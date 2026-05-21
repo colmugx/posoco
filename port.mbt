@@ -118,6 +118,8 @@ pub(all) enum TurnEvent {
   )
   TurnCompleted
   TurnFailed(String)
+  ToolCallDeferred(call~ : ToolCall, reason~ : String)
+  Custom(source~ : String, label~ : String, data~ : Json)
 } derive(Eq, Debug)
 
 ///|
@@ -131,16 +133,19 @@ pub impl Show for TurnEvent with to_string(self) -> String {
     SessionRedirect(from~, to~, ..) => "SessionRedirect(from:\{from}, to:\{to})"
     TurnCompleted => "TurnCompleted"
     TurnFailed(msg) => "TurnFailed(\{msg})"
+    ToolCallDeferred(call~, reason~) =>
+      "ToolCallDeferred(\{call.id}, \{reason})"
+    Custom(source~, label~, ..) => "Custom(source:\{source}, label:\{label})"
   }
 }
 
 ///|
 /// ——— 4.7 Error Types ———
-pub(all) enum ModelError {
+pub(all) suberror ModelError {
   RequestBuild(String)
   Transport(String)
   ResponseParse(String)
-} derive(Eq, Debug)
+} derive(Debug)
 
 ///|
 pub impl Show for ModelError with to_string(self) -> String {
@@ -152,10 +157,10 @@ pub impl Show for ModelError with to_string(self) -> String {
 }
 
 ///|
-pub(all) enum SessionError {
+pub(all) suberror SessionError {
   Load(String)
   Save(String)
-} derive(Eq, Debug)
+} derive(Debug)
 
 ///|
 pub impl Show for SessionError with to_string(self) -> String {
@@ -166,10 +171,10 @@ pub impl Show for SessionError with to_string(self) -> String {
 }
 
 ///|
-pub(all) enum RuntimeError {
+pub(all) suberror RuntimeError {
   InvocationFailed(String)
   Transport(String)
-} derive(Eq, Debug)
+} derive(Debug)
 
 ///|
 pub impl Show for RuntimeError with to_string(self) -> String {
@@ -180,18 +185,18 @@ pub impl Show for RuntimeError with to_string(self) -> String {
 }
 
 ///|
-pub(all) enum AgentError {
-  Model(ModelError)
+pub(all) suberror AgentError {
+  Model(String)
   Session(SessionError)
   Runtime(RuntimeError)
   ToolLoopExceeded
   HookAborted(String)
-} derive(Eq, Debug)
+} derive(Debug)
 
 ///|
 pub impl Show for AgentError with to_string(self) -> String {
   match self {
-    Model(err) => "AgentError::Model(\{err.to_string()})"
+    Model(msg) => "AgentError::Model(\{msg})"
     Session(err) => "AgentError::Session(\{err.to_string()})"
     Runtime(err) => "AgentError::Runtime(\{err.to_string()})"
     ToolLoopExceeded => "AgentError::ToolLoopExceeded"
@@ -202,12 +207,13 @@ pub impl Show for AgentError with to_string(self) -> String {
 ///|
 pub(all) enum HookError {
   Aborted(String)
+  Deferred(reason~ : String)  // needs approval, break tool loop
 } derive(Eq, Debug)
-
 ///|
 pub impl Show for HookError with to_string(self) -> String {
   match self {
     Aborted(msg) => "HookError::Aborted(\{msg})"
+    Deferred(reason=reason) => "HookError::Deferred(\{reason})"
   }
 }
 
@@ -244,23 +250,23 @@ pub(all) enum Stage {
   BeforeTurn
   BeforeModel(Array[Message])
   AfterModel(ModelResponse)
-  ModelError(ModelError)
+  ModelError(String)
   BeforeTool(ToolCall)
   AfterTool(ToolCall, ToolResult)
   ToolError(ToolCall, RuntimeError)
   AfterTurn(TurnResult)
   TurnError(AgentError)
-} derive(Eq, Debug)
+} derive(Debug)
 
 ///|
 /// ——— The 7 Traits ———
 pub(open) trait ModelPort {
-  chat(
+  async chat(
     Self,
     messages : Array[Message],
     tools : Array[ToolDef],
     options : ChatOptions,
-  ) -> Result[ModelResponse, ModelError]
+  ) -> ModelResponse raise ModelError
 }
 
 ///|
@@ -270,10 +276,7 @@ pub(open) trait ToolProvider {
 
 ///|
 pub(open) trait ToolRuntime {
-  execute(Self, name : String, call : ToolCall) -> Result[
-    ToolResult,
-    RuntimeError,
-  ]
+  async execute(Self, name : String, call : ToolCall) -> ToolResult raise RuntimeError
 }
 
 ///|
@@ -295,4 +298,34 @@ pub(open) trait Compressor {
 ///|
 pub(open) trait PipelineHook {
   on_stage(Self, stage : Stage) -> Result[Stage, HookError]
+}
+
+///|
+pub(all) struct MemoryEntry {
+  id : String
+  content : String
+  metadata : Map[String, Json]
+  score : Double?
+} derive(Eq, Debug)
+
+///|
+pub(all) struct MemoryQuery {
+  query : String
+  top_k : Int
+  threshold : Double?
+  filter : Map[String, Json]
+} derive(Eq, Debug)
+
+///|
+pub(all) suberror MemoryError {
+  Store(String)
+  Search(String)
+  Delete(String)
+} derive(Debug)
+
+///|
+pub(open) trait MemoryPort {
+  store(Self, entry : MemoryEntry) -> String raise MemoryError
+  search(Self, query : MemoryQuery) -> Array[MemoryEntry] raise MemoryError
+  delete(Self, id : String) -> Unit raise MemoryError
 }

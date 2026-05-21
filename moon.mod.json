@@ -1,9 +1,19 @@
 {
   "name": "colmugx/posoco",
   "version": "0.1.0",
+  "deps": {
+    "moonbitlang/async": "0.19.1"
+  },
   "readme": "README.mbt.md",
-  "repository": "",
+  "repository": "https://github.com/colmugx/posoco",
   "license": "Apache-2.0",
-  "keywords": [],
-  "description": ""
+  "keywords": [
+    "llm",
+    "agent",
+    "framework",
+    "ports-and-adapters",
+    "hexagonal"
+  ],
+  "preferred-target": "native",
+  "description": "Zero-dependency LLM Agent framework with hexagonal (ports-and-adapters) architecture. Defines 7 traits + Agent loop."
 }

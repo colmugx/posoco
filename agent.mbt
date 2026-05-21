@@ -37,6 +37,7 @@ pub(all) struct Agent {
   observer : &Observer
   compressor : &Compressor
   pipeline_hook : &PipelineHook?
+  memory_port : &MemoryPort?
   config : AgentConfig
 }
 
@@ -49,6 +50,7 @@ pub fn Agent::new(
   observer : &Observer,
   compressor : &Compressor,
   pipeline_hook : &PipelineHook?,
+  memory_port : &MemoryPort?,
   config : AgentConfig,
 ) -> Agent {
   {
@@ -59,6 +61,7 @@ pub fn Agent::new(
     observer,
     compressor,
     pipeline_hook,
+    memory_port,
     config,
   }
 }
@@ -66,26 +69,26 @@ pub fn Agent::new(
 ///|
 /// Run one full agent turn: load session, compress context, call the model,
 /// execute tools in a loop, and persist the final session.
-pub fn Agent::run_turn(
+pub async fn Agent::run_turn(
   self : Agent,
   input : Message,
   session_id : String,
-) -> Result[TurnResult, AgentError] {
+) -> TurnResult raise AgentError {
   // ── Stage: BeforeTurn ──
   match self.pipeline_hook {
     Some(hook) =>
-      match hook.on_stage(Stage::BeforeTurn) {
+      match hook.on_stage(BeforeTurn) {
         Ok(_) => ()
-        Err(e) => return Err(AgentError::HookAborted(e.to_string()))
+        Err(e) => raise HookAborted(e.to_string())
       }
     None => ()
   }
 
-  self.observer.on_event(TurnEvent::TurnStarted)
+  self.observer.on_event(TurnStarted)
 
   let session = match self.session_store.load(session_id) {
     Ok(s) => s
-    Err(e) => return Err(AgentError::Session(e))
+    Err(e) => raise Session(e)
   }
 
   let mut current_session_id = session_id
@@ -95,8 +98,9 @@ pub fn Agent::run_turn(
   let tools = self.tool_provider.list_tools()
   let mut tool_round = 0
   let all_results : Array[ToolResult] = []
+  let mut resolution_required = false
   let initial_msg = {
-    role: Role::Assistant,
+    role: Assistant,
     content: [],
     tool_calls: [],
     tool_call_id: None,
@@ -105,7 +109,7 @@ pub fn Agent::run_turn(
   let mut response = {
     message: initial_msg,
     tool_calls: [],
-    finish_reason: FinishReason::Stop,
+    finish_reason: Stop,
     usage: None,
     reasoning_summary: None,
   }
@@ -118,7 +122,7 @@ pub fn Agent::run_turn(
     }
     let action = self.compressor.compress(messages, ctx)
     match action {
-      CompressAction::NewThread(
+      NewThread(
         messages=msgs,
         new_session_id=new_sid,
         messages_before=before,
@@ -132,10 +136,10 @@ pub fn Agent::run_turn(
         }
         match self.session_store.save(new_sid, new_session) {
           Ok(_) => ()
-          Err(e) => return Err(AgentError::Session(e))
+          Err(e) => raise Session(e)
         }
         self.observer.on_event(
-          TurnEvent::SessionRedirect(
+          SessionRedirect(
             from=current_session_id,
             to=new_sid,
             messages_before=before,
@@ -145,37 +149,40 @@ pub fn Agent::run_turn(
         current_session_id = new_sid
         messages = msgs
       }
-      CompressAction::Replace(msgs) => messages = msgs
-      CompressAction::None => ()
+      Replace(msgs) => messages = msgs
+      None => ()
     }
 
     // ── Stage: BeforeModel ──
     match self.pipeline_hook {
       Some(hook) =>
-        match hook.on_stage(Stage::BeforeModel(messages)) {
+        match hook.on_stage(BeforeModel(messages)) {
+          Ok(BeforeModel(msgs)) => messages = msgs
           Ok(_) => ()
-          Err(e) => return Err(AgentError::HookAborted(e.to_string()))
+          Err(e) => raise HookAborted(e.to_string())
         }
       None => ()
     }
 
     // ── LLM round ──
-    response = match
-      self.model_port.chat(messages, tools, self.config.to_chat_options()) {
-      Ok(r) => r
-      Err(e) => {
+    response = self.model_port.chat(
+      messages,
+      tools,
+      self.config.to_chat_options(),
+    ) catch {
+      e => {
         let reason = e.to_string()
-        self.observer.on_event(TurnEvent::TurnFailed(reason))
+        self.observer.on_event(TurnFailed(reason))
         match self.pipeline_hook {
-          Some(hook) => ignore(hook.on_stage(Stage::ModelError(e)))
+          Some(hook) => ignore(hook.on_stage(ModelError(reason)))
           None => ()
         }
-        return Err(AgentError::Model(e))
+        raise Model(reason)
       }
     }
 
     self.observer.on_event(
-      TurnEvent::ModelResponseReceived(
+      ModelResponseReceived(
         message=response.message,
         usage=response.usage,
         reasoning_summary=response.reasoning_summary,
@@ -185,9 +192,9 @@ pub fn Agent::run_turn(
     // ── Stage: AfterModel ──
     match self.pipeline_hook {
       Some(hook) =>
-        match hook.on_stage(Stage::AfterModel(response)) {
+        match hook.on_stage(AfterModel(response)) {
           Ok(_) => ()
-          Err(e) => return Err(AgentError::HookAborted(e.to_string()))
+          Err(e) => raise HookAborted(e.to_string())
         }
       None => ()
     }
@@ -200,76 +207,85 @@ pub fn Agent::run_turn(
 
     tool_round = tool_round + 1
     if tool_round > self.config.max_tool_rounds {
-      self.observer.on_event(TurnEvent::TurnFailed("tool loop exceeded"))
-      return Err(AgentError::ToolLoopExceeded)
+      self.observer.on_event(TurnFailed("tool loop exceeded"))
+      raise ToolLoopExceeded
     }
 
     // ── Tool execution ──
     for tool_call in response.tool_calls {
-      self.observer.on_event(TurnEvent::ToolCallPending(tool_call))
+      self.observer.on_event(ToolCallPending(tool_call))
 
       // Stage: BeforeTool — PipelineHook can rewrite
       let mut effective_call = tool_call
+      let mut skip_tool = false
       match self.pipeline_hook {
         Some(hook) =>
-          match hook.on_stage(Stage::BeforeTool(effective_call)) {
-            Ok(Stage::BeforeTool(tc)) => effective_call = tc
+          match hook.on_stage(BeforeTool(effective_call)) {
+            Ok(BeforeTool(tc)) => effective_call = tc
             Ok(_) => ()
-            Err(e) => return Err(AgentError::HookAborted(e.to_string()))
+            Err(Deferred(reason=reason)) => {
+              self.observer.on_event(
+                ToolCallDeferred(call=effective_call, reason=reason),
+              )
+              let rejection = ToolResult::{
+                content: "Tool rejected (needs approval): " + reason,
+                structured: None,
+                is_error: true,
+              }
+              all_results.push(rejection)
+              skip_tool = true
+              messages.push(build_tool_result_message(effective_call, rejection))
+              resolution_required = true
+            }
+            Err(Aborted(msg)) => raise HookAborted(msg)
           }
         None => ()
       }
-
-      match self.tool_runtime.execute(effective_call.name, effective_call) {
-        Ok(result) => {
+      if skip_tool == false {
+        try {
+          let result = self.tool_runtime.execute(effective_call.name, effective_call)
           self.observer.on_event(
-            TurnEvent::ToolCallResult(
-              call=effective_call,
-              result~,
-              is_error=false,
-            ),
+            ToolCallResult(call=effective_call, result~, is_error=false),
           )
           match self.pipeline_hook {
-            Some(hook) =>
-              ignore(hook.on_stage(Stage::AfterTool(effective_call, result)))
+            Some(hook) => ignore(hook.on_stage(AfterTool(effective_call, result)))
             None => ()
           }
           all_results.push(result)
           messages.push(build_tool_result_message(effective_call, result))
-        }
-        Err(e) => {
-          let error_result = {
-            content: e.to_string(),
-            structured: None,
-            is_error: true,
+        } catch {
+          e => {
+            let error_result = {
+              content: e.to_string(),
+              structured: None,
+              is_error: true,
+            }
+            self.observer.on_event(
+              ToolCallResult(call=effective_call, result=error_result, is_error=true),
+            )
+            match self.pipeline_hook {
+              Some(hook) => ignore(hook.on_stage(ToolError(effective_call, e)))
+              None => ()
+            }
+            all_results.push(error_result)
+            messages.push(build_error_message(effective_call, e))
           }
-          self.observer.on_event(
-            TurnEvent::ToolCallResult(
-              call=effective_call,
-              result=error_result,
-              is_error=true,
-            ),
-          )
-          match self.pipeline_hook {
-            Some(hook) =>
-              ignore(hook.on_stage(Stage::ToolError(effective_call, e)))
-            None => ()
-          }
-          all_results.push(error_result)
-          messages.push(build_error_message(effective_call, e))
         }
-      }
+      } // end if not skip_tool
+    }  // end for
+    if resolution_required {
+      break
     }
-  }
+  }  // end while
 
   // ── End of turn — save session ──
   let final_session = { messages, metadata: Map::from_array([]) }
   match self.session_store.save(current_session_id, final_session) {
     Ok(_) => ()
-    Err(e) => return Err(AgentError::Session(e))
+    Err(e) => raise Session(e)
   }
 
-  self.observer.on_event(TurnEvent::TurnCompleted)
+  self.observer.on_event(TurnCompleted)
 
   let result = {
     message: response.message,
@@ -279,9 +295,9 @@ pub fn Agent::run_turn(
 
   // Stage: AfterTurn
   match self.pipeline_hook {
-    Some(hook) => ignore(hook.on_stage(Stage::AfterTurn(result)))
+    Some(hook) => ignore(hook.on_stage(AfterTurn(result)))
     None => ()
   }
 
-  Ok(result)
+  result
 }

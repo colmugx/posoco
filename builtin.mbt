@@ -8,7 +8,7 @@ pub impl Compressor for NoopCompressor with compress(
   _messages : Array[Message],
   _ctx : CompressContext,
 ) -> CompressAction {
-  CompressAction::None
+  None
 }
 
 ///|
@@ -51,8 +51,8 @@ pub fn build_tool_result_message(
   result : ToolResult,
 ) -> Message {
   {
-    role: Role::Tool,
-    content: [Content::Text(result.content)],
+    role: Tool,
+    content: [Text(result.content)],
     tool_calls: [],
     tool_call_id: Some(call.id),
     name: Some(call.name),
@@ -63,10 +63,78 @@ pub fn build_tool_result_message(
 /// Build a Tool-role error Message from a ToolCall and RuntimeError.
 pub fn build_error_message(call : ToolCall, error : RuntimeError) -> Message {
   {
-    role: Role::Tool,
-    content: [Content::Text(error.to_string())],
+    role: Tool,
+    content: [Text(error.to_string())],
     tool_calls: [],
     tool_call_id: Some(call.id),
     name: Some(call.name),
   }
+}
+
+///|
+/// CompositeToolProvider — merges multiple ToolProviders
+pub(all) struct CompositeToolProvider {
+  providers : Array[&ToolProvider]
+}
+
+///|
+pub impl ToolProvider for CompositeToolProvider with list_tools(self) {
+  let all : Array[ToolDef] = []
+  for p in self.providers {
+    for t in p.list_tools() {
+      all.push(t)
+    }
+  }
+  all
+}
+
+///|
+/// ToolRegistry — dynamic runtime tool registration
+pub(all) struct ToolRegistry {
+  mut tools : Map[String, ToolDef]
+}
+
+///|
+pub fn ToolRegistry::new() -> ToolRegistry {
+  { tools: Map::from_array([]) }
+}
+
+///|
+pub fn ToolRegistry::register(self : ToolRegistry, tool : ToolDef) -> Unit {
+  self.tools[tool.name] = tool
+}
+
+///|
+pub fn ToolRegistry::unregister(self : ToolRegistry, name : String) -> Unit {
+  self.tools.remove(name)
+}
+
+///|
+pub impl ToolProvider for ToolRegistry with list_tools(self) {
+  let all : Array[ToolDef] = []
+  for v in self.tools.values() {
+    all.push(v)
+  }
+  all
+}
+
+///|
+/// NoopMemoryPort — returns empty/error for all operations
+pub(all) struct NoopMemoryPort {}
+
+///|
+pub impl MemoryPort for NoopMemoryPort with store(_self, _entry) -> String raise MemoryError {
+  raise Store("not implemented")
+}
+
+///|
+pub impl MemoryPort for NoopMemoryPort with search(_self, _query) -> Array[
+  MemoryEntry,
+] raise MemoryError {
+  raise Search("not implemented")
+}
+
+///|
+pub impl MemoryPort for NoopMemoryPort with delete(_self, _id) -> Unit raise MemoryError {
+  raise Delete("not implemented")
 }
