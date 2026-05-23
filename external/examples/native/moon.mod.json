@@ -1,0 +1,13 @@
+{
+  "name": "colmugx/posoco-example",
+  "version": "0.1.0",
+  "deps": {
+    "colmugx/posoco": { "path": "../../.." },
+    "moonbitlang/async": "0.19.1"
+  },
+  "preferred-target": "native",
+  "readme": "README.mbt.md",
+  "license": "Apache-2.0",
+  "keywords": ["posoco", "example", "demo", "repl"],
+  "description": "Posoco Example REPL Agent — live demo of async agent with tool approval"
+}

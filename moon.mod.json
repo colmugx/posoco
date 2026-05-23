@@ -14,6 +14,5 @@
     "ports-and-adapters",
     "hexagonal"
   ],
-  "preferred-target": "native",
   "description": "Zero-dependency LLM Agent framework with hexagonal (ports-and-adapters) architecture. Defines 7 traits + Agent loop."
 }

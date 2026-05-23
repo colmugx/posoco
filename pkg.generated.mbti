@@ -112,7 +112,7 @@ pub impl PipelineHook for HookChain
 
 pub(all) enum HookError {
   Aborted(String)
-  Deferred(String)
+  Deferred(reason~ : String)
 } derive(Eq, @debug.Debug)
 pub impl Show for HookError
 
@@ -275,6 +275,6 @@ pub(open) trait ToolProvider {
 }
 
 pub(open) trait ToolRuntime {
-  execute(Self, String, ToolCall) -> Result[ToolResult, RuntimeError]
+  async execute(Self, String, ToolCall) -> ToolResult raise RuntimeError
 }
 

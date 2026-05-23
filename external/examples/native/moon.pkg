@@ -1,0 +1,10 @@
+import {
+  "colmugx/posoco",
+  "moonbitlang/async",
+  "moonbitlang/async/stdio",
+  "moonbitlang/async/process",
+}
+
+options(
+  "is-main": true,
+)
