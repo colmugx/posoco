@@ -1,0 +1,3 @@
+[submodule "external/extension"]
+	path = external/extension
+	url = https://github.com/colmugx/posoco-extension.git

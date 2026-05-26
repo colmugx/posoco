@@ -32,12 +32,12 @@ let result = agent.run_turn(user_msg("hello"), "session_1")
 
 | Trait | 职责 | 典型实现 |
 |-------|------|----------|
-|| `ModelPort` | LLM 聊天补全 | `OpenAIModelPort`（HTTP → OpenAI/Anthropic） |
+| `ModelPort` | LLM 聊天补全 | `OpenAIModelPort`（HTTP → OpenAI/Anthropic） |
 | `ToolProvider` | 列出可用工具 | `MCPToolProvider`（MCP 协议发现） |
 | `ToolRuntime` | 执行工具调用 | `WasmToolRuntime`（沙箱执行） |
 | `SessionStore` | 持久化会话 | `SQLiteSessionStore` |
-|| `Observer` | 实时事件订阅 | `EventBusObserver`（事件总线） |
-|| `Compressor` *可选* | 上下文压缩 | `AdaptiveCompressor`（自适应压缩策略） |
+| `Observer` | 实时事件订阅 | `EventBusObserver`（事件总线） |
+| `Compressor` *可选* | 上下文压缩 | `AdaptiveCompressor`（自适应压缩策略） |
 | `PipelineHook` *可选* | 流水线拦截 | `RTKHook`（通过 RTK 重写 shell 命令） |
 | `MemoryPort` *可选* | 长期记忆存储 | 向量数据库插件 |
 
