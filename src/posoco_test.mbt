@@ -12,7 +12,7 @@ struct MockModelPort {
 }
 
 ///|
-impl @posoco.ModelPort for MockModelPort with chat(
+impl @posoco.ModelPort for MockModelPort with fn chat(
   self,
   _messages,
   _tools,
@@ -33,7 +33,7 @@ struct MockToolProvider {
 }
 
 ///|
-impl @posoco.ToolProvider for MockToolProvider with list_tools(self) {
+impl @posoco.ToolProvider for MockToolProvider with fn list_tools(self) {
   self.tools
 }
 
@@ -43,7 +43,7 @@ struct MockToolRuntime {
 }
 
 ///|
-impl @posoco.ToolRuntime for MockToolRuntime with execute(self, name, _call) {
+impl @posoco.ToolRuntime for MockToolRuntime with fn execute(self, name, _call) {
   if self.results.contains(name) {
     match self.results[name] {
       Ok(r) => r
@@ -60,7 +60,7 @@ struct MockSessionStore {
 }
 
 ///|
-impl @posoco.SessionStore for MockSessionStore with load(self, id) {
+impl @posoco.SessionStore for MockSessionStore with fn load(self, id) {
   if self.store.contains(id) {
     Ok(self.store[id])
   } else {
@@ -69,7 +69,7 @@ impl @posoco.SessionStore for MockSessionStore with load(self, id) {
 }
 
 ///|
-impl @posoco.SessionStore for MockSessionStore with save(self, id, session) {
+impl @posoco.SessionStore for MockSessionStore with fn save(self, id, session) {
   self.store[id] = session
   Ok(())
 }
@@ -80,7 +80,7 @@ struct MockObserver {
 }
 
 ///|
-impl @posoco.Observer for MockObserver with on_event(self, event) {
+impl @posoco.Observer for MockObserver with fn on_event(self, event) {
   self.events.push(event)
 }
 

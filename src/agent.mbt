@@ -223,9 +223,9 @@ pub async fn Agent::run_turn(
           match hook.on_stage(BeforeTool(effective_call)) {
             Ok(BeforeTool(tc)) => effective_call = tc
             Ok(_) => ()
-            Err(Deferred(reason=reason)) => {
+            Err(Deferred(reason~)) => {
               self.observer.on_event(
-                ToolCallDeferred(call=effective_call, reason=reason),
+                ToolCallDeferred(call=effective_call, reason~),
               )
               let rejection = ToolResult::{
                 content: "Tool rejected (needs approval): " + reason,
@@ -234,7 +234,9 @@ pub async fn Agent::run_turn(
               }
               all_results.push(rejection)
               skip_tool = true
-              messages.push(build_tool_result_message(effective_call, rejection))
+              messages.push(
+                build_tool_result_message(effective_call, rejection),
+              )
               resolution_required = true
             }
             Err(Aborted(msg)) => raise HookAborted(msg)
@@ -243,12 +245,16 @@ pub async fn Agent::run_turn(
       }
       if skip_tool == false {
         try {
-          let result = self.tool_runtime.execute(effective_call.name, effective_call)
+          let result = self.tool_runtime.execute(
+            effective_call.name,
+            effective_call,
+          )
           self.observer.on_event(
             ToolCallResult(call=effective_call, result~, is_error=false),
           )
           match self.pipeline_hook {
-            Some(hook) => ignore(hook.on_stage(AfterTool(effective_call, result)))
+            Some(hook) =>
+              ignore(hook.on_stage(AfterTool(effective_call, result)))
             None => ()
           }
           all_results.push(result)
@@ -261,7 +267,11 @@ pub async fn Agent::run_turn(
               is_error: true,
             }
             self.observer.on_event(
-              ToolCallResult(call=effective_call, result=error_result, is_error=true),
+              ToolCallResult(
+                call=effective_call,
+                result=error_result,
+                is_error=true,
+              ),
             )
             match self.pipeline_hook {
               Some(hook) => ignore(hook.on_stage(ToolError(effective_call, e)))
@@ -272,11 +282,11 @@ pub async fn Agent::run_turn(
           }
         }
       } // end if not skip_tool
-    }  // end for
+    } // end for
     if resolution_required {
       break
     }
-  }  // end while
+  } // end while
 
   // ── End of turn — save session ──
   let final_session = { messages, metadata: Map::from_array([]) }

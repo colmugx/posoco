@@ -12,7 +12,7 @@ struct MockModelPort {
 }
 
 ///|
-impl ModelPort for MockModelPort with chat(self, _messages, _tools, _options) {
+impl ModelPort for MockModelPort with fn chat(self, _messages, _tools, _options) {
   if self.index < self.responses.length() {
     let resp = self.responses[self.index]
     self.index = self.index + 1
@@ -28,7 +28,7 @@ struct MockToolProvider {
 }
 
 ///|
-impl ToolProvider for MockToolProvider with list_tools(self) {
+impl ToolProvider for MockToolProvider with fn list_tools(self) {
   self.tools
 }
 
@@ -38,7 +38,7 @@ struct MockToolRuntime {
 }
 
 ///|
-impl ToolRuntime for MockToolRuntime with execute(self, name, _call) {
+impl ToolRuntime for MockToolRuntime with fn execute(self, name, _call) {
   if self.results.contains(name) {
     match self.results[name] {
       Ok(r) => r
@@ -55,7 +55,7 @@ struct MockSessionStore {
 }
 
 ///|
-impl SessionStore for MockSessionStore with load(self, id) {
+impl SessionStore for MockSessionStore with fn load(self, id) {
   if self.store.contains(id) {
     Ok(self.store[id])
   } else {
@@ -64,7 +64,7 @@ impl SessionStore for MockSessionStore with load(self, id) {
 }
 
 ///|
-impl SessionStore for MockSessionStore with save(self, id, session) {
+impl SessionStore for MockSessionStore with fn save(self, id, session) {
   self.store[id] = session
   Ok(())
 }
@@ -75,7 +75,7 @@ struct MockObserver {
 }
 
 ///|
-impl Observer for MockObserver with on_event(self, event) {
+impl Observer for MockObserver with fn on_event(self, event) {
   self.events.push(event)
 }
 
@@ -84,7 +84,7 @@ impl Observer for MockObserver with on_event(self, event) {
 struct AbortHook {}
 
 ///|
-impl PipelineHook for AbortHook with on_stage(_self, stage) {
+impl PipelineHook for AbortHook with fn on_stage(_self, stage) {
   match stage {
     BeforeTool(_) => Err(Aborted("blocked by policy"))
     _ => Ok(stage)
@@ -97,7 +97,7 @@ struct LogHook {
 }
 
 ///|
-impl PipelineHook for LogHook with on_stage(self, stage) {
+impl PipelineHook for LogHook with fn on_stage(self, stage) {
   self.seen.push(stage)
   Ok(stage)
 }
@@ -107,7 +107,7 @@ impl PipelineHook for LogHook with on_stage(self, stage) {
 struct NewThreadCompressor {}
 
 ///|
-impl Compressor for NewThreadCompressor with compress(_self, messages, _ctx) {
+impl Compressor for NewThreadCompressor with fn compress(_self, messages, _ctx) {
   NewThread(
     messages~,
     new_session_id="session_2",
@@ -120,7 +120,7 @@ impl Compressor for NewThreadCompressor with compress(_self, messages, _ctx) {
 struct ReplaceCompressor {}
 
 ///|
-impl Compressor for ReplaceCompressor with compress(_self, messages, _ctx) {
+impl Compressor for ReplaceCompressor with fn compress(_self, messages, _ctx) {
   if messages.length() > 0 {
     Replace([messages[0]])
   } else {
@@ -638,7 +638,7 @@ async test "session_persistence" {
 struct RewriteModelHook {}
 
 ///|
-impl PipelineHook for RewriteModelHook with on_stage(_self, stage) {
+impl PipelineHook for RewriteModelHook with fn on_stage(_self, stage) {
   match stage {
     BeforeModel(msgs) => {
       let system_msg = {
@@ -694,7 +694,7 @@ async test "hook_rewrites_before_model_messages" {
 struct DeferToolHook {}
 
 ///|
-impl PipelineHook for DeferToolHook with on_stage(_self, stage) {
+impl PipelineHook for DeferToolHook with fn on_stage(_self, stage) {
   match stage {
     BeforeTool(call) if call.name == "restricted" =>
       Err(Deferred(reason="needs admin approval"))

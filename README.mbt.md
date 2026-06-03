@@ -229,7 +229,7 @@ pub(all) struct TurnResult {
 ///|
 /// LLM 模型端口
 pub(open) trait ModelPort {
-  chat(
+  fn chat(
     Self,
     messages : Array[Message],
     tools : Array[ToolDef],
@@ -240,13 +240,13 @@ pub(open) trait ModelPort {
 ///|
 /// 工具发现
 pub(open) trait ToolProvider {
-  list_tools(Self) -> Array[ToolDef]
+  fn list_tools(Self) -> Array[ToolDef]
 }
 
 ///|
 /// 工具执行
 pub(open) trait ToolRuntime {
-  execute(Self, name : String, call : ToolCall) -> Result[
+  fn execute(Self, name : String, call : ToolCall) -> Result[
     ToolResult,
     RuntimeError,
   ]
@@ -255,34 +255,34 @@ pub(open) trait ToolRuntime {
 ///|
 /// 会话存储
 pub(open) trait SessionStore {
-  load(Self, id : String) -> Result[Session, SessionError]
-  save(Self, id : String, session : Session) -> Result[Unit, SessionError]
+  fn load(Self, id : String) -> Result[Session, SessionError]
+  fn save(Self, id : String, session : Session) -> Result[Unit, SessionError]
 }
 
 ///|
 /// 事件观察者（只读，永不阻塞）
 pub(open) trait Observer {
-  on_event(Self, event : TurnEvent) -> Unit
+  fn on_event(Self, event : TurnEvent) -> Unit
 }
 
 ///|
 /// 上下文压缩器（纯函数，返回指令）
 pub(open) trait Compressor {
-  compress(Self, messages : Array[Message], ctx : CompressContext) -> CompressAction
+  fn compress(Self, messages : Array[Message], ctx : CompressContext) -> CompressAction
 }
 
 ///|
 /// 流水线钩子（可变更 Stage，返回 Result，可中止）
 pub(open) trait PipelineHook {
-  on_stage(Self, stage : Stage) -> Result[Stage, HookError]
+  fn on_stage(Self, stage : Stage) -> Result[Stage, HookError]
 }
 
 ///|
 /// 长期记忆端口（可选）
 pub(open) trait MemoryPort {
-  store(Self, entry : MemoryEntry) -> String raise MemoryError
-  search(Self, query : MemoryQuery) -> Array[MemoryEntry] raise MemoryError
-  delete(Self, id : String) -> Unit raise MemoryError
+  fn store(Self, entry : MemoryEntry) -> String raise MemoryError
+  fn search(Self, query : MemoryQuery) -> Array[MemoryEntry] raise MemoryError
+  fn delete(Self, id : String) -> Unit raise MemoryError
 }
 ```
 ### PipelineStage（9 个阶段）
@@ -353,7 +353,7 @@ pub fn build_error_message(call : ToolCall, error : RuntimeError) -> Message
 工具失败是**非致命的** — 错误变成消息传给 LLM。只有模型错误会终止本轮。
 
 ```moonbit nocheck
-///
+///|
 /// Agent 顶层错误（使用 suberror 而非 enum）
 pub(all) suberror AgentError {
   Model(String) // LLM 错误 → 终止本轮
@@ -363,12 +363,14 @@ pub(all) suberror AgentError {
   HookAborted(String) // Hook 中止 → 终止本轮
 }
 
+///|
 /// Hook 错误（可中止或延迟）
 pub(all) enum HookError {
   Aborted(String) // 终止轮次
   Deferred(String) // 延迟执行，通知 LLM
 }
 
+///|
 /// ModelError、SessionError、RuntimeError、MemoryError 都使用 suberror
 pub(all) suberror ModelError {
   RequestBuild(String)

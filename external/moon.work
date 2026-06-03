@@ -1,0 +1,6 @@
+members = [
+  "./extension/posoco_ext_bash",
+  "./extension/posoco_ext_llm",
+  "./extension/posoco_ext_mcp",
+  "./extension/posoco_ext_rtk",
+]

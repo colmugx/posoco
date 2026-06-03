@@ -3,7 +3,7 @@
 pub(all) struct NoopCompressor {}
 
 ///|
-pub impl Compressor for NoopCompressor with compress(
+pub impl Compressor for NoopCompressor with fn compress(
   _self,
   _messages : Array[Message],
   _ctx : CompressContext,
@@ -16,7 +16,7 @@ pub impl Compressor for NoopCompressor with compress(
 pub(all) struct NoopHook {}
 
 ///|
-pub impl PipelineHook for NoopHook with on_stage(_self, stage : Stage) -> Result[
+pub impl PipelineHook for NoopHook with fn on_stage(_self, stage : Stage) -> Result[
   Stage,
   HookError,
 ] {
@@ -30,7 +30,7 @@ pub(all) struct HookChain {
 }
 
 ///|
-pub impl PipelineHook for HookChain with on_stage(self, stage : Stage) -> Result[
+pub impl PipelineHook for HookChain with fn on_stage(self, stage : Stage) -> Result[
   Stage,
   HookError,
 ] {
@@ -78,7 +78,7 @@ pub(all) struct CompositeToolProvider {
 }
 
 ///|
-pub impl ToolProvider for CompositeToolProvider with list_tools(self) {
+pub impl ToolProvider for CompositeToolProvider with fn list_tools(self) {
   let all : Array[ToolDef] = []
   for p in self.providers {
     for t in p.list_tools() {
@@ -110,7 +110,7 @@ pub fn ToolRegistry::unregister(self : ToolRegistry, name : String) -> Unit {
 }
 
 ///|
-pub impl ToolProvider for ToolRegistry with list_tools(self) {
+pub impl ToolProvider for ToolRegistry with fn list_tools(self) {
   let all : Array[ToolDef] = []
   for v in self.tools.values() {
     all.push(v)
@@ -123,18 +123,18 @@ pub impl ToolProvider for ToolRegistry with list_tools(self) {
 pub(all) struct NoopMemoryPort {}
 
 ///|
-pub impl MemoryPort for NoopMemoryPort with store(_self, _entry) -> String raise MemoryError {
+pub impl MemoryPort for NoopMemoryPort with fn store(_self, _entry) -> String raise MemoryError {
   raise Store("not implemented")
 }
 
 ///|
-pub impl MemoryPort for NoopMemoryPort with search(_self, _query) -> Array[
+pub impl MemoryPort for NoopMemoryPort with fn search(_self, _query) -> Array[
   MemoryEntry,
 ] raise MemoryError {
   raise Search("not implemented")
 }
 
 ///|
-pub impl MemoryPort for NoopMemoryPort with delete(_self, _id) -> Unit raise MemoryError {
+pub impl MemoryPort for NoopMemoryPort with fn delete(_self, _id) -> Unit raise MemoryError {
   raise Delete("not implemented")
 }
