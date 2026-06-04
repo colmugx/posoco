@@ -6,27 +6,30 @@ pub(all) struct InMemorySessionStore {
 
 ///|
 pub fn InMemorySessionStore::new() -> InMemorySessionStore {
-  { store: Map::from_array([]) }
+  { store: {} }
 }
 
 ///|
-pub impl @posoco.SessionStore for InMemorySessionStore with load(
+pub impl @posoco.SessionStore for InMemorySessionStore with fn load(
   self,
   id : String,
-) {
+) -> Result[@posoco.Session, @posoco.SessionError] {
   if self.store.contains(id) {
     Ok(self.store[id])
   } else {
-    Ok(@posoco.Session::{ messages: [], metadata: Map::from_array([]) })
+    Ok(@posoco.Session::{
+      messages: [],
+      metadata: {},
+    })
   }
 }
 
 ///|
-pub impl @posoco.SessionStore for InMemorySessionStore with save(
+pub impl @posoco.SessionStore for InMemorySessionStore with fn save(
   self,
   id : String,
   session : @posoco.Session,
-) {
+) -> Result[Unit, @posoco.SessionError] {
   self.store[id] = session
   Ok(())
 }

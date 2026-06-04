@@ -3,27 +3,34 @@
 pub(all) struct ConsoleObserver {}
 
 ///|
-pub impl @posoco.Observer for ConsoleObserver with on_event(
+pub impl @posoco.Observer for ConsoleObserver with fn on_event(
   _self,
   event : @posoco.TurnEvent,
 ) {
   match event {
-    @posoco.TurnStarted => println("🔄 Turn started")
-    @posoco.ToolCallPending(call) => println("🔧 Pending: " + call.name)
-    @posoco.ToolCallResult(call~, result~, is_error~) =>
+    @posoco.TurnEvent::TurnStarted => println("🔄 Turn started")
+    @posoco.TurnEvent::ToolCallPending(call) =>
+      println("🔧 Calling: " + call.name)
+    @posoco.TurnEvent::ToolCallResult(call~, result~, is_error~) =>
       if is_error {
         println("❌ Failed: " + result.content)
       } else {
-        println("✅ Done: " + result.content)
+        println("✅ Done: " + call.name)
       }
-    @posoco.ToolCallDeferred(call~, reason~) =>
+    @posoco.TurnEvent::ToolCallDeferred(call~, reason~) =>
       println("⚠️  DEFERRED: " + call.name + " — " + reason)
-    @posoco.ModelResponseReceived(..) => ()
-    @posoco.TurnCompleted => println("✅ Turn completed")
-    @posoco.TurnFailed(msg) => println("💥 Turn failed: " + msg)
-    @posoco.SessionRedirect(from~, to~, ..) =>
+    @posoco.TurnEvent::ModelResponseReceived(..) => ()
+    @posoco.TurnEvent::StreamChunkReceived(chunk~) => {
+      match chunk {
+        @posoco.StreamChunk::TextDelta(token~) => () // streamed tokens
+        _ => ()
+      }
+    }
+    @posoco.TurnEvent::TurnCompleted => println("\n✅ Turn completed")
+    @posoco.TurnEvent::TurnFailed(msg) => println("💥 Turn failed: " + msg)
+    @posoco.TurnEvent::SessionRedirect(from~, to~, ..) =>
       println("📦 Session redirected: " + from + " → " + to)
-    @posoco.Custom(source~, label~, ..) =>
+    @posoco.TurnEvent::Custom(source~, label~, ..) =>
       println("📢 [" + source + "] " + label)
   }
 }
