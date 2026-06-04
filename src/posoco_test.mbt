@@ -1,11 +1,5 @@
 ///|
-/// posoco_test.mbt — Blackbox tests against the public API.
-///
-/// Types imported via `@posoco` prefix. Covers public helpers,
-/// type constructors, and lifecycle scenarios with mock ports.
-
-///|
-/// ——— Mock implementations (blackbox, implementing pub(open) traits) ———
+/// Blackbox tests against the public API. Mocks live in this file.
 struct MockModelPort {
   responses : Array[@posoco.ModelResponse]
   mut index : Int
@@ -85,7 +79,6 @@ impl @posoco.Observer for MockObserver with fn on_event(self, event) {
 }
 
 ///|
-/// ——— Helpers ———
 fn make_config() -> @posoco.AgentConfig {
   {
     max_tool_rounds: 10,
@@ -126,7 +119,6 @@ fn stop_response(text : String) -> @posoco.ModelResponse {
 }
 
 ///|
-/// ——— Test b1: Simple turn via blackbox ———
 async test "b1_simple_turn_no_tools" {
   let model = MockModelPort::{ responses: [stop_response("hi")], index: 0 }
   let tools = MockToolProvider::{ tools: [] }
@@ -144,6 +136,7 @@ async test "b1_simple_turn_no_tools" {
     @posoco.NoopCompressor::{  },
     None,
     None,
+    None,
     config,
   )
   let result = agent.run_turn(user_msg("hello"), "session_b1")
@@ -152,7 +145,6 @@ async test "b1_simple_turn_no_tools" {
 }
 
 ///|
-/// ——— Test b2: NoopCompressor public API ———
 async test "b2_noop_compressor" {
   let comp = @posoco.NoopCompressor::{  }
   let ctx = @posoco.CompressContext::{
@@ -164,7 +156,6 @@ async test "b2_noop_compressor" {
 }
 
 ///|
-/// ——— Test b3: NoopHook passes through ———
 async test "b3_noop_hook" {
   let hook = @posoco.NoopHook::{  }
   let result = hook.on_stage(BeforeTurn)
@@ -175,7 +166,6 @@ async test "b3_noop_hook" {
 }
 
 ///|
-/// ——— Test b4: HookChain with two hooks ———
 async test "b4_hook_chain" {
   let h1 = @posoco.NoopHook::{  }
   let h2 = @posoco.NoopHook::{  }
@@ -185,7 +175,6 @@ async test "b4_hook_chain" {
 }
 
 ///|
-/// ——— Test b5: ToolCall and ToolResult message building ———
 async test "b5_build_tool_result_message" {
   let call = @posoco.ToolCall::{
     id: "ct_1",
@@ -204,7 +193,6 @@ async test "b5_build_tool_result_message" {
 }
 
 ///|
-/// ——— Test b6: build_error_message ———
 async test "b6_build_error_message" {
   let call = @posoco.ToolCall::{
     id: "ct_2",
@@ -218,7 +206,6 @@ async test "b6_build_error_message" {
 }
 
 ///|
-/// ——— Test b7: AgentError display ———
 async test "b7_agent_error_display" {
   let model_err = @posoco.Model("nope")
   let s = model_err.to_string()
@@ -227,7 +214,6 @@ async test "b7_agent_error_display" {
 }
 
 ///|
-/// ——— Test b8: TurnEvent lifecycle ———
 async test "b8_turn_event_lifecycle" {
   let model = MockModelPort::{ responses: [stop_response("ok")], index: 0 }
   let tools = MockToolProvider::{ tools: [] }
@@ -243,6 +229,7 @@ async test "b8_turn_event_lifecycle" {
     store,
     observer,
     @posoco.NoopCompressor::{  },
+    None,
     None,
     None,
     config,
@@ -262,7 +249,6 @@ async test "b8_turn_event_lifecycle" {
 }
 
 ///|
-/// ——— Test b9: Model error aborts via blackbox ———
 async test "b9_model_error_aborts" {
   let model = MockModelPort::{ responses: [], index: 0 }
   let tools = MockToolProvider::{ tools: [] }
@@ -278,6 +264,7 @@ async test "b9_model_error_aborts" {
     store,
     observer,
     @posoco.NoopCompressor::{  },
+    None,
     None,
     None,
     config,

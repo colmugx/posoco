@@ -1,11 +1,5 @@
 ///|
-/// posoco_wbtest.mbt — Whitebox tests with mock implementations.
-///
-/// Mocks implement port traits for testing Agent::run_turn.
-/// 12 test cases cover the full Agent lifecycle.
-
-///|
-/// ——— Mock Implementations ———
+/// Whitebox tests with mock implementations.
 struct MockModelPort {
   responses : Array[ModelResponse]
   mut index : Int
@@ -80,7 +74,6 @@ impl Observer for MockObserver with fn on_event(self, event) {
 }
 
 ///|
-/// ——— Custom PipelineHook implementations ———
 struct AbortHook {}
 
 ///|
@@ -103,7 +96,6 @@ impl PipelineHook for LogHook with fn on_stage(self, stage) {
 }
 
 ///|
-/// ——— Custom Compressor implementations ———
 struct NewThreadCompressor {}
 
 ///|
@@ -129,7 +121,6 @@ impl Compressor for ReplaceCompressor with fn compress(_self, messages, _ctx) {
 }
 
 ///|
-/// ——— Helper functions ———
 fn make_config() -> AgentConfig {
   {
     max_tool_rounds: 10,
@@ -197,7 +188,6 @@ fn make_tool_call(id : String, name : String) -> ToolCall {
 }
 
 ///|
-/// ——— Test 1: Simple turn without tools ———
 async test "simple_turn_no_tools" {
   let model = MockModelPort::{
     responses: [stop_response("hi there")],
@@ -218,6 +208,7 @@ async test "simple_turn_no_tools" {
     NoopCompressor::{  },
     None,
     None,
+    None,
     config,
   )
   let result = agent.run_turn(user_msg("hello"), "session_1")
@@ -226,7 +217,6 @@ async test "simple_turn_no_tools" {
 }
 
 ///|
-/// ——— Test 2: Turn with a single tool call ———
 async test "turn_with_single_tool" {
   let tc = make_tool_call("call_1", "bash")
   let model = MockModelPort::{
@@ -235,7 +225,12 @@ async test "turn_with_single_tool" {
   }
   let tools = MockToolProvider::{
     tools: [
-      { name: "bash", description: "run a cmd", input_schema: Json::null() },
+      {
+        name: "bash",
+        description: "run a cmd",
+        input_schema: Json::null(),
+        metadata: None,
+      },
     ],
   }
   let runtime = MockToolRuntime::{
@@ -256,6 +251,7 @@ async test "turn_with_single_tool" {
     NoopCompressor::{  },
     None,
     None,
+    None,
     config,
   )
   let result = agent.run_turn(user_msg("run ls"), "session_1")
@@ -264,7 +260,6 @@ async test "turn_with_single_tool" {
 }
 
 ///|
-/// ——— Test 3: Tool failure is non-fatal ———
 async test "tool_failure_non_fatal" {
   let tc = make_tool_call("call_1", "bash")
   let model = MockModelPort::{
@@ -272,7 +267,14 @@ async test "tool_failure_non_fatal" {
     index: 0,
   }
   let tools = MockToolProvider::{
-    tools: [{ name: "bash", description: "", input_schema: Json::null() }],
+    tools: [
+      {
+        name: "bash",
+        description: "",
+        input_schema: Json::null(),
+        metadata: None,
+      },
+    ],
   }
   let runtime = MockToolRuntime::{
     results: Map::from_array([("bash", Err(InvocationFailed("boom")))]),
@@ -290,6 +292,7 @@ async test "tool_failure_non_fatal" {
     NoopCompressor::{  },
     None,
     None,
+    None,
     config,
   )
   let result = agent.run_turn(user_msg("do it"), "session_1")
@@ -298,7 +301,6 @@ async test "tool_failure_non_fatal" {
 }
 
 ///|
-/// ——— Test 4: Model error aborts the turn ———
 async test "model_error_aborts_turn" {
   let model = MockModelPort::{ responses: [], index: 0 }
   let tools = MockToolProvider::{ tools: [] }
@@ -316,6 +318,7 @@ async test "model_error_aborts_turn" {
     NoopCompressor::{  },
     None,
     None,
+    None,
     config,
   )
   match
@@ -326,7 +329,6 @@ async test "model_error_aborts_turn" {
 }
 
 ///|
-/// ——— Test 5: PipelineHook aborts before tool ———
 async test "hook_aborts_before_tool" {
   let tc = make_tool_call("call_1", "bash")
   let model = MockModelPort::{
@@ -334,7 +336,14 @@ async test "hook_aborts_before_tool" {
     index: 0,
   }
   let tools = MockToolProvider::{
-    tools: [{ name: "bash", description: "", input_schema: Json::null() }],
+    tools: [
+      {
+        name: "bash",
+        description: "",
+        input_schema: Json::null(),
+        metadata: None,
+      },
+    ],
   }
   let runtime = MockToolRuntime::{
     results: Map::from_array([
@@ -355,6 +364,7 @@ async test "hook_aborts_before_tool" {
     NoopCompressor::{  },
     Some(abort_hook),
     None,
+    None,
     config,
   )
   match
@@ -365,7 +375,6 @@ async test "hook_aborts_before_tool" {
 }
 
 ///|
-/// ——— Test 6: Compression creates a new thread ———
 async test "compression_new_thread" {
   let model = MockModelPort::{
     responses: [stop_response("compressed")],
@@ -385,6 +394,7 @@ async test "compression_new_thread" {
     store,
     observer,
     compressor,
+    None,
     None,
     None,
     config,
@@ -408,7 +418,6 @@ async test "compression_new_thread" {
 }
 
 ///|
-/// ——— Test 7: Compression replaces messages ———
 async test "compression_replace" {
   let model = MockModelPort::{
     responses: [stop_response("replaced")],
@@ -437,6 +446,7 @@ async test "compression_replace" {
     compressor,
     None,
     None,
+    None,
     config,
   )
   let result = agent.run_turn(user_msg("new msg"), "session_1")
@@ -451,7 +461,6 @@ async test "compression_replace" {
 }
 
 ///|
-/// ——— Test 8: Tool loop exceeded ———
 async test "tool_loop_exceeded" {
   let tc = make_tool_call("call_1", "bash")
   let tool_resp = tool_response([tc])
@@ -460,7 +469,14 @@ async test "tool_loop_exceeded" {
     index: 0,
   }
   let tools = MockToolProvider::{
-    tools: [{ name: "bash", description: "", input_schema: Json::null() }],
+    tools: [
+      {
+        name: "bash",
+        description: "",
+        input_schema: Json::null(),
+        metadata: None,
+      },
+    ],
   }
   let runtime = MockToolRuntime::{
     results: Map::from_array([
@@ -487,6 +503,7 @@ async test "tool_loop_exceeded" {
     NoopCompressor::{  },
     None,
     None,
+    None,
     config,
   )
   match
@@ -497,7 +514,6 @@ async test "tool_loop_exceeded" {
 }
 
 ///|
-/// ——— Test 9: HookChain composition ———
 async test "hook_chain_composition" {
   let hook1 = LogHook::{ seen: [] }
   let hook2 = NoopHook::{  }
@@ -524,7 +540,6 @@ async test "hook_chain_composition" {
 }
 
 ///|
-/// ——— Test 10: NoopCompressor always returns None ———
 async test "noop_compressor_always_none" {
   let comp = NoopCompressor::{  }
   let ctx = { session_id: "test", model_context_window: None }
@@ -539,7 +554,6 @@ async test "noop_compressor_always_none" {
 }
 
 ///|
-/// ——— Test 11: Observer event sequence ———
 async test "observer_event_sequence" {
   let tc = make_tool_call("call_1", "bash")
   let model = MockModelPort::{
@@ -547,7 +561,14 @@ async test "observer_event_sequence" {
     index: 0,
   }
   let tools = MockToolProvider::{
-    tools: [{ name: "bash", description: "", input_schema: Json::null() }],
+    tools: [
+      {
+        name: "bash",
+        description: "",
+        input_schema: Json::null(),
+        metadata: None,
+      },
+    ],
   }
   let runtime = MockToolRuntime::{
     results: Map::from_array([
@@ -565,6 +586,7 @@ async test "observer_event_sequence" {
     store,
     observer,
     NoopCompressor::{  },
+    None,
     None,
     None,
     config,
@@ -599,7 +621,6 @@ async test "observer_event_sequence" {
 }
 
 ///|
-/// ——— Test 12: Session persistence ———
 async test "session_persistence" {
   let model = MockModelPort::{ responses: [stop_response("saved")], index: 0 }
   let tools = MockToolProvider::{ tools: [] }
@@ -615,6 +636,7 @@ async test "session_persistence" {
     store,
     observer,
     NoopCompressor::{  },
+    None,
     None,
     None,
     config,
@@ -659,7 +681,7 @@ impl PipelineHook for RewriteModelHook with fn on_stage(_self, stage) {
 }
 
 ///|
-/// Test: BeforeModel hook can modify messages (Phase 0 fix verification)
+/// Test: BeforeModel hook can modify messages
 async test "hook_rewrites_before_model_messages" {
   let model = MockModelPort::{
     responses: [stop_response("response after rewrite")],
@@ -679,6 +701,7 @@ async test "hook_rewrites_before_model_messages" {
     observer,
     NoopCompressor::{  },
     Some(rewriter),
+    None,
     None,
     config,
   )
@@ -711,7 +734,14 @@ async test "hook_deferred_skips_execution" {
     index: 0,
   }
   let tools = MockToolProvider::{
-    tools: [{ name: "restricted", description: "", input_schema: Json::null() }],
+    tools: [
+      {
+        name: "restricted",
+        description: "",
+        input_schema: Json::null(),
+        metadata: None,
+      },
+    ],
   }
   let runtime = MockToolRuntime::{
     results: Map::from_array([
@@ -734,12 +764,11 @@ async test "hook_deferred_skips_execution" {
     NoopCompressor::{  },
     Some(hook),
     None,
+    None,
     config,
   )
   let result = agent.run_turn(user_msg("use restricted"), "session_1")
-  // Turn should succeed (not abort)
   assert_eq(result.final_session_id, "session_1")
-  // Should have ToolCallDeferred event
   let mut deferred_seen = false
   for e in observer.events {
     match e {
@@ -752,4 +781,226 @@ async test "hook_deferred_skips_execution" {
   assert_eq(result.tool_results.length(), 1)
   assert_true(result.tool_results[0].is_error)
   assert_true(result.tool_results[0].content.contains("rejected"))
+}
+
+///|
+async test "composite_runtime_routes_by_tool_name" {
+  let ctr = CompositeToolRuntime::new()
+  let shell_provider = MockToolProvider::{
+    tools: [
+      {
+        name: "bash",
+        description: "run cmd",
+        input_schema: Json::null(),
+        metadata: None,
+      },
+    ],
+  }
+  let mcp_provider = MockToolProvider::{
+    tools: [
+      {
+        name: "mcp__read",
+        description: "read file",
+        input_schema: Json::null(),
+        metadata: None,
+      },
+    ],
+  }
+  let shell_runtime = MockToolRuntime::{
+    results: Map::from_array([
+      ("bash", Ok({ content: "shell ok", structured: None, is_error: false })),
+    ]),
+  }
+  let mcp_runtime = MockToolRuntime::{
+    results: Map::from_array([
+      (
+        "mcp__read",
+        Ok({ content: "mcp ok", structured: None, is_error: false }),
+      ),
+    ]),
+  }
+
+  ctr.add(shell_provider, shell_runtime)
+  ctr.add(mcp_provider, mcp_runtime)
+
+  let result = ctr.execute("bash", make_tool_call("c1", "bash"))
+  assert_eq(result.content, "shell ok")
+
+  let result2 = ctr.execute("mcp__read", make_tool_call("c2", "mcp__read"))
+  assert_eq(result2.content, "mcp ok")
+}
+
+///|
+async test "composite_runtime_unknown_tool" {
+  let ctr = CompositeToolRuntime::new()
+  let provider = MockToolProvider::{
+    tools: [
+      {
+        name: "bash",
+        description: "",
+        input_schema: Json::null(),
+        metadata: None,
+      },
+    ],
+  }
+  let runtime = MockToolRuntime::{
+    results: Map::from_array([
+      ("bash", Ok({ content: "ok", structured: None, is_error: false })),
+    ]),
+  }
+
+  ctr.add(provider, runtime)
+
+  match
+    (Ok(ctr.execute("nonexistent", make_tool_call("c1", "nonexistent"))) catch {
+      e => Err(e)
+    }) {
+    Err(UnknownTool(msg)) => assert_true(msg.contains("nonexistent"))
+    _ => fail("expected UnknownTool error")
+  }
+}
+
+///|
+async test "composite_runtime_collision_detection" {
+  let ctr = CompositeToolRuntime::new()
+  let provider1 = MockToolProvider::{
+    tools: [
+      {
+        name: "bash",
+        description: "v1",
+        input_schema: Json::null(),
+        metadata: None,
+      },
+    ],
+  }
+  let provider2 = MockToolProvider::{
+    tools: [
+      {
+        name: "bash",
+        description: "v2",
+        input_schema: Json::null(),
+        metadata: None,
+      },
+    ],
+  }
+  let runtime1 = MockToolRuntime::{ results: Map::from_array([]) }
+  let runtime2 = MockToolRuntime::{ results: Map::from_array([]) }
+
+  ctr.add(provider1, runtime1)
+  ctr.add(provider2, runtime2)
+
+  let warnings = ctr.validate()
+  assert_eq(warnings.length(), 1)
+  assert_true(warnings[0].contains("bash"))
+}
+
+///|
+/// Mock ModelPort that emits StreamChunks then returns a final response.
+struct MockStreamingModelPort {
+  chunks : Array[StreamChunk]
+  final_response : ModelResponse
+}
+
+///|
+impl ModelPort for MockStreamingModelPort with fn chat(
+  self,
+  _messages,
+  _tools,
+  _options,
+) {
+  self.final_response
+}
+
+///|
+impl ModelPort for MockStreamingModelPort with fn chat_streaming(
+  self,
+  _messages,
+  _tools,
+  _options,
+  on_chunk,
+) {
+  for chunk in self.chunks {
+    on_chunk(chunk)
+  }
+  self.final_response
+}
+
+///|
+async test "streaming_events_emitted_during_chat" {
+  let chunks : Array[StreamChunk] = [
+    TextDelta(token="Hello"),
+    TextDelta(token=" world"),
+    Usage({
+      input_tokens: Some(10),
+      output_tokens: Some(5),
+      total_tokens: Some(15),
+    }),
+    Finish(reason=Stop),
+  ]
+  let final_response = stop_response("Hello world")
+  let model = MockStreamingModelPort::{ chunks, final_response }
+  let tools = MockToolProvider::{ tools: [] }
+  let runtime = MockToolRuntime::{ results: Map::from_array([]) }
+  let store = MockSessionStore::{ store: Map::from_array([]) }
+  let observer = MockObserver::{ events: [] }
+  let config = make_config()
+
+  let agent = Agent::new(
+    model,
+    tools,
+    runtime,
+    store,
+    observer,
+    NoopCompressor::{  },
+    None,
+    None,
+    None,
+    config,
+  )
+  let _ = agent.run_turn(user_msg("stream test"), "session_s1")
+
+  let mut stream_count = 0
+  for e in observer.events {
+    match e {
+      StreamChunkReceived(_) => stream_count = stream_count + 1
+      _ => ()
+    }
+  }
+  assert_eq(stream_count, 4)
+}
+
+///|
+async test "stream_accumulator_assembles_response" {
+  let acc = StreamAccumulator::new()
+  acc.push(TextDelta(token="Hi"))
+  acc.push(TextDelta(token=" there"))
+  acc.push(ReasoningDelta(token="thinking"))
+  acc.push(
+    ToolCallDelta(
+      index=0,
+      id=Some("tc1"),
+      name=Some("bash"),
+      arguments_delta=Some("{\"cmd\""),
+    ),
+  )
+  acc.push(
+    ToolCallDelta(index=0, id=None, name=None, arguments_delta=Some(":\"ls\"}")),
+  )
+  acc.push(
+    Usage({
+      input_tokens: Some(10),
+      output_tokens: Some(20),
+      total_tokens: Some(30),
+    }),
+  )
+  acc.push(Finish(reason=ToolCalls))
+
+  let resp = acc.to_response()
+  assert_eq(resp.message.content.length(), 1)
+  assert_eq(resp.tool_calls.length(), 1)
+  assert_eq(resp.tool_calls[0].id, "tc1")
+  assert_eq(resp.tool_calls[0].name, "bash")
+  assert_true(resp.finish_reason is ToolCalls)
+  assert_true(resp.usage is Some(_))
+  assert_true(resp.reasoning_summary is Some(_))
 }

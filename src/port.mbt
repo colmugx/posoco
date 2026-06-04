@@ -1,15 +1,5 @@
 ///|
-/// port.mbt — Posoco Agent Framework: port interfaces and contract types.
-///
-/// Defines the abstract port interfaces (hexagonal architecture) that Posoco
-/// adapters implement. Port contract types (Stage, HookError, CompressContext,
-/// CompressAction) are kept here because they exist solely to define the
-/// PipelineHook and Compressor trait boundaries.
-///
-/// Domain model types live in types.mbt. Error types live in errors.mbt.
-
-///|
-/// ——— PipelineHook Contract Types ———
+/// Port interfaces and their contract types (Stage, HookError, CompressContext, CompressAction).
 pub(all) enum HookError {
   Aborted(String)
   Deferred(reason~ : String) // needs approval, break tool loop
@@ -24,7 +14,6 @@ pub impl Show for HookError with fn to_string(self) -> String {
 }
 
 ///|
-/// ——— Compressor Contract Types ———
 pub(all) struct CompressContext {
   session_id : String
   model_context_window : Int?
@@ -43,7 +32,6 @@ pub(all) enum CompressAction {
 } derive(Eq, Debug)
 
 ///|
-/// ——— Stage Enum (9 variants, for PipelineHook) ———
 pub(all) enum Stage {
   BeforeTurn
   BeforeModel(Array[Message])
@@ -57,7 +45,6 @@ pub(all) enum Stage {
 } derive(Debug)
 
 ///|
-/// ——— The 8 Port Traits ———
 pub(open) trait ModelPort {
   async fn chat(
     Self,
@@ -65,11 +52,21 @@ pub(open) trait ModelPort {
     tools : Array[ToolDef],
     options : ChatOptions,
   ) -> ModelResponse raise ModelError
+
+  /// Streaming version of chat. Default: ignores on_chunk, falls back to chat().
+  /// Streaming adapters override this and call on_chunk for each StreamChunk.
+  async fn chat_streaming(
+    Self,
+    messages : Array[Message],
+    tools : Array[ToolDef],
+    options : ChatOptions,
+    on_chunk : (StreamChunk) -> Unit,
+  ) -> ModelResponse raise ModelError = _
 }
 
 ///|
 pub(open) trait ToolProvider {
-  fn list_tools(Self) -> Array[ToolDef]
+  async fn list_tools(Self) -> Array[ToolDef]
 }
 
 ///|
@@ -95,7 +92,7 @@ pub(open) trait Compressor {
 
 ///|
 pub(open) trait PipelineHook {
-  fn on_stage(Self, stage : Stage) -> Result[Stage, HookError]
+  async fn on_stage(Self, stage : Stage) -> Result[Stage, HookError]
 }
 
 ///|
@@ -103,4 +100,9 @@ pub(open) trait MemoryPort {
   fn store(Self, entry : MemoryEntry) -> String raise MemoryError
   fn search(Self, query : MemoryQuery) -> Array[MemoryEntry] raise MemoryError
   fn delete(Self, id : String) -> Unit raise MemoryError
+}
+
+///|
+pub(open) trait Lifecycle {
+  async fn on_shutdown(Self) -> Unit
 }

@@ -1,11 +1,5 @@
 ///|
-/// types.mbt — Posoco Agent Framework: domain model types.
-///
-/// Cross-cutting types that flow through the system. These represent the
-/// business concepts shared by multiple port interfaces.
-
-///|
-/// ——— Message Types ———
+/// Domain model types shared by port interfaces.
 pub(all) enum Role {
   System
   User
@@ -36,11 +30,11 @@ pub(all) struct Message {
 } derive(Eq, Debug)
 
 ///|
-/// ——— Tool Types ———
 pub(all) struct ToolDef {
   name : String
   description : String
   input_schema : Json
+  metadata : Json?
 } derive(Eq, Debug)
 
 ///|
@@ -51,7 +45,6 @@ pub(all) struct ToolResult {
 } derive(Eq, Debug)
 
 ///|
-/// ——— Model Types ———
 pub(all) enum FinishReason {
   Stop
   Length
@@ -76,7 +69,121 @@ pub(all) struct ModelResponse {
 } derive(Eq, Debug)
 
 ///|
-/// ——— ChatOptions ———
+/// StreamChunk — LLM streaming intermediate events.
+/// Inspired by chobits/llm StreamChunk, adapted with named fields.
+pub(all) enum StreamChunk {
+  TextDelta(token~ : String)
+  ReasoningDelta(token~ : String)
+  ToolCallDelta(
+    index~ : Int,
+    id~ : String?,
+    name~ : String?,
+    arguments_delta~ : String?
+  )
+  Usage(Usage)
+  Finish(reason~ : FinishReason)
+} derive(Eq, Debug)
+
+///|
+/// ToolCallBuilder — accumulates partial tool call deltas.
+pub(all) struct ToolCallBuilder {
+  mut id : String
+  mut name : String
+  mut arguments_json : String
+} derive(Debug)
+
+///|
+pub fn ToolCallBuilder::new() -> ToolCallBuilder {
+  { id: "", name: "", arguments_json: "" }
+}
+
+///|
+/// StreamAccumulator — accumulates StreamChunk events into a ModelResponse.
+/// push(chunk) accumulates, to_response() produces the final ModelResponse.
+pub(all) struct StreamAccumulator {
+  mut text : String
+  mut reasoning : String
+  tool_calls : Array[ToolCallBuilder]
+  mut finish_reason : FinishReason
+  mut usage : Usage?
+} derive(Debug)
+
+///|
+pub fn StreamAccumulator::new() -> StreamAccumulator {
+  { text: "", reasoning: "", tool_calls: [], finish_reason: Stop, usage: None }
+}
+
+///|
+pub fn StreamAccumulator::push(
+  self : StreamAccumulator,
+  chunk : StreamChunk,
+) -> Unit {
+  match chunk {
+    TextDelta(token~) => self.text = self.text + token
+    ReasoningDelta(token~) => self.reasoning = self.reasoning + token
+    ToolCallDelta(index~, id~, name~, arguments_delta~) => {
+      while self.tool_calls.length() <= index {
+        self.tool_calls.push(ToolCallBuilder::new())
+      }
+      let builder = self.tool_calls[index]
+      match id {
+        Some(v) => builder.id = v
+        None => ()
+      }
+      match name {
+        Some(v) => builder.name = v
+        None => ()
+      }
+      match arguments_delta {
+        Some(delta) => builder.arguments_json = builder.arguments_json + delta
+        None => ()
+      }
+    }
+    Usage(usage) => self.usage = Some(usage)
+    Finish(reason~) => self.finish_reason = reason
+  }
+}
+
+///|
+/// Convert accumulated chunks into a complete ModelResponse.
+pub fn StreamAccumulator::to_response(
+  self : StreamAccumulator,
+) -> ModelResponse {
+  let tool_calls : Array[ToolCall] = self.tool_calls
+    .filter(fn(tc) { tc.id != "" || tc.arguments_json != "" })
+    .map(fn(tc) {
+      let args : Json = @json.parse(tc.arguments_json) catch {
+        _ => Json::object({})
+      }
+      { id: tc.id, name: tc.name, arguments: args }
+    })
+  let reasoning_opt : String? = if self.reasoning == "" {
+    None
+  } else {
+    Some(self.reasoning)
+  }
+  let content : Array[Content] = if self.text == "" {
+    []
+  } else {
+    [Text(self.text)]
+  }
+  let message : Message = {
+    role: Assistant,
+    content,
+    tool_calls,
+    tool_call_id: None,
+    name: None,
+  }
+  {
+    message,
+    tool_calls,
+    finish_reason: self.finish_reason,
+    usage: self.usage,
+    reasoning_summary: reasoning_opt,
+  }
+}
+
+///|
 pub(all) enum ToolChoice {
   Auto
   NoTool
@@ -93,14 +200,12 @@ pub(all) struct ChatOptions {
 } derive(Eq, Debug)
 
 ///|
-/// ——— Session ———
 pub(all) struct Session {
   messages : Array[Message]
   metadata : Map[String, Json]
 } derive(Eq, Debug)
 
 ///|
-/// ——— TurnEvent (7 variants) ———
 pub(all) enum TurnEvent {
   TurnStarted
   ToolCallPending(ToolCall)
@@ -119,6 +224,7 @@ pub(all) enum TurnEvent {
   TurnCompleted
   TurnFailed(String)
   ToolCallDeferred(call~ : ToolCall, reason~ : String)
+  StreamChunkReceived(chunk~ : StreamChunk)
   Custom(source~ : String, label~ : String, data~ : Json)
 } derive(Eq, Debug)
 
@@ -135,12 +241,12 @@ pub impl Show for TurnEvent with fn to_string(self) -> String {
     TurnFailed(msg) => "TurnFailed(\{msg})"
     ToolCallDeferred(call~, reason~) =>
       "ToolCallDeferred(\{call.id}, \{reason})"
+    StreamChunkReceived(..) => "StreamChunkReceived"
     Custom(source~, label~, ..) => "Custom(source:\{source}, label:\{label})"
   }
 }
 
 ///|
-/// ——— TurnResult ———
 pub(all) struct TurnResult {
   message : Message
   tool_results : Array[ToolResult]
@@ -148,7 +254,6 @@ pub(all) struct TurnResult {
 } derive(Eq, Debug)
 
 ///|
-/// ——— Memory Types ———
 pub(all) struct MemoryEntry {
   id : String
   content : String

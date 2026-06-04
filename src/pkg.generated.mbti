@@ -34,6 +34,7 @@ pub(all) suberror ModelError {
 pub impl Show for ModelError
 
 pub(all) suberror RuntimeError {
+  UnknownTool(String)
   InvocationFailed(String)
   Transport(String)
 } derive(@debug.Debug)
@@ -55,10 +56,12 @@ pub(all) struct Agent {
   compressor : &Compressor
   pipeline_hook : &PipelineHook?
   memory_port : &MemoryPort?
+  lifecycle : &Lifecycle?
   config : AgentConfig
 }
-pub fn Agent::new(&ModelPort, &ToolProvider, &ToolRuntime, &SessionStore, &Observer, &Compressor, &PipelineHook?, &MemoryPort?, AgentConfig) -> Self
+pub fn Agent::new(&ModelPort, &ToolProvider, &ToolRuntime, &SessionStore, &Observer, &Compressor, &PipelineHook?, &MemoryPort?, &Lifecycle?, AgentConfig) -> Self
 pub async fn Agent::run_turn(Self, Message, String) -> TurnResult raise AgentError
+pub async fn Agent::shutdown(Self) -> Unit
 
 pub(all) struct AgentConfig {
   max_tool_rounds : Int
@@ -81,6 +84,16 @@ pub(all) struct CompositeToolProvider {
   providers : Array[&ToolProvider]
 }
 pub impl ToolProvider for CompositeToolProvider
+
+pub(all) struct CompositeToolRuntime {
+  tool_map : Map[String, &ToolRuntime]
+  runtimes : Array[&ToolRuntime]
+  collisions : Array[String]
+}
+pub async fn CompositeToolRuntime::add(Self, &ToolProvider, &ToolRuntime) -> Unit
+pub fn CompositeToolRuntime::new() -> Self
+pub fn CompositeToolRuntime::validate(Self) -> Array[String]
+pub impl ToolRuntime for CompositeToolRuntime
 
 pub(all) enum CompressAction {
   None
@@ -154,6 +167,10 @@ pub(all) struct NoopHook {
 }
 pub impl PipelineHook for NoopHook
 
+pub(all) struct NoopLifecycle {
+}
+pub impl Lifecycle for NoopLifecycle
+
 pub(all) struct NoopMemoryPort {
 }
 pub impl MemoryPort for NoopMemoryPort
@@ -182,11 +199,37 @@ pub(all) enum Stage {
   TurnError(AgentError)
 } derive(@debug.Debug)
 
+pub(all) struct StreamAccumulator {
+  mut text : String
+  mut reasoning : String
+  tool_calls : Array[ToolCallBuilder]
+  mut finish_reason : FinishReason
+  mut usage : Usage?
+} derive(@debug.Debug)
+pub fn StreamAccumulator::new() -> Self
+pub fn StreamAccumulator::push(Self, StreamChunk) -> Unit
+pub fn StreamAccumulator::to_response(Self) -> ModelResponse
+
+pub(all) enum StreamChunk {
+  TextDelta(token~ : String)
+  ReasoningDelta(token~ : String)
+  ToolCallDelta(index~ : Int, id~ : String?, name~ : String?, arguments_delta~ : String?)
+  Usage(Usage)
+  Finish(reason~ : FinishReason)
+} derive(Eq, @debug.Debug)
+
 pub(all) struct ToolCall {
   id : String
   name : String
   arguments : Json
 } derive(Eq, @debug.Debug)
+
+pub(all) struct ToolCallBuilder {
+  mut id : String
+  mut name : String
+  mut arguments_json : String
+} derive(@debug.Debug)
+pub fn ToolCallBuilder::new() -> Self
 
 pub(all) enum ToolChoice {
   Auto
@@ -199,6 +242,7 @@ pub(all) struct ToolDef {
   name : String
   description : String
   input_schema : Json
+  metadata : Json?
 } derive(Eq, @debug.Debug)
 
 pub(all) struct ToolRegistry {
@@ -224,6 +268,7 @@ pub(all) enum TurnEvent {
   TurnCompleted
   TurnFailed(String)
   ToolCallDeferred(call~ : ToolCall, reason~ : String)
+  StreamChunkReceived(chunk~ : StreamChunk)
   Custom(source~ : String, label~ : String, data~ : Json)
 } derive(Eq, @debug.Debug)
 pub impl Show for TurnEvent
@@ -244,37 +289,42 @@ pub(all) struct Usage {
 
 // Traits
 pub(open) trait Compressor {
-  compress(Self, Array[Message], CompressContext) -> CompressAction
+  fn compress(Self, Array[Message], CompressContext) -> CompressAction
+}
+
+pub(open) trait Lifecycle {
+  async fn on_shutdown(Self) -> Unit
 }
 
 pub(open) trait MemoryPort {
-  store(Self, MemoryEntry) -> String raise MemoryError
-  search(Self, MemoryQuery) -> Array[MemoryEntry] raise MemoryError
-  delete(Self, String) -> Unit raise MemoryError
+  fn store(Self, MemoryEntry) -> String raise MemoryError
+  fn search(Self, MemoryQuery) -> Array[MemoryEntry] raise MemoryError
+  fn delete(Self, String) -> Unit raise MemoryError
 }
 
 pub(open) trait ModelPort {
-  async chat(Self, Array[Message], Array[ToolDef], ChatOptions) -> ModelResponse raise ModelError
+  async fn chat(Self, Array[Message], Array[ToolDef], ChatOptions) -> ModelResponse raise ModelError
+  async fn chat_streaming(Self, Array[Message], Array[ToolDef], ChatOptions, (StreamChunk) -> Unit) -> ModelResponse raise ModelError = _
 }
 
 pub(open) trait Observer {
-  on_event(Self, TurnEvent) -> Unit
+  fn on_event(Self, TurnEvent) -> Unit
 }
 
 pub(open) trait PipelineHook {
-  on_stage(Self, Stage) -> Result[Stage, HookError]
+  async fn on_stage(Self, Stage) -> Result[Stage, HookError]
 }
 
 pub(open) trait SessionStore {
-  load(Self, String) -> Result[Session, SessionError]
-  save(Self, String, Session) -> Result[Unit, SessionError]
+  fn load(Self, String) -> Result[Session, SessionError]
+  fn save(Self, String, Session) -> Result[Unit, SessionError]
 }
 
 pub(open) trait ToolProvider {
-  list_tools(Self) -> Array[ToolDef]
+  async fn list_tools(Self) -> Array[ToolDef]
 }
 
 pub(open) trait ToolRuntime {
-  async execute(Self, String, ToolCall) -> ToolResult raise RuntimeError
+  async fn execute(Self, String, ToolCall) -> ToolResult raise RuntimeError
 }
 

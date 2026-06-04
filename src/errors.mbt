@@ -1,10 +1,5 @@
 ///|
-/// errors.mbt — Posoco Agent Framework: error types.
-///
-/// All error enums with their Show implementations. Each error type
-/// corresponds to a port interface or the agent orchestrator.
-
-///|
+/// Error types and their Show implementations.
 pub(all) suberror ModelError {
   RequestBuild(String)
   Transport(String)
@@ -36,6 +31,7 @@ pub impl Show for SessionError with fn to_string(self) -> String {
 
 ///|
 pub(all) suberror RuntimeError {
+  UnknownTool(String)
   InvocationFailed(String)
   Transport(String)
 } derive(Debug)
@@ -43,6 +39,7 @@ pub(all) suberror RuntimeError {
 ///|
 pub impl Show for RuntimeError with fn to_string(self) -> String {
   match self {
+    UnknownTool(msg) => "RuntimeError::UnknownTool(\{msg})"
     InvocationFailed(msg) => "RuntimeError::InvocationFailed(\{msg})"
     Transport(msg) => "RuntimeError::Transport(\{msg})"
   }
