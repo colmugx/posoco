@@ -20,12 +20,11 @@ pub impl @posoco.Observer for ConsoleObserver with fn on_event(
     @posoco.TurnEvent::ToolCallDeferred(call~, reason~) =>
       println("⚠️  DEFERRED: " + call.name + " — " + reason)
     @posoco.TurnEvent::ModelResponseReceived(..) => ()
-    @posoco.TurnEvent::StreamChunkReceived(chunk~) => {
+    @posoco.TurnEvent::StreamChunkReceived(chunk~) =>
       match chunk {
         @posoco.StreamChunk::TextDelta(token~) => () // streamed tokens
         _ => ()
       }
-    }
     @posoco.TurnEvent::TurnCompleted => println("\n✅ Turn completed")
     @posoco.TurnEvent::TurnFailed(msg) => println("💥 Turn failed: " + msg)
     @posoco.TurnEvent::SessionRedirect(from~, to~, ..) =>

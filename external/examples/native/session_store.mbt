@@ -17,10 +17,7 @@ pub impl @posoco.SessionStore for InMemorySessionStore with fn load(
   if self.store.contains(id) {
     Ok(self.store[id])
   } else {
-    Ok(@posoco.Session::{
-      messages: [],
-      metadata: {},
-    })
+    Ok(@posoco.Session::{ messages: [], metadata: {} })
   }
 }
 

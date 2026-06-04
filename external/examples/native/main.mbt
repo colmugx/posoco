@@ -6,17 +6,8 @@ async fn main {
   println("Type 'exit' or 'quit' to stop. Ctrl+D also works.")
   println("")
 
-  // Setup shell tools
-  let tool_provider = ShellToolProvider::{  }
-  let tool_runtime = ShellToolRuntime::new()
-
-  // Build composite runtime
-  let composite = @posoco.CompositeToolRuntime::new()
-  composite.add(tool_provider, tool_runtime)
-  let warnings = composite.validate()
-  for w in warnings {
-    println("⚠️  Tool collision: " + w)
-  }
+  // Setup shell tools (unified ToolProvider: list_tools + execute)
+  let shell_tools = ShellTools::{  }
 
   // Setup model (mock — echoes input + suggests bash)
   let model = EchoModelPort::{  }
@@ -36,16 +27,21 @@ async fn main {
 
   let agent = @posoco.Agent::new(
     model,
-    tool_provider,
-    composite,
-    session_store,
-    observer,
-    @posoco.NoopCompressor::{  },
-    None,
-    None,
-    None,
-    agent_config,
+    tools=[shell_tools],
+    hooks=[],
+    memory=[],
+    compressors=[@posoco.NoopCompressor::{  }],
+    observers=[observer],
+    sessions=[session_store],
+    lifecycle=None,
+    config=agent_config,
   )
+
+  // Check for tool routing warnings
+  let warnings = agent.tool_collisions()
+  for w in warnings {
+    println("⚠️  Tool collision: " + w)
+  }
 
   // REPL loop
   let session_id = "demo-session"
@@ -104,11 +100,11 @@ async fn main {
 // ——— Inline Shell Tools ———
 
 ///|
-/// ShellToolProvider — provides bash tool for the demo.
-pub(all) struct ShellToolProvider {}
+/// ShellTools — unified shell tool provider (list + execute).
+pub(all) struct ShellTools {}
 
 ///|
-pub impl @posoco.ToolProvider for ShellToolProvider with fn list_tools(_self) -> Array[
+pub impl @posoco.ToolProvider for ShellTools with fn list_tools(_self) -> Array[
   @posoco.ToolDef,
 ] {
   [
@@ -119,21 +115,13 @@ pub impl @posoco.ToolProvider for ShellToolProvider with fn list_tools(_self) ->
         Map::from_array([("cmd", Json::string("the command to execute"))]),
       ),
       metadata: None,
+      source: Some("host"),
     },
   ]
 }
 
 ///|
-/// ShellToolRuntime — executes shell commands.
-pub(all) struct ShellToolRuntime {}
-
-///|
-pub fn ShellToolRuntime::new() -> ShellToolRuntime {
-  ShellToolRuntime::{  }
-}
-
-///|
-pub impl @posoco.ToolRuntime for ShellToolRuntime with fn execute(
+pub impl @posoco.ToolProvider for ShellTools with fn execute(
   _self,
   _name : String,
   call : @posoco.ToolCall,
