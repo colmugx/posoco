@@ -1,5 +1,4 @@
 ///|
-/// Domain model types shared by port interfaces.
 pub(all) enum Role {
   System
   User
@@ -10,7 +9,7 @@ pub(all) enum Role {
 ///|
 pub(all) enum Content {
   Text(String)
-  Image(String, String) // (media_type, data)
+  Image(String, String)
 } derive(Eq, Debug)
 
 ///|
@@ -35,6 +34,7 @@ pub(all) struct ToolDef {
   description : String
   input_schema : Json
   metadata : Json?
+  source : String?
 } derive(Eq, Debug)
 
 ///|
@@ -69,8 +69,6 @@ pub(all) struct ModelResponse {
 } derive(Eq, Debug)
 
 ///|
-/// StreamChunk — LLM streaming intermediate events.
-/// Inspired by chobits/llm StreamChunk, adapted with named fields.
 pub(all) enum StreamChunk {
   TextDelta(token~ : String)
   ReasoningDelta(token~ : String)
@@ -85,7 +83,6 @@ pub(all) enum StreamChunk {
 } derive(Eq, Debug)
 
 ///|
-/// ToolCallBuilder — accumulates partial tool call deltas.
 pub(all) struct ToolCallBuilder {
   mut id : String
   mut name : String
@@ -98,8 +95,7 @@ pub fn ToolCallBuilder::new() -> ToolCallBuilder {
 }
 
 ///|
-/// StreamAccumulator — accumulates StreamChunk events into a ModelResponse.
-/// push(chunk) accumulates, to_response() produces the final ModelResponse.
+/// Accumulates StreamChunk events into a ModelResponse.
 pub(all) struct StreamAccumulator {
   mut text : String
   mut reasoning : String
@@ -145,7 +141,6 @@ pub fn StreamAccumulator::push(
 }
 
 ///|
-/// Convert accumulated chunks into a complete ModelResponse.
 pub fn StreamAccumulator::to_response(
   self : StreamAccumulator,
 ) -> ModelResponse {

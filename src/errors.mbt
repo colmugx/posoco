@@ -1,5 +1,4 @@
 ///|
-/// Error types and their Show implementations.
 pub(all) suberror ModelError {
   RequestBuild(String)
   Transport(String)
@@ -71,3 +70,28 @@ pub(all) suberror MemoryError {
   Search(String)
   Delete(String)
 } derive(Debug)
+
+///|
+pub impl Show for MemoryError with fn to_string(self) -> String {
+  match self {
+    Store(msg) => "MemoryError::Store(\{msg})"
+    Search(msg) => "MemoryError::Search(\{msg})"
+    Delete(msg) => "MemoryError::Delete(\{msg})"
+  }
+}
+
+///|
+/// Composition errors raised during Agent::new (tool collisions, empty required ports).
+pub(all) suberror CompositionError {
+  ToolCollision(String, String)
+  EmptyPort(String)
+} derive(Debug)
+
+///|
+pub impl Show for CompositionError with fn to_string(self) -> String {
+  match self {
+    ToolCollision(name, msg) =>
+      "CompositionError::ToolCollision(\{name}: \{msg})"
+    EmptyPort(port) => "CompositionError::EmptyPort(\{port})"
+  }
+}

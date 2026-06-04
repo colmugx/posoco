@@ -17,8 +17,11 @@ impl ModelPort for MockModelPort with fn chat(self, _messages, _tools, _options)
 }
 
 ///|
+/// MockToolProvider — implements the unified ToolProvider trait.
+/// Lists tools and executes them from a results map.
 struct MockToolProvider {
   tools : Array[ToolDef]
+  results : Map[String, Result[ToolResult, RuntimeError]]
 }
 
 ///|
@@ -27,19 +30,15 @@ impl ToolProvider for MockToolProvider with fn list_tools(self) {
 }
 
 ///|
-struct MockToolRuntime {
-  results : Map[String, Result[ToolResult, RuntimeError]]
-}
-
-///|
-impl ToolRuntime for MockToolRuntime with fn execute(self, name, _call) {
-  if self.results.contains(name) {
-    match self.results[name] {
-      Ok(r) => r
-      Err(e) => raise e
-    }
-  } else {
-    raise InvocationFailed("tool not found")
+impl ToolProvider for MockToolProvider with fn execute(
+  self,
+  name : String,
+  _call : ToolCall,
+) -> ToolResult raise RuntimeError {
+  match self.results.get(name) {
+    Some(Ok(r)) => r
+    Some(Err(e)) => raise e
+    None => raise InvocationFailed("tool not found: \{name}")
   }
 }
 
@@ -188,28 +187,31 @@ fn make_tool_call(id : String, name : String) -> ToolCall {
 }
 
 ///|
+/// Helper: empty tool provider (no tools, no execution)
+fn empty_tools() -> MockToolProvider {
+  MockToolProvider::{ tools: [], results: Map::from_array([]) }
+}
+
+///|
 async test "simple_turn_no_tools" {
   let model = MockModelPort::{
     responses: [stop_response("hi there")],
     index: 0,
   }
-  let tools = MockToolProvider::{ tools: [] }
-  let runtime = MockToolRuntime::{ results: Map::from_array([]) }
   let store = MockSessionStore::{ store: Map::from_array([]) }
   let observer = MockObserver::{ events: [] }
   let config = make_config()
 
   let agent = Agent::new(
     model,
-    tools,
-    runtime,
-    store,
-    observer,
-    NoopCompressor::{  },
-    None,
-    None,
-    None,
-    config,
+    tools=[empty_tools()],
+    hooks=[],
+    memory=[],
+    compressors=[NoopCompressor::{  }],
+    observers=[observer],
+    sessions=[store],
+    lifecycle=None,
+    config~,
   )
   let result = agent.run_turn(user_msg("hello"), "session_1")
   assert_eq(result.final_session_id, "session_1")
@@ -230,10 +232,9 @@ async test "turn_with_single_tool" {
         description: "run a cmd",
         input_schema: Json::null(),
         metadata: None,
+        source: None,
       },
     ],
-  }
-  let runtime = MockToolRuntime::{
     results: Map::from_array([
       ("bash", Ok({ content: "ok", structured: None, is_error: false })),
     ]),
@@ -244,15 +245,14 @@ async test "turn_with_single_tool" {
 
   let agent = Agent::new(
     model,
-    tools,
-    runtime,
-    store,
-    observer,
-    NoopCompressor::{  },
-    None,
-    None,
-    None,
-    config,
+    tools=[tools],
+    hooks=[],
+    memory=[],
+    compressors=[NoopCompressor::{  }],
+    observers=[observer],
+    sessions=[store],
+    lifecycle=None,
+    config~,
   )
   let result = agent.run_turn(user_msg("run ls"), "session_1")
   assert_eq(result.tool_results.length(), 1)
@@ -273,10 +273,9 @@ async test "tool_failure_non_fatal" {
         description: "",
         input_schema: Json::null(),
         metadata: None,
+        source: None,
       },
     ],
-  }
-  let runtime = MockToolRuntime::{
     results: Map::from_array([("bash", Err(InvocationFailed("boom")))]),
   }
   let store = MockSessionStore::{ store: Map::from_array([]) }
@@ -285,15 +284,14 @@ async test "tool_failure_non_fatal" {
 
   let agent = Agent::new(
     model,
-    tools,
-    runtime,
-    store,
-    observer,
-    NoopCompressor::{  },
-    None,
-    None,
-    None,
-    config,
+    tools=[tools],
+    hooks=[],
+    memory=[],
+    compressors=[NoopCompressor::{  }],
+    observers=[observer],
+    sessions=[store],
+    lifecycle=None,
+    config~,
   )
   let result = agent.run_turn(user_msg("do it"), "session_1")
   assert_eq(result.tool_results.length(), 1)
@@ -303,23 +301,20 @@ async test "tool_failure_non_fatal" {
 ///|
 async test "model_error_aborts_turn" {
   let model = MockModelPort::{ responses: [], index: 0 }
-  let tools = MockToolProvider::{ tools: [] }
-  let runtime = MockToolRuntime::{ results: Map::from_array([]) }
   let store = MockSessionStore::{ store: Map::from_array([]) }
   let observer = MockObserver::{ events: [] }
   let config = make_config()
 
   let agent = Agent::new(
     model,
-    tools,
-    runtime,
-    store,
-    observer,
-    NoopCompressor::{  },
-    None,
-    None,
-    None,
-    config,
+    tools=[empty_tools()],
+    hooks=[],
+    memory=[],
+    compressors=[NoopCompressor::{  }],
+    observers=[observer],
+    sessions=[store],
+    lifecycle=None,
+    config~,
   )
   match
     (Ok(agent.run_turn(user_msg("ping"), "session_1")) catch { e => Err(e) }) {
@@ -342,10 +337,9 @@ async test "hook_aborts_before_tool" {
         description: "",
         input_schema: Json::null(),
         metadata: None,
+        source: None,
       },
     ],
-  }
-  let runtime = MockToolRuntime::{
     results: Map::from_array([
       ("bash", Ok({ content: "ok", structured: None, is_error: false })),
     ]),
@@ -357,15 +351,14 @@ async test "hook_aborts_before_tool" {
 
   let agent = Agent::new(
     model,
-    tools,
-    runtime,
-    store,
-    observer,
-    NoopCompressor::{  },
-    Some(abort_hook),
-    None,
-    None,
-    config,
+    tools=[tools],
+    hooks=[abort_hook],
+    memory=[],
+    compressors=[NoopCompressor::{  }],
+    observers=[observer],
+    sessions=[store],
+    lifecycle=None,
+    config~,
   )
   match
     (Ok(agent.run_turn(user_msg("danger"), "session_1")) catch { e => Err(e) }) {
@@ -380,8 +373,6 @@ async test "compression_new_thread" {
     responses: [stop_response("compressed")],
     index: 0,
   }
-  let tools = MockToolProvider::{ tools: [] }
-  let runtime = MockToolRuntime::{ results: Map::from_array([]) }
   let store = MockSessionStore::{ store: Map::from_array([]) }
   let observer = MockObserver::{ events: [] }
   let compressor = NewThreadCompressor::{  }
@@ -389,15 +380,14 @@ async test "compression_new_thread" {
 
   let agent = Agent::new(
     model,
-    tools,
-    runtime,
-    store,
-    observer,
-    compressor,
-    None,
-    None,
-    None,
-    config,
+    tools=[empty_tools()],
+    hooks=[],
+    memory=[],
+    compressors=[compressor],
+    observers=[observer],
+    sessions=[store],
+    lifecycle=None,
+    config~,
   )
   let result = agent.run_turn(user_msg("long context"), "session_1")
   assert_eq(result.final_session_id, "session_2")
@@ -423,8 +413,6 @@ async test "compression_replace" {
     responses: [stop_response("replaced")],
     index: 0,
   }
-  let tools = MockToolProvider::{ tools: [] }
-  let runtime = MockToolRuntime::{ results: Map::from_array([]) }
   let store = MockSessionStore::{
     store: Map::from_array([
       (
@@ -439,15 +427,14 @@ async test "compression_replace" {
 
   let agent = Agent::new(
     model,
-    tools,
-    runtime,
-    store,
-    observer,
-    compressor,
-    None,
-    None,
-    None,
-    config,
+    tools=[empty_tools()],
+    hooks=[],
+    memory=[],
+    compressors=[compressor],
+    observers=[observer],
+    sessions=[store],
+    lifecycle=None,
+    config~,
   )
   let result = agent.run_turn(user_msg("new msg"), "session_1")
   assert_eq(result.final_session_id, "session_1")
@@ -475,10 +462,9 @@ async test "tool_loop_exceeded" {
         description: "",
         input_schema: Json::null(),
         metadata: None,
+        source: None,
       },
     ],
-  }
-  let runtime = MockToolRuntime::{
     results: Map::from_array([
       ("bash", Ok({ content: "ok", structured: None, is_error: false })),
     ]),
@@ -496,15 +482,14 @@ async test "tool_loop_exceeded" {
 
   let agent = Agent::new(
     model,
-    tools,
-    runtime,
-    store,
-    observer,
-    NoopCompressor::{  },
-    None,
-    None,
-    None,
-    config,
+    tools=[tools],
+    hooks=[],
+    memory=[],
+    compressors=[NoopCompressor::{  }],
+    observers=[observer],
+    sessions=[store],
+    lifecycle=None,
+    config~,
   )
   match
     (Ok(agent.run_turn(user_msg("loop"), "session_1")) catch { e => Err(e) }) {
@@ -567,10 +552,9 @@ async test "observer_event_sequence" {
         description: "",
         input_schema: Json::null(),
         metadata: None,
+        source: None,
       },
     ],
-  }
-  let runtime = MockToolRuntime::{
     results: Map::from_array([
       ("bash", Ok({ content: "seq", structured: None, is_error: false })),
     ]),
@@ -581,15 +565,14 @@ async test "observer_event_sequence" {
 
   let agent = Agent::new(
     model,
-    tools,
-    runtime,
-    store,
-    observer,
-    NoopCompressor::{  },
-    None,
-    None,
-    None,
-    config,
+    tools=[tools],
+    hooks=[],
+    memory=[],
+    compressors=[NoopCompressor::{  }],
+    observers=[observer],
+    sessions=[store],
+    lifecycle=None,
+    config~,
   )
   let _ = agent.run_turn(user_msg("sequence"), "session_1")
 
@@ -623,23 +606,20 @@ async test "observer_event_sequence" {
 ///|
 async test "session_persistence" {
   let model = MockModelPort::{ responses: [stop_response("saved")], index: 0 }
-  let tools = MockToolProvider::{ tools: [] }
-  let runtime = MockToolRuntime::{ results: Map::from_array([]) }
   let store = MockSessionStore::{ store: Map::from_array([]) }
   let observer = MockObserver::{ events: [] }
   let config = make_config()
 
   let agent = Agent::new(
     model,
-    tools,
-    runtime,
-    store,
-    observer,
-    NoopCompressor::{  },
-    None,
-    None,
-    None,
-    config,
+    tools=[empty_tools()],
+    hooks=[],
+    memory=[],
+    compressors=[NoopCompressor::{  }],
+    observers=[observer],
+    sessions=[store],
+    lifecycle=None,
+    config~,
   )
   let result = agent.run_turn(user_msg("persist me"), "session_1")
   if store.store.contains("session_1") {
@@ -687,23 +667,20 @@ async test "hook_rewrites_before_model_messages" {
     responses: [stop_response("response after rewrite")],
     index: 0,
   }
-  let tools = MockToolProvider::{ tools: [] }
-  let runtime = MockToolRuntime::{ results: Map::from_array([]) }
   let store = MockSessionStore::{ store: Map::from_array([]) }
   let observer = MockObserver::{ events: [] }
   let rewriter = RewriteModelHook::{  }
   let config = make_config()
   let agent = Agent::new(
     model,
-    tools,
-    runtime,
-    store,
-    observer,
-    NoopCompressor::{  },
-    Some(rewriter),
-    None,
-    None,
-    config,
+    tools=[empty_tools()],
+    hooks=[rewriter],
+    memory=[],
+    compressors=[NoopCompressor::{  }],
+    observers=[observer],
+    sessions=[store],
+    lifecycle=None,
+    config~,
   )
   let result = agent.run_turn(user_msg("hello"), "session_1")
   assert_eq(result.final_session_id, "session_1")
@@ -740,10 +717,9 @@ async test "hook_deferred_skips_execution" {
         description: "",
         input_schema: Json::null(),
         metadata: None,
+        source: None,
       },
     ],
-  }
-  let runtime = MockToolRuntime::{
     results: Map::from_array([
       (
         "restricted",
@@ -757,15 +733,14 @@ async test "hook_deferred_skips_execution" {
   let config = make_config()
   let agent = Agent::new(
     model,
-    tools,
-    runtime,
-    store,
-    observer,
-    NoopCompressor::{  },
-    Some(hook),
-    None,
-    None,
-    config,
+    tools=[tools],
+    hooks=[hook],
+    memory=[],
+    compressors=[NoopCompressor::{  }],
+    observers=[observer],
+    sessions=[store],
+    lifecycle=None,
+    config~,
   )
   let result = agent.run_turn(user_msg("use restricted"), "session_1")
   assert_eq(result.final_session_id, "session_1")
@@ -784,34 +759,39 @@ async test "hook_deferred_skips_execution" {
 }
 
 ///|
-async test "composite_runtime_routes_by_tool_name" {
-  let ctr = CompositeToolRuntime::new()
-  let shell_provider = MockToolProvider::{
+/// Test: Agent internally routes tool calls to the correct provider.
+/// Two providers each own different tools; Agent routes by tool name.
+async test "agent_routes_tools_to_correct_provider" {
+  let tc_bash = make_tool_call("c1", "bash")
+  let tc_mcp = make_tool_call("c2", "mcp__read")
+  let model = MockModelPort::{
+    responses: [tool_response([tc_bash, tc_mcp]), stop_response("both done")],
+    index: 0,
+  }
+  let shell_tools = MockToolProvider::{
     tools: [
       {
         name: "bash",
         description: "run cmd",
         input_schema: Json::null(),
         metadata: None,
+        source: Some("host"),
       },
     ],
+    results: Map::from_array([
+      ("bash", Ok({ content: "shell ok", structured: None, is_error: false })),
+    ]),
   }
-  let mcp_provider = MockToolProvider::{
+  let mcp_tools = MockToolProvider::{
     tools: [
       {
         name: "mcp__read",
         description: "read file",
         input_schema: Json::null(),
         metadata: None,
+        source: Some("mcp"),
       },
     ],
-  }
-  let shell_runtime = MockToolRuntime::{
-    results: Map::from_array([
-      ("bash", Ok({ content: "shell ok", structured: None, is_error: false })),
-    ]),
-  }
-  let mcp_runtime = MockToolRuntime::{
     results: Map::from_array([
       (
         "mcp__read",
@@ -819,50 +799,30 @@ async test "composite_runtime_routes_by_tool_name" {
       ),
     ]),
   }
+  let store = MockSessionStore::{ store: Map::from_array([]) }
+  let observer = MockObserver::{ events: [] }
+  let config = make_config()
 
-  ctr.add(shell_provider, shell_runtime)
-  ctr.add(mcp_provider, mcp_runtime)
-
-  let result = ctr.execute("bash", make_tool_call("c1", "bash"))
-  assert_eq(result.content, "shell ok")
-
-  let result2 = ctr.execute("mcp__read", make_tool_call("c2", "mcp__read"))
-  assert_eq(result2.content, "mcp ok")
+  let agent = Agent::new(
+    model,
+    tools=[shell_tools, mcp_tools],
+    hooks=[],
+    memory=[],
+    compressors=[NoopCompressor::{  }],
+    observers=[observer],
+    sessions=[store],
+    lifecycle=None,
+    config~,
+  )
+  let result = agent.run_turn(user_msg("run both"), "session_1")
+  assert_eq(result.tool_results.length(), 2)
+  assert_eq(result.tool_results[0].content, "shell ok")
+  assert_eq(result.tool_results[1].content, "mcp ok")
 }
 
 ///|
-async test "composite_runtime_unknown_tool" {
-  let ctr = CompositeToolRuntime::new()
-  let provider = MockToolProvider::{
-    tools: [
-      {
-        name: "bash",
-        description: "",
-        input_schema: Json::null(),
-        metadata: None,
-      },
-    ],
-  }
-  let runtime = MockToolRuntime::{
-    results: Map::from_array([
-      ("bash", Ok({ content: "ok", structured: None, is_error: false })),
-    ]),
-  }
-
-  ctr.add(provider, runtime)
-
-  match
-    (Ok(ctr.execute("nonexistent", make_tool_call("c1", "nonexistent"))) catch {
-      e => Err(e)
-    }) {
-    Err(UnknownTool(msg)) => assert_true(msg.contains("nonexistent"))
-    _ => fail("expected UnknownTool error")
-  }
-}
-
-///|
-async test "composite_runtime_collision_detection" {
-  let ctr = CompositeToolRuntime::new()
+/// Test: Agent detects tool name collisions across providers
+async test "agent_tool_collision_detection" {
   let provider1 = MockToolProvider::{
     tools: [
       {
@@ -870,8 +830,10 @@ async test "composite_runtime_collision_detection" {
         description: "v1",
         input_schema: Json::null(),
         metadata: None,
+        source: None,
       },
     ],
+    results: Map::from_array([]),
   }
   let provider2 = MockToolProvider::{
     tools: [
@@ -880,16 +842,30 @@ async test "composite_runtime_collision_detection" {
         description: "v2",
         input_schema: Json::null(),
         metadata: None,
+        source: None,
       },
     ],
+    results: Map::from_array([
+      ("bash", Ok({ content: "v2 wins", structured: None, is_error: false })),
+    ]),
   }
-  let runtime1 = MockToolRuntime::{ results: Map::from_array([]) }
-  let runtime2 = MockToolRuntime::{ results: Map::from_array([]) }
+  let model = MockModelPort::{ responses: [stop_response("ok")], index: 0 }
+  let store = MockSessionStore::{ store: Map::from_array([]) }
+  let observer = MockObserver::{ events: [] }
+  let config = make_config()
 
-  ctr.add(provider1, runtime1)
-  ctr.add(provider2, runtime2)
-
-  let warnings = ctr.validate()
+  let agent = Agent::new(
+    model,
+    tools=[provider1, provider2],
+    hooks=[],
+    memory=[],
+    compressors=[NoopCompressor::{  }],
+    observers=[observer],
+    sessions=[store],
+    lifecycle=None,
+    config~,
+  )
+  let warnings = agent.tool_collisions()
   assert_eq(warnings.length(), 1)
   assert_true(warnings[0].contains("bash"))
 }
@@ -939,23 +915,20 @@ async test "streaming_events_emitted_during_chat" {
   ]
   let final_response = stop_response("Hello world")
   let model = MockStreamingModelPort::{ chunks, final_response }
-  let tools = MockToolProvider::{ tools: [] }
-  let runtime = MockToolRuntime::{ results: Map::from_array([]) }
   let store = MockSessionStore::{ store: Map::from_array([]) }
   let observer = MockObserver::{ events: [] }
   let config = make_config()
 
   let agent = Agent::new(
     model,
-    tools,
-    runtime,
-    store,
-    observer,
-    NoopCompressor::{  },
-    None,
-    None,
-    None,
-    config,
+    tools=[empty_tools()],
+    hooks=[],
+    memory=[],
+    compressors=[NoopCompressor::{  }],
+    observers=[observer],
+    sessions=[store],
+    lifecycle=None,
+    config~,
   )
   let _ = agent.run_turn(user_msg("stream test"), "session_s1")
 
@@ -1003,4 +976,88 @@ async test "stream_accumulator_assembles_response" {
   assert_true(resp.finish_reason is ToolCalls)
   assert_true(resp.usage is Some(_))
   assert_true(resp.reasoning_summary is Some(_))
+}
+
+///|
+/// Test: Multiple observers all receive events (fan-out)
+async test "multiple_observers_fan_out" {
+  let model = MockModelPort::{ responses: [stop_response("fan-out")], index: 0 }
+  let store = MockSessionStore::{ store: Map::from_array([]) }
+  let obs1 = MockObserver::{ events: [] }
+  let obs2 = MockObserver::{ events: [] }
+  let config = make_config()
+
+  let agent = Agent::new(
+    model,
+    tools=[empty_tools()],
+    hooks=[],
+    memory=[],
+    compressors=[NoopCompressor::{  }],
+    observers=[obs1, obs2],
+    sessions=[store],
+    lifecycle=None,
+    config~,
+  )
+  let _ = agent.run_turn(user_msg("broadcast"), "session_1")
+
+  assert_true(obs1.events.length() >= 2)
+  assert_true(obs2.events.length() >= 2)
+  assert_eq(obs1.events.length(), obs2.events.length())
+}
+
+///|
+/// Test: Multiple hooks are chained in order
+async test "multiple_hooks_chained_in_order" {
+  let hook1 = LogHook::{ seen: [] }
+  let hook2 = LogHook::{ seen: [] }
+  let model = MockModelPort::{ responses: [stop_response("chained")], index: 0 }
+  let store = MockSessionStore::{ store: Map::from_array([]) }
+  let observer = MockObserver::{ events: [] }
+  let config = make_config()
+
+  let agent = Agent::new(
+    model,
+    tools=[empty_tools()],
+    hooks=[hook1, hook2],
+    memory=[],
+    compressors=[NoopCompressor::{  }],
+    observers=[observer],
+    sessions=[store],
+    lifecycle=None,
+    config~,
+  )
+  let _ = agent.run_turn(user_msg("multi-hook"), "session_1")
+
+  // Both hooks should see BeforeTurn and AfterTurn
+  assert_true(hook1.seen.length() >= 2)
+  assert_eq(hook1.seen.length(), hook2.seen.length())
+}
+
+///|
+/// Test: Multiple session stores all receive writes
+async test "multiple_session_stores_write_all" {
+  let model = MockModelPort::{
+    responses: [stop_response("multi-store")],
+    index: 0,
+  }
+  let store1 = MockSessionStore::{ store: Map::from_array([]) }
+  let store2 = MockSessionStore::{ store: Map::from_array([]) }
+  let observer = MockObserver::{ events: [] }
+  let config = make_config()
+
+  let agent = Agent::new(
+    model,
+    tools=[empty_tools()],
+    hooks=[],
+    memory=[],
+    compressors=[NoopCompressor::{  }],
+    observers=[observer],
+    sessions=[store1, store2],
+    lifecycle=None,
+    config~,
+  )
+  let _ = agent.run_turn(user_msg("persist"), "session_1")
+
+  assert_true(store1.store.contains("session_1"))
+  assert_true(store2.store.contains("session_1"))
 }

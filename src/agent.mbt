@@ -1,8 +1,4 @@
 ///|
-/// Agent struct, constructor, and run_turn loop.
-
-///|
-/// Agent configuration — controls model parameters and loop limits.
 pub(all) struct AgentConfig {
   max_tool_rounds : Int
   temperature : Double?
@@ -23,51 +19,91 @@ pub fn AgentConfig::to_chat_options(self : AgentConfig) -> ChatOptions {
 }
 
 ///|
-/// Agent — the central runtime actor.
-///
-/// Holds references to all port interfaces plus an optional pipeline hook.
+/// Internal routing table: tool name → owning provider. Built during Agent::new.
+struct ToolRouting {
+  tool_map : Map[String, &ToolProvider]
+  providers : Array[&ToolProvider]
+  collisions : Array[String]
+}
+
+///|
+fn build_tool_routing(tools : Array[&ToolProvider]) -> ToolRouting {
+  let tool_map : Map[String, &ToolProvider] = Map::from_array([])
+  let collisions : Array[String] = []
+  for provider in tools {
+    let tool_defs = provider.list_tools()
+    for tool in tool_defs {
+      if tool_map.contains(tool.name) {
+        collisions.push(
+          "Tool '\{tool.name}' registered by multiple providers; last one wins",
+        )
+      }
+      tool_map[tool.name] = provider
+    }
+  }
+  { tool_map, providers: tools, collisions }
+}
+
+///|
+/// Agent — array-based composition: tools routed by name, hooks chained,
+/// observers fan-out, compressors first-wins, sessions write-all/read-first.
 pub(all) struct Agent {
   model_port : &ModelPort
-  tool_provider : &ToolProvider
-  tool_runtime : &ToolRuntime
-  session_store : &SessionStore
-  observer : &Observer
-  compressor : &Compressor
+  tool_routing : ToolRouting
   pipeline_hook : &PipelineHook?
-  memory_port : &MemoryPort?
+  compressors : Array[&Compressor]
+  observers : Array[&Observer]
+  memories : Array[&MemoryPort]
+  sessions : Array[&SessionStore]
   lifecycle : &Lifecycle?
   config : AgentConfig
 }
 
 ///|
+/// Construct an Agent with array-based composition.
+///
+/// - `tools`: routed by tool name (last-wins on collision)
+/// - `hooks`: chained in order (first runs first)
+/// - `memory`: fan-out store/search
+/// - `compressors`: first non-None wins
+/// - `observers`: all receive every event
+/// - `sessions`: write-all, read-first
 pub fn Agent::new(
   model_port : &ModelPort,
-  tool_provider : &ToolProvider,
-  tool_runtime : &ToolRuntime,
-  session_store : &SessionStore,
-  observer : &Observer,
-  compressor : &Compressor,
-  pipeline_hook : &PipelineHook?,
-  memory_port : &MemoryPort?,
-  lifecycle : &Lifecycle?,
-  config : AgentConfig,
+  tools~ : Array[&ToolProvider],
+  hooks~ : Array[&PipelineHook],
+  memory~ : Array[&MemoryPort],
+  compressors~ : Array[&Compressor],
+  observers~ : Array[&Observer],
+  sessions~ : Array[&SessionStore],
+  lifecycle~ : &Lifecycle?,
+  config~ : AgentConfig,
 ) -> Agent {
+  let tool_routing = build_tool_routing(tools)
+  let pipeline_hook : &PipelineHook? = match hooks.length() {
+    0 => None
+    1 => Some(hooks[0])
+    _ => Some(HookChain::{ hooks, })
+  }
   {
     model_port,
-    tool_provider,
-    tool_runtime,
-    session_store,
-    observer,
-    compressor,
+    tool_routing,
     pipeline_hook,
-    memory_port,
+    compressors,
+    observers,
+    memories: memory,
+    sessions,
     lifecycle,
     config,
   }
 }
 
 ///|
-/// Shut down the agent, releasing all held resources.
+pub fn Agent::tool_collisions(self : Agent) -> Array[String] {
+  self.tool_routing.collisions.copy()
+}
+
+///|
 pub async fn Agent::shutdown(self : Agent) -> Unit {
   match self.lifecycle {
     Some(lc) => lc.on_shutdown() catch { _ => () }
@@ -76,8 +112,6 @@ pub async fn Agent::shutdown(self : Agent) -> Unit {
 }
 
 ///|
-/// Helper: call a hook's on_stage, converting async infrastructure errors
-/// to HookAborted. Returns the hook's Result[Stage, HookError].
 async fn call_hook(
   hook : &PipelineHook,
   stage : Stage,
@@ -88,8 +122,6 @@ async fn call_hook(
 }
 
 ///|
-/// Helper: call a hook's on_stage and ignore the result.
-/// Both hook errors and async infrastructure errors are silently ignored.
 async fn ignore_hook(hook : &PipelineHook, stage : Stage) -> Unit {
   ignore(hook.on_stage(stage)) catch {
     _ => ()
@@ -97,11 +129,7 @@ async fn ignore_hook(hook : &PipelineHook, stage : Stage) -> Unit {
 }
 
 ///|
-/// Run one full agent turn: load session, compress context, call the model,
-/// execute tools in a loop, and persist the final session.
-///
-/// Tool execution is parallel: when the LLM returns multiple tool_calls,
-/// approved calls execute concurrently via @async.all.
+/// Run one full agent turn. Tool calls execute in parallel via @async.all.
 pub async fn Agent::run_turn(
   self : Agent,
   input : Message,
@@ -116,19 +144,29 @@ pub async fn Agent::run_turn(
     None => ()
   }
 
-  self.observer.on_event(TurnStarted)
+  for obs in self.observers {
+    obs.on_event(TurnStarted)
+  }
 
-  let session = match self.session_store.load(session_id) {
-    Ok(s) => s
-    Err(e) => raise Session(e)
+  let session = match self.sessions {
+    [first, ..] =>
+      match first.load(session_id) {
+        Ok(s) => s
+        Err(e) => raise Session(e)
+      }
+    [] => raise Session(Load("no session store configured"))
   }
 
   let mut current_session_id = session_id
   let mut messages = session.messages
   messages.push(input)
 
-  let tools = self.tool_provider.list_tools() catch {
-    e => raise Model(e.to_string())
+  let tools : Array[ToolDef] = []
+  for provider in self.tool_routing.providers {
+    let provider_tools = provider.list_tools()
+    for t in provider_tools {
+      tools.push(t)
+    }
   }
   let mut tool_round = 0
   let all_results : Array[ToolResult] = []
@@ -153,37 +191,51 @@ pub async fn Agent::run_turn(
       session_id: current_session_id,
       model_context_window: self.config.model_context_window,
     }
-    let action = self.compressor.compress(messages, ctx)
-    match action {
-      NewThread(
-        messages=msgs,
-        new_session_id=new_sid,
-        messages_before=before,
-        messages_after=after
-      ) => {
-        let new_session = {
-          messages: msgs,
-          metadata: Map::from_array([
-            ("parent_session_id", Json::string(current_session_id)),
-          ]),
-        }
-        match self.session_store.save(new_sid, new_session) {
-          Ok(_) => ()
-          Err(e) => raise Session(e)
-        }
-        self.observer.on_event(
-          SessionRedirect(
-            from=current_session_id,
-            to=new_sid,
-            messages_before=before,
-            messages_after=after,
-          ),
-        )
-        current_session_id = new_sid
-        messages = msgs
+    let mut compress_done = false
+    for comp in self.compressors {
+      if compress_done {
+        break
       }
-      Replace(msgs) => messages = msgs
-      None => ()
+      let action = comp.compress(messages, ctx)
+      match action {
+        NewThread(
+          messages=msgs,
+          new_session_id=new_sid,
+          messages_before=before,
+          messages_after=after
+        ) => {
+          let new_session = {
+            messages: msgs,
+            metadata: Map::from_array([
+              ("parent_session_id", Json::string(current_session_id)),
+            ]),
+          }
+          for store in self.sessions {
+            match store.save(new_sid, new_session) {
+              Ok(_) => ()
+              Err(e) => raise Session(e)
+            }
+          }
+          for obs in self.observers {
+            obs.on_event(
+              SessionRedirect(
+                from=current_session_id,
+                to=new_sid,
+                messages_before=before,
+                messages_after=after,
+              ),
+            )
+          }
+          current_session_id = new_sid
+          messages = msgs
+          compress_done = true
+        }
+        Replace(msgs) => {
+          messages = msgs
+          compress_done = true
+        }
+        None => ()
+      }
     }
 
     match self.pipeline_hook {
@@ -201,12 +253,16 @@ pub async fn Agent::run_turn(
       tools,
       self.config.to_chat_options(),
       fn(chunk : StreamChunk) {
-        self.observer.on_event(StreamChunkReceived(chunk~))
+        for obs in self.observers {
+          obs.on_event(StreamChunkReceived(chunk~))
+        }
       },
     ) catch {
       e => {
         let reason = e.to_string()
-        self.observer.on_event(TurnFailed(reason))
+        for obs in self.observers {
+          obs.on_event(TurnFailed(reason))
+        }
         match self.pipeline_hook {
           Some(hook) => ignore_hook(hook, ModelError(reason)) catch { _ => () }
           None => ()
@@ -215,13 +271,15 @@ pub async fn Agent::run_turn(
       }
     }
 
-    self.observer.on_event(
-      ModelResponseReceived(
-        message=response.message,
-        usage=response.usage,
-        reasoning_summary=response.reasoning_summary,
-      ),
-    )
+    for obs in self.observers {
+      obs.on_event(
+        ModelResponseReceived(
+          message=response.message,
+          usage=response.usage,
+          reasoning_summary=response.reasoning_summary,
+        ),
+      )
+    }
 
     match self.pipeline_hook {
       Some(hook) =>
@@ -240,13 +298,17 @@ pub async fn Agent::run_turn(
 
     tool_round = tool_round + 1
     if tool_round > self.config.max_tool_rounds {
-      self.observer.on_event(TurnFailed("tool loop exceeded"))
+      for obs in self.observers {
+        obs.on_event(TurnFailed("tool loop exceeded"))
+      }
       raise ToolLoopExceeded
     }
 
     let approved_calls : Array[ToolCall] = []
     for tool_call in response.tool_calls {
-      self.observer.on_event(ToolCallPending(tool_call))
+      for obs in self.observers {
+        obs.on_event(ToolCallPending(tool_call))
+      }
 
       let mut effective_call = tool_call
       let mut skip_tool = false
@@ -256,19 +318,19 @@ pub async fn Agent::run_turn(
             Ok(BeforeTool(tc)) => effective_call = tc
             Ok(_) => ()
             Err(Deferred(reason~)) => {
-              self.observer.on_event(
-                ToolCallDeferred(call=effective_call, reason~),
-              )
+              for obs in self.observers {
+                obs.on_event(ToolCallDeferred(call=effective_call, reason~))
+              }
               let rejection = ToolResult::{
                 content: "Tool rejected (needs approval): " + reason,
                 structured: None,
                 is_error: true,
               }
               all_results.push(rejection)
-              skip_tool = true
               messages.push(
                 build_tool_result_message(effective_call, rejection),
               )
+              skip_tool = true
               resolution_required = true
             }
             Err(Aborted(msg)) => raise HookAborted(msg)
@@ -285,8 +347,17 @@ pub async fn Agent::run_turn(
       exec_results = @async.all(
         approved_calls.map(fn(call) {
           async fn() -> Result[ToolResult, RuntimeError] {
-            Ok(self.tool_runtime.execute(call.name, call)) catch {
-              e => Err(e)
+            match self.tool_routing.tool_map.get(call.name) {
+              Some(provider) =>
+                Ok(provider.execute(call.name, call)) catch {
+                  e => Err(e)
+                }
+              None =>
+                Err(
+                  RuntimeError::UnknownTool(
+                    "No provider for tool '\{call.name}'",
+                  ),
+                )
             }
           }
         }),
@@ -299,7 +370,9 @@ pub async fn Agent::run_turn(
       let call = approved_calls[i]
       match exec_results[i] {
         Ok(result) => {
-          self.observer.on_event(ToolCallResult(call~, result~, is_error=false))
+          for obs in self.observers {
+            obs.on_event(ToolCallResult(call~, result~, is_error=false))
+          }
           match self.pipeline_hook {
             Some(hook) =>
               ignore_hook(hook, AfterTool(call, result)) catch {
@@ -316,9 +389,11 @@ pub async fn Agent::run_turn(
             structured: None,
             is_error: true,
           }
-          self.observer.on_event(
-            ToolCallResult(call~, result=error_result, is_error=true),
-          )
+          for obs in self.observers {
+            obs.on_event(
+              ToolCallResult(call~, result=error_result, is_error=true),
+            )
+          }
           match self.pipeline_hook {
             Some(hook) =>
               ignore_hook(hook, ToolError(call, e)) catch {
@@ -338,12 +413,16 @@ pub async fn Agent::run_turn(
   }
 
   let final_session = { messages, metadata: Map::from_array([]) }
-  match self.session_store.save(current_session_id, final_session) {
-    Ok(_) => ()
-    Err(e) => raise Session(e)
+  for store in self.sessions {
+    match store.save(current_session_id, final_session) {
+      Ok(_) => ()
+      Err(e) => raise Session(e)
+    }
   }
 
-  self.observer.on_event(TurnCompleted)
+  for obs in self.observers {
+    obs.on_event(TurnCompleted)
+  }
 
   let result = {
     message: response.message,

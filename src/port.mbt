@@ -1,8 +1,7 @@
 ///|
-/// Port interfaces and their contract types (Stage, HookError, CompressContext, CompressAction).
 pub(all) enum HookError {
   Aborted(String)
-  Deferred(reason~ : String) // needs approval, break tool loop
+  Deferred(reason~ : String)
 } derive(Eq, Debug)
 
 ///|
@@ -53,8 +52,7 @@ pub(open) trait ModelPort {
     options : ChatOptions,
   ) -> ModelResponse raise ModelError
 
-  /// Streaming version of chat. Default: ignores on_chunk, falls back to chat().
-  /// Streaming adapters override this and call on_chunk for each StreamChunk.
+  /// Streaming chat. Default: ignores on_chunk, falls back to chat().
   async fn chat_streaming(
     Self,
     messages : Array[Message],
@@ -65,12 +63,9 @@ pub(open) trait ModelPort {
 }
 
 ///|
+/// Unified tool interface: declare tools via list_tools(), execute via execute().
 pub(open) trait ToolProvider {
-  async fn list_tools(Self) -> Array[ToolDef]
-}
-
-///|
-pub(open) trait ToolRuntime {
+  fn list_tools(Self) -> Array[ToolDef]
   async fn execute(Self, name : String, call : ToolCall) -> ToolResult raise RuntimeError
 }
 

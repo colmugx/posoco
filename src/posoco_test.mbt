@@ -22,8 +22,10 @@ impl @posoco.ModelPort for MockModelPort with fn chat(
 }
 
 ///|
+/// MockToolProvider — implements the unified ToolProvider trait.
 struct MockToolProvider {
   tools : Array[@posoco.ToolDef]
+  results : Map[String, Result[@posoco.ToolResult, @posoco.RuntimeError]]
 }
 
 ///|
@@ -32,19 +34,15 @@ impl @posoco.ToolProvider for MockToolProvider with fn list_tools(self) {
 }
 
 ///|
-struct MockToolRuntime {
-  results : Map[String, Result[@posoco.ToolResult, @posoco.RuntimeError]]
-}
-
-///|
-impl @posoco.ToolRuntime for MockToolRuntime with fn execute(self, name, _call) {
-  if self.results.contains(name) {
-    match self.results[name] {
-      Ok(r) => r
-      Err(e) => raise e
-    }
-  } else {
-    raise @posoco.InvocationFailed("tool not found")
+impl @posoco.ToolProvider for MockToolProvider with fn execute(
+  self,
+  name : String,
+  _call : @posoco.ToolCall,
+) -> @posoco.ToolResult raise @posoco.RuntimeError {
+  match self.results.get(name) {
+    Some(Ok(r)) => r
+    Some(Err(e)) => raise e
+    None => raise @posoco.InvocationFailed("tool not found: \{name}")
   }
 }
 
@@ -119,25 +117,28 @@ fn stop_response(text : String) -> @posoco.ModelResponse {
 }
 
 ///|
+/// Helper: empty tool provider
+fn empty_tools() -> MockToolProvider {
+  MockToolProvider::{ tools: [], results: Map::from_array([]) }
+}
+
+///|
 async test "b1_simple_turn_no_tools" {
   let model = MockModelPort::{ responses: [stop_response("hi")], index: 0 }
-  let tools = MockToolProvider::{ tools: [] }
-  let runtime = MockToolRuntime::{ results: Map::from_array([]) }
   let store = MockSessionStore::{ store: Map::from_array([]) }
   let observer = MockObserver::{ events: [] }
   let config = make_config()
 
   let agent = @posoco.Agent::new(
     model,
-    tools,
-    runtime,
-    store,
-    observer,
-    @posoco.NoopCompressor::{  },
-    None,
-    None,
-    None,
-    config,
+    tools=[empty_tools()],
+    hooks=[],
+    memory=[],
+    compressors=[@posoco.NoopCompressor::{  }],
+    observers=[observer],
+    sessions=[store],
+    lifecycle=None,
+    config~,
   )
   let result = agent.run_turn(user_msg("hello"), "session_b1")
   assert_eq(result.final_session_id, "session_b1")
@@ -216,23 +217,20 @@ async test "b7_agent_error_display" {
 ///|
 async test "b8_turn_event_lifecycle" {
   let model = MockModelPort::{ responses: [stop_response("ok")], index: 0 }
-  let tools = MockToolProvider::{ tools: [] }
-  let runtime = MockToolRuntime::{ results: Map::from_array([]) }
   let store = MockSessionStore::{ store: Map::from_array([]) }
   let observer = MockObserver::{ events: [] }
   let config = make_config()
 
   let agent = @posoco.Agent::new(
     model,
-    tools,
-    runtime,
-    store,
-    observer,
-    @posoco.NoopCompressor::{  },
-    None,
-    None,
-    None,
-    config,
+    tools=[empty_tools()],
+    hooks=[],
+    memory=[],
+    compressors=[@posoco.NoopCompressor::{  }],
+    observers=[observer],
+    sessions=[store],
+    lifecycle=None,
+    config~,
   )
   let _ = agent.run_turn(user_msg("event test"), "session_b8")
 
@@ -251,23 +249,20 @@ async test "b8_turn_event_lifecycle" {
 ///|
 async test "b9_model_error_aborts" {
   let model = MockModelPort::{ responses: [], index: 0 }
-  let tools = MockToolProvider::{ tools: [] }
-  let runtime = MockToolRuntime::{ results: Map::from_array([]) }
   let store = MockSessionStore::{ store: Map::from_array([]) }
   let observer = MockObserver::{ events: [] }
   let config = make_config()
 
   let agent = @posoco.Agent::new(
     model,
-    tools,
-    runtime,
-    store,
-    observer,
-    @posoco.NoopCompressor::{  },
-    None,
-    None,
-    None,
-    config,
+    tools=[empty_tools()],
+    hooks=[],
+    memory=[],
+    compressors=[@posoco.NoopCompressor::{  }],
+    observers=[observer],
+    sessions=[store],
+    lifecycle=None,
+    config~,
   )
   match
     (Ok(agent.run_turn(user_msg("boom"), "session_b9")) catch { e => Err(e) }) {

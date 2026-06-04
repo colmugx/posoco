@@ -1,10 +1,8 @@
 ///|
-/// NoopCompressor — always returns CompressAction::None, never compresses.
 pub(all) struct NoopCompressor {}
 
 ///|
-/// Default implementation of ModelPort::chat_streaming — falls back to chat(),
-/// ignoring the on_chunk callback. Non-streaming adapters use this automatically.
+/// Default chat_streaming: ignores on_chunk, falls back to chat().
 impl ModelPort with fn chat_streaming(
   self : Self,
   messages : Array[Message],
@@ -25,7 +23,6 @@ pub impl Compressor for NoopCompressor with fn compress(
 }
 
 ///|
-/// NoopHook — passes every stage through unchanged.
 pub(all) struct NoopHook {}
 
 ///|
@@ -37,7 +34,7 @@ pub impl PipelineHook for NoopHook with fn on_stage(_self, stage : Stage) -> Res
 }
 
 ///|
-/// HookChain — applies each registered hook in sequence.
+/// Internal: chains multiple hooks in sequence.
 pub(all) struct HookChain {
   hooks : Array[&PipelineHook]
 }
@@ -58,7 +55,6 @@ pub impl PipelineHook for HookChain with fn on_stage(self, stage : Stage) -> Res
 }
 
 ///|
-/// Build a Tool-role Message from a ToolCall and ToolResult.
 pub fn build_tool_result_message(
   call : ToolCall,
   result : ToolResult,
@@ -73,7 +69,6 @@ pub fn build_tool_result_message(
 }
 
 ///|
-/// Build a Tool-role error Message from a ToolCall and RuntimeError.
 pub fn build_error_message(call : ToolCall, error : RuntimeError) -> Message {
   {
     role: Tool,
@@ -85,7 +80,7 @@ pub fn build_error_message(call : ToolCall, error : RuntimeError) -> Message {
 }
 
 ///|
-/// CompositeToolProvider — merges multiple ToolProviders
+/// Internal: merges multiple providers' tool lists. Agent routes via ToolRouting instead.
 pub(all) struct CompositeToolProvider {
   providers : Array[&ToolProvider]
 }
@@ -102,24 +97,42 @@ pub impl ToolProvider for CompositeToolProvider with fn list_tools(self) {
 }
 
 ///|
-/// ToolRegistry — dynamic runtime tool registration
+pub impl ToolProvider for CompositeToolProvider with fn execute(
+  _self,
+  name : String,
+  _call : ToolCall,
+) -> ToolResult raise RuntimeError {
+  raise RuntimeError::UnknownTool(
+    "CompositeToolProvider does not route execute(); Agent uses ToolRouting instead. Tool: '\{name}'",
+  )
+}
+
+///|
+/// Dynamic runtime tool registration. Implements ToolProvider.
 pub(all) struct ToolRegistry {
   mut tools : Map[String, ToolDef]
+  mut executors : Map[String, (ToolCall) -> ToolResult]
 }
 
 ///|
 pub fn ToolRegistry::new() -> ToolRegistry {
-  { tools: Map::from_array([]) }
+  { tools: Map::from_array([]), executors: Map::from_array([]) }
 }
 
 ///|
-pub fn ToolRegistry::register(self : ToolRegistry, tool : ToolDef) -> Unit {
+pub fn ToolRegistry::register(
+  self : ToolRegistry,
+  tool : ToolDef,
+  executor : (ToolCall) -> ToolResult,
+) -> Unit {
   self.tools[tool.name] = tool
+  self.executors[tool.name] = executor
 }
 
 ///|
 pub fn ToolRegistry::unregister(self : ToolRegistry, name : String) -> Unit {
   self.tools.remove(name)
+  self.executors.remove(name)
 }
 
 ///|
@@ -132,7 +145,21 @@ pub impl ToolProvider for ToolRegistry with fn list_tools(self) {
 }
 
 ///|
-/// NoopMemoryPort — returns empty/error for all operations
+pub impl ToolProvider for ToolRegistry with fn execute(
+  self,
+  name : String,
+  call : ToolCall,
+) -> ToolResult raise RuntimeError {
+  match self.executors.get(name) {
+    Some(exec) => exec(call)
+    None =>
+      raise RuntimeError::UnknownTool(
+        "No executor registered for tool '\{name}'",
+      )
+  }
+}
+
+///|
 pub(all) struct NoopMemoryPort {}
 
 ///|
@@ -153,73 +180,9 @@ pub impl MemoryPort for NoopMemoryPort with fn delete(_self, _id) -> Unit raise 
 }
 
 ///|
-/// NoopLifecycle — no-op shutdown, for components that hold no resources.
 pub(all) struct NoopLifecycle {}
 
 ///|
 pub impl Lifecycle for NoopLifecycle with fn on_shutdown(_self) -> Unit {
   ()
-}
-
-///|
-/// CompositeToolRuntime — routes tool calls to the correct runtime via
-/// Map-based O(1) lookup.
-///
-/// Each `(ToolProvider, ToolRuntime)` pair is registered via `add()`.
-/// The provider's `list_tools()` populates an internal routing map.
-/// `execute()` looks up the tool name in the map — no error-based routing.
-pub(all) struct CompositeToolRuntime {
-  tool_map : Map[String, &ToolRuntime]
-  runtimes : Array[&ToolRuntime]
-  collisions : Array[String]
-}
-
-///|
-pub fn CompositeToolRuntime::new() -> CompositeToolRuntime {
-  { tool_map: Map::from_array([]), runtimes: [], collisions: [] }
-}
-
-///|
-/// Register a (provider, runtime) pair. The provider's `list_tools()` is
-/// called to populate the routing map. Tool name collisions are recorded
-/// for later validation via `validate()`.
-pub async fn CompositeToolRuntime::add(
-  self : CompositeToolRuntime,
-  provider : &ToolProvider,
-  runtime : &ToolRuntime,
-) -> Unit {
-  self.runtimes.push(runtime)
-  let tools = provider.list_tools() catch { _ => return () }
-  for tool in tools {
-    if self.tool_map.contains(tool.name) {
-      self.collisions.push(
-        "Tool '\{tool.name}' already registered; overwritten by new provider",
-      )
-    }
-    self.tool_map[tool.name] = runtime
-  }
-}
-
-///|
-/// Returns collision warnings from all `add()` calls.
-/// Empty array means no collisions. Caller may raise or warn.
-pub fn CompositeToolRuntime::validate(
-  self : CompositeToolRuntime,
-) -> Array[String] {
-  self.collisions.copy()
-}
-
-///|
-pub impl ToolRuntime for CompositeToolRuntime with fn execute(
-  self,
-  name : String,
-  call : ToolCall,
-) -> ToolResult raise RuntimeError {
-  match self.tool_map.get(name) {
-    Some(runtime) => runtime.execute(name, call)
-    None =>
-      raise RuntimeError::UnknownTool(
-        "No runtime registered for tool '\{name}'",
-      )
-  }
 }

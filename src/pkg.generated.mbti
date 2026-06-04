@@ -20,11 +20,18 @@ pub(all) suberror AgentError {
 } derive(@debug.Debug)
 pub impl Show for AgentError
 
+pub(all) suberror CompositionError {
+  ToolCollision(String, String)
+  EmptyPort(String)
+} derive(@debug.Debug)
+pub impl Show for CompositionError
+
 pub(all) suberror MemoryError {
   Store(String)
   Search(String)
   Delete(String)
 } derive(@debug.Debug)
+pub impl Show for MemoryError
 
 pub(all) suberror ModelError {
   RequestBuild(String)
@@ -49,19 +56,19 @@ pub impl Show for SessionError
 // Types and methods
 pub(all) struct Agent {
   model_port : &ModelPort
-  tool_provider : &ToolProvider
-  tool_runtime : &ToolRuntime
-  session_store : &SessionStore
-  observer : &Observer
-  compressor : &Compressor
+  tool_routing : ToolRouting
   pipeline_hook : &PipelineHook?
-  memory_port : &MemoryPort?
+  compressors : Array[&Compressor]
+  observers : Array[&Observer]
+  memories : Array[&MemoryPort]
+  sessions : Array[&SessionStore]
   lifecycle : &Lifecycle?
   config : AgentConfig
 }
-pub fn Agent::new(&ModelPort, &ToolProvider, &ToolRuntime, &SessionStore, &Observer, &Compressor, &PipelineHook?, &MemoryPort?, &Lifecycle?, AgentConfig) -> Self
+pub fn Agent::new(&ModelPort, tools~ : Array[&ToolProvider], hooks~ : Array[&PipelineHook], memory~ : Array[&MemoryPort], compressors~ : Array[&Compressor], observers~ : Array[&Observer], sessions~ : Array[&SessionStore], lifecycle~ : &Lifecycle?, config~ : AgentConfig) -> Self
 pub async fn Agent::run_turn(Self, Message, String) -> TurnResult raise AgentError
 pub async fn Agent::shutdown(Self) -> Unit
+pub fn Agent::tool_collisions(Self) -> Array[String]
 
 pub(all) struct AgentConfig {
   max_tool_rounds : Int
@@ -84,16 +91,6 @@ pub(all) struct CompositeToolProvider {
   providers : Array[&ToolProvider]
 }
 pub impl ToolProvider for CompositeToolProvider
-
-pub(all) struct CompositeToolRuntime {
-  tool_map : Map[String, &ToolRuntime]
-  runtimes : Array[&ToolRuntime]
-  collisions : Array[String]
-}
-pub async fn CompositeToolRuntime::add(Self, &ToolProvider, &ToolRuntime) -> Unit
-pub fn CompositeToolRuntime::new() -> Self
-pub fn CompositeToolRuntime::validate(Self) -> Array[String]
-pub impl ToolRuntime for CompositeToolRuntime
 
 pub(all) enum CompressAction {
   None
@@ -243,13 +240,15 @@ pub(all) struct ToolDef {
   description : String
   input_schema : Json
   metadata : Json?
+  source : String?
 } derive(Eq, @debug.Debug)
 
 pub(all) struct ToolRegistry {
   mut tools : Map[String, ToolDef]
+  mut executors : Map[String, (ToolCall) -> ToolResult]
 }
 pub fn ToolRegistry::new() -> Self
-pub fn ToolRegistry::register(Self, ToolDef) -> Unit
+pub fn ToolRegistry::register(Self, ToolDef, (ToolCall) -> ToolResult) -> Unit
 pub fn ToolRegistry::unregister(Self, String) -> Unit
 pub impl ToolProvider for ToolRegistry
 
@@ -258,6 +257,8 @@ pub(all) struct ToolResult {
   structured : Json?
   is_error : Bool
 } derive(Eq, @debug.Debug)
+
+type ToolRouting
 
 pub(all) enum TurnEvent {
   TurnStarted
@@ -321,10 +322,7 @@ pub(open) trait SessionStore {
 }
 
 pub(open) trait ToolProvider {
-  async fn list_tools(Self) -> Array[ToolDef]
-}
-
-pub(open) trait ToolRuntime {
+  fn list_tools(Self) -> Array[ToolDef]
   async fn execute(Self, String, ToolCall) -> ToolResult raise RuntimeError
 }
 
