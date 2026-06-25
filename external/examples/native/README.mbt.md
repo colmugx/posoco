@@ -1,1 +1,0 @@
-# colmugx/posoco-example
