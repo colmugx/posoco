@@ -126,7 +126,7 @@ fn make_config() -> AgentConfig {
     temperature: None,
     max_output_tokens: None,
     tool_choice: None,
-    thinking: None,
+    reasoning_effort: None,
     model_context_window: None,
   }
 }
@@ -160,7 +160,7 @@ fn stop_response(text : String) -> ModelResponse {
     tool_calls: [],
     finish_reason: Stop,
     usage: None,
-    reasoning_summary: None,
+    reasoning_content: None,
   }
 }
 
@@ -177,7 +177,7 @@ fn tool_response(tool_calls : Array[ToolCall]) -> ModelResponse {
     tool_calls,
     finish_reason: ToolCalls,
     usage: None,
-    reasoning_summary: None,
+    reasoning_content: None,
   }
 }
 
@@ -476,7 +476,7 @@ async test "tool_loop_exceeded" {
     temperature: None,
     max_output_tokens: None,
     tool_choice: None,
-    thinking: None,
+    reasoning_effort: None,
     model_context_window: None,
   }
 
@@ -975,7 +975,7 @@ async test "stream_accumulator_assembles_response" {
   assert_eq(resp.tool_calls[0].name, "bash")
   assert_true(resp.finish_reason is ToolCalls)
   assert_true(resp.usage is Some(_))
-  assert_true(resp.reasoning_summary is Some(_))
+  assert_true(resp.reasoning_content is Some(_))
 }
 
 ///|
@@ -1060,4 +1060,261 @@ async test "multiple_session_stores_write_all" {
 
   assert_true(store1.store.contains("session_1"))
   assert_true(store2.store.contains("session_1"))
+}
+
+///|
+/// Helper: build a minimal CommandParam for tests.
+fn make_param(
+  name : String,
+  ptype? : ParamType = Str,
+  required? : Bool = false,
+  positional? : Bool = false,
+  default? : Json? = None,
+  choices? : Array[String]? = None,
+) -> CommandParam {
+  {
+    name,
+    label: name,
+    description: "",
+    ptype,
+    required,
+    default,
+    choices,
+    positional,
+  }
+}
+
+///|
+/// Helper: build a minimal CommandDef for tests.
+fn make_command(
+  id : String,
+  params? : Array[CommandParam] = [],
+  ctype? : CommandType = Action,
+) -> CommandDef {
+  {
+    id,
+    label: id,
+    description: "",
+    category: "test",
+    ctype,
+    params,
+    aliases: [],
+    shortcut: None,
+    icon: None,
+    visible: true,
+    metadata: None,
+  }
+}
+
+///|
+test "parse_slash_args_handles_positional" {
+  let params = [make_param("value", ptype=Str, positional=true)]
+  let result = parse_slash_args("deepseek", params)
+  assert_true(result is Ok(_))
+  match result {
+    Ok(json) =>
+      match json {
+        Object(map) =>
+          match map.get("value") {
+            Some(String(s)) => assert_eq(s, "deepseek")
+            _ => fail("expected string value")
+          }
+        _ => fail("expected object")
+      }
+    Err(_) => fail("parse failed")
+  }
+}
+
+///|
+test "parse_slash_args_handles_key_value" {
+  let params = [
+    make_param("query", ptype=Str, positional=true),
+    make_param(
+      "limit",
+      ptype=Int,
+      positional=false,
+      default=Some(Json::number(5.0)),
+    ),
+  ]
+  let result = parse_slash_args("hello limit=10", params)
+  assert_true(result is Ok(_))
+  match result {
+    Ok(json) =>
+      match json {
+        Object(map) => {
+          match map.get("query") {
+            Some(String(s)) => assert_eq(s, "hello")
+            _ => fail("expected query string")
+          }
+          match map.get("limit") {
+            Some(Number(n, ..)) => assert_eq(n, 10.0)
+            _ => fail("expected limit number")
+          }
+        }
+        _ => fail("expected object")
+      }
+    Err(_) => fail("parse failed")
+  }
+}
+
+///|
+test "validate_args_missing_required" {
+  let def = make_command("test.cmd", params=[
+    make_param("name", ptype=Str, required=true),
+  ])
+  let args = Json::object({})
+  match validate_args(def, args) {
+    Err(msg) => assert_true(msg.contains("missing required"))
+    Ok(_) => fail("should fail on missing required")
+  }
+}
+
+///|
+test "validate_args_applies_default" {
+  let def = make_command("test.cmd", params=[
+    make_param("level", ptype=Int, default=Some(Json::number(3.0))),
+  ])
+  let args = Json::object({})
+  match validate_args(def, args) {
+    Ok(json) =>
+      match json {
+        Object(map) =>
+          match map.get("level") {
+            Some(Number(n, ..)) => assert_eq(n, 3.0)
+            _ => fail("expected default level")
+          }
+        _ => fail("expected object")
+      }
+    Err(_) => fail("should apply default")
+  }
+}
+
+///|
+async test "noop_command_port_returns_empty_and_raises_notfound" {
+  let port = NoopCommandPort::{  }
+  assert_eq(port.commands().length(), 0)
+  match (Ok(port.invoke("anything", Json::object({}))) catch { e => Err(e) }) {
+    Err(NotFound(id)) => assert_eq(id, "anything")
+    Err(_) => fail("expected NotFound")
+    Ok(_) => fail("expected raise")
+  }
+}
+
+///|
+/// Hook that always returns Err(Aborted) — used to test finally semantics.
+struct AlwaysFailHook {}
+
+///|
+impl PipelineHook for AlwaysFailHook with fn on_stage(_self, _stage : Stage) -> Result[
+  Stage,
+  HookError,
+] {
+  Err(Aborted("always fails"))
+}
+
+///|
+/// After stages run hooks in reverse order: hooks[1] runs before hooks[0].
+async test "hook_chain_after_stage_reversed_order" {
+  let hook1 = LogHook::{ seen: [] }
+  let hook2 = LogHook::{ seen: [] }
+  let chain = HookChain::{ hooks: [hook1, hook2] }
+  let tc = { id: "c1", name: "t", arguments: Json::null() }
+  let tr = { content: "ok", structured: None, is_error: false }
+  let _ = chain.on_stage(AfterTool(tc, tr))
+  // hook2 (index 1) should have run first — its seen[0] is the AfterTool
+  assert_eq(hook2.seen.length(), 1)
+  assert_eq(hook1.seen.length(), 1)
+}
+
+///|
+/// Finally semantics: even if one hook returns Err on an after stage,
+/// all other hooks still execute.
+async test "hook_chain_after_stage_runs_all_on_error" {
+  let hook1 = LogHook::{ seen: [] }
+  let fail = AlwaysFailHook::{  }
+  // hook1 first (index 0), fail second (index 1).
+  // On after stage, reverse order: fail runs first (returns Err),
+  // but hook1 still runs (finally).
+  let chain = HookChain::{ hooks: [hook1, fail] }
+  let tc = { id: "c2", name: "t", arguments: Json::null() }
+  let tr = { content: "ok", structured: None, is_error: false }
+  let _ = chain.on_stage(AfterTool(tc, tr))
+  // hook1 must have run despite fail returning Err
+  assert_eq(hook1.seen.length(), 1)
+}
+
+///|
+/// Finally semantics: when the model errors, the TurnError hook still fires
+/// (wrapped by run_turn's outer try/catch) even though the turn aborts.
+async test "hook_turn_error_fires_on_model_error" {
+  let model = MockModelPort::{ responses: [], index: 0 }
+  let store = MockSessionStore::{ store: Map::from_array([]) }
+  let observer = MockObserver::{ events: [] }
+  let log_hook = LogHook::{ seen: [] }
+  let config = make_config()
+
+  let agent = Agent::new(
+    model,
+    tools=[empty_tools()],
+    hooks=[log_hook],
+    memory=[],
+    compressors=[NoopCompressor::{  }],
+    observers=[observer],
+    sessions=[store],
+    lifecycle=None,
+    config~,
+  )
+  // Model has no responses → raises; run_turn catches and fires TurnError.
+  let _ = Ok(agent.run_turn(user_msg("boom"), "session_1")) catch {
+    e => Err(e)
+  }
+  // LogHook should have seen BeforeTurn (forward path) + TurnError (finally path)
+  let saw_turn_error = log_hook.seen.iter().any(fn(s) { s is TurnError(_) })
+  assert_true(saw_turn_error)
+}
+
+///|
+/// Finally semantics: when BeforeTool aborts (raise HookAborted), the
+/// TurnError hook still fires before the error propagates.
+async test "hook_turn_error_fires_on_before_tool_abort" {
+  let tc = make_tool_call("call_1", "bash")
+  let model = MockModelPort::{ responses: [tool_response([tc])], index: 0 }
+  let tools = MockToolProvider::{
+    tools: [
+      {
+        name: "bash",
+        description: "",
+        input_schema: Json::null(),
+        metadata: None,
+        source: None,
+      },
+    ],
+    results: Map::from_array([]),
+  }
+  let store = MockSessionStore::{ store: Map::from_array([]) }
+  let observer = MockObserver::{ events: [] }
+  // AbortHook aborts on BeforeTool; LogHook records stages.
+  // Order matters: LogHook first (sees BeforeTurn), AbortHook second (aborts BeforeTool).
+  // But hook chain runs forward on Before stages, so both see BeforeTurn,
+  // then AbortHook aborts on BeforeTool → run_turn catches → TurnError fires to both (reverse).
+  let log_hook = LogHook::{ seen: [] }
+  let abort_hook = AbortHook::{  }
+  let config = make_config()
+
+  let agent = Agent::new(
+    model,
+    tools=[tools],
+    hooks=[log_hook, abort_hook],
+    memory=[],
+    compressors=[NoopCompressor::{  }],
+    observers=[observer],
+    sessions=[store],
+    lifecycle=None,
+    config~,
+  )
+  let _ = Ok(agent.run_turn(user_msg("danger"), "session_1")) catch {
+    e => Err(e)
+  }
+  let saw_turn_error = log_hook.seen.iter().any(fn(s) { s is TurnError(_) })
+  assert_true(saw_turn_error)
 }

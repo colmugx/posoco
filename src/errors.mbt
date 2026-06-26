@@ -95,3 +95,21 @@ pub impl Show for CompositionError with fn to_string(self) -> String {
     EmptyPort(port) => "CompositionError::EmptyPort(\{port})"
   }
 }
+
+///|
+/// Errors raised by CommandPort.invoke: unknown command id, invalid args,
+/// or execution failure.
+pub(all) suberror CommandError {
+  NotFound(String)
+  InvalidArgs(reason~ : String)
+  ExecutionFailed(String)
+} derive(Debug)
+
+///|
+pub impl Show for CommandError with fn to_string(self) -> String {
+  match self {
+    NotFound(id) => "CommandError::NotFound(\{id})"
+    InvalidArgs(reason~) => "CommandError::InvalidArgs(\{reason})"
+    ExecutionFailed(msg) => "CommandError::ExecutionFailed(\{msg})"
+  }
+}

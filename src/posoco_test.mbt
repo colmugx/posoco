@@ -83,7 +83,7 @@ fn make_config() -> @posoco.AgentConfig {
     temperature: None,
     max_output_tokens: None,
     tool_choice: None,
-    thinking: None,
+    reasoning_effort: None,
     model_context_window: None,
   }
 }
@@ -112,7 +112,7 @@ fn stop_response(text : String) -> @posoco.ModelResponse {
     tool_calls: [],
     finish_reason: Stop,
     usage: None,
-    reasoning_summary: None,
+    reasoning_content: None,
   }
 }
 

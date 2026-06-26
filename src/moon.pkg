@@ -1,4 +1,6 @@
 import {
   "moonbitlang/async",
   "moonbitlang/core/json",
+  "moonbitlang/core/strconv",
+  "moonbitlang/core/string",
 }

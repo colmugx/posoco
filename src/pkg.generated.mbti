@@ -10,6 +10,10 @@ pub fn build_error_message(ToolCall, RuntimeError) -> Message
 
 pub fn build_tool_result_message(ToolCall, ToolResult) -> Message
 
+pub fn parse_slash_args(String, Array[CommandParam]) -> Result[Json, String]
+
+pub fn validate_args(CommandDef, Json) -> Result[Json, String]
+
 // Errors
 pub(all) suberror AgentError {
   Model(String)
@@ -19,6 +23,13 @@ pub(all) suberror AgentError {
   HookAborted(String)
 } derive(@debug.Debug)
 pub impl Show for AgentError
+
+pub(all) suberror CommandError {
+  NotFound(String)
+  InvalidArgs(reason~ : String)
+  ExecutionFailed(String)
+} derive(@debug.Debug)
+pub impl Show for CommandError
 
 pub(all) suberror CompositionError {
   ToolCollision(String, String)
@@ -75,7 +86,7 @@ pub(all) struct AgentConfig {
   temperature : Double?
   max_output_tokens : Int?
   tool_choice : ToolChoice?
-  thinking : Bool?
+  reasoning_effort : ReasoningEffort?
   model_context_window : Int?
 }
 pub fn AgentConfig::to_chat_options(Self) -> ChatOptions
@@ -84,7 +95,46 @@ pub(all) struct ChatOptions {
   temperature : Double?
   max_output_tokens : Int?
   tool_choice : ToolChoice?
-  thinking : Bool?
+  reasoning_effort : ReasoningEffort?
+} derive(Eq, @debug.Debug)
+
+pub(all) struct CommandDef {
+  id : String
+  label : String
+  description : String
+  category : String
+  ctype : CommandType
+  params : Array[CommandParam]
+  aliases : Array[String]
+  shortcut : String?
+  icon : String?
+  visible : Bool
+  metadata : Json?
+} derive(Eq, @debug.Debug)
+
+pub(all) enum CommandOutcome {
+  Success(feedback~ : String, structured~ : Json?, ui_hint~ : UiHint?)
+  Failure(reason~ : String)
+  NeedsInput(prompt~ : String)
+} derive(Eq, @debug.Debug)
+
+pub(all) struct CommandParam {
+  name : String
+  label : String
+  description : String
+  ptype : ParamType
+  required : Bool
+  default : Json?
+  choices : Array[String]?
+  positional : Bool
+} derive(Eq, @debug.Debug)
+
+pub(all) enum CommandType {
+  Action
+  Toggle
+  Select
+  Input
+  MultiStep
 } derive(Eq, @debug.Debug)
 
 pub(all) struct CompositeToolProvider {
@@ -153,8 +203,12 @@ pub(all) struct ModelResponse {
   tool_calls : Array[ToolCall]
   finish_reason : FinishReason
   usage : Usage?
-  reasoning_summary : String?
+  reasoning_content : String?
 } derive(Eq, @debug.Debug)
+
+pub(all) struct NoopCommandPort {
+}
+pub impl CommandPort for NoopCommandPort
 
 pub(all) struct NoopCompressor {
 }
@@ -171,6 +225,22 @@ pub impl Lifecycle for NoopLifecycle
 pub(all) struct NoopMemoryPort {
 }
 pub impl MemoryPort for NoopMemoryPort
+
+pub(all) enum ParamType {
+  Str
+  Int
+  Bool
+  Strs
+} derive(Eq, @debug.Debug)
+
+pub(all) enum ReasoningEffort {
+  Off
+  Minimal
+  Low
+  Medium
+  High
+  Maximum
+} derive(Eq, @debug.Debug)
 
 pub(all) enum Role {
   System
@@ -264,7 +334,7 @@ pub(all) enum TurnEvent {
   TurnStarted
   ToolCallPending(ToolCall)
   ToolCallResult(call~ : ToolCall, result~ : ToolResult, is_error~ : Bool)
-  ModelResponseReceived(message~ : Message, usage~ : Usage?, reasoning_summary~ : String?)
+  ModelResponseReceived(message~ : Message, usage~ : Usage?, reasoning_content~ : String?)
   SessionRedirect(from~ : String, to~ : String, messages_before~ : Int, messages_after~ : Int)
   TurnCompleted
   TurnFailed(String)
@@ -280,6 +350,14 @@ pub(all) struct TurnResult {
   final_session_id : String
 } derive(Eq, @debug.Debug)
 
+pub(all) enum UiHint {
+  RefreshModelList
+  RefreshSettings
+  ClosePanel
+  Toast
+  None
+} derive(Eq, @debug.Debug)
+
 pub(all) struct Usage {
   input_tokens : Int?
   output_tokens : Int?
@@ -289,6 +367,11 @@ pub(all) struct Usage {
 // Type aliases
 
 // Traits
+pub(open) trait CommandPort {
+  fn commands(Self) -> Array[CommandDef]
+  async fn invoke(Self, String, Json) -> CommandOutcome raise CommandError
+}
+
 pub(open) trait Compressor {
   fn compress(Self, Array[Message], CompressContext) -> CompressAction
 }

@@ -4,7 +4,7 @@ pub(all) struct AgentConfig {
   temperature : Double?
   max_output_tokens : Int?
   tool_choice : ToolChoice?
-  thinking : Bool?
+  reasoning_effort : ReasoningEffort?
   model_context_window : Int?
 }
 
@@ -14,7 +14,7 @@ pub fn AgentConfig::to_chat_options(self : AgentConfig) -> ChatOptions {
     temperature: self.temperature,
     max_output_tokens: self.max_output_tokens,
     tool_choice: self.tool_choice,
-    thinking: self.thinking,
+    reasoning_effort: self.reasoning_effort,
   }
 }
 
@@ -135,6 +135,25 @@ pub async fn Agent::run_turn(
   input : Message,
   session_id : String,
 ) -> TurnResult raise AgentError {
+  let result = self.run_turn_inner(input, session_id) catch {
+    e => {
+      // Finally: ensure TurnError fires on any error path before propagating.
+      match self.pipeline_hook {
+        Some(hook) => ignore_hook(hook, TurnError(e)) catch { _ => () }
+        None => ()
+      }
+      raise e
+    }
+  }
+  result
+}
+
+///|
+async fn Agent::run_turn_inner(
+  self : Agent,
+  input : Message,
+  session_id : String,
+) -> TurnResult raise AgentError {
   match self.pipeline_hook {
     Some(hook) =>
       match call_hook(hook, BeforeTurn) {
@@ -183,7 +202,7 @@ pub async fn Agent::run_turn(
     tool_calls: [],
     finish_reason: Stop,
     usage: None,
-    reasoning_summary: None,
+    reasoning_content: None,
   }
 
   while true {
@@ -276,7 +295,7 @@ pub async fn Agent::run_turn(
         ModelResponseReceived(
           message=response.message,
           usage=response.usage,
-          reasoning_summary=response.reasoning_summary,
+          reasoning_content=response.reasoning_content,
         ),
       )
     }
