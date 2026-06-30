@@ -139,6 +139,7 @@ fn user_msg(text : String) -> Message {
     tool_calls: [],
     tool_call_id: None,
     name: None,
+    reasoning_content: None,
   }
 }
 
@@ -150,6 +151,7 @@ fn assistant_msg(text : String) -> Message {
     tool_calls: [],
     tool_call_id: None,
     name: Some("assistant"),
+    reasoning_content: None,
   }
 }
 
@@ -173,6 +175,7 @@ fn tool_response(tool_calls : Array[ToolCall]) -> ModelResponse {
       tool_calls,
       tool_call_id: None,
       name: None,
+    reasoning_content: None,
     },
     tool_calls,
     finish_reason: ToolCalls,
@@ -649,6 +652,7 @@ impl PipelineHook for RewriteModelHook with fn on_stage(_self, stage) {
         tool_calls: [],
         tool_call_id: None,
         name: None,
+    reasoning_content: None,
       }
       let new_msgs = [system_msg]
       for m in msgs {

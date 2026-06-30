@@ -96,6 +96,7 @@ fn user_msg(text : String) -> @posoco.Message {
     tool_calls: [],
     tool_call_id: None,
     name: None,
+    reasoning_content: None,
   }
 }
 
@@ -108,6 +109,7 @@ fn stop_response(text : String) -> @posoco.ModelResponse {
       tool_calls: [],
       tool_call_id: None,
       name: Some("assistant"),
+      reasoning_content: None,
     },
     tool_calls: [],
     finish_reason: Stop,

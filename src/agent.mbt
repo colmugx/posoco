@@ -196,6 +196,7 @@ async fn Agent::run_turn_inner(
     tool_calls: [],
     tool_call_id: None,
     name: None,
+    reasoning_content: None,
   }
   let mut response = {
     message: initial_msg,

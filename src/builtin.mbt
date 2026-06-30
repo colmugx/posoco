@@ -89,6 +89,7 @@ pub fn build_tool_result_message(
     tool_calls: [],
     tool_call_id: Some(call.id),
     name: Some(call.name),
+    reasoning_content: None,
   }
 }
 
@@ -100,6 +101,7 @@ pub fn build_error_message(call : ToolCall, error : RuntimeError) -> Message {
     tool_calls: [],
     tool_call_id: Some(call.id),
     name: Some(call.name),
+    reasoning_content: None,
   }
 }
 

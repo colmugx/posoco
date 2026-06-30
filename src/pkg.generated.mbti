@@ -196,6 +196,7 @@ pub(all) struct Message {
   tool_calls : Array[ToolCall]
   tool_call_id : String?
   name : String?
+  reasoning_content : String?
 } derive(Eq, @debug.Debug)
 
 pub(all) struct ModelResponse {
