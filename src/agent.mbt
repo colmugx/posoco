@@ -23,25 +23,178 @@ pub fn AgentConfig::to_chat_options(self : AgentConfig) -> ChatOptions {
 struct ToolRouting {
   tool_map : Map[String, &ToolProvider]
   providers : Array[&ToolProvider]
-  collisions : Array[String]
 }
 
 ///|
-fn build_tool_routing(tools : Array[&ToolProvider]) -> ToolRouting {
+fn safe_error_label(value : String) -> String {
+  let chars : Array[Char] = []
+  let mut truncated = false
+  for char in value {
+    if chars.length() >= 64 {
+      truncated = true
+      break
+    }
+    match char {
+      '\n' | '\r' => chars.push(' ')
+      other => chars.push(other)
+    }
+  }
+  let label = String::from_array(chars)
+  if truncated {
+    label + "...(truncated)"
+  } else {
+    label
+  }
+}
+
+///|
+fn agent_snapshot_json(value : Json) -> Json {
+  match value {
+    Json::Array(items) => Json::array(items.map(agent_snapshot_json))
+    Json::Object(fields) => {
+      let snapshot : Map[String, Json] = Map::from_array([])
+      for key in fields.keys() {
+        snapshot[key] = agent_snapshot_json(fields[key])
+      }
+      Json::object(snapshot)
+    }
+    scalar => scalar
+  }
+}
+
+///|
+fn agent_snapshot_tool_call(call : ToolCall) -> ToolCall {
+  {
+    id: call.id,
+    name: call.name,
+    arguments: agent_snapshot_json(call.arguments),
+  }
+}
+
+///|
+fn agent_snapshot_message(message : Message) -> Message {
+  {
+    role: message.role,
+    content: message.content.copy(),
+    tool_calls: message.tool_calls.map(agent_snapshot_tool_call),
+    tool_call_id: message.tool_call_id,
+    name: message.name,
+    reasoning_content: message.reasoning_content,
+  }
+}
+
+///|
+fn agent_snapshot_messages(messages : Array[Message]) -> Array[Message] {
+  messages.map(agent_snapshot_message)
+}
+
+///|
+fn agent_snapshot_metadata(metadata : Map[String, Json]) -> Map[String, Json] {
+  let snapshot : Map[String, Json] = Map::from_array([])
+  for key in metadata.keys() {
+    snapshot[key] = agent_snapshot_json(metadata[key])
+  }
+  snapshot
+}
+
+///|
+fn agent_snapshot_session(
+  messages : Array[Message],
+  metadata : Map[String, Json],
+) -> Session {
+  {
+    messages: agent_snapshot_messages(messages),
+    metadata: agent_snapshot_metadata(metadata),
+  }
+}
+
+///|
+fn agent_snapshot_tool_result(result : ToolResult) -> ToolResult {
+  {
+    content: result.content,
+    structured: match result.structured {
+      Some(value) => Some(agent_snapshot_json(value))
+      None => None
+    },
+    is_error: result.is_error,
+  }
+}
+
+///|
+fn agent_snapshot_tool_def(tool : ToolDef) -> ToolDef {
+  {
+    name: tool.name,
+    description: tool.description,
+    input_schema: agent_snapshot_json(tool.input_schema),
+    metadata: match tool.metadata {
+      Some(value) => Some(agent_snapshot_json(value))
+      None => None
+    },
+    source: tool.source,
+  }
+}
+
+///|
+fn agent_snapshot_model_response(response : ModelResponse) -> ModelResponse {
+  {
+    message: agent_snapshot_message(response.message),
+    tool_calls: response.tool_calls.map(agent_snapshot_tool_call),
+    finish_reason: response.finish_reason,
+    usage: response.usage,
+    reasoning_content: response.reasoning_content,
+  }
+}
+
+///|
+fn agent_snapshot_turn_result(result : TurnResult) -> TurnResult {
+  {
+    message: agent_snapshot_message(result.message),
+    tool_results: result.tool_results.map(agent_snapshot_tool_result),
+    final_session_id: result.final_session_id,
+  }
+}
+
+///|
+fn tool_provenance(tool : ToolDef) -> String {
+  match tool.source {
+    Some(source) if source != "" =>
+      "ToolDef.source='\{safe_error_label(source)}'"
+    _ =>
+      "unlabeled provider declaring '\{safe_error_label(tool.name)}' (set ToolDef.source to a stable provider id)"
+  }
+}
+
+///|
+/// Build the tool routing table. Raises CompositionError::ToolCollision on
+/// the FIRST name collision (fail-fast), rather than last-wins. The
+/// collision message identifies the tool name and a provenance hint for each
+/// conflicting provider (ToolDef.source if present, else an actionable marker).
+fn build_tool_routing(
+  tools : Array[&ToolProvider],
+) -> ToolRouting raise CompositionError {
   let tool_map : Map[String, &ToolProvider] = Map::from_array([])
-  let collisions : Array[String] = []
+  let owner_source : Map[String, String] = Map::from_array([])
   for provider in tools {
     let tool_defs = provider.list_tools()
     for tool in tool_defs {
+      let provenance = tool_provenance(tool)
       if tool_map.contains(tool.name) {
-        collisions.push(
-          "Tool '\{tool.name}' registered by multiple providers; last one wins",
+        // T06-B: fail-fast on collision. The error names the tool and both
+        // sources so the caller can locate the conflict without guessing.
+        let prev_source = match owner_source.get(tool.name) {
+          Some(s) => s
+          None => "(unknown)"
+        }
+        raise CompositionError::ToolCollision(
+          safe_error_label(tool.name),
+          "tool collision; first declaration: \{prev_source}; conflicting declaration: \{provenance}",
         )
       }
       tool_map[tool.name] = provider
+      owner_source[tool.name] = provenance
     }
   }
-  { tool_map, providers: tools, collisions }
+  { tool_map, providers: tools }
 }
 
 ///|
@@ -62,7 +215,8 @@ pub(all) struct Agent {
 ///|
 /// Construct an Agent with array-based composition.
 ///
-/// - `tools`: routed by tool name (last-wins on collision)
+/// - `tools`: routed by tool name; a name collision RAISES
+///   `CompositionError::ToolCollision` (fail-fast, not last-wins)
 /// - `hooks`: chained in order (first runs first)
 /// - `memory`: fan-out store/search
 /// - `compressors`: first non-None wins
@@ -78,7 +232,7 @@ pub fn Agent::new(
   sessions~ : Array[&SessionStore],
   lifecycle~ : &Lifecycle?,
   config~ : AgentConfig,
-) -> Agent {
+) -> Agent raise CompositionError {
   let tool_routing = build_tool_routing(tools)
   let pipeline_hook : &PipelineHook? = match hooks.length() {
     0 => None
@@ -99,14 +253,11 @@ pub fn Agent::new(
 }
 
 ///|
-pub fn Agent::tool_collisions(self : Agent) -> Array[String] {
-  self.tool_routing.collisions.copy()
-}
-
-///|
 pub async fn Agent::shutdown(self : Agent) -> Unit {
   match self.lifecycle {
-    Some(lc) => lc.on_shutdown() catch { _ => () }
+    // Lifecycle has no typed error channel today. Do not catch runtime
+    // failures here: cleanup failure must remain loud to the caller.
+    Some(lc) => lc.on_shutdown()
     None => ()
   }
 }
@@ -117,14 +268,146 @@ async fn call_hook(
   stage : Stage,
 ) -> Result[Stage, HookError] raise AgentError {
   hook.on_stage(stage) catch {
-    e => raise HookAborted(e.to_string())
+    e => raise HookAborted(safe_error_label(e.to_string()))
   }
 }
 
 ///|
-async fn ignore_hook(hook : &PipelineHook, stage : Stage) -> Unit {
-  ignore(hook.on_stage(stage)) catch {
-    _ => ()
+fn hook_error_category(error : HookError) -> String {
+  match error {
+    Aborted(_) => "HookError::Aborted"
+    Deferred(..) => "HookError::Deferred"
+  }
+}
+
+///|
+fn agent_error_category(error : AgentError) -> String {
+  match error {
+    Model(_) => "AgentError::Model"
+    Session(_) => "AgentError::Session"
+    Runtime(_) => "AgentError::Runtime"
+    ToolLoopExceeded => "AgentError::ToolLoopExceeded"
+    HookAborted(_) => "AgentError::HookAborted"
+  }
+}
+
+///|
+fn session_error_category(error : SessionError) -> String {
+  match error {
+    Load(_) => "SessionError::Load"
+    Save(_) => "SessionError::Save"
+  }
+}
+
+///|
+fn contextualize_session_error(
+  error : SessionError,
+  session_id : String,
+  operation : String,
+) -> AgentError {
+  let context = "session_id='\{safe_error_label(session_id)}', operation='\{operation}', category='\{session_error_category(error)}', cause='\{safe_error_label(error.to_string())}'"
+  Session(
+    match error {
+      Load(_) => Load(context)
+      Save(_) => Save(context)
+    },
+  )
+}
+
+///|
+fn secondary_failure_event(
+  stage : String,
+  operation : String,
+  error_category : String,
+) -> TurnEvent {
+  Custom(
+    source="posoco.core",
+    label="secondary_failure",
+    data=Json::object(
+      Map::from_array([
+        ("stage", Json::string(stage)),
+        ("operation", Json::string(operation)),
+        ("error_category", Json::string(error_category)),
+      ]),
+    ),
+  )
+}
+
+///|
+fn Agent::record_secondary_failure(
+  self : Agent,
+  stage : String,
+  operation : String,
+  error_category : String,
+) -> Unit {
+  let event = secondary_failure_event(stage, operation, error_category)
+  self.emit_turn_event(event)
+}
+
+///|
+async fn Agent::record_secondary_hook(
+  self : Agent,
+  hook : &PipelineHook,
+  stage : Stage,
+  stage_name : String,
+) -> Unit {
+  let error_category : String? = try {
+    match hook.on_stage(stage) {
+      Ok(_) => None
+      Err(error) => Some(hook_error_category(error))
+    }
+  } catch {
+    _ => Some("UnhandledHookError")
+  }
+  match error_category {
+    Some(category) =>
+      self.record_secondary_failure(
+        stage_name, "PipelineHook.on_stage", category,
+      )
+    None => ()
+  }
+}
+
+///|
+fn TurnEvent::tool_call_result(
+  call : ToolCall,
+  result : ToolResult,
+) -> TurnEvent {
+  ToolCallResult(call~, result~, is_error=result.is_error)
+}
+
+///|
+fn agent_snapshot_turn_event(event : TurnEvent) -> TurnEvent {
+  match event {
+    TurnStarted => TurnStarted
+    ToolCallPending(call) => ToolCallPending(agent_snapshot_tool_call(call))
+    ToolCallResult(call~, result~, ..) =>
+      TurnEvent::tool_call_result(
+        agent_snapshot_tool_call(call),
+        agent_snapshot_tool_result(result),
+      )
+    ModelResponseReceived(message~, usage~, reasoning_content~) =>
+      ModelResponseReceived(
+        message=agent_snapshot_message(message),
+        usage~,
+        reasoning_content~,
+      )
+    SessionRedirect(from~, to~, messages_before~, messages_after~) =>
+      SessionRedirect(from~, to~, messages_before~, messages_after~)
+    TurnCompleted => TurnCompleted
+    TurnFailed(reason) => TurnFailed(reason)
+    ToolCallDeferred(call~, reason~) =>
+      ToolCallDeferred(call=agent_snapshot_tool_call(call), reason~)
+    StreamChunkReceived(chunk~) => StreamChunkReceived(chunk~)
+    Custom(source~, label~, data~) =>
+      Custom(source~, label~, data=agent_snapshot_json(data))
+  }
+}
+
+///|
+fn Agent::emit_turn_event(self : Agent, event : TurnEvent) -> Unit {
+  for observer in self.observers {
+    observer.on_event(agent_snapshot_turn_event(event))
   }
 }
 
@@ -135,16 +418,60 @@ pub async fn Agent::run_turn(
   input : Message,
   session_id : String,
 ) -> TurnResult raise AgentError {
+  match self.pipeline_hook {
+    Some(hook) =>
+      match call_hook(hook, BeforeTurn) {
+        Ok(_) => ()
+        Err(error) => {
+          let primary = HookAborted(error.to_string())
+          self.record_secondary_hook(hook, TurnError(primary), "TurnError") catch {
+            _ =>
+              self.record_secondary_failure(
+                "TurnError", "PipelineHook.on_stage", "AsyncHookDiagnosticError",
+              )
+          }
+          raise primary
+        }
+      }
+    None => ()
+  }
+
+  self.emit_turn_event(TurnStarted)
+
   let result = self.run_turn_inner(input, session_id) catch {
-    e => {
-      // Finally: ensure TurnError fires on any error path before propagating.
+    primary => {
       match self.pipeline_hook {
-        Some(hook) => ignore_hook(hook, TurnError(e)) catch { _ => () }
+        Some(hook) =>
+          self.record_secondary_hook(hook, TurnError(primary), "TurnError") catch {
+            _ =>
+              self.record_secondary_failure(
+                "TurnError", "PipelineHook.on_stage", "AsyncHookDiagnosticError",
+              )
+          }
         None => ()
       }
-      raise e
+      let safe_reason = "turn failed: " + agent_error_category(primary)
+      self.emit_turn_event(TurnFailed(safe_reason))
+      raise primary
     }
   }
+
+  match self.pipeline_hook {
+    Some(hook) =>
+      self.record_secondary_hook(
+        hook,
+        AfterTurn(agent_snapshot_turn_result(result)),
+        "AfterTurn",
+      ) catch {
+        _ =>
+          self.record_secondary_failure(
+            "AfterTurn", "PipelineHook.on_stage", "AsyncHookDiagnosticError",
+          )
+      }
+    None => ()
+  }
+
+  self.emit_turn_event(TurnCompleted)
   result
 }
 
@@ -154,37 +481,36 @@ async fn Agent::run_turn_inner(
   input : Message,
   session_id : String,
 ) -> TurnResult raise AgentError {
-  match self.pipeline_hook {
-    Some(hook) =>
-      match call_hook(hook, BeforeTurn) {
-        Ok(_) => ()
-        Err(e) => raise HookAborted(e.to_string())
-      }
-    None => ()
-  }
-
-  for obs in self.observers {
-    obs.on_event(TurnStarted)
-  }
-
   let session = match self.sessions {
     [first, ..] =>
       match first.load(session_id) {
         Ok(s) => s
-        Err(e) => raise Session(e)
+        Err(error) =>
+          raise contextualize_session_error(error, session_id, "load")
       }
-    [] => raise Session(Load("no session store configured"))
+    [] =>
+      raise contextualize_session_error(
+        Load("no session store configured"),
+        session_id,
+        "load",
+      )
   }
 
   let mut current_session_id = session_id
-  let mut messages = session.messages
-  messages.push(input)
+  let mut messages = agent_snapshot_messages(session.messages)
+  messages.push(agent_snapshot_message(input))
+
+  // T05 data-fidelity: carry loaded session metadata through the turn so the
+  // final save preserves unknown (user-owned) keys. Framework lineage keys
+  // (e.g. parent_session_id) are added by compression and must not be
+  // overwritten by the final save either.
+  let mut current_metadata = agent_snapshot_metadata(session.metadata)
 
   let tools : Array[ToolDef] = []
   for provider in self.tool_routing.providers {
     let provider_tools = provider.list_tools()
     for t in provider_tools {
-      tools.push(t)
+      tools.push(agent_snapshot_tool_def(t))
     }
   }
   let mut tool_round = 0
@@ -216,7 +542,7 @@ async fn Agent::run_turn_inner(
       if compress_done {
         break
       }
-      let action = comp.compress(messages, ctx)
+      let action = comp.compress(agent_snapshot_messages(messages), ctx)
       match action {
         NewThread(
           messages=msgs,
@@ -224,34 +550,39 @@ async fn Agent::run_turn_inner(
           messages_before=before,
           messages_after=after
         ) => {
-          let new_session = {
-            messages: msgs,
-            metadata: Map::from_array([
-              ("parent_session_id", Json::string(current_session_id)),
-            ]),
-          }
+          let parent_id = current_session_id
+          let new_metadata = Map::from_array([
+            ("parent_session_id", Json::string(parent_id)),
+          ])
           for store in self.sessions {
-            match store.save(new_sid, new_session) {
+            match
+              store.save(new_sid, agent_snapshot_session(msgs, new_metadata)) {
               Ok(_) => ()
-              Err(e) => raise Session(e)
+              Err(error) =>
+                raise contextualize_session_error(
+                  error, new_sid, "compression_new_thread_save",
+                )
             }
           }
-          for obs in self.observers {
-            obs.on_event(
-              SessionRedirect(
-                from=current_session_id,
-                to=new_sid,
-                messages_before=before,
-                messages_after=after,
-              ),
-            )
-          }
+          self.emit_turn_event(
+            SessionRedirect(
+              from=parent_id,
+              to=new_sid,
+              messages_before=before,
+              messages_after=after,
+            ),
+          )
           current_session_id = new_sid
-          messages = msgs
+          messages = agent_snapshot_messages(msgs)
+          // T05 lineage: the new thread starts with only the lineage key;
+          // user-owned metadata does not carry across a thread boundary
+          // (it belongs to the parent thread's persistence). The lineage
+          // key points to the parent, preserved through the final save.
+          current_metadata = agent_snapshot_metadata(new_metadata)
           compress_done = true
         }
         Replace(msgs) => {
-          messages = msgs
+          messages = agent_snapshot_messages(msgs)
           compress_done = true
         }
         None => ()
@@ -260,8 +591,8 @@ async fn Agent::run_turn_inner(
 
     match self.pipeline_hook {
       Some(hook) =>
-        match call_hook(hook, BeforeModel(messages)) {
-          Ok(BeforeModel(msgs)) => messages = msgs
+        match call_hook(hook, BeforeModel(agent_snapshot_messages(messages))) {
+          Ok(BeforeModel(msgs)) => messages = agent_snapshot_messages(msgs)
           Ok(_) => ()
           Err(e) => raise HookAborted(e.to_string())
         }
@@ -269,43 +600,49 @@ async fn Agent::run_turn_inner(
     }
 
     response = self.model_port.chat_streaming(
-      messages,
-      tools,
+      agent_snapshot_messages(messages),
+      tools.map(agent_snapshot_tool_def),
       self.config.to_chat_options(),
       fn(chunk : StreamChunk) {
-        for obs in self.observers {
-          obs.on_event(StreamChunkReceived(chunk~))
-        }
+        self.emit_turn_event(StreamChunkReceived(chunk~))
       },
     ) catch {
       e => {
         let reason = e.to_string()
-        for obs in self.observers {
-          obs.on_event(TurnFailed(reason))
-        }
         match self.pipeline_hook {
-          Some(hook) => ignore_hook(hook, ModelError(reason)) catch { _ => () }
+          Some(hook) =>
+            self.record_secondary_hook(hook, ModelError(reason), "ModelError") catch {
+              _ =>
+                self.record_secondary_failure(
+                  "ModelError", "PipelineHook.on_stage", "AsyncHookDiagnosticError",
+                )
+            }
           None => ()
         }
         raise Model(reason)
       }
     }
+    response = agent_snapshot_model_response(response)
 
-    for obs in self.observers {
-      obs.on_event(
-        ModelResponseReceived(
-          message=response.message,
-          usage=response.usage,
-          reasoning_content=response.reasoning_content,
-        ),
-      )
-    }
+    self.emit_turn_event(
+      ModelResponseReceived(
+        message=response.message,
+        usage=response.usage,
+        reasoning_content=response.reasoning_content,
+      ),
+    )
 
     match self.pipeline_hook {
       Some(hook) =>
-        match call_hook(hook, AfterModel(response)) {
-          Ok(_) => ()
-          Err(e) => raise HookAborted(e.to_string())
+        self.record_secondary_hook(
+          hook,
+          AfterModel(agent_snapshot_model_response(response)),
+          "AfterModel",
+        ) catch {
+          _ =>
+            self.record_secondary_failure(
+              "AfterModel", "PipelineHook.on_stage", "AsyncHookDiagnosticError",
+            )
         }
       None => ()
     }
@@ -318,29 +655,28 @@ async fn Agent::run_turn_inner(
 
     tool_round = tool_round + 1
     if tool_round > self.config.max_tool_rounds {
-      for obs in self.observers {
-        obs.on_event(TurnFailed("tool loop exceeded"))
-      }
       raise ToolLoopExceeded
     }
 
     let approved_calls : Array[ToolCall] = []
     for tool_call in response.tool_calls {
-      for obs in self.observers {
-        obs.on_event(ToolCallPending(tool_call))
-      }
+      self.emit_turn_event(ToolCallPending(tool_call))
 
       let mut effective_call = tool_call
       let mut skip_tool = false
       match self.pipeline_hook {
         Some(hook) =>
-          match call_hook(hook, BeforeTool(effective_call)) {
-            Ok(BeforeTool(tc)) => effective_call = tc
+          match
+            call_hook(
+              hook,
+              BeforeTool(agent_snapshot_tool_call(effective_call)),
+            ) {
+            Ok(BeforeTool(tc)) => effective_call = agent_snapshot_tool_call(tc)
             Ok(_) => ()
             Err(Deferred(reason~)) => {
-              for obs in self.observers {
-                obs.on_event(ToolCallDeferred(call=effective_call, reason~))
-              }
+              self.emit_turn_event(
+                ToolCallDeferred(call=effective_call, reason~),
+              )
               let rejection = ToolResult::{
                 content: "Tool rejected (needs approval): " + reason,
                 structured: None,
@@ -369,7 +705,11 @@ async fn Agent::run_turn_inner(
           async fn() -> Result[ToolResult, RuntimeError] {
             match self.tool_routing.tool_map.get(call.name) {
               Some(provider) =>
-                Ok(provider.execute(call.name, call)) catch {
+                Ok(
+                  agent_snapshot_tool_result(
+                    provider.execute(call.name, agent_snapshot_tool_call(call)),
+                  ),
+                ) catch {
                   e => Err(e)
                 }
               None =>
@@ -382,7 +722,12 @@ async fn Agent::run_turn_inner(
           }
         }),
       ) catch {
-        e => raise Model(e.to_string())
+        e =>
+          raise Runtime(
+            InvocationFailed(
+              "parallel tool execution failed: \{safe_error_label(e.to_string())}",
+            ),
+          )
       }
     }
 
@@ -390,13 +735,25 @@ async fn Agent::run_turn_inner(
       let call = approved_calls[i]
       match exec_results[i] {
         Ok(result) => {
-          for obs in self.observers {
-            obs.on_event(ToolCallResult(call~, result~, is_error=false))
-          }
+          // T06-A: the event's is_error MUST be derived from the ToolResult,
+          // not hardcoded. A provider may return Ok(is_error=true) to signal
+          // a business-level failure; that status must propagate to observers
+          // and match what is fed to the model.
+          self.emit_turn_event(TurnEvent::tool_call_result(call, result))
           match self.pipeline_hook {
             Some(hook) =>
-              ignore_hook(hook, AfterTool(call, result)) catch {
-                _ => ()
+              self.record_secondary_hook(
+                hook,
+                AfterTool(
+                  agent_snapshot_tool_call(call),
+                  agent_snapshot_tool_result(result),
+                ),
+                "AfterTool",
+              ) catch {
+                _ =>
+                  self.record_secondary_failure(
+                    "AfterTool", "PipelineHook.on_stage", "AsyncHookDiagnosticError",
+                  )
               }
             None => ()
           }
@@ -409,20 +766,23 @@ async fn Agent::run_turn_inner(
             structured: None,
             is_error: true,
           }
-          for obs in self.observers {
-            obs.on_event(
-              ToolCallResult(call~, result=error_result, is_error=true),
-            )
-          }
+          self.emit_turn_event(TurnEvent::tool_call_result(call, error_result))
           match self.pipeline_hook {
             Some(hook) =>
-              ignore_hook(hook, ToolError(call, e)) catch {
-                _ => ()
+              self.record_secondary_hook(
+                hook,
+                ToolError(agent_snapshot_tool_call(call), e),
+                "ToolError",
+              ) catch {
+                _ =>
+                  self.record_secondary_failure(
+                    "ToolError", "PipelineHook.on_stage", "AsyncHookDiagnosticError",
+                  )
               }
             None => ()
           }
           all_results.push(error_result)
-          messages.push(build_error_message(call, e))
+          messages.push(build_tool_result_message(call, error_result))
         }
       }
     }
@@ -432,27 +792,25 @@ async fn Agent::run_turn_inner(
     }
   }
 
-  let final_session = { messages, metadata: Map::from_array([]) }
+  // T05: final save uses the carried metadata, not a freshly-empty Map.
   for store in self.sessions {
-    match store.save(current_session_id, final_session) {
+    match
+      store.save(
+        current_session_id,
+        agent_snapshot_session(messages, current_metadata),
+      ) {
       Ok(_) => ()
-      Err(e) => raise Session(e)
+      Err(error) =>
+        raise contextualize_session_error(
+          error, current_session_id, "final_save",
+        )
     }
-  }
-
-  for obs in self.observers {
-    obs.on_event(TurnCompleted)
   }
 
   let result = {
     message: response.message,
     tool_results: all_results,
     final_session_id: current_session_id,
-  }
-
-  match self.pipeline_hook {
-    Some(hook) => ignore_hook(hook, AfterTurn(result)) catch { _ => () }
-    None => ()
   }
 
   result

@@ -95,17 +95,39 @@ pub fn StreamAccumulator::push(
 }
 
 ///|
+/// Assemble accumulated stream chunks into a ModelResponse.
+///
+/// T07 error-transparency: malformed tool-call argument JSON raises
+/// `ModelError::ResponseParse` instead of silently becoming `{}`. This
+/// prevents a corrupted stream from masquerading as a valid empty-args call.
 pub fn StreamAccumulator::to_response(
   self : StreamAccumulator,
-) -> ModelResponse {
-  let tool_calls : Array[ToolCall] = self.tool_calls
-    .filter(fn(tc) { tc.id != "" || tc.arguments_json != "" })
-    .map(fn(tc) {
-      let args : Json = @json.parse(tc.arguments_json) catch {
-        _ => Json::object({})
-      }
-      { id: tc.id, name: tc.name, arguments: args }
-    })
+) -> ModelResponse raise ModelError {
+  let tool_calls : Array[ToolCall] = []
+  for index, tc in self.tool_calls {
+    if tc.id == "" {
+      raise ResponseParse(
+        "incomplete streamed tool call at index \{index}: missing id",
+      )
+    }
+    if tc.name == "" {
+      raise ResponseParse(
+        "incomplete streamed tool call at index \{index}: missing name",
+      )
+    }
+    if tc.arguments_json == "" {
+      raise ResponseParse(
+        "incomplete streamed tool call at index \{index}: missing arguments JSON",
+      )
+    }
+    let args : Json = @json.parse(tc.arguments_json) catch {
+      _ =>
+        raise ResponseParse(
+          "malformed tool-call arguments JSON at index \{index}; raw identifiers and payload omitted",
+        )
+    }
+    tool_calls.push({ id: tc.id, name: tc.name, arguments: args })
+  }
   let reasoning_opt : String? = if self.reasoning == "" {
     None
   } else {
