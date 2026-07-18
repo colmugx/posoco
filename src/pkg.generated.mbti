@@ -6,11 +6,31 @@ import {
 }
 
 // Values
+pub fn assert_events_contain(Array[TurnEvent], Array[TurnEvent]) -> Unit
+
+pub fn assert_events_eq(Array[TurnEvent], Array[TurnEvent]) -> Unit
+
 pub fn build_error_message(ToolCall, RuntimeError) -> Message
 
 pub fn build_tool_result_message(ToolCall, ToolResult) -> Message
 
+pub fn event_trace_mismatch(Array[TurnEvent], Array[TurnEvent]) -> String?
+
 pub fn parse_slash_args(String, Array[CommandParam]) -> Result[Json, String]
+
+pub fn tk_config() -> AgentConfig
+
+pub fn tk_error_result(String) -> ToolResult
+
+pub fn tk_ok_result(String) -> ToolResult
+
+pub fn tk_stop_response(String) -> ModelResponse
+
+pub fn tk_tool_call_response(String, String, Json) -> ModelResponse
+
+pub fn tk_tool_def(String, String) -> ToolDef
+
+pub fn tk_user_msg(String) -> Message
 
 pub fn validate_args(CommandDef, Json) -> Result[Json, String]
 
@@ -76,10 +96,9 @@ pub(all) struct Agent {
   lifecycle : &Lifecycle?
   config : AgentConfig
 }
-pub fn Agent::new(&ModelPort, tools~ : Array[&ToolProvider], hooks~ : Array[&PipelineHook], memory~ : Array[&MemoryPort], compressors~ : Array[&Compressor], observers~ : Array[&Observer], sessions~ : Array[&SessionStore], lifecycle~ : &Lifecycle?, config~ : AgentConfig) -> Self
+pub fn Agent::new(&ModelPort, tools~ : Array[&ToolProvider], hooks~ : Array[&PipelineHook], memory~ : Array[&MemoryPort], compressors~ : Array[&Compressor], observers~ : Array[&Observer], sessions~ : Array[&SessionStore], lifecycle~ : &Lifecycle?, config~ : AgentConfig) -> Self raise CompositionError
 pub async fn Agent::run_turn(Self, Message, String) -> TurnResult raise AgentError
 pub async fn Agent::shutdown(Self) -> Unit
-pub fn Agent::tool_collisions(Self) -> Array[String]
 
 pub(all) struct AgentConfig {
   max_tool_rounds : Int
@@ -176,6 +195,11 @@ pub(all) enum HookError {
 } derive(Eq, @debug.Debug)
 pub impl Show for HookError
 
+pub(all) struct HookRecord {
+  stage_in : Stage
+  outcome : RecordedHookOutcome
+}
+
 pub(all) struct MemoryEntry {
   id : String
   content : String
@@ -243,6 +267,58 @@ pub(all) enum ReasoningEffort {
   Maximum
 } derive(Eq, @debug.Debug)
 
+pub(all) enum RecordedHookOutcome {
+  Returned(Stage)
+  AbortedWith(String)
+  DeferredWith(String)
+}
+
+pub(all) struct RecordingHook {
+  mut records : Array[HookRecord]
+  abort_on : Map[String, String]
+  defer_on : Map[String, String]
+}
+pub fn RecordingHook::abort_when(Self, String, String) -> Unit
+pub fn RecordingHook::defer_when(Self, String, String) -> Unit
+pub fn RecordingHook::new() -> Self
+pub fn RecordingHook::records(Self) -> Array[HookRecord]
+pub impl PipelineHook for RecordingHook
+
+pub(all) struct RecordingObserver {
+  mut events : Array[TurnEvent]
+}
+pub fn RecordingObserver::events(Self) -> Array[TurnEvent]
+pub fn RecordingObserver::new() -> Self
+pub impl Observer for RecordingObserver
+
+pub(all) struct RecordingSessionStore {
+  store : Map[String, Session]
+  mut load_failures : Map[String, SessionError]
+  mut save_failures : Array[String]
+  mut ops : Array[SessionOp]
+}
+pub fn RecordingSessionStore::fail_load(Self, String, SessionError) -> Unit
+pub fn RecordingSessionStore::fail_save(Self, String) -> Unit
+pub fn RecordingSessionStore::new() -> Self
+pub fn RecordingSessionStore::ops(Self) -> Array[SessionOp]
+pub fn RecordingSessionStore::save_snapshots(Self) -> Array[(String, Map[String, Json])]
+pub fn RecordingSessionStore::seed(Self, String, Session) -> Unit
+pub impl SessionStore for RecordingSessionStore
+
+pub(all) struct RecordingToolProvider {
+  tool_defs : Array[ToolDef]
+  outcomes : Map[String, ScriptedToolOutcome]
+  mut list_calls : Int
+  mut exec_records : Array[ToolExecRecord]
+  mut ops : Array[ToolProviderOp]
+}
+pub fn RecordingToolProvider::exec_records(Self) -> Array[ToolExecRecord]
+pub async fn RecordingToolProvider::execute_direct(Self, String, ToolCall) -> ToolResult raise RuntimeError
+pub fn RecordingToolProvider::list_call_count(Self) -> Int
+pub fn RecordingToolProvider::new(Array[ToolDef], Map[String, ScriptedToolOutcome]) -> Self
+pub fn RecordingToolProvider::ops(Self) -> Array[ToolProviderOp]
+pub impl ToolProvider for RecordingToolProvider
+
 pub(all) enum Role {
   System
   User
@@ -250,10 +326,42 @@ pub(all) enum Role {
   Tool
 } derive(Eq, @debug.Debug)
 
+pub(all) struct ScriptedModel {
+  steps : Array[ScriptedModelStep]
+  mut index : Int
+  mut calls : Int
+  received_messages : Array[Array[Message]]
+  received_tools : Array[Array[ToolDef]]
+  received_options : Array[ChatOptions]
+  received_chunks : Array[StreamChunk]
+}
+pub fn ScriptedModel::call_count(Self) -> Int
+pub async fn ScriptedModel::chat_direct(Self, Array[Message], Array[ToolDef], ChatOptions) -> ModelResponse raise ModelError
+pub async fn ScriptedModel::chat_streaming_direct(Self, Array[Message], Array[ToolDef], ChatOptions, (StreamChunk) -> Unit) -> ModelResponse raise ModelError
+pub fn ScriptedModel::new(Array[ScriptedModelStep]) -> Self
+pub fn ScriptedModel::options_received(Self) -> Array[ChatOptions]
+pub impl ModelPort for ScriptedModel
+
+pub(all) enum ScriptedModelStep {
+  Respond(ModelResponse)
+  Stream(chunks~ : Array[StreamChunk], response~ : ModelResponse)
+  Fail(ModelError)
+}
+
+pub(all) enum ScriptedToolOutcome {
+  OutcomeOk(ToolResult)
+  OutcomeErr(RuntimeError)
+}
+
 pub(all) struct Session {
   messages : Array[Message]
   metadata : Map[String, Json]
 } derive(Eq, @debug.Debug)
+
+pub(all) enum SessionOp {
+  OpLoad(id~ : String, result~ : Result[Session, SessionError])
+  OpSave(id~ : String, metadata~ : Map[String, Json], result~ : Result[Unit, SessionError])
+}
 
 pub(all) enum Stage {
   BeforeTurn
@@ -276,7 +384,7 @@ pub(all) struct StreamAccumulator {
 } derive(@debug.Debug)
 pub fn StreamAccumulator::new() -> Self
 pub fn StreamAccumulator::push(Self, StreamChunk) -> Unit
-pub fn StreamAccumulator::to_response(Self) -> ModelResponse
+pub fn StreamAccumulator::to_response(Self) -> ModelResponse raise ModelError
 
 pub(all) enum StreamChunk {
   TextDelta(token~ : String)
@@ -313,6 +421,19 @@ pub(all) struct ToolDef {
   metadata : Json?
   source : String?
 } derive(Eq, @debug.Debug)
+
+pub(all) struct ToolExecRecord {
+  requested_name : String
+  call_id : String
+  tool_name : String
+  arguments : Json
+  outcome : ScriptedToolOutcome
+}
+
+pub(all) enum ToolProviderOp {
+  ListTools
+  ExecuteTool(requested_name~ : String, call~ : ToolCall)
+}
 
 pub(all) struct ToolRegistry {
   mut tools : Map[String, ToolDef]

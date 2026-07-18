@@ -175,7 +175,7 @@ fn tool_response(tool_calls : Array[ToolCall]) -> ModelResponse {
       tool_calls,
       tool_call_id: None,
       name: None,
-    reasoning_content: None,
+      reasoning_content: None,
     },
     tool_calls,
     finish_reason: ToolCalls,
@@ -652,7 +652,7 @@ impl PipelineHook for RewriteModelHook with fn on_stage(_self, stage) {
         tool_calls: [],
         tool_call_id: None,
         name: None,
-    reasoning_content: None,
+        reasoning_content: None,
       }
       let new_msgs = [system_msg]
       for m in msgs {
@@ -858,20 +858,26 @@ async test "agent_tool_collision_detection" {
   let observer = MockObserver::{ events: [] }
   let config = make_config()
 
-  let agent = Agent::new(
-    model,
-    tools=[provider1, provider2],
-    hooks=[],
-    memory=[],
-    compressors=[NoopCompressor::{  }],
-    observers=[observer],
-    sessions=[store],
-    lifecycle=None,
-    config~,
-  )
-  let warnings = agent.tool_collisions()
-  assert_eq(warnings.length(), 1)
-  assert_true(warnings[0].contains("bash"))
+  // T06-B: collision now fails composition (raise) rather than last-wins.
+  let composition_result = Ok(
+    Agent::new(
+      model,
+      tools=[provider1, provider2],
+      hooks=[],
+      memory=[],
+      compressors=[NoopCompressor::{  }],
+      observers=[observer],
+      sessions=[store],
+      lifecycle=None,
+      config~,
+    ),
+  ) catch {
+    e => Err(e)
+  }
+  match composition_result {
+    Err(CompositionError::ToolCollision(name, _msg)) => assert_eq(name, "bash")
+    _ => fail("expected CompositionError::ToolCollision for duplicate 'bash'")
+  }
 }
 
 ///|
