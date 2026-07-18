@@ -1172,7 +1172,7 @@ test "validate_args_missing_required" {
   let def = make_command("test.cmd", params=[
     make_param("name", ptype=Str, required=true),
   ])
-  let args = Json::object({})
+  let args = Json::empty_object()
   match validate_args(def, args) {
     Err(msg) => assert_true(msg.contains("missing required"))
     Ok(_) => fail("should fail on missing required")
@@ -1184,7 +1184,7 @@ test "validate_args_applies_default" {
   let def = make_command("test.cmd", params=[
     make_param("level", ptype=Int, default=Some(Json::number(3.0))),
   ])
-  let args = Json::object({})
+  let args = Json::empty_object()
   match validate_args(def, args) {
     Ok(json) =>
       match json {
@@ -1203,7 +1203,7 @@ test "validate_args_applies_default" {
 async test "noop_command_port_returns_empty_and_raises_notfound" {
   let port = NoopCommandPort::{  }
   assert_eq(port.commands().length(), 0)
-  match (Ok(port.invoke("anything", Json::object({}))) catch { e => Err(e) }) {
+  match (Ok(port.invoke("anything", Json::empty_object())) catch { e => Err(e) }) {
     Err(NotFound(id)) => assert_eq(id, "anything")
     Err(_) => fail("expected NotFound")
     Ok(_) => fail("expected raise")
