@@ -1,6 +1,15 @@
 import {
+  "colmugx/posoco/port",
+  "colmugx/posoco/types",
+  "colmugx/posoco/kernel",
+  "colmugx/posoco/error",
+  "colmugx/posoco/puppetry",
   "moonbitlang/async",
   "moonbitlang/core/json",
   "moonbitlang/core/strconv",
   "moonbitlang/core/string",
 }
+
+options(
+  targets: { "error_transparency_shutdown_native_test.mbt": [ "native" ] },
+)

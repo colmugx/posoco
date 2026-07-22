@@ -30,7 +30,7 @@ fn testkit_snapshot_json(value : Json) -> Json {
 }
 
 ///|
-fn testkit_snapshot_tool_call(call : ToolCall) -> ToolCall {
+fn testkit_snapshot_tool_call(call : @types.ToolCall) -> @types.ToolCall {
   {
     id: call.id,
     name: call.name,
@@ -39,7 +39,7 @@ fn testkit_snapshot_tool_call(call : ToolCall) -> ToolCall {
 }
 
 ///|
-fn testkit_snapshot_tool_def(tool : ToolDef) -> ToolDef {
+fn testkit_snapshot_tool_def(tool : @types.ToolDef) -> @types.ToolDef {
   {
     name: tool.name,
     description: tool.description,
@@ -53,7 +53,7 @@ fn testkit_snapshot_tool_def(tool : ToolDef) -> ToolDef {
 }
 
 ///|
-fn testkit_snapshot_message(message : Message) -> Message {
+fn testkit_snapshot_message(message : @types.Message) -> @types.Message {
   {
     role: message.role,
     content: message.content.copy(),
@@ -65,12 +65,16 @@ fn testkit_snapshot_message(message : Message) -> Message {
 }
 
 ///|
-fn testkit_snapshot_messages(messages : Array[Message]) -> Array[Message] {
+fn testkit_snapshot_messages(
+  messages : Array[@types.Message],
+) -> Array[@types.Message] {
   messages.map(testkit_snapshot_message)
 }
 
 ///|
-fn testkit_snapshot_tool_result(result : ToolResult) -> ToolResult {
+fn testkit_snapshot_tool_result(
+  result : @types.ToolResult,
+) -> @types.ToolResult {
   {
     content: result.content,
     structured: match result.structured {
@@ -101,7 +105,7 @@ fn testkit_snapshot_metadata(metadata : Map[String, Json]) -> Map[String, Json] 
 }
 
 ///|
-fn testkit_snapshot_session(session : Session) -> Session {
+fn testkit_snapshot_session(session : @types.Session) -> @types.Session {
   {
     messages: testkit_snapshot_messages(session.messages),
     metadata: testkit_snapshot_metadata(session.metadata),
@@ -109,7 +113,9 @@ fn testkit_snapshot_session(session : Session) -> Session {
 }
 
 ///|
-fn testkit_snapshot_response(response : ModelResponse) -> ModelResponse {
+fn testkit_snapshot_response(
+  response : @types.ModelResponse,
+) -> @types.ModelResponse {
   {
     message: testkit_snapshot_message(response.message),
     tool_calls: response.tool_calls.map(testkit_snapshot_tool_call),
@@ -120,7 +126,9 @@ fn testkit_snapshot_response(response : ModelResponse) -> ModelResponse {
 }
 
 ///|
-fn testkit_snapshot_turn_result(result : TurnResult) -> TurnResult {
+fn testkit_snapshot_turn_result(
+  result : @types.TurnResult,
+) -> @types.TurnResult {
   {
     message: testkit_snapshot_message(result.message),
     tool_results: result.tool_results.map(testkit_snapshot_tool_result),
@@ -129,50 +137,55 @@ fn testkit_snapshot_turn_result(result : TurnResult) -> TurnResult {
 }
 
 ///|
-fn testkit_snapshot_stage(stage : Stage) -> Stage {
+fn testkit_snapshot_stage(stage : @port.Stage) -> @port.Stage {
   match stage {
-    BeforeTurn => BeforeTurn
-    BeforeModel(messages) => BeforeModel(testkit_snapshot_messages(messages))
-    AfterModel(response) => AfterModel(testkit_snapshot_response(response))
-    ModelError(reason) => ModelError(reason)
-    BeforeTool(call) => BeforeTool(testkit_snapshot_tool_call(call))
-    AfterTool(call, result) =>
-      AfterTool(
+    @port.BeforeTurn => @port.BeforeTurn
+    @port.BeforeModel(messages) =>
+      @port.BeforeModel(testkit_snapshot_messages(messages))
+    @port.AfterModel(response) =>
+      @port.AfterModel(testkit_snapshot_response(response))
+    @port.ModelError(reason) => @port.ModelError(reason)
+    @port.BeforeTool(call) => @port.BeforeTool(testkit_snapshot_tool_call(call))
+    @port.AfterTool(call, result) =>
+      @port.AfterTool(
         testkit_snapshot_tool_call(call),
         testkit_snapshot_tool_result(result),
       )
-    ToolError(call, error) => ToolError(testkit_snapshot_tool_call(call), error)
-    AfterTurn(result) => AfterTurn(testkit_snapshot_turn_result(result))
-    TurnError(error) => TurnError(error)
+    @port.ToolError(call, error) =>
+      @port.ToolError(testkit_snapshot_tool_call(call), error)
+    @port.AfterTurn(result) =>
+      @port.AfterTurn(testkit_snapshot_turn_result(result))
+    @port.TurnError(error) => @port.TurnError(error)
   }
 }
 
 ///|
-fn testkit_snapshot_event(event : TurnEvent) -> TurnEvent {
+fn testkit_snapshot_event(event : @types.TurnEvent) -> @types.TurnEvent {
   match event {
-    TurnStarted => TurnStarted
-    ToolCallPending(call) => ToolCallPending(testkit_snapshot_tool_call(call))
-    ToolCallResult(call~, result~, is_error~) =>
-      ToolCallResult(
+    @types.TurnStarted => @types.TurnStarted
+    @types.ToolCallPending(call) =>
+      @types.ToolCallPending(testkit_snapshot_tool_call(call))
+    @types.ToolCallResult(call~, result~, is_error~) =>
+      @types.ToolCallResult(
         call=testkit_snapshot_tool_call(call),
         result=testkit_snapshot_tool_result(result),
         is_error~,
       )
-    ModelResponseReceived(message~, usage~, reasoning_content~) =>
-      ModelResponseReceived(
+    @types.ModelResponseReceived(message~, usage~, reasoning_content~) =>
+      @types.ModelResponseReceived(
         message=testkit_snapshot_message(message),
         usage~,
         reasoning_content~,
       )
-    SessionRedirect(from~, to~, messages_before~, messages_after~) =>
-      SessionRedirect(from~, to~, messages_before~, messages_after~)
-    TurnCompleted => TurnCompleted
-    TurnFailed(reason) => TurnFailed(reason)
-    ToolCallDeferred(call~, reason~) =>
-      ToolCallDeferred(call=testkit_snapshot_tool_call(call), reason~)
-    StreamChunkReceived(chunk~) => StreamChunkReceived(chunk~)
-    Custom(source~, label~, data~) =>
-      Custom(source~, label~, data=testkit_snapshot_json(data))
+    @types.SessionRedirect(from~, to~, messages_before~, messages_after~) =>
+      @types.SessionRedirect(from~, to~, messages_before~, messages_after~)
+    @types.TurnCompleted => @types.TurnCompleted
+    @types.TurnFailed(reason) => @types.TurnFailed(reason)
+    @types.ToolCallDeferred(call~, reason~) =>
+      @types.ToolCallDeferred(call=testkit_snapshot_tool_call(call), reason~)
+    @types.StreamChunkReceived(chunk~) => @types.StreamChunkReceived(chunk~)
+    @types.Custom(source~, label~, data~) =>
+      @types.Custom(source~, label~, data=testkit_snapshot_json(data))
   }
 }
 
@@ -184,9 +197,9 @@ fn testkit_snapshot_event(event : TurnEvent) -> TurnEvent {
 /// A single scripted model interaction: a response, an exact stream transcript,
 /// or a typed error. `Stream` never synthesizes chunks from the final response.
 pub(all) enum ScriptedModelStep {
-  Respond(ModelResponse)
-  Stream(chunks~ : Array[StreamChunk], response~ : ModelResponse)
-  Fail(ModelError)
+  Respond(@types.ModelResponse)
+  Stream(chunks~ : Array[@types.StreamChunk], response~ : @types.ModelResponse)
+  Fail(@error.ModelError)
 }
 
 ///|
@@ -208,10 +221,10 @@ pub(all) struct ScriptedModel {
   steps : Array[ScriptedModelStep]
   mut index : Int
   mut calls : Int
-  received_messages : Array[Array[Message]]
-  received_tools : Array[Array[ToolDef]]
-  received_options : Array[ChatOptions]
-  received_chunks : Array[StreamChunk]
+  received_messages : Array[Array[@types.Message]]
+  received_tools : Array[Array[@types.ToolDef]]
+  received_options : Array[@types.ChatOptions]
+  received_chunks : Array[@types.StreamChunk]
 }
 
 ///|
@@ -239,40 +252,40 @@ pub fn ScriptedModel::call_count(self : ScriptedModel) -> Int {
 /// reference; this wrapper lets tests call chat without an Agent.
 pub async fn ScriptedModel::chat_direct(
   self : ScriptedModel,
-  messages : Array[Message],
-  tools : Array[ToolDef],
-  options : ChatOptions,
-) -> ModelResponse raise ModelError {
-  (self as &ModelPort).chat(messages, tools, options)
+  messages : Array[@types.Message],
+  tools : Array[@types.ToolDef],
+  options : @types.ChatOptions,
+) -> @types.ModelResponse raise @error.ModelError {
+  (self as &@port.ModelPort).chat(messages, tools, options)
 }
 
 ///|
 /// Direct streaming entry point for testkit self-tests.
 pub async fn ScriptedModel::chat_streaming_direct(
   self : ScriptedModel,
-  messages : Array[Message],
-  tools : Array[ToolDef],
-  options : ChatOptions,
-  on_chunk : (StreamChunk) -> Unit,
-) -> ModelResponse raise ModelError {
-  (self as &ModelPort).chat_streaming(messages, tools, options, on_chunk)
+  messages : Array[@types.Message],
+  tools : Array[@types.ToolDef],
+  options : @types.ChatOptions,
+  on_chunk : (@types.StreamChunk) -> Unit,
+) -> @types.ModelResponse raise @error.ModelError {
+  (self as &@port.ModelPort).chat_streaming(messages, tools, options, on_chunk)
 }
 
 ///|
 /// Snapshot of all chat options received, in call order.
 pub fn ScriptedModel::options_received(
   self : ScriptedModel,
-) -> Array[ChatOptions] {
+) -> Array[@types.ChatOptions] {
   self.received_options.copy()
 }
 
 ///|
 fn ScriptedModel::take_step(
   self : ScriptedModel,
-  messages : Array[Message],
-  tools : Array[ToolDef],
-  options : ChatOptions,
-) -> ScriptedModelStep raise ModelError {
+  messages : Array[@types.Message],
+  tools : Array[@types.ToolDef],
+  options : @types.ChatOptions,
+) -> ScriptedModelStep raise @error.ModelError {
   self.calls = self.calls + 1
   self.received_messages.push(testkit_snapshot_messages(messages))
   self.received_tools.push(tools.map(testkit_snapshot_tool_def))
@@ -282,19 +295,19 @@ fn ScriptedModel::take_step(
     self.index = self.index + 1
     step
   } else {
-    raise Transport(
+    raise @error.ModelError::Transport(
       "scripted_model_exhausted at call \{self.calls} (script had \{self.steps.length()} steps)",
     )
   }
 }
 
 ///|
-pub impl ModelPort for ScriptedModel with fn chat(
+pub impl @port.ModelPort for ScriptedModel with fn chat(
   self,
-  messages : Array[Message],
-  tools : Array[ToolDef],
-  options : ChatOptions,
-) -> ModelResponse raise ModelError {
+  messages : Array[@types.Message],
+  tools : Array[@types.ToolDef],
+  options : @types.ChatOptions,
+) -> @types.ModelResponse raise @error.ModelError {
   match self.take_step(messages, tools, options) {
     Respond(resp) => testkit_snapshot_response(resp)
     Stream(response~, ..) => testkit_snapshot_response(response)
@@ -304,13 +317,13 @@ pub impl ModelPort for ScriptedModel with fn chat(
 
 ///|
 /// Streaming variant replays exactly the configured chunks, in order.
-pub impl ModelPort for ScriptedModel with fn chat_streaming(
+pub impl @port.ModelPort for ScriptedModel with fn chat_streaming(
   self,
-  messages : Array[Message],
-  tools : Array[ToolDef],
-  options : ChatOptions,
-  on_chunk : (StreamChunk) -> Unit,
-) -> ModelResponse raise ModelError {
+  messages : Array[@types.Message],
+  tools : Array[@types.ToolDef],
+  options : @types.ChatOptions,
+  on_chunk : (@types.StreamChunk) -> Unit,
+) -> @types.ModelResponse raise @error.ModelError {
   match self.take_step(messages, tools, options) {
     Stream(chunks~, response~) => {
       for chunk in chunks {
@@ -333,8 +346,8 @@ pub impl ModelPort for ScriptedModel with fn chat_streaming(
 /// Constructors are prefixed with `Outcome` to avoid ambiguity with
 /// `Result::Ok`/`Result::Err` at unqualified call sites.
 pub(all) enum ScriptedToolOutcome {
-  OutcomeOk(ToolResult)
-  OutcomeErr(RuntimeError)
+  OutcomeOk(@types.ToolResult)
+  OutcomeErr(@error.RuntimeError)
 }
 
 ///|
@@ -351,7 +364,7 @@ pub(all) struct ToolExecRecord {
 /// Unified provider operation trace, preserving list/execute interleaving.
 pub(all) enum ToolProviderOp {
   ListTools
-  ExecuteTool(requested_name~ : String, call~ : ToolCall)
+  ExecuteTool(requested_name~ : String, call~ : @types.ToolCall)
 }
 
 ///|
@@ -359,7 +372,7 @@ pub(all) enum ToolProviderOp {
 /// tool name through a configurable outcome map. Unknown tools raise
 /// `RuntimeError::UnknownTool`. Every execute is recorded with its call id.
 pub(all) struct RecordingToolProvider {
-  tool_defs : Array[ToolDef]
+  tool_defs : Array[@types.ToolDef]
   outcomes : Map[String, ScriptedToolOutcome]
   mut list_calls : Int
   mut exec_records : Array[ToolExecRecord]
@@ -368,7 +381,7 @@ pub(all) struct RecordingToolProvider {
 
 ///|
 pub fn RecordingToolProvider::new(
-  tool_defs : Array[ToolDef],
+  tool_defs : Array[@types.ToolDef],
   outcomes : Map[String, ScriptedToolOutcome],
 ) -> RecordingToolProvider {
   let copied_outcomes : Map[String, ScriptedToolOutcome] = Map::from_array([])
@@ -427,30 +440,32 @@ pub fn RecordingToolProvider::ops(
 pub async fn RecordingToolProvider::execute_direct(
   self : RecordingToolProvider,
   name : String,
-  call : ToolCall,
-) -> ToolResult raise RuntimeError {
-  (self as &ToolProvider).execute(name, call)
+  call : @types.ToolCall,
+) -> @types.ToolResult raise @error.RuntimeError {
+  (self as &@port.ToolProvider).execute(name, call)
 }
 
 ///|
-pub impl ToolProvider for RecordingToolProvider with fn list_tools(self) {
+pub impl @port.ToolProvider for RecordingToolProvider with fn list_tools(self) {
   self.list_calls = self.list_calls + 1
   self.ops.push(ListTools)
   self.tool_defs.map(testkit_snapshot_tool_def)
 }
 
 ///|
-pub impl ToolProvider for RecordingToolProvider with fn execute(
+pub impl @port.ToolProvider for RecordingToolProvider with fn execute(
   self,
   name : String,
-  call : ToolCall,
-) -> ToolResult raise RuntimeError {
+  call : @types.ToolCall,
+) -> @types.ToolResult raise @error.RuntimeError {
   let lookup = self.outcomes.get(call.name)
   let outcome = match lookup {
     Some(o) => o
     None =>
       OutcomeErr(
-        UnknownTool("recording_tool: no outcome configured for '\{call.name}'"),
+        @error.RuntimeError::UnknownTool(
+          "recording_tool: no outcome configured for '\{call.name}'",
+        ),
       )
   }
   self.ops.push(
@@ -477,11 +492,11 @@ pub impl ToolProvider for RecordingToolProvider with fn execute(
 /// A recorded session operation. Constructors are prefixed with `Op` to avoid
 /// ambiguity with `SessionError::Load`/`SessionError::Save`.
 pub(all) enum SessionOp {
-  OpLoad(id~ : String, result~ : Result[Session, SessionError])
+  OpLoad(id~ : String, result~ : Result[@types.Session, @error.SessionError])
   OpSave(
     id~ : String,
     metadata~ : Map[String, Json],
-    result~ : Result[Unit, SessionError]
+    result~ : Result[Unit, @error.SessionError]
   )
 }
 
@@ -490,8 +505,8 @@ pub(all) enum SessionOp {
 /// with the metadata snapshot at save time. Load/save failures are
 /// configurable per id.
 pub(all) struct RecordingSessionStore {
-  store : Map[String, Session]
-  mut load_failures : Map[String, SessionError]
+  store : Map[String, @types.Session]
+  mut load_failures : Map[String, @error.SessionError]
   mut save_failures : Array[String]
   mut ops : Array[SessionOp]
 }
@@ -511,7 +526,7 @@ pub fn RecordingSessionStore::new() -> RecordingSessionStore {
 pub fn RecordingSessionStore::seed(
   self : RecordingSessionStore,
   id : String,
-  session : Session,
+  session : @types.Session,
 ) -> Unit {
   self.store[id] = testkit_snapshot_session(session)
 }
@@ -521,7 +536,7 @@ pub fn RecordingSessionStore::seed(
 pub fn RecordingSessionStore::fail_load(
   self : RecordingSessionStore,
   id : String,
-  err : SessionError,
+  err : @error.SessionError,
 ) -> Unit {
   self.load_failures[id] = err
 }
@@ -573,11 +588,11 @@ pub fn RecordingSessionStore::save_snapshots(
 }
 
 ///|
-pub impl SessionStore for RecordingSessionStore with fn load(self, id : String) -> Result[
-  Session,
-  SessionError,
-] {
-  let result : Result[Session, SessionError] = match
+pub impl @port.SessionStore for RecordingSessionStore with fn load(
+  self,
+  id : String,
+) -> Result[@types.Session, @error.SessionError] {
+  let result : Result[@types.Session, @error.SessionError] = match
     self.load_failures.get(id) {
     Some(e) => Err(e)
     None =>
@@ -595,14 +610,16 @@ pub impl SessionStore for RecordingSessionStore with fn load(self, id : String) 
 }
 
 ///|
-pub impl SessionStore for RecordingSessionStore with fn save(
+pub impl @port.SessionStore for RecordingSessionStore with fn save(
   self,
   id : String,
-  session : Session,
-) -> Result[Unit, SessionError] {
+  session : @types.Session,
+) -> Result[Unit, @error.SessionError] {
   let meta_copy = testkit_snapshot_metadata(session.metadata)
-  let result : Result[Unit, SessionError] = if self.save_failures.contains(id) {
-    Err(SessionError::Save("configured save failure for '\{id}'"))
+  let result : Result[Unit, @error.SessionError] = if self.save_failures.contains(
+      id,
+    ) {
+    Err(@error.SessionError::Save("configured save failure for '\{id}'"))
   } else {
     self.store[id] = testkit_snapshot_session(session)
     Ok(())
@@ -619,7 +636,7 @@ pub impl SessionStore for RecordingSessionStore with fn save(
 /// Observer fake that records every TurnEvent in arrival order.
 /// Unlike a counter, it keeps the full sequence for trace assertions.
 pub(all) struct RecordingObserver {
-  mut events : Array[TurnEvent]
+  mut events : Array[@types.TurnEvent]
 }
 
 ///|
@@ -629,12 +646,14 @@ pub fn RecordingObserver::new() -> RecordingObserver {
 
 ///|
 /// Snapshot of all recorded events in order.
-pub fn RecordingObserver::events(self : RecordingObserver) -> Array[TurnEvent] {
+pub fn RecordingObserver::events(
+  self : RecordingObserver,
+) -> Array[@types.TurnEvent] {
   self.events.map(testkit_snapshot_event)
 }
 
 ///|
-pub impl Observer for RecordingObserver with fn on_event(self, event) {
+pub impl @port.Observer for RecordingObserver with fn on_event(self, event) {
   self.events.push(testkit_snapshot_event(event))
 }
 
@@ -645,7 +664,7 @@ pub impl Observer for RecordingObserver with fn on_event(self, event) {
 ///|
 /// The exact decision made by a RecordingHook invocation.
 pub(all) enum RecordedHookOutcome {
-  Returned(Stage)
+  Returned(@port.Stage)
   AbortedWith(String)
   DeferredWith(String)
 }
@@ -664,7 +683,7 @@ fn testkit_snapshot_hook_outcome(
 ///|
 /// A recorded hook invocation: the stage received and its exact decision.
 pub(all) struct HookRecord {
-  stage_in : Stage
+  stage_in : @port.Stage
   outcome : RecordedHookOutcome
 }
 
@@ -715,7 +734,7 @@ pub fn RecordingHook::records(self : RecordingHook) -> Array[HookRecord] {
 }
 
 ///|
-pub impl PipelineHook for RecordingHook with fn on_stage(self, stage) {
+pub impl @port.PipelineHook for RecordingHook with fn on_stage(self, stage) {
   let dbg = stage_to_label(stage)
   for trigger in self.abort_on.keys() {
     if dbg.contains(trigger) {
@@ -724,7 +743,7 @@ pub impl PipelineHook for RecordingHook with fn on_stage(self, stage) {
         stage_in: testkit_snapshot_stage(stage),
         outcome: AbortedWith(message),
       })
-      return Err(Aborted(message))
+      return Err(@port.HookError::Aborted(message))
     }
   }
   for trigger in self.defer_on.keys() {
@@ -734,7 +753,7 @@ pub impl PipelineHook for RecordingHook with fn on_stage(self, stage) {
         stage_in: testkit_snapshot_stage(stage),
         outcome: DeferredWith(reason),
       })
-      return Err(Deferred(reason~))
+      return Err(@port.HookError::Deferred(reason~))
     }
   }
   self.records.push({
@@ -746,17 +765,17 @@ pub impl PipelineHook for RecordingHook with fn on_stage(self, stage) {
 
 ///|
 /// Minimal label for a Stage variant, used for abort matching.
-fn stage_to_label(stage : Stage) -> String {
+fn stage_to_label(stage : @port.Stage) -> String {
   match stage {
-    BeforeTurn => "BeforeTurn"
-    BeforeModel(_) => "BeforeModel"
-    AfterModel(_) => "AfterModel"
-    ModelError(_) => "ModelError"
-    BeforeTool(_) => "BeforeTool"
-    AfterTool(_, _) => "AfterTool"
-    ToolError(_, _) => "ToolError"
-    AfterTurn(_) => "AfterTurn"
-    TurnError(_) => "TurnError"
+    @port.BeforeTurn => "BeforeTurn"
+    @port.BeforeModel(_) => "BeforeModel"
+    @port.AfterModel(_) => "AfterModel"
+    @port.ModelError(_) => "ModelError"
+    @port.BeforeTool(_) => "BeforeTool"
+    @port.AfterTool(_, _) => "AfterTool"
+    @port.ToolError(_, _) => "ToolError"
+    @port.AfterTurn(_) => "AfterTurn"
+    @port.TurnError(_) => "TurnError"
   }
 }
 
@@ -769,8 +788,8 @@ fn stage_to_label(stage : Stage) -> String {
 /// can prove missing, duplicate, and out-of-order detection without catching
 /// an assertion panic.
 pub fn event_trace_mismatch(
-  expected : Array[TurnEvent],
-  actual : Array[TurnEvent],
+  expected : Array[@types.TurnEvent],
+  actual : Array[@types.TurnEvent],
 ) -> String? {
   let n = if expected.length() < actual.length() {
     expected.length()
@@ -803,8 +822,8 @@ pub fn event_trace_mismatch(
 /// Assert two event traces are equal, reporting the first differing index,
 /// the expected and actual event, when they diverge.
 pub fn assert_events_eq(
-  expected : Array[TurnEvent],
-  actual : Array[TurnEvent],
+  expected : Array[@types.TurnEvent],
+  actual : Array[@types.TurnEvent],
 ) -> Unit {
   match event_trace_mismatch(expected, actual) {
     Some(message) => abort(message)
@@ -816,8 +835,8 @@ pub fn assert_events_eq(
 /// Assert the recorded events contain a sub-sequence matching `needle`, in
 /// order. Reports the first needle event that could not be matched.
 pub fn assert_events_contain(
-  haystack : Array[TurnEvent],
-  needle : Array[TurnEvent],
+  haystack : Array[@types.TurnEvent],
+  needle : Array[@types.TurnEvent],
 ) -> Unit {
   if needle.is_empty() {
     return
@@ -847,18 +866,18 @@ pub fn assert_events_contain(
 
 ///|
 /// Build a minimal stop response (no tool calls) for scripted tests.
-pub fn tk_stop_response(text : String) -> ModelResponse {
+pub fn tk_stop_response(text : String) -> @types.ModelResponse {
   {
     message: {
-      role: Assistant,
-      content: [Text(text)],
+      role: @types.Assistant,
+      content: [@types.Text(text)],
       tool_calls: [],
       tool_call_id: None,
       name: Some("assistant"),
       reasoning_content: None,
     },
     tool_calls: [],
-    finish_reason: Stop,
+    finish_reason: @types.Stop,
     usage: None,
     reasoning_content: None,
   }
@@ -870,10 +889,10 @@ pub fn tk_tool_call_response(
   tool_name : String,
   call_id : String,
   args : Json,
-) -> ModelResponse {
+) -> @types.ModelResponse {
   {
     message: {
-      role: Assistant,
+      role: @types.Assistant,
       content: [],
       tool_calls: [{ id: call_id, name: tool_name, arguments: args }],
       tool_call_id: None,
@@ -881,7 +900,7 @@ pub fn tk_tool_call_response(
       reasoning_content: None,
     },
     tool_calls: [{ id: call_id, name: tool_name, arguments: args }],
-    finish_reason: ToolCalls,
+    finish_reason: @types.ToolCalls,
     usage: None,
     reasoning_content: None,
   }
@@ -889,10 +908,10 @@ pub fn tk_tool_call_response(
 
 ///|
 /// Build a user message.
-pub fn tk_user_msg(text : String) -> Message {
+pub fn tk_user_msg(text : String) -> @types.Message {
   {
-    role: User,
-    content: [Text(text)],
+    role: @types.User,
+    content: [@types.Text(text)],
     tool_calls: [],
     tool_call_id: None,
     name: None,
@@ -902,7 +921,7 @@ pub fn tk_user_msg(text : String) -> Message {
 
 ///|
 /// Build a ToolDef with an empty object schema.
-pub fn tk_tool_def(name : String, description : String) -> ToolDef {
+pub fn tk_tool_def(name : String, description : String) -> @types.ToolDef {
   {
     name,
     description,
@@ -914,13 +933,13 @@ pub fn tk_tool_def(name : String, description : String) -> ToolDef {
 
 ///|
 /// Build a successful ToolResult.
-pub fn tk_ok_result(content : String) -> ToolResult {
+pub fn tk_ok_result(content : String) -> @types.ToolResult {
   { content, structured: None, is_error: false }
 }
 
 ///|
 /// Build a business-error ToolResult (provider returns Ok but is_error=true).
-pub fn tk_error_result(content : String) -> ToolResult {
+pub fn tk_error_result(content : String) -> @types.ToolResult {
   { content, structured: None, is_error: true }
 }
 

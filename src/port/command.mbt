@@ -82,5 +82,5 @@ pub(all) enum CommandOutcome {
 /// `pub(open)` so any ext can declare commands.
 pub(open) trait CommandPort {
   fn commands(Self) -> Array[CommandDef]
-  async fn invoke(Self, id : String, args : Json) -> CommandOutcome raise CommandError
+  async fn invoke(Self, id : String, args : Json) -> CommandOutcome raise @error.CommandError
 }

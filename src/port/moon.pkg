@@ -1,0 +1,4 @@
+import {
+  "colmugx/posoco/error",
+  "colmugx/posoco/types",
+}

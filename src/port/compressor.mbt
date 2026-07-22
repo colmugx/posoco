@@ -11,9 +11,9 @@ pub(all) struct CompressContext {
 /// summary carried over.
 pub(all) enum CompressAction {
   None
-  Replace(Array[Message])
+  Replace(Array[@types.Message])
   NewThread(
-    messages~ : Array[Message],
+    messages~ : Array[@types.Message],
     new_session_id~ : String,
     messages_before~ : Int,
     messages_after~ : Int
@@ -25,5 +25,5 @@ pub(all) enum CompressAction {
 /// Returns instructions (None/Replace/NewThread) — never saves sessions or
 /// emits events directly; the Agent and Observer handle side effects.
 pub(open) trait Compressor {
-  fn compress(Self, messages : Array[Message], ctx : CompressContext) -> CompressAction
+  fn compress(Self, messages : Array[@types.Message], ctx : CompressContext) -> CompressAction
 }

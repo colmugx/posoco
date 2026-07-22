@@ -2,23 +2,11 @@
 pub(all) struct NoopCompressor {}
 
 ///|
-/// Default chat_streaming: ignores on_chunk, falls back to chat().
-impl ModelPort with fn chat_streaming(
-  self : Self,
-  messages : Array[Message],
-  tools : Array[ToolDef],
-  options : ChatOptions,
-  _on_chunk : (StreamChunk) -> Unit,
-) -> ModelResponse raise ModelError {
-  self.chat(messages, tools, options)
-}
-
-///|
-pub impl Compressor for NoopCompressor with fn compress(
+pub impl @port.Compressor for NoopCompressor with fn compress(
   _self,
-  _messages : Array[Message],
-  _ctx : CompressContext,
-) -> CompressAction {
+  _messages : Array[@types.Message],
+  _ctx : @port.CompressContext,
+) -> @port.CompressAction {
   None
 }
 
@@ -26,24 +14,24 @@ pub impl Compressor for NoopCompressor with fn compress(
 pub(all) struct NoopHook {}
 
 ///|
-pub impl PipelineHook for NoopHook with fn on_stage(_self, stage : Stage) -> Result[
-  Stage,
-  HookError,
-] {
+pub impl @port.PipelineHook for NoopHook with fn on_stage(
+  _self,
+  stage : @port.Stage,
+) -> Result[@port.Stage, @port.HookError] {
   Ok(stage)
 }
 
 ///|
 /// Internal: chains multiple hooks in sequence.
 pub(all) struct HookChain {
-  hooks : Array[&PipelineHook]
+  hooks : Array[&@port.PipelineHook]
 }
 
 ///|
-pub impl PipelineHook for HookChain with fn on_stage(self, stage : Stage) -> Result[
-  Stage,
-  HookError,
-] {
+pub impl @port.PipelineHook for HookChain with fn on_stage(
+  self,
+  stage : @port.Stage,
+) -> Result[@port.Stage, @port.HookError] {
   let mut current_stage = stage
   match stage {
     AfterTurn(_)
@@ -52,7 +40,7 @@ pub impl PipelineHook for HookChain with fn on_stage(self, stage : Stage) -> Res
     | TurnError(_)
     | ModelError(_)
     | ToolError(_, _) => {
-      let mut last_err : HookError? = None
+      let mut last_err : @port.HookError? = None
       let mut i = self.hooks.length() - 1
       while i >= 0 {
         match self.hooks[i].on_stage(current_stage) {
@@ -80,9 +68,9 @@ pub impl PipelineHook for HookChain with fn on_stage(self, stage : Stage) -> Res
 
 ///|
 pub fn build_tool_result_message(
-  call : ToolCall,
-  result : ToolResult,
-) -> Message {
+  call : @types.ToolCall,
+  result : @types.ToolResult,
+) -> @types.Message {
   {
     role: Tool,
     content: [Text(result.content)],
@@ -94,7 +82,10 @@ pub fn build_tool_result_message(
 }
 
 ///|
-pub fn build_error_message(call : ToolCall, error : RuntimeError) -> Message {
+pub fn build_error_message(
+  call : @types.ToolCall,
+  error : @error.RuntimeError,
+) -> @types.Message {
   {
     role: Tool,
     content: [Text(error.to_string())],
@@ -108,12 +99,12 @@ pub fn build_error_message(call : ToolCall, error : RuntimeError) -> Message {
 ///|
 /// Internal: merges multiple providers' tool lists. Agent routes via ToolRouting instead.
 pub(all) struct CompositeToolProvider {
-  providers : Array[&ToolProvider]
+  providers : Array[&@port.ToolProvider]
 }
 
 ///|
-pub impl ToolProvider for CompositeToolProvider with fn list_tools(self) {
-  let all : Array[ToolDef] = []
+pub impl @port.ToolProvider for CompositeToolProvider with fn list_tools(self) {
+  let all : Array[@types.ToolDef] = []
   for p in self.providers {
     for t in p.list_tools() {
       all.push(t)
@@ -123,12 +114,12 @@ pub impl ToolProvider for CompositeToolProvider with fn list_tools(self) {
 }
 
 ///|
-pub impl ToolProvider for CompositeToolProvider with fn execute(
+pub impl @port.ToolProvider for CompositeToolProvider with fn execute(
   _self,
   name : String,
-  _call : ToolCall,
-) -> ToolResult raise RuntimeError {
-  raise RuntimeError::UnknownTool(
+  _call : @types.ToolCall,
+) -> @types.ToolResult raise @error.RuntimeError {
+  raise @error.RuntimeError::UnknownTool(
     "CompositeToolProvider does not route execute(); Agent uses ToolRouting instead. Tool: '\{name}'",
   )
 }
@@ -136,8 +127,8 @@ pub impl ToolProvider for CompositeToolProvider with fn execute(
 ///|
 /// Dynamic runtime tool registration. Implements ToolProvider.
 pub(all) struct ToolRegistry {
-  mut tools : Map[String, ToolDef]
-  mut executors : Map[String, (ToolCall) -> ToolResult]
+  mut tools : Map[String, @types.ToolDef]
+  mut executors : Map[String, (@types.ToolCall) -> @types.ToolResult]
 }
 
 ///|
@@ -148,8 +139,8 @@ pub fn ToolRegistry::new() -> ToolRegistry {
 ///|
 pub fn ToolRegistry::register(
   self : ToolRegistry,
-  tool : ToolDef,
-  executor : (ToolCall) -> ToolResult,
+  tool : @types.ToolDef,
+  executor : (@types.ToolCall) -> @types.ToolResult,
 ) -> Unit {
   self.tools[tool.name] = tool
   self.executors[tool.name] = executor
@@ -162,8 +153,8 @@ pub fn ToolRegistry::unregister(self : ToolRegistry, name : String) -> Unit {
 }
 
 ///|
-pub impl ToolProvider for ToolRegistry with fn list_tools(self) {
-  let all : Array[ToolDef] = []
+pub impl @port.ToolProvider for ToolRegistry with fn list_tools(self) {
+  let all : Array[@types.ToolDef] = []
   for v in self.tools.values() {
     all.push(v)
   }
@@ -171,15 +162,15 @@ pub impl ToolProvider for ToolRegistry with fn list_tools(self) {
 }
 
 ///|
-pub impl ToolProvider for ToolRegistry with fn execute(
+pub impl @port.ToolProvider for ToolRegistry with fn execute(
   self,
   name : String,
-  call : ToolCall,
-) -> ToolResult raise RuntimeError {
+  call : @types.ToolCall,
+) -> @types.ToolResult raise @error.RuntimeError {
   match self.executors.get(name) {
     Some(exec) => exec(call)
     None =>
-      raise RuntimeError::UnknownTool(
+      raise @error.RuntimeError::UnknownTool(
         "No executor registered for tool '\{name}'",
       )
   }
@@ -189,27 +180,27 @@ pub impl ToolProvider for ToolRegistry with fn execute(
 pub(all) struct NoopMemoryPort {}
 
 ///|
-pub impl MemoryPort for NoopMemoryPort with fn store(_self, _entry) -> String raise MemoryError {
-  raise Store("not implemented")
+pub impl @port.MemoryPort for NoopMemoryPort with fn store(_self, _entry) -> String raise @error.MemoryError {
+  raise @error.MemoryError::Store("not implemented")
 }
 
 ///|
-pub impl MemoryPort for NoopMemoryPort with fn search(_self, _query) -> Array[
-  MemoryEntry,
-] raise MemoryError {
-  raise Search("not implemented")
+pub impl @port.MemoryPort for NoopMemoryPort with fn search(_self, _query) -> Array[
+  @types.MemoryEntry,
+] raise @error.MemoryError {
+  raise @error.MemoryError::Search("not implemented")
 }
 
 ///|
-pub impl MemoryPort for NoopMemoryPort with fn delete(_self, _id) -> Unit raise MemoryError {
-  raise Delete("not implemented")
+pub impl @port.MemoryPort for NoopMemoryPort with fn delete(_self, _id) -> Unit raise @error.MemoryError {
+  raise @error.MemoryError::Delete("not implemented")
 }
 
 ///|
 pub(all) struct NoopLifecycle {}
 
 ///|
-pub impl Lifecycle for NoopLifecycle with fn on_shutdown(_self) -> Unit {
+pub impl @port.Lifecycle for NoopLifecycle with fn on_shutdown(_self) -> Unit {
   ()
 }
 
@@ -219,19 +210,19 @@ pub impl Lifecycle for NoopLifecycle with fn on_shutdown(_self) -> Unit {
 pub(all) struct NoopCommandPort {}
 
 ///|
-pub impl CommandPort for NoopCommandPort with fn commands(_self) -> Array[
-  CommandDef,
+pub impl @port.CommandPort for NoopCommandPort with fn commands(_self) -> Array[
+  @port.CommandDef,
 ] {
   []
 }
 
 ///|
-pub impl CommandPort for NoopCommandPort with fn invoke(
+pub impl @port.CommandPort for NoopCommandPort with fn invoke(
   _self,
   id : String,
   _args : Json,
-) -> CommandOutcome raise CommandError {
-  raise NotFound(id)
+) -> @port.CommandOutcome raise @error.CommandError {
+  raise @error.CommandError::NotFound(id)
 }
 
 ///|
@@ -262,7 +253,7 @@ fn tokenize_args(text : String) -> Array[String] {
 
 ///|
 /// Coerce a raw string token into the Json value matching the param's ptype.
-fn coerce_param(p : CommandParam, raw : String) -> Result[Json, String] {
+fn coerce_param(p : @port.CommandParam, raw : String) -> Result[Json, String] {
   match p.ptype {
     Str => Ok(Json::string(raw))
     Int => {
@@ -304,7 +295,10 @@ fn split_kv(token : String) -> (String, String)? {
 
 ///|
 /// Find a CommandParam by name in an array. Returns None if not found.
-fn find_param(params : Array[CommandParam], name : String) -> CommandParam? {
+fn find_param(
+  params : Array[@port.CommandParam],
+  name : String,
+) -> @port.CommandParam? {
   for p in params {
     if p.name == name {
       return Some(p)
@@ -321,7 +315,7 @@ fn find_param(params : Array[CommandParam], name : String) -> CommandParam? {
 /// required params. Pure function (no IO).
 pub fn parse_slash_args(
   text : String,
-  params : Array[CommandParam],
+  params : Array[@port.CommandParam],
 ) -> Result[Json, String] {
   let tokens = tokenize_args(text)
   let positional_params = params.filter(fn(p) { p.positional })
@@ -370,7 +364,10 @@ pub fn parse_slash_args(
 /// Checks required presence; optional params with no value and no default
 /// are omitted (not an error). Returns the (possibly defaulted) args on Ok.
 /// Pure function (no IO).
-pub fn validate_args(def : CommandDef, args : Json) -> Result[Json, String] {
+pub fn validate_args(
+  def : @port.CommandDef,
+  args : Json,
+) -> Result[Json, String] {
   let incoming : Map[String, Json] = match args {
     Object(m) => m
     _ => Map::from_array([])

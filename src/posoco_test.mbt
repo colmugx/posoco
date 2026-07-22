@@ -1,12 +1,12 @@
 ///|
 /// Blackbox tests against the public API. Mocks live in this file.
 struct MockModelPort {
-  responses : Array[@posoco.ModelResponse]
+  responses : Array[@types.ModelResponse]
   mut index : Int
 }
 
 ///|
-impl @posoco.ModelPort for MockModelPort with fn chat(
+impl @port.ModelPort for MockModelPort with fn chat(
   self,
   _messages,
   _tools,
@@ -17,42 +17,43 @@ impl @posoco.ModelPort for MockModelPort with fn chat(
     self.index = self.index + 1
     resp
   } else {
-    raise Transport("no more responses")
+    raise @error.ModelError::Transport("no more responses")
   }
 }
 
 ///|
 /// MockToolProvider — implements the unified ToolProvider trait.
 struct MockToolProvider {
-  tools : Array[@posoco.ToolDef]
-  results : Map[String, Result[@posoco.ToolResult, @posoco.RuntimeError]]
+  tools : Array[@types.ToolDef]
+  results : Map[String, Result[@types.ToolResult, @error.RuntimeError]]
 }
 
 ///|
-impl @posoco.ToolProvider for MockToolProvider with fn list_tools(self) {
+impl @port.ToolProvider for MockToolProvider with fn list_tools(self) {
   self.tools
 }
 
 ///|
-impl @posoco.ToolProvider for MockToolProvider with fn execute(
+impl @port.ToolProvider for MockToolProvider with fn execute(
   self,
   name : String,
-  _call : @posoco.ToolCall,
-) -> @posoco.ToolResult raise @posoco.RuntimeError {
+  _call : @types.ToolCall,
+) -> @types.ToolResult raise @error.RuntimeError {
   match self.results.get(name) {
     Some(Ok(r)) => r
     Some(Err(e)) => raise e
-    None => raise @posoco.InvocationFailed("tool not found: \{name}")
+    None =>
+      raise @error.RuntimeError::InvocationFailed("tool not found: \{name}")
   }
 }
 
 ///|
 struct MockSessionStore {
-  store : Map[String, @posoco.Session]
+  store : Map[String, @types.Session]
 }
 
 ///|
-impl @posoco.SessionStore for MockSessionStore with fn load(self, id) {
+impl @port.SessionStore for MockSessionStore with fn load(self, id) {
   if self.store.contains(id) {
     Ok(self.store[id])
   } else {
@@ -61,18 +62,18 @@ impl @posoco.SessionStore for MockSessionStore with fn load(self, id) {
 }
 
 ///|
-impl @posoco.SessionStore for MockSessionStore with fn save(self, id, session) {
+impl @port.SessionStore for MockSessionStore with fn save(self, id, session) {
   self.store[id] = session
   Ok(())
 }
 
 ///|
 struct MockObserver {
-  events : Array[@posoco.TurnEvent]
+  events : Array[@types.TurnEvent]
 }
 
 ///|
-impl @posoco.Observer for MockObserver with fn on_event(self, event) {
+impl @port.Observer for MockObserver with fn on_event(self, event) {
   self.events.push(event)
 }
 
@@ -89,10 +90,10 @@ fn make_config() -> @posoco.AgentConfig {
 }
 
 ///|
-fn user_msg(text : String) -> @posoco.Message {
+fn user_msg(text : String) -> @types.Message {
   {
-    role: User,
-    content: [Text(text)],
+    role: @types.User,
+    content: [@types.Text(text)],
     tool_calls: [],
     tool_call_id: None,
     name: None,
@@ -101,18 +102,18 @@ fn user_msg(text : String) -> @posoco.Message {
 }
 
 ///|
-fn stop_response(text : String) -> @posoco.ModelResponse {
+fn stop_response(text : String) -> @types.ModelResponse {
   {
     message: {
-      role: Assistant,
-      content: [Text(text)],
+      role: @types.Assistant,
+      content: [@types.Text(text)],
       tool_calls: [],
       tool_call_id: None,
       name: Some("assistant"),
       reasoning_content: None,
     },
     tool_calls: [],
-    finish_reason: Stop,
+    finish_reason: @types.Stop,
     usage: None,
     reasoning_content: None,
   }
@@ -150,7 +151,7 @@ async test "b1_simple_turn_no_tools" {
 ///|
 async test "b2_noop_compressor" {
   let comp = @posoco.NoopCompressor::{  }
-  let ctx = @posoco.CompressContext::{
+  let ctx = @port.CompressContext::{
     session_id: "x",
     model_context_window: None,
   }
@@ -161,9 +162,9 @@ async test "b2_noop_compressor" {
 ///|
 async test "b3_noop_hook" {
   let hook = @posoco.NoopHook::{  }
-  let result = hook.on_stage(BeforeTurn)
+  let result = hook.on_stage(@port.Stage::BeforeTurn)
   match result {
-    Ok(BeforeTurn) => ()
+    Ok(@port.Stage::BeforeTurn) => ()
     _ => fail("expected BeforeTurn stage")
   }
 }
@@ -173,44 +174,44 @@ async test "b4_hook_chain" {
   let h1 = @posoco.NoopHook::{  }
   let h2 = @posoco.NoopHook::{  }
   let chain = @posoco.HookChain::{ hooks: [h1, h2] }
-  let result = chain.on_stage(BeforeTurn)
+  let result = chain.on_stage(@port.Stage::BeforeTurn)
   assert_true(result is Ok(_))
 }
 
 ///|
 async test "b5_build_tool_result_message" {
-  let call = @posoco.ToolCall::{
+  let call = @types.ToolCall::{
     id: "ct_1",
     name: "tool_a",
     arguments: Json::null(),
   }
-  let result = @posoco.ToolResult::{
+  let result = @types.ToolResult::{
     content: "done",
     structured: None,
     is_error: false,
   }
   let msg = @posoco.build_tool_result_message(call, result)
-  assert_true(msg.role == Tool)
+  assert_true(msg.role == @types.Tool)
   assert_true(msg.tool_call_id == Some("ct_1"))
   assert_true(msg.name == Some("tool_a"))
 }
 
 ///|
 async test "b6_build_error_message" {
-  let call = @posoco.ToolCall::{
+  let call = @types.ToolCall::{
     id: "ct_2",
     name: "tool_b",
     arguments: Json::null(),
   }
-  let err = @posoco.InvocationFailed("fail")
+  let err = @error.RuntimeError::InvocationFailed("fail")
   let msg = @posoco.build_error_message(call, err)
-  assert_true(msg.role == Tool)
+  assert_true(msg.role == @types.Tool)
   assert_true(msg.tool_call_id == Some("ct_2"))
 }
 
 ///|
 async test "b7_agent_error_display" {
-  let model_err = @posoco.Model("nope")
+  let model_err = @error.AgentError::Model("nope")
   let s = model_err.to_string()
   assert_true(s.length() > 0)
   assert_true(s.contains("nope"))
@@ -239,11 +240,11 @@ async test "b8_turn_event_lifecycle" {
   let events = observer.events
   assert_true(events.length() >= 2)
   match events[0] {
-    TurnStarted => ()
+    @types.TurnEvent::TurnStarted => ()
     _ => fail("first event should be TurnStarted")
   }
   match events[events.length() - 1] {
-    TurnCompleted => ()
+    @types.TurnEvent::TurnCompleted => ()
     _ => fail("last event should be TurnCompleted")
   }
 }
@@ -268,7 +269,7 @@ async test "b9_model_error_aborts" {
   )
   match
     (Ok(agent.run_turn(user_msg("boom"), "session_b9")) catch { e => Err(e) }) {
-    Err(Model(_)) => ()
+    Err(@error.AgentError::Model(_)) => ()
     _ => fail("expected Model error")
   }
 }

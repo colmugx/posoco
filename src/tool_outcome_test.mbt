@@ -18,26 +18,30 @@ fn outcome_config() -> AgentConfig {
 
 ///|
 fn expected_tool_trace(
-  first_response : ModelResponse,
-  call : ToolCall,
-  tool_result : ToolResult,
-  final_response : ModelResponse,
-) -> Array[TurnEvent] {
+  first_response : @types.ModelResponse,
+  call : @types.ToolCall,
+  tool_result : @types.ToolResult,
+  final_response : @types.ModelResponse,
+) -> Array[@types.TurnEvent] {
   [
-    TurnStarted,
-    ModelResponseReceived(
+    @types.TurnEvent::TurnStarted,
+    @types.TurnEvent::ModelResponseReceived(
       message=first_response.message,
       usage=first_response.usage,
       reasoning_content=first_response.reasoning_content,
     ),
-    ToolCallPending(call),
-    ToolCallResult(call~, result=tool_result, is_error=tool_result.is_error),
-    ModelResponseReceived(
+    @types.TurnEvent::ToolCallPending(call),
+    @types.TurnEvent::ToolCallResult(
+      call~,
+      result=tool_result,
+      is_error=tool_result.is_error,
+    ),
+    @types.TurnEvent::ModelResponseReceived(
       message=final_response.message,
       usage=final_response.usage,
       reasoning_content=final_response.reasoning_content,
     ),
-    TurnCompleted,
+    @types.TurnEvent::TurnCompleted,
   ]
 }
 
@@ -89,10 +93,10 @@ async test "t06a_business_error_event_matches_result" {
     events,
   )
   let mut event_is_error : Bool? = None
-  let mut event_result : ToolResult? = None
+  let mut event_result : @types.ToolResult? = None
   for e in events {
     match e {
-      ToolCallResult(call~, result~, is_error~) =>
+      @types.TurnEvent::ToolCallResult(call~, result~, is_error~) =>
         if call.id == "tc_1" {
           // The event's is_error must equal the result's is_error.
           assert_true(is_error == result.is_error)
@@ -118,7 +122,12 @@ async test "t06a_business_error_event_matches_result" {
       let mut saw_matching_tool_message = false
       for message in saved.messages {
         match message {
-          { role: Tool, content: [Text(content)], tool_call_id: Some(id), .. } =>
+          {
+            role: @types.Tool,
+            content: [@types.Text(content)],
+            tool_call_id: Some(id),
+            ..,
+          } =>
             if id == "tc_1" {
               assert_eq(content, turn_result.tool_results[0].content)
               saw_matching_tool_message = true
@@ -177,7 +186,7 @@ async test "t06a_success_event_is_not_error" {
   assert_true(turn_result.tool_results[0] == success_result)
   for e in events {
     match e {
-      ToolCallResult(call~, result~, is_error~) =>
+      @types.TurnEvent::ToolCallResult(call~, result~, is_error~) =>
         if call.id == "tc_2" {
           assert_true(is_error == result.is_error)
           assert_true(!is_error)
@@ -195,8 +204,10 @@ async test "t06a_success_event_is_not_error" {
 async test "t06a_runtime_error_event_is_error_true" {
   let first_response = tk_tool_call_response("boom", "tc_3", Json::null())
   let final_response = tk_stop_response("after")
-  let raised_error : RuntimeError = RuntimeError::InvocationFailed("crash")
-  let error_result : ToolResult = {
+  let raised_error : @error.RuntimeError = @error.RuntimeError::InvocationFailed(
+    "crash",
+  )
+  let error_result : @types.ToolResult = {
     content: raised_error.to_string(),
     structured: None,
     is_error: true,
@@ -237,7 +248,7 @@ async test "t06a_runtime_error_event_is_error_true" {
   let mut seen_error_event = false
   for e in events {
     match e {
-      ToolCallResult(call~, result~, is_error~) =>
+      @types.TurnEvent::ToolCallResult(call~, result~, is_error~) =>
         if call.id == "tc_3" {
           assert_true(is_error)
           assert_true(result.is_error)
@@ -257,7 +268,12 @@ async test "t06a_runtime_error_event_is_error_true" {
       let mut saw_matching_tool_message = false
       for message in saved.messages {
         match message {
-          { role: Tool, content: [Text(content)], tool_call_id: Some(id), .. } =>
+          {
+            role: @types.Tool,
+            content: [@types.Text(content)],
+            tool_call_id: Some(id),
+            ..,
+          } =>
             if id == "tc_3" {
               assert_eq(content, error_result.content)
               saw_matching_tool_message = true
@@ -278,21 +294,23 @@ async test "t06a_runtime_error_event_is_error_true" {
 ///|
 /// Provider that declares a single tool with a configurable source label.
 struct SingleToolProvider {
-  tool : ToolDef
+  tool : @types.ToolDef
 }
 
 ///|
-pub impl ToolProvider for SingleToolProvider with fn list_tools(self) {
+pub impl @port.ToolProvider for SingleToolProvider with fn list_tools(self) {
   [self.tool]
 }
 
 ///|
-pub impl ToolProvider for SingleToolProvider with fn execute(
+pub impl @port.ToolProvider for SingleToolProvider with fn execute(
   _self,
   name : String,
-  _call : ToolCall,
-) -> ToolResult raise RuntimeError {
-  raise UnknownTool("SingleToolProvider does not execute '\{name}'")
+  _call : @types.ToolCall,
+) -> @types.ToolResult raise @error.RuntimeError {
+  raise @error.RuntimeError::UnknownTool(
+    "SingleToolProvider does not execute '\{name}'",
+  )
 }
 
 ///|
@@ -341,7 +359,7 @@ async test "t06b_collision_fails_composition" {
     e => Err(e)
   }
   match composition_result {
-    Err(CompositionError::ToolCollision(name, msg)) => {
+    Err(@error.CompositionError::ToolCollision(name, msg)) => {
       assert_eq(name, "shared")
       // The message must identify both conflicting sources.
       assert_true(msg.contains("collision"))
@@ -379,7 +397,7 @@ async test "t06b_missing_collision_provenance_is_actionable" {
     e => Err(e)
   }
   match composition_result {
-    Err(CompositionError::ToolCollision(name, msg)) => {
+    Err(@error.CompositionError::ToolCollision(name, msg)) => {
       assert_eq(name, "shared")
       assert_true(msg.contains("ToolDef.source"))
       assert_true(!msg.contains("provider["))

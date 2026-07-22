@@ -1,0 +1,142 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "colmugx/posoco/port"
+
+import {
+  "colmugx/posoco/error",
+  "colmugx/posoco/types",
+  "moonbitlang/core/debug",
+}
+
+// Values
+
+// Errors
+
+// Types and methods
+pub(all) struct CommandDef {
+  id : String
+  label : String
+  description : String
+  category : String
+  ctype : CommandType
+  params : Array[CommandParam]
+  aliases : Array[String]
+  shortcut : String?
+  icon : String?
+  visible : Bool
+  metadata : Json?
+} derive(Eq, @debug.Debug)
+
+pub(all) enum CommandOutcome {
+  Success(feedback~ : String, structured~ : Json?, ui_hint~ : UiHint?)
+  Failure(reason~ : String)
+  NeedsInput(prompt~ : String)
+} derive(Eq, @debug.Debug)
+
+pub(all) struct CommandParam {
+  name : String
+  label : String
+  description : String
+  ptype : ParamType
+  required : Bool
+  default : Json?
+  choices : Array[String]?
+  positional : Bool
+} derive(Eq, @debug.Debug)
+
+pub(all) enum CommandType {
+  Action
+  Toggle
+  Select
+  Input
+  MultiStep
+} derive(Eq, @debug.Debug)
+
+pub(all) enum CompressAction {
+  None
+  Replace(Array[@types.Message])
+  NewThread(messages~ : Array[@types.Message], new_session_id~ : String, messages_before~ : Int, messages_after~ : Int)
+} derive(Eq, @debug.Debug)
+
+pub(all) struct CompressContext {
+  session_id : String
+  model_context_window : Int?
+} derive(Eq, @debug.Debug)
+
+pub(all) enum HookError {
+  Aborted(String)
+  Deferred(reason~ : String)
+} derive(Eq, @debug.Debug)
+pub impl Show for HookError
+
+pub(all) enum ParamType {
+  Str
+  Int
+  Bool
+  Strs
+} derive(Eq, @debug.Debug)
+
+pub(all) enum Stage {
+  BeforeTurn
+  BeforeModel(Array[@types.Message])
+  AfterModel(@types.ModelResponse)
+  ModelError(String)
+  BeforeTool(@types.ToolCall)
+  AfterTool(@types.ToolCall, @types.ToolResult)
+  ToolError(@types.ToolCall, @error.RuntimeError)
+  AfterTurn(@types.TurnResult)
+  TurnError(@error.AgentError)
+} derive(@debug.Debug)
+
+pub(all) enum UiHint {
+  RefreshModelList
+  RefreshSettings
+  ClosePanel
+  Toast
+  None
+} derive(Eq, @debug.Debug)
+
+// Type aliases
+
+// Traits
+pub(open) trait CommandPort {
+  fn commands(Self) -> Array[CommandDef]
+  async fn invoke(Self, String, Json) -> CommandOutcome raise @error.CommandError
+}
+
+pub(open) trait Compressor {
+  fn compress(Self, Array[@types.Message], CompressContext) -> CompressAction
+}
+
+pub(open) trait Lifecycle {
+  async fn on_shutdown(Self) -> Unit
+}
+
+pub(open) trait MemoryPort {
+  fn store(Self, @types.MemoryEntry) -> String raise @error.MemoryError
+  fn search(Self, @types.MemoryQuery) -> Array[@types.MemoryEntry] raise @error.MemoryError
+  fn delete(Self, String) -> Unit raise @error.MemoryError
+}
+
+pub(open) trait ModelPort {
+  async fn chat(Self, Array[@types.Message], Array[@types.ToolDef], @types.ChatOptions) -> @types.ModelResponse raise @error.ModelError
+  async fn chat_streaming(Self, Array[@types.Message], Array[@types.ToolDef], @types.ChatOptions, (@types.StreamChunk) -> Unit) -> @types.ModelResponse raise @error.ModelError = _
+}
+
+pub(open) trait Observer {
+  fn on_event(Self, @types.TurnEvent) -> Unit
+}
+
+pub(open) trait PipelineHook {
+  async fn on_stage(Self, Stage) -> Result[Stage, HookError]
+}
+
+pub(open) trait SessionStore {
+  fn load(Self, String) -> Result[@types.Session, @error.SessionError]
+  fn save(Self, String, @types.Session) -> Result[Unit, @error.SessionError]
+}
+
+pub(open) trait ToolProvider {
+  fn list_tools(Self) -> Array[@types.ToolDef]
+  async fn execute(Self, String, @types.ToolCall) -> @types.ToolResult raise @error.RuntimeError
+}
+

@@ -3,13 +3,13 @@ pub(all) struct AgentConfig {
   max_tool_rounds : Int
   temperature : Double?
   max_output_tokens : Int?
-  tool_choice : ToolChoice?
-  reasoning_effort : ReasoningEffort?
+  tool_choice : @types.ToolChoice?
+  reasoning_effort : @types.ReasoningEffort?
   model_context_window : Int?
 }
 
 ///|
-pub fn AgentConfig::to_chat_options(self : AgentConfig) -> ChatOptions {
+pub fn AgentConfig::to_chat_options(self : AgentConfig) -> @types.ChatOptions {
   {
     temperature: self.temperature,
     max_output_tokens: self.max_output_tokens,
@@ -21,8 +21,8 @@ pub fn AgentConfig::to_chat_options(self : AgentConfig) -> ChatOptions {
 ///|
 /// Internal routing table: tool name → owning provider. Built during Agent::new.
 struct ToolRouting {
-  tool_map : Map[String, &ToolProvider]
-  providers : Array[&ToolProvider]
+  tool_map : Map[String, &@port.ToolProvider]
+  providers : Array[&@port.ToolProvider]
 }
 
 ///|
@@ -63,7 +63,7 @@ fn agent_snapshot_json(value : Json) -> Json {
 }
 
 ///|
-fn agent_snapshot_tool_call(call : ToolCall) -> ToolCall {
+fn agent_snapshot_tool_call(call : @types.ToolCall) -> @types.ToolCall {
   {
     id: call.id,
     name: call.name,
@@ -72,7 +72,7 @@ fn agent_snapshot_tool_call(call : ToolCall) -> ToolCall {
 }
 
 ///|
-fn agent_snapshot_message(message : Message) -> Message {
+fn agent_snapshot_message(message : @types.Message) -> @types.Message {
   {
     role: message.role,
     content: message.content.copy(),
@@ -84,7 +84,9 @@ fn agent_snapshot_message(message : Message) -> Message {
 }
 
 ///|
-fn agent_snapshot_messages(messages : Array[Message]) -> Array[Message] {
+fn agent_snapshot_messages(
+  messages : Array[@types.Message],
+) -> Array[@types.Message] {
   messages.map(agent_snapshot_message)
 }
 
@@ -99,9 +101,9 @@ fn agent_snapshot_metadata(metadata : Map[String, Json]) -> Map[String, Json] {
 
 ///|
 fn agent_snapshot_session(
-  messages : Array[Message],
+  messages : Array[@types.Message],
   metadata : Map[String, Json],
-) -> Session {
+) -> @types.Session {
   {
     messages: agent_snapshot_messages(messages),
     metadata: agent_snapshot_metadata(metadata),
@@ -109,7 +111,7 @@ fn agent_snapshot_session(
 }
 
 ///|
-fn agent_snapshot_tool_result(result : ToolResult) -> ToolResult {
+fn agent_snapshot_tool_result(result : @types.ToolResult) -> @types.ToolResult {
   {
     content: result.content,
     structured: match result.structured {
@@ -121,7 +123,7 @@ fn agent_snapshot_tool_result(result : ToolResult) -> ToolResult {
 }
 
 ///|
-fn agent_snapshot_tool_def(tool : ToolDef) -> ToolDef {
+fn agent_snapshot_tool_def(tool : @types.ToolDef) -> @types.ToolDef {
   {
     name: tool.name,
     description: tool.description,
@@ -135,7 +137,9 @@ fn agent_snapshot_tool_def(tool : ToolDef) -> ToolDef {
 }
 
 ///|
-fn agent_snapshot_model_response(response : ModelResponse) -> ModelResponse {
+fn agent_snapshot_model_response(
+  response : @types.ModelResponse,
+) -> @types.ModelResponse {
   {
     message: agent_snapshot_message(response.message),
     tool_calls: response.tool_calls.map(agent_snapshot_tool_call),
@@ -146,7 +150,7 @@ fn agent_snapshot_model_response(response : ModelResponse) -> ModelResponse {
 }
 
 ///|
-fn agent_snapshot_turn_result(result : TurnResult) -> TurnResult {
+fn agent_snapshot_turn_result(result : @types.TurnResult) -> @types.TurnResult {
   {
     message: agent_snapshot_message(result.message),
     tool_results: result.tool_results.map(agent_snapshot_tool_result),
@@ -155,7 +159,7 @@ fn agent_snapshot_turn_result(result : TurnResult) -> TurnResult {
 }
 
 ///|
-fn tool_provenance(tool : ToolDef) -> String {
+fn tool_provenance(tool : @types.ToolDef) -> String {
   match tool.source {
     Some(source) if source != "" =>
       "ToolDef.source='\{safe_error_label(source)}'"
@@ -170,9 +174,9 @@ fn tool_provenance(tool : ToolDef) -> String {
 /// collision message identifies the tool name and a provenance hint for each
 /// conflicting provider (ToolDef.source if present, else an actionable marker).
 fn build_tool_routing(
-  tools : Array[&ToolProvider],
-) -> ToolRouting raise CompositionError {
-  let tool_map : Map[String, &ToolProvider] = Map::from_array([])
+  tools : Array[&@port.ToolProvider],
+) -> ToolRouting raise @error.CompositionError {
+  let tool_map : Map[String, &@port.ToolProvider] = Map::from_array([])
   let owner_source : Map[String, String] = Map::from_array([])
   for provider in tools {
     let tool_defs = provider.list_tools()
@@ -185,7 +189,7 @@ fn build_tool_routing(
           Some(s) => s
           None => "(unknown)"
         }
-        raise CompositionError::ToolCollision(
+        raise @error.CompositionError::ToolCollision(
           safe_error_label(tool.name),
           "tool collision; first declaration: \{prev_source}; conflicting declaration: \{provenance}",
         )
@@ -201,14 +205,14 @@ fn build_tool_routing(
 /// Agent — array-based composition: tools routed by name, hooks chained,
 /// observers fan-out, compressors first-wins, sessions write-all/read-first.
 pub(all) struct Agent {
-  model_port : &ModelPort
+  model_port : &@port.ModelPort
   tool_routing : ToolRouting
-  pipeline_hook : &PipelineHook?
-  compressors : Array[&Compressor]
-  observers : Array[&Observer]
-  memories : Array[&MemoryPort]
-  sessions : Array[&SessionStore]
-  lifecycle : &Lifecycle?
+  pipeline_hook : &@port.PipelineHook?
+  compressors : Array[&@port.Compressor]
+  observers : Array[&@port.Observer]
+  memories : Array[&@port.MemoryPort]
+  sessions : Array[&@port.SessionStore]
+  lifecycle : &@port.Lifecycle?
   config : AgentConfig
 }
 
@@ -223,18 +227,18 @@ pub(all) struct Agent {
 /// - `observers`: all receive every event
 /// - `sessions`: write-all, read-first
 pub fn Agent::new(
-  model_port : &ModelPort,
-  tools~ : Array[&ToolProvider],
-  hooks~ : Array[&PipelineHook],
-  memory~ : Array[&MemoryPort],
-  compressors~ : Array[&Compressor],
-  observers~ : Array[&Observer],
-  sessions~ : Array[&SessionStore],
-  lifecycle~ : &Lifecycle?,
+  model_port : &@port.ModelPort,
+  tools~ : Array[&@port.ToolProvider],
+  hooks~ : Array[&@port.PipelineHook],
+  memory~ : Array[&@port.MemoryPort],
+  compressors~ : Array[&@port.Compressor],
+  observers~ : Array[&@port.Observer],
+  sessions~ : Array[&@port.SessionStore],
+  lifecycle~ : &@port.Lifecycle?,
   config~ : AgentConfig,
-) -> Agent raise CompositionError {
+) -> Agent raise @error.CompositionError {
   let tool_routing = build_tool_routing(tools)
-  let pipeline_hook : &PipelineHook? = match hooks.length() {
+  let pipeline_hook : &@port.PipelineHook? = match hooks.length() {
     0 => None
     1 => Some(hooks[0])
     _ => Some(HookChain::{ hooks, })
@@ -264,16 +268,16 @@ pub async fn Agent::shutdown(self : Agent) -> Unit {
 
 ///|
 async fn call_hook(
-  hook : &PipelineHook,
-  stage : Stage,
-) -> Result[Stage, HookError] raise AgentError {
+  hook : &@port.PipelineHook,
+  stage : @port.Stage,
+) -> Result[@port.Stage, @port.HookError] raise @error.AgentError {
   hook.on_stage(stage) catch {
-    e => raise HookAborted(safe_error_label(e.to_string()))
+    e => raise @error.AgentError::HookAborted(safe_error_label(e.to_string()))
   }
 }
 
 ///|
-fn hook_error_category(error : HookError) -> String {
+fn hook_error_category(error : @port.HookError) -> String {
   match error {
     Aborted(_) => "HookError::Aborted"
     Deferred(..) => "HookError::Deferred"
@@ -281,7 +285,7 @@ fn hook_error_category(error : HookError) -> String {
 }
 
 ///|
-fn agent_error_category(error : AgentError) -> String {
+fn agent_error_category(error : @error.AgentError) -> String {
   match error {
     Model(_) => "AgentError::Model"
     Session(_) => "AgentError::Session"
@@ -292,7 +296,7 @@ fn agent_error_category(error : AgentError) -> String {
 }
 
 ///|
-fn session_error_category(error : SessionError) -> String {
+fn session_error_category(error : @error.SessionError) -> String {
   match error {
     Load(_) => "SessionError::Load"
     Save(_) => "SessionError::Save"
@@ -301,15 +305,15 @@ fn session_error_category(error : SessionError) -> String {
 
 ///|
 fn contextualize_session_error(
-  error : SessionError,
+  error : @error.SessionError,
   session_id : String,
   operation : String,
-) -> AgentError {
+) -> @error.AgentError {
   let context = "session_id='\{safe_error_label(session_id)}', operation='\{operation}', category='\{session_error_category(error)}', cause='\{safe_error_label(error.to_string())}'"
-  Session(
+  @error.AgentError::Session(
     match error {
-      Load(_) => Load(context)
-      Save(_) => Save(context)
+      Load(_) => @error.SessionError::Load(context)
+      Save(_) => @error.SessionError::Save(context)
     },
   )
 }
@@ -319,7 +323,7 @@ fn secondary_failure_event(
   stage : String,
   operation : String,
   error_category : String,
-) -> TurnEvent {
+) -> @types.TurnEvent {
   Custom(
     source="posoco.core",
     label="secondary_failure",
@@ -347,8 +351,8 @@ fn Agent::record_secondary_failure(
 ///|
 async fn Agent::record_secondary_hook(
   self : Agent,
-  hook : &PipelineHook,
-  stage : Stage,
+  hook : &@port.PipelineHook,
+  stage : @port.Stage,
   stage_name : String,
 ) -> Unit {
   let error_category : String? = try {
@@ -369,20 +373,20 @@ async fn Agent::record_secondary_hook(
 }
 
 ///|
-fn TurnEvent::tool_call_result(
-  call : ToolCall,
-  result : ToolResult,
-) -> TurnEvent {
+fn @types.TurnEvent::tool_call_result(
+  call : @types.ToolCall,
+  result : @types.ToolResult,
+) -> @types.TurnEvent {
   ToolCallResult(call~, result~, is_error=result.is_error)
 }
 
 ///|
-fn agent_snapshot_turn_event(event : TurnEvent) -> TurnEvent {
+fn agent_snapshot_turn_event(event : @types.TurnEvent) -> @types.TurnEvent {
   match event {
     TurnStarted => TurnStarted
     ToolCallPending(call) => ToolCallPending(agent_snapshot_tool_call(call))
     ToolCallResult(call~, result~, ..) =>
-      TurnEvent::tool_call_result(
+      @types.TurnEvent::tool_call_result(
         agent_snapshot_tool_call(call),
         agent_snapshot_tool_result(result),
       )
@@ -405,7 +409,7 @@ fn agent_snapshot_turn_event(event : TurnEvent) -> TurnEvent {
 }
 
 ///|
-fn Agent::emit_turn_event(self : Agent, event : TurnEvent) -> Unit {
+fn Agent::emit_turn_event(self : Agent, event : @types.TurnEvent) -> Unit {
   for observer in self.observers {
     observer.on_event(agent_snapshot_turn_event(event))
   }
@@ -415,15 +419,15 @@ fn Agent::emit_turn_event(self : Agent, event : TurnEvent) -> Unit {
 /// Run one full agent turn. Tool calls execute in parallel via @async.all.
 pub async fn Agent::run_turn(
   self : Agent,
-  input : Message,
+  input : @types.Message,
   session_id : String,
-) -> TurnResult raise AgentError {
+) -> @types.TurnResult raise @error.AgentError {
   match self.pipeline_hook {
     Some(hook) =>
       match call_hook(hook, BeforeTurn) {
         Ok(_) => ()
         Err(error) => {
-          let primary = HookAborted(error.to_string())
+          let primary = @error.AgentError::HookAborted(error.to_string())
           self.record_secondary_hook(hook, TurnError(primary), "TurnError") catch {
             _ =>
               self.record_secondary_failure(
@@ -478,9 +482,9 @@ pub async fn Agent::run_turn(
 ///|
 async fn Agent::run_turn_inner(
   self : Agent,
-  input : Message,
+  input : @types.Message,
   session_id : String,
-) -> TurnResult raise AgentError {
+) -> @types.TurnResult raise @error.AgentError {
   let session = match self.sessions {
     [first, ..] =>
       match first.load(session_id) {
@@ -490,7 +494,7 @@ async fn Agent::run_turn_inner(
       }
     [] =>
       raise contextualize_session_error(
-        Load("no session store configured"),
+        @error.SessionError::Load("no session store configured"),
         session_id,
         "load",
       )
@@ -506,7 +510,7 @@ async fn Agent::run_turn_inner(
   // overwritten by the final save either.
   let mut current_metadata = agent_snapshot_metadata(session.metadata)
 
-  let tools : Array[ToolDef] = []
+  let tools : Array[@types.ToolDef] = []
   for provider in self.tool_routing.providers {
     let provider_tools = provider.list_tools()
     for t in provider_tools {
@@ -514,9 +518,9 @@ async fn Agent::run_turn_inner(
     }
   }
   let mut tool_round = 0
-  let all_results : Array[ToolResult] = []
+  let all_results : Array[@types.ToolResult] = []
   let mut resolution_required = false
-  let initial_msg = {
+  let initial_msg : @types.Message = {
     role: Assistant,
     content: [],
     tool_calls: [],
@@ -524,7 +528,7 @@ async fn Agent::run_turn_inner(
     name: None,
     reasoning_content: None,
   }
-  let mut response = {
+  let mut response : @types.ModelResponse = {
     message: initial_msg,
     tool_calls: [],
     finish_reason: Stop,
@@ -533,7 +537,7 @@ async fn Agent::run_turn_inner(
   }
 
   while true {
-    let ctx = {
+    let ctx : @port.CompressContext = {
       session_id: current_session_id,
       model_context_window: self.config.model_context_window,
     }
@@ -594,7 +598,7 @@ async fn Agent::run_turn_inner(
         match call_hook(hook, BeforeModel(agent_snapshot_messages(messages))) {
           Ok(BeforeModel(msgs)) => messages = agent_snapshot_messages(msgs)
           Ok(_) => ()
-          Err(e) => raise HookAborted(e.to_string())
+          Err(e) => raise @error.AgentError::HookAborted(e.to_string())
         }
       None => ()
     }
@@ -603,7 +607,7 @@ async fn Agent::run_turn_inner(
       agent_snapshot_messages(messages),
       tools.map(agent_snapshot_tool_def),
       self.config.to_chat_options(),
-      fn(chunk : StreamChunk) {
+      fn(chunk : @types.StreamChunk) {
         self.emit_turn_event(StreamChunkReceived(chunk~))
       },
     ) catch {
@@ -619,7 +623,7 @@ async fn Agent::run_turn_inner(
             }
           None => ()
         }
-        raise Model(reason)
+        raise @error.AgentError::Model(reason)
       }
     }
     response = agent_snapshot_model_response(response)
@@ -655,10 +659,10 @@ async fn Agent::run_turn_inner(
 
     tool_round = tool_round + 1
     if tool_round > self.config.max_tool_rounds {
-      raise ToolLoopExceeded
+      raise @error.AgentError::ToolLoopExceeded
     }
 
-    let approved_calls : Array[ToolCall] = []
+    let approved_calls : Array[@types.ToolCall] = []
     for tool_call in response.tool_calls {
       self.emit_turn_event(ToolCallPending(tool_call))
 
@@ -677,7 +681,7 @@ async fn Agent::run_turn_inner(
               self.emit_turn_event(
                 ToolCallDeferred(call=effective_call, reason~),
               )
-              let rejection = ToolResult::{
+              let rejection = @types.ToolResult::{
                 content: "Tool rejected (needs approval): " + reason,
                 structured: None,
                 is_error: true,
@@ -689,7 +693,7 @@ async fn Agent::run_turn_inner(
               skip_tool = true
               resolution_required = true
             }
-            Err(Aborted(msg)) => raise HookAborted(msg)
+            Err(Aborted(msg)) => raise @error.AgentError::HookAborted(msg)
           }
         None => ()
       }
@@ -698,11 +702,11 @@ async fn Agent::run_turn_inner(
       }
     }
 
-    let mut exec_results : Array[Result[ToolResult, RuntimeError]] = []
+    let mut exec_results : Array[Result[@types.ToolResult, @error.RuntimeError]] = []
     if !approved_calls.is_empty() {
       exec_results = @async.all(
         approved_calls.map(fn(call) {
-          async fn() -> Result[ToolResult, RuntimeError] {
+          async fn() -> Result[@types.ToolResult, @error.RuntimeError] {
             match self.tool_routing.tool_map.get(call.name) {
               Some(provider) =>
                 Ok(
@@ -714,7 +718,7 @@ async fn Agent::run_turn_inner(
                 }
               None =>
                 Err(
-                  RuntimeError::UnknownTool(
+                  @error.RuntimeError::UnknownTool(
                     "No provider for tool '\{call.name}'",
                   ),
                 )
@@ -723,8 +727,8 @@ async fn Agent::run_turn_inner(
         }),
       ) catch {
         e =>
-          raise Runtime(
-            InvocationFailed(
+          raise @error.AgentError::Runtime(
+            @error.RuntimeError::InvocationFailed(
               "parallel tool execution failed: \{safe_error_label(e.to_string())}",
             ),
           )
@@ -739,7 +743,7 @@ async fn Agent::run_turn_inner(
           // not hardcoded. A provider may return Ok(is_error=true) to signal
           // a business-level failure; that status must propagate to observers
           // and match what is fed to the model.
-          self.emit_turn_event(TurnEvent::tool_call_result(call, result))
+          self.emit_turn_event(@types.TurnEvent::tool_call_result(call, result))
           match self.pipeline_hook {
             Some(hook) =>
               self.record_secondary_hook(
@@ -761,12 +765,14 @@ async fn Agent::run_turn_inner(
           messages.push(build_tool_result_message(call, result))
         }
         Err(e) => {
-          let error_result = {
+          let error_result : @types.ToolResult = {
             content: e.to_string(),
             structured: None,
             is_error: true,
           }
-          self.emit_turn_event(TurnEvent::tool_call_result(call, error_result))
+          self.emit_turn_event(
+            @types.TurnEvent::tool_call_result(call, error_result),
+          )
           match self.pipeline_hook {
             Some(hook) =>
               self.record_secondary_hook(
@@ -807,7 +813,7 @@ async fn Agent::run_turn_inner(
     }
   }
 
-  let result = {
+  let result : @types.TurnResult = {
     message: response.message,
     tool_results: all_results,
     final_session_id: current_session_id,

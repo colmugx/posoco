@@ -80,11 +80,11 @@ struct NewThreadCompressor {
 }
 
 ///|
-pub impl Compressor for NewThreadCompressor with fn compress(
+pub impl @port.Compressor for NewThreadCompressor with fn compress(
   self,
-  _messages : Array[Message],
-  _ctx : CompressContext,
-) -> CompressAction {
+  _messages : Array[@types.Message],
+  _ctx : @port.CompressContext,
+) -> @port.CompressAction {
   let new_sid = self.parent_id + "_v2"
   NewThread(
     messages=[],
@@ -155,7 +155,7 @@ async test "t05_save_failure_returns_session_error_no_turn_completed" {
     e => Err(e)
   }
   match result {
-    Err(Session(error)) => {
+    Err(@error.AgentError::Session(error)) => {
       let message = error.to_string()
       assert_true(message.contains("doomed"))
       assert_true(message.contains("final_save"))
@@ -168,7 +168,7 @@ async test "t05_save_failure_returns_session_error_no_turn_completed" {
   let events = obs.events()
   for e in events {
     match e {
-      TurnEvent::TurnCompleted =>
+      @types.TurnEvent::TurnCompleted =>
         fail("TurnCompleted must not fire on save failure")
       _ => ()
     }
@@ -181,7 +181,9 @@ async test "t05_save_failure_returns_session_error_no_turn_completed" {
 
 ///|
 async test "t05_failed_turn_does_not_mutate_loaded_session_messages" {
-  let model = ScriptedModel::new([Fail(Transport("network down"))])
+  let model = ScriptedModel::new([
+    Fail(@error.ModelError::Transport("network down")),
+  ])
   let store = RecordingSessionStore::new()
   let original_messages = [tk_user_msg("already persisted")]
   store.seed("stable", {
@@ -203,7 +205,7 @@ async test "t05_failed_turn_does_not_mutate_loaded_session_messages" {
     e => Err(e)
   }
   match result {
-    Err(Model(_)) => ()
+    Err(@error.AgentError::Model(_)) => ()
     _ => fail("expected model failure")
   }
   assert_eq(original_messages.length(), 1)
@@ -225,7 +227,10 @@ async test "t05_failed_turn_does_not_mutate_loaded_session_messages" {
 async test "t05_session_load_error_has_context_without_metadata" {
   let model = ScriptedModel::new([])
   let store = RecordingSessionStore::new()
-  store.fail_load("load-target", Load("backend unavailable"))
+  store.fail_load(
+    "load-target",
+    @error.SessionError::Load("backend unavailable"),
+  )
   let agent = Agent::new(
     model,
     tools=[],
@@ -241,7 +246,7 @@ async test "t05_session_load_error_has_context_without_metadata" {
     e => Err(e)
   }
   match result {
-    Err(Session(err)) => {
+    Err(@error.AgentError::Session(err)) => {
       let message = err.to_string()
       assert_true(message.contains("load-target"))
       assert_true(message.contains("load"))
@@ -258,7 +263,7 @@ async test "t05_session_error_uses_bounded_single_line_id" {
   let raw_id = "line-one\n" + "x".repeat(100) + "TAIL_SESSION_SECRET"
   let model = ScriptedModel::new([])
   let store = RecordingSessionStore::new()
-  store.fail_load(raw_id, Load("backend unavailable"))
+  store.fail_load(raw_id, @error.SessionError::Load("backend unavailable"))
   let agent = Agent::new(
     model,
     tools=[],
@@ -274,7 +279,7 @@ async test "t05_session_error_uses_bounded_single_line_id" {
     error => Err(error)
   }
   match result {
-    Err(Session(error)) => {
+    Err(@error.AgentError::Session(error)) => {
       let message = error.to_string()
       assert_true(message.contains("line-one "))
       assert_true(message.contains("...(truncated)"))
@@ -309,7 +314,7 @@ async test "t05_session_save_cause_cannot_reexpand_raw_id" {
     error => Err(error)
   }
   match result {
-    Err(Session(error)) => {
+    Err(@error.AgentError::Session(error)) => {
       let message = error.to_string()
       assert_true(message.contains("final_save"))
       assert_true(message.contains("SessionError::Save"))
@@ -358,13 +363,16 @@ fn json_has_poison(value : Json) -> Bool {
 }
 
 ///|
-fn poison_first_message(messages : Array[Message], label : String) -> Unit {
+fn poison_first_message(
+  messages : Array[@types.Message],
+  label : String,
+) -> Unit {
   match messages {
     [first, ..] => {
       for call in first.tool_calls {
         poison_json(call.arguments, label)
       }
-      first.content.push(Text(label))
+      first.content.push(@types.Text(label))
       first.tool_calls.push({ id: label, name: label, arguments: Json::null() })
     }
     [] => ()
@@ -372,7 +380,7 @@ fn poison_first_message(messages : Array[Message], label : String) -> Unit {
 }
 
 ///|
-fn assert_session_has_no_boundary_poison(session : Session) -> Unit {
+fn assert_session_has_no_boundary_poison(session : @types.Session) -> Unit {
   if session.metadata.contains("store_poison") {
     abort("store metadata mutation leaked across session snapshot")
   }
@@ -384,11 +392,11 @@ fn assert_session_has_no_boundary_poison(session : Session) -> Unit {
   for message in session.messages {
     for content in message.content {
       match content {
-        Text(text) =>
+        @types.Text(text) =>
           if text.contains("poison") {
             abort("message content mutation leaked across session snapshot")
           }
-        Image(_, _) => ()
+        @types.Image(_, _) => ()
       }
     }
     for call in message.tool_calls {
@@ -406,7 +414,7 @@ fn assert_session_has_no_boundary_poison(session : Session) -> Unit {
 struct BoundaryMutatingStore {}
 
 ///|
-pub impl SessionStore for BoundaryMutatingStore with fn load(_self, _id) {
+pub impl @port.SessionStore for BoundaryMutatingStore with fn load(_self, _id) {
   Ok({
     messages: [],
     metadata: Map::from_array([
@@ -421,7 +429,7 @@ pub impl SessionStore for BoundaryMutatingStore with fn load(_self, _id) {
 }
 
 ///|
-pub impl SessionStore for BoundaryMutatingStore with fn save(
+pub impl @port.SessionStore for BoundaryMutatingStore with fn save(
   _self,
   _id,
   session,
@@ -436,18 +444,18 @@ pub impl SessionStore for BoundaryMutatingStore with fn save(
 
 ///|
 struct BoundaryAliasingStore {
-  session : Session
+  session : @types.Session
 }
 
 ///|
-pub impl SessionStore for BoundaryAliasingStore with fn load(self, _id) {
+pub impl @port.SessionStore for BoundaryAliasingStore with fn load(self, _id) {
   // Deliberately return the retained value directly. Agent must detach from
   // this implementation even when the store itself provides no snapshot.
   Ok(self.session)
 }
 
 ///|
-pub impl SessionStore for BoundaryAliasingStore with fn save(
+pub impl @port.SessionStore for BoundaryAliasingStore with fn save(
   _self,
   _id,
   _session,
@@ -459,7 +467,7 @@ pub impl SessionStore for BoundaryAliasingStore with fn save(
 struct BoundaryMutatingCompressor {}
 
 ///|
-pub impl Compressor for BoundaryMutatingCompressor with fn compress(
+pub impl @port.Compressor for BoundaryMutatingCompressor with fn compress(
   _self,
   messages,
   _ctx,
@@ -472,15 +480,18 @@ pub impl Compressor for BoundaryMutatingCompressor with fn compress(
 struct BoundaryMutatingHook {}
 
 ///|
-pub impl PipelineHook for BoundaryMutatingHook with fn on_stage(_self, stage) {
+pub impl @port.PipelineHook for BoundaryMutatingHook with fn on_stage(
+  _self,
+  stage,
+) {
   match stage {
-    BeforeModel(messages) => {
+    @port.Stage::BeforeModel(messages) => {
       poison_first_message(messages, "hook-poison")
       // Returning a different stage means this mutation was not accepted as a
       // replacement. It must not leak through the input alias.
-      Ok(BeforeTurn)
+      Ok(@port.Stage::BeforeTurn)
     }
-    AfterModel(response) => {
+    @port.Stage::AfterModel(response) => {
       poison_first_message([response.message], "aftermodel-poison")
       response.tool_calls.push({
         id: "aftermodel-poison",
@@ -489,28 +500,28 @@ pub impl PipelineHook for BoundaryMutatingHook with fn on_stage(_self, stage) {
           Map::from_array([("poison", Json::boolean(true))]),
         ),
       })
-      Err(Aborted("aftermodel-poison"))
+      Err(@port.HookError::Aborted("aftermodel-poison"))
     }
-    BeforeTool(call) => {
+    @port.Stage::BeforeTool(call) => {
       poison_json(call.arguments, "beforetool-poison")
-      Ok(BeforeTurn)
+      Ok(@port.Stage::BeforeTurn)
     }
-    AfterTool(call, result) => {
+    @port.Stage::AfterTool(call, result) => {
       poison_json(call.arguments, "aftertool-poison")
       match result.structured {
         Some(value) => poison_json(value, "aftertool-poison")
         None => ()
       }
-      Err(Aborted("aftertool-poison"))
+      Err(@port.HookError::Aborted("aftertool-poison"))
     }
-    AfterTurn(result) => {
+    @port.Stage::AfterTurn(result) => {
       poison_first_message([result.message], "afterturn-poison")
       result.tool_results.push({
         content: "afterturn-poison",
         structured: Some(Json::string("afterturn-poison")),
         is_error: true,
       })
-      Err(Aborted("afterturn-poison"))
+      Err(@port.HookError::Aborted("afterturn-poison"))
     }
     other => Ok(other)
   }
@@ -518,11 +529,11 @@ pub impl PipelineHook for BoundaryMutatingHook with fn on_stage(_self, stage) {
 
 ///|
 struct BoundaryMutatingModel {
-  response : ModelResponse
+  response : @types.ModelResponse
 }
 
 ///|
-pub impl ModelPort for BoundaryMutatingModel with fn chat(
+pub impl @port.ModelPort for BoundaryMutatingModel with fn chat(
   self,
   messages,
   tools,
@@ -543,13 +554,16 @@ pub impl ModelPort for BoundaryMutatingModel with fn chat(
 struct BoundaryMutatingObserver {}
 
 ///|
-pub impl Observer for BoundaryMutatingObserver with fn on_event(_self, event) {
+pub impl @port.Observer for BoundaryMutatingObserver with fn on_event(
+  _self,
+  event,
+) {
   match event {
-    ModelResponseReceived(message~, ..) =>
+    @types.TurnEvent::ModelResponseReceived(message~, ..) =>
       poison_first_message([message], "observer-model-poison")
-    ToolCallPending(call) =>
+    @types.TurnEvent::ToolCallPending(call) =>
       poison_json(call.arguments, "observer-pending-poison")
-    ToolCallResult(call~, result~, ..) => {
+    @types.TurnEvent::ToolCallResult(call~, result~, ..) => {
       poison_json(call.arguments, "observer-result-poison")
       match result.structured {
         Some(value) => poison_json(value, "observer-result-poison")
@@ -561,10 +575,10 @@ pub impl Observer for BoundaryMutatingObserver with fn on_event(_self, event) {
 }
 
 ///|
-fn boundary_input_message(text : String) -> Message {
+fn boundary_input_message(text : String) -> @types.Message {
   {
-    role: User,
-    content: [Text(text)],
+    role: @types.User,
+    content: [@types.Text(text)],
     tool_calls: [
       {
         id: "input-call",
@@ -591,7 +605,7 @@ fn boundary_input_message(text : String) -> Message {
 struct NewThreadWithMessageCompressor {}
 
 ///|
-pub impl Compressor for NewThreadWithMessageCompressor with fn compress(
+pub impl @port.Compressor for NewThreadWithMessageCompressor with fn compress(
   _self,
   _messages,
   ctx,
@@ -610,7 +624,7 @@ pub impl Compressor for NewThreadWithMessageCompressor with fn compress(
 
 ///|
 async test "t05_compressor_hook_and_model_inputs_are_deep_snapshots" {
-  let retained_session : Session = {
+  let retained_session : @types.Session = {
     messages: [boundary_input_message("persisted")],
     metadata: Map::from_array([
       (
@@ -686,7 +700,7 @@ async test "t05_compressor_hook_and_model_inputs_are_deep_snapshots" {
   }
   for event in recording_observer.events() {
     match event {
-      ModelResponseReceived(message~, ..) =>
+      @types.TurnEvent::ModelResponseReceived(message~, ..) =>
         assert_session_has_no_boundary_poison({
           messages: [message],
           metadata: Map::from_array([]),
@@ -750,19 +764,19 @@ async test "t05_each_newthread_save_store_gets_independent_deep_snapshot" {
 
 ///|
 struct BoundaryRecordingToolProvider {
-  result : ToolResult
-  calls : Array[ToolCall]
+  result : @types.ToolResult
+  calls : Array[@types.ToolCall]
 }
 
 ///|
-pub impl ToolProvider for BoundaryRecordingToolProvider with fn list_tools(
+pub impl @port.ToolProvider for BoundaryRecordingToolProvider with fn list_tools(
   _self,
 ) {
   [tk_tool_def("probe", "")]
 }
 
 ///|
-pub impl ToolProvider for BoundaryRecordingToolProvider with fn execute(
+pub impl @port.ToolProvider for BoundaryRecordingToolProvider with fn execute(
   self,
   _name,
   call,
@@ -793,7 +807,7 @@ async test "t05_tool_ports_hooks_and_observers_get_json_snapshots" {
       ),
     ]),
   )
-  let provider_result : ToolResult = {
+  let provider_result : @types.ToolResult = {
     content: "clean result",
     structured: Some(provider_structured),
     is_error: false,
@@ -837,8 +851,9 @@ async test "t05_tool_ports_hooks_and_observers_get_json_snapshots" {
   }
   for event in recording_observer.events() {
     match event {
-      ToolCallPending(call) => assert_true(!json_has_poison(call.arguments))
-      ToolCallResult(call~, result~, ..) => {
+      @types.TurnEvent::ToolCallPending(call) =>
+        assert_true(!json_has_poison(call.arguments))
+      @types.TurnEvent::ToolCallResult(call~, result~, ..) => {
         assert_true(!json_has_poison(call.arguments))
         match result.structured {
           Some(value) => assert_true(!json_has_poison(value))

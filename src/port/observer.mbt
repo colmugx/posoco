@@ -3,5 +3,5 @@
 /// PipelineHook for interception/abortion. Receives TurnEvent for every
 /// significant turn lifecycle event.
 pub(open) trait Observer {
-  fn on_event(Self, event : TurnEvent) -> Unit
+  fn on_event(Self, event : @types.TurnEvent) -> Unit
 }

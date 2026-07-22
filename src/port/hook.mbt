@@ -18,14 +18,14 @@ pub impl Show for HookError with fn to_string(self) -> String {
 /// order (onion semantics) without short-circuiting (finally semantics).
 pub(all) enum Stage {
   BeforeTurn
-  BeforeModel(Array[Message])
-  AfterModel(ModelResponse)
+  BeforeModel(Array[@types.Message])
+  AfterModel(@types.ModelResponse)
   ModelError(String)
-  BeforeTool(ToolCall)
-  AfterTool(ToolCall, ToolResult)
-  ToolError(ToolCall, RuntimeError)
-  AfterTurn(TurnResult)
-  TurnError(AgentError)
+  BeforeTool(@types.ToolCall)
+  AfterTool(@types.ToolCall, @types.ToolResult)
+  ToolError(@types.ToolCall, @error.RuntimeError)
+  AfterTurn(@types.TurnResult)
+  TurnError(@error.AgentError)
 } derive(Debug)
 
 ///|

@@ -1,0 +1,573 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "colmugx/posoco/kernel"
+
+import {
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub fn check_schema_supported(Json) -> Result[Unit, String]
+
+pub fn reduce(RunState, ToolCatalogSnapshot, RunInput) -> ReduceOutput raise KernelError
+
+pub fn run_model_step(RunState, ToolCatalogSnapshot, Json) -> ReduceOutput raise KernelError
+
+pub fn schedule(ToolCatalogSnapshot, CatalogVersion, Array[CanonicalToolCall]) -> ExecutionPlan raise SchedulingError
+
+pub fn scripted_driver_run(RunState, ToolCatalogSnapshot, ScriptedExecutor, StartPayload, Int) -> DriverTrace raise KernelError
+
+pub fn validate_arguments(Json, Json) -> Result[Unit, SchemaDiagnostic]
+
+// Errors
+pub(all) suberror CatalogCompositionError {
+  InvalidToolName(detail~ : String)
+  NameCollision(visible_name~ : String, first_provenance~ : String, conflicting_provenance~ : String)
+  DuplicateProvenance(visible_name~ : String, provenance~ : String)
+  UnsupportedSchemaKeyword(visible_name~ : String, keyword~ : String)
+  MalformedSchema(visible_name~ : String, detail~ : String)
+  InvalidExecutionPolicy(visible_name~ : String, detail~ : String)
+  Empty
+}
+pub impl Show for CatalogCompositionError
+
+pub(all) suberror KernelError {
+  ConstructorInvariant(category~ : InvariantCategory)
+  ReducerInvariant(run_id~ : RunId, phase~ : String, category~ : InvariantCategory)
+  IllegalTransition(run_id~ : RunId, phase~ : String, input_kind~ : String, detail~ : String)
+}
+pub impl Show for KernelError
+
+pub(all) suberror SchedulingError {
+  DuplicateCallId(call_id~ : CallId)
+  UnknownToolReachedScheduler(call_id~ : CallId, name~ : ToolName)
+  StaleSnapshotVersion(expected~ : CatalogVersion, actual~ : CatalogVersion)
+}
+pub impl Show for SchedulingError
+
+// Types and methods
+pub(all) struct AssistantCompletion {
+  message : AssistantMessagePayload
+  usage : CanonicalUsage?
+} derive(Eq, @debug.Debug)
+pub fn AssistantCompletion::finish_reason(Self) -> AssistantFinishReason
+pub fn AssistantCompletion::has_tool_calls(Self) -> Bool
+pub fn AssistantCompletion::new(content~ : Array[CanonicalContent], tool_calls~ : Array[CanonicalToolCall], reasoning~ : Reasoning?, finish_reason~ : AssistantFinishReason, usage~ : CanonicalUsage?) -> Self
+pub fn AssistantCompletion::tool_calls(Self) -> Array[CanonicalToolCall]
+
+pub(all) enum AssistantFinishReason {
+  Stop
+  Length
+  ToolCalls
+  Other(String)
+} derive(Eq, @debug.Debug)
+pub impl Show for AssistantFinishReason
+
+pub(all) struct AssistantMessagePayload {
+  content : Array[CanonicalContent]
+  tool_calls : Array[CanonicalToolCall]
+  reasoning : Reasoning?
+  finish_reason : AssistantFinishReason
+} derive(Eq, @debug.Debug)
+
+pub(all) struct Budget {
+  max_model_steps : Int?
+  max_tool_rounds : Int?
+  max_tool_calls : Int?
+  max_total_tokens : Int?
+} derive(Eq, @debug.Debug)
+pub fn Budget::bounded(max_model_steps~ : Int, max_tool_rounds~ : Int, max_tool_calls~ : Int, max_total_tokens~ : Int) -> Self
+pub fn Budget::default_run() -> Self
+pub fn Budget::from_legacy_rounds(Int) -> Self
+
+pub(all) struct BudgetConsumed {
+  model_steps : Int
+  tool_rounds : Int
+  tool_calls : Int
+  observed_total_tokens : Int
+  any_usage_verified : Bool
+} derive(Eq, @debug.Debug)
+pub fn BudgetConsumed::exceeded(Self, Budget) -> BudgetState
+pub fn BudgetConsumed::zero() -> Self
+
+pub(all) enum BudgetDimension {
+  ModelSteps
+  ToolRounds
+  ToolCalls
+  TotalTokens
+} derive(Eq, @debug.Debug)
+pub impl Show for BudgetDimension
+
+pub(all) struct BudgetExhaustedPayload {
+  dimension : BudgetDimension
+  consumed : Int
+  limit : Int
+} derive(Eq, @debug.Debug)
+
+pub enum BudgetState {
+  WithinBudget
+  Exceeded(BudgetDimension)
+  UnknownUsage(BudgetDimension)
+} derive(Eq, @debug.Debug)
+pub impl Show for BudgetState
+
+pub(all) struct CallId {
+  value : String
+} derive(Eq, Hash, @debug.Debug)
+pub fn CallId::new(String) -> Result[Self, String]
+pub fn CallId::to_string(Self) -> String
+pub fn CallId::unchecked(String) -> Self
+
+pub(all) struct CallModelPayload {
+  model_step_id : ModelStepId
+  messages : Array[CanonicalMessage]
+  catalog_version : CatalogVersion
+  call_options : Json
+} derive(Eq, @debug.Debug)
+
+pub(all) enum CancelDisposition {
+  Propagated
+  NotPropagated
+  Unknown
+} derive(Eq, @debug.Debug)
+pub impl Show for CancelDisposition
+
+pub(all) struct CancelOutstandingPayload {
+  effect_ids : Array[EffectId]
+  reason : CancelReason
+} derive(Eq, @debug.Debug)
+
+pub(all) enum CancelReason {
+  HostRequested(detail~ : String?)
+  DeadlineReached
+} derive(Eq, @debug.Debug)
+pub impl Show for CancelReason
+
+pub(all) struct CancelRequestedPayload {
+  detail : String?
+} derive(Eq, @debug.Debug)
+
+pub(all) enum CanonicalContent {
+  Text(String)
+  Image(media_type~ : String, data~ : String)
+} derive(Eq, @debug.Debug)
+pub impl Show for CanonicalContent
+
+pub(all) enum CanonicalMessage {
+  SystemMessage(content~ : Array[CanonicalContent])
+  UserMessage(content~ : Array[CanonicalContent])
+  AssistantMessage(content~ : Array[CanonicalContent], tool_calls~ : Array[CanonicalToolCall], reasoning~ : Reasoning?, finish_reason~ : AssistantFinishReason)
+  ToolMessage(call_id~ : CallId, tool_name~ : ToolName, outcome~ : ToolOutcome)
+} derive(Eq, @debug.Debug)
+
+pub(all) struct CanonicalToolCall {
+  call_id : CallId
+  name : ToolName
+  arguments : Json
+} derive(Eq, @debug.Debug)
+pub impl Show for CanonicalToolCall
+
+pub(all) struct CanonicalToolDef {
+  name : ToolName
+  description : String
+  input_schema : Json
+  owner : OwnerId
+  policy : ExecutionPolicy
+  provenance : String?
+} derive(Eq, @debug.Debug)
+pub fn CanonicalToolDef::new(name~ : ToolName, description~ : String, input_schema~ : Json, owner~ : OwnerId, policy~ : ExecutionPolicy, provenance~ : String?) -> Self
+pub impl Show for CanonicalToolDef
+
+pub(all) struct CanonicalTranscript {
+  messages : Array[CanonicalMessage]
+} derive(Eq, @debug.Debug)
+pub fn CanonicalTranscript::append(Self, CanonicalMessage) -> Self
+pub fn CanonicalTranscript::append_all(Self, Array[CanonicalMessage]) -> Self
+pub fn CanonicalTranscript::empty() -> Self
+pub fn CanonicalTranscript::from_array(Array[CanonicalMessage]) -> Self
+pub fn CanonicalTranscript::length(Self) -> Int
+pub fn CanonicalTranscript::messages_snapshot(Self) -> Array[CanonicalMessage]
+
+pub(all) struct CanonicalUsage {
+  input_tokens : Int?
+  output_tokens : Int?
+  total_tokens : Int?
+} derive(Eq, @debug.Debug)
+pub impl Show for CanonicalUsage
+
+pub(all) struct CatalogEntry {
+  position : Int
+  definition : CanonicalToolDef
+} derive(Eq, @debug.Debug)
+
+pub(all) struct CatalogVersion {
+  value : Int
+} derive(Eq, @debug.Debug)
+pub fn CatalogVersion::new(Int) -> Self
+pub fn CatalogVersion::to_int(Self) -> Int
+pub impl Show for CatalogVersion
+
+pub(all) struct DeadlineReachedPayload {
+  detail : String
+} derive(Eq, @debug.Debug)
+
+pub(all) struct DriverStep {
+  effect_id : EffectId
+  effect_kind : String
+  input_kind : String
+} derive(Eq, @debug.Debug)
+pub impl Show for DriverStep
+
+pub(all) struct DriverTrace {
+  steps : Array[DriverStep]
+  events : Array[KernelEvent]
+  final_state : RunState
+} derive(@debug.Debug)
+pub fn DriverTrace::events(Self) -> Array[KernelEvent]
+pub fn DriverTrace::final_state(Self) -> RunState
+pub fn DriverTrace::steps(Self) -> Array[DriverStep]
+
+pub(all) enum Effect {
+  CallModel(effect_id~ : EffectId, payload~ : CallModelPayload)
+  ExecuteTool(effect_id~ : EffectId, payload~ : ExecuteToolPayload)
+  CancelOutstanding(effect_id~ : EffectId, payload~ : CancelOutstandingPayload)
+} derive(Eq, @debug.Debug)
+pub fn Effect::effect_id(Self) -> EffectId
+pub fn Effect::model_step_id(Self) -> ModelStepId?
+pub impl Show for Effect
+
+pub(all) struct EffectId {
+  value : Int
+} derive(Eq, Hash, @debug.Debug)
+pub fn EffectId::first() -> Self
+pub fn EffectId::next(Self) -> Self
+pub fn EffectId::to_int(Self) -> Int
+pub impl Show for EffectId
+
+pub(all) struct EventSequence {
+  value : Int
+} derive(Eq, @debug.Debug)
+pub fn EventSequence::initial() -> Self
+pub fn EventSequence::next(Self) -> Self
+pub fn EventSequence::to_int(Self) -> Int
+
+pub(all) struct ExecuteToolPayload {
+  model_step_id : ModelStepId
+  call_id : CallId
+  tool_name : ToolName
+  arguments : Json
+  owner : OwnerId
+  catalog_version : CatalogVersion
+} derive(Eq, @debug.Debug)
+
+pub(all) struct ExecutionPlan {
+  waves : Array[ExecutionWave]
+} derive(Eq, @debug.Debug)
+pub fn ExecutionPlan::total_calls(Self) -> Int
+pub fn ExecutionPlan::trace(Self) -> String
+pub fn ExecutionPlan::wave_count(Self) -> Int
+pub fn ExecutionPlan::waves(Self) -> Array[ExecutionWave]
+pub impl Show for ExecutionPlan
+
+pub(all) enum ExecutionPolicy {
+  Sequential
+  Parallel
+  Exclusive
+} derive(Eq, @debug.Debug)
+pub impl Show for ExecutionPolicy
+
+pub(all) struct ExecutionWave {
+  calls : Array[CanonicalToolCall]
+  policies : Array[ExecutionPolicy]
+} derive(Eq, @debug.Debug)
+pub impl Show for ExecutionWave
+
+pub(all) enum FailureReason {
+  ModelParseFailure(detail~ : String)
+  ModelTransport(detail~ : String)
+  ModelRuntime(detail~ : String)
+  InvariantViolation(category~ : InvariantCategory)
+  BudgetExhausted(dimension~ : BudgetDimension)
+  DeadlineReached
+} derive(Eq, @debug.Debug)
+pub impl Show for FailureReason
+
+pub(all) enum InvariantCategory {
+  DuplicateCompletion(effect_id~ : EffectId)
+  StaleCorrelation(effect_id~ : EffectId)
+  MissingOwner(owner~ : OwnerId)
+  StaleSnapshot(expected~ : CatalogVersion, actual~ : CatalogVersion)
+  DuplicateCallId(call_id~ : CallId)
+  IllegalPhase(phase~ : String, detail~ : String)
+  IllegalInputForPhase(input_kind~ : String, phase~ : String)
+  PostTerminal(input_kind~ : String)
+} derive(Eq, @debug.Debug)
+pub impl Show for InvariantCategory
+
+pub(all) enum KernelEvent {
+  RunStarted(details~ : StartedDetails)
+  ModelStepStarted(model_step_id~ : ModelStepId, effect_id~ : EffectId)
+  ModelStepCompleted(model_step_id~ : ModelStepId, completion_summary~ : String)
+  ToolBatchStarted(model_step_id~ : ModelStepId, call_ids~ : Array[CallId])
+  ToolCompleted(call_id~ : CallId, outcome~ : ToolOutcome)
+  RunSuspended(requirement~ : SuspensionRequirement, model_step_id~ : ModelStepId)
+  RunResumed(model_step_id~ : ModelStepId)
+  CancelRequested(effect_ids~ : Array[EffectId], reason~ : CancelReason)
+  BudgetExhausted(dimension~ : BudgetDimension, consumed~ : Int, limit~ : Int)
+  InputRejected(input_kind~ : String, reason~ : String)
+  RunCompleted(final_message_summary~ : String, model_steps~ : Int, tool_calls~ : Int)
+  RunFailed(reason~ : FailureReason)
+  RunCancelled(reason~ : CancelReason)
+} derive(Eq, @debug.Debug)
+pub fn KernelEvent::is_terminal(Self) -> Bool
+pub impl Show for KernelEvent
+
+pub(all) struct ModelCompletedPayload {
+  effect_id : EffectId
+  model_step_id : ModelStepId
+  completion : AssistantCompletion
+} derive(Eq, @debug.Debug)
+
+pub(all) struct ModelFailedPayload {
+  effect_id : EffectId
+  model_step_id : ModelStepId
+  failure : ModelFailure
+} derive(Eq, @debug.Debug)
+
+pub(all) enum ModelFailure {
+  RequestBuild(reason~ : String)
+  Transport(reason~ : String)
+  Runtime(reason~ : String)
+  Parse(reason~ : String)
+} derive(Eq, @debug.Debug)
+pub impl Show for ModelFailure
+
+pub(all) struct ModelStepId {
+  value : Int
+} derive(Eq, @debug.Debug)
+pub fn ModelStepId::first() -> Self
+pub fn ModelStepId::next(Self) -> Self
+pub fn ModelStepId::to_int(Self) -> Int
+pub impl Show for ModelStepId
+
+pub(all) enum NotExecutedReason {
+  UnknownTool
+  SchemaMismatch(json_path~ : String, expected~ : String, actual~ : String)
+} derive(Eq, @debug.Debug)
+pub impl Show for NotExecutedReason
+
+pub(all) struct OwnerId {
+  value : String
+} derive(Eq, Hash, @debug.Debug)
+pub fn OwnerId::new(String) -> Result[Self, String]
+pub fn OwnerId::to_string(Self) -> String
+pub fn OwnerId::unchecked(String) -> Self
+
+pub(all) enum Phase {
+  Initializing
+  ReadyForModel
+  AwaitingModel
+  AwaitingTools
+  Suspended
+  Terminal
+} derive(Eq, @debug.Debug)
+pub impl Show for Phase
+
+pub(all) struct Reasoning {
+  content : String
+} derive(Eq, @debug.Debug)
+pub impl Show for Reasoning
+
+pub(all) struct ReduceOutput {
+  next_state : RunState
+  effects : Array[Effect]
+  events : Array[KernelEvent]
+} derive(Eq, @debug.Debug)
+pub fn ReduceOutput::effects(Self) -> Array[Effect]
+pub fn ReduceOutput::events(Self) -> Array[KernelEvent]
+pub fn ReduceOutput::next_state(Self) -> RunState
+pub impl Show for ReduceOutput
+
+pub(all) struct ResumePayload {
+  payload : Json
+} derive(Eq, @debug.Debug)
+
+pub(all) struct RunContext {
+  run_id : RunId
+  session_id : SessionId
+  budget : Budget
+} derive(Eq, @debug.Debug)
+pub fn RunContext::new(run_id~ : RunId, session_id~ : SessionId, budget~ : Budget) -> Self
+
+pub(all) struct RunId {
+  value : String
+} derive(Eq, Hash, @debug.Debug)
+pub fn RunId::new(String) -> Result[Self, String]
+pub fn RunId::to_string(Self) -> String
+pub fn RunId::unchecked(String) -> Self
+pub impl Show for RunId
+
+pub(all) enum RunInput {
+  Start(payload~ : StartPayload)
+  ModelCompleted(payload~ : ModelCompletedPayload)
+  ModelFailed(payload~ : ModelFailedPayload)
+  ToolCompleted(payload~ : ToolCompletedPayload)
+  ToolFailed(payload~ : ToolFailedPayload)
+  CancelRequested(payload~ : CancelRequestedPayload)
+  DeadlineReached(payload~ : DeadlineReachedPayload)
+  BudgetExhausted(payload~ : BudgetExhaustedPayload)
+  SuspendRequested(payload~ : SuspendRequestedPayload)
+  Resume(payload~ : ResumePayload)
+} derive(Eq, @debug.Debug)
+pub fn RunInput::kind(Self) -> String
+pub impl Show for RunInput
+
+pub(all) enum RunOutcome {
+  Completed(final_message~ : CanonicalMessage, tool_results~ : Array[ToolOutcome])
+  Failed(reason~ : FailureReason)
+  Cancelled(reason~ : CancelReason)
+} derive(Eq, @debug.Debug)
+pub impl Show for RunOutcome
+
+pub struct RunState {
+  run_id : RunId
+  session_id : SessionId
+  budget : Budget
+  phase : Phase
+  transcript : CanonicalTranscript
+  pending_effects : Array[Effect]
+  next_event_sequence : EventSequence
+  next_effect_id : EffectId
+  current_model_step_id : ModelStepId
+  catalog_version : CatalogVersion
+  budget_consumed : BudgetConsumed
+  outcome : RunOutcome?
+  tool_results : Array[(CallId, ToolOutcome)]
+  suspension_requirement : SuspensionRequirement?
+} derive(Eq, @debug.Debug)
+pub fn RunState::budget(Self) -> Budget
+pub fn RunState::budget_consumed(Self) -> BudgetConsumed
+pub fn RunState::catalog_version(Self) -> CatalogVersion
+pub fn RunState::current_model_step_id(Self) -> ModelStepId
+pub fn RunState::initial(run_id~ : RunId, session_id~ : SessionId, budget~ : Budget) -> Self raise KernelError
+pub fn RunState::next_effect_id(Self) -> EffectId
+pub fn RunState::next_event_sequence(Self) -> EventSequence
+pub fn RunState::outcome(Self) -> RunOutcome?
+pub fn RunState::pending_effects(Self) -> Array[Effect]
+pub fn RunState::phase(Self) -> Phase
+pub fn RunState::run_id(Self) -> RunId
+pub fn RunState::session_id(Self) -> SessionId
+pub fn RunState::suspension_requirement(Self) -> SuspensionRequirement?
+pub fn RunState::transcript(Self) -> CanonicalTranscript
+pub fn RunState::transition(Self, phase~ : Phase, transcript~ : CanonicalTranscript, pending_effects~ : Array[Effect], next_event_sequence~ : EventSequence, next_effect_id~ : EffectId, current_model_step_id~ : ModelStepId, catalog_version~ : CatalogVersion?, budget_consumed~ : BudgetConsumed, outcome~ : RunOutcome?, suspension_requirement~ : SuspensionRequirement?) -> Self raise KernelError
+pub impl Show for RunState
+
+pub(all) struct SchemaDiagnostic {
+  json_path : String
+  expected : String
+  actual : String
+} derive(Eq, @debug.Debug)
+pub impl Show for SchemaDiagnostic
+
+pub struct ScriptedExecutor {
+  outcomes : Map[String, ScriptedOutcome]
+}
+pub fn ScriptedExecutor::lookup(Self, EffectId) -> ScriptedOutcome
+pub fn ScriptedExecutor::new() -> Self
+pub fn ScriptedExecutor::on(Self, EffectId, ScriptedOutcome) -> Self
+
+pub(all) enum ScriptedOutcome {
+  ScriptedModelCompleted(AssistantCompletion)
+  ScriptedModelFailed(ModelFailure)
+  ScriptedToolCompleted(ToolOutcome)
+  ScriptedToolRuntime(ModelFailure)
+  ScriptedToolInvariant(InvariantCategory)
+}
+
+pub(all) struct SessionId {
+  value : String
+} derive(Eq, Hash, @debug.Debug)
+pub fn SessionId::new(String) -> Result[Self, String]
+pub fn SessionId::to_string(Self) -> String
+pub fn SessionId::unchecked(String) -> Self
+
+pub(all) struct StartPayload {
+  initial_messages : Array[CanonicalMessage]
+  catalog_version : CatalogVersion
+} derive(Eq, @debug.Debug)
+
+pub(all) struct StartedDetails {
+  run_id : RunId
+  session_id : SessionId
+} derive(Eq, @debug.Debug)
+
+pub(all) struct SuspendRequestedPayload {
+  requirement : SuspensionRequirement
+} derive(Eq, @debug.Debug)
+
+pub(all) struct SuspensionRequirement {
+  kind : String
+  payload : Json
+} derive(Eq, @debug.Debug)
+
+pub struct ToolCatalogBuilder {
+  entries : Array[CatalogEntry]
+  by_name : Map[String, CatalogEntry]
+  mut finished : Bool
+}
+pub fn ToolCatalogBuilder::add(Self, CanonicalToolDef) -> Self raise CatalogCompositionError
+pub fn ToolCatalogBuilder::finish(Self, version~ : CatalogVersion) -> ToolCatalogSnapshot raise CatalogCompositionError
+pub fn ToolCatalogBuilder::new() -> Self
+
+pub struct ToolCatalogSnapshot {
+  version : CatalogVersion
+  entries : Array[CatalogEntry]
+  by_name : Map[String, CatalogEntry]
+} derive(Eq, @debug.Debug)
+pub fn ToolCatalogSnapshot::contains(Self, ToolName) -> Bool
+pub fn ToolCatalogSnapshot::definitions(Self) -> Array[CanonicalToolDef]
+pub fn ToolCatalogSnapshot::entries(Self) -> Array[CatalogEntry]
+pub fn ToolCatalogSnapshot::find(Self, ToolName) -> CatalogEntry?
+pub fn ToolCatalogSnapshot::size(Self) -> Int
+pub fn ToolCatalogSnapshot::validate_arguments(Self, ToolName, Json) -> Result[Unit, SchemaDiagnostic]
+pub fn ToolCatalogSnapshot::version(Self) -> CatalogVersion
+
+pub(all) struct ToolCompletedPayload {
+  effect_id : EffectId
+  call_id : CallId
+  outcome : ToolOutcome
+} derive(Eq, @debug.Debug)
+
+pub(all) struct ToolFailedPayload {
+  effect_id : EffectId
+  call_id : CallId
+  runtime : ModelFailure?
+  invariant_failure : InvariantCategory?
+} derive(Eq, @debug.Debug)
+
+pub(all) struct ToolName {
+  value : String
+} derive(Eq, Hash, @debug.Debug)
+pub fn ToolName::new(String) -> Result[Self, String]
+pub fn ToolName::to_string(Self) -> String
+pub fn ToolName::unchecked(String) -> Self
+
+pub(all) enum ToolOutcome {
+  Success(content~ : String, structured~ : Json?)
+  ToolReportedError(content~ : String, structured~ : Json?)
+  RuntimeFailure(error_category~ : String, message~ : String)
+  NotExecuted(reason~ : NotExecutedReason, original_call_id~ : CallId)
+} derive(Eq, @debug.Debug)
+pub fn ToolOutcome::is_failure(Self) -> Bool
+pub fn ToolOutcome::summary(Self) -> String
+pub impl Show for ToolOutcome
+
+// Type aliases
+pub type HostChunkCallback = (Json) -> Unit
+
+// Traits
+pub(open) trait HostRuntime {
+  async fn call_model(Self, Array[CanonicalMessage], Array[CanonicalToolDef], Json, (Json) -> Unit) -> Result[AssistantCompletion, ModelFailure]
+  async fn execute_tool(Self, OwnerId, CallId, ToolName, Json) -> ToolOutcome
+  async fn cancel_effects(Self, Array[EffectId], CancelReason) -> Array[(EffectId, CancelDisposition)]
+}
+

@@ -1,18 +1,23 @@
 ///|
 /// Whitebox tests with mock implementations.
 struct MockModelPort {
-  responses : Array[ModelResponse]
+  responses : Array[@types.ModelResponse]
   mut index : Int
 }
 
 ///|
-impl ModelPort for MockModelPort with fn chat(self, _messages, _tools, _options) {
+impl @port.ModelPort for MockModelPort with fn chat(
+  self,
+  _messages,
+  _tools,
+  _options,
+) {
   if self.index < self.responses.length() {
     let resp = self.responses[self.index]
     self.index = self.index + 1
     resp
   } else {
-    raise Transport("no more responses")
+    raise @error.ModelError::Transport("no more responses")
   }
 }
 
@@ -20,35 +25,36 @@ impl ModelPort for MockModelPort with fn chat(self, _messages, _tools, _options)
 /// MockToolProvider — implements the unified ToolProvider trait.
 /// Lists tools and executes them from a results map.
 struct MockToolProvider {
-  tools : Array[ToolDef]
-  results : Map[String, Result[ToolResult, RuntimeError]]
+  tools : Array[@types.ToolDef]
+  results : Map[String, Result[@types.ToolResult, @error.RuntimeError]]
 }
 
 ///|
-impl ToolProvider for MockToolProvider with fn list_tools(self) {
+impl @port.ToolProvider for MockToolProvider with fn list_tools(self) {
   self.tools
 }
 
 ///|
-impl ToolProvider for MockToolProvider with fn execute(
+impl @port.ToolProvider for MockToolProvider with fn execute(
   self,
   name : String,
-  _call : ToolCall,
-) -> ToolResult raise RuntimeError {
+  _call : @types.ToolCall,
+) -> @types.ToolResult raise @error.RuntimeError {
   match self.results.get(name) {
     Some(Ok(r)) => r
     Some(Err(e)) => raise e
-    None => raise InvocationFailed("tool not found: \{name}")
+    None =>
+      raise @error.RuntimeError::InvocationFailed("tool not found: \{name}")
   }
 }
 
 ///|
 struct MockSessionStore {
-  store : Map[String, Session]
+  store : Map[String, @types.Session]
 }
 
 ///|
-impl SessionStore for MockSessionStore with fn load(self, id) {
+impl @port.SessionStore for MockSessionStore with fn load(self, id) {
   if self.store.contains(id) {
     Ok(self.store[id])
   } else {
@@ -57,18 +63,18 @@ impl SessionStore for MockSessionStore with fn load(self, id) {
 }
 
 ///|
-impl SessionStore for MockSessionStore with fn save(self, id, session) {
+impl @port.SessionStore for MockSessionStore with fn save(self, id, session) {
   self.store[id] = session
   Ok(())
 }
 
 ///|
 struct MockObserver {
-  events : Array[TurnEvent]
+  events : Array[@types.TurnEvent]
 }
 
 ///|
-impl Observer for MockObserver with fn on_event(self, event) {
+impl @port.Observer for MockObserver with fn on_event(self, event) {
   self.events.push(event)
 }
 
@@ -76,20 +82,20 @@ impl Observer for MockObserver with fn on_event(self, event) {
 struct AbortHook {}
 
 ///|
-impl PipelineHook for AbortHook with fn on_stage(_self, stage) {
+impl @port.PipelineHook for AbortHook with fn on_stage(_self, stage) {
   match stage {
-    BeforeTool(_) => Err(Aborted("blocked by policy"))
+    BeforeTool(_) => Err(@port.HookError::Aborted("blocked by policy"))
     _ => Ok(stage)
   }
 }
 
 ///|
 struct LogHook {
-  seen : Array[Stage]
+  seen : Array[@port.Stage]
 }
 
 ///|
-impl PipelineHook for LogHook with fn on_stage(self, stage) {
+impl @port.PipelineHook for LogHook with fn on_stage(self, stage) {
   self.seen.push(stage)
   Ok(stage)
 }
@@ -98,7 +104,11 @@ impl PipelineHook for LogHook with fn on_stage(self, stage) {
 struct NewThreadCompressor {}
 
 ///|
-impl Compressor for NewThreadCompressor with fn compress(_self, messages, _ctx) {
+impl @port.Compressor for NewThreadCompressor with fn compress(
+  _self,
+  messages,
+  _ctx,
+) {
   NewThread(
     messages~,
     new_session_id="session_2",
@@ -111,7 +121,11 @@ impl Compressor for NewThreadCompressor with fn compress(_self, messages, _ctx) 
 struct ReplaceCompressor {}
 
 ///|
-impl Compressor for ReplaceCompressor with fn compress(_self, messages, _ctx) {
+impl @port.Compressor for ReplaceCompressor with fn compress(
+  _self,
+  messages,
+  _ctx,
+) {
   if messages.length() > 0 {
     Replace([messages[0]])
   } else {
@@ -132,7 +146,7 @@ fn make_config() -> AgentConfig {
 }
 
 ///|
-fn user_msg(text : String) -> Message {
+fn user_msg(text : String) -> @types.Message {
   {
     role: User,
     content: [Text(text)],
@@ -144,7 +158,7 @@ fn user_msg(text : String) -> Message {
 }
 
 ///|
-fn assistant_msg(text : String) -> Message {
+fn assistant_msg(text : String) -> @types.Message {
   {
     role: Assistant,
     content: [Text(text)],
@@ -156,7 +170,7 @@ fn assistant_msg(text : String) -> Message {
 }
 
 ///|
-fn stop_response(text : String) -> ModelResponse {
+fn stop_response(text : String) -> @types.ModelResponse {
   {
     message: assistant_msg(text),
     tool_calls: [],
@@ -167,7 +181,7 @@ fn stop_response(text : String) -> ModelResponse {
 }
 
 ///|
-fn tool_response(tool_calls : Array[ToolCall]) -> ModelResponse {
+fn tool_response(tool_calls : Array[@types.ToolCall]) -> @types.ModelResponse {
   {
     message: {
       role: Assistant,
@@ -185,7 +199,7 @@ fn tool_response(tool_calls : Array[ToolCall]) -> ModelResponse {
 }
 
 ///|
-fn make_tool_call(id : String, name : String) -> ToolCall {
+fn make_tool_call(id : String, name : String) -> @types.ToolCall {
   { id, name, arguments: Json::null() }
 }
 
@@ -279,7 +293,9 @@ async test "tool_failure_non_fatal" {
         source: None,
       },
     ],
-    results: Map::from_array([("bash", Err(InvocationFailed("boom")))]),
+    results: Map::from_array([
+      ("bash", Err(@error.RuntimeError::InvocationFailed("boom"))),
+    ]),
   }
   let store = MockSessionStore::{ store: Map::from_array([]) }
   let observer = MockObserver::{ events: [] }
@@ -321,7 +337,7 @@ async test "model_error_aborts_turn" {
   )
   match
     (Ok(agent.run_turn(user_msg("ping"), "session_1")) catch { e => Err(e) }) {
-    Err(Model(_)) => ()
+    Err(@error.AgentError::Model(_)) => ()
     _ => fail("expected Model error")
   }
 }
@@ -365,7 +381,8 @@ async test "hook_aborts_before_tool" {
   )
   match
     (Ok(agent.run_turn(user_msg("danger"), "session_1")) catch { e => Err(e) }) {
-    Err(HookAborted(msg)) => assert_true(msg.contains("blocked by policy"))
+    Err(@error.AgentError::HookAborted(msg)) =>
+      assert_true(msg.contains("blocked by policy"))
     _ => fail("expected HookAborted error")
   }
 }
@@ -496,7 +513,7 @@ async test "tool_loop_exceeded" {
   )
   match
     (Ok(agent.run_turn(user_msg("loop"), "session_1")) catch { e => Err(e) }) {
-    Err(ToolLoopExceeded) => ()
+    Err(@error.AgentError::ToolLoopExceeded) => ()
     _ => fail("expected ToolLoopExceeded")
   }
 }
@@ -512,7 +529,11 @@ async test "hook_chain_composition" {
     _ => fail("expected BeforeTurn to pass through")
   }
 
-  let tc = { id: "call_a", name: "test", arguments: Json::null() }
+  let tc = @types.ToolCall::{
+    id: "call_a",
+    name: "test",
+    arguments: Json::null(),
+  }
   match chain.on_stage(BeforeTool(tc)) {
     Ok(BeforeTool(_)) => assert_eq(hook1.seen.length(), 2)
     _ => fail("expected BeforeTool to pass through")
@@ -520,9 +541,13 @@ async test "hook_chain_composition" {
 
   let abort = AbortHook::{  }
   let fail_chain = HookChain::{ hooks: [abort] }
-  let tc2 = { id: "call_b", name: "fail", arguments: Json::null() }
+  let tc2 = @types.ToolCall::{
+    id: "call_b",
+    name: "fail",
+    arguments: Json::null(),
+  }
   match fail_chain.on_stage(BeforeTool(tc2)) {
-    Err(Aborted(msg)) => assert_true(msg.contains("blocked"))
+    Err(@port.HookError::Aborted(msg)) => assert_true(msg.contains("blocked"))
     _ => fail("expected abort")
   }
 }
@@ -530,13 +555,19 @@ async test "hook_chain_composition" {
 ///|
 async test "noop_compressor_always_none" {
   let comp = NoopCompressor::{  }
-  let ctx = { session_id: "test", model_context_window: None }
+  let ctx = @port.CompressContext::{
+    session_id: "test",
+    model_context_window: None,
+  }
 
   let action1 = comp.compress([], ctx)
   assert_true(action1 is None)
 
-  let msgs : Array[Message] = [user_msg("a"), user_msg("b")]
-  let ctx2 = { session_id: "test2", model_context_window: None }
+  let msgs : Array[@types.Message] = [user_msg("a"), user_msg("b")]
+  let ctx2 = @port.CompressContext::{
+    session_id: "test2",
+    model_context_window: None,
+  }
   let action2 = comp.compress(msgs, ctx2)
   assert_true(action2 is None)
 }
@@ -643,12 +674,12 @@ async test "session_persistence" {
 struct RewriteModelHook {}
 
 ///|
-impl PipelineHook for RewriteModelHook with fn on_stage(_self, stage) {
+impl @port.PipelineHook for RewriteModelHook with fn on_stage(_self, stage) {
   match stage {
     BeforeModel(msgs) => {
-      let system_msg = {
-        role: System,
-        content: [Text("SYSTEM: rewritten")],
+      let system_msg = @types.Message::{
+        role: @types.Role::System,
+        content: [@types.Content::Text("SYSTEM: rewritten")],
         tool_calls: [],
         tool_call_id: None,
         name: None,
@@ -698,10 +729,10 @@ async test "hook_rewrites_before_model_messages" {
 struct DeferToolHook {}
 
 ///|
-impl PipelineHook for DeferToolHook with fn on_stage(_self, stage) {
+impl @port.PipelineHook for DeferToolHook with fn on_stage(_self, stage) {
   match stage {
     BeforeTool(call) if call.name == "restricted" =>
-      Err(Deferred(reason="needs admin approval"))
+      Err(@port.HookError::Deferred(reason="needs admin approval"))
     _ => Ok(stage)
   }
 }
@@ -875,7 +906,8 @@ async test "agent_tool_collision_detection" {
     e => Err(e)
   }
   match composition_result {
-    Err(CompositionError::ToolCollision(name, _msg)) => assert_eq(name, "bash")
+    Err(@error.CompositionError::ToolCollision(name, _msg)) =>
+      assert_eq(name, "bash")
     _ => fail("expected CompositionError::ToolCollision for duplicate 'bash'")
   }
 }
@@ -883,12 +915,12 @@ async test "agent_tool_collision_detection" {
 ///|
 /// Mock ModelPort that emits StreamChunks then returns a final response.
 struct MockStreamingModelPort {
-  chunks : Array[StreamChunk]
-  final_response : ModelResponse
+  chunks : Array[@types.StreamChunk]
+  final_response : @types.ModelResponse
 }
 
 ///|
-impl ModelPort for MockStreamingModelPort with fn chat(
+impl @port.ModelPort for MockStreamingModelPort with fn chat(
   self,
   _messages,
   _tools,
@@ -898,7 +930,7 @@ impl ModelPort for MockStreamingModelPort with fn chat(
 }
 
 ///|
-impl ModelPort for MockStreamingModelPort with fn chat_streaming(
+impl @port.ModelPort for MockStreamingModelPort with fn chat_streaming(
   self,
   _messages,
   _tools,
@@ -913,7 +945,7 @@ impl ModelPort for MockStreamingModelPort with fn chat_streaming(
 
 ///|
 async test "streaming_events_emitted_during_chat" {
-  let chunks : Array[StreamChunk] = [
+  let chunks : Array[@types.StreamChunk] = [
     TextDelta(token="Hello"),
     TextDelta(token=" world"),
     Usage({
@@ -954,7 +986,7 @@ async test "streaming_events_emitted_during_chat" {
 
 ///|
 async test "stream_accumulator_assembles_response" {
-  let acc = StreamAccumulator::new()
+  let acc = @types.StreamAccumulator::new()
   acc.push(TextDelta(token="Hi"))
   acc.push(TextDelta(token=" there"))
   acc.push(ReasoningDelta(token="thinking"))
@@ -1076,12 +1108,12 @@ async test "multiple_session_stores_write_all" {
 /// Helper: build a minimal CommandParam for tests.
 fn make_param(
   name : String,
-  ptype? : ParamType = Str,
+  ptype? : @port.ParamType = Str,
   required? : Bool = false,
   positional? : Bool = false,
   default? : Json? = None,
   choices? : Array[String]? = None,
-) -> CommandParam {
+) -> @port.CommandParam {
   {
     name,
     label: name,
@@ -1098,9 +1130,9 @@ fn make_param(
 /// Helper: build a minimal CommandDef for tests.
 fn make_command(
   id : String,
-  params? : Array[CommandParam] = [],
-  ctype? : CommandType = Action,
-) -> CommandDef {
+  params? : Array[@port.CommandParam] = [],
+  ctype? : @port.CommandType = Action,
+) -> @port.CommandDef {
   {
     id,
     label: id,
@@ -1203,8 +1235,9 @@ test "validate_args_applies_default" {
 async test "noop_command_port_returns_empty_and_raises_notfound" {
   let port = NoopCommandPort::{  }
   assert_eq(port.commands().length(), 0)
-  match (Ok(port.invoke("anything", Json::empty_object())) catch { e => Err(e) }) {
-    Err(NotFound(id)) => assert_eq(id, "anything")
+  match
+    (Ok(port.invoke("anything", Json::empty_object())) catch { e => Err(e) }) {
+    Err(@error.CommandError::NotFound(id)) => assert_eq(id, "anything")
     Err(_) => fail("expected NotFound")
     Ok(_) => fail("expected raise")
   }
@@ -1215,11 +1248,11 @@ async test "noop_command_port_returns_empty_and_raises_notfound" {
 struct AlwaysFailHook {}
 
 ///|
-impl PipelineHook for AlwaysFailHook with fn on_stage(_self, _stage : Stage) -> Result[
-  Stage,
-  HookError,
-] {
-  Err(Aborted("always fails"))
+impl @port.PipelineHook for AlwaysFailHook with fn on_stage(
+  _self,
+  _stage : @port.Stage,
+) -> Result[@port.Stage, @port.HookError] {
+  Err(@port.HookError::Aborted("always fails"))
 }
 
 ///|
@@ -1228,8 +1261,12 @@ async test "hook_chain_after_stage_reversed_order" {
   let hook1 = LogHook::{ seen: [] }
   let hook2 = LogHook::{ seen: [] }
   let chain = HookChain::{ hooks: [hook1, hook2] }
-  let tc = { id: "c1", name: "t", arguments: Json::null() }
-  let tr = { content: "ok", structured: None, is_error: false }
+  let tc = @types.ToolCall::{ id: "c1", name: "t", arguments: Json::null() }
+  let tr = @types.ToolResult::{
+    content: "ok",
+    structured: None,
+    is_error: false,
+  }
   let _ = chain.on_stage(AfterTool(tc, tr))
   // hook2 (index 1) should have run first — its seen[0] is the AfterTool
   assert_eq(hook2.seen.length(), 1)
@@ -1246,8 +1283,12 @@ async test "hook_chain_after_stage_runs_all_on_error" {
   // On after stage, reverse order: fail runs first (returns Err),
   // but hook1 still runs (finally).
   let chain = HookChain::{ hooks: [hook1, fail] }
-  let tc = { id: "c2", name: "t", arguments: Json::null() }
-  let tr = { content: "ok", structured: None, is_error: false }
+  let tc = @types.ToolCall::{ id: "c2", name: "t", arguments: Json::null() }
+  let tr = @types.ToolResult::{
+    content: "ok",
+    structured: None,
+    is_error: false,
+  }
   let _ = chain.on_stage(AfterTool(tc, tr))
   // hook1 must have run despite fail returning Err
   assert_eq(hook1.seen.length(), 1)

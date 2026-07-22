@@ -1,0 +1,65 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "colmugx/posoco/error"
+
+import {
+  "moonbitlang/core/debug",
+}
+
+// Values
+
+// Errors
+pub(all) suberror AgentError {
+  Model(String)
+  Session(SessionError)
+  Runtime(RuntimeError)
+  ToolLoopExceeded
+  HookAborted(String)
+} derive(@debug.Debug)
+pub impl Show for AgentError
+
+pub(all) suberror CommandError {
+  NotFound(String)
+  InvalidArgs(reason~ : String)
+  ExecutionFailed(String)
+} derive(@debug.Debug)
+pub impl Show for CommandError
+
+pub(all) suberror CompositionError {
+  ToolCollision(String, String)
+  EmptyPort(String)
+} derive(@debug.Debug)
+pub impl Show for CompositionError
+
+pub(all) suberror MemoryError {
+  Store(String)
+  Search(String)
+  Delete(String)
+} derive(@debug.Debug)
+pub impl Show for MemoryError
+
+pub(all) suberror ModelError {
+  RequestBuild(String)
+  Transport(String)
+  ResponseParse(String)
+} derive(@debug.Debug)
+pub impl Show for ModelError
+
+pub(all) suberror RuntimeError {
+  UnknownTool(String)
+  InvocationFailed(String)
+  Transport(String)
+} derive(@debug.Debug)
+pub impl Show for RuntimeError
+
+pub(all) suberror SessionError {
+  Load(String)
+  Save(String)
+} derive(@debug.Debug)
+pub impl Show for SessionError
+
+// Types and methods
+
+// Type aliases
+
+// Traits
+

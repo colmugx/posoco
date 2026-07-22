@@ -5,7 +5,7 @@
 ///        ModelError::ResponseParse, not silently become {}.
 /// T07-2: terminal failure publishes exactly one terminal event
 ///        (TurnFailed OR TurnCompleted, never both).
-fn err_config() -> AgentConfig {
+fn err_config() -> @posoco.AgentConfig {
   {
     max_tool_rounds: 10,
     temperature: None,
@@ -25,21 +25,23 @@ async test "t07_malformed_tool_json_raises_response_parse" {
   // A tool-call delta with invalid JSON arguments must NOT silently become {}.
   // It must raise ModelError::ResponseParse so the caller knows the stream
   // was malformed.
-  let acc = StreamAccumulator::new()
+  let acc = @types.StreamAccumulator::new()
   // Push a tool-call delta with a name but malformed arguments JSON.
   acc.push(
-    ToolCallDelta(
+    @types.StreamChunk::ToolCallDelta(
       index=0,
       id=Some("tc_1"),
       name=Some("broken"),
       arguments_delta=Some("{not json"),
     ),
   )
-  let result : Result[ModelResponse, ModelError] = Ok(acc.to_response()) catch {
+  let result : Result[@types.ModelResponse, @error.ModelError] = Ok(
+    acc.to_response(),
+  ) catch {
     e => Err(e)
   }
   match result {
-    Err(ResponseParse(msg)) => {
+    Err(@error.ModelError::ResponseParse(msg)) => {
       assert_true(msg.contains("malformed"))
       assert_true(!msg.contains("{not json"))
     }
@@ -52,20 +54,22 @@ async test "t07_malformed_tool_json_raises_response_parse" {
 
 ///|
 async test "t07_incomplete_tool_call_is_loud" {
-  let acc = StreamAccumulator::new()
+  let acc = @types.StreamAccumulator::new()
   acc.push(
-    ToolCallDelta(
+    @types.StreamChunk::ToolCallDelta(
       index=0,
       id=Some("tc_incomplete"),
       name=None,
       arguments_delta=Some("{}"),
     ),
   )
-  let result : Result[ModelResponse, ModelError] = Ok(acc.to_response()) catch {
+  let result : Result[@types.ModelResponse, @error.ModelError] = Ok(
+    acc.to_response(),
+  ) catch {
     e => Err(e)
   }
   match result {
-    Err(ResponseParse(msg)) => {
+    Err(@error.ModelError::ResponseParse(msg)) => {
       assert_true(msg.contains("incomplete"))
       assert_true(msg.contains("name"))
     }
@@ -78,20 +82,22 @@ async test "t07_tool_parse_error_omits_untrusted_identifiers_and_payload" {
   let raw_id = "id-line-one\nid-line-two-" + "i".repeat(100)
   let raw_name = "name-line-one\nname-line-two-" + "n".repeat(100)
   let raw_arguments = "{\"api_key\":\"RAW_TOOL_SECRET"
-  let acc = StreamAccumulator::new()
+  let acc = @types.StreamAccumulator::new()
   acc.push(
-    ToolCallDelta(
+    @types.StreamChunk::ToolCallDelta(
       index=0,
       id=Some(raw_id),
       name=Some(raw_name),
       arguments_delta=Some(raw_arguments),
     ),
   )
-  let result : Result[ModelResponse, ModelError] = Ok(acc.to_response()) catch {
+  let result : Result[@types.ModelResponse, @error.ModelError] = Ok(
+    acc.to_response(),
+  ) catch {
     error => Err(error)
   }
   match result {
-    Err(ResponseParse(message)) => {
+    Err(@error.ModelError::ResponseParse(message)) => {
       assert_true(message.contains("index 0"))
       assert_true(!message.contains("id-line"))
       assert_true(!message.contains("name-line"))
@@ -109,9 +115,9 @@ async test "t07_tool_parse_error_omits_untrusted_identifiers_and_payload" {
 
 ///|
 async test "t07_valid_tool_json_still_parses" {
-  let acc = StreamAccumulator::new()
+  let acc = @types.StreamAccumulator::new()
   acc.push(
-    ToolCallDelta(
+    @types.StreamChunk::ToolCallDelta(
       index=0,
       id=Some("tc_1"),
       name=Some("ok"),
@@ -131,26 +137,28 @@ async test "t07_valid_tool_json_still_parses" {
 async test "t07_model_error_emits_turnfailed_not_turncompleted" {
   // When the model raises, the observer must see TurnFailed (from the model
   // error path) and MUST NOT see TurnCompleted.
-  let model = ScriptedModel::new([Fail(Transport("network down"))])
-  let store = RecordingSessionStore::new()
-  let obs = RecordingObserver::new()
-  let agent = Agent::new(
+  let model = @posoco.ScriptedModel::new([
+    @posoco.Fail(@error.ModelError::Transport("network down")),
+  ])
+  let store = @posoco.RecordingSessionStore::new()
+  let obs = @posoco.RecordingObserver::new()
+  let agent = @posoco.Agent::new(
     model,
     tools=[],
     hooks=[],
     memory=[],
-    compressors=[NoopCompressor::{  }],
+    compressors=[@posoco.NoopCompressor::{  }],
     observers=[obs],
     sessions=[store],
     lifecycle=None,
     config=err_config(),
   )
-  let result = Ok(agent.run_turn(tk_user_msg("hello"), "s1")) catch {
+  let result = Ok(agent.run_turn(@posoco.tk_user_msg("hello"), "s1")) catch {
     e => Err(e)
   }
   // Must raise.
   match result {
-    Err(Model(_)) => ()
+    Err(@error.AgentError::Model(_)) => ()
     _ => fail("expected AgentError::Model")
   }
   let events = obs.events()
@@ -205,26 +213,28 @@ fn has_secondary_failure(
 
 ///|
 async test "t07_save_error_emits_exactly_one_turnfailed" {
-  let model = ScriptedModel::new([Respond(tk_stop_response("done"))])
-  let store = RecordingSessionStore::new()
+  let model = @posoco.ScriptedModel::new([
+    @posoco.Respond(@posoco.tk_stop_response("done")),
+  ])
+  let store = @posoco.RecordingSessionStore::new()
   store.fail_save("save-fail")
-  let obs = RecordingObserver::new()
-  let agent = Agent::new(
+  let obs = @posoco.RecordingObserver::new()
+  let agent = @posoco.Agent::new(
     model,
     tools=[],
     hooks=[],
     memory=[],
-    compressors=[NoopCompressor::{  }],
+    compressors=[@posoco.NoopCompressor::{  }],
     observers=[obs],
     sessions=[store],
     lifecycle=None,
     config=err_config(),
   )
-  let result = Ok(agent.run_turn(tk_user_msg("hello"), "save-fail")) catch {
+  let result = Ok(agent.run_turn(@posoco.tk_user_msg("hello"), "save-fail")) catch {
     e => Err(e)
   }
   match result {
-    Err(Session(_)) => ()
+    Err(@error.AgentError::Session(_)) => ()
     _ => fail("expected session save failure")
   }
   let events = obs.events()
@@ -234,26 +244,28 @@ async test "t07_save_error_emits_exactly_one_turnfailed" {
 
 ///|
 async test "t07_load_error_emits_one_safe_turnfailed" {
-  let model = ScriptedModel::new([])
-  let store = RecordingSessionStore::new()
+  let model = @posoco.ScriptedModel::new([])
+  let store = @posoco.RecordingSessionStore::new()
   store.fail_load("load-fail", Load("backend detail must stay with caller"))
-  let obs = RecordingObserver::new()
-  let agent = Agent::new(
+  let obs = @posoco.RecordingObserver::new()
+  let agent = @posoco.Agent::new(
     model,
     tools=[],
     hooks=[],
     memory=[],
-    compressors=[NoopCompressor::{  }],
+    compressors=[@posoco.NoopCompressor::{  }],
     observers=[obs],
     sessions=[store],
     lifecycle=None,
     config=err_config(),
   )
-  let result = Ok(agent.run_turn(tk_user_msg("private prompt"), "load-fail")) catch {
+  let result = Ok(
+    agent.run_turn(@posoco.tk_user_msg("private prompt"), "load-fail"),
+  ) catch {
     error => Err(error)
   }
   match result {
-    Err(Session(error)) =>
+    Err(@error.AgentError::Session(error)) =>
       assert_true(error.to_string().contains("backend detail"))
     _ => fail("expected session load failure")
   }
@@ -273,23 +285,25 @@ async test "t07_load_error_emits_one_safe_turnfailed" {
 
 ///|
 async test "t07_afterturn_hook_failure_is_observable_but_nonfatal" {
-  let model = ScriptedModel::new([Respond(tk_stop_response("done"))])
-  let store = RecordingSessionStore::new()
-  let obs = RecordingObserver::new()
-  let hook = RecordingHook::new()
+  let model = @posoco.ScriptedModel::new([
+    @posoco.Respond(@posoco.tk_stop_response("done")),
+  ])
+  let store = @posoco.RecordingSessionStore::new()
+  let obs = @posoco.RecordingObserver::new()
+  let hook = @posoco.RecordingHook::new()
   hook.abort_when("AfterTurn", "after-turn cleanup failed")
-  let agent = Agent::new(
+  let agent = @posoco.Agent::new(
     model,
     tools=[],
     hooks=[hook],
     memory=[],
-    compressors=[NoopCompressor::{  }],
+    compressors=[@posoco.NoopCompressor::{  }],
     observers=[obs],
     sessions=[store],
     lifecycle=None,
     config=err_config(),
   )
-  let _ = agent.run_turn(tk_user_msg("hello"), "hook-secondary")
+  let _ = agent.run_turn(@posoco.tk_user_msg("hello"), "hook-secondary")
   let events = obs.events()
   assert_eq(count_terminal_events(events), 1)
   assert_true(has_secondary_failure(events, "AfterTurn"))
@@ -297,27 +311,30 @@ async test "t07_afterturn_hook_failure_is_observable_but_nonfatal" {
 
 ///|
 async test "t07_error_hook_failure_preserves_primary_and_is_observable" {
-  let model = ScriptedModel::new([Fail(Transport("primary network failure"))])
-  let store = RecordingSessionStore::new()
-  let obs = RecordingObserver::new()
-  let hook = RecordingHook::new()
+  let model = @posoco.ScriptedModel::new([
+    @posoco.Fail(@error.ModelError::Transport("primary network failure")),
+  ])
+  let store = @posoco.RecordingSessionStore::new()
+  let obs = @posoco.RecordingObserver::new()
+  let hook = @posoco.RecordingHook::new()
   hook.abort_when("ModelError", "secondary model-error hook failure")
-  let agent = Agent::new(
+  let agent = @posoco.Agent::new(
     model,
     tools=[],
     hooks=[hook],
     memory=[],
-    compressors=[NoopCompressor::{  }],
+    compressors=[@posoco.NoopCompressor::{  }],
     observers=[obs],
     sessions=[store],
     lifecycle=None,
     config=err_config(),
   )
-  let result = Ok(agent.run_turn(tk_user_msg("hello"), "primary-error")) catch {
+  let result = Ok(agent.run_turn(@posoco.tk_user_msg("hello"), "primary-error")) catch {
     e => Err(e)
   }
   match result {
-    Err(Model(msg)) => assert_true(msg.contains("primary network failure"))
+    Err(@error.AgentError::Model(msg)) =>
+      assert_true(msg.contains("primary network failure"))
     _ => fail("expected primary model error to survive secondary hook error")
   }
   let events = obs.events()
@@ -327,27 +344,30 @@ async test "t07_error_hook_failure_preserves_primary_and_is_observable" {
 
 ///|
 async test "t07_turnerror_hook_failure_preserves_primary_and_is_observable" {
-  let model = ScriptedModel::new([Fail(Transport("primary network failure"))])
-  let store = RecordingSessionStore::new()
-  let obs = RecordingObserver::new()
-  let hook = RecordingHook::new()
+  let model = @posoco.ScriptedModel::new([
+    @posoco.Fail(@error.ModelError::Transport("primary network failure")),
+  ])
+  let store = @posoco.RecordingSessionStore::new()
+  let obs = @posoco.RecordingObserver::new()
+  let hook = @posoco.RecordingHook::new()
   hook.abort_when("TurnError", "secondary turn-error hook failure")
-  let agent = Agent::new(
+  let agent = @posoco.Agent::new(
     model,
     tools=[],
     hooks=[hook],
     memory=[],
-    compressors=[NoopCompressor::{  }],
+    compressors=[@posoco.NoopCompressor::{  }],
     observers=[obs],
     sessions=[store],
     lifecycle=None,
     config=err_config(),
   )
-  let result = Ok(agent.run_turn(tk_user_msg("hello"), "turnerror")) catch {
+  let result = Ok(agent.run_turn(@posoco.tk_user_msg("hello"), "turnerror")) catch {
     e => Err(e)
   }
   match result {
-    Err(Model(msg)) => assert_true(msg.contains("primary network failure"))
+    Err(@error.AgentError::Model(msg)) =>
+      assert_true(msg.contains("primary network failure"))
     _ => fail("expected primary model error to survive TurnError hook error")
   }
   let events = obs.events()
@@ -357,32 +377,37 @@ async test "t07_turnerror_hook_failure_preserves_primary_and_is_observable" {
 
 ///|
 async test "t07_aftertool_hook_failure_is_observable_but_nonfatal" {
-  let model = ScriptedModel::new([
-    Respond(tk_tool_call_response("probe", "tc_secondary", Json::null())),
-    Respond(tk_stop_response("done")),
+  let model = @posoco.ScriptedModel::new([
+    @posoco.Respond(
+      @posoco.tk_tool_call_response("probe", "tc_secondary", Json::null()),
+    ),
+    @posoco.Respond(@posoco.tk_stop_response("done")),
   ])
-  let provider = RecordingToolProvider::new(
-    [tk_tool_def("probe", "")],
+  let provider = @posoco.RecordingToolProvider::new(
+    [@posoco.tk_tool_def("probe", "")],
     Map::from_array([
-      ("probe", ScriptedToolOutcome::OutcomeOk(tk_ok_result("ok"))),
+      (
+        "probe",
+        @posoco.ScriptedToolOutcome::OutcomeOk(@posoco.tk_ok_result("ok")),
+      ),
     ]),
   )
-  let store = RecordingSessionStore::new()
-  let obs = RecordingObserver::new()
-  let hook = RecordingHook::new()
+  let store = @posoco.RecordingSessionStore::new()
+  let obs = @posoco.RecordingObserver::new()
+  let hook = @posoco.RecordingHook::new()
   hook.abort_when("AfterTool", "secondary after-tool hook failure")
-  let agent = Agent::new(
+  let agent = @posoco.Agent::new(
     model,
     tools=[provider],
     hooks=[hook],
     memory=[],
-    compressors=[NoopCompressor::{  }],
+    compressors=[@posoco.NoopCompressor::{  }],
     observers=[obs],
     sessions=[store],
     lifecycle=None,
     config=err_config(),
   )
-  let result = agent.run_turn(tk_user_msg("run"), "aftertool")
+  let result = agent.run_turn(@posoco.tk_user_msg("run"), "aftertool")
   assert_eq(result.tool_results.length(), 1)
   assert_true(!result.tool_results[0].is_error)
   let events = obs.events()
@@ -392,27 +417,29 @@ async test "t07_aftertool_hook_failure_is_observable_but_nonfatal" {
 
 ///|
 async test "t07_beforemodel_abort_emits_exactly_one_turnfailed" {
-  let model = ScriptedModel::new([])
-  let store = RecordingSessionStore::new()
-  let obs = RecordingObserver::new()
-  let hook = RecordingHook::new()
+  let model = @posoco.ScriptedModel::new([])
+  let store = @posoco.RecordingSessionStore::new()
+  let obs = @posoco.RecordingObserver::new()
+  let hook = @posoco.RecordingHook::new()
   hook.abort_when("BeforeModel", "policy rejected model call")
-  let agent = Agent::new(
+  let agent = @posoco.Agent::new(
     model,
     tools=[],
     hooks=[hook],
     memory=[],
-    compressors=[NoopCompressor::{  }],
+    compressors=[@posoco.NoopCompressor::{  }],
     observers=[obs],
     sessions=[store],
     lifecycle=None,
     config=err_config(),
   )
-  let result = Ok(agent.run_turn(tk_user_msg("private prompt"), "hook-abort")) catch {
+  let result = Ok(
+    agent.run_turn(@posoco.tk_user_msg("private prompt"), "hook-abort"),
+  ) catch {
     e => Err(e)
   }
   match result {
-    Err(HookAborted(_)) => ()
+    Err(@error.AgentError::HookAborted(_)) => ()
     _ => fail("expected BeforeModel hook abort")
   }
   let events = obs.events()
@@ -431,27 +458,27 @@ async test "t07_beforemodel_abort_emits_exactly_one_turnfailed" {
 
 ///|
 async test "t07_beforeturn_abort_does_not_start_or_terminalize_turn" {
-  let model = ScriptedModel::new([])
-  let store = RecordingSessionStore::new()
-  let obs = RecordingObserver::new()
-  let hook = RecordingHook::new()
+  let model = @posoco.ScriptedModel::new([])
+  let store = @posoco.RecordingSessionStore::new()
+  let obs = @posoco.RecordingObserver::new()
+  let hook = @posoco.RecordingHook::new()
   hook.abort_when("BeforeTurn", "turn rejected before start")
-  let agent = Agent::new(
+  let agent = @posoco.Agent::new(
     model,
     tools=[],
     hooks=[hook],
     memory=[],
-    compressors=[NoopCompressor::{  }],
+    compressors=[@posoco.NoopCompressor::{  }],
     observers=[obs],
     sessions=[store],
     lifecycle=None,
     config=err_config(),
   )
-  let result = Ok(agent.run_turn(tk_user_msg("hello"), "beforeturn")) catch {
+  let result = Ok(agent.run_turn(@posoco.tk_user_msg("hello"), "beforeturn")) catch {
     e => Err(e)
   }
   match result {
-    Err(HookAborted(_)) => ()
+    Err(@error.AgentError::HookAborted(_)) => ()
     _ => fail("expected BeforeTurn hook abort")
   }
   let events = obs.events()
@@ -462,17 +489,22 @@ async test "t07_beforeturn_abort_does_not_start_or_terminalize_turn" {
 
 ///|
 async test "t07_tool_loop_emits_exactly_one_turnfailed" {
-  let model = ScriptedModel::new([
-    Respond(tk_tool_call_response("probe", "tc_loop", Json::null())),
+  let model = @posoco.ScriptedModel::new([
+    @posoco.Respond(
+      @posoco.tk_tool_call_response("probe", "tc_loop", Json::null()),
+    ),
   ])
-  let provider = RecordingToolProvider::new(
-    [tk_tool_def("probe", "")],
+  let provider = @posoco.RecordingToolProvider::new(
+    [@posoco.tk_tool_def("probe", "")],
     Map::from_array([
-      ("probe", ScriptedToolOutcome::OutcomeOk(tk_ok_result("ok"))),
+      (
+        "probe",
+        @posoco.ScriptedToolOutcome::OutcomeOk(@posoco.tk_ok_result("ok")),
+      ),
     ]),
   )
-  let store = RecordingSessionStore::new()
-  let obs = RecordingObserver::new()
+  let store = @posoco.RecordingSessionStore::new()
+  let obs = @posoco.RecordingObserver::new()
   let config : AgentConfig = {
     max_tool_rounds: 0,
     temperature: None,
@@ -481,50 +513,23 @@ async test "t07_tool_loop_emits_exactly_one_turnfailed" {
     reasoning_effort: None,
     model_context_window: None,
   }
-  let agent = Agent::new(
+  let agent = @posoco.Agent::new(
     model,
     tools=[provider],
     hooks=[],
     memory=[],
-    compressors=[NoopCompressor::{  }],
+    compressors=[@posoco.NoopCompressor::{  }],
     observers=[obs],
     sessions=[store],
     lifecycle=None,
     config~,
   )
-  let result = Ok(agent.run_turn(tk_user_msg("loop"), "tool-loop")) catch {
+  let result = Ok(agent.run_turn(@posoco.tk_user_msg("loop"), "tool-loop")) catch {
     e => Err(e)
   }
   match result {
-    Err(ToolLoopExceeded) => ()
+    Err(@error.AgentError::ToolLoopExceeded) => ()
     _ => fail("expected tool loop failure")
   }
   assert_eq(count_terminal_events(obs.events()), 1)
-}
-
-///|
-struct FailingLifecycle {}
-
-///|
-pub impl Lifecycle for FailingLifecycle with fn on_shutdown(_self) -> Unit {
-  abort("shutdown cleanup failed")
-}
-
-///|
-async test "panic t07_shutdown_failure_is_not_swallowed" {
-  let model = ScriptedModel::new([])
-  let store = RecordingSessionStore::new()
-  let lifecycle = FailingLifecycle::{  }
-  let agent = Agent::new(
-    model,
-    tools=[],
-    hooks=[],
-    memory=[],
-    compressors=[NoopCompressor::{  }],
-    observers=[],
-    sessions=[store],
-    lifecycle=Some(lifecycle),
-    config=err_config(),
-  )
-  agent.shutdown()
 }

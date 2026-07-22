@@ -102,7 +102,7 @@ pub fn StreamAccumulator::push(
 /// prevents a corrupted stream from masquerading as a valid empty-args call.
 pub fn StreamAccumulator::to_response(
   self : StreamAccumulator,
-) -> ModelResponse raise ModelError {
+) -> ModelResponse raise @error.ModelError {
   let tool_calls : Array[ToolCall] = []
   for index, tc in self.tool_calls {
     if tc.id == "" {

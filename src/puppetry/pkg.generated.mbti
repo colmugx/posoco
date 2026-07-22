@@ -1,0 +1,537 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "colmugx/posoco/puppetry"
+
+import {
+  "colmugx/posoco/kernel",
+  "moonbitlang/async/aqueue",
+  "moonbitlang/async/cond_var",
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub fn commit_batch(&RunJournal, FrozenBatch) -> Int raise HarnessError
+
+pub async fn execute_one(@kernel.Effect, ExecutionContext, (Json) -> Unit) -> @kernel.RunInput
+
+pub fn prepare_batch(PreCommitContext, Array[&JournalContributor]) -> FrozenBatch raise HarnessError
+
+// Errors
+pub(all) suberror ContributionError {
+  Internal(contributor_id~ : String, detail~ : String)
+  Inconsistent(contributor_id~ : String, detail~ : String)
+}
+pub impl Show for ContributionError
+
+pub(all) suberror HarnessError {
+  IllegalPhaseTransition(from~ : HarnessPhase, to~ : HarnessPhase, operation~ : OperationClass, detail~ : String)
+  OperationNotAllowedInPhase(phase~ : HarnessPhase, operation~ : OperationClass, detail~ : String)
+  LeaseHeld(operation_id~ : String, held_by~ : String)
+  LeaseNotHeld(operation_id~ : String, detail~ : String)
+  AfterShutdown(command~ : String)
+  SnapshotInvalid(detail~ : String)
+  StaleIdentity(kind~ : String, expected~ : String, actual~ : String)
+  QueueFull(kind~ : String, depth~ : Int)
+  SuspensionPayloadMismatch(suspension_id~ : String, expected_kind~ : String)
+  SuspensionIdMismatch(target_run_id~ : @kernel.RunId, expected~ : String, actual~ : String)
+  AbortNoActiveRun(run_id~ : @kernel.RunId)
+  SavepointFailed(kind~ : String, cause~ : SavepointFailureCause)
+  ContributionInvalid(contributor_id~ : String, detail~ : String)
+  SubscriberJournalMutation(subscriber_id~ : String)
+  LifecycleStartupFailed(node_id~ : String, cause~ : String, rollback_failures~ : Array[(String, String)])
+  LifecycleShutdownFailed(node_id~ : String, cause~ : String, other_failures~ : Array[(String, String)])
+  LifecycleDuplicate(node_id~ : String)
+  SubscriberFailed(subscriber_id~ : String, cause~ : String, committed_revision~ : Int)
+  PumpLoopExceeded(iterations~ : Int)
+  DuplicateOrLateCompletion(effect_id~ : @kernel.EffectId, detail~ : String)
+  ReducerInvariantViolation(category~ : @kernel.InvariantCategory)
+}
+pub impl Show for HarnessError
+
+pub(all) suberror LifecycleNodeError {
+  Internal(node_id~ : String, detail~ : String)
+  Inconsistent(node_id~ : String, detail~ : String)
+  InvalidState(node_id~ : String, detail~ : String)
+}
+pub impl Show for LifecycleNodeError
+
+pub(all) suberror SubscriberError {
+  Internal(subscriber_id~ : String, detail~ : String)
+  ContractViolation(subscriber_id~ : String, detail~ : String)
+}
+pub impl Show for SubscriberError
+
+// Types and methods
+pub(all) struct AbortCommand {
+  command_id : CommandId
+  target_run_id : @kernel.RunId
+  detail : String?
+} derive(Eq, @debug.Debug)
+pub fn AbortCommand::command_id(Self) -> CommandId
+pub fn AbortCommand::detail(Self) -> String?
+pub fn AbortCommand::target_run_id(Self) -> @kernel.RunId
+
+pub(all) struct CommandId {
+  value : String
+} derive(Eq, Hash, @debug.Debug)
+pub fn CommandId::new(String) -> Result[Self, String]
+pub fn CommandId::to_string(Self) -> String
+pub fn CommandId::unchecked(String) -> Self
+pub impl Show for CommandId
+
+pub struct ControlMailbox {
+  mut steer_queue : @aqueue.Queue[SteerCommand]
+  mut follow_up_queue : @aqueue.Queue[FollowUpCommand]
+  mut steer_depth : Int
+  mut follow_up_depth : Int
+  resume_pending : Map[String, ResumeCommand]
+  mut abort_requested : Bool
+  mut active_run_id : @kernel.RunId?
+  mut active_turn_id : TurnId?
+  idle_cond : @cond_var.Cond
+  mut quiescent_status : QuiescentStatus
+  max_depth : Int
+}
+pub fn ControlMailbox::abort_requested(Self) -> Bool
+pub fn ControlMailbox::active_run_id(Self) -> @kernel.RunId?
+pub fn ControlMailbox::active_turn_id(Self) -> TurnId?
+pub fn ControlMailbox::bind_run(Self, @kernel.RunId, TurnId) -> Unit
+pub fn ControlMailbox::clear_run(Self) -> Unit
+pub fn ControlMailbox::consume_one_follow_up(Self) -> FollowUpCommand?
+pub fn ControlMailbox::consume_steers(Self) -> Array[SteerCommand]
+pub fn ControlMailbox::enqueue_abort(Self, AbortCommand) -> EnqueueResult
+pub fn ControlMailbox::enqueue_follow_up(Self, FollowUpCommand) -> EnqueueResult
+pub fn ControlMailbox::enqueue_resume(Self, ResumeCommand) -> EnqueueResult
+pub fn ControlMailbox::enqueue_steer(Self, SteerCommand) -> EnqueueResult
+pub fn ControlMailbox::follow_up_depth(Self) -> Int
+pub fn ControlMailbox::new() -> Self
+pub fn ControlMailbox::quiescent_status(Self) -> QuiescentStatus
+pub fn ControlMailbox::set_quiescent(Self, QuiescentStatus) -> Unit
+pub fn ControlMailbox::steer_depth(Self) -> Int
+pub fn ControlMailbox::take_resume(Self, String) -> ResumeCommand?
+pub async fn ControlMailbox::wait_idle(Self) -> QuiescentStatus
+
+pub(all) enum EnqueueResult {
+  Accepted(command_id~ : CommandId)
+  RejectedStale(command_id~ : CommandId, reason~ : String)
+  RejectedQueueFull(command_id~ : CommandId, depth~ : Int)
+  AbortAlreadyRequested(command_id~ : CommandId)
+} derive(Eq, @debug.Debug)
+pub impl Show for EnqueueResult
+
+pub struct EventDispatcher {
+  subscribers : Array[&EventSubscriber]
+  mut next_seq : Int
+  mut last_committed_revision : Int
+  run_id : @kernel.RunId
+  turn_id : TurnId
+  session_id : @kernel.SessionId
+}
+pub async fn EventDispatcher::dispatch(Self, @kernel.KernelEvent, Int) -> Unit raise HarnessError
+pub fn EventDispatcher::new(@kernel.RunId, TurnId, @kernel.SessionId) -> Self
+pub fn EventDispatcher::next_seq(Self) -> Int
+pub fn EventDispatcher::register(Self, &EventSubscriber) -> Unit
+pub fn EventDispatcher::subscriber_count(Self) -> Int
+
+pub(all) struct EventEnvelope {
+  run_id : @kernel.RunId
+  turn_id : TurnId
+  session_id : @kernel.SessionId
+  seq : Int
+  committed_revision : Int
+  event : @kernel.KernelEvent
+} derive(Eq, @debug.Debug)
+pub fn EventEnvelope::committed_revision(Self) -> Int
+pub fn EventEnvelope::event(Self) -> @kernel.KernelEvent
+pub fn EventEnvelope::is_terminal(Self) -> Bool
+pub fn EventEnvelope::new(run_id~ : @kernel.RunId, turn_id~ : TurnId, session_id~ : @kernel.SessionId, seq~ : Int, committed_revision~ : Int, event~ : @kernel.KernelEvent) -> Self
+pub fn EventEnvelope::run_id(Self) -> @kernel.RunId
+pub fn EventEnvelope::seq(Self) -> Int
+pub fn EventEnvelope::session_id(Self) -> @kernel.SessionId
+pub fn EventEnvelope::turn_id(Self) -> TurnId
+pub impl Show for EventEnvelope
+
+pub(all) struct ExecutionContext {
+  host : &@kernel.HostRuntime
+  model_id : ModelId
+  catalog : @kernel.ToolCatalogSnapshot
+}
+pub fn ExecutionContext::new(&@kernel.HostRuntime, model_id~ : ModelId, catalog~ : @kernel.ToolCatalogSnapshot) -> Self
+
+pub struct FailOnNthJournal {
+  inner : InMemoryJournal
+  fail_on : Int
+  mut call_count : Int
+}
+pub fn FailOnNthJournal::new(InMemoryJournal, Int) -> Self
+pub impl RunJournal for FailOnNthJournal
+
+pub(all) struct FollowUpCommand {
+  command_id : CommandId
+  target_run_id : @kernel.RunId
+  source_turn_id : TurnId
+  payload : Json
+} derive(Eq, @debug.Debug)
+pub fn FollowUpCommand::command_id(Self) -> CommandId
+pub fn FollowUpCommand::payload(Self) -> Json
+pub fn FollowUpCommand::source_turn_id(Self) -> TurnId
+pub fn FollowUpCommand::target_run_id(Self) -> @kernel.RunId
+
+pub(all) struct FrozenBatch {
+  savepoint_id : String
+  savepoint_kind : SavepointKind
+  expected_revision : Int
+  entries : Array[JournalEntry]
+  frozen_entry_keys : Array[String]
+} derive(Eq, @debug.Debug)
+pub fn FrozenBatch::entries(Self) -> Array[JournalEntry]
+pub fn FrozenBatch::expected_revision(Self) -> Int
+pub fn FrozenBatch::length(Self) -> Int
+pub fn FrozenBatch::savepoint_id(Self) -> String
+pub fn FrozenBatch::savepoint_kind(Self) -> SavepointKind
+
+pub struct Harness {
+  config : HarnessConfig
+  mut phase_gate : PhaseGate
+  mailbox : ControlMailbox
+  lifecycle : LifecycleCollection
+  mut last_completed_transcript : @kernel.CanonicalTranscript?
+}
+pub fn Harness::is_quiescent(Self) -> Bool
+pub fn Harness::last_completed_transcript(Self) -> @kernel.CanonicalTranscript?
+pub fn Harness::new(HarnessConfig) -> Self
+pub fn Harness::phase(Self) -> HarnessPhase
+pub async fn Harness::prompt(Self, @kernel.RunId, TurnId, @kernel.SessionId, Array[@kernel.CanonicalMessage], String) -> PromptResult raise HarnessError
+pub async fn Harness::shutdown(Self) -> Unit raise HarnessError
+pub async fn Harness::startup(Self) -> Unit raise HarnessError
+pub async fn Harness::wait_idle(Self) -> QuiescentStatus
+
+pub(all) struct HarnessConfig {
+  host : &@kernel.HostRuntime
+  model_id : ModelId
+  catalog : @kernel.ToolCatalogSnapshot
+  journal : &RunJournal
+  contributors : Array[&JournalContributor]
+  subscribers : Array[&EventSubscriber]
+  lifecycle_nodes : Array[&HarnessLifecycleNode]
+  default_budget : @kernel.Budget
+  max_iterations : Int
+}
+
+pub(all) enum HarnessPhase {
+  Idle
+  Active
+  Suspended
+  Terminalizing
+  ShuttingDown
+  Shutdown
+} derive(Eq, @debug.Debug)
+pub fn HarnessPhase::is_accepting(Self) -> Bool
+pub fn HarnessPhase::is_quiescent(Self) -> Bool
+pub impl Show for HarnessPhase
+
+pub struct InMemoryJournal {
+  entries : Array[JournalEntry]
+  seen_ids : Map[String, Bool]
+  terminal_runs : Map[String, Bool]
+}
+pub fn InMemoryJournal::append_impl(Self, Array[JournalEntry]) -> Int raise HarnessError
+pub fn InMemoryJournal::entries_for_run_impl(Self, @kernel.RunId) -> Array[JournalEntry]
+pub fn InMemoryJournal::entries_for_savepoint_impl(Self, @kernel.RunId, String) -> Array[JournalEntry]
+pub fn InMemoryJournal::new() -> Self
+pub fn InMemoryJournal::revision_impl(Self) -> Int
+pub impl RunJournal for InMemoryJournal
+
+pub(all) struct JournalContribution {
+  contributor_id : String
+  provenance : String
+  proposed_entries : Array[JournalEntry]
+} derive(Eq, @debug.Debug)
+pub fn JournalContribution::contributor_id(Self) -> String
+pub fn JournalContribution::empty(String, String) -> Self
+pub fn JournalContribution::proposed_entries(Self) -> Array[JournalEntry]
+pub fn JournalContribution::provenance(Self) -> String
+pub fn JournalContribution::with_entries(String, String, Array[JournalEntry]) -> Self
+
+pub(all) struct JournalEntry {
+  identity : JournalEntryIdentity
+  revision : Int
+  summary : String
+  payload : Json
+} derive(Eq, @debug.Debug)
+pub fn JournalEntry::identity(Self) -> JournalEntryIdentity
+pub fn JournalEntry::payload(Self) -> Json
+pub fn JournalEntry::revision(Self) -> Int
+pub fn JournalEntry::summary(Self) -> String
+
+pub(all) struct JournalEntryIdentity {
+  run_id : @kernel.RunId
+  turn_id : TurnId
+  session_id : @kernel.SessionId
+  savepoint_id : String
+  entry_seq : Int
+  kind : SavepointKind
+} derive(Eq, @debug.Debug)
+pub fn JournalEntryIdentity::entry_seq(Self) -> Int
+pub fn JournalEntryIdentity::kind(Self) -> SavepointKind
+pub fn JournalEntryIdentity::run_id(Self) -> @kernel.RunId
+pub fn JournalEntryIdentity::savepoint_id(Self) -> String
+pub fn JournalEntryIdentity::session_id(Self) -> @kernel.SessionId
+pub fn JournalEntryIdentity::turn_id(Self) -> TurnId
+pub impl Show for JournalEntryIdentity
+
+pub struct LifecycleCollection {
+  nodes : Array[&HarnessLifecycleNode]
+  node_ids : Map[String, Bool]
+  started : Map[String, Bool]
+  shut_down : Map[String, Bool]
+  mut is_sealed : Bool
+}
+pub fn LifecycleCollection::new() -> Self
+pub fn LifecycleCollection::register(Self, &HarnessLifecycleNode) -> Unit raise HarnessError
+pub fn LifecycleCollection::shut_down_node_count(Self) -> Int
+pub async fn LifecycleCollection::shutdown_all(Self) -> Unit raise HarnessError
+pub fn LifecycleCollection::size(Self) -> Int
+pub fn LifecycleCollection::started_node_count(Self) -> Int
+pub async fn LifecycleCollection::startup_all(Self) -> Unit raise HarnessError
+
+pub(all) struct LifecycleShutdownError {
+  failing_node_id : String
+  cause : String
+  other_failures : Array[(String, String)]
+} derive(Eq, @debug.Debug)
+pub impl Show for LifecycleShutdownError
+
+pub(all) struct LifecycleStartupError {
+  failing_node_id : String
+  cause : String
+  rollback_failures : Array[(String, String)]
+} derive(Eq, @debug.Debug)
+pub impl Show for LifecycleStartupError
+
+pub(all) struct ModelId {
+  value : String
+} derive(Eq, Hash, @debug.Debug)
+pub fn ModelId::new(String) -> Result[Self, String]
+pub fn ModelId::to_string(Self) -> String
+pub fn ModelId::unchecked(String) -> Self
+
+pub(all) struct NoopContributor {
+  id : String
+}
+pub fn NoopContributor::new() -> Self
+pub fn NoopContributor::with_id(String) -> Self
+pub impl JournalContributor for NoopContributor
+
+pub(all) struct NoopSubscriber {
+  id : String
+}
+pub fn NoopSubscriber::new() -> Self
+pub fn NoopSubscriber::with_id(String) -> Self
+pub impl EventSubscriber for NoopSubscriber
+
+pub(all) enum OperationClass {
+  Prompt
+  InFlight
+  Structural
+} derive(Eq, @debug.Debug)
+pub impl Show for OperationClass
+
+pub(all) struct OperationLease {
+  operation_id : String
+  acquired_phase : HarnessPhase
+  run_id : @kernel.RunId
+  turn_id : TurnId
+} derive(Eq, @debug.Debug)
+pub fn OperationLease::acquired_phase(Self) -> HarnessPhase
+pub fn OperationLease::operation_id(Self) -> String
+pub fn OperationLease::run_id(Self) -> @kernel.RunId
+pub fn OperationLease::turn_id(Self) -> TurnId
+pub impl Show for OperationLease
+
+pub struct PhaseGate {
+  phase : HarnessPhase
+  lease : OperationLease?
+  active_run_id : @kernel.RunId?
+  active_turn_id : TurnId?
+  active_suspension_id : String?
+}
+pub fn PhaseGate::acquire_prompt(Self, String, @kernel.RunId, TurnId) -> (Self, OperationLease) raise HarnessError
+pub fn PhaseGate::acquire_resume(Self, String, String) -> (Self, OperationLease) raise HarnessError
+pub fn PhaseGate::active_run_id(Self) -> @kernel.RunId?
+pub fn PhaseGate::active_suspension_id(Self) -> String?
+pub fn PhaseGate::active_turn_id(Self) -> TurnId?
+pub fn PhaseGate::authorise(Self, OperationClass) -> Result[Unit, HarnessError]
+pub fn PhaseGate::enter_suspended(Self, String) -> Self raise HarnessError
+pub fn PhaseGate::idle() -> Self
+pub fn PhaseGate::is_quiescent(Self) -> Bool
+pub fn PhaseGate::lease(Self) -> OperationLease?
+pub fn PhaseGate::phase(Self) -> HarnessPhase
+pub fn PhaseGate::release(Self, String) -> Unit raise HarnessError
+pub fn PhaseGate::rotate_turn(Self, TurnId) -> Self raise HarnessError
+pub fn PhaseGate::transition(Self, HarnessPhase) -> Self raise HarnessError
+
+pub(all) struct PreCommitContext {
+  run_id : @kernel.RunId
+  turn_id : TurnId
+  session_id : @kernel.SessionId
+  savepoint_id : String
+  savepoint_kind : SavepointKind
+  base_entries : Array[JournalEntry]
+  current_revision : Int
+  catalog_version : @kernel.CatalogVersion
+} derive(Eq, @debug.Debug)
+pub fn PreCommitContext::base_entries(Self) -> Array[JournalEntry]
+pub fn PreCommitContext::catalog_version(Self) -> @kernel.CatalogVersion
+pub fn PreCommitContext::current_revision(Self) -> Int
+pub fn PreCommitContext::run_id(Self) -> @kernel.RunId
+pub fn PreCommitContext::savepoint_id(Self) -> String
+pub fn PreCommitContext::savepoint_kind(Self) -> SavepointKind
+pub fn PreCommitContext::session_id(Self) -> @kernel.SessionId
+pub fn PreCommitContext::turn_id(Self) -> TurnId
+
+pub(all) enum PromptResult {
+  Accepted(run_id~ : @kernel.RunId, turn_id~ : TurnId)
+  LeaseBusy(held_by~ : String)
+  Rejected(error~ : HarnessError)
+}
+pub impl Show for PromptResult
+
+pub(all) enum QueuePolicy {
+  All
+  OneAtATime
+} derive(Eq, @debug.Debug)
+pub impl Show for QueuePolicy
+
+pub(all) enum QuiescentStatus {
+  Idle
+  Suspended(run_id~ : @kernel.RunId, suspension_id~ : String, requirement_kind~ : String)
+  Terminal(outcome~ : @kernel.RunOutcome)
+  Shutdown
+} derive(Eq, @debug.Debug)
+pub impl Show for QuiescentStatus
+
+pub(all) struct ResumeCommand {
+  command_id : CommandId
+  target_run_id : @kernel.RunId
+  suspension_id : String
+  payload : Json
+} derive(Eq, @debug.Debug)
+pub fn ResumeCommand::command_id(Self) -> CommandId
+pub fn ResumeCommand::payload(Self) -> Json
+pub fn ResumeCommand::suspension_id(Self) -> String
+pub fn ResumeCommand::target_run_id(Self) -> @kernel.RunId
+
+pub(all) enum SavepointFailureCause {
+  ContributorRaised(contributor_id~ : String, detail~ : String)
+  ValidationFailed(detail~ : String)
+  BarrierFailed(detail~ : String)
+} derive(Eq, @debug.Debug)
+pub impl Show for SavepointFailureCause
+
+pub(all) enum SavepointKind {
+  InputAccepted
+  AssistantCommitted
+  ToolCommitted
+  RunSuspended
+  RunTerminal
+} derive(Eq, @debug.Debug)
+pub impl Show for SavepointKind
+
+pub(all) struct SteerCommand {
+  command_id : CommandId
+  target_run_id : @kernel.RunId
+  target_turn_id : TurnId
+  observed_tool_batch_id : String
+  observed_model_step_id : @kernel.ModelStepId
+  payload : Json
+} derive(Eq, @debug.Debug)
+pub fn SteerCommand::command_id(Self) -> CommandId
+pub fn SteerCommand::observed_model_step_id(Self) -> @kernel.ModelStepId
+pub fn SteerCommand::observed_tool_batch_id(Self) -> String
+pub fn SteerCommand::payload(Self) -> Json
+pub fn SteerCommand::target_run_id(Self) -> @kernel.RunId
+pub fn SteerCommand::target_turn_id(Self) -> TurnId
+
+pub(all) struct TurnId {
+  value : String
+} derive(Eq, Hash, @debug.Debug)
+pub fn TurnId::new(String) -> Result[Self, String]
+pub fn TurnId::to_string(Self) -> String
+pub fn TurnId::unchecked(String) -> Self
+pub impl Show for TurnId
+
+pub struct TurnSnapshot {
+  run_id : @kernel.RunId
+  turn_id : TurnId
+  session_id : @kernel.SessionId
+  catalog_version : @kernel.CatalogVersion
+  tool_definitions : Array[@kernel.CanonicalToolDef]
+  model_id : String
+  call_options : Json
+  budget : @kernel.Budget
+  deadline : Int?
+  hook_provenance : Array[String]
+  lifecycle_provenance : Array[String]
+  subscriber_provenance : Array[String]
+  fingerprint : String
+} derive(Eq, @debug.Debug)
+pub fn TurnSnapshot::budget(Self) -> @kernel.Budget
+pub fn TurnSnapshot::call_options(Self) -> Json
+pub fn TurnSnapshot::capture(TurnSnapshotInput) -> Self raise HarnessError
+pub fn TurnSnapshot::catalog_version(Self) -> @kernel.CatalogVersion
+pub fn TurnSnapshot::deadline(Self) -> Int?
+pub fn TurnSnapshot::fingerprint(Self) -> String
+pub fn TurnSnapshot::hook_provenance(Self) -> Array[String]
+pub fn TurnSnapshot::lifecycle_provenance(Self) -> Array[String]
+pub fn TurnSnapshot::model_id(Self) -> String
+pub fn TurnSnapshot::run_id(Self) -> @kernel.RunId
+pub fn TurnSnapshot::session_id(Self) -> @kernel.SessionId
+pub fn TurnSnapshot::subscriber_provenance(Self) -> Array[String]
+pub fn TurnSnapshot::to_redacted_string(Self) -> String
+pub fn TurnSnapshot::tool_definitions(Self) -> Array[@kernel.CanonicalToolDef]
+pub fn TurnSnapshot::turn_id(Self) -> TurnId
+pub impl Show for TurnSnapshot
+
+pub(all) struct TurnSnapshotInput {
+  run_id : @kernel.RunId
+  turn_id : TurnId
+  session_id : @kernel.SessionId
+  catalog : @kernel.ToolCatalogSnapshot
+  model_id : String
+  call_options : Json
+  budget : @kernel.Budget
+  deadline : Int?
+  hook_provenance : Array[String]
+  lifecycle_provenance : Array[String]
+  subscriber_provenance : Array[String]
+} derive(Eq, @debug.Debug)
+
+// Type aliases
+
+// Traits
+pub(open) trait EventSubscriber {
+  fn subscriber_id(Self) -> String
+  fn provenance(Self) -> String
+  async fn on_event(Self, EventEnvelope) -> Unit raise SubscriberError
+}
+
+pub(open) trait HarnessLifecycleNode {
+  fn node_id(Self) -> String
+  fn provenance(Self) -> String
+  async fn startup(Self) -> Unit raise LifecycleNodeError
+  async fn shutdown(Self) -> Unit raise LifecycleNodeError
+}
+
+pub(open) trait JournalContributor {
+  fn contributor_id(Self) -> String
+  fn provenance(Self) -> String
+  fn contribute(Self, PreCommitContext) -> JournalContribution raise ContributionError
+}
+
+pub(open) trait RunJournal {
+  fn append(Self, Array[JournalEntry]) -> Int raise HarnessError
+  fn revision(Self) -> Int
+  fn entries_for_run(Self, @kernel.RunId) -> Array[JournalEntry]
+  fn entries_for_savepoint(Self, @kernel.RunId, String) -> Array[JournalEntry]
+}
+

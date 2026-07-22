@@ -2,273 +2,149 @@
 package "colmugx/posoco"
 
 import {
-  "moonbitlang/core/debug",
+  "colmugx/posoco/error",
+  "colmugx/posoco/kernel",
+  "colmugx/posoco/port",
+  "colmugx/posoco/puppetry",
+  "colmugx/posoco/types",
 }
 
 // Values
-pub fn assert_events_contain(Array[TurnEvent], Array[TurnEvent]) -> Unit
+pub fn assert_events_contain(Array[@types.TurnEvent], Array[@types.TurnEvent]) -> Unit
 
-pub fn assert_events_eq(Array[TurnEvent], Array[TurnEvent]) -> Unit
+pub fn assert_events_eq(Array[@types.TurnEvent], Array[@types.TurnEvent]) -> Unit
 
-pub fn build_error_message(ToolCall, RuntimeError) -> Message
+pub fn build_error_message(@types.ToolCall, @error.RuntimeError) -> @types.Message
 
-pub fn build_tool_result_message(ToolCall, ToolResult) -> Message
+pub fn build_tool_result_message(@types.ToolCall, @types.ToolResult) -> @types.Message
 
-pub fn event_trace_mismatch(Array[TurnEvent], Array[TurnEvent]) -> String?
+pub fn canonical_to_legacy_message(@kernel.CanonicalMessage) -> @types.Message
 
-pub fn parse_slash_args(String, Array[CommandParam]) -> Result[Json, String]
+pub fn event_trace_mismatch(Array[@types.TurnEvent], Array[@types.TurnEvent]) -> String?
+
+pub fn legacy_to_completion(@types.ModelResponse) -> @kernel.AssistantCompletion
+
+pub fn model_error_to_failure(@error.ModelError) -> @kernel.ModelFailure
+
+pub fn outcome_to_legacy(@kernel.ToolOutcome) -> (String, Bool)
+
+pub fn outcome_to_legacy_tool_result(@kernel.ToolOutcome) -> @types.ToolResult
+
+pub fn parse_slash_args(String, Array[@port.CommandParam]) -> Result[Json, String]
 
 pub fn tk_config() -> AgentConfig
 
-pub fn tk_error_result(String) -> ToolResult
+pub fn tk_error_result(String) -> @types.ToolResult
 
-pub fn tk_ok_result(String) -> ToolResult
+pub fn tk_ok_result(String) -> @types.ToolResult
 
-pub fn tk_stop_response(String) -> ModelResponse
+pub fn tk_stop_response(String) -> @types.ModelResponse
 
-pub fn tk_tool_call_response(String, String, Json) -> ModelResponse
+pub fn tk_tool_call_response(String, String, Json) -> @types.ModelResponse
 
-pub fn tk_tool_def(String, String) -> ToolDef
+pub fn tk_tool_def(String, String) -> @types.ToolDef
 
-pub fn tk_user_msg(String) -> Message
+pub fn tk_user_msg(String) -> @types.Message
 
-pub fn validate_args(CommandDef, Json) -> Result[Json, String]
+pub fn validate_args(@port.CommandDef, Json) -> Result[Json, String]
 
 // Errors
-pub(all) suberror AgentError {
-  Model(String)
-  Session(SessionError)
-  Runtime(RuntimeError)
-  ToolLoopExceeded
-  HookAborted(String)
-} derive(@debug.Debug)
-pub impl Show for AgentError
+pub(all) suberror HarnessFacadeError {
+  SessionLoad(detail~ : String)
+  SessionSave(detail~ : String)
+  CatalogComposition(failure~ : @kernel.CatalogCompositionError)
+  HarnessRejected(error~ : @puppetry.HarnessError)
+  UnsupportedSuspension(run_id~ : @kernel.RunId, suspension_id~ : String)
+  NonCompletedTerminal(outcome~ : @kernel.RunOutcome)
+  ConversionFailed(detail~ : String)
+}
+pub impl Show for HarnessFacadeError
 
-pub(all) suberror CommandError {
-  NotFound(String)
-  InvalidArgs(reason~ : String)
-  ExecutionFailed(String)
-} derive(@debug.Debug)
-pub impl Show for CommandError
-
-pub(all) suberror CompositionError {
-  ToolCollision(String, String)
-  EmptyPort(String)
-} derive(@debug.Debug)
-pub impl Show for CompositionError
-
-pub(all) suberror MemoryError {
-  Store(String)
-  Search(String)
-  Delete(String)
-} derive(@debug.Debug)
-pub impl Show for MemoryError
-
-pub(all) suberror ModelError {
-  RequestBuild(String)
-  Transport(String)
-  ResponseParse(String)
-} derive(@debug.Debug)
-pub impl Show for ModelError
-
-pub(all) suberror RuntimeError {
-  UnknownTool(String)
-  InvocationFailed(String)
-  Transport(String)
-} derive(@debug.Debug)
-pub impl Show for RuntimeError
-
-pub(all) suberror SessionError {
-  Load(String)
-  Save(String)
-} derive(@debug.Debug)
-pub impl Show for SessionError
+pub(all) suberror KernelFacadeError {
+  SessionLoad(detail~ : String)
+  SessionSave(detail~ : String)
+  CatalogComposition(failure~ : @kernel.CatalogCompositionError)
+  ConversionFailed(detail~ : String)
+  UntranslatedInvariant(category~ : @kernel.InvariantCategory)
+  DriverLoopExceeded(iterations~ : Int)
+  KernelFailed(reason~ : @kernel.FailureReason)
+  KernelCancelled(reason~ : @kernel.CancelReason)
+}
+pub impl Show for KernelFacadeError
 
 // Types and methods
 pub(all) struct Agent {
-  model_port : &ModelPort
+  model_port : &@port.ModelPort
   tool_routing : ToolRouting
-  pipeline_hook : &PipelineHook?
-  compressors : Array[&Compressor]
-  observers : Array[&Observer]
-  memories : Array[&MemoryPort]
-  sessions : Array[&SessionStore]
-  lifecycle : &Lifecycle?
+  pipeline_hook : &@port.PipelineHook?
+  compressors : Array[&@port.Compressor]
+  observers : Array[&@port.Observer]
+  memories : Array[&@port.MemoryPort]
+  sessions : Array[&@port.SessionStore]
+  lifecycle : &@port.Lifecycle?
   config : AgentConfig
 }
-pub fn Agent::new(&ModelPort, tools~ : Array[&ToolProvider], hooks~ : Array[&PipelineHook], memory~ : Array[&MemoryPort], compressors~ : Array[&Compressor], observers~ : Array[&Observer], sessions~ : Array[&SessionStore], lifecycle~ : &Lifecycle?, config~ : AgentConfig) -> Self raise CompositionError
-pub async fn Agent::run_turn(Self, Message, String) -> TurnResult raise AgentError
+pub fn Agent::new(&@port.ModelPort, tools~ : Array[&@port.ToolProvider], hooks~ : Array[&@port.PipelineHook], memory~ : Array[&@port.MemoryPort], compressors~ : Array[&@port.Compressor], observers~ : Array[&@port.Observer], sessions~ : Array[&@port.SessionStore], lifecycle~ : &@port.Lifecycle?, config~ : AgentConfig) -> Self raise @error.CompositionError
+pub async fn Agent::run_turn(Self, @types.Message, String) -> @types.TurnResult raise @error.AgentError
+pub async fn Agent::run_turn_via_harness(Self, @types.Message, String) -> @types.TurnResult raise HarnessFacadeError
+pub async fn Agent::run_turn_via_kernel(Self, @types.Message, String) -> @types.TurnResult raise KernelFacadeError
 pub async fn Agent::shutdown(Self) -> Unit
 
 pub(all) struct AgentConfig {
   max_tool_rounds : Int
   temperature : Double?
   max_output_tokens : Int?
-  tool_choice : ToolChoice?
-  reasoning_effort : ReasoningEffort?
+  tool_choice : @types.ToolChoice?
+  reasoning_effort : @types.ReasoningEffort?
   model_context_window : Int?
 }
-pub fn AgentConfig::to_chat_options(Self) -> ChatOptions
-
-pub(all) struct ChatOptions {
-  temperature : Double?
-  max_output_tokens : Int?
-  tool_choice : ToolChoice?
-  reasoning_effort : ReasoningEffort?
-} derive(Eq, @debug.Debug)
-
-pub(all) struct CommandDef {
-  id : String
-  label : String
-  description : String
-  category : String
-  ctype : CommandType
-  params : Array[CommandParam]
-  aliases : Array[String]
-  shortcut : String?
-  icon : String?
-  visible : Bool
-  metadata : Json?
-} derive(Eq, @debug.Debug)
-
-pub(all) enum CommandOutcome {
-  Success(feedback~ : String, structured~ : Json?, ui_hint~ : UiHint?)
-  Failure(reason~ : String)
-  NeedsInput(prompt~ : String)
-} derive(Eq, @debug.Debug)
-
-pub(all) struct CommandParam {
-  name : String
-  label : String
-  description : String
-  ptype : ParamType
-  required : Bool
-  default : Json?
-  choices : Array[String]?
-  positional : Bool
-} derive(Eq, @debug.Debug)
-
-pub(all) enum CommandType {
-  Action
-  Toggle
-  Select
-  Input
-  MultiStep
-} derive(Eq, @debug.Debug)
+pub fn AgentConfig::to_chat_options(Self) -> @types.ChatOptions
 
 pub(all) struct CompositeToolProvider {
-  providers : Array[&ToolProvider]
+  providers : Array[&@port.ToolProvider]
 }
-pub impl ToolProvider for CompositeToolProvider
-
-pub(all) enum CompressAction {
-  None
-  Replace(Array[Message])
-  NewThread(messages~ : Array[Message], new_session_id~ : String, messages_before~ : Int, messages_after~ : Int)
-} derive(Eq, @debug.Debug)
-
-pub(all) struct CompressContext {
-  session_id : String
-  model_context_window : Int?
-} derive(Eq, @debug.Debug)
-
-pub(all) enum Content {
-  Text(String)
-  Image(String, String)
-} derive(Eq, @debug.Debug)
-
-pub(all) enum FinishReason {
-  Stop
-  Length
-  ToolCalls
-  Other(String)
-} derive(Eq, @debug.Debug)
+pub impl @port.ToolProvider for CompositeToolProvider
 
 pub(all) struct HookChain {
-  hooks : Array[&PipelineHook]
+  hooks : Array[&@port.PipelineHook]
 }
-pub impl PipelineHook for HookChain
-
-pub(all) enum HookError {
-  Aborted(String)
-  Deferred(reason~ : String)
-} derive(Eq, @debug.Debug)
-pub impl Show for HookError
+pub impl @port.PipelineHook for HookChain
 
 pub(all) struct HookRecord {
-  stage_in : Stage
+  stage_in : @port.Stage
   outcome : RecordedHookOutcome
 }
 
-pub(all) struct MemoryEntry {
-  id : String
-  content : String
-  metadata : Map[String, Json]
-  score : Double?
-} derive(Eq, @debug.Debug)
-
-pub(all) struct MemoryQuery {
-  query : String
-  top_k : Int
-  threshold : Double?
-  filter : Map[String, Json]
-} derive(Eq, @debug.Debug)
-
-pub(all) struct Message {
-  role : Role
-  content : Array[Content]
-  tool_calls : Array[ToolCall]
-  tool_call_id : String?
-  name : String?
-  reasoning_content : String?
-} derive(Eq, @debug.Debug)
-
-pub(all) struct ModelResponse {
-  message : Message
-  tool_calls : Array[ToolCall]
-  finish_reason : FinishReason
-  usage : Usage?
-  reasoning_content : String?
-} derive(Eq, @debug.Debug)
+pub(all) struct LegacyHostRuntime {
+  model_port : &@port.ModelPort
+  tool_providers : Map[String, &@port.ToolProvider]
+}
+pub fn LegacyHostRuntime::from_agent(Agent) -> Self
+pub fn LegacyHostRuntime::new(&@port.ModelPort, Array[(String, &@port.ToolProvider)]) -> Self
+pub impl @kernel.HostRuntime for LegacyHostRuntime
 
 pub(all) struct NoopCommandPort {
 }
-pub impl CommandPort for NoopCommandPort
+pub impl @port.CommandPort for NoopCommandPort
 
 pub(all) struct NoopCompressor {
 }
-pub impl Compressor for NoopCompressor
+pub impl @port.Compressor for NoopCompressor
 
 pub(all) struct NoopHook {
 }
-pub impl PipelineHook for NoopHook
+pub impl @port.PipelineHook for NoopHook
 
 pub(all) struct NoopLifecycle {
 }
-pub impl Lifecycle for NoopLifecycle
+pub impl @port.Lifecycle for NoopLifecycle
 
 pub(all) struct NoopMemoryPort {
 }
-pub impl MemoryPort for NoopMemoryPort
-
-pub(all) enum ParamType {
-  Str
-  Int
-  Bool
-  Strs
-} derive(Eq, @debug.Debug)
-
-pub(all) enum ReasoningEffort {
-  Off
-  Minimal
-  Low
-  Medium
-  High
-  Maximum
-} derive(Eq, @debug.Debug)
+pub impl @port.MemoryPort for NoopMemoryPort
 
 pub(all) enum RecordedHookOutcome {
-  Returned(Stage)
+  Returned(@port.Stage)
   AbortedWith(String)
   DeferredWith(String)
 }
@@ -282,145 +158,74 @@ pub fn RecordingHook::abort_when(Self, String, String) -> Unit
 pub fn RecordingHook::defer_when(Self, String, String) -> Unit
 pub fn RecordingHook::new() -> Self
 pub fn RecordingHook::records(Self) -> Array[HookRecord]
-pub impl PipelineHook for RecordingHook
+pub impl @port.PipelineHook for RecordingHook
 
 pub(all) struct RecordingObserver {
-  mut events : Array[TurnEvent]
+  mut events : Array[@types.TurnEvent]
 }
-pub fn RecordingObserver::events(Self) -> Array[TurnEvent]
+pub fn RecordingObserver::events(Self) -> Array[@types.TurnEvent]
 pub fn RecordingObserver::new() -> Self
-pub impl Observer for RecordingObserver
+pub impl @port.Observer for RecordingObserver
 
 pub(all) struct RecordingSessionStore {
-  store : Map[String, Session]
-  mut load_failures : Map[String, SessionError]
+  store : Map[String, @types.Session]
+  mut load_failures : Map[String, @error.SessionError]
   mut save_failures : Array[String]
   mut ops : Array[SessionOp]
 }
-pub fn RecordingSessionStore::fail_load(Self, String, SessionError) -> Unit
+pub fn RecordingSessionStore::fail_load(Self, String, @error.SessionError) -> Unit
 pub fn RecordingSessionStore::fail_save(Self, String) -> Unit
 pub fn RecordingSessionStore::new() -> Self
 pub fn RecordingSessionStore::ops(Self) -> Array[SessionOp]
 pub fn RecordingSessionStore::save_snapshots(Self) -> Array[(String, Map[String, Json])]
-pub fn RecordingSessionStore::seed(Self, String, Session) -> Unit
-pub impl SessionStore for RecordingSessionStore
+pub fn RecordingSessionStore::seed(Self, String, @types.Session) -> Unit
+pub impl @port.SessionStore for RecordingSessionStore
 
 pub(all) struct RecordingToolProvider {
-  tool_defs : Array[ToolDef]
+  tool_defs : Array[@types.ToolDef]
   outcomes : Map[String, ScriptedToolOutcome]
   mut list_calls : Int
   mut exec_records : Array[ToolExecRecord]
   mut ops : Array[ToolProviderOp]
 }
 pub fn RecordingToolProvider::exec_records(Self) -> Array[ToolExecRecord]
-pub async fn RecordingToolProvider::execute_direct(Self, String, ToolCall) -> ToolResult raise RuntimeError
+pub async fn RecordingToolProvider::execute_direct(Self, String, @types.ToolCall) -> @types.ToolResult raise @error.RuntimeError
 pub fn RecordingToolProvider::list_call_count(Self) -> Int
-pub fn RecordingToolProvider::new(Array[ToolDef], Map[String, ScriptedToolOutcome]) -> Self
+pub fn RecordingToolProvider::new(Array[@types.ToolDef], Map[String, ScriptedToolOutcome]) -> Self
 pub fn RecordingToolProvider::ops(Self) -> Array[ToolProviderOp]
-pub impl ToolProvider for RecordingToolProvider
-
-pub(all) enum Role {
-  System
-  User
-  Assistant
-  Tool
-} derive(Eq, @debug.Debug)
+pub impl @port.ToolProvider for RecordingToolProvider
 
 pub(all) struct ScriptedModel {
   steps : Array[ScriptedModelStep]
   mut index : Int
   mut calls : Int
-  received_messages : Array[Array[Message]]
-  received_tools : Array[Array[ToolDef]]
-  received_options : Array[ChatOptions]
-  received_chunks : Array[StreamChunk]
+  received_messages : Array[Array[@types.Message]]
+  received_tools : Array[Array[@types.ToolDef]]
+  received_options : Array[@types.ChatOptions]
+  received_chunks : Array[@types.StreamChunk]
 }
 pub fn ScriptedModel::call_count(Self) -> Int
-pub async fn ScriptedModel::chat_direct(Self, Array[Message], Array[ToolDef], ChatOptions) -> ModelResponse raise ModelError
-pub async fn ScriptedModel::chat_streaming_direct(Self, Array[Message], Array[ToolDef], ChatOptions, (StreamChunk) -> Unit) -> ModelResponse raise ModelError
+pub async fn ScriptedModel::chat_direct(Self, Array[@types.Message], Array[@types.ToolDef], @types.ChatOptions) -> @types.ModelResponse raise @error.ModelError
+pub async fn ScriptedModel::chat_streaming_direct(Self, Array[@types.Message], Array[@types.ToolDef], @types.ChatOptions, (@types.StreamChunk) -> Unit) -> @types.ModelResponse raise @error.ModelError
 pub fn ScriptedModel::new(Array[ScriptedModelStep]) -> Self
-pub fn ScriptedModel::options_received(Self) -> Array[ChatOptions]
-pub impl ModelPort for ScriptedModel
+pub fn ScriptedModel::options_received(Self) -> Array[@types.ChatOptions]
+pub impl @port.ModelPort for ScriptedModel
 
 pub(all) enum ScriptedModelStep {
-  Respond(ModelResponse)
-  Stream(chunks~ : Array[StreamChunk], response~ : ModelResponse)
-  Fail(ModelError)
+  Respond(@types.ModelResponse)
+  Stream(chunks~ : Array[@types.StreamChunk], response~ : @types.ModelResponse)
+  Fail(@error.ModelError)
 }
 
 pub(all) enum ScriptedToolOutcome {
-  OutcomeOk(ToolResult)
-  OutcomeErr(RuntimeError)
+  OutcomeOk(@types.ToolResult)
+  OutcomeErr(@error.RuntimeError)
 }
-
-pub(all) struct Session {
-  messages : Array[Message]
-  metadata : Map[String, Json]
-} derive(Eq, @debug.Debug)
 
 pub(all) enum SessionOp {
-  OpLoad(id~ : String, result~ : Result[Session, SessionError])
-  OpSave(id~ : String, metadata~ : Map[String, Json], result~ : Result[Unit, SessionError])
+  OpLoad(id~ : String, result~ : Result[@types.Session, @error.SessionError])
+  OpSave(id~ : String, metadata~ : Map[String, Json], result~ : Result[Unit, @error.SessionError])
 }
-
-pub(all) enum Stage {
-  BeforeTurn
-  BeforeModel(Array[Message])
-  AfterModel(ModelResponse)
-  ModelError(String)
-  BeforeTool(ToolCall)
-  AfterTool(ToolCall, ToolResult)
-  ToolError(ToolCall, RuntimeError)
-  AfterTurn(TurnResult)
-  TurnError(AgentError)
-} derive(@debug.Debug)
-
-pub(all) struct StreamAccumulator {
-  mut text : String
-  mut reasoning : String
-  tool_calls : Array[ToolCallBuilder]
-  mut finish_reason : FinishReason
-  mut usage : Usage?
-} derive(@debug.Debug)
-pub fn StreamAccumulator::new() -> Self
-pub fn StreamAccumulator::push(Self, StreamChunk) -> Unit
-pub fn StreamAccumulator::to_response(Self) -> ModelResponse raise ModelError
-
-pub(all) enum StreamChunk {
-  TextDelta(token~ : String)
-  ReasoningDelta(token~ : String)
-  ToolCallDelta(index~ : Int, id~ : String?, name~ : String?, arguments_delta~ : String?)
-  Usage(Usage)
-  Finish(reason~ : FinishReason)
-} derive(Eq, @debug.Debug)
-
-pub(all) struct ToolCall {
-  id : String
-  name : String
-  arguments : Json
-} derive(Eq, @debug.Debug)
-
-pub(all) struct ToolCallBuilder {
-  mut id : String
-  mut name : String
-  mut arguments_json : String
-} derive(@debug.Debug)
-pub fn ToolCallBuilder::new() -> Self
-
-pub(all) enum ToolChoice {
-  Auto
-  NoTool
-  Required
-  NamedTool(String)
-} derive(Eq, @debug.Debug)
-
-pub(all) struct ToolDef {
-  name : String
-  description : String
-  input_schema : Json
-  metadata : Json?
-  source : String?
-} derive(Eq, @debug.Debug)
 
 pub(all) struct ToolExecRecord {
   requested_name : String
@@ -432,102 +237,21 @@ pub(all) struct ToolExecRecord {
 
 pub(all) enum ToolProviderOp {
   ListTools
-  ExecuteTool(requested_name~ : String, call~ : ToolCall)
+  ExecuteTool(requested_name~ : String, call~ : @types.ToolCall)
 }
 
 pub(all) struct ToolRegistry {
-  mut tools : Map[String, ToolDef]
-  mut executors : Map[String, (ToolCall) -> ToolResult]
+  mut tools : Map[String, @types.ToolDef]
+  mut executors : Map[String, (@types.ToolCall) -> @types.ToolResult]
 }
 pub fn ToolRegistry::new() -> Self
-pub fn ToolRegistry::register(Self, ToolDef, (ToolCall) -> ToolResult) -> Unit
+pub fn ToolRegistry::register(Self, @types.ToolDef, (@types.ToolCall) -> @types.ToolResult) -> Unit
 pub fn ToolRegistry::unregister(Self, String) -> Unit
-pub impl ToolProvider for ToolRegistry
-
-pub(all) struct ToolResult {
-  content : String
-  structured : Json?
-  is_error : Bool
-} derive(Eq, @debug.Debug)
+pub impl @port.ToolProvider for ToolRegistry
 
 type ToolRouting
-
-pub(all) enum TurnEvent {
-  TurnStarted
-  ToolCallPending(ToolCall)
-  ToolCallResult(call~ : ToolCall, result~ : ToolResult, is_error~ : Bool)
-  ModelResponseReceived(message~ : Message, usage~ : Usage?, reasoning_content~ : String?)
-  SessionRedirect(from~ : String, to~ : String, messages_before~ : Int, messages_after~ : Int)
-  TurnCompleted
-  TurnFailed(String)
-  ToolCallDeferred(call~ : ToolCall, reason~ : String)
-  StreamChunkReceived(chunk~ : StreamChunk)
-  Custom(source~ : String, label~ : String, data~ : Json)
-} derive(Eq, @debug.Debug)
-pub impl Show for TurnEvent
-
-pub(all) struct TurnResult {
-  message : Message
-  tool_results : Array[ToolResult]
-  final_session_id : String
-} derive(Eq, @debug.Debug)
-
-pub(all) enum UiHint {
-  RefreshModelList
-  RefreshSettings
-  ClosePanel
-  Toast
-  None
-} derive(Eq, @debug.Debug)
-
-pub(all) struct Usage {
-  input_tokens : Int?
-  output_tokens : Int?
-  total_tokens : Int?
-} derive(Eq, @debug.Debug)
 
 // Type aliases
 
 // Traits
-pub(open) trait CommandPort {
-  fn commands(Self) -> Array[CommandDef]
-  async fn invoke(Self, String, Json) -> CommandOutcome raise CommandError
-}
-
-pub(open) trait Compressor {
-  fn compress(Self, Array[Message], CompressContext) -> CompressAction
-}
-
-pub(open) trait Lifecycle {
-  async fn on_shutdown(Self) -> Unit
-}
-
-pub(open) trait MemoryPort {
-  fn store(Self, MemoryEntry) -> String raise MemoryError
-  fn search(Self, MemoryQuery) -> Array[MemoryEntry] raise MemoryError
-  fn delete(Self, String) -> Unit raise MemoryError
-}
-
-pub(open) trait ModelPort {
-  async fn chat(Self, Array[Message], Array[ToolDef], ChatOptions) -> ModelResponse raise ModelError
-  async fn chat_streaming(Self, Array[Message], Array[ToolDef], ChatOptions, (StreamChunk) -> Unit) -> ModelResponse raise ModelError = _
-}
-
-pub(open) trait Observer {
-  fn on_event(Self, TurnEvent) -> Unit
-}
-
-pub(open) trait PipelineHook {
-  async fn on_stage(Self, Stage) -> Result[Stage, HookError]
-}
-
-pub(open) trait SessionStore {
-  fn load(Self, String) -> Result[Session, SessionError]
-  fn save(Self, String, Session) -> Result[Unit, SessionError]
-}
-
-pub(open) trait ToolProvider {
-  fn list_tools(Self) -> Array[ToolDef]
-  async fn execute(Self, String, ToolCall) -> ToolResult raise RuntimeError
-}
 

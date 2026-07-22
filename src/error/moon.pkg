@@ -1,0 +1,11 @@
+import {
+  "moonbitlang/async",
+  "colmugx/posoco",
+  "colmugx/posoco/error",
+  "colmugx/posoco/types",
+  "colmugx/posoco/port",
+} for "test"
+
+options(
+  targets: { "error_transparency_shutdown_native_test.mbt": [ "native" ] },
+)

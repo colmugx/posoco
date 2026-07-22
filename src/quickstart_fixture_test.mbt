@@ -5,15 +5,15 @@
 struct QuickstartFixedModel {}
 
 ///|
-pub impl @posoco.ModelPort for QuickstartFixedModel with fn chat(
+pub impl @port.ModelPort for QuickstartFixedModel with fn chat(
   _self,
-  _messages : Array[@posoco.Message],
-  _tools : Array[@posoco.ToolDef],
-  _options : @posoco.ChatOptions,
-) -> @posoco.ModelResponse {
-  let message : @posoco.Message = {
-    role: @posoco.Role::Assistant,
-    content: [@posoco.Content::Text("Hello from Posoco")],
+  _messages : Array[@types.Message],
+  _tools : Array[@types.ToolDef],
+  _options : @types.ChatOptions,
+) -> @types.ModelResponse {
+  let message : @types.Message = {
+    role: @types.Role::Assistant,
+    content: [@types.Content::Text("Hello from Posoco")],
     tool_calls: [],
     tool_call_id: None,
     name: Some("assistant"),
@@ -22,7 +22,7 @@ pub impl @posoco.ModelPort for QuickstartFixedModel with fn chat(
   {
     message,
     tool_calls: [],
-    finish_reason: @posoco.FinishReason::Stop,
+    finish_reason: @types.FinishReason::Stop,
     usage: None,
     reasoning_content: None,
   }
@@ -30,7 +30,7 @@ pub impl @posoco.ModelPort for QuickstartFixedModel with fn chat(
 
 ///|
 struct QuickstartMemoryStore {
-  sessions : Map[String, @posoco.Session]
+  sessions : Map[String, @types.Session]
 }
 
 ///|
@@ -43,7 +43,7 @@ fn copy_quickstart_metadata(metadata : Map[String, Json]) -> Map[String, Json] {
 }
 
 ///|
-fn copy_quickstart_session(session : @posoco.Session) -> @posoco.Session {
+fn copy_quickstart_session(session : @types.Session) -> @types.Session {
   {
     messages: session.messages.copy(),
     metadata: copy_quickstart_metadata(session.metadata),
@@ -51,10 +51,10 @@ fn copy_quickstart_session(session : @posoco.Session) -> @posoco.Session {
 }
 
 ///|
-pub impl @posoco.SessionStore for QuickstartMemoryStore with fn load(
+pub impl @port.SessionStore for QuickstartMemoryStore with fn load(
   self,
   id : String,
-) -> Result[@posoco.Session, @posoco.SessionError] {
+) -> Result[@types.Session, @error.SessionError] {
   match self.sessions.get(id) {
     Some(session) => Ok(copy_quickstart_session(session))
     None => Ok({ messages: [], metadata: Map::from_array([]) })
@@ -62,11 +62,11 @@ pub impl @posoco.SessionStore for QuickstartMemoryStore with fn load(
 }
 
 ///|
-pub impl @posoco.SessionStore for QuickstartMemoryStore with fn save(
+pub impl @port.SessionStore for QuickstartMemoryStore with fn save(
   self,
   id : String,
-  session : @posoco.Session,
-) -> Result[Unit, @posoco.SessionError] {
+  session : @types.Session,
+) -> Result[Unit, @error.SessionError] {
   self.sessions[id] = copy_quickstart_session(session)
   Ok(())
 }
@@ -93,9 +93,9 @@ async test "quickstart_fixture_uses_current_public_api" {
       model_context_window: None,
     },
   )
-  let input : @posoco.Message = {
-    role: @posoco.Role::User,
-    content: [@posoco.Content::Text("hello")],
+  let input : @types.Message = {
+    role: @types.Role::User,
+    content: [@types.Content::Text("hello")],
     tool_calls: [],
     tool_call_id: None,
     name: None,
@@ -104,6 +104,6 @@ async test "quickstart_fixture_uses_current_public_api" {
   let result = agent.run_turn(input, "quickstart-session")
   assert_eq(result.final_session_id, "quickstart-session")
   assert_true(
-    result.message.content == [@posoco.Content::Text("Hello from Posoco")],
+    result.message.content == [@types.Content::Text("Hello from Posoco")],
   )
 }

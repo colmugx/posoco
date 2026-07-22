@@ -1,9 +1,16 @@
 ///|
-/// Conformance tests for the testkit itself (M0-T04).
-///
-/// These verify the testkit fakes behave correctly: scripts exhaust loudly,
-/// traces record in order, and failures are typed — so that T05/T06/T07
-/// regression tests can rely on the testkit as a stable contract harness.
+using @types {
+  type TurnEvent,
+  type Session,
+  type ChatOptions,
+  type ToolCall,
+  type StreamChunk,
+}
+
+///|
+using @error {type SessionError}
+
+///|
 fn tk_opts() -> ChatOptions {
   {
     temperature: None,
@@ -622,11 +629,7 @@ test "tk_trace_diff_detects_missing_event_at_first_index" {
 test "tk_trace_diff_detects_duplicate_event_at_first_index" {
   let mismatch = event_trace_mismatch(
     [TurnEvent::TurnStarted, TurnEvent::TurnCompleted],
-    [
-      TurnEvent::TurnStarted,
-      TurnEvent::TurnStarted,
-      TurnEvent::TurnCompleted,
-    ],
+    [TurnEvent::TurnStarted, TurnEvent::TurnStarted, TurnEvent::TurnCompleted],
   )
   match mismatch {
     Some(message) => {
