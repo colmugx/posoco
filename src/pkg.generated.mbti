@@ -252,6 +252,67 @@ pub impl @port.ToolProvider for ToolRegistry
 type ToolRouting
 
 // Type aliases
+pub using @error {type AgentError}
+
+pub using @types {type ChatOptions}
+
+pub using @port {type CommandDef}
+
+pub using @port {type CommandParam}
+
+pub using @error {type CompositionError}
+
+pub using @types {type Content}
+
+pub using @types {type Message}
+
+pub using @error {type ModelError}
+
+pub using @types {type ModelResponse}
+
+pub using @types {type ReasoningEffort}
+
+pub using @types {type Role}
+
+pub using @error {type RuntimeError}
+
+pub using @types {type Session}
+
+pub using @error {type SessionError}
+
+pub using @port {type Stage}
+
+pub using @types {type StreamChunk}
+
+pub using @types {type ToolCall}
+
+pub using @types {type ToolChoice}
+
+pub using @types {type ToolDef}
+
+pub using @types {type ToolResult}
+
+pub using @types {type TurnEvent}
+
+pub using @types {type TurnResult}
+
+pub using @port {trait CommandPort}
+
+pub using @port {trait Compressor}
+
+pub using @port {trait Lifecycle}
+
+pub using @port {trait MemoryPort}
+
+pub using @port {trait ModelPort}
+
+pub using @port {trait Observer}
+
+pub using @port {trait PipelineHook}
+
+pub using @port {trait SessionStore}
+
+pub using @port {trait ToolProvider}
 
 // Traits
 
