@@ -13,7 +13,7 @@
 /// 4. Coordinator merges base + validated contributions, freezes the pending
 ///    batch (expected revision, entry ids, savepoint).
 /// 5. Coordinator calls RunJournal.append(frozen_batch) + durability barrier.
-/// 6. Only post-commit does the Harness dispatch events.
+/// 6. Only post-commit does the Puppet dispatch events.
 ///
 /// Post-freeze mutation by any contributor/subscriber is a contract
 /// violation; the coordinator detects this by comparing entry id sets
@@ -36,7 +36,7 @@ pub(all) struct PreCommitContext {
   session_id : SessionId
   savepoint_id : String
   savepoint_kind : SavepointKind
-  /// Base entries the reducer/Harness already produced for this savepoint.
+  /// Base entries the reducer/Puppet already produced for this savepoint.
   /// Read-only; contributors must NOT mutate this array.
   base_entries : Array[JournalEntry]
   /// Current committed revision (before this savepoint commits).
@@ -188,7 +188,7 @@ pub impl Show for ContributionError with fn to_string(self : ContributionError) 
 ///
 /// M2 does not ship any production contributor; the trait exists so M4/M5
 /// extensions (e.g. memory persistence, observation logging) can register
-/// without modifying the Harness pump.
+/// without modifying the Puppet pump.
 pub(open) trait JournalContributor {
   /// Stable identifier for this contributor. Used in diagnostics and in
   /// the contribution's `contributor_id` field.
@@ -300,14 +300,14 @@ pub fn FrozenBatch::length(self : FrozenBatch) -> Int {
 /// 4. Freeze the batch (compute expected_revision + entry keys).
 ///
 /// Raises:
-/// - `HarnessError::SavepointFailed(_, ContributorRaised(_))` if any
+/// - `PuppetError::SavepointFailed(_, ContributorRaised(_))` if any
 ///   contributor raises/returns Err.
-/// - `HarnessError::SavepointFailed(_, ValidationFailed(_))` if any entry
+/// - `PuppetError::SavepointFailed(_, ValidationFailed(_))` if any entry
 ///   fails validation.
 pub fn prepare_batch(
   ctx : PreCommitContext,
   contributors : Array[&JournalContributor],
-) -> FrozenBatch raise HarnessError {
+) -> FrozenBatch raise PuppetError {
   // Collect contributions.
   let all_entries : Array[JournalEntry] = []
   for base in ctx.base_entries {
@@ -389,7 +389,7 @@ pub fn prepare_batch(
 fn validate_entry(
   entry : JournalEntry,
   ctx : PreCommitContext,
-) -> Result[Unit, HarnessError] {
+) -> Result[Unit, PuppetError] {
   // Entry savepoint kind must match the context's savepoint kind.
   if !(entry.identity.kind == ctx.savepoint_kind) {
     return Err(
@@ -453,7 +453,7 @@ fn validate_entry(
 pub fn commit_batch(
   journal : &RunJournal,
   batch : FrozenBatch,
-) -> Int raise HarnessError {
+) -> Int raise PuppetError {
   // Post-freeze integrity check: verify entry keys still match.
   let current_keys : Array[String] = []
   for entry in batch.entries {

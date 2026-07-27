@@ -9,22 +9,36 @@ import {
 }
 
 // Values
-pub fn commit_batch(&RunJournal, FrozenBatch) -> Int raise HarnessError
+pub fn commit_batch(&RunJournal, FrozenBatch) -> Int raise PuppetError
 
-pub async fn execute_one(@kernel.Effect, ExecutionContext, (Json) -> Unit) -> @kernel.RunInput
-
-pub fn prepare_batch(PreCommitContext, Array[&JournalContributor]) -> FrozenBatch raise HarnessError
+pub fn prepare_batch(PreCommitContext, Array[&JournalContributor]) -> FrozenBatch raise PuppetError
 
 // Errors
+pub(all) suberror CanonicalHostCompositionError {
+  OwnerMismatch(tool_name~ : String, declared_owner~ : String, binding_owner~ : String)
+  DuplicateBinding(tool_name~ : String)
+  MissingFromCatalog(tool_name~ : String)
+  DefinitionMismatch(tool_name~ : String)
+  CatalogToolUnbound(tool_name~ : String)
+}
+pub impl Show for CanonicalHostCompositionError
+
 pub(all) suberror ContributionError {
   Internal(contributor_id~ : String, detail~ : String)
   Inconsistent(contributor_id~ : String, detail~ : String)
 }
 pub impl Show for ContributionError
 
-pub(all) suberror HarnessError {
-  IllegalPhaseTransition(from~ : HarnessPhase, to~ : HarnessPhase, operation~ : OperationClass, detail~ : String)
-  OperationNotAllowedInPhase(phase~ : HarnessPhase, operation~ : OperationClass, detail~ : String)
+pub(all) suberror LifecycleNodeError {
+  Internal(node_id~ : String, detail~ : String)
+  Inconsistent(node_id~ : String, detail~ : String)
+  InvalidState(node_id~ : String, detail~ : String)
+}
+pub impl Show for LifecycleNodeError
+
+pub(all) suberror PuppetError {
+  IllegalPhaseTransition(from~ : PuppetPhase, to~ : PuppetPhase, operation~ : OperationClass, detail~ : String)
+  OperationNotAllowedInPhase(phase~ : PuppetPhase, operation~ : OperationClass, detail~ : String)
   LeaseHeld(operation_id~ : String, held_by~ : String)
   LeaseNotHeld(operation_id~ : String, detail~ : String)
   AfterShutdown(command~ : String)
@@ -43,16 +57,11 @@ pub(all) suberror HarnessError {
   SubscriberFailed(subscriber_id~ : String, cause~ : String, committed_revision~ : Int)
   PumpLoopExceeded(iterations~ : Int)
   DuplicateOrLateCompletion(effect_id~ : @kernel.EffectId, detail~ : String)
+  EffectExecutionFailed(phase~ : String, cause~ : String)
+  EffectExecutionCancelled(phase~ : String)
   ReducerInvariantViolation(category~ : @kernel.InvariantCategory)
 }
-pub impl Show for HarnessError
-
-pub(all) suberror LifecycleNodeError {
-  Internal(node_id~ : String, detail~ : String)
-  Inconsistent(node_id~ : String, detail~ : String)
-  InvalidState(node_id~ : String, detail~ : String)
-}
-pub impl Show for LifecycleNodeError
+pub impl Show for PuppetError
 
 pub(all) suberror SubscriberError {
   Internal(subscriber_id~ : String, detail~ : String)
@@ -69,6 +78,14 @@ pub(all) struct AbortCommand {
 pub fn AbortCommand::command_id(Self) -> CommandId
 pub fn AbortCommand::detail(Self) -> String?
 pub fn AbortCommand::target_run_id(Self) -> @kernel.RunId
+
+pub struct CanonicalHost {
+  model : &ModelBinding
+  tools_by_name : Map[String, &ToolBinding]
+}
+pub fn CanonicalHost::from_catalog(&ModelBinding, @kernel.ToolCatalogSnapshot, Array[&ToolBinding]) -> Self raise CanonicalHostCompositionError
+pub fn CanonicalHost::model_id(Self) -> ModelId
+pub impl @kernel.HostRuntime for CanonicalHost
 
 pub(all) struct CommandId {
   value : String
@@ -126,7 +143,7 @@ pub struct EventDispatcher {
   turn_id : TurnId
   session_id : @kernel.SessionId
 }
-pub async fn EventDispatcher::dispatch(Self, @kernel.KernelEvent, Int) -> Unit raise HarnessError
+pub async fn EventDispatcher::dispatch(Self, @kernel.KernelEvent, Int) -> Unit raise PuppetError
 pub fn EventDispatcher::new(@kernel.RunId, TurnId, @kernel.SessionId) -> Self
 pub fn EventDispatcher::next_seq(Self) -> Int
 pub fn EventDispatcher::register(Self, &EventSubscriber) -> Unit
@@ -149,13 +166,6 @@ pub fn EventEnvelope::seq(Self) -> Int
 pub fn EventEnvelope::session_id(Self) -> @kernel.SessionId
 pub fn EventEnvelope::turn_id(Self) -> TurnId
 pub impl Show for EventEnvelope
-
-pub(all) struct ExecutionContext {
-  host : &@kernel.HostRuntime
-  model_id : ModelId
-  catalog : @kernel.ToolCatalogSnapshot
-}
-pub fn ExecutionContext::new(&@kernel.HostRuntime, model_id~ : ModelId, catalog~ : @kernel.ToolCatalogSnapshot) -> Self
 
 pub struct FailOnNthJournal {
   inner : InMemoryJournal
@@ -189,52 +199,14 @@ pub fn FrozenBatch::length(Self) -> Int
 pub fn FrozenBatch::savepoint_id(Self) -> String
 pub fn FrozenBatch::savepoint_kind(Self) -> SavepointKind
 
-pub struct Harness {
-  config : HarnessConfig
-  mut phase_gate : PhaseGate
-  mailbox : ControlMailbox
-  lifecycle : LifecycleCollection
-  mut last_completed_transcript : @kernel.CanonicalTranscript?
-}
-pub fn Harness::is_quiescent(Self) -> Bool
-pub fn Harness::last_completed_transcript(Self) -> @kernel.CanonicalTranscript?
-pub fn Harness::new(HarnessConfig) -> Self
-pub fn Harness::phase(Self) -> HarnessPhase
-pub async fn Harness::prompt(Self, @kernel.RunId, TurnId, @kernel.SessionId, Array[@kernel.CanonicalMessage], String) -> PromptResult raise HarnessError
-pub async fn Harness::shutdown(Self) -> Unit raise HarnessError
-pub async fn Harness::startup(Self) -> Unit raise HarnessError
-pub async fn Harness::wait_idle(Self) -> QuiescentStatus
-
-pub(all) struct HarnessConfig {
-  host : &@kernel.HostRuntime
-  model_id : ModelId
-  catalog : @kernel.ToolCatalogSnapshot
-  journal : &RunJournal
-  contributors : Array[&JournalContributor]
-  subscribers : Array[&EventSubscriber]
-  lifecycle_nodes : Array[&HarnessLifecycleNode]
-  default_budget : @kernel.Budget
-  max_iterations : Int
-}
-
-pub(all) enum HarnessPhase {
-  Idle
-  Active
-  Suspended
-  Terminalizing
-  ShuttingDown
-  Shutdown
-} derive(Eq, @debug.Debug)
-pub fn HarnessPhase::is_accepting(Self) -> Bool
-pub fn HarnessPhase::is_quiescent(Self) -> Bool
-pub impl Show for HarnessPhase
-
 pub struct InMemoryJournal {
   entries : Array[JournalEntry]
   seen_ids : Map[String, Bool]
   terminal_runs : Map[String, Bool]
+  mut append_count : Int
 }
-pub fn InMemoryJournal::append_impl(Self, Array[JournalEntry]) -> Int raise HarnessError
+pub fn InMemoryJournal::append_count(Self) -> Int
+pub fn InMemoryJournal::append_impl(Self, Array[JournalEntry]) -> Int raise PuppetError
 pub fn InMemoryJournal::entries_for_run_impl(Self, @kernel.RunId) -> Array[JournalEntry]
 pub fn InMemoryJournal::entries_for_savepoint_impl(Self, @kernel.RunId, String) -> Array[JournalEntry]
 pub fn InMemoryJournal::new() -> Self
@@ -280,19 +252,19 @@ pub fn JournalEntryIdentity::turn_id(Self) -> TurnId
 pub impl Show for JournalEntryIdentity
 
 pub struct LifecycleCollection {
-  nodes : Array[&HarnessLifecycleNode]
+  nodes : Array[&PuppetLifecycleNode]
   node_ids : Map[String, Bool]
   started : Map[String, Bool]
   shut_down : Map[String, Bool]
   mut is_sealed : Bool
 }
 pub fn LifecycleCollection::new() -> Self
-pub fn LifecycleCollection::register(Self, &HarnessLifecycleNode) -> Unit raise HarnessError
+pub fn LifecycleCollection::register(Self, &PuppetLifecycleNode) -> Unit raise PuppetError
 pub fn LifecycleCollection::shut_down_node_count(Self) -> Int
-pub async fn LifecycleCollection::shutdown_all(Self) -> Unit raise HarnessError
+pub async fn LifecycleCollection::shutdown_all(Self) -> Unit raise PuppetError
 pub fn LifecycleCollection::size(Self) -> Int
 pub fn LifecycleCollection::started_node_count(Self) -> Int
-pub async fn LifecycleCollection::startup_all(Self) -> Unit raise HarnessError
+pub async fn LifecycleCollection::startup_all(Self) -> Unit raise PuppetError
 
 pub(all) struct LifecycleShutdownError {
   failing_node_id : String
@@ -338,37 +310,37 @@ pub impl Show for OperationClass
 
 pub(all) struct OperationLease {
   operation_id : String
-  acquired_phase : HarnessPhase
+  acquired_phase : PuppetPhase
   run_id : @kernel.RunId
   turn_id : TurnId
 } derive(Eq, @debug.Debug)
-pub fn OperationLease::acquired_phase(Self) -> HarnessPhase
+pub fn OperationLease::acquired_phase(Self) -> PuppetPhase
 pub fn OperationLease::operation_id(Self) -> String
 pub fn OperationLease::run_id(Self) -> @kernel.RunId
 pub fn OperationLease::turn_id(Self) -> TurnId
 pub impl Show for OperationLease
 
 pub struct PhaseGate {
-  phase : HarnessPhase
+  phase : PuppetPhase
   lease : OperationLease?
   active_run_id : @kernel.RunId?
   active_turn_id : TurnId?
   active_suspension_id : String?
 }
-pub fn PhaseGate::acquire_prompt(Self, String, @kernel.RunId, TurnId) -> (Self, OperationLease) raise HarnessError
-pub fn PhaseGate::acquire_resume(Self, String, String) -> (Self, OperationLease) raise HarnessError
+pub fn PhaseGate::acquire_prompt(Self, String, @kernel.RunId, TurnId) -> (Self, OperationLease) raise PuppetError
+pub fn PhaseGate::acquire_resume(Self, String, String) -> (Self, OperationLease) raise PuppetError
 pub fn PhaseGate::active_run_id(Self) -> @kernel.RunId?
 pub fn PhaseGate::active_suspension_id(Self) -> String?
 pub fn PhaseGate::active_turn_id(Self) -> TurnId?
-pub fn PhaseGate::authorise(Self, OperationClass) -> Result[Unit, HarnessError]
-pub fn PhaseGate::enter_suspended(Self, String) -> Self raise HarnessError
+pub fn PhaseGate::authorise(Self, OperationClass) -> Result[Unit, PuppetError]
+pub fn PhaseGate::enter_suspended(Self, String) -> Self raise PuppetError
 pub fn PhaseGate::idle() -> Self
 pub fn PhaseGate::is_quiescent(Self) -> Bool
 pub fn PhaseGate::lease(Self) -> OperationLease?
-pub fn PhaseGate::phase(Self) -> HarnessPhase
-pub fn PhaseGate::release(Self, String) -> Unit raise HarnessError
-pub fn PhaseGate::rotate_turn(Self, TurnId) -> Self raise HarnessError
-pub fn PhaseGate::transition(Self, HarnessPhase) -> Self raise HarnessError
+pub fn PhaseGate::phase(Self) -> PuppetPhase
+pub fn PhaseGate::release(Self, String) -> Unit raise PuppetError
+pub fn PhaseGate::rotate_turn(Self, TurnId) -> Self raise PuppetError
+pub fn PhaseGate::transition(Self, PuppetPhase) -> Self raise PuppetError
 
 pub(all) struct PreCommitContext {
   run_id : @kernel.RunId
@@ -392,9 +364,50 @@ pub fn PreCommitContext::turn_id(Self) -> TurnId
 pub(all) enum PromptResult {
   Accepted(run_id~ : @kernel.RunId, turn_id~ : TurnId)
   LeaseBusy(held_by~ : String)
-  Rejected(error~ : HarnessError)
+  Rejected(error~ : PuppetError)
 }
 pub impl Show for PromptResult
+
+pub struct Puppet {
+  config : PuppetConfig
+  mut phase_gate : PhaseGate
+  mailbox : ControlMailbox
+  lifecycle : LifecycleCollection
+  mut last_completed_transcript : @kernel.CanonicalTranscript?
+}
+pub fn Puppet::is_quiescent(Self) -> Bool
+pub fn Puppet::last_completed_transcript(Self) -> @kernel.CanonicalTranscript?
+pub fn Puppet::new(PuppetConfig) -> Self
+pub fn Puppet::phase(Self) -> PuppetPhase
+pub async fn Puppet::prompt(Self, @kernel.RunId, TurnId, @kernel.SessionId, Array[@kernel.CanonicalMessage], String) -> PromptResult raise PuppetError
+pub async fn Puppet::shutdown(Self) -> Unit raise PuppetError
+pub async fn Puppet::startup(Self) -> Unit raise PuppetError
+pub async fn Puppet::wait_idle(Self) -> QuiescentStatus
+
+pub(all) struct PuppetConfig {
+  host : CanonicalHost
+  catalog : @kernel.ToolCatalogSnapshot
+  journal : &RunJournal
+  contributors : Array[&JournalContributor]
+  subscribers : Array[&EventSubscriber]
+  lifecycle_nodes : Array[&PuppetLifecycleNode]
+  stream_chunks : ((Json) -> Unit)?
+  call_options : Json
+  default_budget : @kernel.Budget
+  max_iterations : Int
+}
+
+pub(all) enum PuppetPhase {
+  Idle
+  Active
+  Suspended
+  Terminalizing
+  ShuttingDown
+  Shutdown
+} derive(Eq, @debug.Debug)
+pub fn PuppetPhase::is_accepting(Self) -> Bool
+pub fn PuppetPhase::is_quiescent(Self) -> Bool
+pub impl Show for PuppetPhase
 
 pub(all) enum QueuePolicy {
   All
@@ -477,7 +490,7 @@ pub struct TurnSnapshot {
 } derive(Eq, @debug.Debug)
 pub fn TurnSnapshot::budget(Self) -> @kernel.Budget
 pub fn TurnSnapshot::call_options(Self) -> Json
-pub fn TurnSnapshot::capture(TurnSnapshotInput) -> Self raise HarnessError
+pub fn TurnSnapshot::capture(TurnSnapshotInput) -> Self raise PuppetError
 pub fn TurnSnapshot::catalog_version(Self) -> @kernel.CatalogVersion
 pub fn TurnSnapshot::deadline(Self) -> Int?
 pub fn TurnSnapshot::fingerprint(Self) -> String
@@ -515,23 +528,34 @@ pub(open) trait EventSubscriber {
   async fn on_event(Self, EventEnvelope) -> Unit raise SubscriberError
 }
 
-pub(open) trait HarnessLifecycleNode {
-  fn node_id(Self) -> String
-  fn provenance(Self) -> String
-  async fn startup(Self) -> Unit raise LifecycleNodeError
-  async fn shutdown(Self) -> Unit raise LifecycleNodeError
-}
-
 pub(open) trait JournalContributor {
   fn contributor_id(Self) -> String
   fn provenance(Self) -> String
   fn contribute(Self, PreCommitContext) -> JournalContribution raise ContributionError
 }
 
+pub(open) trait ModelBinding {
+  fn model_id(Self) -> ModelId
+  async fn complete(Self, Array[@kernel.CanonicalMessage], Array[@kernel.CanonicalToolDef], Json, ((Json) -> Unit)?) -> Result[@kernel.AssistantCompletion, @kernel.ModelFailure]
+}
+
+pub(open) trait PuppetLifecycleNode {
+  fn node_id(Self) -> String
+  fn provenance(Self) -> String
+  async fn startup(Self) -> Unit raise LifecycleNodeError
+  async fn shutdown(Self) -> Unit raise LifecycleNodeError
+}
+
 pub(open) trait RunJournal {
-  fn append(Self, Array[JournalEntry]) -> Int raise HarnessError
+  fn append(Self, Array[JournalEntry]) -> Int raise PuppetError
   fn revision(Self) -> Int
   fn entries_for_run(Self, @kernel.RunId) -> Array[JournalEntry]
   fn entries_for_savepoint(Self, @kernel.RunId, String) -> Array[JournalEntry]
+}
+
+pub(open) trait ToolBinding {
+  fn owner_id(Self) -> @kernel.OwnerId
+  fn definitions(Self) -> Array[@kernel.CanonicalToolDef]
+  async fn execute(Self, @kernel.CallId, @kernel.ToolName, Json) -> @kernel.ToolOutcome
 }
 

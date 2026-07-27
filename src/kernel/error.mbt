@@ -3,10 +3,8 @@
 ///
 /// These errors are returned from constructor validation and from the reducer
 /// when an input combination violates the contract (ADR §2.2, §2.4, §2.5).
-/// They are deliberately distinct from the M0 `AgentError` family: the Kernel
-/// does not speak `ModelPort` or `SessionStore`, so its errors must not reuse
-/// their carrier types. The compatibility facade translates between the two
-/// families.
+/// The Kernel owns its own typed failures because pure reduction does not
+/// know provider, storage, or product adapter details.
 
 // ──────────────────────────────────────────────────────────────────────────
 // Invariant categories (one home per failure — ADR §2.4)
@@ -75,6 +73,9 @@ pub(all) enum FailureReason {
   ModelParseFailure(detail~ : String)
   ModelTransport(detail~ : String)
   ModelRuntime(detail~ : String)
+  /// A host-side policy or control gate rejected a model effect. This is not
+  /// a provider error and must remain distinguishable at the product boundary.
+  HostRejected(detail~ : String)
   InvariantViolation(category~ : InvariantCategory)
   BudgetExhausted(dimension~ : BudgetDimension)
   DeadlineReached
@@ -87,6 +88,7 @@ pub impl Show for FailureReason with fn to_string(self : FailureReason) -> Strin
       "ModelParseFailure(\{safe_kernel_label(detail)})"
     ModelTransport(detail~) => "ModelTransport(\{safe_kernel_label(detail)})"
     ModelRuntime(detail~) => "ModelRuntime(\{safe_kernel_label(detail)})"
+    HostRejected(detail~) => "HostRejected(\{safe_kernel_label(detail)})"
     InvariantViolation(category~) =>
       "InvariantViolation(\{category.to_string()})"
     BudgetExhausted(dimension~) => "BudgetExhausted(\{dimension.to_string()})"
@@ -100,8 +102,7 @@ pub impl Show for FailureReason with fn to_string(self : FailureReason) -> Strin
 
 ///|
 /// Unified error type raised by Kernel constructors (`RunState::*`) and the
-/// reducer. The compatibility facade translates this to the legacy
-/// `AgentError` family.
+/// reducer.
 ///
 /// Variant `ReducerInvariant` is the only one that terminates a Run; the
 /// other variants are raised synchronously from constructors before the Run

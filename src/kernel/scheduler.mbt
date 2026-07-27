@@ -78,6 +78,16 @@ pub impl Show for ExecutionWave with fn to_string(self : ExecutionWave) -> Strin
   "Wave([\{ids}])"
 }
 
+///|
+/// Calls assigned to this wave, in stable model source order.
+///
+/// Executors consume this accessor rather than reconstructing scheduling
+/// policy outside the Kernel. The returned array is a snapshot: mutating it
+/// cannot change the plan that was validated by `schedule`.
+pub fn ExecutionWave::calls(self : ExecutionWave) -> Array[CanonicalToolCall] {
+  self.calls.copy()
+}
+
 // ──────────────────────────────────────────────────────────────────────────
 // Execution plan
 // ──────────────────────────────────────────────────────────────────────────

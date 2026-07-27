@@ -1,16 +1,14 @@
 ///|
-/// Pure reducer for the M1 functional Kernel (ADR §2.1, §2.2, §2.5).
+/// Pure reducer for the functional Kernel (ADR §2.1, §2.2, §2.5).
 ///
 /// This file is the SOLE arbiter of phase transitions. Given a RunState and
 /// a RunInput, the reducer returns the next RunState, the effects the
 /// executor should run next, and the domain events the interpreter should
 /// publish. The reducer MUST NOT:
 /// - import async, fs, http, time, or random
-/// - import any port trait (`ModelPort`, `ToolProvider`, `SessionStore`,
-///   `Observer`, `Compressor`, `PipelineHook`, `MemoryPort`, `Lifecycle`,
-///   `CommandPort`)
-/// - import legacy `Message` / `ModelResponse` / `TurnEvent` / `TurnResult`
-///   types — it works only on canonical domain types
+/// - import any host or provider trait
+/// - import non-canonical product data — it works only on canonical domain
+///   types
 /// - mutate caller-owned arrays/maps
 ///
 /// Purity is enforced by a boundary lint in T03/T09 acceptance.
@@ -576,19 +574,44 @@ fn reduce_model_completed_with_tools(
     let next_state = next_state.with_tool_results(tool_results)
     return reduce_output(next_state, [], events)
   }
+  // Account for the entire executable batch before exposing any effect to the
+  // host. This makes the tool limits atomic: a batch that reaches a limit
+  // cannot partially execute, and parallel waves cannot bypass accounting.
+  let next_tool_consumed = bump_tool_batch(next_consumed, effects.length())
+  match next_tool_consumed.exceeded(state.budget()) {
+    Exceeded(dim) => {
+      events.push(
+        BudgetExhausted(
+          dimension=dim,
+          consumed=consumed_for_dim(next_tool_consumed, dim),
+          limit=limit_for_dim(state.budget(), dim),
+        ),
+      )
+      return reduce_terminal_fail_with(
+        state,
+        transcript,
+        next_tool_consumed,
+        BudgetExhausted(dimension=dim),
+        events,
+      )
+    }
+    UnknownUsage(_) | WithinBudget => ()
+  }
   // Emit ToolBatchStarted covering only the calls that became effects.
-  let batch_call_ids : Array[CallId] = []
+  let batch_calls : Array[CanonicalToolCall] = []
   for e in effects {
     match e {
-      ExecuteTool(payload~, ..) => batch_call_ids.push(payload.call_id)
+      ExecuteTool(payload~, ..) =>
+        batch_calls.push({
+          call_id: payload.call_id,
+          name: payload.tool_name,
+          arguments: payload.arguments,
+        })
       _ => ()
     }
   }
   events.push(
-    ToolBatchStarted(
-      model_step_id=payload.model_step_id,
-      call_ids=batch_call_ids,
-    ),
+    ToolBatchStarted(model_step_id=payload.model_step_id, calls=batch_calls),
   )
   let next_state = state.transition(
     phase=AwaitingTools,
@@ -598,7 +621,7 @@ fn reduce_model_completed_with_tools(
     next_effect_id=state.next_effect_id().add(effects.length()),
     current_model_step_id=payload.model_step_id,
     catalog_version=None,
-    budget_consumed=next_consumed,
+    budget_consumed=next_tool_consumed,
     outcome=None,
     suspension_requirement=None,
   )
@@ -635,6 +658,7 @@ fn reduce_model_failed(
     Transport(reason~) => ModelTransport(detail=reason)
     Runtime(reason~) => ModelRuntime(detail=reason)
     Parse(reason~) => ModelParseFailure(detail=reason)
+    HostRejected(reason~) => FailureReason::HostRejected(detail=reason)
   }
   reduce_terminal_fail(state, reason)
 }
@@ -725,11 +749,8 @@ fn reduce_tool_completed(
   let events = [event]
   if new_pending.is_empty() {
     // Batch complete: back to ReadyForModel so the host can issue the next
-    // model step.
-    let next_consumed = bump_tool_call(
-      state.budget_consumed(),
-      new_pending.length() - pending.length(),
-    )
+    // model step. Tool consumption was already recorded atomically when the
+    // reducer declared this batch's ExecuteTool effects.
     let next_state = state.transition(
       phase=ReadyForModel,
       transcript=new_transcript,
@@ -738,7 +759,7 @@ fn reduce_tool_completed(
       next_effect_id=state.next_effect_id(),
       current_model_step_id=state.current_model_step_id(),
       catalog_version=None,
-      budget_consumed=next_consumed,
+      budget_consumed=state.budget_consumed(),
       outcome=None,
       suspension_requirement=None,
     )
@@ -803,6 +824,7 @@ fn reduce_tool_failed(
         Runtime(reason~) => ("Runtime", reason)
         Parse(reason~) => ("Parse", reason)
         RequestBuild(reason~) => ("RequestBuild", reason)
+        HostRejected(reason~) => ("HostRejected", reason)
       }
     None => ("Unknown", "no runtime detail supplied")
   }
@@ -1208,15 +1230,18 @@ fn bump_model_step(
 }
 
 ///|
-fn bump_tool_call(consumed : BudgetConsumed, delta : Int) -> BudgetConsumed {
-  // delta is the number of tool calls whose completion was just folded.
-  // For M1 we count it from the change in pending effects (which is <= 0).
-  // Defensive: take absolute value.
-  let inc = if delta < 0 { -delta } else { delta }
+fn bump_tool_batch(
+  consumed : BudgetConsumed,
+  executable_calls : Int,
+) -> BudgetConsumed {
+  // This helper is only called after validation established a non-empty
+  // ExecuteTool batch. Count when effects are declared, never as individual
+  // completions arrive: completion order is nondeterministic under parallel
+  // execution and must not alter budget accounting.
   {
     model_steps: consumed.model_steps,
-    tool_rounds: consumed.tool_rounds,
-    tool_calls: consumed.tool_calls + inc,
+    tool_rounds: consumed.tool_rounds + 1,
+    tool_calls: consumed.tool_calls + executable_calls,
     observed_total_tokens: consumed.observed_total_tokens,
     any_usage_verified: consumed.any_usage_verified,
   }

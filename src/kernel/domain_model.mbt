@@ -1,11 +1,9 @@
 ///|
-/// Canonical model-step types for the M1 functional Kernel.
+/// Canonical model-step types for the functional Kernel.
 ///
 /// ADR `docs/design/08-functional-kernel-contract.md` §2.1, §2.11: the
 /// assistant completion is the single source of truth for tool calls and
-/// reasoning. The legacy `ModelResponse` type (in `types_model.mbt`) duplicates
-/// `tool_calls` and `reasoning_content` between the top-level struct and the
-/// nested message; the canonical type below has no such duplication.
+/// reasoning. The canonical type has one authoritative owner for each fact.
 
 // ──────────────────────────────────────────────────────────────────────────
 // Usage
@@ -123,6 +121,11 @@ pub(all) enum ModelFailure {
   Transport(reason~ : String)
   Runtime(reason~ : String)
   Parse(reason~ : String)
+  /// The host rejected a reducer-declared model effect before invoking the
+  /// provider (for example, an explicit policy gate). This is deliberately
+  /// distinct from provider failures so callers can preserve the rejection's
+  /// typed meaning instead of string-matching a model error.
+  HostRejected(reason~ : String)
 } derive(Eq, Debug)
 
 ///|
@@ -133,6 +136,8 @@ pub impl Show for ModelFailure with fn to_string(self : ModelFailure) -> String 
     Transport(reason~) => "ModelFailure::Transport(\{safe_model_label(reason)})"
     Runtime(reason~) => "ModelFailure::Runtime(\{safe_model_label(reason)})"
     Parse(reason~) => "ModelFailure::Parse(\{safe_model_label(reason)})"
+    HostRejected(reason~) =>
+      "ModelFailure::HostRejected(\{safe_model_label(reason)})"
   }
 }
 

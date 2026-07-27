@@ -1,8 +1,8 @@
 ///|
-/// Harness orchestration — the single long-lived pump (M2-T06, ADR §2.1,
+/// Puppet orchestration — the single long-lived pump (M2-T06, ADR §2.1,
 /// §4, §6).
 ///
-/// The Harness is the ONLY loop in the product that drives RunState forward
+/// The Puppet is the ONLY loop in the product that drives RunState forward
 /// across model/tool rounds. It composes:
 /// - PhaseGate (T02) — macro-phase gating + lease
 /// - TurnSnapshot (T02) — immutable turn capture
@@ -21,24 +21,29 @@
 /// emits envelopes. Only the pump allocates seq.
 
 // ──────────────────────────────────────────────────────────────────────────
-// HarnessConfig — composition root
+// PuppetConfig — composition root
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-/// Inputs to build a Harness. All fields are required; the Harness owns
+/// Inputs to build a Puppet. All fields are required; the Puppet owns
 /// the lifetime of every reference.
 ///
-/// The host side is supplied as a single `&HostRuntime` (REPAIR D3/D4): the
-/// root compatibility facade implements `HostRuntime`; Puppetry only sees
-/// canonical Kernel values, so no root → puppetry → root package cycle exists.
-pub(all) struct HarnessConfig {
-  host : &@kernel.HostRuntime
-  model_id : ModelId
+/// The host is an owned `CanonicalHost`, assembled once from direct extension
+/// bindings and an already-validated catalog. No product entry can bypass
+/// catalog-checked canonical composition.
+pub(all) struct PuppetConfig {
+  host : CanonicalHost
   catalog : @kernel.ToolCatalogSnapshot
   journal : &RunJournal
   contributors : Array[&JournalContributor]
   subscribers : Array[&EventSubscriber]
-  lifecycle_nodes : Array[&HarnessLifecycleNode]
+  lifecycle_nodes : Array[&PuppetLifecycleNode]
+  /// Optional live chunk sink. `None` is the default product path and tells
+  /// the HostRuntime to avoid chunk JSON conversion altogether.
+  stream_chunks : @kernel.HostChunkCallback?
+  /// Opaque provider options captured at composition. They are carried into
+  /// every reducer-declared CallModel effect unchanged.
+  call_options : Json
   /// Default budget for new runs.
   default_budget : @kernel.Budget
   /// Max iterations before the pump declares PumpLoopExceeded.
@@ -46,42 +51,37 @@ pub(all) struct HarnessConfig {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Harness — the assembled pump
+// Puppet — the assembled pump
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-/// The Harness. Construct once via `Harness::new`; call `startup` once
+/// The Puppet. Construct once via `Puppet::new`; call `startup` once
 /// before any prompt; call `shutdown` once at product exit.
 ///
-/// The Harness owns:
+/// The Puppet owns:
 /// - PhaseGate (mutable)
 /// - ControlMailbox (mutable; includes the idle barrier)
 /// - LifecycleCollection (mutable)
 ///
-/// The Harness borrows:
-/// - &HostRuntime (from config; the root adapter owns compatibility conversion)
+/// The Puppet borrows:
+/// - CanonicalHost (from config)
 /// - &RunJournal (from config)
 /// - &JournalContributor[] (from config)
 /// - &EventSubscriber[] (from config)
 /// - ToolCatalogSnapshot (owned copy; snapshot immutable after capture)
-pub struct Harness {
-  config : HarnessConfig
+pub struct Puppet {
+  config : PuppetConfig
   mut phase_gate : PhaseGate
   mailbox : ControlMailbox
   lifecycle : LifecycleCollection
-  /// Last terminal transcript, retained only for the compatibility facade.
-  /// The Kernel remains the owner of the live transcript while a run is
-  /// active; Harness exposes this immutable snapshot after commit so a host
-  /// can materialize the complete legacy session without reconstructing tool
-  /// messages from lossy terminal summaries.
+  /// Last terminal transcript. The Kernel owns the live transcript while a
+  /// run is active; after a terminal commit the Puppet exposes this immutable
+  /// snapshot so products can materialize their canonical session state.
   mut last_completed_transcript : CanonicalTranscript?
-  // RuntimeRegistry is built per-run from config.tool_providers; we
-  // rebuild it on each prompt (it's cheap and keeps the registry fresh
-  // for future dynamic-refresh in M5).
 }
 
 ///|
-pub fn Harness::new(config : HarnessConfig) -> Harness {
+pub fn Puppet::new(config : PuppetConfig) -> Puppet {
   {
     config,
     phase_gate: PhaseGate::idle(),
@@ -92,21 +92,19 @@ pub fn Harness::new(config : HarnessConfig) -> Harness {
 }
 
 ///|
-/// Return the last terminal transcript captured by the Harness. `None` means
+/// Return the last terminal transcript captured by the Puppet. `None` means
 /// no run has completed since construction or the current run is suspended.
-pub fn Harness::last_completed_transcript(
-  self : Harness,
-) -> CanonicalTranscript? {
+pub fn Puppet::last_completed_transcript(self : Puppet) -> CanonicalTranscript? {
   self.last_completed_transcript
 }
 
 ///|
-pub fn Harness::phase(self : Harness) -> HarnessPhase {
+pub fn Puppet::phase(self : Puppet) -> PuppetPhase {
   self.phase_gate.phase()
 }
 
 ///|
-pub fn Harness::is_quiescent(self : Harness) -> Bool {
+pub fn Puppet::is_quiescent(self : Puppet) -> Bool {
   self.phase_gate.is_quiescent()
 }
 
@@ -117,7 +115,7 @@ pub fn Harness::is_quiescent(self : Harness) -> Bool {
 ///|
 /// Register all configured lifecycle nodes and start them in registration
 /// order. Idempotent: a second call is a no-op.
-pub async fn Harness::startup(self : Harness) -> Unit raise HarnessError {
+pub async fn Puppet::startup(self : Puppet) -> Unit raise PuppetError {
   for node in self.config.lifecycle_nodes {
     self.lifecycle.register(node)
   }
@@ -126,12 +124,12 @@ pub async fn Harness::startup(self : Harness) -> Unit raise HarnessError {
 
 ///|
 /// Shut all started nodes in reverse order. Idempotent.
-pub async fn Harness::shutdown(self : Harness) -> Unit raise HarnessError {
+pub async fn Puppet::shutdown(self : Puppet) -> Unit raise PuppetError {
   // Transition the phase gate to ShuttingDown so any in-flight command
   // is rejected. Active runs are not forcibly aborted (M2 single-threaded
   // means there is no in-flight run when shutdown is called).
   self.phase_gate = self.phase_gate.transition(ShuttingDown)
-  let shutdown_result : Result[Unit, HarnessError] = Ok(
+  let shutdown_result : Result[Unit, PuppetError] = Ok(
     self.lifecycle.shutdown_all(),
   ) catch {
     e => Err(e)
@@ -157,12 +155,12 @@ pub async fn Harness::shutdown(self : Harness) -> Unit raise HarnessError {
 ///|
 /// Result of `prompt`.
 pub(all) enum PromptResult {
-  /// Run accepted; the harness has entered Active phase and is driving.
+  /// Run accepted; the puppet has entered Active phase and is driving.
   Accepted(run_id~ : RunId, turn_id~ : TurnId)
   /// Rejected because a lease is already held.
   LeaseBusy(held_by~ : String)
   /// Rejected for another typed reason.
-  Rejected(error~ : HarnessError)
+  Rejected(error~ : PuppetError)
 }
 
 ///|
@@ -176,31 +174,32 @@ pub impl Show for PromptResult with fn to_string(self : PromptResult) -> String 
 }
 
 ///|
-/// Prompt the Harness with an initial user message. Only legal when the
+/// Prompt the Puppet with an initial user message. Only legal when the
 /// phase is Idle.
 ///
 /// Steps (ADR §6.1):
 /// 1. Acquire prompt lease via the phase gate.
 /// 2. Capture TurnSnapshot.
 /// 3. Bind ControlMailbox to the new run/turn.
-/// 4. Commit `InputAccepted` savepoint BEFORE any model effect.
-/// 5. Transition to Active.
+/// 4. Transition to Active.
+/// 5. Let the pump atomically commit the initial boundary (`InputAccepted`,
+///    `RunStarted`, and first model intent) before any model effect.
 /// 6. Run the pump until terminal or suspended.
 /// 7. On terminal, dispatch terminal event, release lease, return.
 ///
 /// `run_id` / `turn_id` are caller-supplied (host generates them; the
-/// Harness does not allocate). This keeps cross-process resume (M5)
+/// Puppet does not allocate). This keeps cross-process resume (M5)
 /// possible without a central id factory.
-pub async fn Harness::prompt(
-  self : Harness,
+pub async fn Puppet::prompt(
+  self : Puppet,
   run_id : RunId,
   turn_id : TurnId,
   session_id : SessionId,
   initial_messages : Array[CanonicalMessage],
   operation_id : String,
-) -> PromptResult raise HarnessError {
+) -> PromptResult raise PuppetError {
   // Step 1: acquire lease.
-  let acquire_result : Result[(PhaseGate, OperationLease), HarnessError] = Ok(
+  let acquire_result : Result[(PhaseGate, OperationLease), PuppetError] = Ok(
     self.phase_gate.acquire_prompt(operation_id, run_id, turn_id),
   ) catch {
     e => Err(e)
@@ -217,15 +216,15 @@ pub async fn Harness::prompt(
     turn_id,
     session_id,
     catalog: self.config.catalog,
-    model_id: self.config.model_id.to_string(),
-    call_options: Json::null(),
+    model_id: self.config.host.model_id().to_string(),
+    call_options: self.config.call_options,
     budget: self.config.default_budget,
     deadline: None,
     hook_provenance: [],
     lifecycle_provenance: [],
     subscriber_provenance: [],
   }
-  let snap_result : Result[TurnSnapshot, HarnessError] = Ok(
+  let snap_result : Result[TurnSnapshot, PuppetError] = Ok(
     TurnSnapshot::capture(snap_input),
   ) catch {
     e => Err(e)
@@ -241,62 +240,10 @@ pub async fn Harness::prompt(
   }
   // Step 3: bind mailbox.
   self.mailbox.bind_run(run_id, turn_id)
-  // Step 4: commit InputAccepted BEFORE any model effect.
-  let input_accepted_entry : JournalEntry = {
-    identity: {
-      run_id,
-      turn_id,
-      session_id,
-      savepoint_id: "sp_input_\{turn_id.to_string()}",
-      kind: InputAccepted,
-      entry_seq: 0,
-    },
-    revision: 0, // assigned by journal
-    summary: "InputAccepted(run=\{run_id.to_string()})",
-    payload: Json::object(
-      Map::from_array([
-        ("kind", Json::string("InputAccepted")),
-        ("run_id", Json::string(run_id.to_string())),
-        ("turn_id", Json::string(turn_id.to_string())),
-        ("session_id", Json::string(session_id.to_string())),
-        (
-          "catalog_version",
-          Json::number(snap.catalog_version().to_int().to_double()),
-        ),
-      ]),
-    ),
-  }
-  let ctx : PreCommitContext = {
-    run_id,
-    turn_id,
-    session_id,
-    savepoint_id: "sp_input_\{turn_id.to_string()}",
-    savepoint_kind: InputAccepted,
-    base_entries: [input_accepted_entry],
-    current_revision: self.config.journal.revision(),
-    catalog_version: snap.catalog_version(),
-  }
-  let batch_result : Result[FrozenBatch, HarnessError] = Ok(
-    prepare_batch(ctx, self.config.contributors),
-  ) catch {
-    e => Err(e)
-  }
-  let batch = match batch_result {
-    Err(e) => return self.reject_run(error=e)
-    Ok(b) => b
-  }
-  let commit_result : Result[Int, HarnessError] = Ok(
-    commit_batch(self.config.journal, batch),
-  ) catch {
-    e => Err(e)
-  }
-  match commit_result {
-    Err(e) => return self.reject_run(error=e)
-    Ok(_) => ()
-  }
-  // Step 5: transition to Active.
+  // Step 4: transition to Active. `drive_run` commits the initial boundary
+  // before it can dispatch the first model effect.
   self.phase_gate = self.phase_gate.transition(Active)
-  // Step 6: run the pump.
+  // Step 5: run the pump.
   let result = self.drive_run(
     run_id, turn_id, session_id, initial_messages, snap,
   )
@@ -324,14 +271,14 @@ pub async fn Harness::prompt(
 /// This is the ONLY loop in the product that drives RunState. It reuses
 /// M1-T08's `execute_one` (stateless single-effect executor) and never
 /// inspects `tool_calls.is_empty()` to decide termination.
-async fn Harness::drive_run(
-  self : Harness,
+async fn Puppet::drive_run(
+  self : Puppet,
   run_id : RunId,
   turn_id : TurnId,
   session_id : SessionId,
   initial_messages : Array[CanonicalMessage],
   snap : TurnSnapshot,
-) -> PromptResult raise HarnessError {
+) -> PromptResult raise PuppetError {
   // Build the initial RunState.
   let initial_result : Result[RunState, KernelError] = Ok(
     RunState::initial(run_id~, session_id~, budget=snap.budget()),
@@ -348,11 +295,9 @@ async fn Harness::drive_run(
     Ok(s) => s
   }
   // Build the execution context from the host runtime + catalog snapshot.
-  // The host owns owner resolution and legacy conversion; puppetry only
-  // forwards canonical types (REPAIR D3/D4).
+  // Puppetry forwards canonical values without product-specific conversion.
   let exec_ctx = ExecutionContext::new(
-    self.config.host,
-    model_id=self.config.model_id,
+    self.config.host as &@kernel.HostRuntime,
     catalog=self.config.catalog,
   )
   // Build the event dispatcher.
@@ -380,17 +325,32 @@ async fn Harness::drive_run(
       )
     Ok(o) => o
   }
-  state = out0.next_state()
-  // Commit RunStarted savepoint and dispatch events.
-  let commit_result : Result[Unit, HarnessError] = Ok(
-    self.commit_savepoint(
-      state,
+  let initial_boundary : Result[(RunState, Array[KernelEvent]), PuppetError] = Ok(
+    declare_model_effect_if_ready(
+      out0.next_state(),
       out0.events(),
+      self.config.catalog,
+      snap.call_options(),
+    ),
+  ) catch {
+    error => Err(error)
+  }
+  let (initial_state, initial_events) = match initial_boundary {
+    Err(error) => return self.reject_run(error~)
+    Ok(value) => value
+  }
+  // The initial boundary durably accepts input, starts the run, and declares
+  // the first model intent in one append before the effect can execute.
+  let commit_result : Result[Unit, PuppetError] = Ok(
+    self.commit_boundary(
+      initial_state,
+      InputAccepted,
+      initial_events,
       dispatcher,
       run_id,
       turn_id,
       session_id,
-      "sp_start",
+      "sp_input",
     ),
   ) catch {
     e => Err(e)
@@ -399,20 +359,13 @@ async fn Harness::drive_run(
     Err(e) => return self.reject_run(error=e)
     Ok(_) => ()
   }
+  state = initial_state
   // Drive the loop.
   let mut iter = 0
   let max_iter = self.config.max_iterations
   while state.phase() != Terminal && state.phase() != Suspended {
     iter = iter + 1
     if iter > max_iter {
-      return self.reject_run(error=PumpLoopExceeded(iterations=iter))
-    }
-    // Defensive: if the pump task is being cancelled (e.g. by an outer
-    // `with_timeout` wrapping the whole run), re-raise instead of looping.
-    // Without this, the catch blocks below would swallow `Cancelled` into
-    // `Rejected(...)` and the loop would spin forever. See
-    // `moonbitlang/async` `is_being_cancelled` doc.
-    if @async.is_being_cancelled() {
       return self.reject_run(error=PumpLoopExceeded(iterations=iter))
     }
     // Check abort.
@@ -432,9 +385,19 @@ async fn Harness::drive_run(
           )
         Ok(out) => {
           state = out.next_state()
-          let cr : Result[Unit, HarnessError] = Ok(
-            self.commit_savepoint(
+          let propagated : Result[Unit, PuppetError] = Ok(
+            propagate_terminal_cancellations(out.effects(), exec_ctx),
+          ) catch {
+            error => Err(error)
+          }
+          match propagated {
+            Err(error) => return self.reject_run(error~)
+            Ok(_) => ()
+          }
+          let cr : Result[Unit, PuppetError] = Ok(
+            self.commit_boundary(
               state,
+              RunTerminal,
               out.events(),
               dispatcher,
               run_id,
@@ -455,32 +418,30 @@ async fn Harness::drive_run(
     }
     match state.phase() {
       ReadyForModel => {
-        let r : Result[ReduceOutput, KernelError] = Ok(
-          run_model_step(state, self.config.catalog, snap.call_options()),
+        let declared : Result[(RunState, Array[KernelEvent]), PuppetError] = Ok(
+          declare_model_effect_if_ready(
+            state,
+            [],
+            self.config.catalog,
+            snap.call_options(),
+          ),
         ) catch {
-          e => Err(e)
+          error => Err(error)
         }
-        match r {
-          Err(e) =>
-            return self.reject_run(
-              error=ReducerInvariantViolation(
-                category=IllegalPhase(
-                  phase="run_model_step",
-                  detail=e.to_string(),
-                ),
-              ),
-            )
-          Ok(out) => {
-            state = out.next_state()
-            let cr : Result[Unit, HarnessError] = Ok(
-              self.commit_savepoint(
+        match declared {
+          Err(error) => return self.reject_run(error~)
+          Ok((next_state, events)) => {
+            state = next_state
+            let cr : Result[Unit, PuppetError] = Ok(
+              self.commit_boundary(
                 state,
-                out.events(),
+                AssistantCommitted,
+                events,
                 dispatcher,
                 run_id,
                 turn_id,
                 session_id,
-                "sp_model_step_\{iter}",
+                "sp_ready_\{iter}",
               ),
             ) catch {
               e => Err(e)
@@ -492,104 +453,102 @@ async fn Harness::drive_run(
           }
         }
       }
-      AwaitingModel | AwaitingTools => {
+      AwaitingModel => {
         let pending = state.pending_effects()
-        for eff in pending {
-          // execute_one may raise untyped Error (async fn semantics).
-          let exec_result : Result[RunInput, Error] = Ok(
-            execute_one(eff, exec_ctx, fn(_chunk : Json) { () }),
+        if pending.length() != 1 {
+          return self.reject_run(
+            error=ReducerInvariantViolation(
+              category=IllegalPhase(
+                phase="AwaitingModel",
+                detail="expected exactly one pending model effect",
+              ),
+            ),
+          )
+        }
+        let executed : Result[RunInput, PuppetError] = Ok(
+          execute_model_effect(pending[0], exec_ctx, self.config.stream_chunks),
+        ) catch {
+          error => Err(error)
+        }
+        let input = match executed {
+          Err(error) => return self.reject_run(error~)
+          Ok(value) => value
+        }
+        let folded : Result[RunState, PuppetError] = Ok(
+          self.fold_effect_input(
+            state,
+            input,
+            dispatcher,
+            run_id,
+            turn_id,
+            session_id,
+            "sp_model_effect_\{iter}",
+            snap.call_options(),
+          ),
+        ) catch {
+          error => Err(error)
+        }
+        match folded {
+          Err(error) => return self.reject_run(error~)
+          Ok(next_state) => state = next_state
+        }
+      }
+      AwaitingTools => {
+        let wave_result : Result[Array[Array[Effect]], PuppetError] = Ok(
+          scheduled_tool_effect_waves(
+            state.pending_effects(),
+            self.config.catalog,
+            state.catalog_version(),
+          ),
+        ) catch {
+          error => Err(error)
+        }
+        let waves = match wave_result {
+          Err(error) => return self.reject_run(error~)
+          Ok(value) => value
+        }
+        for wave_index, wave in waves {
+          // `@async.all` starts every effect in the reducer-approved wave,
+          // waits at its barrier, and returns inputs in source order. The
+          // reducer remains the sole owner of transcript/result ordering.
+          let executed : Result[Array[RunInput], PuppetError] = Ok(
+            execute_tool_wave(wave, exec_ctx),
           ) catch {
-            e => Err(e)
+            error => Err(error)
           }
-          let input = match exec_result {
-            Err(e) =>
-              return self.reject_run(
-                error=ReducerInvariantViolation(
-                  category=IllegalPhase(
-                    phase="execute_one",
-                    detail=e.to_string(),
-                  ),
-                ),
-              )
-            Ok(i) => i
+          let inputs = match executed {
+            Err(error) => return self.reject_run(error~)
+            Ok(value) => value
           }
-          let r : Result[ReduceOutput, KernelError] = Ok(
-            reduce(state, self.config.catalog, input),
-          ) catch {
-            e => Err(e)
-          }
-          match r {
-            Err(e) =>
-              return self.reject_run(
-                error=ReducerInvariantViolation(
-                  category=IllegalPhase(phase="effect", detail=e.to_string()),
-                ),
-              )
-            Ok(out) => {
-              state = out.next_state()
-              let cr : Result[Unit, HarnessError] = Ok(
-                self.commit_savepoint(
-                  state,
-                  out.events(),
-                  dispatcher,
-                  run_id,
-                  turn_id,
-                  session_id,
-                  "sp_effect_\{iter}",
-                ),
-              ) catch {
-                e => Err(e)
-              }
-              match cr {
-                Err(e) => return self.reject_run(error=e)
-                Ok(_) => ()
-              }
-            }
-          }
-          // Re-check abort between effects.
-          if self.mailbox.abort_requested() {
-            let cancel_input : RunInput = CancelRequested(payload={
-              detail: None,
-            })
-            let r2 : Result[ReduceOutput, KernelError] = Ok(
-              reduce(state, self.config.catalog, cancel_input),
+          for input in inputs {
+            let folded : Result[RunState, PuppetError] = Ok(
+              self.fold_effect_input(
+                state,
+                input,
+                dispatcher,
+                run_id,
+                turn_id,
+                session_id,
+                "sp_tool_wave_\{wave_index}",
+                snap.call_options(),
+              ),
             ) catch {
-              e => Err(e)
+              error => Err(error)
             }
-            match r2 {
-              Err(e) =>
-                return self.reject_run(
-                  error=ReducerInvariantViolation(
-                    category=IllegalPhase(
-                      phase="cancel-mid",
-                      detail=e.to_string(),
-                    ),
-                  ),
-                )
-              Ok(out) => {
-                state = out.next_state()
-                let cr : Result[Unit, HarnessError] = Ok(
-                  self.commit_savepoint(
-                    state,
-                    out.events(),
-                    dispatcher,
-                    run_id,
-                    turn_id,
-                    session_id,
-                    "sp_cancel_mid",
-                  ),
-                ) catch {
-                  e => Err(e)
-                }
-                match cr {
-                  Err(e) => return self.reject_run(error=e)
-                  Ok(_) => ()
-                }
-              }
+            match folded {
+              Err(error) => return self.reject_run(error~)
+              Ok(next_state) => state = next_state
             }
-            break
+            if state.phase() == Terminal || state.phase() == Suspended {
+              break
+            }
           }
-          if state.phase() == Terminal || state.phase() == Suspended {
+          // Abort is observed at a side-effect boundary. Do not launch a
+          // later wave after it was requested; the next pump iteration feeds
+          // CancelRequested into the reducer.
+          if state.phase() == Terminal ||
+            state.phase() == Suspended ||
+            self.mailbox.abort_requested() {
             break
           }
         }
@@ -649,66 +608,316 @@ async fn Harness::drive_run(
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// commit_savepoint — the deterministic pre-commit → freeze → commit → dispatch
+// Effect completion folding — reducer then durable savepoint
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-/// For each KernelEvent the reducer emitted, derive a JournalEntry, run
-/// the pre-commit → freeze → commit pipeline, then dispatch the event
-/// post-commit. Each event becomes one savepoint; the savepoint_id is
-/// derived from the prefix + the journal's pre-commit revision (which is
-/// monotonic, guaranteeing unique dedup keys across the run).
-async fn Harness::commit_savepoint(
-  self : Harness,
+/// Fold one completed effect through the reducer, declare the next model
+/// effect when the reducer reaches `ReadyForModel`, and commit the complete
+/// side-effect boundary before returning. Execution and scheduling remain
+/// outside this helper; it is only the reducer → boundary-journal seam.
+async fn Puppet::fold_effect_input(
+  self : Puppet,
   state : RunState,
-  events : Array[KernelEvent],
+  input : RunInput,
   dispatcher : EventDispatcher,
   run_id : RunId,
   turn_id : TurnId,
   session_id : SessionId,
   savepoint_id_prefix : String,
-) -> Unit raise HarnessError {
+  call_options : Json,
+) -> RunState raise PuppetError {
+  let reduced : Result[ReduceOutput, KernelError] = Ok(
+    reduce(state, self.config.catalog, input),
+  ) catch {
+    error => Err(error)
+  }
+  let output = match reduced {
+    Err(error) =>
+      raise ReducerInvariantViolation(
+        category=IllegalPhase(phase="effect", detail=error.to_string()),
+      )
+    Ok(value) => value
+  }
+  let boundary_kind = boundary_kind_for_events(output.events())
+  let (next_state, boundary_events) = declare_model_effect_if_ready(
+    output.next_state(),
+    output.events(),
+    self.config.catalog,
+    call_options,
+  )
+  let committed : Result[Unit, PuppetError] = Ok(
+    self.commit_boundary(
+      next_state, boundary_kind, boundary_events, dispatcher, run_id, turn_id, session_id,
+      savepoint_id_prefix,
+    ),
+  ) catch {
+    error => Err(error)
+  }
+  match committed {
+    Err(error) => raise error
+    Ok(_) => next_state
+  }
+}
+
+///|
+/// The pump is allowed to request a model step only after the reducer has
+/// reached `ReadyForModel`. Merge that declared intent into the same durable
+/// boundary as the fact that made it ready; the model effect is never
+/// dispatched before this boundary commits.
+fn declare_model_effect_if_ready(
+  state : RunState,
+  prior_events : Array[KernelEvent],
+  catalog : ToolCatalogSnapshot,
+  call_options : Json,
+) -> (RunState, Array[KernelEvent]) raise PuppetError {
+  if state.phase() != ReadyForModel {
+    return (state, prior_events.copy())
+  }
+  let declared : Result[ReduceOutput, KernelError] = Ok(
+    run_model_step(state, catalog, call_options),
+  ) catch {
+    error => Err(error)
+  }
+  let output = match declared {
+    Err(error) =>
+      raise ReducerInvariantViolation(
+        category=IllegalPhase(phase="run_model_step", detail=error.to_string()),
+      )
+    Ok(value) => value
+  }
+  let events = prior_events.copy()
+  for event in output.events() {
+    events.push(event)
+  }
+  (output.next_state(), events)
+}
+
+///|
+/// Execute the single reducer-declared model effect. Expected provider
+/// failures travel as `ModelFailed` data; raised host defects are surfaced as
+/// a distinct Puppet error and never fabricated into a completion.
+async fn execute_model_effect(
+  effect : Effect,
+  context : ExecutionContext,
+  on_chunk : @kernel.HostChunkCallback?,
+) -> RunInput raise PuppetError {
+  let attempted : Result[RunInput, Error] = Ok(
+    execute_one(effect, context, on_chunk),
+  ) catch {
+    error => Err(error)
+  }
+  match attempted {
+    Ok(input) => input
+    Err(error) => raise execution_error("AwaitingModel", error)
+  }
+}
+
+///|
+/// Execute one already-scheduled tool wave. `@async.all` supplies the actual
+/// parallelism and cancels peers if one task raises. Its result array remains
+/// in source order, which the caller feeds to the reducer deterministically.
+async fn execute_tool_wave(
+  effects : Array[Effect],
+  context : ExecutionContext,
+) -> Array[RunInput] raise PuppetError {
+  let attempted : Result[Array[RunInput], Error] = Ok(
+    @async.all(
+      effects.map(fn(effect) { () => execute_one(effect, context, None) }),
+    ),
+  ) catch {
+    error => Err(error)
+  }
+  match attempted {
+    Ok(inputs) => inputs
+    Err(error) => raise execution_error("AwaitingTools", error)
+  }
+}
+
+///|
+/// Propagate reducer-declared cancellation effects at their terminal boundary.
+/// Cancellation has no reducer completion input: converting it into a tool or
+/// model result would fabricate a fact. The host must return one disposition
+/// for every requested effect id; malformed reports fail the run loudly.
+async fn propagate_terminal_cancellations(
+  effects : Array[Effect],
+  context : ExecutionContext,
+) -> Unit raise PuppetError {
+  for effect in effects {
+    match effect {
+      @kernel.CancelOutstanding(payload~, ..) => {
+        let attempted : Result[Array[(EffectId, CancelDisposition)], Error] = Ok(
+          context.host.cancel_effects(payload.effect_ids, payload.reason),
+        ) catch {
+          error => Err(error)
+        }
+        let dispositions = match attempted {
+          Ok(value) => value
+          Err(error) =>
+            raise EffectExecutionFailed(
+              phase="CancelOutstanding",
+              cause=error.to_string(),
+            )
+        }
+        validate_cancel_dispositions(payload.effect_ids, dispositions)
+      }
+      other =>
+        raise EffectExecutionFailed(
+          phase="CancelOutstanding",
+          cause="terminal cancellation boundary received non-cancellation effect: " +
+            other.to_string(),
+        )
+    }
+  }
+}
+
+///|
+/// Verify that a host reported exactly one disposition for every requested
+/// effect. `NotPropagated` is an explicit adapter fact; missing, duplicate,
+/// or foreign ids are contract failures.
+fn validate_cancel_dispositions(
+  expected : Array[EffectId],
+  reported : Array[(EffectId, CancelDisposition)],
+) -> Unit raise PuppetError {
+  if expected.length() != reported.length() {
+    raise EffectExecutionFailed(
+      phase="CancelOutstanding",
+      cause="host returned a cancellation disposition count different from the request",
+    )
+  }
+  let expected_ids : Map[String, Bool] = Map::from_array([])
+  for effect_id in expected {
+    let key = effect_id.to_string()
+    if expected_ids.contains(key) {
+      raise EffectExecutionFailed(
+        phase="CancelOutstanding",
+        cause="reducer declared duplicate cancellation effect id " + key,
+      )
+    }
+    expected_ids[key] = true
+  }
+  let reported_ids : Map[String, Bool] = Map::from_array([])
+  for entry in reported {
+    let (effect_id, _disposition) = entry
+    let key = effect_id.to_string()
+    if !expected_ids.contains(key) {
+      raise EffectExecutionFailed(
+        phase="CancelOutstanding",
+        cause="host reported cancellation for unknown effect id " + key,
+      )
+    }
+    if reported_ids.contains(key) {
+      raise EffectExecutionFailed(
+        phase="CancelOutstanding",
+        cause="host reported duplicate cancellation disposition for effect id " +
+          key,
+      )
+    }
+    reported_ids[key] = true
+  }
+}
+
+///|
+/// Convert an executor-raised error into an observable typed product error.
+/// Cancellation stays distinct from a host defect; neither becomes a normal
+/// tool result or a synthetic model completion.
+fn execution_error(phase : String, error : Error) -> PuppetError {
+  if @async.is_cancellation_error(error) {
+    EffectExecutionCancelled(phase~)
+  } else {
+    EffectExecutionFailed(phase~, cause=error.to_string())
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// commit_boundary — the deterministic pre-commit → freeze → commit → dispatch
+// ──────────────────────────────────────────────────────────────────────────
+
+///|
+/// Commit one fixed side-effect boundary. The boundary emits every KernelEvent
+/// only after the single journal barrier succeeds, but persists only its
+/// recovery-relevant primary fact. This keeps append count proportional to
+/// side effects rather than the number of observer events.
+async fn Puppet::commit_boundary(
+  self : Puppet,
+  state : RunState,
+  kind : SavepointKind,
+  events : Array[KernelEvent],
+  dispatcher : EventDispatcher,
+  run_id : RunId,
+  turn_id : TurnId,
+  session_id : SessionId,
+  boundary_id_prefix : String,
+) -> Unit raise PuppetError {
+  let pre_commit_rev = self.config.journal.revision()
+  let savepoint_id = "\{boundary_id_prefix}_r\{pre_commit_rev}"
+  let entry = boundary_entry(
+    state, kind, events, run_id, turn_id, session_id, savepoint_id,
+  )
+  let ctx : PreCommitContext = {
+    run_id,
+    turn_id,
+    session_id,
+    savepoint_id,
+    savepoint_kind: kind,
+    base_entries: [entry],
+    current_revision: pre_commit_rev,
+    catalog_version: state.catalog_version(),
+  }
+  let batch = prepare_batch(ctx, self.config.contributors)
+  let committed_rev = commit_batch(self.config.journal, batch)
+  // Every event is published after the one boundary commit. They share its
+  // committed revision while EventDispatcher preserves a strict event seq.
   for event in events {
-    let kind = event_to_savepoint_kind(event)
-    // Derive a unique savepoint_id using the current journal revision as
-    // a monotonic suffix. This guarantees no collision with previous
-    // savepoints even when the same prefix is used multiple times.
-    let pre_commit_rev = self.config.journal.revision()
-    let savepoint_id = "\{savepoint_id_prefix}_r\{pre_commit_rev}"
-    let entry : JournalEntry = {
-      identity: {
-        run_id,
-        turn_id,
-        session_id,
-        savepoint_id,
-        kind,
-        entry_seq: 0,
-      },
-      revision: 0,
-      summary: event.to_string(),
-      payload: kernel_event_payload(event),
-    }
-    let ctx : PreCommitContext = {
-      run_id,
-      turn_id,
-      session_id,
-      savepoint_id,
-      savepoint_kind: kind,
-      base_entries: [entry],
-      current_revision: pre_commit_rev,
-      catalog_version: state.catalog_version(),
-    }
-    let batch = prepare_batch(ctx, self.config.contributors)
-    let committed_rev = commit_batch(self.config.journal, batch)
-    // Dispatch the event post-commit.
     dispatcher.dispatch(event, committed_rev)
   }
 }
 
 ///|
-/// Map a KernelEvent to its SavepointKind. Terminal events → RunTerminal;
-/// RunSuspended → RunSuspended; everything else maps by heuristic.
-fn event_to_savepoint_kind(event : KernelEvent) -> SavepointKind {
+/// Select the one boundary category for a reducer transition. Priority is
+/// terminal → suspension → tool outcome → assistant completion → input.
+/// This is a fixed runtime rule, not an extension-selectable policy.
+fn boundary_kind_for_events(events : Array[KernelEvent]) -> SavepointKind {
+  for event in events {
+    match event {
+      RunCompleted(..) | RunFailed(..) | RunCancelled(..) => return RunTerminal
+      _ => ()
+    }
+  }
+  for event in events {
+    match event {
+      RunSuspended(..) => return RunSuspended
+      _ => ()
+    }
+  }
+  for event in events {
+    match event {
+      ToolCompleted(..) => return ToolCommitted
+      _ => ()
+    }
+  }
+  for event in events {
+    match event {
+      ModelStepCompleted(..) => return AssistantCommitted
+      _ => ()
+    }
+  }
+  for event in events {
+    match event {
+      RunStarted(..) => return InputAccepted
+      _ => ()
+    }
+  }
+  // `ModelStepStarted` is an intent attached to an existing boundary in the
+  // normal pump flow. If it is ever committed alone, retain it as an
+  // assistant boundary rather than silently omitting it.
+  AssistantCommitted
+}
+
+///|
+/// Map one event to its natural boundary category. Used solely to choose the
+/// persisted primary fact within a multi-event boundary.
+fn event_to_boundary_kind(event : KernelEvent) -> SavepointKind {
   match event {
     RunStarted(..) => InputAccepted
     ModelStepCompleted(..) => AssistantCommitted
@@ -717,6 +926,77 @@ fn event_to_savepoint_kind(event : KernelEvent) -> SavepointKind {
     RunCompleted(..) | RunFailed(..) | RunCancelled(..) => RunTerminal
     _ => AssistantCommitted
   }
+}
+
+///|
+/// Construct the one durable entry for a boundary. The entry kind describes
+/// the recovery boundary; event payloads retain their exact event kind for
+/// inspection without forcing a durability barrier per observer event.
+fn boundary_entry(
+  state : RunState,
+  kind : SavepointKind,
+  events : Array[KernelEvent],
+  run_id : RunId,
+  turn_id : TurnId,
+  session_id : SessionId,
+  savepoint_id : String,
+) -> JournalEntry raise PuppetError {
+  if events.is_empty() {
+    raise ReducerInvariantViolation(
+      category=IllegalPhase(
+        phase="commit_boundary",
+        detail="boundary has no events",
+      ),
+    )
+  }
+  let (summary, payload) = if kind == InputAccepted {
+    (
+      "InputAccepted(run=\{run_id.to_string()})",
+      Json::object(
+        Map::from_array([
+          ("kind", Json::string("InputAccepted")),
+          ("run_id", Json::string(run_id.to_string())),
+          ("turn_id", Json::string(turn_id.to_string())),
+          ("session_id", Json::string(session_id.to_string())),
+          (
+            "catalog_version",
+            Json::number(state.catalog_version().to_int().to_double()),
+          ),
+        ]),
+      ),
+    )
+  } else {
+    let primary = boundary_primary_event(events, kind)
+    (primary.to_string(), kernel_event_payload(primary))
+  }
+  {
+    identity: { run_id, turn_id, session_id, savepoint_id, kind, entry_seq: 0 },
+    revision: 0,
+    summary,
+    payload,
+  }
+}
+
+///|
+/// Find the event that represents the durable fact for its boundary.
+fn boundary_primary_event(
+  events : Array[KernelEvent],
+  kind : SavepointKind,
+) -> KernelEvent raise PuppetError {
+  for event in events {
+    if event_to_boundary_kind(event) == kind {
+      return event
+    }
+  }
+  if events.is_empty() {
+    raise ReducerInvariantViolation(
+      category=IllegalPhase(
+        phase="commit_boundary",
+        detail="boundary has no primary event",
+      ),
+    )
+  }
+  events[0]
 }
 
 ///|
@@ -750,12 +1030,12 @@ fn kernel_event_payload(event : KernelEvent) -> Json {
           ("summary", Json::string(completion_summary)),
         ]),
       )
-    ToolBatchStarted(model_step_id~, call_ids~) =>
+    ToolBatchStarted(model_step_id~, calls~) =>
       Json::object(
         Map::from_array([
           ("kind", Json::string("ToolBatchStarted")),
           ("model_step_id", Json::number(model_step_id.to_int().to_double())),
-          ("call_count", Json::number(call_ids.length().to_double())),
+          ("call_count", Json::number(calls.length().to_double())),
         ]),
       )
     ToolCompleted(call_id~, outcome~) =>
@@ -833,11 +1113,11 @@ fn kernel_event_payload(event : KernelEvent) -> Json {
 }
 
 ///|
-/// Put the Harness back into a quiescent, retryable state on a host-level
+/// Put the Puppet back into a quiescent, retryable state on a host-level
 /// failure that prevents the reducer from producing a terminal outcome. The
 /// typed error remains the caller-visible diagnostic; cleanup must not leave a
 /// stale lease or an active mailbox behind.
-fn Harness::reject_run(self : Harness, error~ : HarnessError) -> PromptResult {
+fn Puppet::reject_run(self : Puppet, error~ : PuppetError) -> PromptResult {
   self.phase_gate = PhaseGate::idle()
   self.mailbox.clear_run()
   self.mailbox.set_quiescent(Idle)
@@ -849,9 +1129,9 @@ fn Harness::reject_run(self : Harness, error~ : HarnessError) -> PromptResult {
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-/// Wait until the Harness reaches a quiescent status. Returns Idle,
+/// Wait until the Puppet reaches a quiescent status. Returns Idle,
 /// Suspended, Terminal, or Shutdown (typed, distinct). Implemented via
 /// `@cond_var.Cond::wait` — NOT polling.
-pub async fn Harness::wait_idle(self : Harness) -> QuiescentStatus {
+pub async fn Puppet::wait_idle(self : Puppet) -> QuiescentStatus {
   self.mailbox.wait_idle()
 }

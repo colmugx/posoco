@@ -15,7 +15,7 @@
 ///   trait references; the snapshot is data, not a live wiring)
 ///
 /// What the snapshot does NOT carry:
-/// - runtime port references (those are Harness-owned; the snapshot only carries
+/// - runtime port references (those are Puppet-owned; the snapshot only carries
 ///   provenance strings for diagnostics)
 /// - prompt text or tool arguments (those are in the RunState transcript)
 /// - mutable handles to the original config arrays
@@ -93,7 +93,7 @@ pub(all) struct TurnSnapshotInput {
 /// copy of the catalog definitions and call options; the caller's original
 /// arrays/maps are not aliased.
 ///
-/// Raises `HarnessError::SnapshotInvalid` for:
+/// Raises `PuppetError::SnapshotInvalid` for:
 /// - empty model_id
 /// - empty catalog (zero tools is legal but warned)
 /// - negative budget dimensions
@@ -101,15 +101,14 @@ pub(all) struct TurnSnapshotInput {
 ///   reject if deadline < 0)
 pub fn TurnSnapshot::capture(
   input : TurnSnapshotInput,
-) -> TurnSnapshot raise HarnessError {
+) -> TurnSnapshot raise PuppetError {
   // Validate inputs.
   if input.model_id == "" {
     raise SnapshotInvalid(detail="model_id must be non-empty")
   }
-  // Empty catalog is LEGAL — a pure-chat run with no tools is a valid use
-  // case (matches M0 legacy Agent behaviour). The snapshot just records
-  // zero tool definitions; the reducer's unknown-tool path handles any
-  // tool_calls the model emits despite the empty catalog.
+  // Empty catalog is legal — a pure-chat run with no tools is valid. The
+  // snapshot records zero definitions; the reducer's unknown-tool path
+  // handles any tool calls emitted despite the empty catalog.
   // Validate budget dimensions are non-negative where Some.
   match check_budget(input.budget) {
     Err(e) => raise e
@@ -149,7 +148,7 @@ pub fn TurnSnapshot::capture(
 }
 
 ///|
-fn check_budget(budget : Budget) -> Result[Unit, HarnessError] {
+fn check_budget(budget : Budget) -> Result[Unit, PuppetError] {
   match budget.max_model_steps {
     Some(n) => {
       if n < 0 {

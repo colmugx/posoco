@@ -12,6 +12,19 @@ import {
 // Errors
 
 // Types and methods
+pub(all) struct AutocompleteItem {
+  label : String
+  insert_text : String
+  detail : String?
+  kind : String
+} derive(@debug.Debug)
+
+pub(all) struct AutocompleteSource {
+  trigger : String
+  kind : String
+  fetch : (String) -> Array[AutocompleteItem]
+} derive(@debug.Debug)
+
 pub(all) struct CommandDef {
   id : String
   label : String
@@ -51,6 +64,16 @@ pub(all) enum CommandType {
   MultiStep
 } derive(Eq, @debug.Debug)
 
+pub(all) struct CompositeUiPort {
+  contributors : Array[&UiPort]
+}
+pub fn CompositeUiPort::contributors(Self) -> Array[&UiPort]
+pub fn CompositeUiPort::new(Array[&UiPort]) -> Self
+pub fn CompositeUiPort::render(Self, UiRender) -> Unit
+pub async fn CompositeUiPort::request(Self, UiRequest) -> UiResponse raise @error.UiError
+pub fn CompositeUiPort::ui_descriptor(Self) -> UiDescriptor
+pub impl UiPort for CompositeUiPort
+
 pub(all) enum CompressAction {
   None
   Replace(Array[@types.Message])
@@ -62,11 +85,35 @@ pub(all) struct CompressContext {
   model_context_window : Int?
 } derive(Eq, @debug.Debug)
 
+pub(all) struct ExtensionManifest {
+  id : String
+  models : Array[&ModelPort]
+  tools : Array[&ToolProvider]
+  sessions : Array[&SessionStore]
+  observers : Array[&Observer]
+  compressors : Array[&Compressor]
+  hooks : Array[&PipelineHook]
+  memory : Array[&MemoryPort]
+  lifecycle : Array[&Lifecycle]
+  commands : Array[&CommandPort]
+  ui : Array[&UiPort]
+  prompt_contributors : Array[&SystemPromptContributor]
+}
+pub fn ExtensionManifest::empty(id~ : String) -> Self
+
 pub(all) enum HookError {
   Aborted(String)
   Deferred(reason~ : String)
 } derive(Eq, @debug.Debug)
 pub impl Show for HookError
+
+pub(all) struct NoopUiPort {
+}
+pub fn NoopUiPort::new() -> Self
+pub fn NoopUiPort::render(Self, UiRender) -> Unit
+pub async fn NoopUiPort::request(Self, UiRequest) -> UiResponse raise @error.UiError
+pub fn NoopUiPort::ui_descriptor(Self) -> UiDescriptor
+pub impl UiPort for NoopUiPort
 
 pub(all) enum ParamType {
   Str
@@ -87,6 +134,34 @@ pub(all) enum Stage {
   TurnError(@error.AgentError)
 } derive(@debug.Debug)
 
+pub(all) struct SystemPromptHook {
+  base_prompt : String
+  contributors : Array[SystemPromptSection]
+}
+pub fn SystemPromptHook::assemble(Self) -> String
+pub fn SystemPromptHook::new(base_prompt~ : String, contributors~ : Array[SystemPromptSection]) -> Self
+pub impl PipelineHook for SystemPromptHook
+
+pub(all) struct SystemPromptSection {
+  id : String
+  contributor : &SystemPromptContributor
+}
+pub fn SystemPromptSection::new(id~ : String, contributor~ : &SystemPromptContributor) -> Self
+
+pub(all) enum UiBody {
+  Text(String)
+  Lines(Array[String])
+  KeyValue(Array[(String, String)])
+  Progress(Double)
+  Markdown(String)
+} derive(@debug.Debug)
+pub impl Show for UiBody
+
+pub(all) struct UiDescriptor {
+  autocomplete_sources : Array[AutocompleteSource]
+} derive(@debug.Debug)
+pub fn UiDescriptor::empty() -> Self
+
 pub(all) enum UiHint {
   RefreshModelList
   RefreshSettings
@@ -94,6 +169,38 @@ pub(all) enum UiHint {
   Toast
   None
 } derive(Eq, @debug.Debug)
+
+pub(all) struct UiRender {
+  slot : UiSlot
+  key : String
+  title : String?
+  body : UiBody
+  ttl_ms : Int?
+} derive(@debug.Debug)
+pub impl Show for UiRender
+
+pub(all) enum UiRequest {
+  Input(prompt~ : String, default~ : String?)
+  Confirm(prompt~ : String)
+  Select(prompt~ : String, options~ : Array[String], default~ : Int?)
+} derive(@debug.Debug)
+pub impl Show for UiRequest
+
+pub(all) enum UiResponse {
+  Text(String)
+  Yes
+  No
+  Selected(Int)
+  Cancelled
+} derive(Eq, @debug.Debug)
+pub impl Show for UiResponse
+
+pub(all) enum UiSlot {
+  Status
+  Notice
+  Widget
+} derive(Eq, @debug.Debug)
+pub impl Show for UiSlot
 
 // Type aliases
 
@@ -105,6 +212,11 @@ pub(open) trait CommandPort {
 
 pub(open) trait Compressor {
   fn compress(Self, Array[@types.Message], CompressContext) -> CompressAction
+}
+
+pub(open) trait Extension {
+  fn extension_id(Self) -> String
+  fn manifest(Self) -> ExtensionManifest
 }
 
 pub(open) trait Lifecycle {
@@ -135,8 +247,18 @@ pub(open) trait SessionStore {
   fn save(Self, String, @types.Session) -> Result[Unit, @error.SessionError]
 }
 
+pub(open) trait SystemPromptContributor {
+  fn system_prompt(Self) -> String
+}
+
 pub(open) trait ToolProvider {
   fn list_tools(Self) -> Array[@types.ToolDef]
   async fn execute(Self, String, @types.ToolCall) -> @types.ToolResult raise @error.RuntimeError
+}
+
+pub(open) trait UiPort {
+  fn ui_descriptor(Self) -> UiDescriptor
+  fn render(Self, UiRender) -> Unit
+  async fn request(Self, UiRequest) -> UiResponse raise @error.UiError
 }
 

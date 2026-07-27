@@ -1,14 +1,14 @@
 ///|
-/// Harness lifecycle collection (M2-T05, ADR §2.2, §4 rule 12).
+/// Puppet lifecycle collection (M2-T05, ADR §2.2, §4 rule 12).
 ///
-/// The Harness is the **single product-level lifecycle executor**. All
+/// The Puppet is the **single product-level lifecycle executor**. All
 /// top-level lifecycle nodes register here exactly once at composition.
 /// Startup order is registration order; shutdown order is reverse.
 ///
 /// M0 `Lifecycle` trait only has `on_shutdown`; M2 needs startup semantics
 /// and a typed error path. Rather than breaking the M0 trait (Q7.5 open
-/// question), M2 introduces a parallel `HarnessLifecycleNode` trait. A
-/// thin adapter wraps an M0 `Lifecycle` into a `HarnessLifecycleNode` so
+/// question), M2 introduces a parallel `PuppetLifecycleNode` trait. A
+/// thin adapter wraps an M0 `Lifecycle` into a `PuppetLifecycleNode` so
 /// existing extensions continue to work without code changes.
 ///
 /// Ownership invariants (ADR §4 rules 12–13):
@@ -95,20 +95,20 @@ fn safe_lifecycle_label(value : String) -> String {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// HarnessLifecycleNode trait
+// PuppetLifecycleNode trait
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-/// Port: top-level lifecycle node registered with the Harness.
+/// Port: top-level lifecycle node registered with the Puppet.
 ///
 /// Each node has a stable `node_id` and a human-readable `provenance`. The
-/// Harness calls `startup` once in registration order at product startup,
+/// Puppet calls `startup` once in registration order at product startup,
 /// and `shutdown` once in reverse order at product shutdown.
 ///
 /// Both methods may raise `LifecycleNodeError` for typed failure paths.
 /// Untyped `raise Error` (e.g. from an async panic) is caught by the
 /// collection layer and converted to a typed `LifecycleNodeError::Internal`.
-pub(open) trait HarnessLifecycleNode {
+pub(open) trait PuppetLifecycleNode {
   /// Stable identifier for this node. Used in diagnostics and to detect
   /// duplicate registration.
   fn node_id(Self) -> String
@@ -157,16 +157,16 @@ pub impl Show for LifecycleNodeError with fn to_string(
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-/// Ordered collection of HarnessLifecycleNode references. Tracks registration
+/// Ordered collection of PuppetLifecycleNode references. Tracks registration
 /// order, duplicate ids, and exactly-once start/stop state.
 ///
 /// Construction: `LifecycleCollection::new()` then `register` in startup
 /// order. Once `startup_all` has been called, no further registrations are
 /// accepted (the collection is sealed).
 pub struct LifecycleCollection {
-  nodes : Array[&HarnessLifecycleNode]
+  nodes : Array[&PuppetLifecycleNode]
   node_ids : Map[String, Bool]
-  /// Pointer-equality check: track which &HarnessLifecycleNode references
+  /// Pointer-equality check: track which &PuppetLifecycleNode references
   /// have been registered. MoonBit does not expose object identity on
   /// trait references, so we use (node_id, provenance) as a proxy: the
   /// same node id cannot be registered twice anyway, and a composite host
@@ -188,13 +188,13 @@ pub fn LifecycleCollection::new() -> LifecycleCollection {
 }
 
 ///|
-/// Register a node. Raises `HarnessError::LifecycleDuplicate` if the node
+/// Register a node. Raises `PuppetError::LifecycleDuplicate` if the node
 /// id is already registered. Once `startup_all` has been called, further
 /// registrations raise `InvalidState`.
 pub fn LifecycleCollection::register(
   self : LifecycleCollection,
-  node : &HarnessLifecycleNode,
-) -> Unit raise HarnessError {
+  node : &PuppetLifecycleNode,
+) -> Unit raise PuppetError {
   if self.is_sealed {
     raise LifecycleDuplicate(node_id="collection sealed after startup")
   }
@@ -220,7 +220,7 @@ pub fn LifecycleCollection::size(self : LifecycleCollection) -> Int {
 /// Idempotent: if already started, returns immediately.
 pub async fn LifecycleCollection::startup_all(
   self : LifecycleCollection,
-) -> Unit raise HarnessError {
+) -> Unit raise PuppetError {
   // Check if any node has already been started (idempotency).
   let any_started = self.started.contains("collection_started")
   if any_started {
@@ -278,7 +278,7 @@ pub async fn LifecycleCollection::startup_all(
 /// Idempotent: if already shut down, returns immediately.
 pub async fn LifecycleCollection::shutdown_all(
   self : LifecycleCollection,
-) -> Unit raise HarnessError {
+) -> Unit raise PuppetError {
   let any_shut_down = self.shut_down.contains("collection_shutdown")
   if any_shut_down {
     return ()

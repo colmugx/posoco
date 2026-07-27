@@ -25,7 +25,12 @@ pub(all) suberror CommandError {
 pub impl Show for CommandError
 
 pub(all) suberror CompositionError {
-  ToolCollision(String, String)
+  ToolCollision(String, String, manifests~ : Array[String])
+  CommandCollision(String, manifests~ : Array[String])
+  MissingModel
+  MultipleModels(manifests~ : Array[String])
+  EmptyManifests
+  ManifestSchemaError(manifest_id~ : String, detail~ : String)
   EmptyPort(String)
 } derive(@debug.Debug)
 pub impl Show for CompositionError
@@ -56,6 +61,14 @@ pub(all) suberror SessionError {
   Save(String)
 } derive(@debug.Debug)
 pub impl Show for SessionError
+
+pub(all) suberror UiError {
+  Unsupported(detail~ : String)
+  Cancelled
+  InvalidRequest(detail~ : String)
+  IoFailure(detail~ : String)
+} derive(@debug.Debug)
+pub impl Show for UiError
 
 // Types and methods
 

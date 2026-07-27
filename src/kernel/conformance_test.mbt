@@ -531,11 +531,11 @@ test "GOLDEN C-HAPPY-REVERSE-TOOL-COMPLETION: terminal results preserve call ord
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// C-UNSCRIPTED-EFFECT (golden — loud failure when test forgets to script)
+// C-UNSCRIPTED-EFFECT (fixture setup must fail loudly)
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-test "GOLDEN C-UNSCRIPTED-EFFECT: missing script → StaleCorrelation → Failed" {
+test "GOLDEN C-UNSCRIPTED-EFFECT: missing script raises fixture error" {
   let catalog = golden_catalog()
   let st0 = golden_initial_state()
   // Script the first model step but forget to script the resulting tool.
@@ -549,16 +549,17 @@ test "GOLDEN C-UNSCRIPTED-EFFECT: missing script → StaleCorrelation → Failed
       ),
     ),
   )
-  let trace = scripted_driver_run(st0, catalog, scripted, golden_start(), 30)
-  let final_st = trace.final_state()
-  // Missing script → invariant failure (loud default).
-  assert_eq(final_st.phase(), Terminal)
-  match final_st.outcome() {
-    Some(Failed(reason=InvariantViolation(category~))) =>
-      match category {
-        StaleCorrelation(..) => ()
-        _ => fail("expected StaleCorrelation from missing script")
-      }
-    _ => fail("expected InvariantViolation from missing script")
+  let result : Result[DriverTrace, KernelError] = Ok(
+    scripted_driver_run(st0, catalog, scripted, golden_start(), 30),
+  ) catch {
+    error => Err(error)
+  }
+  match result {
+    Err(IllegalTransition(phase~, input_kind~, detail~, ..)) => {
+      assert_eq(phase, "fixture")
+      assert_eq(input_kind, "lookup")
+      assert_true(detail.contains("missing scripted outcome"))
+    }
+    _ => fail("expected missing-script fixture error")
   }
 }

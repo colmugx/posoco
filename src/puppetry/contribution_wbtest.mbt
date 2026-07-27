@@ -1,6 +1,6 @@
 ///|
 /// Whitebox tests for M2-T04 contribution + coordinator (companion to
-/// harness_journal_wbtest.mbt).
+/// puppet_journal_wbtest.mbt).
 ///
 /// Coverage:
 /// - NoopContributor returns empty contribution
@@ -141,7 +141,7 @@ fn make_c_ctx(
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-test "harness_contribution/noop_returns_empty" {
+test "puppet_contribution/noop_returns_empty" {
   let ctx = make_c_ctx("sp1", InputAccepted, [])
   let noop = NoopContributor::new()
   let c = noop.contribute(ctx)
@@ -154,7 +154,7 @@ test "harness_contribution/noop_returns_empty" {
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-test "harness_contribution/prepare_batch_with_no_contributors" {
+test "puppet_contribution/prepare_batch_with_no_contributors" {
   let base = [make_c_entry(InputAccepted, "sp1", 0)]
   let ctx = make_c_ctx("sp1", InputAccepted, base)
   let batch = prepare_batch(ctx, [])
@@ -163,7 +163,7 @@ test "harness_contribution/prepare_batch_with_no_contributors" {
 }
 
 ///|
-test "harness_contribution/prepare_batch_merges_contributor_entries" {
+test "puppet_contribution/prepare_batch_merges_contributor_entries" {
   let base = [make_c_entry(InputAccepted, "sp1", 0)]
   let ctx = make_c_ctx("sp1", InputAccepted, base)
   // Contributor proposes an extra entry.
@@ -175,11 +175,11 @@ test "harness_contribution/prepare_batch_merges_contributor_entries" {
 }
 
 ///|
-test "harness_contribution/prepare_batch_contributor_raise_surfaces_as_savepoint_failed" {
+test "puppet_contribution/prepare_batch_contributor_raise_surfaces_as_savepoint_failed" {
   let ctx = make_c_ctx("sp1", InputAccepted, [])
   let failing = FailingContributor::new("bad")
   let contributors : Array[&JournalContributor] = [failing]
-  let result : Result[FrozenBatch, HarnessError] = Ok(
+  let result : Result[FrozenBatch, PuppetError] = Ok(
     prepare_batch(ctx, contributors),
   ) catch {
     e => Err(e)
@@ -201,11 +201,11 @@ test "harness_contribution/prepare_batch_contributor_raise_surfaces_as_savepoint
 }
 
 ///|
-test "harness_contribution/prepare_batch_rejects_wrong_kind" {
+test "puppet_contribution/prepare_batch_rejects_wrong_kind" {
   // Context says InputAccepted, but base entry is ToolCommitted.
   let wrong = make_c_entry(ToolCommitted, "sp1", 0)
   let ctx = make_c_ctx("sp1", InputAccepted, [wrong])
-  let result : Result[FrozenBatch, HarnessError] = Ok(prepare_batch(ctx, [])) catch {
+  let result : Result[FrozenBatch, PuppetError] = Ok(prepare_batch(ctx, [])) catch {
     e => Err(e)
   }
   assert_true(result is Err(_))
@@ -217,17 +217,17 @@ test "harness_contribution/prepare_batch_rejects_wrong_kind" {
 }
 
 ///|
-test "harness_contribution/prepare_batch_rejects_wrong_savepoint_id" {
+test "puppet_contribution/prepare_batch_rejects_wrong_savepoint_id" {
   let wrong = make_c_entry(InputAccepted, "sp_other", 0)
   let ctx = make_c_ctx("sp1", InputAccepted, [wrong])
-  let result : Result[FrozenBatch, HarnessError] = Ok(prepare_batch(ctx, [])) catch {
+  let result : Result[FrozenBatch, PuppetError] = Ok(prepare_batch(ctx, [])) catch {
     e => Err(e)
   }
   assert_true(result is Err(_))
 }
 
 ///|
-test "harness_contribution/prepare_batch_rejects_wrong_run_id_in_contributor" {
+test "puppet_contribution/prepare_batch_rejects_wrong_run_id_in_contributor" {
   let ctx = make_c_ctx("sp1", InputAccepted, [])
   // Build an entry with a DIFFERENT run id.
   let identity : JournalEntryIdentity = {
@@ -246,7 +246,7 @@ test "harness_contribution/prepare_batch_rejects_wrong_run_id_in_contributor" {
   }
   let contributor = ProposingContributor::new("bad", bad_entry)
   let contributors : Array[&JournalContributor] = [contributor]
-  let result : Result[FrozenBatch, HarnessError] = Ok(
+  let result : Result[FrozenBatch, PuppetError] = Ok(
     prepare_batch(ctx, contributors),
   ) catch {
     e => Err(e)
@@ -260,14 +260,14 @@ test "harness_contribution/prepare_batch_rejects_wrong_run_id_in_contributor" {
 }
 
 ///|
-test "harness_contribution/prepare_batch_rejects_duplicate_entry_id" {
+test "puppet_contribution/prepare_batch_rejects_duplicate_entry_id" {
   let e1 = make_c_entry(InputAccepted, "sp1", 0)
   let ctx = make_c_ctx("sp1", InputAccepted, [e1])
   // Contributor proposes the SAME entry_seq — duplicate dedup key.
   let dup = make_c_entry(InputAccepted, "sp1", 0)
   let contributor = ProposingContributor::new("dup", dup)
   let contributors : Array[&JournalContributor] = [contributor]
-  let result : Result[FrozenBatch, HarnessError] = Ok(
+  let result : Result[FrozenBatch, PuppetError] = Ok(
     prepare_batch(ctx, contributors),
   ) catch {
     e => Err(e)
@@ -285,7 +285,7 @@ test "harness_contribution/prepare_batch_rejects_duplicate_entry_id" {
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-test "harness_contribution/commit_batch_advances_revision" {
+test "puppet_contribution/commit_batch_advances_revision" {
   let journal = InMemoryJournal::new()
   let base = [make_c_entry(InputAccepted, "sp1", 0)]
   let ctx = make_c_ctx("sp1", InputAccepted, base)
@@ -296,14 +296,14 @@ test "harness_contribution/commit_batch_advances_revision" {
 }
 
 ///|
-test "harness_contribution/commit_batch_via_fail_on_nth" {
+test "puppet_contribution/commit_batch_via_fail_on_nth" {
   // FailOnNthJournal fails on the 1st append.
   let inner = InMemoryJournal::new()
   let failing = FailOnNthJournal::new(inner, 1)
   let base = [make_c_entry(InputAccepted, "sp1", 0)]
   let ctx = make_c_ctx("sp1", InputAccepted, base)
   let batch = prepare_batch(ctx, [])
-  let result : Result[Int, HarnessError] = Ok(commit_batch(failing, batch)) catch {
+  let result : Result[Int, PuppetError] = Ok(commit_batch(failing, batch)) catch {
     e => Err(e)
   }
   assert_true(result is Err(_))
@@ -319,7 +319,7 @@ test "harness_contribution/commit_batch_via_fail_on_nth" {
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-test "harness_contribution/commit_batch_detects_post_freeze_count_change" {
+test "puppet_contribution/commit_batch_detects_post_freeze_count_change" {
   // We build a batch by hand (not via prepare_batch) so we can mutate it
   // after freeze to simulate contract violation.
   let base = [make_c_entry(InputAccepted, "sp1", 0)]
@@ -334,7 +334,7 @@ test "harness_contribution/commit_batch_detects_post_freeze_count_change" {
   // Inject an extra entry into batch.entries post-freeze.
   batch.entries.push(make_c_entry(InputAccepted, "sp1", 1))
   let journal = InMemoryJournal::new()
-  let result : Result[Int, HarnessError] = Ok(commit_batch(journal, batch)) catch {
+  let result : Result[Int, PuppetError] = Ok(commit_batch(journal, batch)) catch {
     e => Err(e)
   }
   assert_true(result is Err(_))

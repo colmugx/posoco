@@ -81,18 +81,75 @@ pub impl Show for MemoryError with fn to_string(self) -> String {
 }
 
 ///|
-/// Composition errors raised during Agent::new (tool collisions, empty required ports).
+/// Composition errors raised during Agent::new (manifest aggregation failures).
+///
+/// Every variant that involves a specific extension carries `manifest_id` so
+/// callers can locate the offending extension without guessing. Multi-party
+/// collisions carry the list of involved manifest ids.
 pub(all) suberror CompositionError {
-  ToolCollision(String, String)
+  /// Two extensions declared a tool with the same name. Fail-fast; no
+  /// last-wins routing. First arg is the tool name, second is a diagnostic
+  /// message, third is the list of manifest ids that declared it.
+  ToolCollision(String, String, manifests~ : Array[String])
+  /// Two extensions declared a slash command with the same id.
+  CommandCollision(String, manifests~ : Array[String])
+  /// No extension contributed a ModelPort. Exactly one is required.
+  MissingModel
+  /// More than one extension contributed a ModelPort. Multi-model routing
+  /// must be solved inside a meta-extension (e.g. posoco-ext-llm), not by
+  /// declaring multiple top-level models.
+  MultipleModels(manifests~ : Array[String])
+  /// Empty extension list passed to Agent::new.
+  EmptyManifests
+  /// An extension manifest was malformed (e.g. empty id, structural issue).
+  ManifestSchemaError(manifest_id~ : String, detail~ : String)
+  /// Legacy: a required port had zero contributors. Kept for compatibility
+  /// with older composition paths that do not use manifests.
   EmptyPort(String)
 } derive(Debug)
 
 ///|
 pub impl Show for CompositionError with fn to_string(self) -> String {
   match self {
-    ToolCollision(name, msg) =>
-      "CompositionError::ToolCollision(\{name}: \{msg})"
+    ToolCollision(name, msg, manifests~) =>
+      "CompositionError::ToolCollision(\{name}: \{msg}; manifests=\{manifests.join(",")})"
+    CommandCollision(name, manifests~) =>
+      "CompositionError::CommandCollision(\{name}; manifests=\{manifests.join(",")})"
+    MissingModel => "CompositionError::MissingModel"
+    MultipleModels(manifests~) =>
+      "CompositionError::MultipleModels(manifests=\{manifests.join(",")})"
+    EmptyManifests => "CompositionError::EmptyManifests"
+    ManifestSchemaError(manifest_id~, detail~) =>
+      "CompositionError::ManifestSchemaError(manifest=\{manifest_id}, detail=\{detail})"
     EmptyPort(port) => "CompositionError::EmptyPort(\{port})"
+  }
+}
+
+///|
+/// Errors raised by UiPort implementations. `UiPort::request` MUST raise one
+/// of these typed variants instead of an untyped error, so that callers can
+/// distinguish "user cancelled" from "this UI doesn't support requests".
+pub(all) suberror UiError {
+  /// The UiPort does not support interactive requests at all (e.g. NoopUiPort,
+  /// or a headless host). Distinct from Cancelled (which means the request
+  /// was presented to the user and they dismissed it).
+  Unsupported(detail~ : String)
+  /// User saw the request and explicitly cancelled it.
+  Cancelled
+  /// The request payload was structurally invalid (e.g. Select with empty
+  /// options). Raised by the UiPort before any user interaction.
+  InvalidRequest(detail~ : String)
+  /// The host reported a transport/IO failure while servicing the request.
+  IoFailure(detail~ : String)
+} derive(Debug)
+
+///|
+pub impl Show for UiError with fn to_string(self) -> String {
+  match self {
+    Unsupported(detail~) => "UiError::Unsupported(\{detail})"
+    Cancelled => "UiError::Cancelled"
+    InvalidRequest(detail~) => "UiError::InvalidRequest(\{detail})"
+    IoFailure(detail~) => "UiError::IoFailure(\{detail})"
   }
 }
 

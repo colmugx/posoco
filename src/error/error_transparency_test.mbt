@@ -143,14 +143,12 @@ async test "t07_model_error_emits_turnfailed_not_turncompleted" {
   let store = @posoco.RecordingSessionStore::new()
   let obs = @posoco.RecordingObserver::new()
   let agent = @posoco.Agent::new(
-    model,
-    tools=[],
-    hooks=[],
-    memory=[],
-    compressors=[@posoco.NoopCompressor::{  }],
-    observers=[obs],
-    sessions=[store],
-    lifecycle=None,
+    exts=[
+      @posoco.tk_ext(id="model", model=Some(model)),
+      @posoco.tk_ext(id="io", sessions=[store], observers=[obs], compressors=[
+        @posoco.NoopCompressor::{  },
+      ]),
+    ],
     config=err_config(),
   )
   let result = Ok(agent.run_turn(@posoco.tk_user_msg("hello"), "s1")) catch {
@@ -220,14 +218,12 @@ async test "t07_save_error_emits_exactly_one_turnfailed" {
   store.fail_save("save-fail")
   let obs = @posoco.RecordingObserver::new()
   let agent = @posoco.Agent::new(
-    model,
-    tools=[],
-    hooks=[],
-    memory=[],
-    compressors=[@posoco.NoopCompressor::{  }],
-    observers=[obs],
-    sessions=[store],
-    lifecycle=None,
+    exts=[
+      @posoco.tk_ext(id="model", model=Some(model)),
+      @posoco.tk_ext(id="io", sessions=[store], observers=[obs], compressors=[
+        @posoco.NoopCompressor::{  },
+      ]),
+    ],
     config=err_config(),
   )
   let result = Ok(agent.run_turn(@posoco.tk_user_msg("hello"), "save-fail")) catch {
@@ -249,14 +245,12 @@ async test "t07_load_error_emits_one_safe_turnfailed" {
   store.fail_load("load-fail", Load("backend detail must stay with caller"))
   let obs = @posoco.RecordingObserver::new()
   let agent = @posoco.Agent::new(
-    model,
-    tools=[],
-    hooks=[],
-    memory=[],
-    compressors=[@posoco.NoopCompressor::{  }],
-    observers=[obs],
-    sessions=[store],
-    lifecycle=None,
+    exts=[
+      @posoco.tk_ext(id="model", model=Some(model)),
+      @posoco.tk_ext(id="io", sessions=[store], observers=[obs], compressors=[
+        @posoco.NoopCompressor::{  },
+      ]),
+    ],
     config=err_config(),
   )
   let result = Ok(
@@ -293,14 +287,12 @@ async test "t07_afterturn_hook_failure_is_observable_but_nonfatal" {
   let hook = @posoco.RecordingHook::new()
   hook.abort_when("AfterTurn", "after-turn cleanup failed")
   let agent = @posoco.Agent::new(
-    model,
-    tools=[],
-    hooks=[hook],
-    memory=[],
-    compressors=[@posoco.NoopCompressor::{  }],
-    observers=[obs],
-    sessions=[store],
-    lifecycle=None,
+    exts=[
+      @posoco.tk_ext(id="model", model=Some(model)),
+      @posoco.tk_ext(id="io", hooks=[hook], sessions=[store], observers=[obs], compressors=[
+        @posoco.NoopCompressor::{  },
+      ]),
+    ],
     config=err_config(),
   )
   let _ = agent.run_turn(@posoco.tk_user_msg("hello"), "hook-secondary")
@@ -319,14 +311,12 @@ async test "t07_error_hook_failure_preserves_primary_and_is_observable" {
   let hook = @posoco.RecordingHook::new()
   hook.abort_when("ModelError", "secondary model-error hook failure")
   let agent = @posoco.Agent::new(
-    model,
-    tools=[],
-    hooks=[hook],
-    memory=[],
-    compressors=[@posoco.NoopCompressor::{  }],
-    observers=[obs],
-    sessions=[store],
-    lifecycle=None,
+    exts=[
+      @posoco.tk_ext(id="model", model=Some(model)),
+      @posoco.tk_ext(id="io", hooks=[hook], sessions=[store], observers=[obs], compressors=[
+        @posoco.NoopCompressor::{  },
+      ]),
+    ],
     config=err_config(),
   )
   let result = Ok(agent.run_turn(@posoco.tk_user_msg("hello"), "primary-error")) catch {
@@ -352,14 +342,12 @@ async test "t07_turnerror_hook_failure_preserves_primary_and_is_observable" {
   let hook = @posoco.RecordingHook::new()
   hook.abort_when("TurnError", "secondary turn-error hook failure")
   let agent = @posoco.Agent::new(
-    model,
-    tools=[],
-    hooks=[hook],
-    memory=[],
-    compressors=[@posoco.NoopCompressor::{  }],
-    observers=[obs],
-    sessions=[store],
-    lifecycle=None,
+    exts=[
+      @posoco.tk_ext(id="model", model=Some(model)),
+      @posoco.tk_ext(id="io", hooks=[hook], sessions=[store], observers=[obs], compressors=[
+        @posoco.NoopCompressor::{  },
+      ]),
+    ],
     config=err_config(),
   )
   let result = Ok(agent.run_turn(@posoco.tk_user_msg("hello"), "turnerror")) catch {
@@ -397,14 +385,17 @@ async test "t07_aftertool_hook_failure_is_observable_but_nonfatal" {
   let hook = @posoco.RecordingHook::new()
   hook.abort_when("AfterTool", "secondary after-tool hook failure")
   let agent = @posoco.Agent::new(
-    model,
-    tools=[provider],
-    hooks=[hook],
-    memory=[],
-    compressors=[@posoco.NoopCompressor::{  }],
-    observers=[obs],
-    sessions=[store],
-    lifecycle=None,
+    exts=[
+      @posoco.tk_ext(id="model", model=Some(model)),
+      @posoco.tk_ext(
+        id="io",
+        tools=[provider],
+        hooks=[hook],
+        sessions=[store],
+        observers=[obs],
+        compressors=[@posoco.NoopCompressor::{  }],
+      ),
+    ],
     config=err_config(),
   )
   let result = agent.run_turn(@posoco.tk_user_msg("run"), "aftertool")
@@ -423,14 +414,12 @@ async test "t07_beforemodel_abort_emits_exactly_one_turnfailed" {
   let hook = @posoco.RecordingHook::new()
   hook.abort_when("BeforeModel", "policy rejected model call")
   let agent = @posoco.Agent::new(
-    model,
-    tools=[],
-    hooks=[hook],
-    memory=[],
-    compressors=[@posoco.NoopCompressor::{  }],
-    observers=[obs],
-    sessions=[store],
-    lifecycle=None,
+    exts=[
+      @posoco.tk_ext(id="model", model=Some(model)),
+      @posoco.tk_ext(id="io", hooks=[hook], sessions=[store], observers=[obs], compressors=[
+        @posoco.NoopCompressor::{  },
+      ]),
+    ],
     config=err_config(),
   )
   let result = Ok(
@@ -464,14 +453,12 @@ async test "t07_beforeturn_abort_does_not_start_or_terminalize_turn" {
   let hook = @posoco.RecordingHook::new()
   hook.abort_when("BeforeTurn", "turn rejected before start")
   let agent = @posoco.Agent::new(
-    model,
-    tools=[],
-    hooks=[hook],
-    memory=[],
-    compressors=[@posoco.NoopCompressor::{  }],
-    observers=[obs],
-    sessions=[store],
-    lifecycle=None,
+    exts=[
+      @posoco.tk_ext(id="model", model=Some(model)),
+      @posoco.tk_ext(id="io", hooks=[hook], sessions=[store], observers=[obs], compressors=[
+        @posoco.NoopCompressor::{  },
+      ]),
+    ],
     config=err_config(),
   )
   let result = Ok(agent.run_turn(@posoco.tk_user_msg("hello"), "beforeturn")) catch {
@@ -514,14 +501,16 @@ async test "t07_tool_loop_emits_exactly_one_turnfailed" {
     model_context_window: None,
   }
   let agent = @posoco.Agent::new(
-    model,
-    tools=[provider],
-    hooks=[],
-    memory=[],
-    compressors=[@posoco.NoopCompressor::{  }],
-    observers=[obs],
-    sessions=[store],
-    lifecycle=None,
+    exts=[
+      @posoco.tk_ext(id="model", model=Some(model)),
+      @posoco.tk_ext(
+        id="io",
+        tools=[provider],
+        sessions=[store],
+        observers=[obs],
+        compressors=[@posoco.NoopCompressor::{  }],
+      ),
+    ],
     config~,
   )
   let result = Ok(agent.run_turn(@posoco.tk_user_msg("loop"), "tool-loop")) catch {

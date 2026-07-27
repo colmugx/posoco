@@ -47,9 +47,9 @@ pub impl Show for RunId with fn to_string(self : RunId) -> String {
 }
 
 ///|
-/// Stable identifier for a session. Maps directly to the legacy
-/// `SessionStore::load/save` id; the Kernel never opens the session itself,
-/// it only carries the id for the executor/facade to use.
+/// Stable identifier for a product session. The Kernel never opens or
+/// materializes session storage; it carries this identity through effects,
+/// journal entries, and committed event envelopes.
 pub(all) struct SessionId {
   value : String
 } derive(Eq, Hash, Debug)
@@ -135,7 +135,7 @@ pub impl Show for EffectId with fn to_string(self : EffectId) -> String {
 
 ///|
 /// Monotonic sequence counter for KernelEvents. The reducer allocates these.
-/// EventEnvelopes (built by the Harness/Interpreter outside the reducer) carry
+/// EventEnvelopes (built by the Puppet/Interpreter outside the reducer) carry
 /// the sequence plus a wall-clock timestamp from an injected clock.
 pub(all) struct EventSequence {
   value : Int
@@ -181,10 +181,9 @@ pub(all) struct Budget {
 } derive(Eq, Debug)
 
 ///|
-/// Default budget: only `max_tool_rounds` is bounded (to a conservative 32 by
-/// default — the legacy `AgentConfig.max_tool_rounds` was caller-supplied but
-/// every existing caller set it). All other dimensions unbounded. Override
-/// via `Budget::bounded`.
+/// Default budget: only `max_tool_rounds` is bounded, at a conservative 32.
+/// All other dimensions are unbounded. Products with stronger safety limits
+/// must use `Budget::bounded` at composition.
 pub fn Budget::default_run() -> Budget {
   {
     max_model_steps: None,
@@ -207,18 +206,6 @@ pub fn Budget::bounded(
     max_tool_rounds: Some(max_tool_rounds),
     max_tool_calls: Some(max_tool_calls),
     max_total_tokens: Some(max_total_tokens),
-  }
-}
-
-///|
-/// Build a budget that mirrors the legacy `AgentConfig`. The legacy config had
-/// no token / step / call limits, so those dimensions stay unbounded.
-pub fn Budget::from_legacy_rounds(max_tool_rounds : Int) -> Budget {
-  {
-    max_model_steps: None,
-    max_tool_rounds: Some(max_tool_rounds),
-    max_tool_calls: None,
-    max_total_tokens: None,
   }
 }
 
@@ -384,25 +371,22 @@ fn detail_or_empty(detail : String?) -> String {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Cancel disposition — recorded by the scripted executor for M1 conformance
+// Cancel disposition
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-/// What the scripted executor recorded about a `CancelOutstanding` effect.
-/// Real adapter propagation is M3; in M1 the executor always reports
-/// `Propagated` against the in-memory scripted fakes and `NotPropagated` only
-/// when the bound adapter declares it cannot cancel (used by adapter-hardening
-/// tests). The reducer never blocks on this — termination is decided by
-/// inputs.
+/// What an adapter reports after a `CancelOutstanding` effect. The reducer
+/// never waits for this report; the Puppet records and validates it at the
+/// terminal side-effect boundary.
 pub(all) enum CancelDisposition {
-  /// The underlying operation was observable cancelled (fake: immediately).
+  /// The underlying operation received a cancellation signal.
   Propagated
   /// The adapter cannot cancel the underlying HTTP/process; the cancel only
   /// stops the reducer waiting for completion.
   NotPropagated
-  /// The adapter has not declared its capability yet. Real adapters in M3
-  /// must not emit this for production code paths.
-  Unknown
+  /// The effect had already settled before the cancellation reached its
+  /// adapter, so no live side effect remained to stop.
+  AlreadySettled
 } derive(Eq, Debug)
 
 ///|
@@ -410,6 +394,6 @@ pub impl Show for CancelDisposition with fn to_string(self : CancelDisposition) 
   match self {
     Propagated => "Propagated"
     NotPropagated => "NotPropagated"
-    Unknown => "Unknown"
+    AlreadySettled => "AlreadySettled"
   }
 }

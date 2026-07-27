@@ -37,14 +37,10 @@ async test "t05_metadata_roundtrip_preserves_unknown_keys" {
   ])
   store.seed("s1", { messages: [], metadata: initial_meta })
   let agent = Agent::new(
-    model,
-    tools=[],
-    hooks=[],
-    memory=[],
-    compressors=[NoopCompressor::{  }],
-    observers=[],
-    sessions=[store],
-    lifecycle=None,
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", sessions=[store], compressors=[NoopCompressor::{  }]),
+    ],
     config=metadata_config(),
   )
   let _ = agent.run_turn(tk_user_msg("hello"), "s1")
@@ -102,14 +98,12 @@ async test "t05_newthread_lineage_survives_final_save" {
   let model = ScriptedModel::new([Respond(tk_stop_response("ok"))])
   let store = RecordingSessionStore::new()
   let agent = Agent::new(
-    model,
-    tools=[],
-    hooks=[],
-    memory=[],
-    compressors=[NewThreadCompressor::{ parent_id: "orig" }],
-    observers=[],
-    sessions=[store],
-    lifecycle=None,
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", sessions=[store], compressors=[
+        NewThreadCompressor::{ parent_id: "orig" },
+      ]),
+    ],
     config=metadata_config(),
   )
   let result = agent.run_turn(tk_user_msg("compress me"), "orig")
@@ -141,14 +135,12 @@ async test "t05_save_failure_returns_session_error_no_turn_completed" {
   store.fail_save("doomed")
   let obs = RecordingObserver::new()
   let agent = Agent::new(
-    model,
-    tools=[],
-    hooks=[],
-    memory=[],
-    compressors=[NoopCompressor::{  }],
-    observers=[obs],
-    sessions=[store],
-    lifecycle=None,
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", sessions=[store], observers=[obs], compressors=[
+        NoopCompressor::{  },
+      ]),
+    ],
     config=metadata_config(),
   )
   let result = Ok(agent.run_turn(tk_user_msg("hello"), "doomed")) catch {
@@ -191,14 +183,10 @@ async test "t05_failed_turn_does_not_mutate_loaded_session_messages" {
     metadata: Map::from_array([]),
   })
   let agent = Agent::new(
-    model,
-    tools=[],
-    hooks=[],
-    memory=[],
-    compressors=[NoopCompressor::{  }],
-    observers=[],
-    sessions=[store],
-    lifecycle=None,
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", sessions=[store], compressors=[NoopCompressor::{  }]),
+    ],
     config=metadata_config(),
   )
   let result = Ok(agent.run_turn(tk_user_msg("must not leak"), "stable")) catch {
@@ -232,14 +220,10 @@ async test "t05_session_load_error_has_context_without_metadata" {
     @error.SessionError::Load("backend unavailable"),
   )
   let agent = Agent::new(
-    model,
-    tools=[],
-    hooks=[],
-    memory=[],
-    compressors=[NoopCompressor::{  }],
-    observers=[],
-    sessions=[store],
-    lifecycle=None,
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", sessions=[store], compressors=[NoopCompressor::{  }]),
+    ],
     config=metadata_config(),
   )
   let result = Ok(agent.run_turn(tk_user_msg("secret prompt"), "load-target")) catch {
@@ -265,14 +249,10 @@ async test "t05_session_error_uses_bounded_single_line_id" {
   let store = RecordingSessionStore::new()
   store.fail_load(raw_id, @error.SessionError::Load("backend unavailable"))
   let agent = Agent::new(
-    model,
-    tools=[],
-    hooks=[],
-    memory=[],
-    compressors=[NoopCompressor::{  }],
-    observers=[],
-    sessions=[store],
-    lifecycle=None,
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", sessions=[store], compressors=[NoopCompressor::{  }]),
+    ],
     config=metadata_config(),
   )
   let result = Ok(agent.run_turn(tk_user_msg("private prompt"), raw_id)) catch {
@@ -300,14 +280,10 @@ async test "t05_session_save_cause_cannot_reexpand_raw_id" {
   // both the contextual id label and the bounded cause label.
   store.fail_save(raw_id)
   let agent = Agent::new(
-    model,
-    tools=[],
-    hooks=[],
-    memory=[],
-    compressors=[NoopCompressor::{  }],
-    observers=[],
-    sessions=[store],
-    lifecycle=None,
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", sessions=[store], compressors=[NoopCompressor::{  }]),
+    ],
     config=metadata_config(),
   )
   let result = Ok(agent.run_turn(tk_user_msg("private prompt"), raw_id)) catch {
@@ -666,14 +642,17 @@ async test "t05_compressor_hook_and_model_inputs_are_deep_snapshots" {
     Map::from_array([]),
   )
   let agent = Agent::new(
-    model,
-    tools=[provider],
-    hooks=[hook],
-    memory=[],
-    compressors=[compressor],
-    observers=[mutating_observer, recording_observer],
-    sessions=[aliasing_store, recording_store],
-    lifecycle=None,
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(
+        id="io",
+        tools=[provider],
+        hooks=[hook],
+        sessions=[aliasing_store, recording_store],
+        observers=[mutating_observer, recording_observer],
+        compressors=[compressor],
+      ),
+    ],
     config=metadata_config(),
   )
   let input = boundary_input_message("hello")
@@ -716,14 +695,12 @@ async test "t05_each_final_save_store_gets_independent_deep_snapshot" {
   let recording_store = RecordingSessionStore::new()
   let model = ScriptedModel::new([Respond(tk_stop_response("done"))])
   let agent = Agent::new(
-    model,
-    tools=[],
-    hooks=[],
-    memory=[],
-    compressors=[NoopCompressor::{  }],
-    observers=[],
-    sessions=[mutating_store, recording_store],
-    lifecycle=None,
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", sessions=[mutating_store, recording_store], compressors=[
+        NoopCompressor::{  },
+      ]),
+    ],
     config=metadata_config(),
   )
   let _ = agent.run_turn(boundary_input_message("hello"), "final-snapshot")
@@ -740,14 +717,12 @@ async test "t05_each_newthread_save_store_gets_independent_deep_snapshot" {
   let model = ScriptedModel::new([Respond(tk_stop_response("done"))])
   let compressor = NewThreadWithMessageCompressor::{  }
   let agent = Agent::new(
-    model,
-    tools=[],
-    hooks=[],
-    memory=[],
-    compressors=[compressor],
-    observers=[],
-    sessions=[mutating_store, recording_store],
-    lifecycle=None,
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", sessions=[mutating_store, recording_store], compressors=[
+        compressor,
+      ]),
+    ],
     config=metadata_config(),
   )
   let result = agent.run_turn(boundary_input_message("hello"), "parent")
@@ -825,14 +800,17 @@ async test "t05_tool_ports_hooks_and_observers_get_json_snapshots" {
   let recording_observer = RecordingObserver::new()
   let store = RecordingSessionStore::new()
   let agent = Agent::new(
-    model,
-    tools=[provider],
-    hooks=[hook],
-    memory=[],
-    compressors=[NoopCompressor::{  }],
-    observers=[mutating_observer, recording_observer],
-    sessions=[store],
-    lifecycle=None,
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(
+        id="io",
+        tools=[provider],
+        hooks=[hook],
+        sessions=[store],
+        observers=[mutating_observer, recording_observer],
+        compressors=[NoopCompressor::{  }],
+      ),
+    ],
     config=metadata_config(),
   )
   let result = agent.run_turn(tk_user_msg("run probe"), "tool-boundaries")

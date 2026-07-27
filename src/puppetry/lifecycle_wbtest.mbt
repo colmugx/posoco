@@ -98,17 +98,17 @@ pub fn SpyLifecycleNode::shutdown_count(self : SpyLifecycleNode) -> Int {
 }
 
 ///|
-pub impl HarnessLifecycleNode for SpyLifecycleNode with fn node_id(self) -> String {
+pub impl PuppetLifecycleNode for SpyLifecycleNode with fn node_id(self) -> String {
   self.node_id_value
 }
 
 ///|
-pub impl HarnessLifecycleNode for SpyLifecycleNode with fn provenance(self) -> String {
+pub impl PuppetLifecycleNode for SpyLifecycleNode with fn provenance(self) -> String {
   self.provenance_value
 }
 
 ///|
-pub impl HarnessLifecycleNode for SpyLifecycleNode with fn startup(self) -> Unit raise LifecycleNodeError {
+pub impl PuppetLifecycleNode for SpyLifecycleNode with fn startup(self) -> Unit raise LifecycleNodeError {
   self.startup_count = self.startup_count + 1
   self.log.record("start:" + self.node_id_value)
   match self.fail_on_startup {
@@ -126,7 +126,7 @@ pub impl HarnessLifecycleNode for SpyLifecycleNode with fn startup(self) -> Unit
 }
 
 ///|
-pub impl HarnessLifecycleNode for SpyLifecycleNode with fn shutdown(self) -> Unit raise LifecycleNodeError {
+pub impl PuppetLifecycleNode for SpyLifecycleNode with fn shutdown(self) -> Unit raise LifecycleNodeError {
   self.shutdown_count = self.shutdown_count + 1
   self.log.record("stop:" + self.node_id_value)
   match self.fail_on_shutdown {
@@ -144,9 +144,9 @@ pub impl HarnessLifecycleNode for SpyLifecycleNode with fn shutdown(self) -> Uni
 }
 
 ///|
-/// Helper: run a closure that may raise HarnessError; capture as Result.
+/// Helper: run a closure that may raise PuppetError; capture as Result.
 /// Lets assertions pattern-match on the result without a `raise` context.
-fn try_harness(r : () -> Unit raise HarnessError) -> Result[Unit, HarnessError] {
+fn try_puppet(r : () -> Unit raise PuppetError) -> Result[Unit, PuppetError] {
   try {
     r()
     Ok(())
@@ -160,7 +160,7 @@ fn try_harness(r : () -> Unit raise HarnessError) -> Result[Unit, HarnessError] 
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-async test "harness_lifecycle/happy_path" {
+async test "puppet_lifecycle/happy_path" {
   let log = LifecycleSpyLog::new()
   let a = SpyLifecycleNode::new("a", "pa", log)
   let b = SpyLifecycleNode::new("b", "pb", log)
@@ -186,7 +186,7 @@ async test "harness_lifecycle/happy_path" {
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-async test "harness_lifecycle/exactly_once" {
+async test "puppet_lifecycle/exactly_once" {
   let log = LifecycleSpyLog::new()
   let a = SpyLifecycleNode::new("a", "pa", log)
   let col = LifecycleCollection::new()
@@ -208,13 +208,13 @@ async test "harness_lifecycle/exactly_once" {
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-test "harness_lifecycle/duplicate_id_rejected" {
+test "puppet_lifecycle/duplicate_id_rejected" {
   let log = LifecycleSpyLog::new()
   let a = SpyLifecycleNode::new("a", "pa", log)
   let a_again = SpyLifecycleNode::new("a", "pa2", log)
   let col = LifecycleCollection::new()
   col.register(a)
-  let result = try_harness(() => col.register(a_again))
+  let result = try_puppet(() => col.register(a_again))
   assert_true(result is Err(_))
   match result {
     Err(LifecycleDuplicate(node_id~)) => assert_true(node_id == "a")
@@ -227,14 +227,14 @@ test "harness_lifecycle/duplicate_id_rejected" {
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-async test "harness_lifecycle/register_after_startup_rejected" {
+async test "puppet_lifecycle/register_after_startup_rejected" {
   let log = LifecycleSpyLog::new()
   let a = SpyLifecycleNode::new("a", "pa", log)
   let b = SpyLifecycleNode::new("b", "pb", log)
   let col = LifecycleCollection::new()
   col.register(a)
   col.startup_all()
-  let result = try_harness(() => col.register(b))
+  let result = try_puppet(() => col.register(b))
   assert_true(result is Err(_))
 }
 
@@ -243,7 +243,7 @@ async test "harness_lifecycle/register_after_startup_rejected" {
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-async test "harness_lifecycle/startup_failure_rolls_back" {
+async test "puppet_lifecycle/startup_failure_rolls_back" {
   let log = LifecycleSpyLog::new()
   let a = SpyLifecycleNode::new("a", "pa", log)
   let b = SpyLifecycleNode::new("b", "pb", log).fail_on_shutdown_at(1)
@@ -252,7 +252,7 @@ async test "harness_lifecycle/startup_failure_rolls_back" {
   col.register(a)
   col.register(b)
   col.register(c)
-  let result : Result[Unit, HarnessError] = Ok(col.startup_all()) catch {
+  let result : Result[Unit, PuppetError] = Ok(col.startup_all()) catch {
     e => Err(e)
   }
   assert_true(result is Err(_))
@@ -281,7 +281,7 @@ async test "harness_lifecycle/startup_failure_rolls_back" {
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-async test "harness_lifecycle/shutdown_failure_aggregated" {
+async test "puppet_lifecycle/shutdown_failure_aggregated" {
   let log = LifecycleSpyLog::new()
   let a = SpyLifecycleNode::new("a", "pa", log)
   let b = SpyLifecycleNode::new("b", "pb", log).fail_on_shutdown_at(1)
@@ -291,7 +291,7 @@ async test "harness_lifecycle/shutdown_failure_aggregated" {
   col.register(b)
   col.register(c)
   col.startup_all()
-  let result : Result[Unit, HarnessError] = Ok(col.shutdown_all()) catch {
+  let result : Result[Unit, PuppetError] = Ok(col.shutdown_all()) catch {
     e => Err(e)
   }
   assert_true(result is Err(_))
@@ -312,16 +312,16 @@ async test "harness_lifecycle/shutdown_failure_aggregated" {
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-test "harness_lifecycle/composite_child_double_registration_detected" {
+test "puppet_lifecycle/composite_child_double_registration_detected" {
   let log = LifecycleSpyLog::new()
   let host = SpyLifecycleNode::new("host", "host", log)
   let child_direct = SpyLifecycleNode::new("child", "child", log)
   let col = LifecycleCollection::new()
   col.register(host)
-  let result = try_harness(() => col.register(child_direct))
+  let result = try_puppet(() => col.register(child_direct))
   assert_true(result is Ok(_))
   // Registering the same id again must fail.
   let child_again = SpyLifecycleNode::new("child", "child2", log)
-  let result2 = try_harness(() => col.register(child_again))
+  let result2 = try_puppet(() => col.register(child_again))
   assert_true(result2 is Err(_))
 }

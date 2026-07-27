@@ -1,6 +1,6 @@
 ///|
 /// Package-level re-export of Kernel types and functions used across the
-/// Puppetry/Harness package.
+/// Puppetry/Puppet package.
 ///
 /// MoonBit `using @kernel { type X }` introduces `X` as a package-local
 /// alias for `@kernel.X`. Declaring these aliases once in this single file
@@ -18,7 +18,9 @@ using @kernel {
   type CanonicalMessage,
   type CanonicalTranscript,
   type CanonicalToolDef,
+  type CanonicalToolCall,
   // Effect + payloads
+  type Effect,
   // RunInput + payloads
   type RunInput,
   // Run state machine
@@ -32,13 +34,17 @@ using @kernel {
   // Catalog
   type CatalogVersion,
   type ToolCatalogSnapshot,
+  type ExecutionPlan,
+  type SchedulingError,
   // Identity / context
   type RunId,
   type SessionId,
   type Budget,
+  type CancelDisposition,
   // Kernel events
   type KernelEvent,
   // Reducer entry points
   reduce,
   run_model_step,
+  schedule,
 }

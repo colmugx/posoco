@@ -76,14 +76,12 @@ async test "quickstart_fixture_uses_current_public_api" {
   let model = QuickstartFixedModel::{  }
   let store = QuickstartMemoryStore::{ sessions: Map::from_array([]) }
   let agent = @posoco.Agent::new(
-    model,
-    tools=[],
-    hooks=[],
-    memory=[],
-    compressors=[@posoco.NoopCompressor::{  }],
-    observers=[],
-    sessions=[store],
-    lifecycle=None,
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", sessions=[store], compressors=[
+        @posoco.NoopCompressor::{  },
+      ]),
+    ],
     config={
       max_tool_rounds: 10,
       temperature: None,

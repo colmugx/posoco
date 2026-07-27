@@ -70,14 +70,12 @@ async test "t06a_business_error_event_matches_result" {
   let obs = RecordingObserver::new()
   let store = RecordingSessionStore::new()
   let agent = Agent::new(
-    model,
-    tools=[provider],
-    hooks=[],
-    memory=[],
-    compressors=[NoopCompressor::{  }],
-    observers=[obs],
-    sessions=[store],
-    lifecycle=None,
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", tools=[provider], sessions=[store], observers=[obs], compressors=[
+        NoopCompressor::{  },
+      ]),
+    ],
     config=outcome_config(),
   )
   let turn_result = agent.run_turn(tk_user_msg("run probe"), "s1")
@@ -161,14 +159,12 @@ async test "t06a_success_event_is_not_error" {
   let obs = RecordingObserver::new()
   let store = RecordingSessionStore::new()
   let agent = Agent::new(
-    model,
-    tools=[provider],
-    hooks=[],
-    memory=[],
-    compressors=[NoopCompressor::{  }],
-    observers=[obs],
-    sessions=[store],
-    lifecycle=None,
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", tools=[provider], sessions=[store], observers=[obs], compressors=[
+        NoopCompressor::{  },
+      ]),
+    ],
     config=outcome_config(),
   )
   let turn_result = agent.run_turn(tk_user_msg("run safe"), "s1")
@@ -223,14 +219,12 @@ async test "t06a_runtime_error_event_is_error_true" {
   let obs = RecordingObserver::new()
   let store = RecordingSessionStore::new()
   let agent = Agent::new(
-    model,
-    tools=[provider],
-    hooks=[],
-    memory=[],
-    compressors=[NoopCompressor::{  }],
-    observers=[obs],
-    sessions=[store],
-    lifecycle=None,
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", tools=[provider], sessions=[store], observers=[obs], compressors=[
+        NoopCompressor::{  },
+      ]),
+    ],
     config=outcome_config(),
   )
   let result = agent.run_turn(tk_user_msg("run boom"), "s1")
@@ -345,21 +339,19 @@ async test "t06b_collision_fails_composition" {
   let store = RecordingSessionStore::new()
   let composition_result = Ok(
     Agent::new(
-      model,
-      tools=[p1, p2],
-      hooks=[],
-      memory=[],
-      compressors=[NoopCompressor::{  }],
-      observers=[],
-      sessions=[store],
-      lifecycle=None,
+      exts=[
+        tk_ext(id="model", model=Some(model)),
+        tk_ext(id="io", tools=[p1, p2], sessions=[store], compressors=[
+          NoopCompressor::{  },
+        ]),
+      ],
       config=outcome_config(),
     ),
   ) catch {
     e => Err(e)
   }
   match composition_result {
-    Err(@error.CompositionError::ToolCollision(name, msg)) => {
+    Err(@error.CompositionError::ToolCollision(name, msg, ..)) => {
       assert_eq(name, "shared")
       // The message must identify both conflicting sources.
       assert_true(msg.contains("collision"))
@@ -383,21 +375,19 @@ async test "t06b_missing_collision_provenance_is_actionable" {
   let store = RecordingSessionStore::new()
   let composition_result = Ok(
     Agent::new(
-      model,
-      tools=[p1, p2],
-      hooks=[],
-      memory=[],
-      compressors=[NoopCompressor::{  }],
-      observers=[],
-      sessions=[store],
-      lifecycle=None,
+      exts=[
+        tk_ext(id="model", model=Some(model)),
+        tk_ext(id="io", tools=[p1, p2], sessions=[store], compressors=[
+          NoopCompressor::{  },
+        ]),
+      ],
       config=outcome_config(),
     ),
   ) catch {
     e => Err(e)
   }
   match composition_result {
-    Err(@error.CompositionError::ToolCollision(name, msg)) => {
+    Err(@error.CompositionError::ToolCollision(name, msg, ..)) => {
       assert_eq(name, "shared")
       assert_true(msg.contains("ToolDef.source"))
       assert_true(!msg.contains("provider["))

@@ -1,5 +1,5 @@
 ///|
-/// Harness event dispatch (M2-T05, ADR §5 step 6, §6 subscriber rules).
+/// Puppet event dispatch (M2-T05, ADR §5 step 6, §6 subscriber rules).
 ///
 /// Post-commit event dispatcher. Receives envelopes CONSTRUCTED AFTER the
 /// journal barrier succeeds; assigns monotonic `seq` per run; dispatches
@@ -7,7 +7,7 @@
 ///
 /// M2 default (ADR §7 Q7.4 recommendation): ALL subscribers are
 /// correctness-critical. A subscriber failure fails the run with
-/// `HarnessError::SubscriberFailed`; the journal entry is already durable
+/// `PuppetError::SubscriberFailed`; the journal entry is already durable
 /// (commit happened before dispatch). No best-effort escape hatch in M2.
 ///
 /// Subscribers never receive a journal writer. If a subscriber needs to add
@@ -74,7 +74,7 @@ pub fn EventEnvelope::is_terminal(self : EventEnvelope) -> Bool {
 }
 
 ///|
-/// Construct an envelope. Internal — only the Harness dispatcher builds
+/// Construct an envelope. Internal — only the Puppet dispatcher builds
 /// envelopes (it owns the seq counter).
 pub fn EventEnvelope::new(
   run_id~ : RunId,
@@ -104,7 +104,7 @@ pub impl Show for EventEnvelope with fn to_string(self : EventEnvelope) -> Strin
 /// - mutate the envelope (it's passed by value, but the inner KernelEvent
 ///   is immutable anyway)
 /// - reach into the journal (the trait exposes no writer)
-/// - re-enter the Harness via structural commands (ADR §11 reentrancy rule)
+/// - re-enter the Puppet via structural commands (ADR §11 reentrancy rule)
 ///
 /// Subscribers may:
 /// - read the envelope and any derived state
@@ -184,7 +184,7 @@ pub impl EventSubscriber for NoopSubscriber with fn on_event(
 
 ///|
 /// Post-commit event dispatcher. Holds the per-run seq counter and the
-/// subscriber list. The Harness constructs one dispatcher per Run; seq
+/// subscriber list. The Puppet constructs one dispatcher per Run; seq
 /// starts at 1 for each Run (seq 0 is reserved for "no events yet").
 ///
 /// ADR §5 step 6: dispatcher runs ONLY after commit succeeds.
@@ -243,13 +243,13 @@ pub fn EventDispatcher::next_seq(self : EventDispatcher) -> Int {
 /// Dispatch a single KernelEvent to all subscribers. Assigns the next seq,
 /// builds the envelope, and awaits each subscriber in order.
 ///
-/// Raises `HarnessError::SubscriberFailed` if any subscriber raises. The
+/// Raises `PuppetError::SubscriberFailed` if any subscriber raises. The
 /// dispatcher stops at the first failure (correctness-critical default).
 pub async fn EventDispatcher::dispatch(
   self : EventDispatcher,
   event : KernelEvent,
   committed_revision : Int,
-) -> Unit raise HarnessError {
+) -> Unit raise PuppetError {
   let seq = self.next_seq
   self.next_seq = self.next_seq + 1
   self.last_committed_revision = committed_revision

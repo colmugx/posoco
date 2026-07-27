@@ -4,7 +4,7 @@
 ///
 /// All events are unstamped: the reducer emits them with a sequence number
 /// (allocated by RunState), but the wall-clock timestamp is added outside the
-/// reducer by the Harness/Interpreter, which has access to an injected clock.
+/// reducer by the Puppet/Interpreter, which has access to an injected clock.
 /// This is what makes Kernel replay byte-equal.
 ///
 /// Convention: terminal events (`RunCompleted`/`RunFailed`/`RunCancelled`)
@@ -19,9 +19,7 @@
 /// Emitted when the reducer first transitions out of `Initializing` (the
 /// `Start` input). The `RunStarted` event is non-terminal.
 ///
-/// Note: this is the new Kernel name (open question Q6.4 — ADR recommended
-/// scheme). The legacy `TurnStarted` continues to be emitted by the
-/// compatibility facade alongside this event.
+/// `RunStarted` is the product's sole start event.
 pub(all) struct StartedDetails {
   run_id : RunId
   session_id : SessionId
@@ -46,7 +44,7 @@ pub(all) struct SuspensionRequirement {
 
 ///|
 /// A single domain event declared by the reducer. EventEnvelopes are built
-/// by the Harness/Interpreter outside the reducer.
+/// by the Puppet/Interpreter outside the reducer.
 pub(all) enum KernelEvent {
   /// Emitted on the Start input. Exactly once per Run.
   RunStarted(details~ : StartedDetails)
@@ -55,8 +53,14 @@ pub(all) enum KernelEvent {
   /// Emitted when a model completion is folded into the transcript.
   ModelStepCompleted(model_step_id~ : ModelStepId, completion_summary~ : String)
   /// Emitted when a tool batch is dispatched (one event per batch, not per
-  /// tool). The per-call events are `ToolCompleted`.
-  ToolBatchStarted(model_step_id~ : ModelStepId, call_ids~ : Array[CallId])
+  /// tool). The calls retain their names and parsed arguments so a committed
+  /// product subscriber can render the exact pending work without querying a
+  /// second routing cache. The journal payload deliberately stores only a
+  /// count; arguments never enter durable diagnostic summaries.
+  ToolBatchStarted(
+    model_step_id~ : ModelStepId,
+    calls~ : Array[CanonicalToolCall]
+  )
   /// Emitted per tool outcome (success, error, runtime failure or
   /// NotExecuted). The outcome tag IS the error status — there is no
   /// parallel `is_error` boolean (ADR §2.11).
@@ -99,8 +103,8 @@ pub impl Show for KernelEvent with fn to_string(self : KernelEvent) -> String {
       "ModelStepStarted(step=\{model_step_id.to_int()}, effect=\{effect_id.to_int()})"
     ModelStepCompleted(model_step_id~, completion_summary~) =>
       "ModelStepCompleted(step=\{model_step_id.to_int()}, \{completion_summary})"
-    ToolBatchStarted(model_step_id~, call_ids~) =>
-      "ToolBatchStarted(step=\{model_step_id.to_int()}, \{call_ids.length()} calls)"
+    ToolBatchStarted(model_step_id~, calls~) =>
+      "ToolBatchStarted(step=\{model_step_id.to_int()}, \{calls.length()} calls)"
     ToolCompleted(call_id~, outcome~) =>
       "ToolCompleted(call=\{call_id.to_string()}, \{outcome.summary()})"
     RunSuspended(requirement~, model_step_id~) =>

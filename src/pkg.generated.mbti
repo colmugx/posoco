@@ -10,6 +10,8 @@ import {
 }
 
 // Values
+pub fn aggregate_extensions(Array[&@port.Extension]) -> AggregatedPorts raise @error.CompositionError
+
 pub fn assert_events_contain(Array[@types.TurnEvent], Array[@types.TurnEvent]) -> Unit
 
 pub fn assert_events_eq(Array[@types.TurnEvent], Array[@types.TurnEvent]) -> Unit
@@ -18,23 +20,15 @@ pub fn build_error_message(@types.ToolCall, @error.RuntimeError) -> @types.Messa
 
 pub fn build_tool_result_message(@types.ToolCall, @types.ToolResult) -> @types.Message
 
-pub fn canonical_to_legacy_message(@kernel.CanonicalMessage) -> @types.Message
-
 pub fn event_trace_mismatch(Array[@types.TurnEvent], Array[@types.TurnEvent]) -> String?
-
-pub fn legacy_to_completion(@types.ModelResponse) -> @kernel.AssistantCompletion
-
-pub fn model_error_to_failure(@error.ModelError) -> @kernel.ModelFailure
-
-pub fn outcome_to_legacy(@kernel.ToolOutcome) -> (String, Bool)
-
-pub fn outcome_to_legacy_tool_result(@kernel.ToolOutcome) -> @types.ToolResult
 
 pub fn parse_slash_args(String, Array[@port.CommandParam]) -> Result[Json, String]
 
 pub fn tk_config() -> AgentConfig
 
 pub fn tk_error_result(String) -> @types.ToolResult
+
+pub fn tk_ext(id~ : String, model? : &@port.ModelPort?, tools? : Array[&@port.ToolProvider], sessions? : Array[&@port.SessionStore], observers? : Array[&@port.Observer], compressors? : Array[&@port.Compressor], hooks? : Array[&@port.PipelineHook], memory? : Array[&@port.MemoryPort], lifecycle? : Array[&@port.Lifecycle], commands? : Array[&@port.CommandPort], ui? : Array[&@port.UiPort], prompt_contributors? : Array[&@port.SystemPromptContributor]) -> ManifestOnly
 
 pub fn tk_ok_result(String) -> @types.ToolResult
 
@@ -49,28 +43,6 @@ pub fn tk_user_msg(String) -> @types.Message
 pub fn validate_args(@port.CommandDef, Json) -> Result[Json, String]
 
 // Errors
-pub(all) suberror HarnessFacadeError {
-  SessionLoad(detail~ : String)
-  SessionSave(detail~ : String)
-  CatalogComposition(failure~ : @kernel.CatalogCompositionError)
-  HarnessRejected(error~ : @puppetry.HarnessError)
-  UnsupportedSuspension(run_id~ : @kernel.RunId, suspension_id~ : String)
-  NonCompletedTerminal(outcome~ : @kernel.RunOutcome)
-  ConversionFailed(detail~ : String)
-}
-pub impl Show for HarnessFacadeError
-
-pub(all) suberror KernelFacadeError {
-  SessionLoad(detail~ : String)
-  SessionSave(detail~ : String)
-  CatalogComposition(failure~ : @kernel.CatalogCompositionError)
-  ConversionFailed(detail~ : String)
-  UntranslatedInvariant(category~ : @kernel.InvariantCategory)
-  DriverLoopExceeded(iterations~ : Int)
-  KernelFailed(reason~ : @kernel.FailureReason)
-  KernelCancelled(reason~ : @kernel.CancelReason)
-}
-pub impl Show for KernelFacadeError
 
 // Types and methods
 pub(all) struct Agent {
@@ -84,10 +56,8 @@ pub(all) struct Agent {
   lifecycle : &@port.Lifecycle?
   config : AgentConfig
 }
-pub fn Agent::new(&@port.ModelPort, tools~ : Array[&@port.ToolProvider], hooks~ : Array[&@port.PipelineHook], memory~ : Array[&@port.MemoryPort], compressors~ : Array[&@port.Compressor], observers~ : Array[&@port.Observer], sessions~ : Array[&@port.SessionStore], lifecycle~ : &@port.Lifecycle?, config~ : AgentConfig) -> Self raise @error.CompositionError
+pub fn Agent::new(exts~ : Array[&@port.Extension], config~ : AgentConfig) -> Self raise @error.CompositionError
 pub async fn Agent::run_turn(Self, @types.Message, String) -> @types.TurnResult raise @error.AgentError
-pub async fn Agent::run_turn_via_harness(Self, @types.Message, String) -> @types.TurnResult raise HarnessFacadeError
-pub async fn Agent::run_turn_via_kernel(Self, @types.Message, String) -> @types.TurnResult raise KernelFacadeError
 pub async fn Agent::shutdown(Self) -> Unit
 
 pub(all) struct AgentConfig {
@@ -99,6 +69,21 @@ pub(all) struct AgentConfig {
   model_context_window : Int?
 }
 pub fn AgentConfig::to_chat_options(Self) -> @types.ChatOptions
+
+pub(all) struct AggregatedPorts {
+  model : &@port.ModelPort
+  tools : Array[&@port.ToolProvider]
+  sessions : Array[&@port.SessionStore]
+  observers : Array[&@port.Observer]
+  compressors : Array[&@port.Compressor]
+  hooks : Array[&@port.PipelineHook]
+  memory : Array[&@port.MemoryPort]
+  lifecycle : Array[&@port.Lifecycle]
+  commands : Array[&@port.CommandPort]
+  ui : &@port.UiPort
+  prompt_contributors : Array[&@port.SystemPromptContributor]
+  contributor_ids : Array[String]
+}
 
 pub(all) struct CompositeToolProvider {
   providers : Array[&@port.ToolProvider]
@@ -115,13 +100,13 @@ pub(all) struct HookRecord {
   outcome : RecordedHookOutcome
 }
 
-pub(all) struct LegacyHostRuntime {
-  model_port : &@port.ModelPort
-  tool_providers : Map[String, &@port.ToolProvider]
+pub(all) struct ManifestOnly {
+  cached : @port.ExtensionManifest
 }
-pub fn LegacyHostRuntime::from_agent(Agent) -> Self
-pub fn LegacyHostRuntime::new(&@port.ModelPort, Array[(String, &@port.ToolProvider)]) -> Self
-pub impl @kernel.HostRuntime for LegacyHostRuntime
+pub fn ManifestOnly::extension_id(Self) -> String
+pub fn ManifestOnly::manifest(Self) -> @port.ExtensionManifest
+pub fn ManifestOnly::new(@port.ExtensionManifest) -> Self
+pub impl @port.Extension for ManifestOnly
 
 pub(all) struct NoopCommandPort {
 }
@@ -195,6 +180,24 @@ pub fn RecordingToolProvider::new(Array[@types.ToolDef], Map[String, ScriptedToo
 pub fn RecordingToolProvider::ops(Self) -> Array[ToolProviderOp]
 pub impl @port.ToolProvider for RecordingToolProvider
 
+pub(all) struct RecordingUiPort {
+  mut rendered : Array[@port.UiRender]
+  mut scripted_responses : Array[@port.UiResponse]
+  mut unsupported_mode : Bool
+  mut descriptor : @port.UiDescriptor
+}
+pub fn RecordingUiPort::new(responses? : Array[@port.UiResponse]) -> Self
+pub fn RecordingUiPort::new_unsupported() -> Self
+pub fn RecordingUiPort::render(Self, @port.UiRender) -> Unit
+pub fn RecordingUiPort::render_count(Self) -> Int
+pub fn RecordingUiPort::rendered_in_slot(Self, @port.UiSlot) -> Array[@port.UiRender]
+pub fn RecordingUiPort::rendered_intents(Self) -> Array[@port.UiRender]
+pub async fn RecordingUiPort::request(Self, @port.UiRequest) -> @port.UiResponse raise @error.UiError
+pub fn RecordingUiPort::set_descriptor(Self, @port.UiDescriptor) -> Unit
+pub fn RecordingUiPort::ui_descriptor(Self) -> @port.UiDescriptor
+pub fn RecordingUiPort::unconsumed_response_count(Self) -> Int
+pub impl @port.UiPort for RecordingUiPort
+
 pub(all) struct ScriptedModel {
   steps : Array[ScriptedModelStep]
   mut index : Int
@@ -252,67 +255,139 @@ pub impl @port.ToolProvider for ToolRegistry
 type ToolRouting
 
 // Type aliases
-pub using @error {type AgentError}
+pub using @kernel {type AssistantCompletion}
 
-pub using @types {type ChatOptions}
+pub using @kernel {type AssistantFinishReason}
 
-pub using @port {type CommandDef}
+pub using @port {type AutocompleteItem}
 
-pub using @port {type CommandParam}
+pub using @port {type AutocompleteSource}
 
-pub using @error {type CompositionError}
+pub using @kernel {type Budget}
 
-pub using @types {type Content}
+pub using @kernel {type BudgetDimension}
 
-pub using @types {type Message}
+pub using @kernel {type CallId}
 
-pub using @error {type ModelError}
+pub using @kernel {type CancelReason}
 
-pub using @types {type ModelResponse}
+pub using @kernel {type CanonicalContent}
 
-pub using @types {type ReasoningEffort}
+pub using @puppetry {type CanonicalHost}
 
-pub using @types {type Role}
+pub using @puppetry {type CanonicalHostCompositionError}
 
-pub using @error {type RuntimeError}
+pub using @kernel {type CanonicalMessage}
 
-pub using @types {type Session}
+pub using @kernel {type CanonicalToolCall}
 
-pub using @error {type SessionError}
+pub using @kernel {type CanonicalToolDef}
 
-pub using @port {type Stage}
+pub using @kernel {type CanonicalTranscript}
 
-pub using @types {type StreamChunk}
+pub using @kernel {type CanonicalUsage}
 
-pub using @types {type ToolCall}
+pub using @kernel {type CatalogCompositionError}
 
-pub using @types {type ToolChoice}
+pub using @kernel {type CatalogVersion}
 
-pub using @types {type ToolDef}
+pub using @port {type CompositeUiPort}
 
-pub using @types {type ToolResult}
+pub using @kernel {type EffectId}
 
-pub using @types {type TurnEvent}
+pub using @puppetry {type EventEnvelope}
 
-pub using @types {type TurnResult}
+pub using @kernel {type ExecutionPolicy}
 
-pub using @port {trait CommandPort}
+pub using @port {type ExtensionManifest}
 
-pub using @port {trait Compressor}
+pub type HostChunkCallback = (Json) -> Unit
 
-pub using @port {trait Lifecycle}
+pub using @puppetry {type InMemoryJournal}
 
-pub using @port {trait MemoryPort}
+pub using @kernel {type KernelError}
 
-pub using @port {trait ModelPort}
+pub using @kernel {type KernelEvent}
 
-pub using @port {trait Observer}
+pub using @kernel {type ModelFailure}
 
-pub using @port {trait PipelineHook}
+pub using @puppetry {type ModelId}
 
-pub using @port {trait SessionStore}
+pub using @kernel {type ModelStepId}
 
-pub using @port {trait ToolProvider}
+pub using @puppetry {type NoopContributor}
+
+pub using @puppetry {type NoopSubscriber}
+
+pub using @port {type NoopUiPort}
+
+pub using @kernel {type NotExecutedReason}
+
+pub using @kernel {type OwnerId}
+
+pub using @puppetry {type PromptResult}
+
+pub using @puppetry {type Puppet}
+
+pub using @puppetry {type PuppetConfig}
+
+pub using @puppetry {type PuppetError}
+
+pub using @puppetry {type QuiescentStatus}
+
+pub using @kernel {type RunId}
+
+pub using @kernel {type RunOutcome}
+
+pub using @kernel {type SessionId}
+
+pub using @puppetry {type SubscriberError}
+
+pub using @port {type SystemPromptHook}
+
+pub using @port {type SystemPromptSection}
+
+pub using @kernel {type ToolCatalogBuilder}
+
+pub using @kernel {type ToolCatalogSnapshot}
+
+pub using @kernel {type ToolName}
+
+pub using @kernel {type ToolOutcome}
+
+pub using @puppetry {type TurnId}
+
+pub using @port {type UiBody}
+
+pub using @port {type UiDescriptor}
+
+pub using @port {type UiRender}
+
+pub using @port {type UiRequest}
+
+pub using @port {type UiResponse}
+
+pub using @port {type UiSlot}
+
+pub using @puppetry {trait EventSubscriber}
+
+pub using @port {trait Extension}
+
+pub using @kernel {trait HostRuntime}
+
+pub using @puppetry {trait JournalContributor}
+
+pub using @puppetry {trait ModelBinding}
+
+pub using @puppetry {trait PuppetLifecycleNode}
+
+pub using @puppetry {trait RunJournal}
+
+pub using @port {trait SystemPromptContributor}
+
+pub using @puppetry {trait ToolBinding}
+
+pub using @port {trait UiPort}
 
 // Traits
 

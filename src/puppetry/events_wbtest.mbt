@@ -122,7 +122,7 @@ fn completed_event() -> KernelEvent {
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-async test "harness_events/noop_subscriber_accepts_all" {
+async test "puppet_events/noop_subscriber_accepts_all" {
   let d = ev_dispatcher()
   let noop = NoopSubscriber::new()
   d.register(noop)
@@ -136,7 +136,7 @@ async test "harness_events/noop_subscriber_accepts_all" {
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-async test "harness_events/dispatcher_assigns_monotonic_seq" {
+async test "puppet_events/dispatcher_assigns_monotonic_seq" {
   let d = ev_dispatcher()
   let rec = RecordingSubscriber::new("rec")
   d.register(rec)
@@ -159,7 +159,7 @@ async test "harness_events/dispatcher_assigns_monotonic_seq" {
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-async test "harness_events/subscribers_invoked_in_registration_order" {
+async test "puppet_events/subscribers_invoked_in_registration_order" {
   let d = ev_dispatcher()
   // Two recording subscribers; verify both get the event but in the order
   // they were registered (we infer this via the order of pushes to a
@@ -182,11 +182,11 @@ async test "harness_events/subscribers_invoked_in_registration_order" {
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-async test "harness_events/subscriber_failure_raises_subscriber_failed" {
+async test "puppet_events/subscriber_failure_raises_subscriber_failed" {
   let d = ev_dispatcher()
   let failing = FailingSubscriber::new("bad")
   d.register(failing)
-  let result : Result[Unit, HarnessError] = Ok(d.dispatch(started_event(), 5)) catch {
+  let result : Result[Unit, PuppetError] = Ok(d.dispatch(started_event(), 5)) catch {
     e => Err(e)
   }
   assert_true(result is Err(_))
@@ -201,7 +201,7 @@ async test "harness_events/subscriber_failure_raises_subscriber_failed" {
 }
 
 ///|
-async test "harness_events/subscriber_failure_stops_further_dispatch" {
+async test "puppet_events/subscriber_failure_stops_further_dispatch" {
   // If subscriber A fails, subscriber B (registered after A) must NOT
   // receive the event (correctness-critical default — ADR §6.6).
   let d = ev_dispatcher()
@@ -224,7 +224,7 @@ async test "harness_events/subscriber_failure_stops_further_dispatch" {
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-async test "harness_events/envelope_carries_identity" {
+async test "puppet_events/envelope_carries_identity" {
   let d = ev_dispatcher()
   let rec = RecordingSubscriber::new("r")
   d.register(rec)
@@ -238,7 +238,7 @@ async test "harness_events/envelope_carries_identity" {
 }
 
 ///|
-async test "harness_events/envelope_is_terminal_delegates" {
+async test "puppet_events/envelope_is_terminal_delegates" {
   let d = ev_dispatcher()
   let rec = RecordingSubscriber::new("r")
   d.register(rec)

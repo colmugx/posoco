@@ -79,7 +79,7 @@ fn bound_mailbox() -> ControlMailbox {
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-test "harness_control/bind_then_clear" {
+test "puppet_control/bind_then_clear" {
   let mb = ControlMailbox::new()
   assert_true(mb.active_run_id() is None)
   mb.bind_run(mb_run_id(), mb_turn_id())
@@ -94,7 +94,7 @@ test "harness_control/bind_then_clear" {
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-test "harness_control/steer_enqueue_accepted" {
+test "puppet_control/steer_enqueue_accepted" {
   let mb = bound_mailbox()
   let result = mb.enqueue_steer(make_steer("s1", mb_run_id(), mb_turn_id()))
   assert_true(result is Accepted(_))
@@ -102,7 +102,7 @@ test "harness_control/steer_enqueue_accepted" {
 }
 
 ///|
-test "harness_control/steer_enqueue_stale_run_rejected" {
+test "puppet_control/steer_enqueue_stale_run_rejected" {
   let mb = bound_mailbox()
   let result = mb.enqueue_steer(
     make_steer("s1", RunId::unchecked("run_OTHER"), mb_turn_id()),
@@ -112,14 +112,14 @@ test "harness_control/steer_enqueue_stale_run_rejected" {
 }
 
 ///|
-test "harness_control/steer_enqueue_no_active_run_rejected" {
+test "puppet_control/steer_enqueue_no_active_run_rejected" {
   let mb = ControlMailbox::new()
   let result = mb.enqueue_steer(make_steer("s1", mb_run_id(), mb_turn_id()))
   assert_true(result is RejectedStale(_))
 }
 
 ///|
-test "harness_control/steer_consume_drains_queue" {
+test "puppet_control/steer_consume_drains_queue" {
   let mb = bound_mailbox()
   let _ = mb.enqueue_steer(make_steer("s1", mb_run_id(), mb_turn_id()))
   let _ = mb.enqueue_steer(make_steer("s2", mb_run_id(), mb_turn_id()))
@@ -137,7 +137,7 @@ test "harness_control/steer_consume_drains_queue" {
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-test "harness_control/follow_up_enqueue_accepted" {
+test "puppet_control/follow_up_enqueue_accepted" {
   let mb = bound_mailbox()
   let result = mb.enqueue_follow_up(
     make_follow_up("f1", mb_run_id(), mb_turn_id()),
@@ -147,7 +147,7 @@ test "harness_control/follow_up_enqueue_accepted" {
 }
 
 ///|
-test "harness_control/follow_up_consume_one_at_a_time" {
+test "puppet_control/follow_up_consume_one_at_a_time" {
   let mb = bound_mailbox()
   let _ = mb.enqueue_follow_up(make_follow_up("f1", mb_run_id(), mb_turn_id()))
   let _ = mb.enqueue_follow_up(make_follow_up("f2", mb_run_id(), mb_turn_id()))
@@ -176,7 +176,7 @@ test "harness_control/follow_up_consume_one_at_a_time" {
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-test "harness_control/resume_enqueue_and_take" {
+test "puppet_control/resume_enqueue_and_take" {
   let mb = bound_mailbox()
   let result = mb.enqueue_resume(make_resume("r1", mb_run_id(), "susp_1"))
   assert_true(result is Accepted(_))
@@ -191,7 +191,7 @@ test "harness_control/resume_enqueue_and_take" {
 }
 
 ///|
-test "harness_control/resume_duplicate_suspension_rejected" {
+test "puppet_control/resume_duplicate_suspension_rejected" {
   let mb = bound_mailbox()
   let _ = mb.enqueue_resume(make_resume("r1", mb_run_id(), "susp_1"))
   let result = mb.enqueue_resume(make_resume("r2", mb_run_id(), "susp_1"))
@@ -199,7 +199,7 @@ test "harness_control/resume_duplicate_suspension_rejected" {
 }
 
 ///|
-test "harness_control/resume_wrong_run_rejected" {
+test "puppet_control/resume_wrong_run_rejected" {
   let mb = bound_mailbox()
   let result = mb.enqueue_resume(
     make_resume("r1", RunId::unchecked("run_OTHER"), "susp_1"),
@@ -212,7 +212,7 @@ test "harness_control/resume_wrong_run_rejected" {
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-test "harness_control/abort_first_accepted_second_already_requested" {
+test "puppet_control/abort_first_accepted_second_already_requested" {
   let mb = bound_mailbox()
   let r1 = mb.enqueue_abort(make_abort("a1", mb_run_id()))
   assert_true(r1 is Accepted(_))
@@ -222,14 +222,14 @@ test "harness_control/abort_first_accepted_second_already_requested" {
 }
 
 ///|
-test "harness_control/abort_no_active_run_rejected" {
+test "puppet_control/abort_no_active_run_rejected" {
   let mb = ControlMailbox::new()
   let r = mb.enqueue_abort(make_abort("a1", mb_run_id()))
   assert_true(r is RejectedStale(_))
 }
 
 ///|
-test "harness_control/abort_stale_run_rejected" {
+test "puppet_control/abort_stale_run_rejected" {
   let mb = bound_mailbox()
   let r = mb.enqueue_abort(make_abort("a1", RunId::unchecked("run_OTHER")))
   assert_true(r is RejectedStale(_))
@@ -240,7 +240,7 @@ test "harness_control/abort_stale_run_rejected" {
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-test "harness_control/clear_run_drops_queued_commands" {
+test "puppet_control/clear_run_drops_queued_commands" {
   let mb = bound_mailbox()
   let _ = mb.enqueue_steer(make_steer("s1", mb_run_id(), mb_turn_id()))
   let _ = mb.enqueue_follow_up(make_follow_up("f1", mb_run_id(), mb_turn_id()))
@@ -259,7 +259,7 @@ test "harness_control/clear_run_drops_queued_commands" {
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-test "harness_control/queue_policy_all_vs_one_at_a_time" {
+test "puppet_control/queue_policy_all_vs_one_at_a_time" {
   // Steer is All (drain everything); follow-up is OneAtATime (one per call).
   // Documented by the consume methods' behaviour.
   let mb = bound_mailbox()
@@ -281,7 +281,7 @@ test "harness_control/queue_policy_all_vs_one_at_a_time" {
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-test "harness_control/quiescent_status_idle_initially" {
+test "puppet_control/quiescent_status_idle_initially" {
   let mb = ControlMailbox::new()
   let s = mb.quiescent_status()
   // Initial quiescent status is Idle.
@@ -289,14 +289,14 @@ test "harness_control/quiescent_status_idle_initially" {
 }
 
 ///|
-test "harness_control/set_quiescent_updates_status" {
+test "puppet_control/set_quiescent_updates_status" {
   let mb = ControlMailbox::new()
   mb.set_quiescent(Shutdown)
   assert_true(mb.quiescent_status() is Shutdown)
 }
 
 ///|
-async test "harness_control/wait_idle_returns_when_already_idle" {
+async test "puppet_control/wait_idle_returns_when_already_idle" {
   // When the mailbox is already Idle, wait_idle must return immediately.
   let mb = ControlMailbox::new()
   let s = mb.wait_idle()
@@ -304,7 +304,7 @@ async test "harness_control/wait_idle_returns_when_already_idle" {
 }
 
 ///|
-async test "harness_control/wait_idle_returns_terminal" {
+async test "puppet_control/wait_idle_returns_terminal" {
   let mb = ControlMailbox::new()
   let outcome : RunOutcome = Completed(
     final_message=AssistantMessage(

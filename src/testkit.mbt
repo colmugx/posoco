@@ -955,3 +955,106 @@ pub fn tk_config() -> AgentConfig {
     model_context_window: None,
   }
 }
+
+// ──────────────────────────────────────────────────────────────────────────
+// ManifestOnly — anonymous Extension stub for tests and prototypes.
+// ──────────────────────────────────────────────────────────────────────────
+
+///|
+/// Anonymous Extension wrapper around a pre-built `ExtensionManifest`.
+///
+/// Real extensions implement `Extension` directly on their struct (so the
+/// compiler knows the concrete type satisfies every port it contributes).
+/// But tests, prototypes, and one-off agents often want to compose ports
+/// without defining a fresh named struct. `ManifestOnly` fills that role:
+/// build a manifest with `tk_ext`, wrap it, and pass it to `Agent::new` as
+/// a `&Extension`.
+///
+/// This is a testkit-only convenience. Production agents should expose a
+/// typed `<ext>_extension()` factory that returns an `ExtensionManifest`
+/// from a real struct, not use `ManifestOnly`.
+pub(all) struct ManifestOnly {
+  cached : @port.ExtensionManifest
+}
+
+///|
+/// Construct an anonymous Extension from a pre-built manifest.
+pub fn ManifestOnly::new(manifest : @port.ExtensionManifest) -> ManifestOnly {
+  { cached: manifest }
+}
+
+///|
+pub impl @port.Extension for ManifestOnly with fn extension_id(self) -> String {
+  self.cached.id
+}
+
+///|
+pub impl @port.Extension for ManifestOnly with fn manifest(self) -> @port.ExtensionManifest {
+  self.cached
+}
+
+///|
+/// Expose Extension methods on ManifestOnly for dot-syntax callers and so
+/// `&ManifestOnly` can be coerced to `&Extension`.
+pub extend ManifestOnly with @port.Extension::{extension_id, manifest}
+
+// ──────────────────────────────────────────────────────────────────────────
+// tk_ext — labeled manifest builder
+// ──────────────────────────────────────────────────────────────────────────
+
+///|
+/// Build a `ManifestOnly` extension from labeled optional arguments.
+///
+/// Every port argument defaults to empty; pick the ones the test needs. The
+/// `model` parameter is `&ModelPort?` because at most one model is allowed
+/// per agent — `Some(m)` puts it in the manifest's `models` array, `None`
+/// leaves models empty (use a different extension to contribute the model).
+///
+/// Example:
+/// ```moonbit nocheck
+/// let model = ScriptedModel::new(..)
+/// let tools = RecordingToolProvider::new(..)
+/// let store = RecordingSessionStore::new()
+/// let observer = RecordingObserver::new()
+/// let agent = Agent::new(
+///   exts=[
+///     tk_ext("model", model=Some(model)),
+///     tk_ext("tools", tools=[tools]),
+///     tk_ext("io", sessions=[store], observers=[observer]),
+///   ],
+///   config=tk_config(),
+/// )
+/// ```
+pub fn tk_ext(
+  id~ : String,
+  model? : &@port.ModelPort? = None,
+  tools? : Array[&@port.ToolProvider] = [],
+  sessions? : Array[&@port.SessionStore] = [],
+  observers? : Array[&@port.Observer] = [],
+  compressors? : Array[&@port.Compressor] = [],
+  hooks? : Array[&@port.PipelineHook] = [],
+  memory? : Array[&@port.MemoryPort] = [],
+  lifecycle? : Array[&@port.Lifecycle] = [],
+  commands? : Array[&@port.CommandPort] = [],
+  ui? : Array[&@port.UiPort] = [],
+  prompt_contributors? : Array[&@port.SystemPromptContributor] = [],
+) -> ManifestOnly {
+  let models : Array[&@port.ModelPort] = match model {
+    Some(m) => [m]
+    None => []
+  }
+  ManifestOnly::new({
+    id,
+    models,
+    tools,
+    sessions,
+    observers,
+    compressors,
+    hooks,
+    memory,
+    lifecycle,
+    commands,
+    ui,
+    prompt_contributors,
+  })
+}

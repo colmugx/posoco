@@ -192,6 +192,7 @@ fn build_tool_routing(
         raise @error.CompositionError::ToolCollision(
           safe_error_label(tool.name),
           "tool collision; first declaration: \{prev_source}; conflicting declaration: \{provenance}",
+          manifests=[],
         )
       }
       tool_map[tool.name] = provider
@@ -217,40 +218,42 @@ pub(all) struct Agent {
 }
 
 ///|
-/// Construct an Agent with array-based composition.
+/// Construct an Agent from extensions.
 ///
-/// - `tools`: routed by tool name; a name collision RAISES
-///   `CompositionError::ToolCollision` (fail-fast, not last-wins)
-/// - `hooks`: chained in order (first runs first)
-/// - `memory`: fan-out store/search
-/// - `compressors`: first non-None wins
-/// - `observers`: all receive every event
-/// - `sessions`: write-all, read-first
+/// `exts` is the single composition surface: every port the agent will use
+/// comes from one of the extensions, discovered via its `Extension::manifest`
+/// implementation. Aggregation order is the array order; tool and
+/// slash-command collisions fail-fast with manifest-id-attributed errors.
+///
+/// At least one extension MUST contribute a `ModelPort`. Multi-model routing
+/// is solved inside a meta-extension (e.g. posoco-ext-llm), not by declaring
+/// multiple top-level models — `MultipleModels` is raised otherwise.
+///
+/// The internal execution engine (currently the legacy run loop; transitioning
+/// to Puppetry in R3) consumes the aggregated ports directly.
 pub fn Agent::new(
-  model_port : &@port.ModelPort,
-  tools~ : Array[&@port.ToolProvider],
-  hooks~ : Array[&@port.PipelineHook],
-  memory~ : Array[&@port.MemoryPort],
-  compressors~ : Array[&@port.Compressor],
-  observers~ : Array[&@port.Observer],
-  sessions~ : Array[&@port.SessionStore],
-  lifecycle~ : &@port.Lifecycle?,
+  exts~ : Array[&@port.Extension],
   config~ : AgentConfig,
 ) -> Agent raise @error.CompositionError {
-  let tool_routing = build_tool_routing(tools)
-  let pipeline_hook : &@port.PipelineHook? = match hooks.length() {
+  let agg = aggregate_extensions(exts)
+  let tool_routing = build_tool_routing(agg.tools)
+  let pipeline_hook : &@port.PipelineHook? = match agg.hooks.length() {
     0 => None
-    1 => Some(hooks[0])
-    _ => Some(HookChain::{ hooks, })
+    1 => Some(agg.hooks[0])
+    _ => Some(HookChain::{ hooks: agg.hooks.copy() })
+  }
+  let lifecycle : &@port.Lifecycle? = match agg.lifecycle.length() {
+    0 => None
+    _ => Some(agg.lifecycle[0])
   }
   {
-    model_port,
+    model_port: agg.model,
     tool_routing,
     pipeline_hook,
-    compressors,
-    observers,
-    memories: memory,
-    sessions,
+    compressors: agg.compressors,
+    observers: agg.observers,
+    memories: agg.memory,
+    sessions: agg.sessions,
     lifecycle,
     config,
   }

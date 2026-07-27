@@ -61,7 +61,7 @@ fn make_entry(
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-test "harness_journal/append_only_monotonic_revision" {
+test "puppet_journal/append_only_monotonic_revision" {
   let j = InMemoryJournal::new()
   assert_true(j.revision() == 0)
   let e1 = make_entry(InputAccepted, "sp1", 0)
@@ -75,7 +75,7 @@ test "harness_journal/append_only_monotonic_revision" {
 }
 
 ///|
-test "harness_journal/empty_batch_noop" {
+test "puppet_journal/empty_batch_noop" {
   let j = InMemoryJournal::new()
   let r = j.append([])
   assert_true(r == 0)
@@ -83,7 +83,7 @@ test "harness_journal/empty_batch_noop" {
 }
 
 ///|
-test "harness_journal/multi_entry_batch_single_revision_window" {
+test "puppet_journal/multi_entry_batch_single_revision_window" {
   let j = InMemoryJournal::new()
   // Two ToolCommitted entries in one batch (parallel tool batch).
   let e1 = make_entry(ToolCommitted, "sp1", 0)
@@ -101,12 +101,12 @@ test "harness_journal/multi_entry_batch_single_revision_window" {
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-test "harness_journal/duplicate_entry_id_rejected" {
+test "puppet_journal/duplicate_entry_id_rejected" {
   let j = InMemoryJournal::new()
   let e1 = make_entry(InputAccepted, "sp1", 0)
   let _ = j.append([e1])
   // Re-append the same entry (same dedup key) — must fail.
-  let result : Result[Int, HarnessError] = Ok(j.append([e1])) catch {
+  let result : Result[Int, PuppetError] = Ok(j.append([e1])) catch {
     e => Err(e)
   }
   assert_true(result is Err(_))
@@ -129,7 +129,7 @@ test "harness_journal/duplicate_entry_id_rejected" {
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-test "harness_journal/post_terminal_append_rejected" {
+test "puppet_journal/post_terminal_append_rejected" {
   let j = InMemoryJournal::new()
   // First commit a RunTerminal entry.
   let terminal = make_entry(RunTerminal, "sp_final", 0)
@@ -137,7 +137,7 @@ test "harness_journal/post_terminal_append_rejected" {
   assert_true(j.revision() == 1)
   // Now try to append more for the same run.
   let later = make_entry(ToolCommitted, "sp_late", 0)
-  let result : Result[Int, HarnessError] = Ok(j.append([later])) catch {
+  let result : Result[Int, PuppetError] = Ok(j.append([later])) catch {
     e => Err(e)
   }
   assert_true(result is Err(_))
@@ -149,7 +149,7 @@ test "harness_journal/post_terminal_append_rejected" {
 }
 
 ///|
-test "harness_journal/suspended_does_not_close_journal" {
+test "puppet_journal/suspended_does_not_close_journal" {
   let j = InMemoryJournal::new()
   // Commit a RunSuspended entry.
   let suspended = make_entry(RunSuspended, "sp_susp", 0)
@@ -165,7 +165,7 @@ test "harness_journal/suspended_does_not_close_journal" {
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-test "harness_journal/entries_for_run_filters_by_run" {
+test "puppet_journal/entries_for_run_filters_by_run" {
   let j = InMemoryJournal::new()
   let e1 = make_entry(InputAccepted, "sp1", 0)
   let _ = j.append([e1])

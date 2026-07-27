@@ -64,6 +64,15 @@ fn fresh_state() -> RunState raise KernelError {
 }
 
 ///|
+fn fresh_state_with_budget(budget : Budget) -> RunState raise KernelError {
+  RunState::initial(
+    run_id=RunId::unchecked("run_budget"),
+    session_id=SessionId::unchecked("sess_budget"),
+    budget~,
+  )
+}
+
+///|
 fn start_input() -> RunInput {
   Start(payload=StartPayload::{
     initial_messages: [UserMessage(content=[Text("hi")])],
@@ -187,6 +196,62 @@ test "C-HAPPY-ONE-TOOL: model step → tool call → ExecuteTool → ToolComplet
   assert_eq(st_ready.phase(), ReadyForModel)
   // Transcript: [UserMessage, AssistantMessage, ToolMessage]
   assert_eq(st_ready.transcript().length(), 3)
+}
+
+///|
+test "C-BUDGET-TOOL-BATCH: count atomically before any tool effect is exposed" {
+  let catalog = make_catalog_v1()
+  let initial = fresh_state_with_budget(
+    Budget::bounded(
+      max_model_steps=10,
+      max_tool_rounds=10,
+      max_tool_calls=2,
+      max_total_tokens=1000,
+    ),
+  )
+  let started = reduce(initial, catalog, start_input())
+  let waiting = run_model_step(started.next_state(), catalog, Json::null())
+  let (effect_id, model_step_id) = match waiting.effects()[0] {
+    CallModel(effect_id~, payload~) => (effect_id, payload.model_step_id)
+    _ => fail("expected CallModel effect")
+  }
+  let completion = AssistantCompletion::new(
+    content=[Text("calling two tools")],
+    tool_calls=[
+      {
+        call_id: CallId::unchecked("budget_1"),
+        name: ToolName::unchecked("read"),
+        arguments: Json::object(Map::from_array([("path", Json::string("/a"))])),
+      },
+      {
+        call_id: CallId::unchecked("budget_2"),
+        name: ToolName::unchecked("read"),
+        arguments: Json::object(Map::from_array([("path", Json::string("/b"))])),
+      },
+    ],
+    reasoning=None,
+    finish_reason=ToolCalls,
+    usage=None,
+  )
+  let out = reduce(
+    waiting.next_state(),
+    catalog,
+    ModelCompleted(payload={ effect_id, model_step_id, completion }),
+  )
+  let terminal = out.next_state()
+  assert_eq(out.effects().length(), 0)
+  assert_eq(terminal.budget_consumed().tool_rounds, 1)
+  assert_eq(terminal.budget_consumed().tool_calls, 2)
+  match terminal.outcome() {
+    Some(Failed(reason=BudgetExhausted(dimension=ToolCalls))) => ()
+    _ => fail("expected ToolCalls budget exhaustion before tool execution")
+  }
+  assert_true(
+    out
+    .events()
+    .iter()
+    .any(fn(event) { event is BudgetExhausted(dimension=ToolCalls, ..) }),
+  )
 }
 
 // ──────────────────────────────────────────────────────────────────────────

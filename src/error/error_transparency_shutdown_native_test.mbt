@@ -17,14 +17,15 @@ async test "panic t07_shutdown_failure_is_not_swallowed" {
   let store = @posoco.RecordingSessionStore::new()
   let lifecycle = FailingLifecycle::{  }
   let agent = @posoco.Agent::new(
-    model,
-    tools=[],
-    hooks=[],
-    memory=[],
-    compressors=[@posoco.NoopCompressor::{  }],
-    observers=[],
-    sessions=[store],
-    lifecycle=Some(lifecycle),
+    exts=[
+      @posoco.tk_ext(id="model", model=Some(model)),
+      @posoco.tk_ext(
+        id="io",
+        sessions=[store],
+        compressors=[@posoco.NoopCompressor::{  }],
+        lifecycle=[lifecycle],
+      ),
+    ],
     config=err_config(),
   )
   agent.shutdown()

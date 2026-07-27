@@ -12,7 +12,7 @@
 ///   requirement.
 ///
 /// Plus an **idle barrier**: a `@cond_var.Cond` that `wait_idle` waits on,
-/// woken when the Harness reaches a quiescent phase (Idle / Suspended /
+/// woken when the Puppet reaches a quiescent phase (Idle / Suspended /
 /// Shutdown).
 ///
 /// IDs (ADR §6.1): every command carries the IDs required for safe-point
@@ -95,7 +95,7 @@ pub(all) struct SteerCommand {
   /// Observed model_step_id when the steer was enqueued.
   observed_model_step_id : ModelStepId
   /// Opaque steer payload (e.g. additional system message). The Kernel
-  /// does not interpret this; the Harness converts it to a RunInput at
+  /// does not interpret this; the Puppet converts it to a RunInput at
   /// consume time.
   payload : Json
 } derive(Eq, Debug)
@@ -257,7 +257,7 @@ pub impl Show for EnqueueResult with fn to_string(self : EnqueueResult) -> Strin
 let default_max_queue_depth : Int = 64
 
 ///|
-/// The control mailbox bundle. One instance per Harness; tracks the
+/// The control mailbox bundle. One instance per Puppet; tracks the
 /// currently-active run_id (so stale commands targeting an old run are
 /// rejected at enqueue time without needing to consult the phase gate).
 ///
@@ -285,9 +285,9 @@ pub struct ControlMailbox {
   /// Currently-active turn_id. None when Idle.
   mut active_turn_id : TurnId?
   /// Condition variable for the idle barrier. `wait_idle` waits on this;
-  /// the Harness signals it when reaching a quiescent phase.
+  /// the Puppet signals it when reaching a quiescent phase.
   idle_cond : @cond_var.Cond
-  /// Current quiescent status — set by the Harness when it reaches Idle /
+  /// Current quiescent status — set by the Puppet when it reaches Idle /
   /// Suspended / Shutdown. `wait_idle` reads this upon wake.
   mut quiescent_status : QuiescentStatus
   max_depth : Int
@@ -295,7 +295,7 @@ pub struct ControlMailbox {
 
 ///|
 /// Typed quiescent status returned by `wait_idle`. Distinct from
-/// `HarnessPhase` because it carries suspension details and the terminal
+/// `PuppetPhase` because it carries suspension details and the terminal
 /// outcome (ADR §6.7).
 pub(all) enum QuiescentStatus {
   /// No run was active.
@@ -308,7 +308,7 @@ pub(all) enum QuiescentStatus {
   )
   /// Run reached terminal outcome; carries the outcome for the caller.
   Terminal(outcome~ : RunOutcome)
-  /// Harness has shut down. No further commands will be accepted.
+  /// Puppet has shut down. No further commands will be accepted.
   Shutdown
 } derive(Eq, Debug)
 
@@ -341,7 +341,7 @@ pub fn ControlMailbox::new() -> ControlMailbox {
 }
 
 ///|
-/// Bind the mailbox to a new active run/turn. Called by the Harness when
+/// Bind the mailbox to a new active run/turn. Called by the Puppet when
 /// acquiring a prompt lease. Clears any leftover state from the previous
 /// run.
 pub fn ControlMailbox::bind_run(
@@ -363,7 +363,7 @@ pub fn ControlMailbox::bind_run(
 }
 
 ///|
-/// Clear the active run binding. Called by the Harness when the run
+/// Clear the active run binding. Called by the Puppet when the run
 /// reaches terminal. Any queued commands targeting the now-terminal run
 /// are dropped.
 pub fn ControlMailbox::clear_run(self : ControlMailbox) -> Unit {
@@ -543,11 +543,11 @@ pub fn ControlMailbox::enqueue_abort(
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Consume — called by the Harness at safe points
+// Consume — called by the Puppet at safe points
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-/// Consume all steer commands at one safe point. The Harness calls this
+/// Consume all steer commands at one safe point. The Puppet calls this
 /// after a complete tool batch commits and before allocating the next
 /// model_step_id. Returns the commands in FIFO order; the queue is
 /// drained.
@@ -574,7 +574,7 @@ pub fn ControlMailbox::consume_steers(
 
 ///|
 /// Consume one follow-up command (OneAtATime policy). Returns the oldest
-/// if any, else None. The Harness calls this at a turn boundary.
+/// if any, else None. The Puppet calls this at a turn boundary.
 pub fn ControlMailbox::consume_one_follow_up(
   self : ControlMailbox,
 ) -> FollowUpCommand? {
@@ -612,7 +612,7 @@ pub fn ControlMailbox::take_resume(
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-/// Current quiescent status. Set by the Harness via `set_quiescent`.
+/// Current quiescent status. Set by the Puppet via `set_quiescent`.
 pub fn ControlMailbox::quiescent_status(
   self : ControlMailbox,
 ) -> QuiescentStatus {
@@ -620,7 +620,7 @@ pub fn ControlMailbox::quiescent_status(
 }
 
 ///|
-/// Update the quiescent status and wake all waiters. Called by the Harness
+/// Update the quiescent status and wake all waiters. Called by the Puppet
 /// when it reaches Idle / Suspended / Terminal / Shutdown. The status is
 /// read by `wait_idle` upon wake.
 pub fn ControlMailbox::set_quiescent(
@@ -637,7 +637,7 @@ pub fn ControlMailbox::set_quiescent(
 /// wake on `set_quiescent`.
 ///
 /// Returns the quiescent status (never `Idle`-but-still-active — the
-/// Harness only sets quiescent when truly quiescent).
+/// Puppet only sets quiescent when truly quiescent).
 pub async fn ControlMailbox::wait_idle(
   self : ControlMailbox,
 ) -> QuiescentStatus {
@@ -653,7 +653,7 @@ pub async fn ControlMailbox::wait_idle(
       Terminal(..) => return self.quiescent_status
       Shutdown => return Shutdown
     }
-    // Active state: wait for the Harness to signal.
+    // Active state: wait for the Puppet to signal.
     self.idle_cond.wait()
   }
   // Unreachable; MoonBit needs a return at the end.

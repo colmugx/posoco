@@ -220,14 +220,16 @@ async test "simple_turn_no_tools" {
   let config = make_config()
 
   let agent = Agent::new(
-    model,
-    tools=[empty_tools()],
-    hooks=[],
-    memory=[],
-    compressors=[NoopCompressor::{  }],
-    observers=[observer],
-    sessions=[store],
-    lifecycle=None,
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(
+        id="io",
+        tools=[empty_tools()],
+        sessions=[store],
+        observers=[observer],
+        compressors=[NoopCompressor::{  }],
+      ),
+    ],
     config~,
   )
   let result = agent.run_turn(user_msg("hello"), "session_1")
@@ -261,14 +263,12 @@ async test "turn_with_single_tool" {
   let config = make_config()
 
   let agent = Agent::new(
-    model,
-    tools=[tools],
-    hooks=[],
-    memory=[],
-    compressors=[NoopCompressor::{  }],
-    observers=[observer],
-    sessions=[store],
-    lifecycle=None,
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", tools=[tools], sessions=[store], observers=[observer], compressors=[
+        NoopCompressor::{  },
+      ]),
+    ],
     config~,
   )
   let result = agent.run_turn(user_msg("run ls"), "session_1")
@@ -302,14 +302,12 @@ async test "tool_failure_non_fatal" {
   let config = make_config()
 
   let agent = Agent::new(
-    model,
-    tools=[tools],
-    hooks=[],
-    memory=[],
-    compressors=[NoopCompressor::{  }],
-    observers=[observer],
-    sessions=[store],
-    lifecycle=None,
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", tools=[tools], sessions=[store], observers=[observer], compressors=[
+        NoopCompressor::{  },
+      ]),
+    ],
     config~,
   )
   let result = agent.run_turn(user_msg("do it"), "session_1")
@@ -325,14 +323,16 @@ async test "model_error_aborts_turn" {
   let config = make_config()
 
   let agent = Agent::new(
-    model,
-    tools=[empty_tools()],
-    hooks=[],
-    memory=[],
-    compressors=[NoopCompressor::{  }],
-    observers=[observer],
-    sessions=[store],
-    lifecycle=None,
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(
+        id="io",
+        tools=[empty_tools()],
+        sessions=[store],
+        observers=[observer],
+        compressors=[NoopCompressor::{  }],
+      ),
+    ],
     config~,
   )
   match
@@ -369,14 +369,17 @@ async test "hook_aborts_before_tool" {
   let abort_hook = AbortHook::{  }
 
   let agent = Agent::new(
-    model,
-    tools=[tools],
-    hooks=[abort_hook],
-    memory=[],
-    compressors=[NoopCompressor::{  }],
-    observers=[observer],
-    sessions=[store],
-    lifecycle=None,
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(
+        id="io",
+        tools=[tools],
+        hooks=[abort_hook],
+        sessions=[store],
+        observers=[observer],
+        compressors=[NoopCompressor::{  }],
+      ),
+    ],
     config~,
   )
   match
@@ -399,14 +402,16 @@ async test "compression_new_thread" {
   let config = make_config()
 
   let agent = Agent::new(
-    model,
-    tools=[empty_tools()],
-    hooks=[],
-    memory=[],
-    compressors=[compressor],
-    observers=[observer],
-    sessions=[store],
-    lifecycle=None,
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(
+        id="io",
+        tools=[empty_tools()],
+        sessions=[store],
+        observers=[observer],
+        compressors=[compressor],
+      ),
+    ],
     config~,
   )
   let result = agent.run_turn(user_msg("long context"), "session_1")
@@ -446,14 +451,16 @@ async test "compression_replace" {
   let config = make_config()
 
   let agent = Agent::new(
-    model,
-    tools=[empty_tools()],
-    hooks=[],
-    memory=[],
-    compressors=[compressor],
-    observers=[observer],
-    sessions=[store],
-    lifecycle=None,
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(
+        id="io",
+        tools=[empty_tools()],
+        sessions=[store],
+        observers=[observer],
+        compressors=[compressor],
+      ),
+    ],
     config~,
   )
   let result = agent.run_turn(user_msg("new msg"), "session_1")
@@ -501,14 +508,12 @@ async test "tool_loop_exceeded" {
   }
 
   let agent = Agent::new(
-    model,
-    tools=[tools],
-    hooks=[],
-    memory=[],
-    compressors=[NoopCompressor::{  }],
-    observers=[observer],
-    sessions=[store],
-    lifecycle=None,
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", tools=[tools], sessions=[store], observers=[observer], compressors=[
+        NoopCompressor::{  },
+      ]),
+    ],
     config~,
   )
   match
@@ -598,14 +603,12 @@ async test "observer_event_sequence" {
   let config = make_config()
 
   let agent = Agent::new(
-    model,
-    tools=[tools],
-    hooks=[],
-    memory=[],
-    compressors=[NoopCompressor::{  }],
-    observers=[observer],
-    sessions=[store],
-    lifecycle=None,
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", tools=[tools], sessions=[store], observers=[observer], compressors=[
+        NoopCompressor::{  },
+      ]),
+    ],
     config~,
   )
   let _ = agent.run_turn(user_msg("sequence"), "session_1")
@@ -645,14 +648,16 @@ async test "session_persistence" {
   let config = make_config()
 
   let agent = Agent::new(
-    model,
-    tools=[empty_tools()],
-    hooks=[],
-    memory=[],
-    compressors=[NoopCompressor::{  }],
-    observers=[observer],
-    sessions=[store],
-    lifecycle=None,
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(
+        id="io",
+        tools=[empty_tools()],
+        sessions=[store],
+        observers=[observer],
+        compressors=[NoopCompressor::{  }],
+      ),
+    ],
     config~,
   )
   let result = agent.run_turn(user_msg("persist me"), "session_1")
@@ -707,14 +712,17 @@ async test "hook_rewrites_before_model_messages" {
   let rewriter = RewriteModelHook::{  }
   let config = make_config()
   let agent = Agent::new(
-    model,
-    tools=[empty_tools()],
-    hooks=[rewriter],
-    memory=[],
-    compressors=[NoopCompressor::{  }],
-    observers=[observer],
-    sessions=[store],
-    lifecycle=None,
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(
+        id="io",
+        tools=[empty_tools()],
+        hooks=[rewriter],
+        sessions=[store],
+        observers=[observer],
+        compressors=[NoopCompressor::{  }],
+      ),
+    ],
     config~,
   )
   let result = agent.run_turn(user_msg("hello"), "session_1")
@@ -767,14 +775,17 @@ async test "hook_deferred_skips_execution" {
   let hook = DeferToolHook::{  }
   let config = make_config()
   let agent = Agent::new(
-    model,
-    tools=[tools],
-    hooks=[hook],
-    memory=[],
-    compressors=[NoopCompressor::{  }],
-    observers=[observer],
-    sessions=[store],
-    lifecycle=None,
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(
+        id="io",
+        tools=[tools],
+        hooks=[hook],
+        sessions=[store],
+        observers=[observer],
+        compressors=[NoopCompressor::{  }],
+      ),
+    ],
     config~,
   )
   let result = agent.run_turn(user_msg("use restricted"), "session_1")
@@ -839,14 +850,16 @@ async test "agent_routes_tools_to_correct_provider" {
   let config = make_config()
 
   let agent = Agent::new(
-    model,
-    tools=[shell_tools, mcp_tools],
-    hooks=[],
-    memory=[],
-    compressors=[NoopCompressor::{  }],
-    observers=[observer],
-    sessions=[store],
-    lifecycle=None,
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(
+        id="io",
+        tools=[shell_tools, mcp_tools],
+        sessions=[store],
+        observers=[observer],
+        compressors=[NoopCompressor::{  }],
+      ),
+    ],
     config~,
   )
   let result = agent.run_turn(user_msg("run both"), "session_1")
@@ -892,21 +905,23 @@ async test "agent_tool_collision_detection" {
   // T06-B: collision now fails composition (raise) rather than last-wins.
   let composition_result = Ok(
     Agent::new(
-      model,
-      tools=[provider1, provider2],
-      hooks=[],
-      memory=[],
-      compressors=[NoopCompressor::{  }],
-      observers=[observer],
-      sessions=[store],
-      lifecycle=None,
+      exts=[
+        tk_ext(id="model", model=Some(model)),
+        tk_ext(
+          id="io",
+          tools=[provider1, provider2],
+          sessions=[store],
+          observers=[observer],
+          compressors=[NoopCompressor::{  }],
+        ),
+      ],
       config~,
     ),
   ) catch {
     e => Err(e)
   }
   match composition_result {
-    Err(@error.CompositionError::ToolCollision(name, _msg)) =>
+    Err(@error.CompositionError::ToolCollision(name, _msg, ..)) =>
       assert_eq(name, "bash")
     _ => fail("expected CompositionError::ToolCollision for duplicate 'bash'")
   }
@@ -962,14 +977,16 @@ async test "streaming_events_emitted_during_chat" {
   let config = make_config()
 
   let agent = Agent::new(
-    model,
-    tools=[empty_tools()],
-    hooks=[],
-    memory=[],
-    compressors=[NoopCompressor::{  }],
-    observers=[observer],
-    sessions=[store],
-    lifecycle=None,
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(
+        id="io",
+        tools=[empty_tools()],
+        sessions=[store],
+        observers=[observer],
+        compressors=[NoopCompressor::{  }],
+      ),
+    ],
     config~,
   )
   let _ = agent.run_turn(user_msg("stream test"), "session_s1")
@@ -1030,14 +1047,16 @@ async test "multiple_observers_fan_out" {
   let config = make_config()
 
   let agent = Agent::new(
-    model,
-    tools=[empty_tools()],
-    hooks=[],
-    memory=[],
-    compressors=[NoopCompressor::{  }],
-    observers=[obs1, obs2],
-    sessions=[store],
-    lifecycle=None,
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(
+        id="io",
+        tools=[empty_tools()],
+        sessions=[store],
+        observers=[obs1, obs2],
+        compressors=[NoopCompressor::{  }],
+      ),
+    ],
     config~,
   )
   let _ = agent.run_turn(user_msg("broadcast"), "session_1")
@@ -1058,14 +1077,17 @@ async test "multiple_hooks_chained_in_order" {
   let config = make_config()
 
   let agent = Agent::new(
-    model,
-    tools=[empty_tools()],
-    hooks=[hook1, hook2],
-    memory=[],
-    compressors=[NoopCompressor::{  }],
-    observers=[observer],
-    sessions=[store],
-    lifecycle=None,
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(
+        id="io",
+        tools=[empty_tools()],
+        hooks=[hook1, hook2],
+        sessions=[store],
+        observers=[observer],
+        compressors=[NoopCompressor::{  }],
+      ),
+    ],
     config~,
   )
   let _ = agent.run_turn(user_msg("multi-hook"), "session_1")
@@ -1088,14 +1110,16 @@ async test "multiple_session_stores_write_all" {
   let config = make_config()
 
   let agent = Agent::new(
-    model,
-    tools=[empty_tools()],
-    hooks=[],
-    memory=[],
-    compressors=[NoopCompressor::{  }],
-    observers=[observer],
-    sessions=[store1, store2],
-    lifecycle=None,
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(
+        id="io",
+        tools=[empty_tools()],
+        sessions=[store1, store2],
+        observers=[observer],
+        compressors=[NoopCompressor::{  }],
+      ),
+    ],
     config~,
   )
   let _ = agent.run_turn(user_msg("persist"), "session_1")
@@ -1305,14 +1329,17 @@ async test "hook_turn_error_fires_on_model_error" {
   let config = make_config()
 
   let agent = Agent::new(
-    model,
-    tools=[empty_tools()],
-    hooks=[log_hook],
-    memory=[],
-    compressors=[NoopCompressor::{  }],
-    observers=[observer],
-    sessions=[store],
-    lifecycle=None,
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(
+        id="io",
+        tools=[empty_tools()],
+        hooks=[log_hook],
+        sessions=[store],
+        observers=[observer],
+        compressors=[NoopCompressor::{  }],
+      ),
+    ],
     config~,
   )
   // Model has no responses → raises; run_turn catches and fires TurnError.
@@ -1353,14 +1380,17 @@ async test "hook_turn_error_fires_on_before_tool_abort" {
   let config = make_config()
 
   let agent = Agent::new(
-    model,
-    tools=[tools],
-    hooks=[log_hook, abort_hook],
-    memory=[],
-    compressors=[NoopCompressor::{  }],
-    observers=[observer],
-    sessions=[store],
-    lifecycle=None,
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(
+        id="io",
+        tools=[tools],
+        hooks=[log_hook, abort_hook],
+        sessions=[store],
+        observers=[observer],
+        compressors=[NoopCompressor::{  }],
+      ),
+    ],
     config~,
   )
   let _ = Ok(agent.run_turn(user_msg("danger"), "session_1")) catch {

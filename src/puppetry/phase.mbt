@@ -1,9 +1,9 @@
 ///|
-/// Harness phase gate (M2-T02).
+/// Puppet phase gate (M2-T02).
 ///
-/// ADR §4: the Harness maintains a macro-level phase machine ON TOP OF the
+/// ADR §4: the Puppet maintains a macro-level phase machine ON TOP OF the
 /// reducer's `Phase`. The reducer phase describes one Run's micro-state; the
-/// Harness phase describes the product-level macro-state that gates which
+/// Puppet phase describes the product-level macro-state that gates which
 /// host commands are accepted.
 ///
 /// Invariants:
@@ -16,7 +16,7 @@
 ///   final shutdown transition.
 
 // ──────────────────────────────────────────────────────────────────────────
-// HarnessPhase (ADR §4 — Q7.1 recommendation: `HarnessPhase`)
+// PuppetPhase (ADR §4 — Q7.1 recommendation: `PuppetPhase`)
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
@@ -32,7 +32,7 @@
 /// - Terminalizing → Idle     (terminal event dispatched + cleanup)
 /// - Idle/Suspended/Active → ShuttingDown  (host shutdown call; Active defers)
 /// - ShuttingDown → Shutdown  (lifecycle rollback complete)
-pub(all) enum HarnessPhase {
+pub(all) enum PuppetPhase {
   Idle
   Active
   Suspended
@@ -42,7 +42,7 @@ pub(all) enum HarnessPhase {
 } derive(Eq, Debug)
 
 ///|
-pub impl Show for HarnessPhase with fn to_string(self : HarnessPhase) -> String {
+pub impl Show for PuppetPhase with fn to_string(self : PuppetPhase) -> String {
   match self {
     Idle => "Idle"
     Active => "Active"
@@ -55,10 +55,10 @@ pub impl Show for HarnessPhase with fn to_string(self : HarnessPhase) -> String 
 
 ///|
 /// Whether this phase is quiescent — the union of Idle, Suspended and
-/// Shutdown per ADR §4. `wait_idle` wakes when the Harness reaches any of
+/// Shutdown per ADR §4. `wait_idle` wakes when the Puppet reaches any of
 /// these (with distinct typed status, never conflating Suspended with a
 /// terminal outcome).
-pub fn HarnessPhase::is_quiescent(self : HarnessPhase) -> Bool {
+pub fn PuppetPhase::is_quiescent(self : PuppetPhase) -> Bool {
   match self {
     Idle => true
     Suspended => true
@@ -68,9 +68,9 @@ pub fn HarnessPhase::is_quiescent(self : HarnessPhase) -> Bool {
 }
 
 ///|
-/// Whether the Harness will accept ANY new host command. Once `Shutdown`
-/// is reached, all commands fail with `HarnessError::AfterShutdown`.
-pub fn HarnessPhase::is_accepting(self : HarnessPhase) -> Bool {
+/// Whether the Puppet will accept ANY new host command. Once `Shutdown`
+/// is reached, all commands fail with `PuppetError::AfterShutdown`.
+pub fn PuppetPhase::is_accepting(self : PuppetPhase) -> Bool {
   match self {
     Shutdown => false
     _ => true
@@ -119,7 +119,7 @@ pub(all) struct OperationLease {
   operation_id : String
   /// Phase at acquisition. Used by release to detect misuse (e.g. releasing
   /// a Prompt lease during a Structural operation).
-  acquired_phase : HarnessPhase
+  acquired_phase : PuppetPhase
   /// Run id the lease is bound to. Set for Prompt/InFlight; empty for
   /// Structural reservations.
   run_id : RunId
@@ -148,7 +148,7 @@ pub fn OperationLease::turn_id(self : OperationLease) -> TurnId {
 }
 
 ///|
-pub fn OperationLease::acquired_phase(self : OperationLease) -> HarnessPhase {
+pub fn OperationLease::acquired_phase(self : OperationLease) -> PuppetPhase {
   self.acquired_phase
 }
 
@@ -189,28 +189,28 @@ pub impl Show for TurnId with fn to_string(self : TurnId) -> String {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// HarnessError (phase gate subset; extended by T04/T05)
+// PuppetError (phase gate subset; extended by T04/T05)
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-/// Typed errors raised by the Harness. Single suberror type because MoonBit
-/// can raise only one error type per function — all Harness subsystems
+/// Typed errors raised by the Puppet. Single suberror type because MoonBit
+/// can raise only one error type per function — all Puppet subsystems
 /// contribute variants here (phase/journal/lifecycle/event/control).
 ///
 /// Variants are grouped by subsystem; new subsystems append, they do not
 /// rename existing variants.
-pub(all) suberror HarnessError {
+pub(all) suberror PuppetError {
   // ── Phase gate (T02) ──
   /// Operation requested in a phase that does not accept it.
   IllegalPhaseTransition(
-    from~ : HarnessPhase,
-    to~ : HarnessPhase,
+    from~ : PuppetPhase,
+    to~ : PuppetPhase,
     operation~ : OperationClass,
     detail~ : String
   )
   /// Operation class not allowed in this phase (e.g. Structural while Active).
   OperationNotAllowedInPhase(
-    phase~ : HarnessPhase,
+    phase~ : PuppetPhase,
     operation~ : OperationClass,
     detail~ : String
   )
@@ -219,7 +219,7 @@ pub(all) suberror HarnessError {
   /// Release called with the wrong owner or after the lease was already
   /// released.
   LeaseNotHeld(operation_id~ : String, detail~ : String)
-  /// Host command issued after Harness reached Shutdown.
+  /// Host command issued after Puppet reached Shutdown.
   AfterShutdown(command~ : String)
   /// Snapshot capture failed (empty model, invalid budget, etc.).
   SnapshotInvalid(detail~ : String)
@@ -273,6 +273,13 @@ pub(all) suberror HarnessError {
   PumpLoopExceeded(iterations~ : Int)
   /// Effect completion arrived for an unknown or already-terminal effect.
   DuplicateOrLateCompletion(effect_id~ : EffectId, detail~ : String)
+  /// A host/executor task raised instead of returning its typed canonical
+  /// completion. This is never converted into a normal tool outcome.
+  EffectExecutionFailed(phase~ : String, cause~ : String)
+  /// The async runtime cancelled a model or tool wave. Kept distinct from a
+  /// host failure so callers can diagnose interruption without guessing from
+  /// a generic error string.
+  EffectExecutionCancelled(phase~ : String)
   /// Reducer raised KernelError (host-fatal; aborts the product lifecycle).
   ReducerInvariantViolation(category~ : InvariantCategory)
 }
@@ -282,7 +289,7 @@ pub(all) suberror HarnessError {
 pub(all) enum SavepointFailureCause {
   /// Contributor raised or returned Err.
   ContributorRaised(contributor_id~ : String, detail~ : String)
-  /// Harness validation rejected an entry (wrong kind, stale id, etc.).
+  /// Puppet validation rejected an entry (wrong kind, stale id, etc.).
   ValidationFailed(detail~ : String)
   /// Journal append or durability barrier failed.
   BarrierFailed(detail~ : String)
@@ -301,7 +308,7 @@ pub impl Show for SavepointFailureCause with fn to_string(
 }
 
 ///|
-pub impl Show for HarnessError with fn to_string(self : HarnessError) -> String {
+pub impl Show for PuppetError with fn to_string(self : PuppetError) -> String {
   match self {
     IllegalPhaseTransition(from~, to~, operation~, detail~) =>
       "IllegalPhaseTransition(\{from.to_string()}→\{to.to_string()}, op=\{operation.to_string()}, \{safe_label(detail)})"
@@ -338,6 +345,10 @@ pub impl Show for HarnessError with fn to_string(self : HarnessError) -> String 
     PumpLoopExceeded(iterations~) => "PumpLoopExceeded(\{iterations})"
     DuplicateOrLateCompletion(effect_id~, detail~) =>
       "DuplicateOrLateCompletion(effect=\{effect_id.to_int()}, \{safe_label(detail)})"
+    EffectExecutionFailed(phase~, cause~) =>
+      "EffectExecutionFailed(phase=\{safe_label(phase)}, \{safe_label(cause)})"
+    EffectExecutionCancelled(phase~) =>
+      "EffectExecutionCancelled(phase=\{safe_label(phase)})"
     ReducerInvariantViolation(category~) =>
       "ReducerInvariantViolation(\{category.to_string()})"
   }
@@ -379,9 +390,9 @@ fn safe_label(value : String) -> String {
 /// Construction: `PhaseGate::idle()` is the only public constructor.
 pub struct PhaseGate {
   // Field visibility is package-private: only this file constructs or
-  // mutates the gate. The Harness (T06) holds a PhaseGate and calls its
+  // mutates the gate. The Puppet (T06) holds a PhaseGate and calls its
   // methods; it never reaches into fields.
-  phase : HarnessPhase
+  phase : PuppetPhase
   lease : OperationLease?
   /// Run id currently bound to the gate (None when Idle). Survives
   /// Active→Suspended→Active.
@@ -405,7 +416,7 @@ pub fn PhaseGate::idle() -> PhaseGate {
 
 ///|
 /// Current macro-phase. Read-only accessor.
-pub fn PhaseGate::phase(self : PhaseGate) -> HarnessPhase {
+pub fn PhaseGate::phase(self : PhaseGate) -> PuppetPhase {
   self.phase
 }
 
@@ -434,7 +445,7 @@ pub fn PhaseGate::active_suspension_id(self : PhaseGate) -> String? {
 }
 
 ///|
-/// Whether the gate is in a quiescent phase (delegates to HarnessPhase).
+/// Whether the gate is in a quiescent phase (delegates to PuppetPhase).
 pub fn PhaseGate::is_quiescent(self : PhaseGate) -> Bool {
   self.phase.is_quiescent()
 }
@@ -445,13 +456,13 @@ pub fn PhaseGate::is_quiescent(self : PhaseGate) -> Bool {
 
 ///|
 /// Decide whether an operation class is allowed in the current phase.
-/// Returns `Ok` if allowed, or a typed `HarnessError` describing the
+/// Returns `Ok` if allowed, or a typed `PuppetError` describing the
 /// rejection (never a bare bool — the rejection reason is part of the
 /// contract).
 pub fn PhaseGate::authorise(
   self : PhaseGate,
   operation : OperationClass,
-) -> Result[Unit, HarnessError] {
+) -> Result[Unit, PuppetError] {
   match (self.phase, operation) {
     // Idle accepts Prompt (prompt/continue/resume is a new Run start in this
     // state) and Structural (M5 reservation). It rejects InFlight (no active
@@ -544,7 +555,7 @@ pub fn PhaseGate::acquire_prompt(
   operation_id : String,
   run_id : RunId,
   turn_id : TurnId,
-) -> (PhaseGate, OperationLease) raise HarnessError {
+) -> (PhaseGate, OperationLease) raise PuppetError {
   match self.authorise(Prompt) {
     Err(e) => raise e
     Ok(_) => ()
@@ -583,7 +594,7 @@ pub fn PhaseGate::acquire_resume(
   self : PhaseGate,
   operation_id : String,
   expected_suspension_id : String,
-) -> (PhaseGate, OperationLease) raise HarnessError {
+) -> (PhaseGate, OperationLease) raise PuppetError {
   match self.authorise(InFlight) {
     Err(e) => raise e
     Ok(_) => ()
@@ -633,7 +644,7 @@ pub fn PhaseGate::acquire_resume(
 pub fn PhaseGate::release(
   self : PhaseGate,
   operation_id : String,
-) -> Unit raise HarnessError {
+) -> Unit raise PuppetError {
   match self.lease {
     None => raise LeaseNotHeld(operation_id~, detail="no lease currently held")
     Some(existing) => {
@@ -649,19 +660,19 @@ pub fn PhaseGate::release(
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Internal mutators (used by the Harness pump in T06)
+// Internal mutators (used by the Puppet pump in T06)
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-/// Apply a transition. Internal — the Harness (T06) is the only caller and
+/// Apply a transition. Internal — the Puppet (T06) is the only caller and
 /// it has already acquired/released the lease as appropriate. Raises typed
 /// error on illegal transitions.
 ///
 /// The legal edges are encoded here once; everything else is rejected.
 pub fn PhaseGate::transition(
   self : PhaseGate,
-  to : HarnessPhase,
-) -> PhaseGate raise HarnessError {
+  to : PuppetPhase,
+) -> PhaseGate raise PuppetError {
   let legal = check_transition(self.phase, to)
   if !legal {
     raise IllegalPhaseTransition(
@@ -688,7 +699,7 @@ pub fn PhaseGate::transition(
       }
     Active =>
       // From Suspended: clear suspension_id.
-      // From Idle: run_id/turn_id set by `bind_run` (called by the harness
+      // From Idle: run_id/turn_id set by `bind_run` (called by the puppet
       // before transition).
       {
         phase: Active,
@@ -709,7 +720,7 @@ pub fn PhaseGate::transition(
       }
     Terminalizing =>
       // Active/Suspended→Terminalizing: keep run id for diagnostics; lease
-      // is released by the harness on the final terminal dispatch.
+      // is released by the puppet on the final terminal dispatch.
       {
         phase: Terminalizing,
         lease: self.lease,
@@ -737,9 +748,9 @@ pub fn PhaseGate::transition(
 }
 
 ///|
-/// Legal-edge table for HarnessPhase transitions. Single source of truth
+/// Legal-edge table for PuppetPhase transitions. Single source of truth
 /// for what transitions are allowed; `transition` and tests both consult it.
-fn check_transition(from : HarnessPhase, to : HarnessPhase) -> Bool {
+fn check_transition(from : PuppetPhase, to : PuppetPhase) -> Bool {
   match (from, to) {
     // From Idle: only to Active (prompt) or ShuttingDown.
     (Idle, Active) => true
@@ -767,12 +778,12 @@ fn check_transition(from : HarnessPhase, to : HarnessPhase) -> Bool {
 }
 
 ///|
-/// Enter Suspended phase with a suspension id. Called by the Harness when
+/// Enter Suspended phase with a suspension id. Called by the Puppet when
 /// the reducer transitions to Suspended. Keeps run/turn identity.
 pub fn PhaseGate::enter_suspended(
   self : PhaseGate,
   suspension_id : String,
-) -> PhaseGate raise HarnessError {
+) -> PhaseGate raise PuppetError {
   let next = self.transition(Suspended)
   {
     phase: next.phase,
@@ -789,7 +800,7 @@ pub fn PhaseGate::enter_suspended(
 pub fn PhaseGate::rotate_turn(
   self : PhaseGate,
   new_turn_id : TurnId,
-) -> PhaseGate raise HarnessError {
+) -> PhaseGate raise PuppetError {
   match (self.phase, self.active_run_id) {
     (Active, Some(_)) =>
       {

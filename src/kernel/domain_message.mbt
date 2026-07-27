@@ -1,13 +1,11 @@
 ///|
-/// Canonical transcript message types for the M1 functional Kernel.
+/// Canonical transcript message types for the functional Kernel.
 ///
 /// Design (ADR `docs/design/08-functional-kernel-contract.md` §2.1, §2.10,
 /// §2.11): tool calls live ONLY on the assistant message; reasoning content
 /// lives ONLY on the assistant message; tool error status lives ONLY on the
-/// `ToolOutcome`. The legacy `Message` type (in `types_message.mbt`) keeps its
-/// parallel fields for source compatibility, but the Kernel reducer is
-/// forbidden from touching it — it only ever produces and consumes these
-/// canonical types.
+/// `ToolOutcome`. The reducer produces and consumes only these canonical
+/// types.
 ///
 /// These types are pure data: no IO, no trait references, no async.
 
@@ -58,9 +56,9 @@ pub fn CallId::new(value : String) -> Result[CallId, String] {
 }
 
 ///|
-/// Internal constructor used by Kernel tests and by the facade adapter when the
-/// caller has already validated the string. Production callers should prefer
-/// `CallId::new` and handle the typed rejection.
+/// Internal constructor used by Kernel tests and by callers that have already
+/// validated the string. Production callers should prefer `CallId::new` and
+/// handle the typed rejection.
 pub fn CallId::unchecked(value : String) -> CallId {
   CallId::{ value, }
 }
@@ -144,9 +142,7 @@ pub impl Show for Reasoning with fn to_string(self : Reasoning) -> String {
 
 ///|
 /// Canonical conversation message. The role determines which payload is
-/// legal — illegal combinations are unrepresentable at the type level, unlike
-/// the legacy `Message` struct which carries every optional field on every
-/// message.
+/// legal, making invalid role/payload combinations unrepresentable.
 ///
 /// Invariants:
 /// - `SystemMessage` / `UserMessage` never carry tool calls.
@@ -167,10 +163,8 @@ pub(all) enum CanonicalMessage {
 } derive(Eq, Debug)
 
 ///|
-/// Why the assistant finished a step. This is the canonical mirror of the M0
-/// `FinishReason`, but it is owned by the assistant message (per ADR §2.11:
-/// single source of truth) rather than living on a separate `ModelResponse`
-/// field.
+/// Why the assistant finished a step. It is owned by the assistant message
+/// (per ADR §2.11: single source of truth).
 ///
 /// `Length` is preserved as a distinct variant because the reducer must NOT
 /// emit `ExecuteTool` effects after a length-truncated completion, even if the
@@ -232,9 +226,9 @@ pub impl Show for NotExecutedReason with fn to_string(self : NotExecutedReason) 
 /// - `Success`: tool ran and returned structured data. `structured` is the
 ///   model-facing JSON payload; `content` is the human-readable mirror used by
 ///   the transcript.
-/// - `ToolReportedError`: tool ran and reported a business-level failure
-///   (equivalent to legacy `ToolResult.is_error = true`). The Run continues;
-///   the failure is fed back to the model as a normal tool message.
+/// - `ToolReportedError`: tool ran and reported a business-level failure. The
+///   Run continues; the failure is fed back to the model as a normal tool
+///   message.
 /// - `RuntimeFailure`: tool did not run to completion — adapter raised a
 ///   `RuntimeError`. Still non-terminal for the Run.
 /// - `NotExecuted`: model requested a tool that was not executed (unknown name
@@ -252,9 +246,8 @@ pub(all) enum ToolOutcome {
 
 ///|
 /// Whether the outcome represents a non-success path (any variant other than
-/// `Success`). Used by the facade when translating to the legacy
-/// `ToolResult.is_error` boolean — but the canonical Kernel never needs this
-/// helper because pattern-matching is exhaustive.
+/// `Success`). Product adapters may use this for presentation, while canonical
+/// control flow pattern-matches the outcome exhaustively.
 pub fn ToolOutcome::is_failure(self : ToolOutcome) -> Bool {
   match self {
     Success(..) => false
@@ -284,9 +277,7 @@ pub impl Show for ToolOutcome with fn to_string(self : ToolOutcome) -> String {
 }
 
 ///|
-/// Internal: bounded single-line label helper, mirroring `safe_error_label`
-/// in `agent.mbt` but kept local so this file has no production cross-file
-/// dependency.
+/// Internal bounded single-line label helper for safe diagnostics.
 fn safe_outcome_label(value : String) -> String {
   let chars : Array[Char] = []
   let mut truncated = false

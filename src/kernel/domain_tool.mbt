@@ -18,9 +18,9 @@
 /// - `Parallel`: may share a wave with adjacent `Parallel` calls.
 /// - `Exclusive`: forms a barrier before and after; never shares a wave.
 ///
-/// ADR §2.8 freezes the safe default as `Sequential`. The compatibility facade
-/// (M1-T10) pins every legacy tool to `Parallel` to preserve M0's
-/// `async.all`-every-batch behaviour byte-for-byte.
+/// `Sequential` is the safe default. Products opt into `Parallel` only for
+/// tools whose effects are independently safe, and use `Exclusive` at a
+/// visible side-effect boundary.
 pub(all) enum ExecutionPolicy {
   Sequential
   Parallel

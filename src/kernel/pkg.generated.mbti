@@ -77,7 +77,6 @@ pub(all) struct Budget {
 } derive(Eq, @debug.Debug)
 pub fn Budget::bounded(max_model_steps~ : Int, max_tool_rounds~ : Int, max_tool_calls~ : Int, max_total_tokens~ : Int) -> Self
 pub fn Budget::default_run() -> Self
-pub fn Budget::from_legacy_rounds(Int) -> Self
 
 pub(all) struct BudgetConsumed {
   model_steps : Int
@@ -127,7 +126,7 @@ pub(all) struct CallModelPayload {
 pub(all) enum CancelDisposition {
   Propagated
   NotPropagated
-  Unknown
+  AlreadySettled
 } derive(Eq, @debug.Debug)
 pub impl Show for CancelDisposition
 
@@ -279,12 +278,14 @@ pub(all) struct ExecutionWave {
   calls : Array[CanonicalToolCall]
   policies : Array[ExecutionPolicy]
 } derive(Eq, @debug.Debug)
+pub fn ExecutionWave::calls(Self) -> Array[CanonicalToolCall]
 pub impl Show for ExecutionWave
 
 pub(all) enum FailureReason {
   ModelParseFailure(detail~ : String)
   ModelTransport(detail~ : String)
   ModelRuntime(detail~ : String)
+  HostRejected(detail~ : String)
   InvariantViolation(category~ : InvariantCategory)
   BudgetExhausted(dimension~ : BudgetDimension)
   DeadlineReached
@@ -307,7 +308,7 @@ pub(all) enum KernelEvent {
   RunStarted(details~ : StartedDetails)
   ModelStepStarted(model_step_id~ : ModelStepId, effect_id~ : EffectId)
   ModelStepCompleted(model_step_id~ : ModelStepId, completion_summary~ : String)
-  ToolBatchStarted(model_step_id~ : ModelStepId, call_ids~ : Array[CallId])
+  ToolBatchStarted(model_step_id~ : ModelStepId, calls~ : Array[CanonicalToolCall])
   ToolCompleted(call_id~ : CallId, outcome~ : ToolOutcome)
   RunSuspended(requirement~ : SuspensionRequirement, model_step_id~ : ModelStepId)
   RunResumed(model_step_id~ : ModelStepId)
@@ -338,6 +339,7 @@ pub(all) enum ModelFailure {
   Transport(reason~ : String)
   Runtime(reason~ : String)
   Parse(reason~ : String)
+  HostRejected(reason~ : String)
 } derive(Eq, @debug.Debug)
 pub impl Show for ModelFailure
 
@@ -566,7 +568,7 @@ pub type HostChunkCallback = (Json) -> Unit
 
 // Traits
 pub(open) trait HostRuntime {
-  async fn call_model(Self, Array[CanonicalMessage], Array[CanonicalToolDef], Json, (Json) -> Unit) -> Result[AssistantCompletion, ModelFailure]
+  async fn call_model(Self, Array[CanonicalMessage], Array[CanonicalToolDef], Json, ((Json) -> Unit)?) -> Result[AssistantCompletion, ModelFailure]
   async fn execute_tool(Self, OwnerId, CallId, ToolName, Json) -> ToolOutcome
   async fn cancel_effects(Self, Array[EffectId], CancelReason) -> Array[(EffectId, CancelDisposition)]
 }

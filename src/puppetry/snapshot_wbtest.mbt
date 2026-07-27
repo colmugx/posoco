@@ -75,7 +75,7 @@ fn snapshot_input(
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-test "harness_snapshot/capture_basic" {
+test "puppet_snapshot/capture_basic" {
   let catalog = snapshot_catalog()
   let input = snapshot_input(
     catalog,
@@ -93,7 +93,7 @@ test "harness_snapshot/capture_basic" {
 }
 
 ///|
-test "harness_snapshot/capture_deep_copies_options" {
+test "puppet_snapshot/capture_deep_copies_options" {
   // The Json passed in is an object; we capture, then mutate the original
   // (conceptually — Json is immutable in MoonBit so we pass different Json
   // objects to two captures and verify the fingerprint differs).
@@ -120,7 +120,7 @@ test "harness_snapshot/capture_deep_copies_options" {
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-test "harness_snapshot/mutation_of_original_array_does_not_affect_snapshot" {
+test "puppet_snapshot/mutation_of_original_array_does_not_affect_snapshot" {
   // The catalog's underlying entries array is not aliased by the snapshot.
   // We cannot mutate ToolCatalogSnapshot directly (it's immutable), but we
   // CAN verify that calling snapshot.tool_definitions() twice returns
@@ -157,10 +157,10 @@ test "harness_snapshot/mutation_of_original_array_does_not_affect_snapshot" {
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-test "harness_snapshot/empty_model_id_rejected" {
+test "puppet_snapshot/empty_model_id_rejected" {
   let catalog = snapshot_catalog()
   let input = snapshot_input(catalog, "", Json::null(), Budget::default_run())
-  let result : Result[TurnSnapshot, HarnessError] = Ok(
+  let result : Result[TurnSnapshot, PuppetError] = Ok(
     TurnSnapshot::capture(input),
   ) catch {
     e => Err(e)
@@ -173,7 +173,7 @@ test "harness_snapshot/empty_model_id_rejected" {
 }
 
 ///|
-test "harness_snapshot/empty_catalog_is_legal" {
+test "puppet_snapshot/empty_catalog_is_legal" {
   // Empty catalog is LEGAL: a pure-chat run with no tools is valid.
   let empty_catalog = ToolCatalogBuilder::new().finish(
     version=CatalogVersion::new(0),
@@ -189,7 +189,7 @@ test "harness_snapshot/empty_catalog_is_legal" {
 }
 
 ///|
-test "harness_snapshot/negative_budget_rejected" {
+test "puppet_snapshot/negative_budget_rejected" {
   let catalog = snapshot_catalog()
   let bad_budget : Budget = {
     max_model_steps: Some(-1),
@@ -198,7 +198,7 @@ test "harness_snapshot/negative_budget_rejected" {
     max_total_tokens: None,
   }
   let input = snapshot_input(catalog, "gpt-test", Json::null(), bad_budget)
-  let result : Result[TurnSnapshot, HarnessError] = Ok(
+  let result : Result[TurnSnapshot, PuppetError] = Ok(
     TurnSnapshot::capture(input),
   ) catch {
     e => Err(e)
@@ -212,7 +212,7 @@ test "harness_snapshot/negative_budget_rejected" {
 }
 
 ///|
-test "harness_snapshot/negative_deadline_rejected" {
+test "puppet_snapshot/negative_deadline_rejected" {
   let catalog = snapshot_catalog()
   let input : TurnSnapshotInput = {
     run_id: RunId::unchecked("run_1"),
@@ -227,7 +227,7 @@ test "harness_snapshot/negative_deadline_rejected" {
     lifecycle_provenance: [],
     subscriber_provenance: [],
   }
-  let result : Result[TurnSnapshot, HarnessError] = Ok(
+  let result : Result[TurnSnapshot, PuppetError] = Ok(
     TurnSnapshot::capture(input),
   ) catch {
     e => Err(e)
@@ -244,7 +244,7 @@ test "harness_snapshot/negative_deadline_rejected" {
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-test "harness_snapshot/fingerprint_deterministic" {
+test "puppet_snapshot/fingerprint_deterministic" {
   let catalog = snapshot_catalog()
   let input1 = snapshot_input(
     catalog,
@@ -264,7 +264,7 @@ test "harness_snapshot/fingerprint_deterministic" {
 }
 
 ///|
-test "harness_snapshot/fingerprint_changes_on_model_id" {
+test "puppet_snapshot/fingerprint_changes_on_model_id" {
   let catalog = snapshot_catalog()
   let input1 = snapshot_input(
     catalog,
@@ -284,7 +284,7 @@ test "harness_snapshot/fingerprint_changes_on_model_id" {
 }
 
 ///|
-test "harness_snapshot/fingerprint_changes_on_budget" {
+test "puppet_snapshot/fingerprint_changes_on_budget" {
   let catalog = snapshot_catalog()
   let b1 : Budget = {
     max_model_steps: Some(5),
@@ -310,7 +310,7 @@ test "harness_snapshot/fingerprint_changes_on_budget" {
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-test "harness_snapshot/redacted_view_excludes_options_payload" {
+test "puppet_snapshot/redacted_view_excludes_options_payload" {
   let catalog = snapshot_catalog()
   let secret_options = Json::object(
     Map::from_array([("api_key", Json::string("sk-secret-12345"))]),
@@ -331,7 +331,7 @@ test "harness_snapshot/redacted_view_excludes_options_payload" {
 }
 
 ///|
-test "harness_snapshot/show_uses_redacted_view" {
+test "puppet_snapshot/show_uses_redacted_view" {
   let catalog = snapshot_catalog()
   let secret_options = Json::object(
     Map::from_array([("api_key", Json::string("sk-secret-67890"))]),

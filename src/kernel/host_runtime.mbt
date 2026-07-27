@@ -2,17 +2,13 @@
 /// Host-side runtime contract for executing Kernel `Effect`s (ADR §2.5, §5).
 ///
 /// The Kernel reducer is pure and only emits `Effect` data. Actually calling a
-/// model or running a tool is a host concern. Rather than reach back into the
-/// legacy `ModelPort` / `ToolProvider` traits (which live in the root
-/// compatibility facade and would create a package cycle), the Kernel defines
-/// this minimal `pub(open)` trait. The root facade provides a concrete
-/// implementation that adapts legacy providers; M3 providers can implement it
-/// directly against their own wire types.
+/// model or running a tool is a host concern. The Kernel defines this minimal
+/// `pub(open)` trait so direct provider bindings can implement the effect
+/// boundary without a package cycle.
 ///
 /// Design rules (frozen by this contract):
-/// - Inputs and outputs are ALL canonical Kernel types. The host never receives
-///   a raw legacy `Message`/`ToolCall` here — it receives `CanonicalMessage`
-///   and the parsed tool arguments. This is the single conversion boundary.
+/// - Inputs and outputs are ALL canonical Kernel types. The host receives
+///   `CanonicalMessage` values and parsed tool arguments only.
 /// - Tool catalog definitions are passed explicitly so the model adapter sees
 ///   the same definitions the reducer validated against (ADR §2.7). The host
 ///   MUST forward the real definitions; it MUST NOT substitute an empty array
@@ -21,18 +17,16 @@
 /// - Every failure path returns a typed `ModelFailure` / `ToolOutcome`. The
 ///   host MUST NOT collapse an error into an empty success or a default
 ///   `Stop`. Malformed JSON from a provider surfaces as `ModelFailure::Parse`.
-/// - Streaming chunks are delivered via the optional `on_chunk` callback. The
-///   host MAY ignore it (non-streaming adapters). If the host has no streaming
-///   support it MUST still return the final completion; it MUST NOT silently
-///   drop the call.
+/// - Streaming chunks are delivered only when the caller supplies an optional
+///   `on_chunk` callback. When it is `None`, the host MUST skip chunk-wire
+///   conversion and callback work entirely; final completion remains required.
 /// - `cancel_effects` is best-effort: the host records the request and returns
 ///   a `CancelDisposition` per effect id (reuses the existing
 ///   `CancelDisposition` enum from `run_context.mbt`). The reducer never blocks
 ///   on cancel.
 ///
 /// This trait is allowed to be async because hosts use async I/O. The Kernel
-/// reducer never calls it — only the imperative shell (puppetry executor /
-/// root adapter) does.
+/// reducer never calls it — only the Puppetry executor does.
 
 // ──────────────────────────────────────────────────────────────────────────
 // HostRuntime trait
@@ -46,8 +40,7 @@
 pub type HostChunkCallback = (Json) -> Unit
 
 ///|
-/// Host runtime contract. Implementations live outside the Kernel package
-/// (root compatibility facade or M3 provider packages).
+/// Host runtime contract. Implementations live outside the Kernel package.
 pub(open) trait HostRuntime {
   /// Execute a `CallModel` effect. The host:
   /// 1. converts `messages` + `tool_definitions` to its provider wire format,
@@ -63,7 +56,7 @@ pub(open) trait HostRuntime {
     messages : Array[CanonicalMessage],
     tool_definitions : Array[CanonicalToolDef],
     call_options : Json,
-    on_chunk : HostChunkCallback,
+    on_chunk : HostChunkCallback?,
   ) -> Result[AssistantCompletion, ModelFailure]
 
   /// Execute a single tool call. The host:

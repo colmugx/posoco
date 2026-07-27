@@ -133,14 +133,16 @@ async test "b1_simple_turn_no_tools" {
   let config = make_config()
 
   let agent = @posoco.Agent::new(
-    model,
-    tools=[empty_tools()],
-    hooks=[],
-    memory=[],
-    compressors=[@posoco.NoopCompressor::{  }],
-    observers=[observer],
-    sessions=[store],
-    lifecycle=None,
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(
+        id="io",
+        tools=[empty_tools()],
+        sessions=[store],
+        observers=[observer],
+        compressors=[@posoco.NoopCompressor::{  }],
+      ),
+    ],
     config~,
   )
   let result = agent.run_turn(user_msg("hello"), "session_b1")
@@ -225,14 +227,16 @@ async test "b8_turn_event_lifecycle" {
   let config = make_config()
 
   let agent = @posoco.Agent::new(
-    model,
-    tools=[empty_tools()],
-    hooks=[],
-    memory=[],
-    compressors=[@posoco.NoopCompressor::{  }],
-    observers=[observer],
-    sessions=[store],
-    lifecycle=None,
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(
+        id="io",
+        tools=[empty_tools()],
+        sessions=[store],
+        observers=[observer],
+        compressors=[@posoco.NoopCompressor::{  }],
+      ),
+    ],
     config~,
   )
   let _ = agent.run_turn(user_msg("event test"), "session_b8")
@@ -257,14 +261,16 @@ async test "b9_model_error_aborts" {
   let config = make_config()
 
   let agent = @posoco.Agent::new(
-    model,
-    tools=[empty_tools()],
-    hooks=[],
-    memory=[],
-    compressors=[@posoco.NoopCompressor::{  }],
-    observers=[observer],
-    sessions=[store],
-    lifecycle=None,
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(
+        id="io",
+        tools=[empty_tools()],
+        sessions=[store],
+        observers=[observer],
+        compressors=[@posoco.NoopCompressor::{  }],
+      ),
+    ],
     config~,
   )
   match

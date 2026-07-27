@@ -1,5 +1,5 @@
 ///|
-/// RunJournal — append-only, single-writer journal for Harness savepoints
+/// RunJournal — append-only, single-writer journal for Puppet savepoints
 /// (M2-T04, ADR §5).
 ///
 /// Contract:
@@ -60,7 +60,7 @@ pub(all) struct JournalEntryIdentity {
   turn_id : TurnId
   session_id : SessionId
   savepoint_id : String
-  /// Monotonic within the savepoint. The Harness assigns this when freezing
+  /// Monotonic within the savepoint. The Puppet assigns this when freezing
   /// the pending batch.
   entry_seq : Int
   kind : SavepointKind
@@ -175,10 +175,10 @@ pub(open) trait RunJournal {
   /// typed error describing why the append failed.
   ///
   /// Raises:
-  /// - `HarnessError::SavepointFailed(_, BarrierFailed(_))` if the append
+  /// - `PuppetError::SavepointFailed(_, BarrierFailed(_))` if the append
   ///   itself fails (e.g. I/O error in M5).
   /// - Identity mismatch / post-terminal append also raise SavepointFailed.
-  fn append(Self, Array[JournalEntry]) -> Int raise HarnessError
+  fn append(Self, Array[JournalEntry]) -> Int raise PuppetError
 
   /// Current committed revision. 0 means "no entries yet".
   fn revision(Self) -> Int
@@ -200,11 +200,11 @@ pub(open) trait RunJournal {
 /// Append-only in-memory journal. Stores entries in an Array; revision is
 /// derived from the array length (entry N has revision N).
 ///
-/// Thread-safety: M2 runs single-threaded; the Harness is the only writer.
+/// Thread-safety: M2 runs single-threaded; the Puppet is the only writer.
 /// M5's durable adapter will add its own concurrency control.
 pub struct InMemoryJournal {
   // Field visibility is package-private: only this file constructs the
-  // journal. The Harness holds a `&RunJournal` reference; callers cannot
+  // journal. The Puppet holds a `&RunJournal` reference; callers cannot
   // reach into fields.
   entries : Array[JournalEntry]
   /// Set of (run_id, savepoint_id, entry_seq) triples already committed.
@@ -213,6 +213,10 @@ pub struct InMemoryJournal {
   /// Set of run_ids that have committed a RunTerminal entry. Further
   /// appends for these runs are rejected (terminal is terminal).
   terminal_runs : Map[String, Bool]
+  /// Successful non-empty append calls. This is deliberately distinct from
+  /// `revision`: one boundary may contain multiple entries/contributions but
+  /// must still cross the durability barrier exactly once.
+  mut append_count : Int
 }
 
 ///|
@@ -221,7 +225,15 @@ pub fn InMemoryJournal::new() -> InMemoryJournal {
     entries: [],
     seen_ids: Map::from_array([]),
     terminal_runs: Map::from_array([]),
+    append_count: 0,
   }
+}
+
+///|
+/// Number of successful non-empty append barriers. Exposed for deterministic
+/// performance-gate fixtures; production code relies on journal revisions.
+pub fn InMemoryJournal::append_count(self : InMemoryJournal) -> Int {
+  self.append_count
 }
 
 ///|
@@ -234,7 +246,7 @@ fn entry_dedup_key(id : JournalEntryIdentity) -> String {
 pub impl RunJournal for InMemoryJournal with fn append(
   self,
   batch : Array[JournalEntry],
-) -> Int raise HarnessError {
+) -> Int raise PuppetError {
   InMemoryJournal::append_impl(self, batch)
 }
 
@@ -267,7 +279,7 @@ pub impl RunJournal for InMemoryJournal with fn entries_for_savepoint(
 pub fn InMemoryJournal::append_impl(
   self : InMemoryJournal,
   batch : Array[JournalEntry],
-) -> Int raise HarnessError {
+) -> Int raise PuppetError {
   if batch.is_empty() {
     return self.revision_impl()
   }
@@ -290,6 +302,7 @@ pub fn InMemoryJournal::append_impl(
     }
   }
   // Phase 2: commit.
+  self.append_count = self.append_count + 1
   let mut next_rev = self.revision_impl() + 1
   for entry in batch {
     let key = entry_dedup_key(entry.identity)
@@ -374,7 +387,7 @@ pub fn FailOnNthJournal::new(
 pub impl RunJournal for FailOnNthJournal with fn append(
   self,
   batch : Array[JournalEntry],
-) -> Int raise HarnessError {
+) -> Int raise PuppetError {
   self.call_count = self.call_count + 1
   if self.call_count == self.fail_on {
     raise SavepointFailed(
