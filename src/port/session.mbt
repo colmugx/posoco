@@ -6,6 +6,6 @@
 /// lets js-target adapters (e.g. JsonlSessionStore) implement the trait
 /// directly instead of going through `load_async`/`save_async` side-paths.
 pub(open) trait SessionStore {
-  fn load(Self, id : String) -> @types.Session raise @error.SessionError
-  fn save(Self, id : String, session : @types.Session) -> Unit raise @error.SessionError
+  async fn load(Self, id : String) -> @types.Session raise @error.SessionError
+  async fn save(Self, id : String, session : @types.Session) -> Unit raise @error.SessionError
 }

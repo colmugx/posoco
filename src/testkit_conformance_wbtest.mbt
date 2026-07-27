@@ -255,7 +255,7 @@ async test "tk_tool_records_are_recursive_json_snapshots" {
 // ---------------------------------------------------------------------------
 
 ///|
-test "tk_store_records_save_metadata_snapshot" {
+async test "tk_store_records_save_metadata_snapshot" {
   let store = RecordingSessionStore()
   let meta = Map::from_array([
     ("user_role", Json::string("admin")),
@@ -272,7 +272,7 @@ test "tk_store_records_save_metadata_snapshot" {
 }
 
 ///|
-test "tk_store_load_unknown_returns_empty_session" {
+async test "tk_store_load_unknown_returns_empty_session" {
   let store = RecordingSessionStore()
   try {
     let s = store.load("never_saved")
@@ -284,7 +284,7 @@ test "tk_store_load_unknown_returns_empty_session" {
 }
 
 ///|
-test "tk_store_load_and_seed_are_snapshot_isolated" {
+async test "tk_store_load_and_seed_are_snapshot_isolated" {
   let store = RecordingSessionStore()
   let seeded : Session = {
     messages: [tk_user_msg("seed")],
@@ -308,7 +308,7 @@ test "tk_store_load_and_seed_are_snapshot_isolated" {
 }
 
 ///|
-test "tk_store_snapshots_nested_json_and_tool_arguments" {
+async test "tk_store_snapshots_nested_json_and_tool_arguments" {
   let metadata_object : Map[String, Json] = Map::from_array([
     ("value", Json::string("metadata-original")),
   ])
@@ -365,7 +365,7 @@ test "tk_store_snapshots_nested_json_and_tool_arguments" {
 }
 
 ///|
-test "tk_store_operation_accessors_return_recursive_snapshots" {
+async test "tk_store_operation_accessors_return_recursive_snapshots" {
   let nested : Map[String, Json] = Map::from_array([
     ("value", Json::string("original")),
   ])
@@ -396,7 +396,7 @@ test "tk_store_operation_accessors_return_recursive_snapshots" {
 }
 
 ///|
-test "tk_store_fail_save_returns_typed_error" {
+async test "tk_store_fail_save_returns_typed_error" {
   let store = RecordingSessionStore()
   store.fail_save("broken")
   let result = Ok(
@@ -411,7 +411,7 @@ test "tk_store_fail_save_returns_typed_error" {
 }
 
 ///|
-test "tk_store_fail_load_returns_typed_error" {
+async test "tk_store_fail_load_returns_typed_error" {
   let store = RecordingSessionStore()
   store.fail_load("dead", Load("disk gone"))
   let result = Ok(store.load("dead")) catch { e => Err(e) }
