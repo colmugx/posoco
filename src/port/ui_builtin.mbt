@@ -19,7 +19,7 @@ pub(all) struct NoopUiPort {
 }
 
 ///|
-pub fn NoopUiPort::new() -> NoopUiPort {
+pub fn NoopUiPort::NoopUiPort() -> NoopUiPort {
   NoopUiPort::{  }
 }
 
@@ -64,7 +64,9 @@ pub(all) struct CompositeUiPort {
 }
 
 ///|
-pub fn CompositeUiPort::new(contributors : Array[&UiPort]) -> CompositeUiPort {
+pub fn CompositeUiPort::CompositeUiPort(
+  contributors : Array[&UiPort],
+) -> CompositeUiPort {
   { contributors, }
 }
 

@@ -16,9 +16,9 @@
 // ──────────────────────────────────────────────────────────────────────────
 
 fn snapshot_catalog() -> ToolCatalogSnapshot raise CatalogCompositionError {
-  let builder = ToolCatalogBuilder::new()
+  let builder = ToolCatalogBuilder()
   let _ = builder.add(
-    CanonicalToolDef::new(
+    CanonicalToolDef(
       name=ToolName::unchecked("read"),
       description="read a file",
       input_schema=Json::object(
@@ -45,7 +45,7 @@ fn snapshot_catalog() -> ToolCatalogSnapshot raise CatalogCompositionError {
       provenance=Some("ext_a"),
     ),
   )
-  builder.finish(version=CatalogVersion::new(1))
+  builder.finish(version=CatalogVersion(1))
 }
 
 ///|
@@ -88,7 +88,7 @@ test "puppet_snapshot/capture_basic" {
   assert_true(snap.turn_id() == TurnId::unchecked("turn_1"))
   assert_true(snap.session_id() == SessionId::unchecked("sess_1"))
   assert_true(snap.model_id() == "gpt-test")
-  assert_true(snap.catalog_version() == CatalogVersion::new(1))
+  assert_true(snap.catalog_version() == CatalogVersion(1))
   assert_true(snap.tool_definitions().length() == 1)
 }
 
@@ -137,7 +137,7 @@ test "puppet_snapshot/mutation_of_original_array_does_not_affect_snapshot" {
   let defs2 = snap.tool_definitions()
   // Pushing to defs1 must not affect defs2 (proves copy semantics).
   defs1.push(
-    CanonicalToolDef::new(
+    CanonicalToolDef(
       name=ToolName::unchecked("injected"),
       description="",
       input_schema=Json::null(),
@@ -175,9 +175,7 @@ test "puppet_snapshot/empty_model_id_rejected" {
 ///|
 test "puppet_snapshot/empty_catalog_is_legal" {
   // Empty catalog is LEGAL: a pure-chat run with no tools is valid.
-  let empty_catalog = ToolCatalogBuilder::new().finish(
-    version=CatalogVersion::new(0),
-  )
+  let empty_catalog = ToolCatalogBuilder().finish(version=CatalogVersion(0))
   let input = snapshot_input(
     empty_catalog,
     "gpt-test",

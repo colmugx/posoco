@@ -108,6 +108,7 @@ pub struct ControlMailbox {
   mut quiescent_status : QuiescentStatus
   max_depth : Int
 }
+pub fn ControlMailbox::ControlMailbox() -> Self
 pub fn ControlMailbox::abort_requested(Self) -> Bool
 pub fn ControlMailbox::active_run_id(Self) -> @kernel.RunId?
 pub fn ControlMailbox::active_turn_id(Self) -> TurnId?
@@ -120,7 +121,6 @@ pub fn ControlMailbox::enqueue_follow_up(Self, FollowUpCommand) -> EnqueueResult
 pub fn ControlMailbox::enqueue_resume(Self, ResumeCommand) -> EnqueueResult
 pub fn ControlMailbox::enqueue_steer(Self, SteerCommand) -> EnqueueResult
 pub fn ControlMailbox::follow_up_depth(Self) -> Int
-pub fn ControlMailbox::new() -> Self
 pub fn ControlMailbox::quiescent_status(Self) -> QuiescentStatus
 pub fn ControlMailbox::set_quiescent(Self, QuiescentStatus) -> Unit
 pub fn ControlMailbox::steer_depth(Self) -> Int
@@ -143,8 +143,8 @@ pub struct EventDispatcher {
   turn_id : TurnId
   session_id : @kernel.SessionId
 }
+pub fn EventDispatcher::EventDispatcher(@kernel.RunId, TurnId, @kernel.SessionId) -> Self
 pub async fn EventDispatcher::dispatch(Self, @kernel.KernelEvent, Int) -> Unit raise PuppetError
-pub fn EventDispatcher::new(@kernel.RunId, TurnId, @kernel.SessionId) -> Self
 pub fn EventDispatcher::next_seq(Self) -> Int
 pub fn EventDispatcher::register(Self, &EventSubscriber) -> Unit
 pub fn EventDispatcher::subscriber_count(Self) -> Int
@@ -157,10 +157,10 @@ pub(all) struct EventEnvelope {
   committed_revision : Int
   event : @kernel.KernelEvent
 } derive(Eq, @debug.Debug)
+pub fn EventEnvelope::EventEnvelope(run_id~ : @kernel.RunId, turn_id~ : TurnId, session_id~ : @kernel.SessionId, seq~ : Int, committed_revision~ : Int, event~ : @kernel.KernelEvent) -> Self
 pub fn EventEnvelope::committed_revision(Self) -> Int
 pub fn EventEnvelope::event(Self) -> @kernel.KernelEvent
 pub fn EventEnvelope::is_terminal(Self) -> Bool
-pub fn EventEnvelope::new(run_id~ : @kernel.RunId, turn_id~ : TurnId, session_id~ : @kernel.SessionId, seq~ : Int, committed_revision~ : Int, event~ : @kernel.KernelEvent) -> Self
 pub fn EventEnvelope::run_id(Self) -> @kernel.RunId
 pub fn EventEnvelope::seq(Self) -> Int
 pub fn EventEnvelope::session_id(Self) -> @kernel.SessionId
@@ -172,7 +172,7 @@ pub struct FailOnNthJournal {
   fail_on : Int
   mut call_count : Int
 }
-pub fn FailOnNthJournal::new(InMemoryJournal, Int) -> Self
+pub fn FailOnNthJournal::FailOnNthJournal(InMemoryJournal, Int) -> Self
 pub impl RunJournal for FailOnNthJournal
 
 pub(all) struct FollowUpCommand {
@@ -205,11 +205,11 @@ pub struct InMemoryJournal {
   terminal_runs : Map[String, Bool]
   mut append_count : Int
 }
+pub fn InMemoryJournal::InMemoryJournal() -> Self
 pub fn InMemoryJournal::append_count(Self) -> Int
 pub fn InMemoryJournal::append_impl(Self, Array[JournalEntry]) -> Int raise PuppetError
 pub fn InMemoryJournal::entries_for_run_impl(Self, @kernel.RunId) -> Array[JournalEntry]
 pub fn InMemoryJournal::entries_for_savepoint_impl(Self, @kernel.RunId, String) -> Array[JournalEntry]
-pub fn InMemoryJournal::new() -> Self
 pub fn InMemoryJournal::revision_impl(Self) -> Int
 pub impl RunJournal for InMemoryJournal
 
@@ -258,7 +258,7 @@ pub struct LifecycleCollection {
   shut_down : Map[String, Bool]
   mut is_sealed : Bool
 }
-pub fn LifecycleCollection::new() -> Self
+pub fn LifecycleCollection::LifecycleCollection() -> Self
 pub fn LifecycleCollection::register(Self, &PuppetLifecycleNode) -> Unit raise PuppetError
 pub fn LifecycleCollection::shut_down_node_count(Self) -> Int
 pub async fn LifecycleCollection::shutdown_all(Self) -> Unit raise PuppetError
@@ -290,14 +290,14 @@ pub fn ModelId::unchecked(String) -> Self
 pub(all) struct NoopContributor {
   id : String
 }
-pub fn NoopContributor::new() -> Self
+pub fn NoopContributor::NoopContributor() -> Self
 pub fn NoopContributor::with_id(String) -> Self
 pub impl JournalContributor for NoopContributor
 
 pub(all) struct NoopSubscriber {
   id : String
 }
-pub fn NoopSubscriber::new() -> Self
+pub fn NoopSubscriber::NoopSubscriber() -> Self
 pub fn NoopSubscriber::with_id(String) -> Self
 pub impl EventSubscriber for NoopSubscriber
 
@@ -375,9 +375,9 @@ pub struct Puppet {
   lifecycle : LifecycleCollection
   mut last_completed_transcript : @kernel.CanonicalTranscript?
 }
+pub fn Puppet::Puppet(PuppetConfig) -> Self
 pub fn Puppet::is_quiescent(Self) -> Bool
 pub fn Puppet::last_completed_transcript(Self) -> @kernel.CanonicalTranscript?
-pub fn Puppet::new(PuppetConfig) -> Self
 pub fn Puppet::phase(Self) -> PuppetPhase
 pub async fn Puppet::prompt(Self, @kernel.RunId, TurnId, @kernel.SessionId, Array[@kernel.CanonicalMessage], String) -> PromptResult raise PuppetError
 pub async fn Puppet::shutdown(Self) -> Unit raise PuppetError

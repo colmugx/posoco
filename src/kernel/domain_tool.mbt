@@ -77,7 +77,7 @@ pub(all) struct CatalogVersion {
 } derive(Eq, Debug)
 
 ///|
-pub fn CatalogVersion::new(value : Int) -> CatalogVersion {
+pub fn CatalogVersion::CatalogVersion(value : Int) -> CatalogVersion {
   CatalogVersion::{ value, }
 }
 
@@ -110,7 +110,7 @@ pub(all) struct CanonicalToolDef {
 /// is optional. The catalog builder (T05) validates the schema and policy
 /// before constructing this, so by the time a `CanonicalToolDef` reaches the
 /// reducer, it has already passed composition.
-pub fn CanonicalToolDef::new(
+pub fn CanonicalToolDef::CanonicalToolDef(
   name~ : ToolName,
   description~ : String,
   input_schema~ : Json,

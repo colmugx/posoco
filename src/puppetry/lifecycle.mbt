@@ -160,7 +160,7 @@ pub impl Show for LifecycleNodeError with fn to_string(
 /// Ordered collection of PuppetLifecycleNode references. Tracks registration
 /// order, duplicate ids, and exactly-once start/stop state.
 ///
-/// Construction: `LifecycleCollection::new()` then `register` in startup
+/// Construction: `LifecycleCollection()` then `register` in startup
 /// order. Once `startup_all` has been called, no further registrations are
 /// accepted (the collection is sealed).
 pub struct LifecycleCollection {
@@ -177,7 +177,7 @@ pub struct LifecycleCollection {
 }
 
 ///|
-pub fn LifecycleCollection::new() -> LifecycleCollection {
+pub fn LifecycleCollection::LifecycleCollection() -> LifecycleCollection {
   {
     nodes: [],
     node_ids: Map::from_array([]),

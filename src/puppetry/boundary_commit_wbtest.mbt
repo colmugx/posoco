@@ -93,13 +93,13 @@ fn BoundaryProbeHost::bind_catalog(
 
 ///|
 async test "puppet/boundary_commits_intent_before_each_model_effect" {
-  let journal = InMemoryJournal::new()
+  let journal = InMemoryJournal()
   let host = BoundaryProbeHost::new(journal, [
     Ok(fixture_tool_calls([fixture_call("echo", "tool_1")])),
     Ok(fixture_stop("done")),
   ])
   let catalog = fixture_tool_catalog("echo")
-  let puppet = Puppet::new(
+  let puppet = Puppet(
     canonical_puppet_config(
       host.bind_catalog(catalog),
       catalog,

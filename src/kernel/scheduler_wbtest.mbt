@@ -8,11 +8,11 @@
 fn make_catalog(
   defs : Array[(String, ExecutionPolicy)],
 ) -> ToolCatalogSnapshot raise CatalogCompositionError {
-  let builder = ToolCatalogBuilder::new()
+  let builder = ToolCatalogBuilder()
   for pair in defs {
     let (name, policy) = pair
     let _ = builder.add(
-      CanonicalToolDef::new(
+      CanonicalToolDef(
         name=ToolName::unchecked(name),
         description="test",
         input_schema=Json::object(
@@ -24,7 +24,7 @@ fn make_catalog(
       ),
     )
   }
-  builder.finish(version=CatalogVersion::new(1))
+  builder.finish(version=CatalogVersion(1))
 }
 
 ///|
@@ -43,7 +43,7 @@ fn make_call(call_id : String, name : String) -> CanonicalToolCall {
 ///|
 test "Scheduler: empty calls produces empty plan" {
   let catalog = make_catalog([("a", Parallel)])
-  let plan = schedule(catalog, CatalogVersion::new(1), [])
+  let plan = schedule(catalog, CatalogVersion(1), [])
   assert_eq(plan.wave_count(), 0)
   assert_eq(plan.total_calls(), 0)
 }
@@ -51,7 +51,7 @@ test "Scheduler: empty calls produces empty plan" {
 ///|
 test "Scheduler: single Parallel call → 1 wave" {
   let catalog = make_catalog([("a", Parallel)])
-  let plan = schedule(catalog, CatalogVersion::new(1), [make_call("c1", "a")])
+  let plan = schedule(catalog, CatalogVersion(1), [make_call("c1", "a")])
   assert_eq(plan.wave_count(), 1)
   assert_eq(plan.total_calls(), 1)
 }
@@ -59,7 +59,7 @@ test "Scheduler: single Parallel call → 1 wave" {
 ///|
 test "Scheduler: P/P/P → 1 wave of 3" {
   let catalog = make_catalog([("a", Parallel), ("b", Parallel), ("c", Parallel)])
-  let plan = schedule(catalog, CatalogVersion::new(1), [
+  let plan = schedule(catalog, CatalogVersion(1), [
     make_call("c1", "a"),
     make_call("c2", "b"),
     make_call("c3", "c"),
@@ -78,7 +78,7 @@ test "Scheduler: S/P/S → 3 single-element waves" {
     ("b", Parallel),
     ("c", Sequential),
   ])
-  let plan = schedule(catalog, CatalogVersion::new(1), [
+  let plan = schedule(catalog, CatalogVersion(1), [
     make_call("c1", "a"),
     make_call("c2", "b"),
     make_call("c3", "c"),
@@ -96,7 +96,7 @@ test "Scheduler: P/E/P → 3 waves, Exclusive alone" {
     ("b", Exclusive),
     ("c", Parallel),
   ])
-  let plan = schedule(catalog, CatalogVersion::new(1), [
+  let plan = schedule(catalog, CatalogVersion(1), [
     make_call("c1", "a"),
     make_call("c2", "b"),
     make_call("c3", "c"),
@@ -115,7 +115,7 @@ test "Scheduler: P/E/P → 3 waves, Exclusive alone" {
 ///|
 test "Scheduler: E/E forms two separate waves" {
   let catalog = make_catalog([("a", Exclusive), ("b", Exclusive)])
-  let plan = schedule(catalog, CatalogVersion::new(1), [
+  let plan = schedule(catalog, CatalogVersion(1), [
     make_call("c1", "a"),
     make_call("c2", "b"),
   ])
@@ -132,7 +132,7 @@ test "Scheduler: E/E forms two separate waves" {
 test "Scheduler: duplicate call_id raises" {
   let catalog = make_catalog([("a", Parallel)])
   let result : Result[ExecutionPlan, SchedulingError] = Ok(
-    schedule(catalog, CatalogVersion::new(1), [
+    schedule(catalog, CatalogVersion(1), [
       make_call("dup", "a"),
       make_call("dup", "a"),
     ]),
@@ -149,7 +149,7 @@ test "Scheduler: duplicate call_id raises" {
 test "Scheduler: unknown tool reaching scheduler raises" {
   let catalog = make_catalog([("a", Parallel)])
   let result : Result[ExecutionPlan, SchedulingError] = Ok(
-    schedule(catalog, CatalogVersion::new(1), [make_call("c1", "missing")]),
+    schedule(catalog, CatalogVersion(1), [make_call("c1", "missing")]),
   ) catch {
     e => Err(e)
   }
@@ -164,7 +164,7 @@ test "Scheduler: unknown tool reaching scheduler raises" {
 test "Scheduler: stale snapshot version raises" {
   let catalog = make_catalog([("a", Parallel)])
   let result : Result[ExecutionPlan, SchedulingError] = Ok(
-    schedule(catalog, CatalogVersion::new(99), [make_call("c1", "a")]),
+    schedule(catalog, CatalogVersion(99), [make_call("c1", "a")]),
   ) catch {
     e => Err(e)
   }
@@ -181,7 +181,7 @@ test "Scheduler: stale snapshot version raises" {
 ///|
 test "Scheduler: trace excludes arguments" {
   let catalog = make_catalog([("a", Parallel), ("b", Exclusive)])
-  let plan = schedule(catalog, CatalogVersion::new(1), [
+  let plan = schedule(catalog, CatalogVersion(1), [
     make_call("c1", "a"),
     make_call("c2", "b"),
   ])
@@ -211,7 +211,7 @@ test "Scheduler: source order preserved within parallel wave" {
     ("c", Parallel),
     ("d", Parallel),
   ])
-  let plan = schedule(catalog, CatalogVersion::new(1), [
+  let plan = schedule(catalog, CatalogVersion(1), [
     make_call("z", "a"),
     make_call("y", "b"),
     make_call("x", "c"),

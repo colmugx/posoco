@@ -33,7 +33,7 @@ pub(all) struct RecordingUiPort {
 ///|
 /// Construct with a list of scripted responses. They will be returned in
 /// order, one per `request` call.
-pub fn RecordingUiPort::new(
+pub fn RecordingUiPort::RecordingUiPort(
   responses? : Array[@port.UiResponse] = [],
 ) -> RecordingUiPort {
   {
@@ -47,7 +47,7 @@ pub fn RecordingUiPort::new(
 ///|
 /// Construct a UiPort that always raises `Unsupported` from `request`.
 pub fn RecordingUiPort::new_unsupported() -> RecordingUiPort {
-  let r = RecordingUiPort::new()
+  let r = RecordingUiPort()
   r.unsupported_mode = true
   r
 }

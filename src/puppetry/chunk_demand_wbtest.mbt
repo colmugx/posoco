@@ -70,8 +70,8 @@ fn chunk_demand_config(
 ///|
 async test "puppet/chunks_are_not_requested_without_a_consumer" {
   let host = ChunkDemandHost::new()
-  let journal = InMemoryJournal::new()
-  let puppet = Puppet::new(
+  let journal = InMemoryJournal()
+  let puppet = Puppet(
     chunk_demand_config(host, fixture_empty_catalog(), journal, None),
   )
 
@@ -84,8 +84,8 @@ async test "puppet/chunks_are_not_requested_without_a_consumer" {
 ///|
 async test "puppet/chunks_are_requested_for_a_live_consumer" {
   let host = ChunkDemandHost::new()
-  let journal = InMemoryJournal::new()
-  let puppet = Puppet::new(
+  let journal = InMemoryJournal()
+  let puppet = Puppet(
     chunk_demand_config(
       host,
       fixture_empty_catalog(),

@@ -214,7 +214,7 @@ pub(all) struct NoopContributor {
 }
 
 ///|
-pub fn NoopContributor::new() -> NoopContributor {
+pub fn NoopContributor::NoopContributor() -> NoopContributor {
   { id: "noop" }
 }
 

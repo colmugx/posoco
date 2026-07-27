@@ -62,7 +62,7 @@ fn make_entry(
 
 ///|
 test "puppet_journal/append_only_monotonic_revision" {
-  let j = InMemoryJournal::new()
+  let j = InMemoryJournal()
   assert_true(j.revision() == 0)
   let e1 = make_entry(InputAccepted, "sp1", 0)
   let r1 = j.append([e1])
@@ -76,7 +76,7 @@ test "puppet_journal/append_only_monotonic_revision" {
 
 ///|
 test "puppet_journal/empty_batch_noop" {
-  let j = InMemoryJournal::new()
+  let j = InMemoryJournal()
   let r = j.append([])
   assert_true(r == 0)
   assert_true(j.revision() == 0)
@@ -84,7 +84,7 @@ test "puppet_journal/empty_batch_noop" {
 
 ///|
 test "puppet_journal/multi_entry_batch_single_revision_window" {
-  let j = InMemoryJournal::new()
+  let j = InMemoryJournal()
   // Two ToolCommitted entries in one batch (parallel tool batch).
   let e1 = make_entry(ToolCommitted, "sp1", 0)
   let e2 = make_entry(ToolCommitted, "sp1", 1)
@@ -102,7 +102,7 @@ test "puppet_journal/multi_entry_batch_single_revision_window" {
 
 ///|
 test "puppet_journal/duplicate_entry_id_rejected" {
-  let j = InMemoryJournal::new()
+  let j = InMemoryJournal()
   let e1 = make_entry(InputAccepted, "sp1", 0)
   let _ = j.append([e1])
   // Re-append the same entry (same dedup key) — must fail.
@@ -130,7 +130,7 @@ test "puppet_journal/duplicate_entry_id_rejected" {
 
 ///|
 test "puppet_journal/post_terminal_append_rejected" {
-  let j = InMemoryJournal::new()
+  let j = InMemoryJournal()
   // First commit a RunTerminal entry.
   let terminal = make_entry(RunTerminal, "sp_final", 0)
   let _ = j.append([terminal])
@@ -150,7 +150,7 @@ test "puppet_journal/post_terminal_append_rejected" {
 
 ///|
 test "puppet_journal/suspended_does_not_close_journal" {
-  let j = InMemoryJournal::new()
+  let j = InMemoryJournal()
   // Commit a RunSuspended entry.
   let suspended = make_entry(RunSuspended, "sp_susp", 0)
   let _ = j.append([suspended])
@@ -166,7 +166,7 @@ test "puppet_journal/suspended_does_not_close_journal" {
 
 ///|
 test "puppet_journal/entries_for_run_filters_by_run" {
-  let j = InMemoryJournal::new()
+  let j = InMemoryJournal()
   let e1 = make_entry(InputAccepted, "sp1", 0)
   let _ = j.append([e1])
   let run_entries = j.entries_for_run(j_run_id())

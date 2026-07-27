@@ -49,9 +49,9 @@ pub(all) struct AssistantCompletion {
   message : AssistantMessagePayload
   usage : CanonicalUsage?
 } derive(Eq, @debug.Debug)
+pub fn AssistantCompletion::AssistantCompletion(content~ : Array[CanonicalContent], tool_calls~ : Array[CanonicalToolCall], reasoning~ : Reasoning?, finish_reason~ : AssistantFinishReason, usage~ : CanonicalUsage?) -> Self
 pub fn AssistantCompletion::finish_reason(Self) -> AssistantFinishReason
 pub fn AssistantCompletion::has_tool_calls(Self) -> Bool
-pub fn AssistantCompletion::new(content~ : Array[CanonicalContent], tool_calls~ : Array[CanonicalToolCall], reasoning~ : Reasoning?, finish_reason~ : AssistantFinishReason, usage~ : CanonicalUsage?) -> Self
 pub fn AssistantCompletion::tool_calls(Self) -> Array[CanonicalToolCall]
 
 pub(all) enum AssistantFinishReason {
@@ -173,7 +173,7 @@ pub(all) struct CanonicalToolDef {
   policy : ExecutionPolicy
   provenance : String?
 } derive(Eq, @debug.Debug)
-pub fn CanonicalToolDef::new(name~ : ToolName, description~ : String, input_schema~ : Json, owner~ : OwnerId, policy~ : ExecutionPolicy, provenance~ : String?) -> Self
+pub fn CanonicalToolDef::CanonicalToolDef(name~ : ToolName, description~ : String, input_schema~ : Json, owner~ : OwnerId, policy~ : ExecutionPolicy, provenance~ : String?) -> Self
 pub impl Show for CanonicalToolDef
 
 pub(all) struct CanonicalTranscript {
@@ -201,7 +201,7 @@ pub(all) struct CatalogEntry {
 pub(all) struct CatalogVersion {
   value : Int
 } derive(Eq, @debug.Debug)
-pub fn CatalogVersion::new(Int) -> Self
+pub fn CatalogVersion::CatalogVersion(Int) -> Self
 pub fn CatalogVersion::to_int(Self) -> Int
 pub impl Show for CatalogVersion
 
@@ -398,7 +398,7 @@ pub(all) struct RunContext {
   session_id : SessionId
   budget : Budget
 } derive(Eq, @debug.Debug)
-pub fn RunContext::new(run_id~ : RunId, session_id~ : SessionId, budget~ : Budget) -> Self
+pub fn RunContext::RunContext(run_id~ : RunId, session_id~ : SessionId, budget~ : Budget) -> Self
 
 pub(all) struct RunId {
   value : String
@@ -473,8 +473,8 @@ pub impl Show for SchemaDiagnostic
 pub struct ScriptedExecutor {
   outcomes : Map[String, ScriptedOutcome]
 }
+pub fn ScriptedExecutor::ScriptedExecutor() -> Self
 pub fn ScriptedExecutor::lookup(Self, EffectId) -> ScriptedOutcome
-pub fn ScriptedExecutor::new() -> Self
 pub fn ScriptedExecutor::on(Self, EffectId, ScriptedOutcome) -> Self
 
 pub(all) enum ScriptedOutcome {
@@ -516,9 +516,9 @@ pub struct ToolCatalogBuilder {
   by_name : Map[String, CatalogEntry]
   mut finished : Bool
 }
+pub fn ToolCatalogBuilder::ToolCatalogBuilder() -> Self
 pub fn ToolCatalogBuilder::add(Self, CanonicalToolDef) -> Self raise CatalogCompositionError
 pub fn ToolCatalogBuilder::finish(Self, version~ : CatalogVersion) -> ToolCatalogSnapshot raise CatalogCompositionError
-pub fn ToolCatalogBuilder::new() -> Self
 
 pub struct ToolCatalogSnapshot {
   version : CatalogVersion

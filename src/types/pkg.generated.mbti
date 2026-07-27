@@ -89,7 +89,7 @@ pub(all) struct StreamAccumulator {
   mut finish_reason : FinishReason
   mut usage : Usage?
 } derive(@debug.Debug)
-pub fn StreamAccumulator::new() -> Self
+pub fn StreamAccumulator::StreamAccumulator() -> Self
 pub fn StreamAccumulator::push(Self, StreamChunk) -> Unit
 pub fn StreamAccumulator::to_response(Self) -> ModelResponse raise @error.ModelError
 
@@ -112,7 +112,7 @@ pub(all) struct ToolCallBuilder {
   mut name : String
   mut arguments_json : String
 } derive(@debug.Debug)
-pub fn ToolCallBuilder::new() -> Self
+pub fn ToolCallBuilder::ToolCallBuilder() -> Self
 
 pub(all) enum ToolChoice {
   Auto

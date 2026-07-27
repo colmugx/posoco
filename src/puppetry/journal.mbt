@@ -220,7 +220,7 @@ pub struct InMemoryJournal {
 }
 
 ///|
-pub fn InMemoryJournal::new() -> InMemoryJournal {
+pub fn InMemoryJournal::InMemoryJournal() -> InMemoryJournal {
   {
     entries: [],
     seen_ids: Map::from_array([]),
@@ -376,7 +376,7 @@ pub struct FailOnNthJournal {
 }
 
 ///|
-pub fn FailOnNthJournal::new(
+pub fn FailOnNthJournal::FailOnNthJournal(
   inner : InMemoryJournal,
   fail_on : Int,
 ) -> FailOnNthJournal {

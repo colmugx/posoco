@@ -4,8 +4,8 @@
 
 ///|
 async test "puppet/call_options_reach_model_effect" {
-  let host = FixtureHost::new([Ok(fixture_stop("done"))], Map::from_array([]))
-  let journal = InMemoryJournal::new()
+  let host = FixtureHost([Ok(fixture_stop("done"))], Map::from_array([]))
+  let journal = InMemoryJournal()
   let options = Json::object(
     Map::from_array([
       ("temperature", Json::number(0.25)),
@@ -22,7 +22,7 @@ async test "puppet/call_options_reach_model_effect" {
     None,
     options,
   )
-  let puppet = Puppet::new(config)
+  let puppet = Puppet(config)
 
   assert_true(fixture_prompt(puppet, "call_options") is Accepted(_))
   assert_eq(host.observed_call_options(), [options])

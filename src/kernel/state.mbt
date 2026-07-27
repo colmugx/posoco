@@ -138,7 +138,7 @@ pub fn RunState::initial(
     next_event_sequence: EventSequence::initial(),
     next_effect_id: EffectId::first(),
     current_model_step_id: ModelStepId::first(),
-    catalog_version: CatalogVersion::new(0),
+    catalog_version: CatalogVersion(0),
     budget_consumed: BudgetConsumed::zero(),
     outcome: None,
     tool_results: [],

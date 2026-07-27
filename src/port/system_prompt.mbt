@@ -71,7 +71,7 @@ pub(all) struct SystemPromptSection {
 }
 
 ///|
-pub fn SystemPromptSection::new(
+pub fn SystemPromptSection::SystemPromptSection(
   id~ : String,
   contributor~ : &SystemPromptContributor,
 ) -> SystemPromptSection {
@@ -79,7 +79,7 @@ pub fn SystemPromptSection::new(
 }
 
 ///|
-pub fn SystemPromptHook::new(
+pub fn SystemPromptHook::SystemPromptHook(
   base_prompt~ : String,
   contributors~ : Array[SystemPromptSection],
 ) -> SystemPromptHook {

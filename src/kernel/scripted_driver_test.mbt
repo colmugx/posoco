@@ -49,7 +49,7 @@ pub struct ScriptedExecutor {
 }
 
 ///|
-pub fn ScriptedExecutor::new() -> ScriptedExecutor {
+pub fn ScriptedExecutor::ScriptedExecutor() -> ScriptedExecutor {
   { outcomes: Map::from_array([]) }
 }
 

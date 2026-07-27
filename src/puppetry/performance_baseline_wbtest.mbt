@@ -7,9 +7,9 @@
 
 ///|
 async test "puppet/BASELINE-NO-TOOLS-COUNTERS" {
-  let host = FixtureHost::new([Ok(fixture_stop("done"))], Map::from_array([]))
-  let journal = InMemoryJournal::new()
-  let puppet = Puppet::new(
+  let host = FixtureHost([Ok(fixture_stop("done"))], Map::from_array([]))
+  let journal = InMemoryJournal()
+  let puppet = Puppet(
     fixture_config(host, fixture_empty_catalog(), journal, [], []),
   )
 
@@ -21,15 +21,15 @@ async test "puppet/BASELINE-NO-TOOLS-COUNTERS" {
 
 ///|
 async test "puppet/BASELINE-ONE-TOOL-COUNTERS" {
-  let host = FixtureHost::new(
+  let host = FixtureHost(
     [
       Ok(fixture_tool_calls([fixture_call("echo", "one")])),
       Ok(fixture_stop("done")),
     ],
     Map::from_array([("one", Success(content="ok", structured=None))]),
   )
-  let journal = InMemoryJournal::new()
-  let puppet = Puppet::new(
+  let journal = InMemoryJournal()
+  let puppet = Puppet(
     fixture_config(host, fixture_tool_catalog("echo"), journal, [], []),
   )
 
@@ -41,7 +41,7 @@ async test "puppet/BASELINE-ONE-TOOL-COUNTERS" {
 
 ///|
 async test "puppet/BASELINE-FOUR-TOOL-COUNTERS" {
-  let host = FixtureHost::new(
+  let host = FixtureHost(
     [
       Ok(
         fixture_tool_calls([
@@ -60,8 +60,8 @@ async test "puppet/BASELINE-FOUR-TOOL-COUNTERS" {
       ("four", Success(content="four", structured=None)),
     ]),
   )
-  let journal = InMemoryJournal::new()
-  let puppet = Puppet::new(
+  let journal = InMemoryJournal()
+  let puppet = Puppet(
     fixture_config(host, fixture_tool_catalog("echo"), journal, [], []),
   )
 

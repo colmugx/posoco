@@ -132,7 +132,7 @@ async test "b1_simple_turn_no_tools" {
   let observer = MockObserver::{ events: [] }
   let config = make_config()
 
-  let agent = @posoco.Agent::new(
+  let agent = @posoco.Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
       tk_ext(
@@ -226,7 +226,7 @@ async test "b8_turn_event_lifecycle" {
   let observer = MockObserver::{ events: [] }
   let config = make_config()
 
-  let agent = @posoco.Agent::new(
+  let agent = @posoco.Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
       tk_ext(
@@ -260,7 +260,7 @@ async test "b9_model_error_aborts" {
   let observer = MockObserver::{ events: [] }
   let config = make_config()
 
-  let agent = @posoco.Agent::new(
+  let agent = @posoco.Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
       tk_ext(

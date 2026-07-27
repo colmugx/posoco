@@ -67,7 +67,7 @@ pub(all) struct AssistantMessagePayload {
 /// Build an `AssistantCompletion` from its parts. The reducer constructs this
 /// from a `ModelCompleted` input after parsing the model adapter's wire
 /// representation.
-pub fn AssistantCompletion::new(
+pub fn AssistantCompletion::AssistantCompletion(
   content~ : Array[CanonicalContent],
   tool_calls~ : Array[CanonicalToolCall],
   reasoning~ : Reasoning?,

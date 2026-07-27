@@ -324,7 +324,7 @@ pub impl Show for QuiescentStatus with fn to_string(self : QuiescentStatus) -> S
 }
 
 ///|
-pub fn ControlMailbox::new() -> ControlMailbox {
+pub fn ControlMailbox::ControlMailbox() -> ControlMailbox {
   {
     steer_queue: @aqueue.Queue::Queue(kind=Unbounded),
     follow_up_queue: @aqueue.Queue::Queue(kind=Unbounded),

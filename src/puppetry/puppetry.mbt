@@ -81,12 +81,12 @@ pub struct Puppet {
 }
 
 ///|
-pub fn Puppet::new(config : PuppetConfig) -> Puppet {
+pub fn Puppet::Puppet(config : PuppetConfig) -> Puppet {
   {
     config,
     phase_gate: PhaseGate::idle(),
-    mailbox: ControlMailbox::new(),
-    lifecycle: LifecycleCollection::new(),
+    mailbox: ControlMailbox(),
+    lifecycle: LifecycleCollection(),
     last_completed_transcript: None,
   }
 }
@@ -301,7 +301,7 @@ async fn Puppet::drive_run(
     catalog=self.config.catalog,
   )
   // Build the event dispatcher.
-  let dispatcher = EventDispatcher::new(run_id, turn_id, session_id)
+  let dispatcher = EventDispatcher(run_id, turn_id, session_id)
   for sub in self.config.subscribers {
     dispatcher.register(sub)
   }

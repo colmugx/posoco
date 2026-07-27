@@ -56,7 +56,7 @@ pub(all) struct Agent {
   lifecycle : &@port.Lifecycle?
   config : AgentConfig
 }
-pub fn Agent::new(exts~ : Array[&@port.Extension], config~ : AgentConfig) -> Self raise @error.CompositionError
+pub fn Agent::Agent(exts~ : Array[&@port.Extension], config~ : AgentConfig) -> Self raise @error.CompositionError
 pub async fn Agent::run_turn(Self, @types.Message, String) -> @types.TurnResult raise @error.AgentError
 pub async fn Agent::shutdown(Self) -> Unit
 
@@ -103,9 +103,9 @@ pub(all) struct HookRecord {
 pub(all) struct ManifestOnly {
   cached : @port.ExtensionManifest
 }
+pub fn ManifestOnly::ManifestOnly(@port.ExtensionManifest) -> Self
 pub fn ManifestOnly::extension_id(Self) -> String
 pub fn ManifestOnly::manifest(Self) -> @port.ExtensionManifest
-pub fn ManifestOnly::new(@port.ExtensionManifest) -> Self
 pub impl @port.Extension for ManifestOnly
 
 pub(all) struct NoopCommandPort {
@@ -139,17 +139,17 @@ pub(all) struct RecordingHook {
   abort_on : Map[String, String]
   defer_on : Map[String, String]
 }
+pub fn RecordingHook::RecordingHook() -> Self
 pub fn RecordingHook::abort_when(Self, String, String) -> Unit
 pub fn RecordingHook::defer_when(Self, String, String) -> Unit
-pub fn RecordingHook::new() -> Self
 pub fn RecordingHook::records(Self) -> Array[HookRecord]
 pub impl @port.PipelineHook for RecordingHook
 
 pub(all) struct RecordingObserver {
   mut events : Array[@types.TurnEvent]
 }
+pub fn RecordingObserver::RecordingObserver() -> Self
 pub fn RecordingObserver::events(Self) -> Array[@types.TurnEvent]
-pub fn RecordingObserver::new() -> Self
 pub impl @port.Observer for RecordingObserver
 
 pub(all) struct RecordingSessionStore {
@@ -158,9 +158,9 @@ pub(all) struct RecordingSessionStore {
   mut save_failures : Array[String]
   mut ops : Array[SessionOp]
 }
+pub fn RecordingSessionStore::RecordingSessionStore() -> Self
 pub fn RecordingSessionStore::fail_load(Self, String, @error.SessionError) -> Unit
 pub fn RecordingSessionStore::fail_save(Self, String) -> Unit
-pub fn RecordingSessionStore::new() -> Self
 pub fn RecordingSessionStore::ops(Self) -> Array[SessionOp]
 pub fn RecordingSessionStore::save_snapshots(Self) -> Array[(String, Map[String, Json])]
 pub fn RecordingSessionStore::seed(Self, String, @types.Session) -> Unit
@@ -173,10 +173,10 @@ pub(all) struct RecordingToolProvider {
   mut exec_records : Array[ToolExecRecord]
   mut ops : Array[ToolProviderOp]
 }
+pub fn RecordingToolProvider::RecordingToolProvider(Array[@types.ToolDef], Map[String, ScriptedToolOutcome]) -> Self
 pub fn RecordingToolProvider::exec_records(Self) -> Array[ToolExecRecord]
 pub async fn RecordingToolProvider::execute_direct(Self, String, @types.ToolCall) -> @types.ToolResult raise @error.RuntimeError
 pub fn RecordingToolProvider::list_call_count(Self) -> Int
-pub fn RecordingToolProvider::new(Array[@types.ToolDef], Map[String, ScriptedToolOutcome]) -> Self
 pub fn RecordingToolProvider::ops(Self) -> Array[ToolProviderOp]
 pub impl @port.ToolProvider for RecordingToolProvider
 
@@ -186,7 +186,7 @@ pub(all) struct RecordingUiPort {
   mut unsupported_mode : Bool
   mut descriptor : @port.UiDescriptor
 }
-pub fn RecordingUiPort::new(responses? : Array[@port.UiResponse]) -> Self
+pub fn RecordingUiPort::RecordingUiPort(responses? : Array[@port.UiResponse]) -> Self
 pub fn RecordingUiPort::new_unsupported() -> Self
 pub fn RecordingUiPort::render(Self, @port.UiRender) -> Unit
 pub fn RecordingUiPort::render_count(Self) -> Int
@@ -207,10 +207,10 @@ pub(all) struct ScriptedModel {
   received_options : Array[@types.ChatOptions]
   received_chunks : Array[@types.StreamChunk]
 }
+pub fn ScriptedModel::ScriptedModel(Array[ScriptedModelStep]) -> Self
 pub fn ScriptedModel::call_count(Self) -> Int
 pub async fn ScriptedModel::chat_direct(Self, Array[@types.Message], Array[@types.ToolDef], @types.ChatOptions) -> @types.ModelResponse raise @error.ModelError
 pub async fn ScriptedModel::chat_streaming_direct(Self, Array[@types.Message], Array[@types.ToolDef], @types.ChatOptions, (@types.StreamChunk) -> Unit) -> @types.ModelResponse raise @error.ModelError
-pub fn ScriptedModel::new(Array[ScriptedModelStep]) -> Self
 pub fn ScriptedModel::options_received(Self) -> Array[@types.ChatOptions]
 pub impl @port.ModelPort for ScriptedModel
 
@@ -247,7 +247,7 @@ pub(all) struct ToolRegistry {
   mut tools : Map[String, @types.ToolDef]
   mut executors : Map[String, (@types.ToolCall) -> @types.ToolResult]
 }
-pub fn ToolRegistry::new() -> Self
+pub fn ToolRegistry::ToolRegistry() -> Self
 pub fn ToolRegistry::register(Self, @types.ToolDef, (@types.ToolCall) -> @types.ToolResult) -> Unit
 pub fn ToolRegistry::unregister(Self, String) -> Unit
 pub impl @port.ToolProvider for ToolRegistry

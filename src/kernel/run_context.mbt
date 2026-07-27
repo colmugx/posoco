@@ -333,7 +333,7 @@ pub(all) struct RunContext {
 } derive(Eq, Debug)
 
 ///|
-pub fn RunContext::new(
+pub fn RunContext::RunContext(
   run_id~ : RunId,
   session_id~ : SessionId,
   budget~ : Budget,

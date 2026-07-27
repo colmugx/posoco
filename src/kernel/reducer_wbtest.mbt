@@ -22,9 +22,9 @@
 // ──────────────────────────────────────────────────────────────────────────
 
 fn make_catalog_v1() -> ToolCatalogSnapshot raise CatalogCompositionError {
-  let builder = ToolCatalogBuilder::new()
+  let builder = ToolCatalogBuilder()
   let _ = builder.add(
-    CanonicalToolDef::new(
+    CanonicalToolDef(
       name=ToolName::unchecked("read"),
       description="read a file",
       input_schema=Json::object(
@@ -51,7 +51,7 @@ fn make_catalog_v1() -> ToolCatalogSnapshot raise CatalogCompositionError {
       provenance=Some("fs-provider"),
     ),
   )
-  builder.finish(version=CatalogVersion::new(1))
+  builder.finish(version=CatalogVersion(1))
 }
 
 ///|
@@ -76,13 +76,13 @@ fn fresh_state_with_budget(budget : Budget) -> RunState raise KernelError {
 fn start_input() -> RunInput {
   Start(payload=StartPayload::{
     initial_messages: [UserMessage(content=[Text("hi")])],
-    catalog_version: CatalogVersion::new(1),
+    catalog_version: CatalogVersion(1),
   })
 }
 
 ///|
 fn make_completion_no_tools() -> AssistantCompletion {
-  AssistantCompletion::new(
+  AssistantCompletion(
     content=[Text("hello")],
     tool_calls=[],
     reasoning=None,
@@ -97,7 +97,7 @@ fn make_completion_with_tool_call(
   name : String,
   args : Json,
 ) -> AssistantCompletion {
-  AssistantCompletion::new(
+  AssistantCompletion(
     content=[Text("calling")],
     tool_calls=[
       {
@@ -215,7 +215,7 @@ test "C-BUDGET-TOOL-BATCH: count atomically before any tool effect is exposed" {
     CallModel(effect_id~, payload~) => (effect_id, payload.model_step_id)
     _ => fail("expected CallModel effect")
   }
-  let completion = AssistantCompletion::new(
+  let completion = AssistantCompletion(
     content=[Text("calling two tools")],
     tool_calls=[
       {
@@ -336,7 +336,7 @@ test "C-MODEL-SCHEMA-MISMATCH: parsed args fail schema → NotExecuted(SchemaMis
 test "C-MODEL-LENGTH-FINISH: finish_reason=Length → Terminal(Failed)" {
   let (st_awaiting, eff_id, step_id) = run_until_awaiting_model()
   let catalog = make_catalog_v1()
-  let completion = AssistantCompletion::new(
+  let completion = AssistantCompletion(
     content=[Text("truncated")],
     tool_calls=[],
     reasoning=None,
@@ -388,7 +388,7 @@ test "C-INVARIANT-DUPLICATE-CALL-ID: same call_id twice in one batch → Failed"
   let (st_awaiting, eff_id, step_id) = run_until_awaiting_model()
   let catalog = make_catalog_v1()
   // Two tool calls with the SAME call_id, both valid schema.
-  let completion = AssistantCompletion::new(
+  let completion = AssistantCompletion(
     content=[Text("calling")],
     tool_calls=[
       {

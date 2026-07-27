@@ -75,7 +75,7 @@ pub impl @port.SessionStore for QuickstartMemoryStore with fn save(
 async test "quickstart_fixture_uses_current_public_api" {
   let model = QuickstartFixedModel::{  }
   let store = QuickstartMemoryStore::{ sessions: Map::from_array([]) }
-  let agent = @posoco.Agent::new(
+  let agent = @posoco.Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
       tk_ext(id="io", sessions=[store], compressors=[

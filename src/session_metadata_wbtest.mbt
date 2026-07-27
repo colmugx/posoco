@@ -29,14 +29,14 @@ fn metadata_config() -> AgentConfig {
 async test "t05_metadata_roundtrip_preserves_unknown_keys" {
   // Seed a session with user-owned metadata. After a no-tool turn, the saved
   // session MUST still contain those keys with unchanged values.
-  let model = ScriptedModel::new([Respond(tk_stop_response("done"))])
-  let store = RecordingSessionStore::new()
+  let model = ScriptedModel([Respond(tk_stop_response("done"))])
+  let store = RecordingSessionStore()
   let initial_meta = Map::from_array([
     ("user_role", Json::string("admin")),
     ("turn_count", Json::number(5.0)),
   ])
   store.seed("s1", { messages: [], metadata: initial_meta })
-  let agent = Agent::new(
+  let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
       tk_ext(id="io", sessions=[store], compressors=[NoopCompressor::{  }]),
@@ -95,9 +95,9 @@ async test "t05_newthread_lineage_survives_final_save" {
   // When compression creates a new thread, the new session's metadata gets
   // parent_session_id. The final save to the NEW session id MUST still carry
   // that lineage key (the bug: final_session used metadata: Map::from_array([])).
-  let model = ScriptedModel::new([Respond(tk_stop_response("ok"))])
-  let store = RecordingSessionStore::new()
-  let agent = Agent::new(
+  let model = ScriptedModel([Respond(tk_stop_response("ok"))])
+  let store = RecordingSessionStore()
+  let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
       tk_ext(id="io", sessions=[store], compressors=[
@@ -129,12 +129,12 @@ async test "t05_newthread_lineage_survives_final_save" {
 
 ///|
 async test "t05_save_failure_returns_session_error_no_turn_completed" {
-  let model = ScriptedModel::new([Respond(tk_stop_response("done"))])
-  let store = RecordingSessionStore::new()
+  let model = ScriptedModel([Respond(tk_stop_response("done"))])
+  let store = RecordingSessionStore()
   // Configure the session id to fail on save.
   store.fail_save("doomed")
-  let obs = RecordingObserver::new()
-  let agent = Agent::new(
+  let obs = RecordingObserver()
+  let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
       tk_ext(id="io", sessions=[store], observers=[obs], compressors=[
@@ -173,16 +173,14 @@ async test "t05_save_failure_returns_session_error_no_turn_completed" {
 
 ///|
 async test "t05_failed_turn_does_not_mutate_loaded_session_messages" {
-  let model = ScriptedModel::new([
-    Fail(@error.ModelError::Transport("network down")),
-  ])
-  let store = RecordingSessionStore::new()
+  let model = ScriptedModel([Fail(@error.ModelError::Transport("network down"))])
+  let store = RecordingSessionStore()
   let original_messages = [tk_user_msg("already persisted")]
   store.seed("stable", {
     messages: original_messages,
     metadata: Map::from_array([]),
   })
-  let agent = Agent::new(
+  let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
       tk_ext(id="io", sessions=[store], compressors=[NoopCompressor::{  }]),
@@ -213,13 +211,13 @@ async test "t05_failed_turn_does_not_mutate_loaded_session_messages" {
 
 ///|
 async test "t05_session_load_error_has_context_without_metadata" {
-  let model = ScriptedModel::new([])
-  let store = RecordingSessionStore::new()
+  let model = ScriptedModel([])
+  let store = RecordingSessionStore()
   store.fail_load(
     "load-target",
     @error.SessionError::Load("backend unavailable"),
   )
-  let agent = Agent::new(
+  let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
       tk_ext(id="io", sessions=[store], compressors=[NoopCompressor::{  }]),
@@ -245,10 +243,10 @@ async test "t05_session_load_error_has_context_without_metadata" {
 ///|
 async test "t05_session_error_uses_bounded_single_line_id" {
   let raw_id = "line-one\n" + "x".repeat(100) + "TAIL_SESSION_SECRET"
-  let model = ScriptedModel::new([])
-  let store = RecordingSessionStore::new()
+  let model = ScriptedModel([])
+  let store = RecordingSessionStore()
   store.fail_load(raw_id, @error.SessionError::Load("backend unavailable"))
-  let agent = Agent::new(
+  let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
       tk_ext(id="io", sessions=[store], compressors=[NoopCompressor::{  }]),
@@ -274,12 +272,12 @@ async test "t05_session_error_uses_bounded_single_line_id" {
 ///|
 async test "t05_session_save_cause_cannot_reexpand_raw_id" {
   let raw_id = "save-line\n" + "y".repeat(100) + "TAIL_SAVE_SECRET"
-  let model = ScriptedModel::new([Respond(tk_stop_response("done"))])
-  let store = RecordingSessionStore::new()
+  let model = ScriptedModel([Respond(tk_stop_response("done"))])
+  let store = RecordingSessionStore()
   // This fake includes the raw id in its underlying Save message, exercising
   // both the contextual id label and the bounded cause label.
   store.fail_save(raw_id)
-  let agent = Agent::new(
+  let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
       tk_ext(id="io", sessions=[store], compressors=[NoopCompressor::{  }]),
@@ -612,12 +610,12 @@ async test "t05_compressor_hook_and_model_inputs_are_deep_snapshots" {
     ]),
   }
   let aliasing_store = BoundaryAliasingStore::{ session: retained_session }
-  let recording_store = RecordingSessionStore::new()
+  let recording_store = RecordingSessionStore()
   let compressor = BoundaryMutatingCompressor::{  }
   let hook = BoundaryMutatingHook::{  }
   let model = BoundaryMutatingModel::{ response: tk_stop_response("done") }
   let mutating_observer = BoundaryMutatingObserver::{  }
-  let recording_observer = RecordingObserver::new()
+  let recording_observer = RecordingObserver()
   let schema = Json::object(
     Map::from_array([
       (
@@ -629,7 +627,7 @@ async test "t05_compressor_hook_and_model_inputs_are_deep_snapshots" {
   let tool_metadata = Json::object(
     Map::from_array([("value", Json::string("clean-tool-metadata"))]),
   )
-  let provider = RecordingToolProvider::new(
+  let provider = RecordingToolProvider(
     [
       {
         name: "boundary-tool",
@@ -641,7 +639,7 @@ async test "t05_compressor_hook_and_model_inputs_are_deep_snapshots" {
     ],
     Map::from_array([]),
   )
-  let agent = Agent::new(
+  let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
       tk_ext(
@@ -692,9 +690,9 @@ async test "t05_compressor_hook_and_model_inputs_are_deep_snapshots" {
 ///|
 async test "t05_each_final_save_store_gets_independent_deep_snapshot" {
   let mutating_store = BoundaryMutatingStore::{  }
-  let recording_store = RecordingSessionStore::new()
-  let model = ScriptedModel::new([Respond(tk_stop_response("done"))])
-  let agent = Agent::new(
+  let recording_store = RecordingSessionStore()
+  let model = ScriptedModel([Respond(tk_stop_response("done"))])
+  let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
       tk_ext(id="io", sessions=[mutating_store, recording_store], compressors=[
@@ -713,10 +711,10 @@ async test "t05_each_final_save_store_gets_independent_deep_snapshot" {
 ///|
 async test "t05_each_newthread_save_store_gets_independent_deep_snapshot" {
   let mutating_store = BoundaryMutatingStore::{  }
-  let recording_store = RecordingSessionStore::new()
-  let model = ScriptedModel::new([Respond(tk_stop_response("done"))])
+  let recording_store = RecordingSessionStore()
+  let model = ScriptedModel([Respond(tk_stop_response("done"))])
   let compressor = NewThreadWithMessageCompressor::{  }
-  let agent = Agent::new(
+  let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
       tk_ext(id="io", sessions=[mutating_store, recording_store], compressors=[
@@ -787,7 +785,7 @@ async test "t05_tool_ports_hooks_and_observers_get_json_snapshots" {
     structured: Some(provider_structured),
     is_error: false,
   }
-  let model = ScriptedModel::new([
+  let model = ScriptedModel([
     Respond(tk_tool_call_response("probe", "tc-json", call_args)),
     Respond(tk_stop_response("done")),
   ])
@@ -797,9 +795,9 @@ async test "t05_tool_ports_hooks_and_observers_get_json_snapshots" {
   }
   let hook = BoundaryMutatingHook::{  }
   let mutating_observer = BoundaryMutatingObserver::{  }
-  let recording_observer = RecordingObserver::new()
-  let store = RecordingSessionStore::new()
-  let agent = Agent::new(
+  let recording_observer = RecordingObserver()
+  let store = RecordingSessionStore()
+  let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
       tk_ext(

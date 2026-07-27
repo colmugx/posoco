@@ -127,7 +127,7 @@ fn wave_catalog() -> ToolCatalogSnapshot raise CatalogCompositionError {
       ("properties", Json::object(Map::from_array([]))),
     ]),
   )
-  let builder = ToolCatalogBuilder::new()
+  let builder = ToolCatalogBuilder()
   for
     definition in [
       ("parallel_one", @kernel.Parallel),
@@ -138,7 +138,7 @@ fn wave_catalog() -> ToolCatalogSnapshot raise CatalogCompositionError {
     let (name, policy) = definition
     ignore(
       builder.add(
-        CanonicalToolDef::new(
+        CanonicalToolDef(
           name=ToolName::unchecked(name),
           description="wave fixture tool",
           input_schema=schema,
@@ -149,7 +149,7 @@ fn wave_catalog() -> ToolCatalogSnapshot raise CatalogCompositionError {
       ),
     )
   }
-  builder.finish(version=CatalogVersion::new(1))
+  builder.finish(version=CatalogVersion(1))
 }
 
 ///|
@@ -165,9 +165,9 @@ async test "puppet/pump_executes_scheduler_waves_with_source_ordered_reduction" 
     ),
     Ok(fixture_stop("done")),
   ])
-  let journal = InMemoryJournal::new()
+  let journal = InMemoryJournal()
   let catalog = wave_catalog()
-  let puppet = Puppet::new(
+  let puppet = Puppet(
     canonical_puppet_config(
       host.bind_catalog(catalog),
       catalog,

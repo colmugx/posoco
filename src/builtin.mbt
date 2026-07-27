@@ -132,7 +132,7 @@ pub(all) struct ToolRegistry {
 }
 
 ///|
-pub fn ToolRegistry::new() -> ToolRegistry {
+pub fn ToolRegistry::ToolRegistry() -> ToolRegistry {
   { tools: Map::from_array([]), executors: Map::from_array([]) }
 }
 

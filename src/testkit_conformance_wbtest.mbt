@@ -1,16 +1,4 @@
 ///|
-using @types {
-  type TurnEvent,
-  type Session,
-  type ChatOptions,
-  type ToolCall,
-  type StreamChunk,
-}
-
-///|
-using @error {type SessionError}
-
-///|
 fn tk_opts() -> ChatOptions {
   {
     temperature: None,
@@ -32,7 +20,7 @@ fn tk_call(id : String, name : String) -> ToolCall {
 ///|
 async test "tk_model_script_exhausts_loudly" {
   // A model with zero steps must fail on the first call, naming the call index.
-  let model = ScriptedModel::new([])
+  let model = ScriptedModel([])
   let result = Ok(model.chat_direct([], [], tk_opts())) catch { e => Err(e) }
   match result {
     Err(Transport(msg)) => assert_true(msg.contains("scripted_model_exhausted"))
@@ -42,7 +30,7 @@ async test "tk_model_script_exhausts_loudly" {
 
 ///|
 async test "tk_model_records_call_count" {
-  let model = ScriptedModel::new([
+  let model = ScriptedModel([
     Respond(tk_stop_response("a")),
     Respond(tk_stop_response("b")),
   ])
@@ -59,7 +47,7 @@ async test "tk_model_records_call_count" {
 
 ///|
 async test "tk_model_records_received_messages_and_tools" {
-  let model = ScriptedModel::new([Respond(tk_stop_response("ok"))])
+  let model = ScriptedModel([Respond(tk_stop_response("ok"))])
   let msg = tk_user_msg("hello")
   let tool = tk_tool_def("greet", "say hi")
   let _ = model.chat_direct([msg], [tool], tk_opts())
@@ -71,7 +59,7 @@ async test "tk_model_records_received_messages_and_tools" {
 
 ///|
 async test "tk_model_records_chat_options_exactly" {
-  let model = ScriptedModel::new([Respond(tk_stop_response("ok"))])
+  let model = ScriptedModel([Respond(tk_stop_response("ok"))])
   let options : ChatOptions = {
     temperature: Some(0.25),
     max_output_tokens: Some(512),
@@ -93,7 +81,7 @@ async test "tk_model_stream_replays_exact_chunks_in_order" {
     Finish(reason=Stop),
   ]
   let response = tk_stop_response("hello world")
-  let model = ScriptedModel::new([Stream(chunks~, response~)])
+  let model = ScriptedModel([Stream(chunks~, response~)])
   let observed : Array[StreamChunk] = []
   let actual = model.chat_streaming_direct([], [], tk_opts(), fn(chunk) {
     observed.push(chunk)
@@ -106,7 +94,7 @@ async test "tk_model_stream_replays_exact_chunks_in_order" {
 
 ///|
 async test "tk_model_stream_does_not_synthesize_chunks_for_response_step" {
-  let model = ScriptedModel::new([Respond(tk_stop_response("do not split me"))])
+  let model = ScriptedModel([Respond(tk_stop_response("do not split me"))])
   let observed : Array[StreamChunk] = []
   let _ = model.chat_streaming_direct([], [], tk_opts(), fn(chunk) {
     observed.push(chunk)
@@ -117,7 +105,7 @@ async test "tk_model_stream_does_not_synthesize_chunks_for_response_step" {
 
 ///|
 async test "tk_model_fail_step_raises_typed_model_error" {
-  let model = ScriptedModel::new([Fail(ResponseParse("bad json"))])
+  let model = ScriptedModel([Fail(ResponseParse("bad json"))])
   let result = Ok(model.chat_direct([], [], tk_opts())) catch { e => Err(e) }
   match result {
     Err(ResponseParse(msg)) => assert_true(msg.contains("bad json"))
@@ -134,10 +122,7 @@ async test "tk_tool_records_execute_with_call_id" {
   let outcomes : Map[String, ScriptedToolOutcome] = Map::from_array([
     ("lookup", ScriptedToolOutcome::OutcomeOk(tk_ok_result("found"))),
   ])
-  let provider = RecordingToolProvider::new(
-    [tk_tool_def("lookup", "")],
-    outcomes,
-  )
+  let provider = RecordingToolProvider([tk_tool_def("lookup", "")], outcomes)
   let call = tk_call("tc_42", "lookup")
   let result = provider.execute_direct("lookup", call)
   assert_eq(result.content, "found")
@@ -152,7 +137,7 @@ async test "tk_tool_records_execute_with_call_id" {
 
 ///|
 async test "tk_tool_unknown_raises_typed_error" {
-  let provider = RecordingToolProvider::new([], Map::from_array([]))
+  let provider = RecordingToolProvider([], Map::from_array([]))
   let call = tk_call("tc_1", "missing")
   let result = Ok(provider.execute_direct("missing", call)) catch {
     e => Err(e)
@@ -175,10 +160,7 @@ async test "tk_tool_records_raised_runtime_error" {
   let outcomes : Map[String, ScriptedToolOutcome] = Map::from_array([
     ("flaky", ScriptedToolOutcome::OutcomeErr(InvocationFailed("boom"))),
   ])
-  let provider = RecordingToolProvider::new(
-    [tk_tool_def("flaky", "")],
-    outcomes,
-  )
+  let provider = RecordingToolProvider([tk_tool_def("flaky", "")], outcomes)
   let call = tk_call("tc_9", "flaky")
   let result = Ok(provider.execute_direct("flaky", call)) catch { e => Err(e) }
   match result {
@@ -199,10 +181,7 @@ async test "tk_tool_unified_trace_preserves_list_execute_order" {
   let outcomes : Map[String, ScriptedToolOutcome] = Map::from_array([
     ("lookup", ScriptedToolOutcome::OutcomeOk(tk_ok_result("found"))),
   ])
-  let provider = RecordingToolProvider::new(
-    [tk_tool_def("lookup", "")],
-    outcomes,
-  )
+  let provider = RecordingToolProvider([tk_tool_def("lookup", "")], outcomes)
   let _ = provider.list_tools()
   let call = ToolCall::{
     id: "tc_order",
@@ -241,10 +220,7 @@ async test "tk_tool_records_are_recursive_json_snapshots" {
       }),
     ),
   ])
-  let provider = RecordingToolProvider::new(
-    [tk_tool_def("lookup", "")],
-    outcomes,
-  )
+  let provider = RecordingToolProvider([tk_tool_def("lookup", "")], outcomes)
   structured_map["status"] = Json::string("mutated after configuration")
   let argument_map : Map[String, Json] = Map::from_array([
     ("query", Json::string("original")),
@@ -280,7 +256,7 @@ async test "tk_tool_records_are_recursive_json_snapshots" {
 
 ///|
 test "tk_store_records_save_metadata_snapshot" {
-  let store = RecordingSessionStore::new()
+  let store = RecordingSessionStore()
   let meta = Map::from_array([
     ("user_role", Json::string("admin")),
     ("turn_count", Json::number(3.0)),
@@ -297,7 +273,7 @@ test "tk_store_records_save_metadata_snapshot" {
 
 ///|
 test "tk_store_load_unknown_returns_empty_session" {
-  let store = RecordingSessionStore::new()
+  let store = RecordingSessionStore()
   let result = store.load("never_saved")
   match result {
     Ok(s) => {
@@ -310,7 +286,7 @@ test "tk_store_load_unknown_returns_empty_session" {
 
 ///|
 test "tk_store_load_and_seed_are_snapshot_isolated" {
-  let store = RecordingSessionStore::new()
+  let store = RecordingSessionStore()
   let seeded : Session = {
     messages: [tk_user_msg("seed")],
     metadata: Map::from_array([("owner", Json::string("original"))]),
@@ -361,7 +337,7 @@ test "tk_store_snapshots_nested_json_and_tool_arguments" {
     ],
     metadata: Map::from_array([("nested", Json::object(metadata_object))]),
   }
-  let store = RecordingSessionStore::new()
+  let store = RecordingSessionStore()
   store.seed("nested", session)
   metadata_object["value"] = Json::string("metadata-outside")
   argument_object["value"] = Json::string("argument-outside")
@@ -398,7 +374,7 @@ test "tk_store_operation_accessors_return_recursive_snapshots" {
   let nested : Map[String, Json] = Map::from_array([
     ("value", Json::string("original")),
   ])
-  let store = RecordingSessionStore::new()
+  let store = RecordingSessionStore()
   let _ = store.save("ops", {
     messages: [],
     metadata: Map::from_array([("nested", Json::object(nested))]),
@@ -426,7 +402,7 @@ test "tk_store_operation_accessors_return_recursive_snapshots" {
 
 ///|
 test "tk_store_fail_save_returns_typed_error" {
-  let store = RecordingSessionStore::new()
+  let store = RecordingSessionStore()
   store.fail_save("broken")
   let result = store.save("broken", {
     messages: [],
@@ -440,7 +416,7 @@ test "tk_store_fail_save_returns_typed_error" {
 
 ///|
 test "tk_store_fail_load_returns_typed_error" {
-  let store = RecordingSessionStore::new()
+  let store = RecordingSessionStore()
   store.fail_load("dead", Load("disk gone"))
   let result = store.load("dead")
   match result {
@@ -455,7 +431,7 @@ test "tk_store_fail_load_returns_typed_error" {
 
 ///|
 async test "tk_observer_preserves_event_order" {
-  let obs = RecordingObserver::new()
+  let obs = RecordingObserver()
   obs.on_event(TurnStarted)
   obs.on_event(ToolCallPending(tk_call("c1", "t")))
   obs.on_event(TurnCompleted)
@@ -467,7 +443,7 @@ async test "tk_observer_preserves_event_order" {
 
 ///|
 async test "tk_observer_event_accessor_is_deep_snapshot" {
-  let obs = RecordingObserver::new()
+  let obs = RecordingObserver()
   let message = tk_user_msg("original")
   obs.on_event(
     ModelResponseReceived(message~, usage=None, reasoning_content=None),
@@ -495,7 +471,7 @@ async test "tk_observer_event_accessor_is_deep_snapshot" {
 
 ///|
 async test "tk_hook_records_stage_and_configured_abort" {
-  let hook = RecordingHook::new()
+  let hook = RecordingHook()
   hook.abort_when("BeforeModel", "policy rejected model call")
   let result = hook.on_stage(BeforeModel([tk_user_msg("hello")]))
   match result {
@@ -513,7 +489,7 @@ async test "tk_hook_records_stage_and_configured_abort" {
 
 ///|
 async test "tk_hook_records_stage_and_configured_deferral" {
-  let hook = RecordingHook::new()
+  let hook = RecordingHook()
   hook.defer_when("BeforeTool", "approval required")
   let result = hook.on_stage(BeforeTool(tk_call("tc_defer", "dangerous")))
   match result {
@@ -531,7 +507,7 @@ async test "tk_hook_records_stage_and_configured_deferral" {
 
 ///|
 async test "tk_hook_records_pass_through_outcome" {
-  let hook = RecordingHook::new()
+  let hook = RecordingHook()
   let result = hook.on_stage(BeforeModel([tk_user_msg("hello")]))
   assert_true(result is Ok(BeforeModel(_)))
   let records = hook.records()
@@ -547,7 +523,7 @@ async test "tk_hook_records_pass_through_outcome" {
 
 ///|
 async test "tk_hook_record_accessor_is_deep_snapshot" {
-  let hook = RecordingHook::new()
+  let hook = RecordingHook()
   let message = tk_user_msg("original")
   let _ = hook.on_stage(BeforeModel([message]))
   message.content.push(Text("outside mutation"))

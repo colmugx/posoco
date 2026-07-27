@@ -69,7 +69,7 @@ fn make_abort(cmd_id : String, run : RunId) -> AbortCommand {
 
 ///|
 fn bound_mailbox() -> ControlMailbox {
-  let mb = ControlMailbox::new()
+  let mb = ControlMailbox()
   mb.bind_run(mb_run_id(), mb_turn_id())
   mb
 }
@@ -80,7 +80,7 @@ fn bound_mailbox() -> ControlMailbox {
 
 ///|
 test "puppet_control/bind_then_clear" {
-  let mb = ControlMailbox::new()
+  let mb = ControlMailbox()
   assert_true(mb.active_run_id() is None)
   mb.bind_run(mb_run_id(), mb_turn_id())
   assert_true(mb.active_run_id() == Some(mb_run_id()))
@@ -113,7 +113,7 @@ test "puppet_control/steer_enqueue_stale_run_rejected" {
 
 ///|
 test "puppet_control/steer_enqueue_no_active_run_rejected" {
-  let mb = ControlMailbox::new()
+  let mb = ControlMailbox()
   let result = mb.enqueue_steer(make_steer("s1", mb_run_id(), mb_turn_id()))
   assert_true(result is RejectedStale(_))
 }
@@ -223,7 +223,7 @@ test "puppet_control/abort_first_accepted_second_already_requested" {
 
 ///|
 test "puppet_control/abort_no_active_run_rejected" {
-  let mb = ControlMailbox::new()
+  let mb = ControlMailbox()
   let r = mb.enqueue_abort(make_abort("a1", mb_run_id()))
   assert_true(r is RejectedStale(_))
 }
@@ -282,7 +282,7 @@ test "puppet_control/queue_policy_all_vs_one_at_a_time" {
 
 ///|
 test "puppet_control/quiescent_status_idle_initially" {
-  let mb = ControlMailbox::new()
+  let mb = ControlMailbox()
   let s = mb.quiescent_status()
   // Initial quiescent status is Idle.
   assert_true(s is Idle)
@@ -290,7 +290,7 @@ test "puppet_control/quiescent_status_idle_initially" {
 
 ///|
 test "puppet_control/set_quiescent_updates_status" {
-  let mb = ControlMailbox::new()
+  let mb = ControlMailbox()
   mb.set_quiescent(Shutdown)
   assert_true(mb.quiescent_status() is Shutdown)
 }
@@ -298,14 +298,14 @@ test "puppet_control/set_quiescent_updates_status" {
 ///|
 async test "puppet_control/wait_idle_returns_when_already_idle" {
   // When the mailbox is already Idle, wait_idle must return immediately.
-  let mb = ControlMailbox::new()
+  let mb = ControlMailbox()
   let s = mb.wait_idle()
   assert_true(s is Idle)
 }
 
 ///|
 async test "puppet_control/wait_idle_returns_terminal" {
-  let mb = ControlMailbox::new()
+  let mb = ControlMailbox()
   let outcome : RunOutcome = Completed(
     final_message=AssistantMessage(
       content=[],

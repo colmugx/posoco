@@ -59,7 +59,7 @@ pub impl ToolBinding for CanonicalHostTool with fn execute(
 
 ///|
 fn canonical_host_definition() -> @kernel.CanonicalToolDef {
-  @kernel.CanonicalToolDef::new(
+  @kernel.CanonicalToolDef(
     name=@kernel.ToolName::unchecked("canonical_probe"),
     description="canonical host probe",
     input_schema=Json::object(Map::from_array([])),
@@ -73,9 +73,9 @@ fn canonical_host_definition() -> @kernel.CanonicalToolDef {
 fn canonical_host_catalog(
   definition : @kernel.CanonicalToolDef,
 ) -> @kernel.ToolCatalogSnapshot raise @kernel.CatalogCompositionError {
-  let builder = @kernel.ToolCatalogBuilder::new()
+  let builder = @kernel.ToolCatalogBuilder()
   ignore(builder.add(definition))
-  builder.finish(version=@kernel.CatalogVersion::new(1))
+  builder.finish(version=@kernel.CatalogVersion(1))
 }
 
 ///|
@@ -102,7 +102,7 @@ async test "canonical_host/routes_exact_catalog_binding" {
 ///|
 async test "canonical_host/rejects_binding_not_present_in_catalog" {
   let catalog = canonical_host_catalog(canonical_host_definition())
-  let mismatched : @kernel.CanonicalToolDef = @kernel.CanonicalToolDef::new(
+  let mismatched : @kernel.CanonicalToolDef = @kernel.CanonicalToolDef(
     name=@kernel.ToolName::unchecked("other_probe"),
     description="mismatch",
     input_schema=Json::object(Map::from_array([])),

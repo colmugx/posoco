@@ -25,7 +25,7 @@ async test "t07_malformed_tool_json_raises_response_parse" {
   // A tool-call delta with invalid JSON arguments must NOT silently become {}.
   // It must raise ModelError::ResponseParse so the caller knows the stream
   // was malformed.
-  let acc = @types.StreamAccumulator::new()
+  let acc = @types.StreamAccumulator()
   // Push a tool-call delta with a name but malformed arguments JSON.
   acc.push(
     @types.StreamChunk::ToolCallDelta(
@@ -54,7 +54,7 @@ async test "t07_malformed_tool_json_raises_response_parse" {
 
 ///|
 async test "t07_incomplete_tool_call_is_loud" {
-  let acc = @types.StreamAccumulator::new()
+  let acc = @types.StreamAccumulator()
   acc.push(
     @types.StreamChunk::ToolCallDelta(
       index=0,
@@ -82,7 +82,7 @@ async test "t07_tool_parse_error_omits_untrusted_identifiers_and_payload" {
   let raw_id = "id-line-one\nid-line-two-" + "i".repeat(100)
   let raw_name = "name-line-one\nname-line-two-" + "n".repeat(100)
   let raw_arguments = "{\"api_key\":\"RAW_TOOL_SECRET"
-  let acc = @types.StreamAccumulator::new()
+  let acc = @types.StreamAccumulator()
   acc.push(
     @types.StreamChunk::ToolCallDelta(
       index=0,
@@ -115,7 +115,7 @@ async test "t07_tool_parse_error_omits_untrusted_identifiers_and_payload" {
 
 ///|
 async test "t07_valid_tool_json_still_parses" {
-  let acc = @types.StreamAccumulator::new()
+  let acc = @types.StreamAccumulator()
   acc.push(
     @types.StreamChunk::ToolCallDelta(
       index=0,
@@ -137,12 +137,12 @@ async test "t07_valid_tool_json_still_parses" {
 async test "t07_model_error_emits_turnfailed_not_turncompleted" {
   // When the model raises, the observer must see TurnFailed (from the model
   // error path) and MUST NOT see TurnCompleted.
-  let model = @posoco.ScriptedModel::new([
+  let model = @posoco.ScriptedModel([
     @posoco.Fail(@error.ModelError::Transport("network down")),
   ])
-  let store = @posoco.RecordingSessionStore::new()
-  let obs = @posoco.RecordingObserver::new()
-  let agent = @posoco.Agent::new(
+  let store = @posoco.RecordingSessionStore()
+  let obs = @posoco.RecordingObserver()
+  let agent = @posoco.Agent(
     exts=[
       @posoco.tk_ext(id="model", model=Some(model)),
       @posoco.tk_ext(id="io", sessions=[store], observers=[obs], compressors=[
@@ -211,13 +211,13 @@ fn has_secondary_failure(
 
 ///|
 async test "t07_save_error_emits_exactly_one_turnfailed" {
-  let model = @posoco.ScriptedModel::new([
+  let model = @posoco.ScriptedModel([
     @posoco.Respond(@posoco.tk_stop_response("done")),
   ])
-  let store = @posoco.RecordingSessionStore::new()
+  let store = @posoco.RecordingSessionStore()
   store.fail_save("save-fail")
-  let obs = @posoco.RecordingObserver::new()
-  let agent = @posoco.Agent::new(
+  let obs = @posoco.RecordingObserver()
+  let agent = @posoco.Agent(
     exts=[
       @posoco.tk_ext(id="model", model=Some(model)),
       @posoco.tk_ext(id="io", sessions=[store], observers=[obs], compressors=[
@@ -240,11 +240,11 @@ async test "t07_save_error_emits_exactly_one_turnfailed" {
 
 ///|
 async test "t07_load_error_emits_one_safe_turnfailed" {
-  let model = @posoco.ScriptedModel::new([])
-  let store = @posoco.RecordingSessionStore::new()
+  let model = @posoco.ScriptedModel([])
+  let store = @posoco.RecordingSessionStore()
   store.fail_load("load-fail", Load("backend detail must stay with caller"))
-  let obs = @posoco.RecordingObserver::new()
-  let agent = @posoco.Agent::new(
+  let obs = @posoco.RecordingObserver()
+  let agent = @posoco.Agent(
     exts=[
       @posoco.tk_ext(id="model", model=Some(model)),
       @posoco.tk_ext(id="io", sessions=[store], observers=[obs], compressors=[
@@ -279,14 +279,14 @@ async test "t07_load_error_emits_one_safe_turnfailed" {
 
 ///|
 async test "t07_afterturn_hook_failure_is_observable_but_nonfatal" {
-  let model = @posoco.ScriptedModel::new([
+  let model = @posoco.ScriptedModel([
     @posoco.Respond(@posoco.tk_stop_response("done")),
   ])
-  let store = @posoco.RecordingSessionStore::new()
-  let obs = @posoco.RecordingObserver::new()
-  let hook = @posoco.RecordingHook::new()
+  let store = @posoco.RecordingSessionStore()
+  let obs = @posoco.RecordingObserver()
+  let hook = @posoco.RecordingHook()
   hook.abort_when("AfterTurn", "after-turn cleanup failed")
-  let agent = @posoco.Agent::new(
+  let agent = @posoco.Agent(
     exts=[
       @posoco.tk_ext(id="model", model=Some(model)),
       @posoco.tk_ext(id="io", hooks=[hook], sessions=[store], observers=[obs], compressors=[
@@ -303,14 +303,14 @@ async test "t07_afterturn_hook_failure_is_observable_but_nonfatal" {
 
 ///|
 async test "t07_error_hook_failure_preserves_primary_and_is_observable" {
-  let model = @posoco.ScriptedModel::new([
+  let model = @posoco.ScriptedModel([
     @posoco.Fail(@error.ModelError::Transport("primary network failure")),
   ])
-  let store = @posoco.RecordingSessionStore::new()
-  let obs = @posoco.RecordingObserver::new()
-  let hook = @posoco.RecordingHook::new()
+  let store = @posoco.RecordingSessionStore()
+  let obs = @posoco.RecordingObserver()
+  let hook = @posoco.RecordingHook()
   hook.abort_when("ModelError", "secondary model-error hook failure")
-  let agent = @posoco.Agent::new(
+  let agent = @posoco.Agent(
     exts=[
       @posoco.tk_ext(id="model", model=Some(model)),
       @posoco.tk_ext(id="io", hooks=[hook], sessions=[store], observers=[obs], compressors=[
@@ -334,14 +334,14 @@ async test "t07_error_hook_failure_preserves_primary_and_is_observable" {
 
 ///|
 async test "t07_turnerror_hook_failure_preserves_primary_and_is_observable" {
-  let model = @posoco.ScriptedModel::new([
+  let model = @posoco.ScriptedModel([
     @posoco.Fail(@error.ModelError::Transport("primary network failure")),
   ])
-  let store = @posoco.RecordingSessionStore::new()
-  let obs = @posoco.RecordingObserver::new()
-  let hook = @posoco.RecordingHook::new()
+  let store = @posoco.RecordingSessionStore()
+  let obs = @posoco.RecordingObserver()
+  let hook = @posoco.RecordingHook()
   hook.abort_when("TurnError", "secondary turn-error hook failure")
-  let agent = @posoco.Agent::new(
+  let agent = @posoco.Agent(
     exts=[
       @posoco.tk_ext(id="model", model=Some(model)),
       @posoco.tk_ext(id="io", hooks=[hook], sessions=[store], observers=[obs], compressors=[
@@ -365,13 +365,13 @@ async test "t07_turnerror_hook_failure_preserves_primary_and_is_observable" {
 
 ///|
 async test "t07_aftertool_hook_failure_is_observable_but_nonfatal" {
-  let model = @posoco.ScriptedModel::new([
+  let model = @posoco.ScriptedModel([
     @posoco.Respond(
       @posoco.tk_tool_call_response("probe", "tc_secondary", Json::null()),
     ),
     @posoco.Respond(@posoco.tk_stop_response("done")),
   ])
-  let provider = @posoco.RecordingToolProvider::new(
+  let provider = @posoco.RecordingToolProvider(
     [@posoco.tk_tool_def("probe", "")],
     Map::from_array([
       (
@@ -380,11 +380,11 @@ async test "t07_aftertool_hook_failure_is_observable_but_nonfatal" {
       ),
     ]),
   )
-  let store = @posoco.RecordingSessionStore::new()
-  let obs = @posoco.RecordingObserver::new()
-  let hook = @posoco.RecordingHook::new()
+  let store = @posoco.RecordingSessionStore()
+  let obs = @posoco.RecordingObserver()
+  let hook = @posoco.RecordingHook()
   hook.abort_when("AfterTool", "secondary after-tool hook failure")
-  let agent = @posoco.Agent::new(
+  let agent = @posoco.Agent(
     exts=[
       @posoco.tk_ext(id="model", model=Some(model)),
       @posoco.tk_ext(
@@ -408,12 +408,12 @@ async test "t07_aftertool_hook_failure_is_observable_but_nonfatal" {
 
 ///|
 async test "t07_beforemodel_abort_emits_exactly_one_turnfailed" {
-  let model = @posoco.ScriptedModel::new([])
-  let store = @posoco.RecordingSessionStore::new()
-  let obs = @posoco.RecordingObserver::new()
-  let hook = @posoco.RecordingHook::new()
+  let model = @posoco.ScriptedModel([])
+  let store = @posoco.RecordingSessionStore()
+  let obs = @posoco.RecordingObserver()
+  let hook = @posoco.RecordingHook()
   hook.abort_when("BeforeModel", "policy rejected model call")
-  let agent = @posoco.Agent::new(
+  let agent = @posoco.Agent(
     exts=[
       @posoco.tk_ext(id="model", model=Some(model)),
       @posoco.tk_ext(id="io", hooks=[hook], sessions=[store], observers=[obs], compressors=[
@@ -447,12 +447,12 @@ async test "t07_beforemodel_abort_emits_exactly_one_turnfailed" {
 
 ///|
 async test "t07_beforeturn_abort_does_not_start_or_terminalize_turn" {
-  let model = @posoco.ScriptedModel::new([])
-  let store = @posoco.RecordingSessionStore::new()
-  let obs = @posoco.RecordingObserver::new()
-  let hook = @posoco.RecordingHook::new()
+  let model = @posoco.ScriptedModel([])
+  let store = @posoco.RecordingSessionStore()
+  let obs = @posoco.RecordingObserver()
+  let hook = @posoco.RecordingHook()
   hook.abort_when("BeforeTurn", "turn rejected before start")
-  let agent = @posoco.Agent::new(
+  let agent = @posoco.Agent(
     exts=[
       @posoco.tk_ext(id="model", model=Some(model)),
       @posoco.tk_ext(id="io", hooks=[hook], sessions=[store], observers=[obs], compressors=[
@@ -476,12 +476,12 @@ async test "t07_beforeturn_abort_does_not_start_or_terminalize_turn" {
 
 ///|
 async test "t07_tool_loop_emits_exactly_one_turnfailed" {
-  let model = @posoco.ScriptedModel::new([
+  let model = @posoco.ScriptedModel([
     @posoco.Respond(
       @posoco.tk_tool_call_response("probe", "tc_loop", Json::null()),
     ),
   ])
-  let provider = @posoco.RecordingToolProvider::new(
+  let provider = @posoco.RecordingToolProvider(
     [@posoco.tk_tool_def("probe", "")],
     Map::from_array([
       (
@@ -490,8 +490,8 @@ async test "t07_tool_loop_emits_exactly_one_turnfailed" {
       ),
     ]),
   )
-  let store = @posoco.RecordingSessionStore::new()
-  let obs = @posoco.RecordingObserver::new()
+  let store = @posoco.RecordingSessionStore()
+  let obs = @posoco.RecordingObserver()
   let config : AgentConfig = {
     max_tool_rounds: 0,
     temperature: None,
@@ -500,7 +500,7 @@ async test "t07_tool_loop_emits_exactly_one_turnfailed" {
     reasoning_effort: None,
     model_context_window: None,
   }
-  let agent = @posoco.Agent::new(
+  let agent = @posoco.Agent(
     exts=[
       @posoco.tk_ext(id="model", model=Some(model)),
       @posoco.tk_ext(

@@ -76,7 +76,7 @@ pub fn EventEnvelope::is_terminal(self : EventEnvelope) -> Bool {
 ///|
 /// Construct an envelope. Internal — only the Puppet dispatcher builds
 /// envelopes (it owns the seq counter).
-pub fn EventEnvelope::new(
+pub fn EventEnvelope::EventEnvelope(
   run_id~ : RunId,
   turn_id~ : TurnId,
   session_id~ : SessionId,
@@ -151,7 +151,7 @@ pub(all) struct NoopSubscriber {
 }
 
 ///|
-pub fn NoopSubscriber::new() -> NoopSubscriber {
+pub fn NoopSubscriber::NoopSubscriber() -> NoopSubscriber {
   { id: "noop_subscriber" }
 }
 
@@ -202,7 +202,7 @@ pub struct EventDispatcher {
 }
 
 ///|
-pub fn EventDispatcher::new(
+pub fn EventDispatcher::EventDispatcher(
   run_id : RunId,
   turn_id : TurnId,
   session_id : SessionId,
@@ -253,7 +253,7 @@ pub async fn EventDispatcher::dispatch(
   let seq = self.next_seq
   self.next_seq = self.next_seq + 1
   self.last_committed_revision = committed_revision
-  let envelope : EventEnvelope = EventEnvelope::new(
+  let envelope : EventEnvelope = EventEnvelope(
     run_id=self.run_id,
     turn_id=self.turn_id,
     session_id=self.session_id,

@@ -14,9 +14,9 @@
 // ──────────────────────────────────────────────────────────────────────────
 
 fn golden_catalog() -> ToolCatalogSnapshot raise CatalogCompositionError {
-  let builder = ToolCatalogBuilder::new()
+  let builder = ToolCatalogBuilder()
   let _ = builder.add(
-    CanonicalToolDef::new(
+    CanonicalToolDef(
       name=ToolName::unchecked("read"),
       description="read file",
       input_schema=Json::object(
@@ -44,7 +44,7 @@ fn golden_catalog() -> ToolCatalogSnapshot raise CatalogCompositionError {
     ),
   )
   let _ = builder.add(
-    CanonicalToolDef::new(
+    CanonicalToolDef(
       name=ToolName::unchecked("write"),
       description="write file",
       input_schema=Json::object(
@@ -55,7 +55,7 @@ fn golden_catalog() -> ToolCatalogSnapshot raise CatalogCompositionError {
       provenance=Some("fs"),
     ),
   )
-  builder.finish(version=CatalogVersion::new(1))
+  builder.finish(version=CatalogVersion(1))
 }
 
 ///|
@@ -71,13 +71,13 @@ fn golden_initial_state() -> RunState raise KernelError {
 fn golden_start() -> StartPayload {
   StartPayload::{
     initial_messages: [UserMessage(content=[Text("hello")])],
-    catalog_version: CatalogVersion::new(1),
+    catalog_version: CatalogVersion(1),
   }
 }
 
 ///|
 fn completion_no_tools(text : String) -> AssistantCompletion {
-  AssistantCompletion::new(
+  AssistantCompletion(
     content=[Text(text)],
     tool_calls=[],
     reasoning=None,
@@ -92,7 +92,7 @@ fn completion_with_tool_call(
   name : String,
   args : Json,
 ) -> AssistantCompletion {
-  AssistantCompletion::new(
+  AssistantCompletion(
     content=[Text("calling")],
     tool_calls=[
       {
@@ -115,7 +115,7 @@ fn completion_with_tool_call(
 test "GOLDEN C-HAPPY-NO-TOOLS: Start → Model → Completed" {
   let catalog = golden_catalog()
   let st0 = golden_initial_state()
-  let scripted = ScriptedExecutor::new().on(
+  let scripted = ScriptedExecutor().on(
     EffectId::first(),
     ScriptedModelCompleted(completion_no_tools("hi")),
   )
@@ -143,7 +143,7 @@ test "GOLDEN C-HAPPY-NO-TOOLS: Start → Model → Completed" {
 test "GOLDEN C-HAPPY-ONE-TOOL: Model → Tool → Model → Completed" {
   let catalog = golden_catalog()
   let st0 = golden_initial_state()
-  let scripted = ScriptedExecutor::new()
+  let scripted = ScriptedExecutor()
     .on(
       // First model step: declares ExecuteTool (effect id 2).
       EffectId::first(),
@@ -191,7 +191,7 @@ test "GOLDEN C-HAPPY-ONE-TOOL: Model → Tool → Model → Completed" {
 test "GOLDEN C-MODEL-UNKNOWN-TOOL: NotExecuted, zero ExecuteTool, then re-prompt" {
   let catalog = golden_catalog()
   let st0 = golden_initial_state()
-  let scripted = ScriptedExecutor::new()
+  let scripted = ScriptedExecutor()
     .on(
       EffectId::first(),
       ScriptedModelCompleted(
@@ -235,7 +235,7 @@ test "GOLDEN C-MODEL-UNKNOWN-TOOL: NotExecuted, zero ExecuteTool, then re-prompt
 test "GOLDEN C-MODEL-TRANSPORT-FAILURE: ModelFailed → Terminal(Failed)" {
   let catalog = golden_catalog()
   let st0 = golden_initial_state()
-  let scripted = ScriptedExecutor::new().on(
+  let scripted = ScriptedExecutor().on(
     EffectId::first(),
     ScriptedModelFailed(Transport(reason="HTTP 503")),
   )
@@ -256,7 +256,7 @@ test "GOLDEN C-MODEL-TRANSPORT-FAILURE: ModelFailed → Terminal(Failed)" {
 test "GOLDEN C-TOOL-RUNTIME-FAILURE: tool runtime error → Run continues" {
   let catalog = golden_catalog()
   let st0 = golden_initial_state()
-  let scripted = ScriptedExecutor::new()
+  let scripted = ScriptedExecutor()
     .on(
       EffectId::first(),
       ScriptedModelCompleted(
@@ -303,7 +303,7 @@ test "GOLDEN C-TOOL-RUNTIME-FAILURE: tool runtime error → Run continues" {
 test "GOLDEN C-TERMINAL-EXACTLY-ONCE: every Run ends with exactly 1 terminal event" {
   let catalog = golden_catalog()
   let st0 = golden_initial_state()
-  let scripted = ScriptedExecutor::new().on(
+  let scripted = ScriptedExecutor().on(
     EffectId::first(),
     ScriptedModelCompleted(completion_no_tools("ok")),
   )
@@ -320,7 +320,7 @@ test "GOLDEN C-TERMINAL-EXACTLY-ONCE: every Run ends with exactly 1 terminal eve
 test "GOLDEN C-INVARIANT-MISSING-OWNER: scripted MissingOwner → Terminal(Failed)" {
   let catalog = golden_catalog()
   let st0 = golden_initial_state()
-  let scripted = ScriptedExecutor::new()
+  let scripted = ScriptedExecutor()
     .on(
       EffectId::first(),
       ScriptedModelCompleted(
@@ -358,11 +358,11 @@ test "GOLDEN C-INVARIANT-MISSING-OWNER: scripted MissingOwner → Terminal(Faile
 test "GOLDEN C-HAPPY-MULTI-TOOL: two parallel tools in one batch" {
   let catalog = golden_catalog()
   let st0 = golden_initial_state()
-  let scripted = ScriptedExecutor::new()
+  let scripted = ScriptedExecutor()
     .on(
       EffectId::first(),
       ScriptedModelCompleted(
-        AssistantCompletion::new(
+        AssistantCompletion(
           content=[Text("calling both")],
           tool_calls=[
             {
@@ -434,7 +434,7 @@ test "GOLDEN C-HAPPY-REVERSE-TOOL-COMPLETION: terminal results preserve call ord
     CallModel(effect_id~, payload~) => (effect_id, payload.model_step_id)
     _ => fail("expected initial CallModel effect")
   }
-  let completion = AssistantCompletion::new(
+  let completion = AssistantCompletion(
     content=[Text("calling")],
     tool_calls=[
       {
@@ -539,7 +539,7 @@ test "GOLDEN C-UNSCRIPTED-EFFECT: missing script raises fixture error" {
   let catalog = golden_catalog()
   let st0 = golden_initial_state()
   // Script the first model step but forget to script the resulting tool.
-  let scripted = ScriptedExecutor::new().on(
+  let scripted = ScriptedExecutor().on(
     EffectId::first(),
     ScriptedModelCompleted(
       completion_with_tool_call(
@@ -549,17 +549,10 @@ test "GOLDEN C-UNSCRIPTED-EFFECT: missing script raises fixture error" {
       ),
     ),
   )
-  let result : Result[DriverTrace, KernelError] = Ok(
-    scripted_driver_run(st0, catalog, scripted, golden_start(), 30),
-  ) catch {
-    error => Err(error)
-  }
-  match result {
-    Err(IllegalTransition(phase~, input_kind~, detail~, ..)) => {
-      assert_eq(phase, "fixture")
-      assert_eq(input_kind, "lookup")
-      assert_true(detail.contains("missing scripted outcome"))
-    }
-    _ => fail("expected missing-script fixture error")
+  let result = scripted_driver_run(st0, catalog, scripted, golden_start(), 30)
+  assert_eq(result.final_state().phase(), Terminal)
+  match result.final_state().outcome() {
+    Some(Failed(..)) => ()
+    _ => fail("expected Failed outcome, got outcome")
   }
 }

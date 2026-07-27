@@ -3,9 +3,9 @@
 
 ///|
 async test "puppet/pump_forwards_catalog_definitions_to_host" {
-  let host = FixtureHost::new([Ok(fixture_stop("done"))], Map::from_array([]))
-  let journal = InMemoryJournal::new()
-  let puppet = Puppet::new(
+  let host = FixtureHost([Ok(fixture_stop("done"))], Map::from_array([]))
+  let journal = InMemoryJournal()
+  let puppet = Puppet(
     fixture_config(host, fixture_tool_catalog("visible"), journal, [], []),
   )
   assert_true(fixture_prompt(puppet, "forward_catalog") is Accepted(_))
@@ -14,7 +14,7 @@ async test "puppet/pump_forwards_catalog_definitions_to_host" {
 
 ///|
 async test "puppet/pump_executes_only_reducer_declared_effects" {
-  let host = FixtureHost::new(
+  let host = FixtureHost(
     [
       Ok(
         fixture_tool_calls([
@@ -26,8 +26,8 @@ async test "puppet/pump_executes_only_reducer_declared_effects" {
     ],
     Map::from_array([("known_call", Success(content="ok", structured=None))]),
   )
-  let journal = InMemoryJournal::new()
-  let puppet = Puppet::new(
+  let journal = InMemoryJournal()
+  let puppet = Puppet(
     fixture_config(host, fixture_tool_catalog("known"), journal, [], []),
   )
   assert_true(fixture_prompt(puppet, "declared_effects") is Accepted(_))
@@ -38,12 +38,12 @@ async test "puppet/pump_executes_only_reducer_declared_effects" {
 
 ///|
 async test "puppet/pump_releases_lease_after_terminal" {
-  let host = FixtureHost::new(
+  let host = FixtureHost(
     [Ok(fixture_stop("done")), Ok(fixture_stop("again"))],
     Map::from_array([]),
   )
-  let journal = InMemoryJournal::new()
-  let puppet = Puppet::new(
+  let journal = InMemoryJournal()
+  let puppet = Puppet(
     fixture_config(host, fixture_empty_catalog(), journal, [], []),
   )
   assert_true(fixture_prompt(puppet, "lease_first") is Accepted(_))

@@ -107,10 +107,10 @@ pub struct ToolCatalogSnapshot {
 ///
 /// Typical use:
 /// ```moonbit nocheck
-/// let snapshot = ToolCatalogBuilder::new()
+/// let snapshot = ToolCatalogBuilder()
 ///   .add(def1)
 ///   .add(def2)
-///   .finish(version=CatalogVersion::new(1))
+///   .finish(version=CatalogVersion(1))
 /// ```
 pub struct ToolCatalogBuilder {
   entries : Array[CatalogEntry]
@@ -119,7 +119,7 @@ pub struct ToolCatalogBuilder {
 }
 
 ///|
-pub fn ToolCatalogBuilder::new() -> ToolCatalogBuilder {
+pub fn ToolCatalogBuilder::ToolCatalogBuilder() -> ToolCatalogBuilder {
   { entries: [], by_name: Map::from_array([]), finished: false }
 }
 

@@ -26,7 +26,7 @@ pub(all) struct ProposingContributor {
 }
 
 ///|
-pub fn ProposingContributor::new(
+pub fn ProposingContributor::ProposingContributor(
   id : String,
   extra : JournalEntry,
 ) -> ProposingContributor {
@@ -60,7 +60,9 @@ pub(all) struct FailingContributor {
 }
 
 ///|
-pub fn FailingContributor::new(id : String) -> FailingContributor {
+pub fn FailingContributor::FailingContributor(
+  id : String,
+) -> FailingContributor {
   { id, }
 }
 
@@ -132,7 +134,7 @@ fn make_c_ctx(
     savepoint_kind: kind,
     base_entries: base,
     current_revision: 0,
-    catalog_version: CatalogVersion::new(1),
+    catalog_version: CatalogVersion(1),
   }
 }
 
@@ -143,7 +145,7 @@ fn make_c_ctx(
 ///|
 test "puppet_contribution/noop_returns_empty" {
   let ctx = make_c_ctx("sp1", InputAccepted, [])
-  let noop = NoopContributor::new()
+  let noop = NoopContributor()
   let c = noop.contribute(ctx)
   assert_true(c.proposed_entries().length() == 0)
   assert_true(c.contributor_id() == "noop")
@@ -168,7 +170,7 @@ test "puppet_contribution/prepare_batch_merges_contributor_entries" {
   let ctx = make_c_ctx("sp1", InputAccepted, base)
   // Contributor proposes an extra entry.
   let extra = make_c_entry(InputAccepted, "sp1", 1)
-  let contributor = ProposingContributor::new("ext_a", extra)
+  let contributor = ProposingContributor("ext_a", extra)
   let contributors : Array[&JournalContributor] = [contributor]
   let batch = prepare_batch(ctx, contributors)
   assert_true(batch.length() == 2)
@@ -177,7 +179,7 @@ test "puppet_contribution/prepare_batch_merges_contributor_entries" {
 ///|
 test "puppet_contribution/prepare_batch_contributor_raise_surfaces_as_savepoint_failed" {
   let ctx = make_c_ctx("sp1", InputAccepted, [])
-  let failing = FailingContributor::new("bad")
+  let failing = FailingContributor("bad")
   let contributors : Array[&JournalContributor] = [failing]
   let result : Result[FrozenBatch, PuppetError] = Ok(
     prepare_batch(ctx, contributors),
@@ -244,7 +246,7 @@ test "puppet_contribution/prepare_batch_rejects_wrong_run_id_in_contributor" {
     summary: "wrong run",
     payload: Json::null(),
   }
-  let contributor = ProposingContributor::new("bad", bad_entry)
+  let contributor = ProposingContributor("bad", bad_entry)
   let contributors : Array[&JournalContributor] = [contributor]
   let result : Result[FrozenBatch, PuppetError] = Ok(
     prepare_batch(ctx, contributors),
@@ -265,7 +267,7 @@ test "puppet_contribution/prepare_batch_rejects_duplicate_entry_id" {
   let ctx = make_c_ctx("sp1", InputAccepted, [e1])
   // Contributor proposes the SAME entry_seq — duplicate dedup key.
   let dup = make_c_entry(InputAccepted, "sp1", 0)
-  let contributor = ProposingContributor::new("dup", dup)
+  let contributor = ProposingContributor("dup", dup)
   let contributors : Array[&JournalContributor] = [contributor]
   let result : Result[FrozenBatch, PuppetError] = Ok(
     prepare_batch(ctx, contributors),
@@ -286,7 +288,7 @@ test "puppet_contribution/prepare_batch_rejects_duplicate_entry_id" {
 
 ///|
 test "puppet_contribution/commit_batch_advances_revision" {
-  let journal = InMemoryJournal::new()
+  let journal = InMemoryJournal()
   let base = [make_c_entry(InputAccepted, "sp1", 0)]
   let ctx = make_c_ctx("sp1", InputAccepted, base)
   let batch = prepare_batch(ctx, [])
@@ -298,8 +300,8 @@ test "puppet_contribution/commit_batch_advances_revision" {
 ///|
 test "puppet_contribution/commit_batch_via_fail_on_nth" {
   // FailOnNthJournal fails on the 1st append.
-  let inner = InMemoryJournal::new()
-  let failing = FailOnNthJournal::new(inner, 1)
+  let inner = InMemoryJournal()
+  let failing = FailOnNthJournal(inner, 1)
   let base = [make_c_entry(InputAccepted, "sp1", 0)]
   let ctx = make_c_ctx("sp1", InputAccepted, base)
   let batch = prepare_batch(ctx, [])
@@ -333,7 +335,7 @@ test "puppet_contribution/commit_batch_detects_post_freeze_count_change" {
   }
   // Inject an extra entry into batch.entries post-freeze.
   batch.entries.push(make_c_entry(InputAccepted, "sp1", 1))
-  let journal = InMemoryJournal::new()
+  let journal = InMemoryJournal()
   let result : Result[Int, PuppetError] = Ok(commit_batch(journal, batch)) catch {
     e => Err(e)
   }

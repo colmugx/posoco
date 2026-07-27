@@ -192,7 +192,7 @@ pub fn aggregate_extensions(
   // UI cardinality: 0 → NoopUiPort, 1 → passthrough, 2+ → CompositeUiPort.
   let ui_ref : &@port.UiPort = match ui.length() {
     0 => {
-      let n : &@port.UiPort = NoopUiPort::new()
+      let n : &@port.UiPort = NoopUiPort()
       n
     }
     1 => {
@@ -200,7 +200,7 @@ pub fn aggregate_extensions(
       u
     }
     _ => {
-      let c : &@port.UiPort = CompositeUiPort::new(ui.copy())
+      let c : &@port.UiPort = CompositeUiPort(ui.copy())
       c
     }
   }

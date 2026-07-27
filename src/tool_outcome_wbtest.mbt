@@ -56,20 +56,14 @@ async test "t06a_business_error_event_matches_result" {
   let first_response = tk_tool_call_response("probe", "tc_1", Json::null())
   let final_response = tk_stop_response("after")
   let business_result = tk_error_result("denied")
-  let model = ScriptedModel::new([
-    Respond(first_response),
-    Respond(final_response),
-  ])
+  let model = ScriptedModel([Respond(first_response), Respond(final_response)])
   let outcomes : Map[String, ScriptedToolOutcome] = Map::from_array([
     ("probe", ScriptedToolOutcome::OutcomeOk(business_result)),
   ])
-  let provider = RecordingToolProvider::new(
-    [tk_tool_def("probe", "")],
-    outcomes,
-  )
-  let obs = RecordingObserver::new()
-  let store = RecordingSessionStore::new()
-  let agent = Agent::new(
+  let provider = RecordingToolProvider([tk_tool_def("probe", "")], outcomes)
+  let obs = RecordingObserver()
+  let store = RecordingSessionStore()
+  let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
       tk_ext(id="io", tools=[provider], sessions=[store], observers=[obs], compressors=[
@@ -148,17 +142,14 @@ async test "t06a_success_event_is_not_error" {
   let first_response = tk_tool_call_response("safe", "tc_2", Json::null())
   let final_response = tk_stop_response("done")
   let success_result = tk_ok_result("ok")
-  let model = ScriptedModel::new([
-    Respond(first_response),
-    Respond(final_response),
-  ])
+  let model = ScriptedModel([Respond(first_response), Respond(final_response)])
   let outcomes : Map[String, ScriptedToolOutcome] = Map::from_array([
     ("safe", ScriptedToolOutcome::OutcomeOk(success_result)),
   ])
-  let provider = RecordingToolProvider::new([tk_tool_def("safe", "")], outcomes)
-  let obs = RecordingObserver::new()
-  let store = RecordingSessionStore::new()
-  let agent = Agent::new(
+  let provider = RecordingToolProvider([tk_tool_def("safe", "")], outcomes)
+  let obs = RecordingObserver()
+  let store = RecordingSessionStore()
+  let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
       tk_ext(id="io", tools=[provider], sessions=[store], observers=[obs], compressors=[
@@ -208,17 +199,14 @@ async test "t06a_runtime_error_event_is_error_true" {
     structured: None,
     is_error: true,
   }
-  let model = ScriptedModel::new([
-    Respond(first_response),
-    Respond(final_response),
-  ])
+  let model = ScriptedModel([Respond(first_response), Respond(final_response)])
   let outcomes : Map[String, ScriptedToolOutcome] = Map::from_array([
     ("boom", ScriptedToolOutcome::OutcomeErr(raised_error)),
   ])
-  let provider = RecordingToolProvider::new([tk_tool_def("boom", "")], outcomes)
-  let obs = RecordingObserver::new()
-  let store = RecordingSessionStore::new()
-  let agent = Agent::new(
+  let provider = RecordingToolProvider([tk_tool_def("boom", "")], outcomes)
+  let obs = RecordingObserver()
+  let store = RecordingSessionStore()
+  let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
       tk_ext(id="io", tools=[provider], sessions=[store], observers=[obs], compressors=[
@@ -311,7 +299,7 @@ pub impl @port.ToolProvider for SingleToolProvider with fn execute(
 async test "t06b_collision_fails_composition" {
   // Two providers register a tool named "shared". Agent::new MUST raise
   // CompositionError::ToolCollision (fail-fast), not silently pick the last.
-  let p1 = RecordingToolProvider::new(
+  let p1 = RecordingToolProvider(
     [
       {
         name: "shared",
@@ -323,7 +311,7 @@ async test "t06b_collision_fails_composition" {
     ],
     Map::from_array([]),
   )
-  let p2 = RecordingToolProvider::new(
+  let p2 = RecordingToolProvider(
     [
       {
         name: "shared",
@@ -335,10 +323,10 @@ async test "t06b_collision_fails_composition" {
     ],
     Map::from_array([]),
   )
-  let model = ScriptedModel::new([])
-  let store = RecordingSessionStore::new()
+  let model = ScriptedModel([])
+  let store = RecordingSessionStore()
   let composition_result = Ok(
-    Agent::new(
+    Agent(
       exts=[
         tk_ext(id="model", model=Some(model)),
         tk_ext(id="io", tools=[p1, p2], sessions=[store], compressors=[
@@ -371,10 +359,10 @@ async test "t06b_collision_fails_composition" {
 async test "t06b_missing_collision_provenance_is_actionable" {
   let p1 = SingleToolProvider::{ tool: tk_tool_def("shared", "first") }
   let p2 = SingleToolProvider::{ tool: tk_tool_def("shared", "second") }
-  let model = ScriptedModel::new([])
-  let store = RecordingSessionStore::new()
+  let model = ScriptedModel([])
+  let store = RecordingSessionStore()
   let composition_result = Ok(
-    Agent::new(
+    Agent(
       exts=[
         tk_ext(id="model", model=Some(model)),
         tk_ext(id="io", tools=[p1, p2], sessions=[store], compressors=[

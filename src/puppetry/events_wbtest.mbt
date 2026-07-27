@@ -22,7 +22,9 @@ pub(all) struct RecordingSubscriber {
 }
 
 ///|
-pub fn RecordingSubscriber::new(id : String) -> RecordingSubscriber {
+pub fn RecordingSubscriber::RecordingSubscriber(
+  id : String,
+) -> RecordingSubscriber {
   { id_value: id, received: [] }
 }
 
@@ -58,7 +60,7 @@ pub(all) struct FailingSubscriber {
 }
 
 ///|
-pub fn FailingSubscriber::new(id : String) -> FailingSubscriber {
+pub fn FailingSubscriber::FailingSubscriber(id : String) -> FailingSubscriber {
   { id_value: id }
 }
 
@@ -104,7 +106,7 @@ fn ev_session_id() -> SessionId {
 
 ///|
 fn ev_dispatcher() -> EventDispatcher {
-  EventDispatcher::new(ev_run_id(), ev_turn_id(), ev_session_id())
+  EventDispatcher(ev_run_id(), ev_turn_id(), ev_session_id())
 }
 
 ///|
@@ -124,7 +126,7 @@ fn completed_event() -> KernelEvent {
 ///|
 async test "puppet_events/noop_subscriber_accepts_all" {
   let d = ev_dispatcher()
-  let noop = NoopSubscriber::new()
+  let noop = NoopSubscriber()
   d.register(noop)
   d.dispatch(started_event(), 1)
   d.dispatch(completed_event(), 2)
@@ -138,7 +140,7 @@ async test "puppet_events/noop_subscriber_accepts_all" {
 ///|
 async test "puppet_events/dispatcher_assigns_monotonic_seq" {
   let d = ev_dispatcher()
-  let rec = RecordingSubscriber::new("rec")
+  let rec = RecordingSubscriber("rec")
   d.register(rec)
   assert_true(d.next_seq() == 1)
   d.dispatch(started_event(), 1)
@@ -164,8 +166,8 @@ async test "puppet_events/subscribers_invoked_in_registration_order" {
   // Two recording subscribers; verify both get the event but in the order
   // they were registered (we infer this via the order of pushes to a
   // shared sentinel subscriber_id list).
-  let rec_a = RecordingSubscriber::new("a")
-  let rec_b = RecordingSubscriber::new("b")
+  let rec_a = RecordingSubscriber("a")
+  let rec_b = RecordingSubscriber("b")
   d.register(rec_a)
   d.register(rec_b)
   d.dispatch(started_event(), 1)
@@ -184,7 +186,7 @@ async test "puppet_events/subscribers_invoked_in_registration_order" {
 ///|
 async test "puppet_events/subscriber_failure_raises_subscriber_failed" {
   let d = ev_dispatcher()
-  let failing = FailingSubscriber::new("bad")
+  let failing = FailingSubscriber("bad")
   d.register(failing)
   let result : Result[Unit, PuppetError] = Ok(d.dispatch(started_event(), 5)) catch {
     e => Err(e)
@@ -205,8 +207,8 @@ async test "puppet_events/subscriber_failure_stops_further_dispatch" {
   // If subscriber A fails, subscriber B (registered after A) must NOT
   // receive the event (correctness-critical default — ADR §6.6).
   let d = ev_dispatcher()
-  let failing = FailingSubscriber::new("a")
-  let rec = RecordingSubscriber::new("b")
+  let failing = FailingSubscriber("a")
+  let rec = RecordingSubscriber("b")
   d.register(failing)
   d.register(rec)
   let _ = try {
@@ -226,7 +228,7 @@ async test "puppet_events/subscriber_failure_stops_further_dispatch" {
 ///|
 async test "puppet_events/envelope_carries_identity" {
   let d = ev_dispatcher()
-  let rec = RecordingSubscriber::new("r")
+  let rec = RecordingSubscriber("r")
   d.register(rec)
   d.dispatch(started_event(), 1)
   let env = rec.received()[0]
@@ -240,7 +242,7 @@ async test "puppet_events/envelope_carries_identity" {
 ///|
 async test "puppet_events/envelope_is_terminal_delegates" {
   let d = ev_dispatcher()
-  let rec = RecordingSubscriber::new("r")
+  let rec = RecordingSubscriber("r")
   d.register(rec)
   d.dispatch(started_event(), 1)
   assert_true(!rec.received()[0].is_terminal())

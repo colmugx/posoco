@@ -16,7 +16,7 @@ fn make_call_model_effect(id : EffectId) -> Effect {
   let payload : CallModelPayload = {
     model_step_id: ModelStepId::first(),
     messages: [],
-    catalog_version: CatalogVersion::new(1),
+    catalog_version: CatalogVersion(1),
     call_options: Json::null(),
   }
   CallModel(effect_id=id, payload~)
@@ -68,7 +68,7 @@ test "CallId: rejects empty string" {
   let result = CallId::new("")
   match result {
     Err(msg) => assert_true(msg.contains("non-empty"))
-    Ok(_) => fail("CallId::new(\"\") should reject")
+    Ok(_) => fail("CallId(\"\") should reject")
   }
 }
 
@@ -86,7 +86,7 @@ test "ToolName: rejects empty string" {
   let result = ToolName::new("")
   match result {
     Err(_) => ()
-    Ok(_) => fail("ToolName::new(\"\") should reject")
+    Ok(_) => fail("ToolName(\"\") should reject")
   }
 }
 
@@ -95,7 +95,7 @@ test "RunId: rejects empty string" {
   let result = RunId::new("")
   match result {
     Err(_) => ()
-    Ok(_) => fail("RunId::new(\"\") should reject")
+    Ok(_) => fail("RunId(\"\") should reject")
   }
 }
 
@@ -104,7 +104,7 @@ test "OwnerId: rejects empty string" {
   let result = OwnerId::new("")
   match result {
     Err(_) => ()
-    Ok(_) => fail("OwnerId::new(\"\") should reject")
+    Ok(_) => fail("OwnerId(\"\") should reject")
   }
 }
 
@@ -299,7 +299,7 @@ test "BudgetConsumed: UnknownUsage for tokens when no usage verified" {
 test "RunInput: kind labels are stable" {
   let start : RunInput = Start(payload=StartPayload::{
     initial_messages: [],
-    catalog_version: CatalogVersion::new(1),
+    catalog_version: CatalogVersion(1),
   })
   assert_eq(start.kind(), "Start")
 

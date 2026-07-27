@@ -20,7 +20,7 @@ fn make_def(
   schema : Json,
   policy : ExecutionPolicy,
 ) -> CanonicalToolDef {
-  CanonicalToolDef::new(
+  CanonicalToolDef(
     name=ToolName::unchecked(name),
     description="test",
     input_schema=schema,
@@ -39,11 +39,11 @@ fn empty_object_schema() -> Json {
 fn make_snapshot(
   defs : Array[CanonicalToolDef],
 ) -> ToolCatalogSnapshot raise CatalogCompositionError {
-  let builder = ToolCatalogBuilder::new()
+  let builder = ToolCatalogBuilder()
   for d in defs {
     let _ = builder.add(d)
   }
-  builder.finish(version=CatalogVersion::new(1))
+  builder.finish(version=CatalogVersion(1))
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -52,9 +52,7 @@ fn make_snapshot(
 
 ///|
 test "ToolCatalogBuilder: empty finish produces empty snapshot" {
-  let snapshot = ToolCatalogBuilder::new().finish(
-    version=CatalogVersion::new(1),
-  )
+  let snapshot = ToolCatalogBuilder().finish(version=CatalogVersion(1))
   assert_eq(snapshot.size(), 0)
   assert_eq(snapshot.version().to_int(), 1)
 }
@@ -169,8 +167,8 @@ test "ToolCatalogBuilder: malformed top-level schema fails" {
 ///|
 test "ToolCatalogBuilder: cannot add after finish" {
   let result : Result[ToolCatalogBuilder, CatalogCompositionError] = try {
-    let b = ToolCatalogBuilder::new()
-    let _ = b.finish(version=CatalogVersion::new(1))
+    let b = ToolCatalogBuilder()
+    let _ = b.finish(version=CatalogVersion(1))
     Ok(b.add(make_def("x", "o", empty_object_schema(), Parallel)))
   } catch {
     e => Err(e)

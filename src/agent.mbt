@@ -231,7 +231,7 @@ pub(all) struct Agent {
 ///
 /// The internal execution engine (currently the legacy run loop; transitioning
 /// to Puppetry in R3) consumes the aggregated ports directly.
-pub fn Agent::new(
+pub fn Agent::Agent(
   exts~ : Array[&@port.Extension],
   config~ : AgentConfig,
 ) -> Agent raise @error.CompositionError {

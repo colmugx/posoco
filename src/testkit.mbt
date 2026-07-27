@@ -228,7 +228,9 @@ pub(all) struct ScriptedModel {
 }
 
 ///|
-pub fn ScriptedModel::new(steps : Array[ScriptedModelStep]) -> ScriptedModel {
+pub fn ScriptedModel::ScriptedModel(
+  steps : Array[ScriptedModelStep],
+) -> ScriptedModel {
   {
     steps: steps.map(testkit_snapshot_model_step),
     index: 0,
@@ -380,7 +382,7 @@ pub(all) struct RecordingToolProvider {
 }
 
 ///|
-pub fn RecordingToolProvider::new(
+pub fn RecordingToolProvider::RecordingToolProvider(
   tool_defs : Array[@types.ToolDef],
   outcomes : Map[String, ScriptedToolOutcome],
 ) -> RecordingToolProvider {
@@ -512,7 +514,7 @@ pub(all) struct RecordingSessionStore {
 }
 
 ///|
-pub fn RecordingSessionStore::new() -> RecordingSessionStore {
+pub fn RecordingSessionStore::RecordingSessionStore() -> RecordingSessionStore {
   {
     store: Map::from_array([]),
     load_failures: Map::from_array([]),
@@ -640,7 +642,7 @@ pub(all) struct RecordingObserver {
 }
 
 ///|
-pub fn RecordingObserver::new() -> RecordingObserver {
+pub fn RecordingObserver::RecordingObserver() -> RecordingObserver {
   { events: [] }
 }
 
@@ -697,7 +699,7 @@ pub(all) struct RecordingHook {
 }
 
 ///|
-pub fn RecordingHook::new() -> RecordingHook {
+pub fn RecordingHook::RecordingHook() -> RecordingHook {
   { records: [], abort_on: Map::from_array([]), defer_on: Map::from_array([]) }
 }
 
@@ -979,7 +981,9 @@ pub(all) struct ManifestOnly {
 
 ///|
 /// Construct an anonymous Extension from a pre-built manifest.
-pub fn ManifestOnly::new(manifest : @port.ExtensionManifest) -> ManifestOnly {
+pub fn ManifestOnly::ManifestOnly(
+  manifest : @port.ExtensionManifest,
+) -> ManifestOnly {
   { cached: manifest }
 }
 
@@ -1012,11 +1016,11 @@ pub extend ManifestOnly with @port.Extension::{extension_id, manifest}
 ///
 /// Example:
 /// ```moonbit nocheck
-/// let model = ScriptedModel::new(..)
-/// let tools = RecordingToolProvider::new(..)
-/// let store = RecordingSessionStore::new()
-/// let observer = RecordingObserver::new()
-/// let agent = Agent::new(
+/// let model = ScriptedModel(..)
+/// let tools = RecordingToolProvider(..)
+/// let store = RecordingSessionStore()
+/// let observer = RecordingObserver()
+/// let agent = Agent(
 ///   exts=[
 ///     tk_ext("model", model=Some(model)),
 ///     tk_ext("tools", tools=[tools]),
@@ -1043,7 +1047,7 @@ pub fn tk_ext(
     Some(m) => [m]
     None => []
   }
-  ManifestOnly::new({
+  ManifestOnly({
     id,
     models,
     tools,

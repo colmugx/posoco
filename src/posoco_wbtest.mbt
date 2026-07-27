@@ -101,10 +101,10 @@ impl @port.PipelineHook for LogHook with fn on_stage(self, stage) {
 }
 
 ///|
-struct NewThreadCompressor {}
+struct HardcodedNewThreadCompressor {}
 
 ///|
-impl @port.Compressor for NewThreadCompressor with fn compress(
+impl @port.Compressor for HardcodedNewThreadCompressor with fn compress(
   _self,
   messages,
   _ctx,
@@ -219,7 +219,7 @@ async test "simple_turn_no_tools" {
   let observer = MockObserver::{ events: [] }
   let config = make_config()
 
-  let agent = Agent::new(
+  let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
       tk_ext(
@@ -262,7 +262,7 @@ async test "turn_with_single_tool" {
   let observer = MockObserver::{ events: [] }
   let config = make_config()
 
-  let agent = Agent::new(
+  let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
       tk_ext(id="io", tools=[tools], sessions=[store], observers=[observer], compressors=[
@@ -301,7 +301,7 @@ async test "tool_failure_non_fatal" {
   let observer = MockObserver::{ events: [] }
   let config = make_config()
 
-  let agent = Agent::new(
+  let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
       tk_ext(id="io", tools=[tools], sessions=[store], observers=[observer], compressors=[
@@ -322,7 +322,7 @@ async test "model_error_aborts_turn" {
   let observer = MockObserver::{ events: [] }
   let config = make_config()
 
-  let agent = Agent::new(
+  let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
       tk_ext(
@@ -368,7 +368,7 @@ async test "hook_aborts_before_tool" {
   let config = make_config()
   let abort_hook = AbortHook::{  }
 
-  let agent = Agent::new(
+  let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
       tk_ext(
@@ -398,10 +398,10 @@ async test "compression_new_thread" {
   }
   let store = MockSessionStore::{ store: Map::from_array([]) }
   let observer = MockObserver::{ events: [] }
-  let compressor = NewThreadCompressor::{  }
+  let compressor = HardcodedNewThreadCompressor::{  }
   let config = make_config()
 
-  let agent = Agent::new(
+  let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
       tk_ext(
@@ -450,7 +450,7 @@ async test "compression_replace" {
   let compressor = ReplaceCompressor::{  }
   let config = make_config()
 
-  let agent = Agent::new(
+  let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
       tk_ext(
@@ -507,7 +507,7 @@ async test "tool_loop_exceeded" {
     model_context_window: None,
   }
 
-  let agent = Agent::new(
+  let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
       tk_ext(id="io", tools=[tools], sessions=[store], observers=[observer], compressors=[
@@ -602,7 +602,7 @@ async test "observer_event_sequence" {
   let observer = MockObserver::{ events: [] }
   let config = make_config()
 
-  let agent = Agent::new(
+  let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
       tk_ext(id="io", tools=[tools], sessions=[store], observers=[observer], compressors=[
@@ -647,7 +647,7 @@ async test "session_persistence" {
   let observer = MockObserver::{ events: [] }
   let config = make_config()
 
-  let agent = Agent::new(
+  let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
       tk_ext(
@@ -711,7 +711,7 @@ async test "hook_rewrites_before_model_messages" {
   let observer = MockObserver::{ events: [] }
   let rewriter = RewriteModelHook::{  }
   let config = make_config()
-  let agent = Agent::new(
+  let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
       tk_ext(
@@ -774,7 +774,7 @@ async test "hook_deferred_skips_execution" {
   let observer = MockObserver::{ events: [] }
   let hook = DeferToolHook::{  }
   let config = make_config()
-  let agent = Agent::new(
+  let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
       tk_ext(
@@ -849,7 +849,7 @@ async test "agent_routes_tools_to_correct_provider" {
   let observer = MockObserver::{ events: [] }
   let config = make_config()
 
-  let agent = Agent::new(
+  let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
       tk_ext(
@@ -904,7 +904,7 @@ async test "agent_tool_collision_detection" {
 
   // T06-B: collision now fails composition (raise) rather than last-wins.
   let composition_result = Ok(
-    Agent::new(
+    Agent(
       exts=[
         tk_ext(id="model", model=Some(model)),
         tk_ext(
@@ -976,7 +976,7 @@ async test "streaming_events_emitted_during_chat" {
   let observer = MockObserver::{ events: [] }
   let config = make_config()
 
-  let agent = Agent::new(
+  let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
       tk_ext(
@@ -1003,7 +1003,7 @@ async test "streaming_events_emitted_during_chat" {
 
 ///|
 async test "stream_accumulator_assembles_response" {
-  let acc = @types.StreamAccumulator::new()
+  let acc = @types.StreamAccumulator()
   acc.push(TextDelta(token="Hi"))
   acc.push(TextDelta(token=" there"))
   acc.push(ReasoningDelta(token="thinking"))
@@ -1046,7 +1046,7 @@ async test "multiple_observers_fan_out" {
   let obs2 = MockObserver::{ events: [] }
   let config = make_config()
 
-  let agent = Agent::new(
+  let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
       tk_ext(
@@ -1076,7 +1076,7 @@ async test "multiple_hooks_chained_in_order" {
   let observer = MockObserver::{ events: [] }
   let config = make_config()
 
-  let agent = Agent::new(
+  let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
       tk_ext(
@@ -1109,7 +1109,7 @@ async test "multiple_session_stores_write_all" {
   let observer = MockObserver::{ events: [] }
   let config = make_config()
 
-  let agent = Agent::new(
+  let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
       tk_ext(
@@ -1328,7 +1328,7 @@ async test "hook_turn_error_fires_on_model_error" {
   let log_hook = LogHook::{ seen: [] }
   let config = make_config()
 
-  let agent = Agent::new(
+  let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
       tk_ext(
@@ -1379,7 +1379,7 @@ async test "hook_turn_error_fires_on_before_tool_abort" {
   let abort_hook = AbortHook::{  }
   let config = make_config()
 
-  let agent = Agent::new(
+  let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
       tk_ext(

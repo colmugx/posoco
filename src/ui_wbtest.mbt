@@ -2,8 +2,8 @@
 /// UI contract tests — verify the trait semantics, NoopUiPort, CompositeUiPort,
 /// and RecordingUiPort independently of any host UI implementation.
 ///
-/// These tests are blackbox (`@posoco.` prefix) so they exercise the public
-/// API as an extension author would see it.
+/// These tests are whitebox (same-package, no prefix) so they exercise types as
+/// an extension author would see them.
 
 // ──────────────────────────────────────────────────────────────────────────
 // NoopUiPort
@@ -11,12 +11,12 @@
 
 ///|
 test "noop_ui_port_render_is_silent" {
-  let ui = @posoco.NoopUiPort::new()
-  ui.render(@posoco.UiRender::{
-    slot: @posoco.UiSlot::Status,
+  let ui = NoopUiPort()
+  ui.render(UiRender::{
+    slot: UiSlot::Status,
     key: "x",
     title: None,
-    body: @posoco.UiBody::Text("anything"),
+    body: UiBody::Text("anything"),
     ttl_ms: None,
   })
   // No assertion needed — silent return is the contract.
@@ -24,21 +24,21 @@ test "noop_ui_port_render_is_silent" {
 
 ///|
 test "noop_ui_port_descriptor_is_empty" {
-  let ui = @posoco.NoopUiPort::new()
+  let ui = NoopUiPort()
   let d = ui.ui_descriptor()
   assert_eq(d.autocomplete_sources.length(), 0)
 }
 
 ///|
 async test "noop_ui_port_request_raises_unsupported" {
-  let ui = @posoco.NoopUiPort::new()
-  let result : Result[@posoco.UiResponse, @error.UiError] = Ok(
-    ui.request(@posoco.UiRequest::Confirm(prompt="ok?")),
+  let ui = NoopUiPort()
+  let result : Result[UiResponse, UiError] = Ok(
+    ui.request(UiRequest::Confirm(prompt="ok?")),
   ) catch {
     e => Err(e)
   }
   match result {
-    Err(@error.UiError::Unsupported(_)) => ()
+    Err(UiError::Unsupported(_)) => ()
     Ok(_) => fail("expected Unsupported, got Ok response")
     Err(other) => fail("expected Unsupported, got error: " + other.to_string())
   }
@@ -50,15 +50,15 @@ async test "noop_ui_port_request_raises_unsupported" {
 
 ///|
 test "composite_ui_port_render_broadcasts_in_order" {
-  let a = RecordingUiPort::new()
-  let b = RecordingUiPort::new()
-  let c = RecordingUiPort::new()
-  let composite = @posoco.CompositeUiPort::new([a, b, c])
-  let intent = @posoco.UiRender::{
-    slot: @posoco.UiSlot::Status,
+  let a = RecordingUiPort()
+  let b = RecordingUiPort()
+  let c = RecordingUiPort()
+  let composite = CompositeUiPort([a, b, c])
+  let intent = UiRender::{
+    slot: UiSlot::Status,
     key: "k",
     title: None,
-    body: @posoco.UiBody::Text("hi"),
+    body: UiBody::Text("hi"),
     ttl_ms: None,
   }
   composite.render(intent)
@@ -74,24 +74,24 @@ test "composite_ui_port_render_broadcasts_in_order" {
 ///|
 async test "composite_ui_port_request_first_supporting_wins" {
   let unsupported_a = RecordingUiPort::new_unsupported()
-  let supporting_b = RecordingUiPort::new(responses=[@posoco.UiResponse::Yes])
-  let composite = @posoco.CompositeUiPort::new([unsupported_a, supporting_b])
-  let resp = composite.request(@posoco.UiRequest::Confirm(prompt="ok?"))
-  assert_true(resp is @posoco.UiResponse::Yes)
+  let supporting_b = RecordingUiPort(responses=[UiResponse::Yes])
+  let composite = CompositeUiPort([unsupported_a, supporting_b])
+  let resp = composite.request(UiRequest::Confirm(prompt="ok?"))
+  assert_true(resp is UiResponse::Yes)
 }
 
 ///|
 async test "composite_ui_port_request_all_unsupported_raises" {
   let a = RecordingUiPort::new_unsupported()
   let b = RecordingUiPort::new_unsupported()
-  let composite = @posoco.CompositeUiPort::new([a, b])
-  let result : Result[@posoco.UiResponse, @error.UiError] = Ok(
-    composite.request(@posoco.UiRequest::Confirm(prompt="ok?")),
+  let composite = CompositeUiPort([a, b])
+  let result : Result[UiResponse, UiError] = Ok(
+    composite.request(UiRequest::Confirm(prompt="ok?")),
   ) catch {
     e => Err(e)
   }
   match result {
-    Err(@error.UiError::Unsupported(_)) => ()
+    Err(UiError::Unsupported(_)) => ()
     Ok(_) => fail("expected Unsupported, got Ok response")
     Err(other) => fail("expected Unsupported, got error: " + other.to_string())
   }
@@ -101,12 +101,10 @@ async test "composite_ui_port_request_all_unsupported_raises" {
 async test "composite_ui_port_request_propagates_non_unsupported_error" {
   // RecordingUiPort with empty script raises Unsupported from the second
   // contributor, but if we set the script we can simulate a Cancelled flow.
-  let supporting_then_cancel = RecordingUiPort::new(responses=[
-    @posoco.UiResponse::Cancelled,
-  ])
-  let composite = @posoco.CompositeUiPort::new([supporting_then_cancel])
-  let resp = composite.request(@posoco.UiRequest::Confirm(prompt="ok?"))
-  assert_true(resp is @posoco.UiResponse::Cancelled)
+  let supporting_then_cancel = RecordingUiPort(responses=[UiResponse::Cancelled])
+  let composite = CompositeUiPort([supporting_then_cancel])
+  let resp = composite.request(UiRequest::Confirm(prompt="ok?"))
+  assert_true(resp is UiResponse::Cancelled)
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -115,29 +113,19 @@ async test "composite_ui_port_request_propagates_non_unsupported_error" {
 
 ///|
 test "composite_ui_port_descriptor_concatenates_sources" {
-  let with_one_source_a = RecordingUiPort::new()
+  let with_one_source_a = RecordingUiPort()
   with_one_source_a.set_descriptor({
     autocomplete_sources: [
-      @posoco.AutocompleteSource::{
-        trigger: "/",
-        kind: "command",
-        fetch: fn(_) { [] },
-      },
+      AutocompleteSource::{ trigger: "/", kind: "command", fetch: fn(_) { [] } },
     ],
   })
-  let with_one_source_b = RecordingUiPort::new()
+  let with_one_source_b = RecordingUiPort()
   with_one_source_b.set_descriptor({
     autocomplete_sources: [
-      @posoco.AutocompleteSource::{
-        trigger: "@",
-        kind: "mention",
-        fetch: fn(_) { [] },
-      },
+      AutocompleteSource::{ trigger: "@", kind: "mention", fetch: fn(_) { [] } },
     ],
   })
-  let composite = @posoco.CompositeUiPort::new([
-    with_one_source_a, with_one_source_b,
-  ])
+  let composite = CompositeUiPort([with_one_source_a, with_one_source_b])
   let d = composite.ui_descriptor()
   assert_eq(d.autocomplete_sources.length(), 2)
   assert_eq(d.autocomplete_sources[0].trigger, "/")
@@ -150,19 +138,19 @@ test "composite_ui_port_descriptor_concatenates_sources" {
 
 ///|
 test "recording_ui_port_records_render_in_order" {
-  let r = RecordingUiPort::new()
-  r.render(@posoco.UiRender::{
-    slot: @posoco.UiSlot::Notice,
+  let r = RecordingUiPort()
+  r.render(UiRender::{
+    slot: UiSlot::Notice,
     key: "first",
     title: None,
-    body: @posoco.UiBody::Text("1"),
+    body: UiBody::Text("1"),
     ttl_ms: None,
   })
-  r.render(@posoco.UiRender::{
-    slot: @posoco.UiSlot::Status,
+  r.render(UiRender::{
+    slot: UiSlot::Status,
     key: "second",
     title: None,
-    body: @posoco.UiBody::Text("2"),
+    body: UiBody::Text("2"),
     ttl_ms: None,
   })
   let rendered = r.rendered_intents()
@@ -173,18 +161,18 @@ test "recording_ui_port_records_render_in_order" {
 
 ///|
 async test "recording_ui_port_request_drains_script_in_fifo_order" {
-  let r = RecordingUiPort::new(responses=[
-    @posoco.UiResponse::Text("first"),
-    @posoco.UiResponse::Text("second"),
+  let r = RecordingUiPort(responses=[
+    UiResponse::Text("first"),
+    UiResponse::Text("second"),
   ])
-  let resp1 = r.request(@posoco.UiRequest::Input(prompt="?", default=None))
-  let resp2 = r.request(@posoco.UiRequest::Input(prompt="?", default=None))
+  let resp1 = r.request(UiRequest::Input(prompt="?", default=None))
+  let resp2 = r.request(UiRequest::Input(prompt="?", default=None))
   match resp1 {
-    @posoco.UiResponse::Text(s) => assert_eq(s, "first")
+    UiResponse::Text(s) => assert_eq(s, "first")
     other => fail("first response wrong: " + other.to_string())
   }
   match resp2 {
-    @posoco.UiResponse::Text(s) => assert_eq(s, "second")
+    UiResponse::Text(s) => assert_eq(s, "second")
     other => fail("second response wrong: " + other.to_string())
   }
   // Script exhausted; further requests raise Unsupported.
@@ -193,14 +181,14 @@ async test "recording_ui_port_request_drains_script_in_fifo_order" {
 
 ///|
 async test "recording_ui_port_request_unsupported_when_exhausted" {
-  let r = RecordingUiPort::new(responses=[])
-  let result : Result[@posoco.UiResponse, @error.UiError] = Ok(
-    r.request(@posoco.UiRequest::Confirm(prompt="ok?")),
+  let r = RecordingUiPort(responses=[])
+  let result : Result[UiResponse, UiError] = Ok(
+    r.request(UiRequest::Confirm(prompt="ok?")),
   ) catch {
     e => Err(e)
   }
   match result {
-    Err(@error.UiError::Unsupported(_)) => ()
+    Err(UiError::Unsupported(_)) => ()
     Ok(_) => fail("expected Unsupported, got Ok response")
     Err(other) => fail("expected Unsupported, got error: " + other.to_string())
   }
@@ -208,32 +196,32 @@ async test "recording_ui_port_request_unsupported_when_exhausted" {
 
 ///|
 test "recording_ui_port_rendered_in_slot_filters_by_slot" {
-  let r = RecordingUiPort::new()
-  r.render(@posoco.UiRender::{
-    slot: @posoco.UiSlot::Status,
+  let r = RecordingUiPort()
+  r.render(UiRender::{
+    slot: UiSlot::Status,
     key: "s1",
     title: None,
-    body: @posoco.UiBody::Text(""),
+    body: UiBody::Text(""),
     ttl_ms: None,
   })
-  r.render(@posoco.UiRender::{
-    slot: @posoco.UiSlot::Notice,
+  r.render(UiRender::{
+    slot: UiSlot::Notice,
     key: "n1",
     title: None,
-    body: @posoco.UiBody::Text(""),
+    body: UiBody::Text(""),
     ttl_ms: None,
   })
-  r.render(@posoco.UiRender::{
-    slot: @posoco.UiSlot::Status,
+  r.render(UiRender::{
+    slot: UiSlot::Status,
     key: "s2",
     title: None,
-    body: @posoco.UiBody::Text(""),
+    body: UiBody::Text(""),
     ttl_ms: None,
   })
-  let notices = r.rendered_in_slot(@posoco.UiSlot::Notice)
+  let notices = r.rendered_in_slot(UiSlot::Notice)
   assert_eq(notices.length(), 1)
   assert_eq(notices[0].key, "n1")
-  let statuses = r.rendered_in_slot(@posoco.UiSlot::Status)
+  let statuses = r.rendered_in_slot(UiSlot::Status)
   assert_eq(statuses.length(), 2)
 }
 
@@ -243,7 +231,7 @@ test "recording_ui_port_rendered_in_slot_filters_by_slot" {
 
 ///|
 test "ui_request_show_round_trip" {
-  let req = @posoco.UiRequest::Select(
+  let req = UiRequest::Select(
     prompt="pick",
     options=["a", "b", "c"],
     default=Some(1),
@@ -255,6 +243,6 @@ test "ui_request_show_round_trip" {
 
 ///|
 test "ui_response_equality_for_yes_no" {
-  assert_eq(@posoco.UiResponse::Yes, @posoco.UiResponse::Yes)
-  assert_false(@posoco.UiResponse::Yes == @posoco.UiResponse::No)
+  assert_eq(UiResponse::Yes, UiResponse::Yes)
+  assert_false(UiResponse::Yes == UiResponse::No)
 }

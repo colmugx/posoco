@@ -44,7 +44,7 @@ pub(all) struct ToolCallBuilder {
 } derive(Debug)
 
 ///|
-pub fn ToolCallBuilder::new() -> ToolCallBuilder {
+pub fn ToolCallBuilder::ToolCallBuilder() -> ToolCallBuilder {
   { id: "", name: "", arguments_json: "" }
 }
 
@@ -59,7 +59,7 @@ pub(all) struct StreamAccumulator {
 } derive(Debug)
 
 ///|
-pub fn StreamAccumulator::new() -> StreamAccumulator {
+pub fn StreamAccumulator::StreamAccumulator() -> StreamAccumulator {
   { text: "", reasoning: "", tool_calls: [], finish_reason: Stop, usage: None }
 }
 
@@ -73,7 +73,7 @@ pub fn StreamAccumulator::push(
     ReasoningDelta(token~) => self.reasoning = self.reasoning + token
     ToolCallDelta(index~, id~, name~, arguments_delta~) => {
       while self.tool_calls.length() <= index {
-        self.tool_calls.push(ToolCallBuilder::new())
+        self.tool_calls.push(ToolCallBuilder())
       }
       let builder = self.tool_calls[index]
       match id {

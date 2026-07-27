@@ -17,7 +17,7 @@ pub(all) struct FixtureHost {
 }
 
 ///|
-pub fn FixtureHost::new(
+pub fn FixtureHost::FixtureHost(
   model_results : Array[Result[AssistantCompletion, ModelFailure]],
   tool_results : Map[String, ToolOutcome],
 ) -> FixtureHost {
@@ -119,7 +119,7 @@ fn FixtureHost::bind_catalog(
 
 ///|
 fn fixture_stop(text : String) -> AssistantCompletion {
-  AssistantCompletion::new(
+  AssistantCompletion(
     content=[Text(text)],
     tool_calls=[],
     reasoning=None,
@@ -130,7 +130,7 @@ fn fixture_stop(text : String) -> AssistantCompletion {
 
 ///|
 fn fixture_tool_calls(calls : Array[CanonicalToolCall]) -> AssistantCompletion {
-  AssistantCompletion::new(
+  AssistantCompletion(
     content=[],
     tool_calls=calls,
     reasoning=None,
@@ -150,7 +150,7 @@ fn fixture_call(name : String, id : String) -> CanonicalToolCall {
 
 ///|
 fn fixture_empty_catalog() -> ToolCatalogSnapshot raise CatalogCompositionError {
-  ToolCatalogBuilder::new().finish(version=CatalogVersion::new(1))
+  ToolCatalogBuilder().finish(version=CatalogVersion(1))
 }
 
 ///|
@@ -163,10 +163,10 @@ fn fixture_tool_catalog(
       ("properties", Json::object(Map::from_array([]))),
     ]),
   )
-  let builder = ToolCatalogBuilder::new()
+  let builder = ToolCatalogBuilder()
   ignore(
     builder.add(
-      CanonicalToolDef::new(
+      CanonicalToolDef(
         name=ToolName::unchecked(name),
         description="fixture tool",
         input_schema=schema,
@@ -176,7 +176,7 @@ fn fixture_tool_catalog(
       ),
     ),
   )
-  builder.finish(version=CatalogVersion::new(1))
+  builder.finish(version=CatalogVersion(1))
 }
 
 ///|
@@ -251,9 +251,9 @@ fn first_revision_matching(
 
 ///|
 async test "puppet/C-HAPPY-NO-TOOLS" {
-  let host = FixtureHost::new([Ok(fixture_stop("hi"))], Map::from_array([]))
-  let journal = InMemoryJournal::new()
-  let puppet = Puppet::new(
+  let host = FixtureHost([Ok(fixture_stop("hi"))], Map::from_array([]))
+  let journal = InMemoryJournal()
+  let puppet = Puppet(
     fixture_config(host, fixture_empty_catalog(), journal, [], []),
   )
   match fixture_prompt(puppet, "happy") {
@@ -289,15 +289,15 @@ async test "puppet/C-HAPPY-NO-TOOLS" {
 
 ///|
 async test "puppet/C-SINGLE-TOOL" {
-  let host = FixtureHost::new(
+  let host = FixtureHost(
     [
       Ok(fixture_tool_calls([fixture_call("echo", "one")])),
       Ok(fixture_stop("done")),
     ],
     Map::from_array([("one", Success(content="ok", structured=None))]),
   )
-  let journal = InMemoryJournal::new()
-  let puppet = Puppet::new(
+  let journal = InMemoryJournal()
+  let puppet = Puppet(
     fixture_config(host, fixture_tool_catalog("echo"), journal, [], []),
   )
   assert_true(fixture_prompt(puppet, "single") is Accepted(_))
@@ -315,7 +315,7 @@ async test "puppet/C-SINGLE-TOOL" {
 
 ///|
 async test "puppet/C-PARALLEL-TOOLS" {
-  let host = FixtureHost::new(
+  let host = FixtureHost(
     [
       Ok(
         fixture_tool_calls([
@@ -330,8 +330,8 @@ async test "puppet/C-PARALLEL-TOOLS" {
       ("two", Success(content="two", structured=None)),
     ]),
   )
-  let journal = InMemoryJournal::new()
-  let puppet = Puppet::new(
+  let journal = InMemoryJournal()
+  let puppet = Puppet(
     fixture_config(host, fixture_tool_catalog("echo"), journal, [], []),
   )
   assert_true(fixture_prompt(puppet, "batch") is Accepted(_))
@@ -348,12 +348,12 @@ async test "puppet/C-PARALLEL-TOOLS" {
 
 ///|
 async test "puppet/C-MODEL-FAILURE" {
-  let host = FixtureHost::new(
+  let host = FixtureHost(
     [Err(Transport(reason="offline"))],
     Map::from_array([]),
   )
-  let journal = InMemoryJournal::new()
-  let puppet = Puppet::new(
+  let journal = InMemoryJournal()
+  let puppet = Puppet(
     fixture_config(host, fixture_empty_catalog(), journal, [], []),
   )
   assert_true(fixture_prompt(puppet, "model_failure") is Accepted(_))
@@ -368,7 +368,7 @@ async test "puppet/C-MODEL-FAILURE" {
 
 ///|
 async test "puppet/C-TOOL-BUSINESS-FAILURE" {
-  let host = FixtureHost::new(
+  let host = FixtureHost(
     [
       Ok(fixture_tool_calls([fixture_call("echo", "business")])),
       Ok(fixture_stop("done")),
@@ -377,8 +377,8 @@ async test "puppet/C-TOOL-BUSINESS-FAILURE" {
       ("business", ToolReportedError(content="bad input", structured=None)),
     ]),
   )
-  let journal = InMemoryJournal::new()
-  let puppet = Puppet::new(
+  let journal = InMemoryJournal()
+  let puppet = Puppet(
     fixture_config(host, fixture_tool_catalog("echo"), journal, [], []),
   )
   assert_true(fixture_prompt(puppet, "business") is Accepted(_))
@@ -388,7 +388,7 @@ async test "puppet/C-TOOL-BUSINESS-FAILURE" {
 
 ///|
 async test "puppet/C-TOOL-RUNTIME-FAILURE" {
-  let host = FixtureHost::new(
+  let host = FixtureHost(
     [
       Ok(fixture_tool_calls([fixture_call("echo", "runtime")])),
       Ok(fixture_stop("done")),
@@ -397,8 +397,8 @@ async test "puppet/C-TOOL-RUNTIME-FAILURE" {
       ("runtime", RuntimeFailure(error_category="Transport", message="offline")),
     ]),
   )
-  let journal = InMemoryJournal::new()
-  let puppet = Puppet::new(
+  let journal = InMemoryJournal()
+  let puppet = Puppet(
     fixture_config(host, fixture_tool_catalog("echo"), journal, [], []),
   )
   assert_true(fixture_prompt(puppet, "runtime") is Accepted(_))
@@ -408,7 +408,7 @@ async test "puppet/C-TOOL-RUNTIME-FAILURE" {
 
 ///|
 async test "puppet/C-MISSING-OWNER-IS-INVARIANT" {
-  let host = FixtureHost::new(
+  let host = FixtureHost(
     [Ok(fixture_tool_calls([fixture_call("echo", "missing_owner")]))],
     Map::from_array([
       (
@@ -417,8 +417,8 @@ async test "puppet/C-MISSING-OWNER-IS-INVARIANT" {
       ),
     ]),
   )
-  let journal = InMemoryJournal::new()
-  let puppet = Puppet::new(
+  let journal = InMemoryJournal()
+  let puppet = Puppet(
     fixture_config(host, fixture_tool_catalog("echo"), journal, [], []),
   )
   assert_true(fixture_prompt(puppet, "missing_owner") is Accepted(_))
@@ -470,7 +470,7 @@ test "puppet/C-SUSPEND-RESUME-IN-PROCESS" {
 
 ///|
 test "puppet/C-ABORT-DURING-MODEL" {
-  let mailbox = ControlMailbox::new()
+  let mailbox = ControlMailbox()
   let run = RunId::unchecked("run_abort_model")
   mailbox.bind_run(run, TurnId::unchecked("turn_abort_model"))
   let first = mailbox.enqueue_abort({
@@ -507,13 +507,10 @@ test "puppet/C-ABORT-DURING-TOOLS" {
 
 ///|
 async test "puppet/C-CONTRIBUTION-VALIDATION-FAIL" {
-  let host = FixtureHost::new(
-    [Ok(fixture_stop("ignored"))],
-    Map::from_array([]),
-  )
-  let journal = InMemoryJournal::new()
-  let bad = FailingContributor::new("bad")
-  let puppet = Puppet::new(
+  let host = FixtureHost([Ok(fixture_stop("ignored"))], Map::from_array([]))
+  let journal = InMemoryJournal()
+  let bad = FailingContributor("bad")
+  let puppet = Puppet(
     fixture_config(host, fixture_empty_catalog(), journal, [], [bad]),
   )
   match fixture_prompt(puppet, "contribution") {
@@ -525,13 +522,10 @@ async test "puppet/C-CONTRIBUTION-VALIDATION-FAIL" {
 
 ///|
 async test "puppet/C-JOURNAL-APPEND-FAIL" {
-  let host = FixtureHost::new(
-    [Ok(fixture_stop("ignored"))],
-    Map::from_array([]),
-  )
-  let inner = InMemoryJournal::new()
-  let failing = FailOnNthJournal::new(inner, 1)
-  let puppet = Puppet::new(
+  let host = FixtureHost([Ok(fixture_stop("ignored"))], Map::from_array([]))
+  let inner = InMemoryJournal()
+  let failing = FailOnNthJournal(inner, 1)
+  let puppet = Puppet(
     fixture_config(host, fixture_empty_catalog(), failing, [], []),
   )
   match fixture_prompt(puppet, "journal") {
@@ -543,13 +537,10 @@ async test "puppet/C-JOURNAL-APPEND-FAIL" {
 
 ///|
 async test "puppet/C-SUBSCRIBER-FAIL" {
-  let host = FixtureHost::new(
-    [Ok(fixture_stop("ignored"))],
-    Map::from_array([]),
-  )
-  let journal = InMemoryJournal::new()
-  let subscriber = FailingSubscriber::new("bad")
-  let puppet = Puppet::new(
+  let host = FixtureHost([Ok(fixture_stop("ignored"))], Map::from_array([]))
+  let journal = InMemoryJournal()
+  let subscriber = FailingSubscriber("bad")
+  let puppet = Puppet(
     fixture_config(host, fixture_empty_catalog(), journal, [subscriber], []),
   )
   match fixture_prompt(puppet, "subscriber") {
@@ -616,7 +607,7 @@ test "puppet/C-LATE-COMPLETION" {
 
 ///|
 test "puppet/C-DOUBLE-TERMINAL-REJECTION" {
-  let mailbox = ControlMailbox::new()
+  let mailbox = ControlMailbox()
   let result = mailbox.enqueue_abort({
     command_id: CommandId::unchecked("late_abort"),
     target_run_id: RunId::unchecked("completed"),
@@ -699,7 +690,7 @@ test "puppet/C-SNAPSHOT-IMMUTABLE" {
   })
   let definitions = snapshot.tool_definitions()
   definitions.push(
-    CanonicalToolDef::new(
+    CanonicalToolDef(
       name=ToolName::unchecked("mutated"),
       description="",
       input_schema=Json::null(),
@@ -713,7 +704,7 @@ test "puppet/C-SNAPSHOT-IMMUTABLE" {
 
 ///|
 test "puppet/C-FOLLOW-UP-SAME-RUN" {
-  let mailbox = ControlMailbox::new()
+  let mailbox = ControlMailbox()
   let run = RunId::unchecked("run_follow")
   let turn = TurnId::unchecked("turn_follow")
   mailbox.bind_run(run, turn)
@@ -732,7 +723,7 @@ test "puppet/C-FOLLOW-UP-SAME-RUN" {
 
 ///|
 test "puppet/C-STEER-SAFE-POINT" {
-  let mailbox = ControlMailbox::new()
+  let mailbox = ControlMailbox()
   let run = RunId::unchecked("run_steer")
   let turn = TurnId::unchecked("turn_steer")
   mailbox.bind_run(run, turn)
@@ -767,15 +758,11 @@ test "puppet/C-RESUME-WRONG-SUSPENSION" {
 
 ///|
 async test "puppet/C-LIFECYCLE-ROLLBACK" {
-  let log = LifecycleSpyLog::new()
-  let collection = LifecycleCollection::new()
-  collection.register(SpyLifecycleNode::new("a", "a", log))
-  collection.register(
-    SpyLifecycleNode::new("b", "b", log).fail_on_shutdown_at(1),
-  )
-  collection.register(
-    SpyLifecycleNode::new("c", "c", log).fail_on_startup_at(1),
-  )
+  let log = LifecycleSpyLog()
+  let collection = LifecycleCollection()
+  collection.register(SpyLifecycleNode("a", "a", log))
+  collection.register(SpyLifecycleNode("b", "b", log).fail_on_shutdown_at(1))
+  collection.register(SpyLifecycleNode("c", "c", log).fail_on_startup_at(1))
   let result : Result[Unit, PuppetError] = try {
     collection.startup_all()
     Ok(())
@@ -791,11 +778,11 @@ async test "puppet/C-LIFECYCLE-ROLLBACK" {
 
 ///|
 test "puppet/C-COMPOSITE-LIFECYCLE" {
-  let log = LifecycleSpyLog::new()
-  let collection = LifecycleCollection::new()
-  collection.register(SpyLifecycleNode::new("host", "host", log))
+  let log = LifecycleSpyLog()
+  let collection = LifecycleCollection()
+  collection.register(SpyLifecycleNode("host", "host", log))
   let duplicate : Result[Unit, PuppetError] = try {
-    collection.register(SpyLifecycleNode::new("host", "other", log))
+    collection.register(SpyLifecycleNode("host", "other", log))
     Ok(())
   } catch {
     error => Err(error)

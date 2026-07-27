@@ -25,7 +25,7 @@ pub(all) struct LifecycleSpyLog {
 }
 
 ///|
-pub fn LifecycleSpyLog::new() -> LifecycleSpyLog {
+pub fn LifecycleSpyLog::LifecycleSpyLog() -> LifecycleSpyLog {
   { events: [] }
 }
 
@@ -53,7 +53,7 @@ pub(all) struct SpyLifecycleNode {
 }
 
 ///|
-pub fn SpyLifecycleNode::new(
+pub fn SpyLifecycleNode::SpyLifecycleNode(
   node_id : String,
   provenance : String,
   log : LifecycleSpyLog,
@@ -161,11 +161,11 @@ fn try_puppet(r : () -> Unit raise PuppetError) -> Result[Unit, PuppetError] {
 
 ///|
 async test "puppet_lifecycle/happy_path" {
-  let log = LifecycleSpyLog::new()
-  let a = SpyLifecycleNode::new("a", "pa", log)
-  let b = SpyLifecycleNode::new("b", "pb", log)
-  let c = SpyLifecycleNode::new("c", "pc", log)
-  let col = LifecycleCollection::new()
+  let log = LifecycleSpyLog()
+  let a = SpyLifecycleNode("a", "pa", log)
+  let b = SpyLifecycleNode("b", "pb", log)
+  let c = SpyLifecycleNode("c", "pc", log)
+  let col = LifecycleCollection()
   col.register(a)
   col.register(b)
   col.register(c)
@@ -187,9 +187,9 @@ async test "puppet_lifecycle/happy_path" {
 
 ///|
 async test "puppet_lifecycle/exactly_once" {
-  let log = LifecycleSpyLog::new()
-  let a = SpyLifecycleNode::new("a", "pa", log)
-  let col = LifecycleCollection::new()
+  let log = LifecycleSpyLog()
+  let a = SpyLifecycleNode("a", "pa", log)
+  let col = LifecycleCollection()
   col.register(a)
   col.startup_all()
   // Second startup is a no-op.
@@ -209,10 +209,10 @@ async test "puppet_lifecycle/exactly_once" {
 
 ///|
 test "puppet_lifecycle/duplicate_id_rejected" {
-  let log = LifecycleSpyLog::new()
-  let a = SpyLifecycleNode::new("a", "pa", log)
-  let a_again = SpyLifecycleNode::new("a", "pa2", log)
-  let col = LifecycleCollection::new()
+  let log = LifecycleSpyLog()
+  let a = SpyLifecycleNode("a", "pa", log)
+  let a_again = SpyLifecycleNode("a", "pa2", log)
+  let col = LifecycleCollection()
   col.register(a)
   let result = try_puppet(() => col.register(a_again))
   assert_true(result is Err(_))
@@ -228,10 +228,10 @@ test "puppet_lifecycle/duplicate_id_rejected" {
 
 ///|
 async test "puppet_lifecycle/register_after_startup_rejected" {
-  let log = LifecycleSpyLog::new()
-  let a = SpyLifecycleNode::new("a", "pa", log)
-  let b = SpyLifecycleNode::new("b", "pb", log)
-  let col = LifecycleCollection::new()
+  let log = LifecycleSpyLog()
+  let a = SpyLifecycleNode("a", "pa", log)
+  let b = SpyLifecycleNode("b", "pb", log)
+  let col = LifecycleCollection()
   col.register(a)
   col.startup_all()
   let result = try_puppet(() => col.register(b))
@@ -244,11 +244,11 @@ async test "puppet_lifecycle/register_after_startup_rejected" {
 
 ///|
 async test "puppet_lifecycle/startup_failure_rolls_back" {
-  let log = LifecycleSpyLog::new()
-  let a = SpyLifecycleNode::new("a", "pa", log)
-  let b = SpyLifecycleNode::new("b", "pb", log).fail_on_shutdown_at(1)
-  let c = SpyLifecycleNode::new("c", "pc", log).fail_on_startup_at(1)
-  let col = LifecycleCollection::new()
+  let log = LifecycleSpyLog()
+  let a = SpyLifecycleNode("a", "pa", log)
+  let b = SpyLifecycleNode("b", "pb", log).fail_on_shutdown_at(1)
+  let c = SpyLifecycleNode("c", "pc", log).fail_on_startup_at(1)
+  let col = LifecycleCollection()
   col.register(a)
   col.register(b)
   col.register(c)
@@ -282,11 +282,11 @@ async test "puppet_lifecycle/startup_failure_rolls_back" {
 
 ///|
 async test "puppet_lifecycle/shutdown_failure_aggregated" {
-  let log = LifecycleSpyLog::new()
-  let a = SpyLifecycleNode::new("a", "pa", log)
-  let b = SpyLifecycleNode::new("b", "pb", log).fail_on_shutdown_at(1)
-  let c = SpyLifecycleNode::new("c", "pc", log).fail_on_shutdown_at(1)
-  let col = LifecycleCollection::new()
+  let log = LifecycleSpyLog()
+  let a = SpyLifecycleNode("a", "pa", log)
+  let b = SpyLifecycleNode("b", "pb", log).fail_on_shutdown_at(1)
+  let c = SpyLifecycleNode("c", "pc", log).fail_on_shutdown_at(1)
+  let col = LifecycleCollection()
   col.register(a)
   col.register(b)
   col.register(c)
@@ -313,15 +313,15 @@ async test "puppet_lifecycle/shutdown_failure_aggregated" {
 
 ///|
 test "puppet_lifecycle/composite_child_double_registration_detected" {
-  let log = LifecycleSpyLog::new()
-  let host = SpyLifecycleNode::new("host", "host", log)
-  let child_direct = SpyLifecycleNode::new("child", "child", log)
-  let col = LifecycleCollection::new()
+  let log = LifecycleSpyLog()
+  let host = SpyLifecycleNode("host", "host", log)
+  let child_direct = SpyLifecycleNode("child", "child", log)
+  let col = LifecycleCollection()
   col.register(host)
   let result = try_puppet(() => col.register(child_direct))
   assert_true(result is Ok(_))
   // Registering the same id again must fail.
-  let child_again = SpyLifecycleNode::new("child", "child2", log)
+  let child_again = SpyLifecycleNode("child", "child2", log)
   let result2 = try_puppet(() => col.register(child_again))
   assert_true(result2 is Err(_))
 }
