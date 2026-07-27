@@ -593,7 +593,7 @@ pub fn RecordingSessionStore::save_snapshots(
 pub impl @port.SessionStore for RecordingSessionStore with fn load(
   self,
   id : String,
-) -> Result[@types.Session, @error.SessionError] {
+) -> @types.Session raise @error.SessionError {
   let result : Result[@types.Session, @error.SessionError] = match
     self.load_failures.get(id) {
     Some(e) => Err(e)
@@ -608,7 +608,10 @@ pub impl @port.SessionStore for RecordingSessionStore with fn load(
     Err(error) => Err(error)
   }
   self.ops.push(OpLoad(id~, result=recorded_result))
-  result
+  match result {
+    Ok(s) => s
+    Err(e) => raise e
+  }
 }
 
 ///|
@@ -616,7 +619,7 @@ pub impl @port.SessionStore for RecordingSessionStore with fn save(
   self,
   id : String,
   session : @types.Session,
-) -> Result[Unit, @error.SessionError] {
+) -> Unit raise @error.SessionError {
   let meta_copy = testkit_snapshot_metadata(session.metadata)
   let result : Result[Unit, @error.SessionError] = if self.save_failures.contains(
       id,
@@ -627,7 +630,10 @@ pub impl @port.SessionStore for RecordingSessionStore with fn save(
     Ok(())
   }
   self.ops.push(OpSave(id~, metadata=meta_copy, result~))
-  result
+  match result {
+    Ok(_) => ()
+    Err(e) => raise e
+  }
 }
 
 // ---------------------------------------------------------------------------

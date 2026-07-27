@@ -109,27 +109,27 @@ async test "t06a_business_error_event_matches_result" {
   }
   // The exact same outcome semantics must be persisted in the tool message
   // that is fed into the next model round.
-  match store.load("s1") {
-    Ok(saved) => {
-      let mut saw_matching_tool_message = false
-      for message in saved.messages {
-        match message {
-          {
-            role: @types.Tool,
-            content: [@types.Text(content)],
-            tool_call_id: Some(id),
-            ..,
-          } =>
-            if id == "tc_1" {
-              assert_eq(content, turn_result.tool_results[0].content)
-              saw_matching_tool_message = true
-            }
-          _ => ()
-        }
+  try {
+    let saved = store.load("s1")
+    let mut saw_matching_tool_message = false
+    for message in saved.messages {
+      match message {
+        {
+          role: @types.Tool,
+          content: [@types.Text(content)],
+          tool_call_id: Some(id),
+          ..,
+        } =>
+          if id == "tc_1" {
+            assert_eq(content, turn_result.tool_results[0].content)
+            saw_matching_tool_message = true
+          }
+        _ => ()
       }
-      assert_true(saw_matching_tool_message)
     }
-    Err(_) => fail("expected completed session to be loadable")
+    assert_true(saw_matching_tool_message)
+  } catch {
+    _ => fail("expected completed session to be loadable")
   }
 }
 
@@ -245,27 +245,27 @@ async test "t06a_runtime_error_event_is_error_true" {
   assert_true(result.tool_results[0] == error_result)
   // The same standardized runtime error content must be persisted in the
   // tool message that was fed into the second model round.
-  match store.load("s1") {
-    Ok(saved) => {
-      let mut saw_matching_tool_message = false
-      for message in saved.messages {
-        match message {
-          {
-            role: @types.Tool,
-            content: [@types.Text(content)],
-            tool_call_id: Some(id),
-            ..,
-          } =>
-            if id == "tc_3" {
-              assert_eq(content, error_result.content)
-              saw_matching_tool_message = true
-            }
-          _ => ()
-        }
+  try {
+    let saved = store.load("s1")
+    let mut saw_matching_tool_message = false
+    for message in saved.messages {
+      match message {
+        {
+          role: @types.Tool,
+          content: [@types.Text(content)],
+          tool_call_id: Some(id),
+          ..,
+        } =>
+          if id == "tc_3" {
+            assert_eq(content, error_result.content)
+            saw_matching_tool_message = true
+          }
+        _ => ()
       }
-      assert_true(saw_matching_tool_message)
     }
-    Err(_) => fail("expected completed runtime-error session to be loadable")
+    assert_true(saw_matching_tool_message)
+  } catch {
+    _ => fail("expected completed runtime-error session to be loadable")
   }
 }
 

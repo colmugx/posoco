@@ -53,18 +53,17 @@ struct MockSessionStore {
 }
 
 ///|
-impl @port.SessionStore for MockSessionStore with fn load(self, id) {
+impl @port.SessionStore for MockSessionStore with fn load(self, id) -> @types.Session {
   if self.store.contains(id) {
-    Ok(self.store[id])
+    self.store[id]
   } else {
-    Ok({ messages: [], metadata: Map::from_array([]) })
+    { messages: [], metadata: Map::from_array([]) }
   }
 }
 
 ///|
-impl @port.SessionStore for MockSessionStore with fn save(self, id, session) {
+impl @port.SessionStore for MockSessionStore with fn save(self, id, session) -> Unit {
   self.store[id] = session
-  Ok(())
 }
 
 ///|

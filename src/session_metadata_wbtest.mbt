@@ -196,12 +196,12 @@ async test "t05_failed_turn_does_not_mutate_loaded_session_messages" {
   }
   assert_eq(original_messages.length(), 1)
   assert_true(original_messages[0] == tk_user_msg("already persisted"))
-  match store.load("stable") {
-    Ok(persisted) => {
-      assert_eq(persisted.messages.length(), 1)
-      assert_true(persisted.messages[0] == tk_user_msg("already persisted"))
-    }
-    Err(_) => fail("seeded session should remain loadable")
+  try {
+    let persisted = store.load("stable")
+    assert_eq(persisted.messages.length(), 1)
+    assert_true(persisted.messages[0] == tk_user_msg("already persisted"))
+  } catch {
+    _ => fail("seeded session should remain loadable")
   }
 }
 
@@ -388,8 +388,8 @@ fn assert_session_has_no_boundary_poison(session : @types.Session) -> Unit {
 struct BoundaryMutatingStore {}
 
 ///|
-pub impl @port.SessionStore for BoundaryMutatingStore with fn load(_self, _id) {
-  Ok({
+pub impl @port.SessionStore for BoundaryMutatingStore with fn load(_self, _id) -> @types.Session {
+  {
     messages: [],
     metadata: Map::from_array([
       (
@@ -399,7 +399,7 @@ pub impl @port.SessionStore for BoundaryMutatingStore with fn load(_self, _id) {
         ),
       ),
     ]),
-  })
+  }
 }
 
 ///|
@@ -407,13 +407,12 @@ pub impl @port.SessionStore for BoundaryMutatingStore with fn save(
   _self,
   _id,
   session,
-) {
+) -> Unit {
   poison_first_message(session.messages, "store-poison")
   if session.metadata.contains("nested") {
     poison_json(session.metadata["nested"], "store-poison")
   }
   session.metadata["store_poison"] = Json::boolean(true)
-  Ok(())
 }
 
 ///|
@@ -425,7 +424,7 @@ struct BoundaryAliasingStore {
 pub impl @port.SessionStore for BoundaryAliasingStore with fn load(self, _id) {
   // Deliberately return the retained value directly. Agent must detach from
   // this implementation even when the store itself provides no snapshot.
-  Ok(self.session)
+  self.session
 }
 
 ///|
@@ -434,7 +433,7 @@ pub impl @port.SessionStore for BoundaryAliasingStore with fn save(
   _id,
   _session,
 ) {
-  Ok(())
+  ()
 }
 
 ///|
@@ -671,9 +670,11 @@ async test "t05_compressor_hook_and_model_inputs_are_deep_snapshots" {
     messages: [input],
     metadata: Map::from_array([]),
   })
-  match recording_store.load("boundary-inputs") {
-    Ok(saved) => assert_session_has_no_boundary_poison(saved)
-    Err(_) => fail("expected saved boundary-inputs session")
+  try {
+    let saved = recording_store.load("boundary-inputs")
+    assert_session_has_no_boundary_poison(saved)
+  } catch {
+    _ => fail("expected saved boundary-inputs session")
   }
   for event in recording_observer.events() {
     match event {
@@ -702,9 +703,11 @@ async test "t05_each_final_save_store_gets_independent_deep_snapshot" {
     config=metadata_config(),
   )
   let _ = agent.run_turn(boundary_input_message("hello"), "final-snapshot")
-  match recording_store.load("final-snapshot") {
-    Ok(saved) => assert_session_has_no_boundary_poison(saved)
-    Err(_) => fail("expected second store final snapshot")
+  try {
+    let saved = recording_store.load("final-snapshot")
+    assert_session_has_no_boundary_poison(saved)
+  } catch {
+    _ => fail("expected second store final snapshot")
   }
 }
 
@@ -725,13 +728,13 @@ async test "t05_each_newthread_save_store_gets_independent_deep_snapshot" {
   )
   let result = agent.run_turn(boundary_input_message("hello"), "parent")
   assert_eq(result.final_session_id, "child")
-  match recording_store.load("child") {
-    Ok(saved) => {
-      assert_session_has_no_boundary_poison(saved)
-      assert_true(saved.metadata.contains("parent_session_id"))
-      assert_true(saved.metadata["parent_session_id"] == Json::string("parent"))
-    }
-    Err(_) => fail("expected second store NewThread snapshot")
+  try {
+    let saved = recording_store.load("child")
+    assert_session_has_no_boundary_poison(saved)
+    assert_true(saved.metadata.contains("parent_session_id"))
+    assert_true(saved.metadata["parent_session_id"] == Json::string("parent"))
+  } catch {
+    _ => fail("expected second store NewThread snapshot")
   }
 }
 
@@ -821,9 +824,11 @@ async test "t05_tool_ports_hooks_and_observers_get_json_snapshots" {
     Some(value) => assert_true(!json_has_poison(value))
     None => fail("expected structured tool result")
   }
-  match store.load("tool-boundaries") {
-    Ok(saved) => assert_session_has_no_boundary_poison(saved)
-    Err(_) => fail("expected saved tool-boundaries session")
+  try {
+    let saved = store.load("tool-boundaries")
+    assert_session_has_no_boundary_poison(saved)
+  } catch {
+    _ => fail("expected saved tool-boundaries session")
   }
   for event in recording_observer.events() {
     match event {

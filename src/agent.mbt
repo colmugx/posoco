@@ -490,10 +490,8 @@ async fn Agent::run_turn_inner(
 ) -> @types.TurnResult raise @error.AgentError {
   let session = match self.sessions {
     [first, ..] =>
-      match first.load(session_id) {
-        Ok(s) => s
-        Err(error) =>
-          raise contextualize_session_error(error, session_id, "load")
+      first.load(session_id) catch {
+        error => raise contextualize_session_error(error, session_id, "load")
       }
     [] =>
       raise contextualize_session_error(
@@ -562,10 +560,8 @@ async fn Agent::run_turn_inner(
             ("parent_session_id", Json::string(parent_id)),
           ])
           for store in self.sessions {
-            match
-              store.save(new_sid, agent_snapshot_session(msgs, new_metadata)) {
-              Ok(_) => ()
-              Err(error) =>
+            store.save(new_sid, agent_snapshot_session(msgs, new_metadata)) catch {
+              error =>
                 raise contextualize_session_error(
                   error, new_sid, "compression_new_thread_save",
                 )
@@ -803,13 +799,11 @@ async fn Agent::run_turn_inner(
 
   // T05: final save uses the carried metadata, not a freshly-empty Map.
   for store in self.sessions {
-    match
-      store.save(
-        current_session_id,
-        agent_snapshot_session(messages, current_metadata),
-      ) {
-      Ok(_) => ()
-      Err(error) =>
+    store.save(
+      current_session_id,
+      agent_snapshot_session(messages, current_metadata),
+    ) catch {
+      error =>
         raise contextualize_session_error(
           error, current_session_id, "final_save",
         )

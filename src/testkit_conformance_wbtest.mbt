@@ -274,13 +274,12 @@ test "tk_store_records_save_metadata_snapshot" {
 ///|
 test "tk_store_load_unknown_returns_empty_session" {
   let store = RecordingSessionStore()
-  let result = store.load("never_saved")
-  match result {
-    Ok(s) => {
-      assert_true(s.messages.is_empty())
-      assert_true(s.metadata.length() == 0)
-    }
-    Err(_) => fail("load of unknown id should return empty session, not error")
+  try {
+    let s = store.load("never_saved")
+    assert_true(s.messages.is_empty())
+    assert_true(s.metadata.length() == 0)
+  } catch {
+    _ => fail("load of unknown id should return empty session, not error")
   }
 }
 
@@ -294,17 +293,15 @@ test "tk_store_load_and_seed_are_snapshot_isolated" {
   store.seed("isolated", seeded)
   seeded.messages.push(tk_user_msg("outside mutation"))
   seeded.metadata["owner"] = Json::string("outside mutation")
-  let first = match store.load("isolated") {
-    Ok(session) => session
-    Err(_) => fail("seeded session should load")
+  let first = store.load("isolated") catch {
+    _ => fail("seeded session should load")
   }
   assert_eq(first.messages.length(), 1)
   assert_true(first.metadata["owner"] == Json::string("original"))
   first.messages.push(tk_user_msg("loaded mutation"))
   first.metadata["owner"] = Json::string("loaded mutation")
-  let second = match store.load("isolated") {
-    Ok(session) => session
-    Err(_) => fail("seeded session should load twice")
+  let second = store.load("isolated") catch {
+    _ => fail("seeded session should load twice")
   }
   assert_eq(second.messages.length(), 1)
   assert_true(second.metadata["owner"] == Json::string("original"))
@@ -341,9 +338,8 @@ test "tk_store_snapshots_nested_json_and_tool_arguments" {
   store.seed("nested", session)
   metadata_object["value"] = Json::string("metadata-outside")
   argument_object["value"] = Json::string("argument-outside")
-  let first = match store.load("nested") {
-    Ok(saved) => saved
-    Err(_) => fail("expected nested session")
+  let first = store.load("nested") catch {
+    _ => fail("expected nested session")
   }
   guard first.metadata["nested"] is Object(first_metadata) else {
     fail("expected nested metadata object")
@@ -355,9 +351,8 @@ test "tk_store_snapshots_nested_json_and_tool_arguments" {
   assert_true(first_arguments["value"] == Json::string("argument-original"))
   first_metadata["value"] = Json::string("metadata-loaded")
   first_arguments["value"] = Json::string("argument-loaded")
-  let second = match store.load("nested") {
-    Ok(saved) => saved
-    Err(_) => fail("expected nested session twice")
+  let second = store.load("nested") catch {
+    _ => fail("expected nested session twice")
   }
   guard second.metadata["nested"] is Object(second_metadata) else {
     fail("expected second nested metadata object")
@@ -404,10 +399,11 @@ test "tk_store_operation_accessors_return_recursive_snapshots" {
 test "tk_store_fail_save_returns_typed_error" {
   let store = RecordingSessionStore()
   store.fail_save("broken")
-  let result = store.save("broken", {
-    messages: [],
-    metadata: Map::from_array([]),
-  })
+  let result = Ok(
+    store.save("broken", { messages: [], metadata: Map::from_array([]) }),
+  ) catch {
+    e => Err(e)
+  }
   match result {
     Err(SessionError::Save(_)) => ()
     _ => fail("expected SessionError::Save for configured failure")
@@ -418,7 +414,7 @@ test "tk_store_fail_save_returns_typed_error" {
 test "tk_store_fail_load_returns_typed_error" {
   let store = RecordingSessionStore()
   store.fail_load("dead", Load("disk gone"))
-  let result = store.load("dead")
+  let result = Ok(store.load("dead")) catch { e => Err(e) }
   match result {
     Err(Load(msg)) => assert_true(msg.contains("disk gone"))
     _ => fail("expected configured Load failure")

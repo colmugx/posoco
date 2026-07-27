@@ -54,10 +54,10 @@ fn copy_quickstart_session(session : @types.Session) -> @types.Session {
 pub impl @port.SessionStore for QuickstartMemoryStore with fn load(
   self,
   id : String,
-) -> Result[@types.Session, @error.SessionError] {
+) -> @types.Session {
   match self.sessions.get(id) {
-    Some(session) => Ok(copy_quickstart_session(session))
-    None => Ok({ messages: [], metadata: Map::from_array([]) })
+    Some(session) => copy_quickstart_session(session)
+    None => { messages: [], metadata: Map::from_array([]) }
   }
 }
 
@@ -66,9 +66,8 @@ pub impl @port.SessionStore for QuickstartMemoryStore with fn save(
   self,
   id : String,
   session : @types.Session,
-) -> Result[Unit, @error.SessionError] {
+) -> Unit {
   self.sessions[id] = copy_quickstart_session(session)
-  Ok(())
 }
 
 ///|
