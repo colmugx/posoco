@@ -255,6 +255,8 @@ pub impl @port.ToolProvider for ToolRegistry
 type ToolRouting
 
 // Type aliases
+pub using @error {type AgentError}
+
 pub using @kernel {type AssistantCompletion}
 
 pub using @kernel {type AssistantFinishReason}
@@ -291,7 +293,27 @@ pub using @kernel {type CatalogCompositionError}
 
 pub using @kernel {type CatalogVersion}
 
+pub using @types {type ChatOptions}
+
+pub using @port {type CommandDef}
+
+pub using @error {type CommandError}
+
+pub using @port {type CommandOutcome}
+
+pub using @port {type CommandParam}
+
+pub using @port {type CommandType}
+
 pub using @port {type CompositeUiPort}
+
+pub using @error {type CompositionError}
+
+pub using @port {type CompressAction}
+
+pub using @port {type CompressContext}
+
+pub using @types {type Content}
 
 pub using @kernel {type EffectId}
 
@@ -301,6 +323,10 @@ pub using @kernel {type ExecutionPolicy}
 
 pub using @port {type ExtensionManifest}
 
+pub using @types {type FinishReason}
+
+pub using @port {type HookError}
+
 pub type HostChunkCallback = (Json) -> Unit
 
 pub using @puppetry {type InMemoryJournal}
@@ -309,9 +335,21 @@ pub using @kernel {type KernelError}
 
 pub using @kernel {type KernelEvent}
 
+pub using @types {type MemoryEntry}
+
+pub using @error {type MemoryError}
+
+pub using @types {type MemoryQuery}
+
+pub using @types {type Message}
+
+pub using @error {type ModelError}
+
 pub using @kernel {type ModelFailure}
 
 pub using @puppetry {type ModelId}
+
+pub using @types {type ModelResponse}
 
 pub using @kernel {type ModelStepId}
 
@@ -325,6 +363,8 @@ pub using @kernel {type NotExecutedReason}
 
 pub using @kernel {type OwnerId}
 
+pub using @port {type ParamType}
+
 pub using @puppetry {type PromptResult}
 
 pub using @puppetry {type Puppet}
@@ -335,11 +375,27 @@ pub using @puppetry {type PuppetError}
 
 pub using @puppetry {type QuiescentStatus}
 
+pub using @types {type ReasoningEffort}
+
+pub using @types {type Role}
+
 pub using @kernel {type RunId}
 
 pub using @kernel {type RunOutcome}
 
+pub using @error {type RuntimeError}
+
+pub using @types {type Session}
+
+pub using @error {type SessionError}
+
 pub using @kernel {type SessionId}
+
+pub using @port {type Stage}
+
+pub using @types {type StreamAccumulator}
+
+pub using @types {type StreamChunk}
 
 pub using @puppetry {type SubscriberError}
 
@@ -347,19 +403,35 @@ pub using @port {type SystemPromptHook}
 
 pub using @port {type SystemPromptSection}
 
+pub using @types {type ToolCall}
+
 pub using @kernel {type ToolCatalogBuilder}
 
 pub using @kernel {type ToolCatalogSnapshot}
+
+pub using @types {type ToolChoice}
+
+pub using @types {type ToolDef}
 
 pub using @kernel {type ToolName}
 
 pub using @kernel {type ToolOutcome}
 
+pub using @types {type ToolResult}
+
+pub using @types {type TurnEvent}
+
 pub using @puppetry {type TurnId}
+
+pub using @types {type TurnResult}
 
 pub using @port {type UiBody}
 
 pub using @port {type UiDescriptor}
+
+pub using @error {type UiError}
+
+pub using @port {type UiHint}
 
 pub using @port {type UiRender}
 
@@ -369,6 +441,12 @@ pub using @port {type UiResponse}
 
 pub using @port {type UiSlot}
 
+pub using @types {type Usage}
+
+pub using @port {trait CommandPort}
+
+pub using @port {trait Compressor}
+
 pub using @puppetry {trait EventSubscriber}
 
 pub using @port {trait Extension}
@@ -377,15 +455,29 @@ pub using @kernel {trait HostRuntime}
 
 pub using @puppetry {trait JournalContributor}
 
+pub using @port {trait Lifecycle}
+
+pub using @port {trait MemoryPort}
+
 pub using @puppetry {trait ModelBinding}
+
+pub using @port {trait ModelPort}
+
+pub using @port {trait Observer}
+
+pub using @port {trait PipelineHook}
 
 pub using @puppetry {trait PuppetLifecycleNode}
 
 pub using @puppetry {trait RunJournal}
 
+pub using @port {trait SessionStore}
+
 pub using @port {trait SystemPromptContributor}
 
 pub using @puppetry {trait ToolBinding}
+
+pub using @port {trait ToolProvider}
 
 pub using @port {trait UiPort}
 

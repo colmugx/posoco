@@ -1,9 +1,81 @@
 ///|
-/// Posoco's public core is the canonical Kernel plus the long-lived Puppet.
-///
-/// There is deliberately no `Agent`, `run_turn`, compatibility port, or
-/// legacy message projection at this boundary. Products compose direct model
-/// and tool bindings, validate one catalog, then drive it through `Puppet`.
+pub using @types {
+  type Role,
+  type Content,
+  type Message,
+  type ToolCall,
+  type ToolDef,
+  type ToolResult,
+  type ModelResponse,
+  type Session,
+  type TurnEvent,
+  type TurnResult,
+  type ChatOptions,
+  type StreamChunk,
+  type StreamAccumulator,
+  type Usage,
+  type MemoryEntry,
+  type MemoryQuery,
+  type FinishReason,
+  type ReasoningEffort,
+  type ToolChoice,
+}
+
+///|
+// Core port traits.
+pub using @port {
+  trait ModelPort,
+  trait ToolProvider,
+  trait SessionStore,
+  trait Observer,
+  trait Compressor,
+  trait PipelineHook,
+  trait MemoryPort,
+  trait Lifecycle,
+  trait CommandPort,
+  trait UiPort,
+  trait SystemPromptContributor,
+  // Self-reporting manifest protocol.
+  trait Extension,
+  // Port-related enums.
+  type Stage,
+  type HookError,
+  type CompressAction,
+  type CommandOutcome,
+  type CommandType,
+  type CommandParam,
+  type ParamType,
+  type UiHint,
+  type UiSlot,
+  type UiBody,
+  type UiRequest,
+  type UiResponse,
+  // Port-related structs.
+  type CompressContext,
+  type CommandDef,
+  type AutocompleteItem,
+  type AutocompleteSource,
+  type UiDescriptor,
+  type UiRender,
+  type SystemPromptHook,
+  type SystemPromptSection,
+  type ExtensionManifest,
+  // Builtin UiPort impls (testkit-grade, also used by hosts without a UI).
+  type NoopUiPort,
+  type CompositeUiPort,
+}
+
+///|
+pub using @error {
+  type AgentError,
+  type ModelError,
+  type RuntimeError,
+  type SessionError,
+  type CompositionError,
+  type CommandError,
+  type MemoryError,
+  type UiError,
+}
 
 ///|
 pub using @kernel {
@@ -62,28 +134,4 @@ pub using @puppetry {
   type SubscriberError,
   type NoopSubscriber,
   type NoopContributor,
-}
-
-///|
-/// Port layer re-exports — UI, system prompt, and the Extension manifest
-/// protocol. These are the seams extension authors implement; they live in
-/// the `port` subpackage but are surfaced under `@posoco.` so callers do not
-/// need to import `@posoco/port` separately.
-pub using @port {
-  trait UiPort,
-  trait SystemPromptContributor,
-  trait Extension,
-  type UiSlot,
-  type UiBody,
-  type UiRender,
-  type AutocompleteItem,
-  type AutocompleteSource,
-  type UiDescriptor,
-  type UiRequest,
-  type UiResponse,
-  type NoopUiPort,
-  type CompositeUiPort,
-  type SystemPromptHook,
-  type SystemPromptSection,
-  type ExtensionManifest,
 }
