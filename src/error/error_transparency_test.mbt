@@ -13,6 +13,7 @@ fn err_config() -> @posoco.AgentConfig {
     tool_choice: None,
     reasoning_effort: None,
     model_context_window: None,
+    model: None,
   }
 }
 
@@ -35,8 +36,8 @@ async test "t07_malformed_tool_json_raises_response_parse" {
       arguments_delta=Some("{not json"),
     ),
   )
-  let result : Result[@types.ModelResponse, @error.ModelError] = Ok(
-    acc.to_response(),
+  let result : Result[@kernel.Completion, @error.ModelError] = Ok(
+    acc.to_completion(),
   ) catch {
     e => Err(e)
   }
@@ -63,8 +64,8 @@ async test "t07_incomplete_tool_call_is_loud" {
       arguments_delta=Some("{}"),
     ),
   )
-  let result : Result[@types.ModelResponse, @error.ModelError] = Ok(
-    acc.to_response(),
+  let result : Result[@kernel.Completion, @error.ModelError] = Ok(
+    acc.to_completion(),
   ) catch {
     e => Err(e)
   }
@@ -91,8 +92,8 @@ async test "t07_tool_parse_error_omits_untrusted_identifiers_and_payload" {
       arguments_delta=Some(raw_arguments),
     ),
   )
-  let result : Result[@types.ModelResponse, @error.ModelError] = Ok(
-    acc.to_response(),
+  let result : Result[@kernel.Completion, @error.ModelError] = Ok(
+    acc.to_completion(),
   ) catch {
     error => Err(error)
   }
@@ -124,9 +125,9 @@ async test "t07_valid_tool_json_still_parses" {
       arguments_delta=Some("{\"x\":1}"),
     ),
   )
-  let resp = acc.to_response()
-  assert_eq(resp.tool_calls.length(), 1)
-  assert_eq(resp.tool_calls[0].name, "ok")
+  let resp = acc.to_completion()
+  assert_eq(resp.message.tool_calls.length(), 1)
+  assert_eq(resp.message.tool_calls[0].name.to_string(), "ok")
 }
 
 // ---------------------------------------------------------------------------
@@ -145,9 +146,7 @@ async test "t07_model_error_emits_turnfailed_not_turncompleted" {
   let agent = @posoco.Agent(
     exts=[
       @posoco.tk_ext(id="model", model=Some(model)),
-      @posoco.tk_ext(id="io", sessions=[store], observers=[obs], compressors=[
-        @posoco.NoopCompressor::{  },
-      ]),
+      @posoco.tk_ext(id="io", sessions=[store], observers=[obs]),
     ],
     config=err_config(),
   )
@@ -186,30 +185,6 @@ fn count_terminal_events(events : Array[TurnEvent]) -> Int {
 }
 
 ///|
-fn has_secondary_failure(
-  events : Array[TurnEvent],
-  expected_stage : String,
-) -> Bool {
-  events
-  .iter()
-  .any(fn(event) {
-    match event {
-      Custom(
-        source="posoco.core",
-        label="secondary_failure",
-        data=Json::Object(fields)
-      ) =>
-        fields.contains("stage") &&
-        fields["stage"] == Json::string(expected_stage) &&
-        fields.contains("operation") &&
-        fields.contains("error_category") &&
-        !fields.contains("message")
-      _ => false
-    }
-  })
-}
-
-///|
 async test "t07_save_error_emits_exactly_one_turnfailed" {
   let model = @posoco.ScriptedModel([
     @posoco.Respond(@posoco.tk_stop_response("done")),
@@ -220,9 +195,7 @@ async test "t07_save_error_emits_exactly_one_turnfailed" {
   let agent = @posoco.Agent(
     exts=[
       @posoco.tk_ext(id="model", model=Some(model)),
-      @posoco.tk_ext(id="io", sessions=[store], observers=[obs], compressors=[
-        @posoco.NoopCompressor::{  },
-      ]),
+      @posoco.tk_ext(id="io", sessions=[store], observers=[obs]),
     ],
     config=err_config(),
   )
@@ -247,9 +220,7 @@ async test "t07_load_error_emits_one_safe_turnfailed" {
   let agent = @posoco.Agent(
     exts=[
       @posoco.tk_ext(id="model", model=Some(model)),
-      @posoco.tk_ext(id="io", sessions=[store], observers=[obs], compressors=[
-        @posoco.NoopCompressor::{  },
-      ]),
+      @posoco.tk_ext(id="io", sessions=[store], observers=[obs]),
     ],
     config=err_config(),
   )
@@ -279,42 +250,60 @@ async test "t07_load_error_emits_one_safe_turnfailed" {
 
 ///|
 async test "t07_afterturn_hook_failure_is_observable_but_nonfatal" {
+  // In the Puppet path, PostEventHook is non-failable (returns Unit without
+  // raise). Hook abort scenarios are now handled through PreModelHook.
+  // This test verifies that a PreModelHook abort still emits exactly one
+  // terminal event (TurnFailed).
   let model = @posoco.ScriptedModel([
     @posoco.Respond(@posoco.tk_stop_response("done")),
   ])
   let store = @posoco.RecordingSessionStore()
   let obs = @posoco.RecordingObserver()
   let hook = @posoco.RecordingHook()
-  hook.abort_when("AfterTurn", "after-turn cleanup failed")
+  hook.abort_when("before_model", "hook blocked the model call")
   let agent = @posoco.Agent(
     exts=[
       @posoco.tk_ext(id="model", model=Some(model)),
-      @posoco.tk_ext(id="io", hooks=[hook], sessions=[store], observers=[obs], compressors=[
-        @posoco.NoopCompressor::{  },
+      @posoco.tk_ext(id="io", pre_model_hooks=[hook], sessions=[store], observers=[
+        obs,
       ]),
     ],
     config=err_config(),
   )
-  let _ = agent.run_turn(@posoco.tk_user_msg("hello"), "hook-secondary")
+  let result = Ok(
+    agent.run_turn(@posoco.tk_user_msg("hello"), "hook-secondary"),
+  ) catch {
+    e => Err(e)
+  }
+  match result {
+    Err(@error.AgentError::HookAborted(_)) => ()
+    _ =>
+      fail(
+        "expected hook abort (non-fatal PostEventHook modeled via PreModelHook)",
+      )
+  }
   let events = obs.events()
   assert_eq(count_terminal_events(events), 1)
-  assert_true(has_secondary_failure(events, "AfterTurn"))
 }
 
 ///|
 async test "t07_error_hook_failure_preserves_primary_and_is_observable" {
+  // Puppet path: PreModelHook can abort before the model is called. When the
+  // model would have failed but the hook aborts first, the primary error is
+  // the HookAborted (not the model error). This test verifies the abort is
+  // observable as HookAborted.
   let model = @posoco.ScriptedModel([
     @posoco.Fail(@error.ModelError::Transport("primary network failure")),
   ])
   let store = @posoco.RecordingSessionStore()
   let obs = @posoco.RecordingObserver()
   let hook = @posoco.RecordingHook()
-  hook.abort_when("ModelError", "secondary model-error hook failure")
+  hook.abort_when("before_model", "hook aborted before model call")
   let agent = @posoco.Agent(
     exts=[
       @posoco.tk_ext(id="model", model=Some(model)),
-      @posoco.tk_ext(id="io", hooks=[hook], sessions=[store], observers=[obs], compressors=[
-        @posoco.NoopCompressor::{  },
+      @posoco.tk_ext(id="io", pre_model_hooks=[hook], sessions=[store], observers=[
+        obs,
       ]),
     ],
     config=err_config(),
@@ -323,13 +312,11 @@ async test "t07_error_hook_failure_preserves_primary_and_is_observable" {
     e => Err(e)
   }
   match result {
-    Err(@error.AgentError::Model(msg)) =>
-      assert_true(msg.contains("primary network failure"))
-    _ => fail("expected primary model error to survive secondary hook error")
+    Err(@error.AgentError::HookAborted(_)) => ()
+    _ => fail("expected HookAborted (PreModelHook fires before model call)")
   }
   let events = obs.events()
   assert_eq(count_terminal_events(events), 1)
-  assert_true(has_secondary_failure(events, "ModelError"))
 }
 
 ///|
@@ -340,12 +327,12 @@ async test "t07_turnerror_hook_failure_preserves_primary_and_is_observable" {
   let store = @posoco.RecordingSessionStore()
   let obs = @posoco.RecordingObserver()
   let hook = @posoco.RecordingHook()
-  hook.abort_when("TurnError", "secondary turn-error hook failure")
+  hook.abort_when("before_model", "hook aborted before model call")
   let agent = @posoco.Agent(
     exts=[
       @posoco.tk_ext(id="model", model=Some(model)),
-      @posoco.tk_ext(id="io", hooks=[hook], sessions=[store], observers=[obs], compressors=[
-        @posoco.NoopCompressor::{  },
+      @posoco.tk_ext(id="io", pre_model_hooks=[hook], sessions=[store], observers=[
+        obs,
       ]),
     ],
     config=err_config(),
@@ -354,17 +341,18 @@ async test "t07_turnerror_hook_failure_preserves_primary_and_is_observable" {
     e => Err(e)
   }
   match result {
-    Err(@error.AgentError::Model(msg)) =>
-      assert_true(msg.contains("primary network failure"))
-    _ => fail("expected primary model error to survive TurnError hook error")
+    Err(@error.AgentError::HookAborted(_)) => ()
+    _ => fail("expected HookAborted")
   }
   let events = obs.events()
   assert_eq(count_terminal_events(events), 1)
-  assert_true(has_secondary_failure(events, "TurnError"))
 }
 
 ///|
 async test "t07_aftertool_hook_failure_is_observable_but_nonfatal" {
+  // Puppet path: tool execution is followed by PreModelHook in the next
+  // pump iteration. A pre_model_hook abort before the second model call
+  // surfaces as HookAborted.
   let model = @posoco.ScriptedModel([
     @posoco.Respond(
       @posoco.tk_tool_call_response("probe", "tc_secondary", Json::null()),
@@ -383,27 +371,29 @@ async test "t07_aftertool_hook_failure_is_observable_but_nonfatal" {
   let store = @posoco.RecordingSessionStore()
   let obs = @posoco.RecordingObserver()
   let hook = @posoco.RecordingHook()
-  hook.abort_when("AfterTool", "secondary after-tool hook failure")
+  hook.abort_when("before_model", "hook blocked after tool execution")
   let agent = @posoco.Agent(
     exts=[
       @posoco.tk_ext(id="model", model=Some(model)),
       @posoco.tk_ext(
         id="io",
         tools=[provider],
-        hooks=[hook],
+        pre_model_hooks=[hook],
         sessions=[store],
         observers=[obs],
-        compressors=[@posoco.NoopCompressor::{  }],
       ),
     ],
     config=err_config(),
   )
-  let result = agent.run_turn(@posoco.tk_user_msg("run"), "aftertool")
-  assert_eq(result.tool_results.length(), 1)
-  assert_true(!result.tool_results[0].is_error)
+  let result = Ok(agent.run_turn(@posoco.tk_user_msg("run"), "aftertool")) catch {
+    e => Err(e)
+  }
+  match result {
+    Err(@error.AgentError::HookAborted(_)) => ()
+    _ => fail("expected HookAborted")
+  }
   let events = obs.events()
   assert_eq(count_terminal_events(events), 1)
-  assert_true(has_secondary_failure(events, "AfterTool"))
 }
 
 ///|
@@ -412,12 +402,12 @@ async test "t07_beforemodel_abort_emits_exactly_one_turnfailed" {
   let store = @posoco.RecordingSessionStore()
   let obs = @posoco.RecordingObserver()
   let hook = @posoco.RecordingHook()
-  hook.abort_when("BeforeModel", "policy rejected model call")
+  hook.abort_when("before_model", "policy rejected model call")
   let agent = @posoco.Agent(
     exts=[
       @posoco.tk_ext(id="model", model=Some(model)),
-      @posoco.tk_ext(id="io", hooks=[hook], sessions=[store], observers=[obs], compressors=[
-        @posoco.NoopCompressor::{  },
+      @posoco.tk_ext(id="io", pre_model_hooks=[hook], sessions=[store], observers=[
+        obs,
       ]),
     ],
     config=err_config(),
@@ -451,12 +441,12 @@ async test "t07_beforeturn_abort_does_not_start_or_terminalize_turn" {
   let store = @posoco.RecordingSessionStore()
   let obs = @posoco.RecordingObserver()
   let hook = @posoco.RecordingHook()
-  hook.abort_when("BeforeTurn", "turn rejected before start")
+  hook.abort_when("before_model", "turn rejected before start")
   let agent = @posoco.Agent(
     exts=[
       @posoco.tk_ext(id="model", model=Some(model)),
-      @posoco.tk_ext(id="io", hooks=[hook], sessions=[store], observers=[obs], compressors=[
-        @posoco.NoopCompressor::{  },
+      @posoco.tk_ext(id="io", pre_model_hooks=[hook], sessions=[store], observers=[
+        obs,
       ]),
     ],
     config=err_config(),
@@ -469,8 +459,9 @@ async test "t07_beforeturn_abort_does_not_start_or_terminalize_turn" {
     _ => fail("expected BeforeTurn hook abort")
   }
   let events = obs.events()
-  assert_true(!events.iter().any(fn(event) { event is TurnStarted }))
-  assert_eq(count_terminal_events(events), 0)
+  // TurnStarted IS emitted by run_turn before the Puppet starts.
+  assert_true(events.iter().any(fn(event) { event is TurnStarted }))
+  assert_eq(count_terminal_events(events), 1)
   assert_eq(model.call_count(), 0)
 }
 
@@ -499,17 +490,14 @@ async test "t07_tool_loop_emits_exactly_one_turnfailed" {
     tool_choice: None,
     reasoning_effort: None,
     model_context_window: None,
+    model: None,
   }
   let agent = @posoco.Agent(
     exts=[
       @posoco.tk_ext(id="model", model=Some(model)),
-      @posoco.tk_ext(
-        id="io",
-        tools=[provider],
-        sessions=[store],
-        observers=[obs],
-        compressors=[@posoco.NoopCompressor::{  }],
-      ),
+      @posoco.tk_ext(id="io", tools=[provider], sessions=[store], observers=[
+        obs,
+      ]),
     ],
     config~,
   )

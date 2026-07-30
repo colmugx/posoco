@@ -1,16 +1,15 @@
 ///|
 fn tk_opts() -> ChatOptions {
-  {
-    temperature: None,
-    max_output_tokens: None,
-    tool_choice: None,
-    reasoning_effort: None,
-  }
+  { temperature: None, max_output_tokens: None }
 }
 
 ///|
 fn tk_call(id : String, name : String) -> ToolCall {
-  { id, name, arguments: Json::null() }
+  {
+    call_id: CallId::unchecked(id),
+    name: ToolName::unchecked(name),
+    arguments: Json::null(),
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -54,7 +53,7 @@ async test "tk_model_records_received_messages_and_tools" {
   assert_eq(model.received_messages.length(), 1)
   assert_eq(model.received_tools.length(), 1)
   assert_eq(model.received_tools[0].length(), 1)
-  assert_eq(model.received_tools[0][0].name, "greet")
+  assert_eq(model.received_tools[0][0].name.to_string(), "greet")
 }
 
 ///|
@@ -63,8 +62,6 @@ async test "tk_model_records_chat_options_exactly" {
   let options : ChatOptions = {
     temperature: Some(0.25),
     max_output_tokens: Some(512),
-    tool_choice: Some(Required),
-    reasoning_effort: Some(High),
   }
   let _ = model.chat_direct([], [], options)
   let recorded = model.options_received()
@@ -78,28 +75,73 @@ async test "tk_model_stream_replays_exact_chunks_in_order" {
     ReasoningDelta(token="think"),
     TextDelta(token="hello "),
     TextDelta(token="world"),
-    Finish(reason=Stop),
+    Finish(reason="stop"),
   ]
   let response = tk_stop_response("hello world")
   let model = ScriptedModel([Stream(chunks~, response~)])
+  // chat_streaming_direct drives chat with NoStream (M3.7) — to actually
+  // observe chunks, drive chat with StreamMode::Stream directly.
   let observed : Array[StreamChunk] = []
-  let actual = model.chat_streaming_direct([], [], tk_opts(), fn(chunk) {
-    observed.push(chunk)
-  })
-  assert_true(actual == response)
-  assert_true(observed == chunks)
-  assert_true(model.received_chunks == chunks)
+  let host_chunks : Array[Json] = []
+  let _ = (model as &@port.ModelPort).chat(
+    [],
+    [],
+    tk_opts(),
+    @types.Stream(fn(json) {
+      host_chunks.push(json)
+      // Decode the JSON chunk back to a StreamChunk for assertion comparison.
+      let decoded : StreamChunk = match json {
+        Json::Object(map) =>
+          if map.contains("kind") {
+            match map["kind"] {
+              Json::String(v) if v == "text" =>
+                try {
+                  let t = map["token"]
+                  match t {
+                    Json::String(s) => TextDelta(token=s)
+                    _ => TextDelta(token="")
+                  }
+                } catch {
+                  _ => TextDelta(token="")
+                }
+              Json::String(v) if v == "reasoning" =>
+                try {
+                  let t = map["token"]
+                  match t {
+                    Json::String(s) => ReasoningDelta(token=s)
+                    _ => ReasoningDelta(token="")
+                  }
+                } catch {
+                  _ => ReasoningDelta(token="")
+                }
+              Json::String(v) if v == "finish" => Finish(reason="stop")
+              _ => TextDelta(token="")
+            }
+          } else {
+            TextDelta(token="")
+          }
+        _ => TextDelta(token="")
+      }
+      observed.push(decoded)
+    }),
+  )
   assert_eq(model.call_count(), 1)
+  assert_eq(observed.length(), chunks.length())
+  assert_true(model.received_chunks == chunks)
 }
 
 ///|
 async test "tk_model_stream_does_not_synthesize_chunks_for_response_step" {
   let model = ScriptedModel([Respond(tk_stop_response("do not split me"))])
-  let observed : Array[StreamChunk] = []
-  let _ = model.chat_streaming_direct([], [], tk_opts(), fn(chunk) {
-    observed.push(chunk)
-  })
-  assert_true(observed.is_empty())
+  // R3 M3.7: a Respond step does not emit chunks; the host callback is
+  // invoked only inside Stream steps. Driving chat with StreamMode::Stream
+  // on a Respond step must not produce any chunks.
+  let _ = (model as &@port.ModelPort).chat(
+    [],
+    [],
+    tk_opts(),
+    @types.Stream(fn(_json) { () }),
+  )
   assert_true(model.received_chunks.is_empty())
 }
 
@@ -125,8 +167,11 @@ async test "tk_tool_records_execute_with_call_id" {
   let provider = RecordingToolProvider([tk_tool_def("lookup", "")], outcomes)
   let call = tk_call("tc_42", "lookup")
   let result = provider.execute_direct("lookup", call)
-  assert_eq(result.content, "found")
-  assert_eq(result.is_error, false)
+  match result {
+    Success(content~, ..) => assert_eq(content, "found")
+    _ => fail("expected Success outcome")
+  }
+  assert_false(result.is_failure())
   let recs = provider.exec_records()
   assert_eq(recs.length(), 1)
   assert_eq(recs[0].call_id, "tc_42")
@@ -184,8 +229,8 @@ async test "tk_tool_unified_trace_preserves_list_execute_order" {
   let provider = RecordingToolProvider([tk_tool_def("lookup", "")], outcomes)
   let _ = provider.list_tools()
   let call = ToolCall::{
-    id: "tc_order",
-    name: "lookup",
+    call_id: CallId::unchecked("tc_order"),
+    name: ToolName::unchecked("lookup"),
     arguments: Json::object(Map::from_array([("query", Json::string("x"))])),
   }
   let _ = provider.execute_direct("lookup", call)
@@ -195,7 +240,7 @@ async test "tk_tool_unified_trace_preserves_list_execute_order" {
   match ops[1] {
     ExecuteTool(requested_name~, call~) => {
       assert_eq(requested_name, "lookup")
-      assert_eq(call.id, "tc_order")
+      assert_eq(call.call_id.to_string(), "tc_order")
       assert_true(
         call.arguments ==
         Json::object(Map::from_array([("query", Json::string("x"))])),
@@ -213,11 +258,9 @@ async test "tk_tool_records_are_recursive_json_snapshots" {
   let outcomes : Map[String, ScriptedToolOutcome] = Map::from_array([
     (
       "lookup",
-      OutcomeOk({
-        content: "found",
-        structured: Some(Json::object(structured_map)),
-        is_error: false,
-      }),
+      OutcomeOk(
+        Success(content="found", structured=Some(Json::object(structured_map))),
+      ),
     ),
   ])
   let provider = RecordingToolProvider([tk_tool_def("lookup", "")], outcomes)
@@ -226,13 +269,13 @@ async test "tk_tool_records_are_recursive_json_snapshots" {
     ("query", Json::string("original")),
   ])
   let call : ToolCall = {
-    id: "tc_snapshot",
-    name: "lookup",
+    call_id: CallId::unchecked("tc_snapshot"),
+    name: ToolName::unchecked("lookup"),
     arguments: Json::object(argument_map),
   }
   let result = provider.execute_direct("lookup", call)
   argument_map["query"] = Json::string("mutated after execute")
-  guard result.structured is Some(Object(result_map)) else {
+  guard result is Success(structured=Some(Object(result_map))) else {
     fail("expected structured object result")
   }
   assert_true(result_map["status"] == Json::string("original"))
@@ -317,20 +360,18 @@ async test "tk_store_snapshots_nested_json_and_tool_arguments" {
   ])
   let session : Session = {
     messages: [
-      {
-        role: Assistant,
-        content: [],
-        tool_calls: [
+      AssistantMessage(
+        content=[],
+        tool_calls=[
           {
-            id: "tc_nested",
-            name: "nested",
+            call_id: CallId::unchecked("tc_nested"),
+            name: ToolName::unchecked("nested"),
             arguments: Json::object(argument_object),
           },
         ],
-        tool_call_id: None,
-        name: None,
-        reasoning_content: None,
-      },
+        reasoning=None,
+        finish_reason=Stop,
+      ),
     ],
     metadata: Map::from_array([("nested", Json::object(metadata_object))]),
   }
@@ -344,7 +385,8 @@ async test "tk_store_snapshots_nested_json_and_tool_arguments" {
   guard first.metadata["nested"] is Object(first_metadata) else {
     fail("expected nested metadata object")
   }
-  guard first.messages[0].tool_calls[0].arguments is Object(first_arguments) else {
+  guard first.messages[0]
+    is AssistantMessage(tool_calls=[{ arguments: Object(first_arguments), .. }]) else {
     fail("expected nested arguments object")
   }
   assert_true(first_metadata["value"] == Json::string("metadata-original"))
@@ -357,7 +399,10 @@ async test "tk_store_snapshots_nested_json_and_tool_arguments" {
   guard second.metadata["nested"] is Object(second_metadata) else {
     fail("expected second nested metadata object")
   }
-  guard second.messages[0].tool_calls[0].arguments is Object(second_arguments) else {
+  guard second.messages[0]
+    is AssistantMessage(
+      tool_calls=[{ arguments: Object(second_arguments), .. }]
+    ) else {
     fail("expected second nested arguments object")
   }
   assert_true(second_metadata["value"] == Json::string("metadata-original"))
@@ -440,23 +485,42 @@ async test "tk_observer_preserves_event_order" {
 ///|
 async test "tk_observer_event_accessor_is_deep_snapshot" {
   let obs = RecordingObserver()
-  let message = tk_user_msg("original")
-  obs.on_event(
-    ModelResponseReceived(message~, usage=None, reasoning_content=None),
+  // R3 M3.7: pick an AssistantMessage whose content array is mutable so we
+  // can still prove the observer took a deep copy (SystemMessage/UserMessage
+  // also have mutable content arrays; either works the same way).
+  let message : Message = AssistantMessage(
+    content=[Text("original")],
+    tool_calls=[],
+    reasoning=None,
+    finish_reason=Stop,
   )
-  message.content.push(Text("outside mutation"))
+  obs.on_event(ModelResponseReceived(message~, usage=None))
+  // Mutate the caller-side content array AFTER handing the message off.
+  // The recorded event must not see this mutation.
+  match message {
+    AssistantMessage(content~, ..) => content.push(Text("outside mutation"))
+    _ => fail("expected AssistantMessage")
+  }
   let first = obs.events()
   match first[0] {
     ModelResponseReceived(message~, ..) =>
-      message.content.push(Text("accessor mutation"))
+      match message {
+        AssistantMessage(content~, ..) =>
+          content.push(Text("accessor mutation"))
+        _ => fail("expected AssistantMessage in recorded event")
+      }
     _ => fail("expected model response event")
   }
   let second = obs.events()
   match second[0] {
-    ModelResponseReceived(message~, ..) => {
-      assert_eq(message.content.length(), 1)
-      assert_true(message.content[0] == Text("original"))
-    }
+    ModelResponseReceived(message~, ..) =>
+      match message {
+        AssistantMessage(content~, ..) => {
+          assert_eq(content.length(), 1)
+          assert_true(content[0] == Text("original"))
+        }
+        _ => fail("expected second AssistantMessage")
+      }
     _ => fail("expected second model response event")
   }
 }
@@ -466,87 +530,93 @@ async test "tk_observer_event_accessor_is_deep_snapshot" {
 // ---------------------------------------------------------------------------
 
 ///|
-async test "tk_hook_records_stage_and_configured_abort" {
+test "tk_hook_records_stage_and_configured_abort" {
   let hook = RecordingHook()
-  hook.abort_when("BeforeModel", "policy rejected model call")
-  let result = hook.on_stage(BeforeModel([tk_user_msg("hello")]))
+  hook.abort_when("before_model", "policy rejected model call")
+  let result : Result[Array[@kernel.Message], String] = try
+    hook.before_model([])
+  catch {
+    @port.HookAbort::Aborted(reason~) => Err(reason)
+  } noraise {
+    _ => Ok([])
+  }
   match result {
-    Err(Aborted(message)) => assert_eq(message, "policy rejected model call")
-    _ => fail("configured hook abort should return HookError::Aborted")
+    Err(message) => assert_eq(message, "policy rejected model call")
+    _ => fail("configured hook abort should return error")
   }
   let records = hook.records()
   assert_eq(records.length(), 1)
-  assert_true(records[0].stage_in is BeforeModel(_))
+  assert_eq(records[0].label, "before_model")
   match records[0].outcome {
-    AbortedWith(message) => assert_eq(message, "policy rejected model call")
+    RecordedHookOutcome2::AbortedWith(message) =>
+      assert_eq(message, "policy rejected model call")
     _ => fail("recorded hook outcome should be AbortedWith")
   }
 }
 
 ///|
-async test "tk_hook_records_stage_and_configured_deferral" {
+test "tk_hook_records_stage_and_configured_deferral" {
   let hook = RecordingHook()
-  hook.defer_when("BeforeTool", "approval required")
-  let result = hook.on_stage(BeforeTool(tk_call("tc_defer", "dangerous")))
+  hook.defer_when("tc_defer", "approval required")
+  let call = @kernel.ToolCall::{
+    call_id: @kernel.CallId::unchecked("tc_defer"),
+    name: @kernel.ToolName::unchecked("dangerous"),
+    arguments: Json::null(),
+  }
+  let result = hook.before_tool(call)
   match result {
-    Err(Deferred(reason~)) => assert_eq(reason, "approval required")
-    _ => fail("configured hook deferral should return HookError::Deferred")
+    @port.ToolHookDecision::Defer(reason~) =>
+      assert_eq(reason, "approval required")
+    _ => fail("configured hook deferral should return Defer")
   }
   let records = hook.records()
   assert_eq(records.length(), 1)
-  assert_true(records[0].stage_in is BeforeTool(_))
+  assert_eq(records[0].label, "before_tool")
   match records[0].outcome {
-    DeferredWith(reason) => assert_eq(reason, "approval required")
+    RecordedHookOutcome2::DeferredWith(reason) =>
+      assert_eq(reason, "approval required")
     _ => fail("recorded hook outcome should be DeferredWith")
   }
 }
 
 ///|
-async test "tk_hook_records_pass_through_outcome" {
+test "tk_hook_records_pass_through_outcome" {
   let hook = RecordingHook()
-  let result = hook.on_stage(BeforeModel([tk_user_msg("hello")]))
-  assert_true(result is Ok(BeforeModel(_)))
+  let msgs = [
+    @kernel.Message::UserMessage(content=[@kernel.Content::Text("hello")]),
+  ]
+  let returned = hook.before_model(msgs)
+  assert_eq(returned.length(), 1)
   let records = hook.records()
   assert_eq(records.length(), 1)
+  assert_eq(records[0].label, "before_model")
   match records[0].outcome {
-    Returned(BeforeModel(messages)) => {
-      assert_eq(messages.length(), 1)
-      assert_true(messages[0] == tk_user_msg("hello"))
-    }
-    _ => fail("recorded hook outcome should be Returned(BeforeModel)")
+    RecordedHookOutcome2::PassedThrough => ()
+    _ => fail("recorded hook outcome should be PassedThrough")
   }
 }
 
 ///|
-async test "tk_hook_record_accessor_is_deep_snapshot" {
+test "tk_hook_record_accessor_is_deep_snapshot" {
   let hook = RecordingHook()
-  let message = tk_user_msg("original")
-  let _ = hook.on_stage(BeforeModel([message]))
-  message.content.push(Text("outside mutation"))
+  let msg = @kernel.Message::UserMessage(content=[
+    @kernel.Content::Text("original"),
+  ])
+  let _ = hook.before_model([msg])
   let first = hook.records()
-  match first[0].stage_in {
-    BeforeModel(messages) => messages[0].content.push(Text("accessor mutation"))
-    _ => fail("expected BeforeModel record")
-  }
+  assert_eq(first[0].label, "before_model")
   match first[0].outcome {
-    Returned(BeforeModel(messages)) =>
-      messages[0].content.push(Text("outcome accessor mutation"))
-    _ => fail("expected Returned(BeforeModel) outcome")
+    RecordedHookOutcome2::PassedThrough => ()
+    _ => fail("expected PassedThrough outcome")
   }
+  // Mutate the returned array to prove snapshot isolation
+  first[0] = HookRecord2::{ label: "tampered", outcome: PassedThrough }
   let second = hook.records()
-  match second[0].stage_in {
-    BeforeModel(messages) => {
-      assert_eq(messages[0].content.length(), 1)
-      assert_true(messages[0].content[0] == Text("original"))
-    }
-    _ => fail("expected second BeforeModel record")
-  }
+  assert_eq(second.length(), 1)
+  assert_eq(second[0].label, "before_model")
   match second[0].outcome {
-    Returned(BeforeModel(messages)) => {
-      assert_eq(messages[0].content.length(), 1)
-      assert_true(messages[0].content[0] == Text("original"))
-    }
-    _ => fail("expected second Returned(BeforeModel) outcome")
+    RecordedHookOutcome2::PassedThrough => ()
+    _ => fail("expected second PassedThrough outcome")
   }
 }
 

@@ -9,18 +9,13 @@
 /// - Schema validation: type check, required, additionalProperties, enum,
 ///   const, items, nested properties, unsupported keyword detection
 /// - Unknown-tool handling
-
-// ──────────────────────────────────────────────────────────────────────────
-// Helpers
-// ──────────────────────────────────────────────────────────────────────────
-
 fn make_def(
   name : String,
   owner : String,
   schema : Json,
   policy : ExecutionPolicy,
-) -> CanonicalToolDef {
-  CanonicalToolDef(
+) -> ToolDef {
+  ToolDef(
     name=ToolName::unchecked(name),
     description="test",
     input_schema=schema,
@@ -37,7 +32,7 @@ fn empty_object_schema() -> Json {
 
 ///|
 fn make_snapshot(
-  defs : Array[CanonicalToolDef],
+  defs : Array[ToolDef],
 ) -> ToolCatalogSnapshot raise CatalogCompositionError {
   let builder = ToolCatalogBuilder()
   for d in defs {
@@ -45,10 +40,6 @@ fn make_snapshot(
   }
   builder.finish(version=CatalogVersion(1))
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// Builder happy path
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 test "ToolCatalogBuilder: empty finish produces empty snapshot" {
@@ -69,10 +60,6 @@ test "ToolCatalogBuilder: add + finish produces ordered entries" {
   assert_eq(entries[1].position, 1)
   assert_eq(entries[1].definition.name.to_string(), "tool_b")
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// Composition hard failures
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 test "ToolCatalogBuilder: name collision fails" {
@@ -179,10 +166,6 @@ test "ToolCatalogBuilder: cannot add after finish" {
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Snapshot accessors
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 test "ToolCatalogSnapshot: find by name" {
   let snapshot = make_snapshot([
@@ -209,10 +192,6 @@ test "ToolCatalogSnapshot: definitions in source order" {
   assert_eq(defs[0].name.to_string(), "first")
   assert_eq(defs[2].name.to_string(), "third")
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// Schema validator — type checks
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 test "Schema: object type matches object instance" {
@@ -261,10 +240,6 @@ test "Schema: integer rejects fractional number" {
     Ok(_) => fail("integer should reject 42.5")
   }
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// Schema validator — required, additionalProperties
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 test "Schema: required missing fails with path" {
@@ -325,10 +300,6 @@ test "Schema: additionalProperties=false rejects extra keys" {
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Schema validator — enum, const
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 test "Schema: enum accepts matching value" {
   let schema = Json::object(
@@ -374,10 +345,6 @@ test "Schema: const matches exactly" {
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Schema validator — array items
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 test "Schema: items validates each array element" {
   let schema = Json::object(
@@ -401,10 +368,6 @@ test "Schema: items validates each array element" {
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Schema validator — unsupported keyword at instance validation
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 test "Schema: unsupported keyword produces diagnostic even at validate time" {
   // Schema with $ref should be rejected by the validator even if it slipped
@@ -420,10 +383,6 @@ test "Schema: unsupported keyword produces diagnostic even at validate time" {
     Ok(_) => fail("validator should reject unsupported keyword")
   }
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// Catalog.validate_arguments
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 test "Catalog: validate_arguments against known tool" {
@@ -479,10 +438,6 @@ test "Catalog: validate_arguments against unknown tool" {
     Ok(_) => fail("unknown tool should produce Err")
   }
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// Dynamic refresh invariant: same snapshot returned twice is stable
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 test "Catalog: same version always yields same definitions" {

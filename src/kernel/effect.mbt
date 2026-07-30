@@ -7,10 +7,6 @@
 /// Each `Effect` carries its `effect_id` and the `model_step_id` it belongs
 /// to; the executor returns a completion input that must match these.
 
-// ──────────────────────────────────────────────────────────────────────────
-// Effect payloads (per kind)
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 /// Payload for `Effect::CallModel`. The executor uses `catalog_version` to
 /// re-derive the same definitions the model was prompted against; a stale
@@ -20,7 +16,7 @@ pub(all) struct CallModelPayload {
   model_step_id : ModelStepId
   /// Read-only snapshot of the messages to send to the model. The executor
   /// must NOT mutate this array.
-  messages : Array[CanonicalMessage]
+  messages : Array[Message]
   /// Catalog version this prompt was built against.
   catalog_version : CatalogVersion
   /// Opaque provider-call options (temperature, max_tokens, etc.) — carried
@@ -58,10 +54,6 @@ pub(all) struct CancelOutstandingPayload {
   /// observability — the reducer does not branch on this.
   reason : CancelReason
 } derive(Eq, Debug)
-
-// ──────────────────────────────────────────────────────────────────────────
-// Effect ADT
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 /// A single declared Effect. Each variant carries its own id and the

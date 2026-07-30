@@ -1,28 +1,14 @@
 ///|
-pub(all) enum FinishReason {
-  Stop
-  Length
-  ToolCalls
-  Other(String)
-} derive(Eq, Debug)
-
-///|
-pub(all) struct Usage {
-  input_tokens : Int?
-  output_tokens : Int?
-  total_tokens : Int?
-} derive(Eq, Debug)
-
-///|
-pub(all) struct ModelResponse {
-  message : Message
-  tool_calls : Array[ToolCall]
-  finish_reason : FinishReason
-  usage : Usage?
-  reasoning_content : String?
-} derive(Eq, Debug)
-
-///|
+/// Streaming chunk shape emitted by modelports inside the `Stream(cb)`
+/// callback of `ModelPort::chat`. This is the modelport's own representation
+/// of provider chunks; posoco does NOT define a canonical chunk type (ADR
+/// §2.11 — streaming is host/telemetry concern, not transcript fact).
+///
+/// `StreamChunk` exists as a public type because it is useful for modelports
+/// that want a shared wire vocabulary (ext-llm and ext-deepseek both emit
+/// these). Modelports that prefer their own chunk type are free to use it;
+/// the only contract is "what you pass to the `Stream(cb)` callback, the
+/// `HostChunkCallback` consumer must be able to decode".
 pub(all) enum StreamChunk {
   TextDelta(token~ : String)
   ReasoningDelta(token~ : String)
@@ -32,11 +18,15 @@ pub(all) enum StreamChunk {
     name~ : String?,
     arguments_delta~ : String?
   )
-  Usage(Usage)
-  Finish(reason~ : FinishReason)
+  Usage(input_tokens~ : Int, output_tokens~ : Int, total_tokens~ : Int)
+  Finish(reason~ : String)
 } derive(Eq, Debug)
 
 ///|
+/// Mutable per-index accumulator used by `StreamAccumulator` while assembling
+/// streamed tool calls. Each streamed `ToolCallDelta` targets an `index`;
+/// the builder records the first non-empty `id` / `name` / `arguments_json`
+/// it sees for that index.
 pub(all) struct ToolCallBuilder {
   mut id : String
   mut name : String
@@ -49,18 +39,38 @@ pub fn ToolCallBuilder::ToolCallBuilder() -> ToolCallBuilder {
 }
 
 ///|
-/// Accumulates StreamChunk events into a ModelResponse.
+/// Accumulates `StreamChunk` events during a streaming chat call. Modelports
+/// that want a standard "double-write" implementation (one chunk to the
+/// `Stream(cb)` callback for telemetry, one chunk to the accumulator for the
+/// final completion) can use this helper. Modelports with more sophisticated
+/// needs (e.g. DeepSeek's dynamic tool-result removal during streaming) are
+/// free to ignore this and maintain their own state.
+///
+/// R3 M3.7: the previous `to_response() -> ModelResponse` has been replaced
+/// by `to_completion() -> @kernel.Completion`. The old `ModelResponse` type
+/// is deleted — `chat` now returns `ModelCallResult` whose `completion`
+/// field is the canonical `Completion`.
 pub(all) struct StreamAccumulator {
   mut text : String
   mut reasoning : String
   tool_calls : Array[ToolCallBuilder]
-  mut finish_reason : FinishReason
-  mut usage : Usage?
+  mut finish_reason : String
+  mut usage_input : Int?
+  mut usage_output : Int?
+  mut usage_total : Int?
 } derive(Debug)
 
 ///|
 pub fn StreamAccumulator::StreamAccumulator() -> StreamAccumulator {
-  { text: "", reasoning: "", tool_calls: [], finish_reason: Stop, usage: None }
+  {
+    text: "",
+    reasoning: "",
+    tool_calls: [],
+    finish_reason: "stop",
+    usage_input: None,
+    usage_output: None,
+    usage_total: None,
+  }
 }
 
 ///|
@@ -89,21 +99,25 @@ pub fn StreamAccumulator::push(
         None => ()
       }
     }
-    Usage(usage) => self.usage = Some(usage)
+    Usage(input_tokens~, output_tokens~, total_tokens~) => {
+      self.usage_input = Some(input_tokens)
+      self.usage_output = Some(output_tokens)
+      self.usage_total = Some(total_tokens)
+    }
     Finish(reason~) => self.finish_reason = reason
   }
 }
 
 ///|
-/// Assemble accumulated stream chunks into a ModelResponse.
+/// Assemble accumulated stream chunks into a canonical `@kernel.Completion`.
 ///
 /// T07 error-transparency: malformed tool-call argument JSON raises
 /// `ModelError::ResponseParse` instead of silently becoming `{}`. This
 /// prevents a corrupted stream from masquerading as a valid empty-args call.
-pub fn StreamAccumulator::to_response(
+pub fn StreamAccumulator::to_completion(
   self : StreamAccumulator,
-) -> ModelResponse raise @error.ModelError {
-  let tool_calls : Array[ToolCall] = []
+) -> @kernel.Completion raise @error.ModelError {
+  let tool_calls : Array[@kernel.ToolCall] = []
   for index, tc in self.tool_calls {
     if tc.id == "" {
       raise ResponseParse(
@@ -126,31 +140,42 @@ pub fn StreamAccumulator::to_response(
           "malformed tool-call arguments JSON at index \{index}; raw identifiers and payload omitted",
         )
     }
-    tool_calls.push({ id: tc.id, name: tc.name, arguments: args })
+    tool_calls.push({
+      call_id: @kernel.CallId::unchecked(tc.id),
+      name: @kernel.ToolName::unchecked(tc.name),
+      arguments: args,
+    })
   }
-  let reasoning_opt : String? = if self.reasoning == "" {
+  let reasoning_opt : @kernel.Reasoning? = if self.reasoning == "" {
     None
   } else {
-    Some(self.reasoning)
+    Some(@kernel.Reasoning::{ content: self.reasoning })
   }
-  let content : Array[Content] = if self.text == "" {
+  let content : Array[@kernel.Content] = if self.text == "" {
     []
   } else {
-    [Text(self.text)]
+    [@kernel.Text(self.text)]
   }
-  let message : Message = {
-    role: Assistant,
-    content,
-    tool_calls,
-    tool_call_id: None,
-    name: None,
-    reasoning_content: reasoning_opt,
+  let finish : @kernel.FinishReason = match self.finish_reason {
+    "stop" => @kernel.Stop
+    "length" => @kernel.Length
+    "tool_calls" | "toolcalls" => @kernel.ToolCalls
+    other => @kernel.Other(other)
   }
-  {
-    message,
-    tool_calls,
-    finish_reason: self.finish_reason,
-    usage: self.usage,
-    reasoning_content: reasoning_opt,
+  let usage : @kernel.Usage? = match self.usage_total {
+    Some(_) =>
+      Some({
+        input_tokens: self.usage_input,
+        output_tokens: self.usage_output,
+        total_tokens: self.usage_total,
+      })
+    None => None
   }
+  @kernel.Completion(
+    content~,
+    tool_calls~,
+    reasoning=reasoning_opt,
+    finish_reason=finish,
+    usage~,
+  )
 }

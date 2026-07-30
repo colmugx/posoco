@@ -319,3 +319,163 @@ async test "puppet_control/wait_idle_returns_terminal" {
   let s = mb.wait_idle()
   assert_true(s is Terminal(_))
 }
+
+// ──────────────────────────────────────────────────────────────────────────
+// Fork (M3.5)
+// ──────────────────────────────────────────────────────────────────────────
+
+///|
+fn make_fork(
+  cmd_id : String,
+  run : RunId,
+  turn : TurnId,
+  fork_index : Int,
+) -> ForkCommand {
+  {
+    command_id: CommandId::unchecked(cmd_id),
+    target_run_id: run,
+    target_turn_id: turn,
+    fork_index,
+  }
+}
+
+///|
+test "puppet_control/fork_enqueue_accepted" {
+  let mb = bound_mailbox()
+  let result = mb.enqueue_fork(make_fork("fk1", mb_run_id(), mb_turn_id(), 3))
+  assert_true(result is Accepted(_))
+  assert_true(mb.fork_depth() == 1)
+}
+
+///|
+test "puppet_control/fork_enqueue_no_active_run_rejected" {
+  let mb = ControlMailbox()
+  let result = mb.enqueue_fork(make_fork("fk1", mb_run_id(), mb_turn_id(), 3))
+  assert_true(result is RejectedStale(_))
+}
+
+///|
+test "puppet_control/fork_enqueue_stale_run_rejected" {
+  let mb = bound_mailbox()
+  let result = mb.enqueue_fork(
+    make_fork("fk1", RunId::unchecked("run_OTHER"), mb_turn_id(), 0),
+  )
+  assert_true(result is RejectedStale(_))
+  assert_true(mb.fork_depth() == 0)
+}
+
+///|
+test "puppet_control/fork_consume_one_at_a_time" {
+  let mb = bound_mailbox()
+  let _ = mb.enqueue_fork(make_fork("fk1", mb_run_id(), mb_turn_id(), 0))
+  let _ = mb.enqueue_fork(make_fork("fk2", mb_run_id(), mb_turn_id(), 2))
+  let first = mb.consume_one_fork()
+  assert_true(first is Some(_))
+  match first {
+    Some(cmd) => {
+      assert_true(cmd.command_id().to_string() == "fk1")
+      assert_true(cmd.fork_index() == 0)
+    }
+    None => assert_true(false)
+  }
+  assert_true(mb.fork_depth() == 1)
+  let second = mb.consume_one_fork()
+  match second {
+    Some(cmd) => assert_true(cmd.command_id().to_string() == "fk2")
+    None => assert_true(false)
+  }
+  assert_true(mb.fork_depth() == 0)
+  // Queue drained.
+  assert_true(mb.consume_one_fork() is None)
+}
+
+///|
+test "puppet_control/fork_clear_run_drops_queued" {
+  let mb = bound_mailbox()
+  let _ = mb.enqueue_fork(make_fork("fk1", mb_run_id(), mb_turn_id(), 0))
+  mb.clear_run()
+  assert_true(mb.fork_depth() == 0)
+  assert_true(mb.consume_one_fork() is None)
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Compact (M3.5)
+// ──────────────────────────────────────────────────────────────────────────
+
+///|
+fn make_compact(
+  cmd_id : String,
+  run : RunId,
+  turn : TurnId,
+  trigger : @kernel.CompactTrigger,
+) -> CompactCommand {
+  {
+    command_id: CommandId::unchecked(cmd_id),
+    target_run_id: run,
+    target_turn_id: turn,
+    trigger,
+  }
+}
+
+///|
+test "puppet_control/compact_enqueue_manual_accepted" {
+  let mb = bound_mailbox()
+  let result = mb.enqueue_compact(
+    make_compact("cm1", mb_run_id(), mb_turn_id(), @kernel.Manual),
+  )
+  assert_true(result is Accepted(_))
+  assert_true(mb.compact_depth() == 1)
+}
+
+///|
+test "puppet_control/compact_enqueue_auto_accepted" {
+  let mb = bound_mailbox()
+  let result = mb.enqueue_compact(
+    make_compact("cm1", mb_run_id(), mb_turn_id(), @kernel.Auto),
+  )
+  assert_true(result is Accepted(_))
+}
+
+///|
+test "puppet_control/compact_enqueue_stale_rejected" {
+  let mb = bound_mailbox()
+  let result = mb.enqueue_compact(
+    make_compact(
+      "cm1",
+      RunId::unchecked("run_OTHER"),
+      mb_turn_id(),
+      @kernel.Manual,
+    ),
+  )
+  assert_true(result is RejectedStale(_))
+  assert_true(mb.compact_depth() == 0)
+}
+
+///|
+test "puppet_control/compact_consume_one_at_a_time" {
+  let mb = bound_mailbox()
+  let _ = mb.enqueue_compact(
+    make_compact("cm1", mb_run_id(), mb_turn_id(), @kernel.Manual),
+  )
+  let _ = mb.enqueue_compact(
+    make_compact("cm2", mb_run_id(), mb_turn_id(), @kernel.Auto),
+  )
+  let first = mb.consume_one_compact()
+  match first {
+    Some(cmd) => {
+      assert_true(cmd.command_id().to_string() == "cm1")
+      assert_true(cmd.trigger() == @kernel.Manual)
+    }
+    None => assert_true(false)
+  }
+  let second = mb.consume_one_compact()
+  match second {
+    Some(cmd) => {
+      assert_true(cmd.command_id().to_string() == "cm2")
+      assert_true(cmd.trigger() == @kernel.Auto)
+    }
+    None => assert_true(false)
+  }
+  assert_true(mb.compact_depth() == 0)
+  assert_true(mb.consume_one_compact() is None)
+}

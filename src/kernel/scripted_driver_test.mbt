@@ -30,7 +30,7 @@
 /// What the test fixture returns for a given effect id.
 pub(all) enum ScriptedOutcome {
   /// ModelCompleted with the supplied completion.
-  ScriptedModelCompleted(AssistantCompletion)
+  ScriptedModelCompleted(Completion)
   /// ModelFailed with the supplied failure.
   ScriptedModelFailed(ModelFailure)
   /// ToolCompleted with the supplied outcome.
@@ -209,6 +209,7 @@ fn input_for_effect(
           effect_id,
           model_step_id: payload.model_step_id,
           completion,
+          processed_messages: [],
         }),
         "CallModel",
         "ModelCompleted",
@@ -228,6 +229,8 @@ fn input_for_effect(
         @kernel.ToolCompleted(payload=ToolCompletedPayload::{
           effect_id,
           call_id: payload.call_id,
+          tool_name: payload.tool_name,
+          arguments: payload.arguments,
           outcome,
         }),
         "ExecuteTool",
@@ -238,6 +241,9 @@ fn input_for_effect(
         @kernel.ToolFailed(payload=ToolFailedPayload::{
           effect_id,
           call_id: payload.call_id,
+          tool_name: payload.tool_name,
+          arguments: payload.arguments,
+          reason: "test: " + failure.to_string(),
           runtime: Some(failure),
           invariant_failure: None,
         }),
@@ -249,6 +255,9 @@ fn input_for_effect(
         @kernel.ToolFailed(payload=ToolFailedPayload::{
           effect_id,
           call_id: payload.call_id,
+          tool_name: payload.tool_name,
+          arguments: payload.arguments,
+          reason: "test invariant: " + cat.to_string(),
           runtime: None,
           invariant_failure: Some(cat),
         }),

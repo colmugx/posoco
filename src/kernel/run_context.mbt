@@ -11,13 +11,8 @@
 /// - Cancel is idempotent: the second `CancelRequested` after
 ///   `Terminal(Cancelled)` is a typed rejection, not a new terminal event.
 
-// ──────────────────────────────────────────────────────────────────────────
-// IDs — typed wrappers (open question Q6.1, recommended option applied)
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
-/// Stable identifier for a single Run. The Kernel never constructs this; it is
-/// supplied by the host in the `Start` input and carried through every state.
+/// Stable identifier for a single Run. Supplied by the host in the `Start` input and carried through every state.
 pub(all) struct RunId {
   value : String
 } derive(Eq, Hash, Debug)
@@ -129,14 +124,8 @@ pub impl Show for EffectId with fn to_string(self : EffectId) -> String {
   "EffectId(\{self.value})"
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Event sequence
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
-/// Monotonic sequence counter for KernelEvents. The reducer allocates these.
-/// EventEnvelopes (built by the Puppet/Interpreter outside the reducer) carry
-/// the sequence plus a wall-clock timestamp from an injected clock.
+/// Monotonic sequence counter for KernelEvents. Allocated by the reducer.
 pub(all) struct EventSequence {
   value : Int
 } derive(Eq, Debug)
@@ -156,27 +145,17 @@ pub fn EventSequence::to_int(self : EventSequence) -> Int {
   self.value
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Budget
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
-/// Budget dimensions tracked per Run (ADR §2.9). Each dimension is `Int?`:
-/// `None` means "unbounded" (the host did not configure that limit). The
-/// reducer increments the consumed counters as it declares effects.
-///
-/// Token accounting is a special case: `total_tokens_observed` only increases
-/// when the model reports usage via `CanonicalUsage`. Unknown usage is never
-/// reported as 0; the reducer refuses to terminate on a token budget whose
-/// consumed amount is unknown.
+/// Budget dimensions tracked per Run (ADR §2.9). `Int?` → `None` means unbounded.
+/// The reducer increments consumed counters as it declares effects.
 pub(all) struct Budget {
-  /// Configured limit. `None` = unbounded.
+  /// Limit. `None` = unbounded.
   max_model_steps : Int?
-  /// Configured limit. `None` = unbounded.
+  /// Limit. `None` = unbounded.
   max_tool_rounds : Int?
-  /// Configured limit. `None` = unbounded.
+  /// Limit. `None` = unbounded.
   max_tool_calls : Int?
-  /// Configured limit. `None` = unbounded.
+  /// Limit. `None` = unbounded.
   max_total_tokens : Int?
 } derive(Eq, Debug)
 
@@ -209,27 +188,19 @@ pub fn Budget::bounded(
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Budget consumption (incremental counters kept by RunState)
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
-/// Per-Run consumed counters. The reducer increments these as it declares
-/// effects. Each counter is `Int` (never optional) because "nothing consumed
-/// yet" is just `0`.
+/// Per-Run consumed counters. Incremented by the reducer as it declares effects.
 pub(all) struct BudgetConsumed {
-  /// Number of `CallModel` effects declared so far.
+  /// `CallModel` effects declared so far.
   model_steps : Int
-  /// Number of tool batches (a model completion with N tool calls = 1 round).
+  /// Tool batches completed (model completion with N tool calls = 1 round).
   tool_rounds : Int
-  /// Number of `ExecuteTool` effects declared so far.
+  /// `ExecuteTool` effects declared so far.
   tool_calls : Int
-  /// Sum of observed `CanonicalUsage.total_tokens`, where the model reported
-  /// it. Stays at 0 while usage is unknown — and the reducer must NOT
-  /// terminate a `max_total_tokens` budget when the consumption is unverified.
+  /// Observed `Usage.total_tokens`. 0 while unknown; reducer must not terminate
+  /// on a token budget with unverified consumption.
   observed_total_tokens : Int
-  /// Whether any model step in this Run reported verified token usage. Used to
-  /// guard against terminating on a token budget the reducer cannot measure.
+  /// Whether any model step reported verified token usage.
   any_usage_verified : Bool
 } derive(Eq, Debug)
 
@@ -245,10 +216,7 @@ pub fn BudgetConsumed::zero() -> BudgetConsumed {
 }
 
 ///|
-/// Returns the dimension that is now exceeded (if any) after this consumption.
-/// Returns `None` if every dimension still has headroom. If a token budget
-/// exists but no usage has ever been verified, the token dimension is reported
-/// as `BudgetState::UnknownUsage` and the reducer must NOT terminate on it.
+/// Returns the dimension that is now exceeded (if any), or `UnknownUsage` if token budget exists but no usage verified.
 pub fn BudgetConsumed::exceeded(
   self : BudgetConsumed,
   limit : Budget,
@@ -281,10 +249,7 @@ pub fn BudgetConsumed::exceeded(
 pub enum BudgetState {
   WithinBudget
   Exceeded(BudgetDimension)
-  /// A budget dimension exists but the reducer has no verified observation to
-  /// compare against. The reducer MUST NOT terminate the Run on this; it can
-  /// only continue and hope usage arrives, or let a different dimension
-  /// exhaust.
+  /// Budget exists but no verified observation. Reducer MUST NOT terminate on this.
   UnknownUsage(BudgetDimension)
 } derive(Eq, Debug)
 
@@ -315,17 +280,9 @@ pub impl Show for BudgetDimension with fn to_string(self : BudgetDimension) -> S
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// RunContext — the immutable host-supplied input bundle
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
-/// Immutable runtime context for a single Run (ADR §2.9). Carried by RunState
-/// but never mutated. The reducer reads from this for budget/limit checks; it
-/// does NOT read a clock.
-///
-/// Product layers (TUI, session backend, MCP, extension host) MUST NOT appear
-/// here — Kernel boundary.
+/// Immutable runtime context for a single Run (ADR §2.9). Carried by RunState but never mutated.
+/// The reducer reads from this for budget/limit checks; it does NOT read a clock.
 pub(all) struct RunContext {
   run_id : RunId
   session_id : SessionId
@@ -341,16 +298,12 @@ pub fn RunContext::RunContext(
   { run_id, session_id, budget }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Cancel reasons
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
-/// Why a Run was cancelled. Carried by the terminal `Cancelled` outcome.
+/// Why a Run was cancelled.
 pub(all) enum CancelReason {
-  /// Host explicitly cancelled via `CancelRequested`.
+  /// Host explicitly cancelled.
   HostRequested(detail~ : String?)
-  /// Adapter/host observed the deadline and the reducer delivered the cancel.
+  /// Adapter/host observed the deadline.
   DeadlineReached
 } derive(Eq, Debug)
 
@@ -370,22 +323,14 @@ fn detail_or_empty(detail : String?) -> String {
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Cancel disposition
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
-/// What an adapter reports after a `CancelOutstanding` effect. The reducer
-/// never waits for this report; the Puppet records and validates it at the
-/// terminal side-effect boundary.
+/// What an adapter reports after a `CancelOutstanding` effect. The reducer never waits for this.
 pub(all) enum CancelDisposition {
-  /// The underlying operation received a cancellation signal.
+  /// Cancel signal propagated.
   Propagated
-  /// The adapter cannot cancel the underlying HTTP/process; the cancel only
-  /// stops the reducer waiting for completion.
+  /// Cancel not propagated; only stops the reducer waiting.
   NotPropagated
-  /// The effect had already settled before the cancellation reached its
-  /// adapter, so no live side effect remained to stop.
+  /// Effect already settled before cancel arrived.
   AlreadySettled
 } derive(Eq, Debug)
 

@@ -1,17 +1,19 @@
 ///|
 /// Blackbox tests against the public API. Mocks live in this file.
+/// R3 M3.7: all fixtures use canonical kernel types directly.
 struct MockModelPort {
-  responses : Array[@types.ModelResponse]
+  responses : Array[@kernel.ModelCallResult]
   mut index : Int
 }
 
 ///|
 impl @port.ModelPort for MockModelPort with fn chat(
   self,
-  _messages,
-  _tools,
-  _options,
-) {
+  _messages : Array[@kernel.Message],
+  _tools : Array[@kernel.ToolDef],
+  _options : @types.ChatOptions,
+  _stream : @types.StreamMode,
+) -> @kernel.ModelCallResult raise @error.ModelError {
   if self.index < self.responses.length() {
     let resp = self.responses[self.index]
     self.index = self.index + 1
@@ -22,10 +24,27 @@ impl @port.ModelPort for MockModelPort with fn chat(
 }
 
 ///|
+impl @port.ModelPort for MockModelPort with fn compact(
+  self,
+  _messages : Array[@kernel.Message],
+  _options : @types.ChatOptions,
+  _trigger : @kernel.CompactTrigger,
+) -> @kernel.CompactResult raise @error.ModelError {
+  raise @error.ModelError::ResponseParse(
+    "MockModelPort does not implement compact",
+  )
+}
+
+///|
+impl @port.ModelPort for MockModelPort with fn provider_config(_self) -> @port.ProviderConfig {
+  @port.ProviderConfig::empty()
+}
+
+///|
 /// MockToolProvider — implements the unified ToolProvider trait.
 struct MockToolProvider {
-  tools : Array[@types.ToolDef]
-  results : Map[String, Result[@types.ToolResult, @error.RuntimeError]]
+  tools : Array[@kernel.ToolDef]
+  results : Map[String, Result[@kernel.ToolOutcome, @error.RuntimeError]]
 }
 
 ///|
@@ -37,8 +56,8 @@ impl @port.ToolProvider for MockToolProvider with fn list_tools(self) {
 impl @port.ToolProvider for MockToolProvider with fn execute(
   self,
   name : String,
-  _call : @types.ToolCall,
-) -> @types.ToolResult raise @error.RuntimeError {
+  _call : @kernel.ToolCall,
+) -> @kernel.ToolOutcome raise @error.RuntimeError {
   match self.results.get(name) {
     Some(Ok(r)) => r
     Some(Err(e)) => raise e
@@ -85,36 +104,26 @@ fn make_config() -> @posoco.AgentConfig {
     tool_choice: None,
     reasoning_effort: None,
     model_context_window: None,
+    model: None,
   }
 }
 
 ///|
-fn user_msg(text : String) -> @types.Message {
-  {
-    role: @types.User,
-    content: [@types.Text(text)],
-    tool_calls: [],
-    tool_call_id: None,
-    name: None,
-    reasoning_content: None,
-  }
+fn user_msg(text : String) -> @kernel.Message {
+  @kernel.UserMessage(content=[@kernel.Text(text)])
 }
 
 ///|
-fn stop_response(text : String) -> @types.ModelResponse {
+fn stop_response(text : String) -> @kernel.ModelCallResult {
   {
-    message: {
-      role: @types.Assistant,
-      content: [@types.Text(text)],
-      tool_calls: [],
-      tool_call_id: None,
-      name: Some("assistant"),
-      reasoning_content: None,
-    },
-    tool_calls: [],
-    finish_reason: @types.Stop,
-    usage: None,
-    reasoning_content: None,
+    completion: @kernel.Completion(
+      content=[@kernel.Text(text)],
+      tool_calls=[],
+      reasoning=None,
+      finish_reason=@kernel.Stop,
+      usage=None,
+    ),
+    processed_messages: [],
   }
 }
 
@@ -134,13 +143,9 @@ async test "b1_simple_turn_no_tools" {
   let agent = @posoco.Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
-      tk_ext(
-        id="io",
-        tools=[empty_tools()],
-        sessions=[store],
-        observers=[observer],
-        compressors=[@posoco.NoopCompressor::{  }],
-      ),
+      tk_ext(id="io", tools=[empty_tools()], sessions=[store], observers=[
+        observer,
+      ]),
     ],
     config~,
   )
@@ -150,64 +155,37 @@ async test "b1_simple_turn_no_tools" {
 }
 
 ///|
-async test "b2_noop_compressor" {
-  let comp = @posoco.NoopCompressor::{  }
-  let ctx = @port.CompressContext::{
-    session_id: "x",
-    model_context_window: None,
-  }
-  let action = comp.compress([], ctx)
-  assert_true(action is None)
-}
-
-///|
-async test "b3_noop_hook" {
-  let hook = @posoco.NoopHook::{  }
-  let result = hook.on_stage(@port.Stage::BeforeTurn)
-  match result {
-    Ok(@port.Stage::BeforeTurn) => ()
-    _ => fail("expected BeforeTurn stage")
-  }
-}
-
-///|
-async test "b4_hook_chain" {
-  let h1 = @posoco.NoopHook::{  }
-  let h2 = @posoco.NoopHook::{  }
-  let chain = @posoco.HookChain::{ hooks: [h1, h2] }
-  let result = chain.on_stage(@port.Stage::BeforeTurn)
-  assert_true(result is Ok(_))
-}
-
-///|
 async test "b5_build_tool_result_message" {
-  let call = @types.ToolCall::{
-    id: "ct_1",
-    name: "tool_a",
+  let call : @kernel.ToolCall = {
+    call_id: @kernel.CallId::unchecked("ct_1"),
+    name: @kernel.ToolName::unchecked("tool_a"),
     arguments: Json::null(),
   }
-  let result = @types.ToolResult::{
-    content: "done",
-    structured: None,
-    is_error: false,
+  let outcome = @kernel.Success(content="done", structured=None)
+  let msg = @posoco.build_tool_result_message(call, outcome)
+  assert_true(msg is @kernel.ToolMessage(..))
+  match msg {
+    @kernel.ToolMessage(call_id~, ..) => assert_eq(call_id.to_string(), "ct_1")
+    _ => fail("expected ToolMessage")
   }
-  let msg = @posoco.build_tool_result_message(call, result)
-  assert_true(msg.role == @types.Tool)
-  assert_true(msg.tool_call_id == Some("ct_1"))
-  assert_true(msg.name == Some("tool_a"))
 }
 
 ///|
 async test "b6_build_error_message" {
-  let call = @types.ToolCall::{
-    id: "ct_2",
-    name: "tool_b",
+  let call : @kernel.ToolCall = {
+    call_id: @kernel.CallId::unchecked("ct_2"),
+    name: @kernel.ToolName::unchecked("tool_b"),
     arguments: Json::null(),
   }
   let err = @error.RuntimeError::InvocationFailed("fail")
   let msg = @posoco.build_error_message(call, err)
-  assert_true(msg.role == @types.Tool)
-  assert_true(msg.tool_call_id == Some("ct_2"))
+  match msg {
+    @kernel.ToolMessage(call_id~, outcome~, ..) => {
+      assert_eq(call_id.to_string(), "ct_2")
+      assert_true(outcome is @kernel.RuntimeFailure(..))
+    }
+    _ => fail("expected ToolMessage")
+  }
 }
 
 ///|
@@ -228,13 +206,9 @@ async test "b8_turn_event_lifecycle" {
   let agent = @posoco.Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
-      tk_ext(
-        id="io",
-        tools=[empty_tools()],
-        sessions=[store],
-        observers=[observer],
-        compressors=[@posoco.NoopCompressor::{  }],
-      ),
+      tk_ext(id="io", tools=[empty_tools()], sessions=[store], observers=[
+        observer,
+      ]),
     ],
     config~,
   )
@@ -262,13 +236,9 @@ async test "b9_model_error_aborts" {
   let agent = @posoco.Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
-      tk_ext(
-        id="io",
-        tools=[empty_tools()],
-        sessions=[store],
-        observers=[observer],
-        compressors=[@posoco.NoopCompressor::{  }],
-      ),
+      tk_ext(id="io", tools=[empty_tools()], sessions=[store], observers=[
+        observer,
+      ]),
     ],
     config~,
   )

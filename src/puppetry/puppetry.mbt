@@ -28,19 +28,37 @@
 /// Inputs to build a Puppet. All fields are required; the Puppet owns
 /// the lifetime of every reference.
 ///
-/// The host is an owned `CanonicalHost`, assembled once from direct extension
-/// bindings and an already-validated catalog. No product entry can bypass
-/// catalog-checked canonical composition.
+/// The host is an `&HostRuntime` — any implementation (port adapter, direct
+/// fixture, external host) that satisfies the canonical effect-execution
+/// contract. Catalog-composition validation is the caller's responsibility.
 pub(all) struct PuppetConfig {
-  host : CanonicalHost
+  host : &@kernel.HostRuntime
+  /// Stable model identifier for diagnostics and turn snapshots. The host
+  /// does not expose this via HostRuntime; it is supplied separately.
+  model_id : String
   catalog : @kernel.ToolCatalogSnapshot
   journal : &RunJournal
   contributors : Array[&JournalContributor]
   subscribers : Array[&EventSubscriber]
+  /// D5: real-time effect-level observers. The pump fires each Observer's
+  /// `on_kernel_event(PostStage)` immediately after every effect commits,
+  /// right after the PostEventHook handlers. This gives extensions a
+  /// read-only real-time channel without forcing them to register a
+  /// separate PostEventHook. Observer also keeps its session-level
+  /// `on_event(TurnEvent)` channel (fired at turn boundaries).
+  observers : Array[&@port.Observer]
   lifecycle_nodes : Array[&PuppetLifecycleNode]
   /// Optional live chunk sink. `None` is the default product path and tells
   /// the HostRuntime to avoid chunk JSON conversion altogether.
   stream_chunks : @kernel.HostChunkCallback?
+  /// Pre-model hooks called before the reducer declares a CallModel effect.
+  /// First abort wins; chain stops on non-Approve.
+  pre_model_hooks : Array[&PreModelHook]
+  /// Pre-tool hooks called before each tool execution. First non-Approve
+  /// decision wins.
+  pre_tool_hooks : Array[&PreToolHook]
+  /// Post-event hooks called after each effect completes (read-only).
+  post_event_hooks : Array[&PostEventHook]
   /// Opaque provider options captured at composition. They are carried into
   /// every reducer-declared CallModel effect unchanged.
   call_options : Json
@@ -48,6 +66,34 @@ pub(all) struct PuppetConfig {
   default_budget : @kernel.Budget
   /// Max iterations before the pump declares PumpLoopExceeded.
   max_iterations : Int
+  /// M3.5: slash command processors. The pump does NOT invoke these —
+  /// `BuiltinCommandPort` is registered here so product code can reach it
+  /// through `puppet.commands()`. The BuiltinCommandPort holds a reference
+  /// to the Puppet's ControlMailbox so its `/compact` and `/fork-here`
+  /// enqueue fork/compact signals for the pump's safe points.
+  commands : Array[&CommandPort]
+  /// M3.5: session store used by fork (and by compact::NewThread) to write
+  /// the new session carrying `parent_thread_id` lineage. `None` means the
+  /// product did not configure persistence — fork still works in-memory
+  /// (the new session id is returned via `PromptResult::ForkCompleted`),
+  /// but nothing is durably saved.
+  session_store : &SessionStore?
+  /// M3.5: token budget ceiling for auto-compact. When
+  /// `BudgetConsumed.observed_total_tokens` reaches 90% of this value, the
+  /// pump auto-triggers `ModelPort::compact(trigger=Auto)`. `None` disables
+  /// auto-compact (manual `/compact` still works).
+  context_window : Int?
+  /// M3.5: configurable auto-compact threshold (default 0.9). Product
+  /// code can tune this; the pump multiplies `context_window * threshold`
+  /// to get the trigger point.
+  compact_threshold : Double
+  /// D1: the shared control mailbox. The Agent owns the concrete
+  /// `ControlMailbox` instance and borrows it here so the Puppet, the
+  /// BuiltinCommandPort (constructed from the same instance), and the
+  /// product layer all see ONE mailbox. Signals enqueued by the product
+  /// layer reach the pump's safe points. Previously each Puppet
+  /// constructed its own mailbox, severing the product→pump signal path.
+  mailbox : &Mailbox
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -60,11 +106,11 @@ pub(all) struct PuppetConfig {
 ///
 /// The Puppet owns:
 /// - PhaseGate (mutable)
-/// - ControlMailbox (mutable; includes the idle barrier)
+/// - &Mailbox (borrowed from `PuppetConfig`; the Agent owns the concrete
 /// - LifecycleCollection (mutable)
 ///
 /// The Puppet borrows:
-/// - CanonicalHost (from config)
+/// - &HostRuntime (from config)
 /// - &RunJournal (from config)
 /// - &JournalContributor[] (from config)
 /// - &EventSubscriber[] (from config)
@@ -72,12 +118,20 @@ pub(all) struct PuppetConfig {
 pub struct Puppet {
   config : PuppetConfig
   mut phase_gate : PhaseGate
-  mailbox : ControlMailbox
+  /// D1: borrowed from `PuppetConfig.mailbox` so the Puppet, the Agent,
+  /// and any BuiltinCommandPort all share the SAME `ControlMailbox`
+  /// instance. Previously this was an owned value, which gave the Puppet
+  /// a private mailbox distinct from the Agent's — signals enqueued by
+  /// the product layer never reached the pump.
+  mailbox : &Mailbox
   lifecycle : LifecycleCollection
   /// Last terminal transcript. The Kernel owns the live transcript while a
   /// run is active; after a terminal commit the Puppet exposes this immutable
   /// snapshot so products can materialize their canonical session state.
-  mut last_completed_transcript : CanonicalTranscript?
+  mut last_completed_transcript : Transcript?
+  /// Last terminal outcome captured by the Puppet. `None` means no run has
+  /// completed or the current run is suspended.
+  mut last_outcome : RunOutcome?
 }
 
 ///|
@@ -85,22 +139,40 @@ pub fn Puppet::Puppet(config : PuppetConfig) -> Puppet {
   {
     config,
     phase_gate: PhaseGate::idle(),
-    mailbox: ControlMailbox(),
+    mailbox: config.mailbox,
     lifecycle: LifecycleCollection(),
     last_completed_transcript: None,
+    last_outcome: None,
   }
 }
 
 ///|
 /// Return the last terminal transcript captured by the Puppet. `None` means
 /// no run has completed since construction or the current run is suspended.
-pub fn Puppet::last_completed_transcript(self : Puppet) -> CanonicalTranscript? {
+pub fn Puppet::last_completed_transcript(self : Puppet) -> Transcript? {
   self.last_completed_transcript
+}
+
+///|
+/// Return the last terminal outcome captured by the Puppet. `None` means no
+/// run has completed since construction or the current run is suspended.
+pub fn Puppet::last_terminal_outcome(self : Puppet) -> RunOutcome? {
+  self.last_outcome
 }
 
 ///|
 pub fn Puppet::phase(self : Puppet) -> PuppetPhase {
   self.phase_gate.phase()
+}
+
+///|
+/// D1: borrow the Puppet's mailbox. Product code (BuiltinCommandPort, test
+/// harness) uses this to enqueue fork/compact/steer/abort commands that
+/// the pump consumes at its safe points. Returns `&Mailbox` so the caller
+/// and the pump observe the same underlying `ControlMailbox` instance —
+/// mutation through the returned reference is visible to the pump.
+pub fn Puppet::mailbox(self : Puppet) -> &Mailbox {
+  self.mailbox
 }
 
 ///|
@@ -161,6 +233,43 @@ pub(all) enum PromptResult {
   LeaseBusy(held_by~ : String)
   /// Rejected for another typed reason.
   Rejected(error~ : PuppetError)
+  /// M3.5: Fork completed. The pump consumed a `ForkCommand` at a safe
+  /// point, snapshotted the transcript's first `fork_index` messages,
+  /// wrote them as a new session (carrying `parent_thread_id` lineage) to
+  /// the configured SessionStore if any, and stopped the current turn.
+  /// Product code should switch its active thread to `new_session_id`.
+  /// `forked_messages` is the new thread's body (deep copy of the parent's
+  /// transcript prefix). The original thread is untouched and may continue
+  /// accepting turns (copy-on-write semantics).
+  ForkCompleted(
+    run_id~ : RunId,
+    turn_id~ : TurnId,
+    parent_session_id~ : String,
+    new_session_id~ : String,
+    forked_messages~ : Array[@kernel.Message]
+  )
+  /// M3.5: Compact completed. The pump consumed a `CompactCommand`
+  /// (manual `/compact`) or auto-triggered compact (90% context-window
+  /// pressure) and applied the modelport's `CompactResult` to the current
+  /// transcript. `mode` reports how the modelport asked posoco to apply
+  /// the result:
+  /// - **NewThread**: a new session was created with `parent_thread_id`
+  ///   lineage. `new_session_id` is `Some(id)`; product code should switch
+  ///   its active thread. The original thread is preserved unchanged.
+  /// - **Replace**: the current session's message body was replaced in
+  ///   place. `new_session_id` is `None`; product code keeps the same
+  ///   active thread. The current turn continues with the compacted body.
+  /// - **Append**: the compacted body was appended to the current session.
+  ///   `new_session_id` is `None`; product code keeps the same active
+  ///   thread. The current turn continues with the appended body.
+  CompactCompleted(
+    run_id~ : RunId,
+    turn_id~ : TurnId,
+    mode~ : @kernel.CompactMode,
+    trigger~ : @kernel.CompactTrigger,
+    new_session_id~ : String?,
+    compacted_messages~ : Array[@kernel.Message]
+  )
 }
 
 ///|
@@ -170,6 +279,23 @@ pub impl Show for PromptResult with fn to_string(self : PromptResult) -> String 
       "Accepted(run=\{run_id.to_string()}, turn=\{turn_id.to_string()})"
     LeaseBusy(held_by~) => "LeaseBusy(held_by=\{held_by})"
     Rejected(error~) => "Rejected(\{error.to_string()})"
+    ForkCompleted(
+      run_id~,
+      turn_id~,
+      parent_session_id~,
+      new_session_id~,
+      forked_messages~
+    ) =>
+      "ForkCompleted(run=\{run_id.to_string()}, turn=\{turn_id.to_string()}, parent=\{parent_session_id}, new=\{new_session_id}, msgs=\{forked_messages.length()})"
+    CompactCompleted(
+      run_id~,
+      turn_id~,
+      mode~,
+      trigger~,
+      new_session_id~,
+      compacted_messages~
+    ) =>
+      "CompactCompleted(run=\{run_id.to_string()}, turn=\{turn_id.to_string()}, mode=\{mode}, trigger=\{trigger}, new=\{match new_session_id { Some(id) => id; None => "-" }}, msgs=\{compacted_messages.length()})"
   }
 }
 
@@ -195,7 +321,7 @@ pub async fn Puppet::prompt(
   run_id : RunId,
   turn_id : TurnId,
   session_id : SessionId,
-  initial_messages : Array[CanonicalMessage],
+  initial_messages : Array[Message],
   operation_id : String,
 ) -> PromptResult raise PuppetError {
   // Step 1: acquire lease.
@@ -216,7 +342,7 @@ pub async fn Puppet::prompt(
     turn_id,
     session_id,
     catalog: self.config.catalog,
-    model_id: self.config.host.model_id().to_string(),
+    model_id: self.config.model_id,
     call_options: self.config.call_options,
     budget: self.config.default_budget,
     deadline: None,
@@ -276,7 +402,7 @@ async fn Puppet::drive_run(
   run_id : RunId,
   turn_id : TurnId,
   session_id : SessionId,
-  initial_messages : Array[CanonicalMessage],
+  initial_messages : Array[Message],
   snap : TurnSnapshot,
 ) -> PromptResult raise PuppetError {
   // Build the initial RunState.
@@ -297,7 +423,7 @@ async fn Puppet::drive_run(
   // Build the execution context from the host runtime + catalog snapshot.
   // Puppetry forwards canonical values without product-specific conversion.
   let exec_ctx = ExecutionContext::new(
-    self.config.host as &@kernel.HostRuntime,
+    self.config.host,
     catalog=self.config.catalog,
   )
   // Build the event dispatcher.
@@ -306,8 +432,18 @@ async fn Puppet::drive_run(
     dispatcher.register(sub)
   }
   // Seed the reducer with Start.
+  // Run pre-model hooks on the initial messages — they can modify or abort.
+  let mut seeded_messages = initial_messages.copy()
+  for hook in self.config.pre_model_hooks {
+    seeded_messages = hook.before_model(seeded_messages) catch {
+      HookAbort::Aborted(reason~) =>
+        return self.reject_run(
+          error=HookRejected(reason="pre_model_hook: " + reason),
+        )
+    }
+  }
   let start_input : RunInput = Start(payload={
-    initial_messages: initial_messages.copy(),
+    initial_messages: seeded_messages,
     catalog_version: snap.catalog_version(),
   })
   let mut state = initial_state
@@ -416,8 +552,162 @@ async fn Puppet::drive_run(
       }
       continue
     }
+    // ── M3.5 SAFE POINT A2: fork.
+    // Consume one fork command. Fork is copy-on-write: the original
+    // transcript is never mutated. We snapshot the transcript's first
+    // `fork_index` messages, write them as a new session (carrying
+    // `parent_thread_id` lineage) if a session_store is configured, and
+    // return PromptResult::ForkCompleted. The current turn stops; the
+    // product layer may then drive the new session as a separate turn.
+    match self.mailbox.consume_one_fork() {
+      Some(fork_cmd) => {
+        let transcript_msgs = state.transcript().messages_snapshot()
+        let len = transcript_msgs.length()
+        let fork_index = if fork_cmd.fork_index < 0 {
+          0
+        } else if fork_cmd.fork_index > len {
+          len
+        } else {
+          fork_cmd.fork_index
+        }
+        let forked_messages : Array[@kernel.Message] = []
+        for i in 0..<fork_index {
+          forked_messages.push(transcript_msgs[i])
+        }
+        let parent_session_id = session_id.to_string()
+        let new_session_id = parent_session_id +
+          "_fork_" +
+          fork_cmd.command_id().to_string()
+        // Persist the new session if a session_store is configured. The
+        // new session carries `parent_thread_id` lineage so callers can
+        // walk the DAG.
+        match self.config.session_store {
+          Some(store) => {
+            let new_session : @types.Session = {
+              messages: forked_messages.copy(),
+              metadata: Map::from_array([]),
+            }
+            let with_lineage = new_session.with_parent_thread_id(
+              parent_session_id,
+            )
+            store.save(new_session_id, with_lineage) catch {
+              error =>
+                return self.reject_run(
+                  error=EffectExecutionFailed(
+                    phase="fork",
+                    cause="session save failed: " + error.to_string(),
+                  ),
+                )
+            }
+          }
+          None => ()
+        }
+        // Release lease + clear mailbox before returning ForkCompleted so
+        // the next prompt can bind cleanly.
+        self.phase_gate = self.phase_gate.transition(Terminalizing)
+        self.phase_gate = self.phase_gate.transition(Idle)
+        self.mailbox.clear_run()
+        return ForkCompleted(
+          run_id~,
+          turn_id~,
+          parent_session_id~,
+          new_session_id~,
+          forked_messages~,
+        )
+      }
+      None => ()
+    }
+    // ── M3.5 SAFE POINT A3: compact (manual).
+    // Consume one compact command from the queue. Manual compacts come
+    // from `/compact` (the BuiltinCommandPort enqueued them with
+    // trigger=Manual). Auto compacts (trigger=Auto from context-window
+    // pressure) are checked separately inside the ReadyForModel branch.
+    match self.mailbox.consume_one_compact() {
+      Some(compact_cmd) => {
+        let compact_outcome = self.handle_compact(
+          state, compact_cmd, run_id, turn_id, session_id, dispatcher,
+        )
+        match compact_outcome {
+          CompactFlow::ReturnedResult(r) => return r
+          CompactFlow::UpdatedState(new_state) => {
+            state = new_state
+            continue
+          }
+          CompactFlow::Failed(error) => return self.reject_run(error~)
+        }
+      }
+      None => ()
+    }
     match state.phase() {
       ReadyForModel => {
+        // Run pre-model hooks — they can rewrite the transcript messages or
+        // abort the turn before the model is called. Each hook sees the
+        // previous hook's output (chained rewrite). The rewritten messages
+        // replace the reducer state's transcript so the next CallModel
+        // effect uses them.
+        let mut current_messages = state.transcript().messages_snapshot()
+        let mut hook_aborted = false
+        let mut abort_reason = ""
+        for hook in self.config.pre_model_hooks {
+          current_messages = hook.before_model(current_messages) catch {
+            HookAbort::Aborted(reason~) => {
+              hook_aborted = true
+              abort_reason = reason
+              []
+            }
+          }
+          if hook_aborted {
+            break
+          }
+        }
+        if hook_aborted {
+          return self.reject_run(
+            error=HookRejected(reason="pre_model_hook: " + abort_reason),
+          )
+        }
+        // Apply the rewritten transcript to the reducer state if hooks
+        // changed anything.
+        let prior_length = state.transcript().length()
+        if current_messages.length() != prior_length {
+          let new_transcript = Transcript::from_array(current_messages)
+          let transitioned : Result[RunState, KernelError] = Ok(
+            state.transition(
+              phase=state.phase(),
+              transcript=new_transcript,
+              pending_effects=state.pending_effects(),
+              next_event_sequence=state.next_event_sequence(),
+              next_effect_id=state.next_effect_id(),
+              current_model_step_id=state.current_model_step_id(),
+              catalog_version=None,
+              budget_consumed=state.budget_consumed(),
+              outcome=state.outcome(),
+              suspension_requirement=state.suspension_requirement(),
+            ),
+          ) catch {
+            e => Err(e)
+          }
+          match transitioned {
+            Err(e) =>
+              return self.reject_run(
+                error=ReducerInvariantViolation(
+                  category=IllegalPhase(
+                    phase="ReadyForModel",
+                    detail="pre_model_hook transcript rewrite: " + e.to_string(),
+                  ),
+                ),
+              )
+            Ok(new_state) => state = new_state
+          }
+        }
+        // M3.5: auto-compact threshold check runs INSIDE fold_effect_input
+        // (the path the pump takes through AwaitingModel / AwaitingTools),
+        // not here. The ReadyForModel branch only fires on the very first
+        // model step (the Start input lands in ReadyForModel and
+        // declare_model_effect_if_ready moves it to AwaitingModel before
+        // the loop iterates), so a check here would never see post-tool
+        // usage observations. Auto compact therefore lives in
+        // fold_effect_input where the reducer's budget update is
+        // observable before the next model effect is declared.
         let declared : Result[(RunState, Array[KernelEvent]), PuppetError] = Ok(
           declare_model_effect_if_ready(
             state,
@@ -474,7 +764,7 @@ async fn Puppet::drive_run(
           Err(error) => return self.reject_run(error~)
           Ok(value) => value
         }
-        let folded : Result[RunState, PuppetError] = Ok(
+        let folded : Result[FoldOutcome, PuppetError] = Ok(
           self.fold_effect_input(
             state,
             input,
@@ -490,7 +780,11 @@ async fn Puppet::drive_run(
         }
         match folded {
           Err(error) => return self.reject_run(error~)
-          Ok(next_state) => state = next_state
+          Ok(FoldOutcome::Return(r)) => return r
+          Ok(FoldOutcome::Continue(next_state)) => {
+            self.fire_post_event_hooks(input)
+            state = next_state
+          }
         }
       }
       AwaitingTools => {
@@ -508,6 +802,69 @@ async fn Puppet::drive_run(
           Ok(value) => value
         }
         for wave_index, wave in waves {
+          // Run pre-tool hooks on each ExecuteTool effect in the wave.
+          // Hooks can rewrite the call (chained — each hook sees the previous
+          // hook's output), defer it (suspend), or reject (abort). The
+          // rewritten call replaces the payload passed to the executor so the
+          // host sees the hook-modified name/arguments. call_id is preserved
+          // so reducer correlation stays intact.
+          let rewritten_wave : Array[Effect] = []
+          for effect in wave {
+            match effect {
+              @kernel.ExecuteTool(effect_id~, payload~) => {
+                let mut current_call : ToolCall = {
+                  call_id: payload.call_id,
+                  name: payload.tool_name,
+                  arguments: payload.arguments,
+                }
+                let mut aborted = false
+                let mut deferred_reason : String? = None
+                for hook in self.config.pre_tool_hooks {
+                  match hook.before_tool(current_call) {
+                    Approve(call~) => {
+                      current_call = call
+                      continue
+                    }
+                    Defer(reason~) => {
+                      deferred_reason = Some(reason)
+                      aborted = true
+                      break
+                    }
+                    Reject(reason~) =>
+                      return self.reject_run(
+                        error=HookRejected(reason="pre_tool_hook: " + reason),
+                      )
+                  }
+                }
+                if aborted {
+                  match deferred_reason {
+                    Some(reason) =>
+                      return self.reject_run(
+                        error=HookRejected(
+                          reason="pre_tool_hook defer not yet supported: " +
+                            reason,
+                        ),
+                      )
+                    None => ()
+                  }
+                }
+                // Reconstruct the effect with the rewritten name/arguments.
+                // call_id, owner, model_step_id, catalog_version are preserved.
+                rewritten_wave.push(
+                  @kernel.ExecuteTool(effect_id~, payload=@kernel.ExecuteToolPayload::{
+                    call_id: payload.call_id,
+                    tool_name: current_call.name,
+                    arguments: current_call.arguments,
+                    owner: payload.owner,
+                    model_step_id: payload.model_step_id,
+                    catalog_version: payload.catalog_version,
+                  }),
+                )
+              }
+              _ => rewritten_wave.push(effect)
+            }
+          }
+          let wave = rewritten_wave
           // `@async.all` starts every effect in the reducer-approved wave,
           // waits at its barrier, and returns inputs in source order. The
           // reducer remains the sole owner of transcript/result ordering.
@@ -521,7 +878,7 @@ async fn Puppet::drive_run(
             Ok(value) => value
           }
           for input in inputs {
-            let folded : Result[RunState, PuppetError] = Ok(
+            let folded : Result[FoldOutcome, PuppetError] = Ok(
               self.fold_effect_input(
                 state,
                 input,
@@ -537,7 +894,11 @@ async fn Puppet::drive_run(
             }
             match folded {
               Err(error) => return self.reject_run(error~)
-              Ok(next_state) => state = next_state
+              Ok(FoldOutcome::Return(r)) => return r
+              Ok(FoldOutcome::Continue(next_state)) => {
+                self.fire_post_event_hooks(input)
+                state = next_state
+              }
             }
             if state.phase() == Terminal || state.phase() == Suspended {
               break
@@ -573,6 +934,7 @@ async fn Puppet::drive_run(
       }
       self.mailbox.set_quiescent(Terminal(outcome~))
       self.last_completed_transcript = Some(state.transcript())
+      self.last_outcome = Some(outcome)
       // Release lease + clear mailbox.
       self.phase_gate = self.phase_gate.transition(Terminalizing)
       self.phase_gate = self.phase_gate.transition(Idle)
@@ -608,6 +970,243 @@ async fn Puppet::drive_run(
 }
 
 // ──────────────────────────────────────────────────────────────────────────
+// M3.5 — Fork + Compact safe-point handlers
+// ──────────────────────────────────────────────────────────────────────────
+
+///|
+/// Outcome of `handle_compact`: either the pump should return the given
+/// `PromptResult` (compact::NewThread stops the turn with CompactCompleted),
+/// or it should adopt the new `RunState` and continue the loop (Replace /
+/// Append), or it should reject the run (compact failed).
+enum CompactFlow {
+  ReturnedResult(PromptResult)
+  UpdatedState(RunState)
+  Failed(PuppetError)
+}
+
+///|
+/// Apply one compact command. Calls `HostRuntime::compact` (which forwards
+/// to `ModelPort::compact`) and applies the result according to its
+/// `CompactMode`:
+/// - **NewThread**: write a new session with lineage, release lease, and
+///   return `PromptResult::CompactCompleted(new_session_id=Some(...))`.
+///   The current turn stops.
+/// - **Replace**: rebuild the transcript from `compacted_messages` and
+///   return `UpdatedState`. The loop continues on the same session id.
+/// - **Append**: append `compacted_messages` to the current transcript and
+///   return `UpdatedState`. The loop continues on the same session id.
+///
+/// `commit_boundary` is NOT called here — compact is not a reducer event.
+/// The transcript mutation is internal; the next reducer event will be the
+/// next ModelStepCompleted (after the post-compact model call).
+async fn Puppet::handle_compact(
+  self : Puppet,
+  state : RunState,
+  compact_cmd : CompactCommand,
+  run_id : RunId,
+  turn_id : TurnId,
+  session_id : SessionId,
+  _dispatcher : EventDispatcher,
+) -> CompactFlow raise PuppetError {
+  let messages = state.transcript().messages_snapshot()
+  let attempted : Result[Result[CompactResult, @kernel.ModelFailure], Error] = Ok(
+    self.config.host.compact(
+      messages,
+      self.config.call_options,
+      compact_cmd.trigger(),
+    ),
+  ) catch {
+    error => Err(error)
+  }
+  let compact_result = match attempted {
+    Err(error) =>
+      return CompactFlow::Failed(
+        EffectExecutionFailed(
+          phase="compact",
+          cause="host compact raised: " + error.to_string(),
+        ),
+      )
+    Ok(Err(failure)) =>
+      return CompactFlow::Failed(
+        EffectExecutionFailed(
+          phase="compact",
+          cause="modelport compact failed: " + failure.to_string(),
+        ),
+      )
+    Ok(Ok(result)) => result
+  }
+  match compact_result.mode {
+    @kernel.NewThread => {
+      let new_session_id = session_id.to_string() +
+        "_compact_" +
+        compact_cmd.command_id().to_string()
+      // Persist the new session if configured.
+      match self.config.session_store {
+        Some(store) => {
+          let new_session : @types.Session = {
+            messages: compact_result.compacted_messages.copy(),
+            metadata: Map::from_array([]),
+          }
+          let with_lineage = new_session.with_parent_thread_id(
+            session_id.to_string(),
+          )
+          store.save(new_session_id, with_lineage) catch {
+            error =>
+              return CompactFlow::Failed(
+                EffectExecutionFailed(
+                  phase="compact",
+                  cause="session save failed: " + error.to_string(),
+                ),
+              )
+          }
+        }
+        None => ()
+      }
+      // Release lease + clear mailbox before returning.
+      self.phase_gate = self.phase_gate.transition(Terminalizing)
+      self.phase_gate = self.phase_gate.transition(Idle)
+      self.mailbox.clear_run()
+      CompactFlow::ReturnedResult(
+        CompactCompleted(
+          run_id~,
+          turn_id~,
+          mode=@kernel.NewThread,
+          trigger=compact_cmd.trigger(),
+          new_session_id=Some(new_session_id),
+          compacted_messages=compact_result.compacted_messages,
+        ),
+      )
+    }
+    @kernel.Replace => {
+      let new_transcript = Transcript::from_array(
+        compact_result.compacted_messages,
+      )
+      let transitioned : Result[RunState, KernelError] = Ok(
+        state.transition(
+          phase=state.phase(),
+          transcript=new_transcript,
+          pending_effects=state.pending_effects(),
+          next_event_sequence=state.next_event_sequence(),
+          next_effect_id=state.next_effect_id(),
+          current_model_step_id=state.current_model_step_id(),
+          catalog_version=None,
+          budget_consumed=state.budget_consumed(),
+          outcome=state.outcome(),
+          suspension_requirement=state.suspension_requirement(),
+        ),
+      ) catch {
+        e => Err(e)
+      }
+      match transitioned {
+        Err(e) =>
+          CompactFlow::Failed(
+            ReducerInvariantViolation(
+              category=IllegalPhase(
+                phase="compact-replace",
+                detail=e.to_string(),
+              ),
+            ),
+          )
+        Ok(new_state) => CompactFlow::UpdatedState(new_state)
+      }
+    }
+    @kernel.Append => {
+      let current = state.transcript().messages_snapshot()
+      let combined : Array[@kernel.Message] = []
+      for m in current {
+        combined.push(m)
+      }
+      for m in compact_result.compacted_messages {
+        combined.push(m)
+      }
+      let new_transcript = Transcript::from_array(combined)
+      let transitioned : Result[RunState, KernelError] = Ok(
+        state.transition(
+          phase=state.phase(),
+          transcript=new_transcript,
+          pending_effects=state.pending_effects(),
+          next_event_sequence=state.next_event_sequence(),
+          next_effect_id=state.next_effect_id(),
+          current_model_step_id=state.current_model_step_id(),
+          catalog_version=None,
+          budget_consumed=state.budget_consumed(),
+          outcome=state.outcome(),
+          suspension_requirement=state.suspension_requirement(),
+        ),
+      ) catch {
+        e => Err(e)
+      }
+      match transitioned {
+        Err(e) =>
+          CompactFlow::Failed(
+            ReducerInvariantViolation(
+              category=IllegalPhase(
+                phase="compact-append",
+                detail=e.to_string(),
+              ),
+            ),
+          )
+        Ok(new_state) => CompactFlow::UpdatedState(new_state)
+      }
+    }
+  }
+}
+
+///|
+/// Check whether auto-compact should fire on this iteration. Returns
+/// `Some(CompactCommand{trigger=Auto})` when `observed_total_tokens >=
+/// context_window * compact_threshold`. Returns `None` when:
+/// - `context_window` is `None` (auto-compact disabled), OR
+/// - `any_usage_verified` is false (no model step reported usage yet), OR
+/// - usage is below the threshold.
+///
+/// The command_id is deterministic per (run_id, model_step_id) so two
+/// checks in the same step cannot enqueue duplicates.
+fn Puppet::check_auto_compact(
+  self : Puppet,
+  state : RunState,
+) -> CompactCommand? {
+  let context_window = match self.config.context_window {
+    Some(w) => w
+    None => return None
+  }
+  if context_window <= 0 {
+    return None
+  }
+  let consumed = state.budget_consumed()
+  // Without a verified usage observation we cannot honestly claim the
+  // threshold has been crossed. The reducer explicitly tracks this.
+  if not(consumed.any_usage_verified) {
+    return None
+  }
+  // threshold * 100 rounded — compact_threshold is a Double (default 0.9).
+  let threshold_units = (self.config.compact_threshold * 100.0).to_int()
+  // total_units = context_window * threshold; floor at 0.
+  let limit = context_window * threshold_units / 100
+  if consumed.observed_total_tokens >= limit {
+    let cid = "auto_" +
+      state.run_id().to_string() +
+      "_" +
+      state.current_model_step_id().to_int().to_string()
+    Some({
+      command_id: CommandId::unchecked(cid),
+      target_run_id: state.run_id(),
+      target_turn_id: match self.mailbox.active_turn_id() {
+        Some(t) => t
+        None =>
+          // Defensive: if mailbox is unbound we cannot correlate. The
+          // pump is inside drive_run so the mailbox MUST be bound; this
+          // branch is unreachable in practice.
+          return None
+      },
+      trigger: @kernel.Auto,
+    })
+  } else {
+    None
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // Effect completion folding — reducer then durable savepoint
 // ──────────────────────────────────────────────────────────────────────────
 
@@ -616,6 +1215,17 @@ async fn Puppet::drive_run(
 /// effect when the reducer reaches `ReadyForModel`, and commit the complete
 /// side-effect boundary before returning. Execution and scheduling remain
 /// outside this helper; it is only the reducer → boundary-journal seam.
+
+///|
+/// Outcome of `fold_effect_input`. Either the next state to drive, or a
+/// terminal PromptResult to return early (used by auto-compact when the
+/// modelport chose NewThread — the run stops with CompactCompleted).
+enum FoldOutcome {
+  Continue(RunState)
+  Return(PromptResult)
+}
+
+///|
 async fn Puppet::fold_effect_input(
   self : Puppet,
   state : RunState,
@@ -626,7 +1236,7 @@ async fn Puppet::fold_effect_input(
   session_id : SessionId,
   savepoint_id_prefix : String,
   call_options : Json,
-) -> RunState raise PuppetError {
+) -> FoldOutcome raise PuppetError {
   let reduced : Result[ReduceOutput, KernelError] = Ok(
     reduce(state, self.config.catalog, input),
   ) catch {
@@ -639,9 +1249,38 @@ async fn Puppet::fold_effect_input(
       )
     Ok(value) => value
   }
+  // M3.5: auto-compact threshold check. If the reducer just landed in
+  // ReadyForModel AND observed token usage crossed the threshold, fire
+  // a compact (trigger=Auto) BEFORE declaring the next model effect.
+  // NewThread mode stops the turn with CompactCompleted; Replace / Append
+  // updates the state and we proceed to declare_model_effect_if_ready
+  // on the post-compact transcript.
+  let state_after_auto_compact = if output.next_state().phase() == ReadyForModel {
+    match self.check_auto_compact(output.next_state()) {
+      Some(compact_cmd) => {
+        let compact_outcome = self.handle_compact(
+          output.next_state(),
+          compact_cmd,
+          run_id,
+          turn_id,
+          session_id,
+          dispatcher,
+        )
+        match compact_outcome {
+          CompactFlow::ReturnedResult(r) => return FoldOutcome::Return(r)
+          CompactFlow::UpdatedState(new_state) => new_state
+          CompactFlow::Failed(error) =>
+            return FoldOutcome::Return(self.reject_run(error~))
+        }
+      }
+      None => output.next_state()
+    }
+  } else {
+    output.next_state()
+  }
   let boundary_kind = boundary_kind_for_events(output.events())
   let (next_state, boundary_events) = declare_model_effect_if_ready(
-    output.next_state(),
+    state_after_auto_compact,
     output.events(),
     self.config.catalog,
     call_options,
@@ -656,7 +1295,7 @@ async fn Puppet::fold_effect_input(
   }
   match committed {
     Err(error) => raise error
-    Ok(_) => next_state
+    Ok(_) => FoldOutcome::Continue(next_state)
   }
 }
 
@@ -697,6 +1336,10 @@ fn declare_model_effect_if_ready(
 /// Execute the single reducer-declared model effect. Expected provider
 /// failures travel as `ModelFailed` data; raised host defects are surfaced as
 /// a distinct Puppet error and never fabricated into a completion.
+///
+/// (R3 M3.7: the previous `(RunInput, NewThreadSpec?)` tuple has been removed
+/// — compact is now a separate `ModelPort::compact` method driven by posoco,
+/// not a side-channel of `CallModel`.)
 async fn execute_model_effect(
   effect : Effect,
   context : ExecutionContext,
@@ -708,7 +1351,7 @@ async fn execute_model_effect(
     error => Err(error)
   }
   match attempted {
-    Ok(input) => input
+    Ok(value) => value
     Err(error) => raise execution_error("AwaitingModel", error)
   }
 }
@@ -729,7 +1372,7 @@ async fn execute_tool_wave(
     error => Err(error)
   }
   match attempted {
-    Ok(inputs) => inputs
+    Ok(values) => values
     Err(error) => raise execution_error("AwaitingTools", error)
   }
 }
@@ -1134,4 +1777,56 @@ fn Puppet::reject_run(self : Puppet, error~ : PuppetError) -> PromptResult {
 /// `@cond_var.Cond::wait` — NOT polling.
 pub async fn Puppet::wait_idle(self : Puppet) -> QuiescentStatus {
   self.mailbox.wait_idle()
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Post-event hook fire helper
+// ──────────────────────────────────────────────────────────────────────────
+
+///|
+/// Fire all registered post-event hooks for a completed effect. Hook
+/// failures are silently caught — they never stop the run.
+
+///|
+fn Puppet::fire_post_event_hooks(self : Puppet, input : RunInput) -> Unit {
+  // Fast path: skip stage translation entirely when neither hooks nor
+  // observers care about post-effect events.
+  if self.config.post_event_hooks.is_empty() && self.config.observers.is_empty() {
+    return
+  }
+  let stage : PostStage = match input {
+    ModelCompleted(payload~) =>
+      PostStage::ModelCompleted(completion=payload.completion)
+    ModelFailed(payload~) => PostStage::ModelFailed(failure=payload.failure)
+    ToolCompleted(payload~) =>
+      PostStage::ToolCompleted(
+        call=ToolCall::{
+          call_id: payload.call_id,
+          name: payload.tool_name,
+          arguments: payload.arguments,
+        },
+        outcome=payload.outcome,
+      )
+    ToolFailed(payload~) =>
+      PostStage::ToolFailed(
+        call=ToolCall::{
+          call_id: payload.call_id,
+          name: payload.tool_name,
+          arguments: payload.arguments,
+        },
+        reason=payload.reason,
+      )
+    _ => return
+  }
+  // PostEventHook handlers first (they may mutate / short-circuit within
+  // their own contract).
+  for hook in self.config.post_event_hooks {
+    hook.on_post_event(stage)
+  }
+  // D5: then fire Observer.on_kernel_event for real-time read-only
+  // notification. Runs all observers (finally semantics); failures are
+  // swallowed (Observer contract: never blocks or mutates).
+  for observer in self.config.observers {
+    observer.on_kernel_event(stage)
+  }
 }

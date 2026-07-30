@@ -1,39 +1,25 @@
 ///|
 /// Canonical transcript message types for the functional Kernel.
-///
-/// Design (ADR `docs/design/08-functional-kernel-contract.md` §2.1, §2.10,
-/// §2.11): tool calls live ONLY on the assistant message; reasoning content
-/// lives ONLY on the assistant message; tool error status lives ONLY on the
-/// `ToolOutcome`. The reducer produces and consumes only these canonical
-/// types.
-///
-/// These types are pure data: no IO, no trait references, no async.
-
-// ──────────────────────────────────────────────────────────────────────────
-// Content blocks
-// ──────────────────────────────────────────────────────────────────────────
+/// Tool calls, reasoning, and finish_reason live only on `AssistantMessage`.
+/// Pure data — no IO, no trait references, no async.
 
 ///|
 /// Canonical content block. `Text` is the common case; `Image` carries a
 /// stable media-type identifier plus opaque payload data (base64, URL, or an
 /// adapter-managed handle — the Kernel does not interpret it).
-pub(all) enum CanonicalContent {
+pub(all) enum Content {
   Text(String)
   Image(media_type~ : String, data~ : String)
 } derive(Eq, Debug)
 
 ///|
-pub impl Show for CanonicalContent with fn to_string(self) -> String {
+pub impl Show for Content with fn to_string(self) -> String {
   match self {
     Text(s) => "Text(\{s.length()} chars)"
     Image(media_type~, data~) =>
       "Image(\{media_type}, \{data.length()} bytes-suffix)"
   }
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// Assistant tool call
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 /// Stable identifier for a single tool call requested by the assistant. The
@@ -99,28 +85,24 @@ pub fn ToolName::to_string(self : ToolName) -> String {
 /// Tool arguments as parsed JSON. This is the post-parsing representation: if
 /// the model stream produced malformed JSON, the reducer has already terminated
 /// the Run with `ModelParseFailure` before this type is constructed. Therefore
-/// any `CanonicalToolCall` reaching the scheduler has well-formed arguments,
+/// any `ToolCall` reaching the scheduler has well-formed arguments,
 /// but the arguments may still fail the catalog schema (handled separately as
 /// `NotExecuted(SchemaMismatch)`).
-pub(all) struct CanonicalToolCall {
+pub(all) struct ToolCall {
   call_id : CallId
   name : ToolName
   arguments : Json
 } derive(Eq, Debug)
 
 ///|
-pub impl Show for CanonicalToolCall with fn to_string(self) -> String {
+pub impl Show for ToolCall with fn to_string(self) -> String {
   let args_summary = match self.arguments {
     Object(_) => "object"
     Array(_) => "array"
     _ => "scalar"
   }
-  "CanonicalToolCall(call_id=\{self.call_id.to_string()}, name=\{self.name.to_string()}, args=\{args_summary})"
+  "ToolCall(call_id=\{self.call_id.to_string()}, name=\{self.name.to_string()}, args=\{args_summary})"
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// Assistant reasoning metadata
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 /// Reasoning trace produced by the assistant (e.g. DeepSeek deepseek-reasoner
@@ -136,10 +118,6 @@ pub impl Show for Reasoning with fn to_string(self : Reasoning) -> String {
   "Reasoning(\{self.content.length()} chars)"
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Canonical messages — one ADT, role-tagged, no illegal combos
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 /// Canonical conversation message. The role determines which payload is
 /// legal, making invalid role/payload combinations unrepresentable.
@@ -150,14 +128,14 @@ pub impl Show for Reasoning with fn to_string(self : Reasoning) -> String {
 ///   ONLY variant that carries reasoning.
 /// - `ToolMessage` is the ONLY variant that carries a `call_id` correlation
 ///   and a `ToolOutcome`. It never carries tool calls.
-pub(all) enum CanonicalMessage {
-  SystemMessage(content~ : Array[CanonicalContent])
-  UserMessage(content~ : Array[CanonicalContent])
+pub(all) enum Message {
+  SystemMessage(content~ : Array[Content])
+  UserMessage(content~ : Array[Content])
   AssistantMessage(
-    content~ : Array[CanonicalContent],
-    tool_calls~ : Array[CanonicalToolCall],
+    content~ : Array[Content],
+    tool_calls~ : Array[ToolCall],
     reasoning~ : Reasoning?,
-    finish_reason~ : AssistantFinishReason
+    finish_reason~ : FinishReason
   )
   ToolMessage(call_id~ : CallId, tool_name~ : ToolName, outcome~ : ToolOutcome)
 } derive(Eq, Debug)
@@ -169,7 +147,7 @@ pub(all) enum CanonicalMessage {
 /// `Length` is preserved as a distinct variant because the reducer must NOT
 /// emit `ExecuteTool` effects after a length-truncated completion, even if the
 /// provider tried to stream partial tool calls.
-pub(all) enum AssistantFinishReason {
+pub(all) enum FinishReason {
   Stop
   Length
   ToolCalls
@@ -177,9 +155,7 @@ pub(all) enum AssistantFinishReason {
 } derive(Eq, Debug)
 
 ///|
-pub impl Show for AssistantFinishReason with fn to_string(
-  self : AssistantFinishReason,
-) -> String {
+pub impl Show for FinishReason with fn to_string(self : FinishReason) -> String {
   match self {
     Stop => "Stop"
     Length => "Length"
@@ -187,10 +163,6 @@ pub impl Show for AssistantFinishReason with fn to_string(
     Other(s) => "Other(\{s})"
   }
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// Tool outcome — the single source of truth for tool error status
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 /// Discriminator for the reason a tool call was NOT executed even though the
@@ -299,27 +271,21 @@ fn safe_outcome_label(value : String) -> String {
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Transcript — owned by the reducer
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 /// Canonical conversation transcript. Every transition produces a fresh array
 /// (the reducer never mutates caller-owned arrays, ADR §2.10). The reducer is
 /// the only writer.
-pub(all) struct CanonicalTranscript {
-  messages : Array[CanonicalMessage]
+pub(all) struct Transcript {
+  messages : Array[Message]
 } derive(Eq, Debug)
 
 ///|
-pub fn CanonicalTranscript::empty() -> CanonicalTranscript {
+pub fn Transcript::empty() -> Transcript {
   { messages: [] }
 }
 
 ///|
-pub fn CanonicalTranscript::from_array(
-  messages : Array[CanonicalMessage],
-) -> CanonicalTranscript {
+pub fn Transcript::from_array(messages : Array[Message]) -> Transcript {
   // Defensive copy: the transcript must be reducer-owned. Callers that pass
   // an array they continue to mutate will not affect this transcript.
   { messages: messages.copy() }
@@ -328,10 +294,7 @@ pub fn CanonicalTranscript::from_array(
 ///|
 /// Returns a new transcript with `message` appended. The original transcript
 /// is not mutated (ADR §2.10).
-pub fn CanonicalTranscript::append(
-  self : CanonicalTranscript,
-  message : CanonicalMessage,
-) -> CanonicalTranscript {
+pub fn Transcript::append(self : Transcript, message : Message) -> Transcript {
   let next = self.messages.copy()
   next.push(message)
   { messages: next }
@@ -339,10 +302,10 @@ pub fn CanonicalTranscript::append(
 
 ///|
 /// Returns a new transcript with `messages` appended in order.
-pub fn CanonicalTranscript::append_all(
-  self : CanonicalTranscript,
-  messages : Array[CanonicalMessage],
-) -> CanonicalTranscript {
+pub fn Transcript::append_all(
+  self : Transcript,
+  messages : Array[Message],
+) -> Transcript {
   let next = self.messages.copy()
   for m in messages {
     next.push(m)
@@ -352,15 +315,13 @@ pub fn CanonicalTranscript::append_all(
 
 ///|
 /// Returns the number of messages.
-pub fn CanonicalTranscript::length(self : CanonicalTranscript) -> Int {
+pub fn Transcript::length(self : Transcript) -> Int {
   self.messages.length()
 }
 
 ///|
 /// Read-only snapshot of the message array. Returns a copy so callers cannot
 /// mutate the reducer-owned transcript.
-pub fn CanonicalTranscript::messages_snapshot(
-  self : CanonicalTranscript,
-) -> Array[CanonicalMessage] {
+pub fn Transcript::messages_snapshot(self : Transcript) -> Array[Message] {
   self.messages.copy()
 }

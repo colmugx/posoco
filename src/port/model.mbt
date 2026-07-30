@@ -1,33 +1,27 @@
 ///|
-/// ModelPort: the LLM calling interface. Every ext-deepseek / ext-openai /
-/// ext-anthropic implements this. `chat` is the primary call; `chat_streaming`
-/// has a default that ignores on_chunk and falls back to chat().
+/// ModelPort: LLM calling interface. Decides HOW to compact; posoco decides
+/// WHEN. `chat` returns `ModelCallResult` with `processed_messages`.
 pub(open) trait ModelPort {
+  /// One chat call. `Stream(cb)` emits chunks; `NoStream` skips chunk work.
   async fn chat(
     Self,
-    messages : Array[@types.Message],
-    tools : Array[@types.ToolDef],
+    messages : Array[@kernel.Message],
+    tools : Array[@kernel.ToolDef],
     options : @types.ChatOptions,
-  ) -> @types.ModelResponse raise @error.ModelError
+    stream : @types.StreamMode,
+  ) -> @kernel.ModelCallResult raise @error.ModelError
 
-  /// Streaming chat. Default: ignores on_chunk, falls back to chat().
-  async fn chat_streaming(
+  /// Compact the conversation. `trigger` (Auto/Manual) is advisory — the
+  /// modelport MAY use a cheaper strategy for Auto. Modelports that do not
+  /// support compact should raise `ModelError::ResponseParse`.
+  async fn compact(
     Self,
-    messages : Array[@types.Message],
-    tools : Array[@types.ToolDef],
+    messages : Array[@kernel.Message],
     options : @types.ChatOptions,
-    on_chunk : (@types.StreamChunk) -> Unit,
-  ) -> @types.ModelResponse raise @error.ModelError = _
-}
+    trigger : @kernel.CompactTrigger,
+  ) -> @kernel.CompactResult raise @error.ModelError
 
-///|
-/// Default chat_streaming: ignores on_chunk, falls back to chat().
-impl ModelPort with fn chat_streaming(
-  self : Self,
-  messages : Array[@types.Message],
-  tools : Array[@types.ToolDef],
-  options : @types.ChatOptions,
-  _on_chunk : (@types.StreamChunk) -> Unit,
-) -> @types.ModelResponse raise @error.ModelError {
-  self.chat(messages, tools, options)
+  /// Self-description: which config values this modelport accepts. A mismatch
+  /// is not fatal — posoco emits a warning and resets. Pure function.
+  fn provider_config(Self) -> ProviderConfig
 }

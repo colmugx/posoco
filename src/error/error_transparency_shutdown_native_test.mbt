@@ -19,12 +19,7 @@ async test "panic t07_shutdown_failure_is_not_swallowed" {
   let agent = @posoco.Agent(
     exts=[
       @posoco.tk_ext(id="model", model=Some(model)),
-      @posoco.tk_ext(
-        id="io",
-        sessions=[store],
-        compressors=[@posoco.NoopCompressor::{  }],
-        lifecycle=[lifecycle],
-      ),
+      @posoco.tk_ext(id="io", sessions=[store], lifecycle=[lifecycle]),
     ],
     config=err_config(),
   )

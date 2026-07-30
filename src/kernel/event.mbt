@@ -1,19 +1,9 @@
 ///|
-/// KernelEvent — pure domain events emitted by the reducer (ADR §2.1, §2.3,
-/// §2.6, §2.9).
-///
-/// All events are unstamped: the reducer emits them with a sequence number
-/// (allocated by RunState), but the wall-clock timestamp is added outside the
-/// reducer by the Puppet/Interpreter, which has access to an injected clock.
-/// This is what makes Kernel replay byte-equal.
-///
-/// Convention: terminal events (`RunCompleted`/`RunFailed`/`RunCancelled`)
-/// are emitted exactly once per Run. `RunSuspended` and `RunResumed` are
-/// non-terminal — they mark quiescent-phase transitions.
+/// KernelEvent — pure domain events emitted by the reducer.
+/// Events are unstamped (wall-clock added externally) for replay equality.
+/// Terminal events appear at most once per Run.
 
-// ──────────────────────────────────────────────────────────────────────────
 // Run-level events
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 /// Emitted when the reducer first transitions out of `Initializing` (the
@@ -38,9 +28,7 @@ pub(all) struct SuspensionRequirement {
   payload : Json
 } derive(Eq, Debug)
 
-// ──────────────────────────────────────────────────────────────────────────
 // KernelEvent ADT
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 /// A single domain event declared by the reducer. EventEnvelopes are built
@@ -57,10 +45,7 @@ pub(all) enum KernelEvent {
   /// product subscriber can render the exact pending work without querying a
   /// second routing cache. The journal payload deliberately stores only a
   /// count; arguments never enter durable diagnostic summaries.
-  ToolBatchStarted(
-    model_step_id~ : ModelStepId,
-    calls~ : Array[CanonicalToolCall]
-  )
+  ToolBatchStarted(model_step_id~ : ModelStepId, calls~ : Array[ToolCall])
   /// Emitted per tool outcome (success, error, runtime failure or
   /// NotExecuted). The outcome tag IS the error status — there is no
   /// parallel `is_error` boolean (ADR §2.11).

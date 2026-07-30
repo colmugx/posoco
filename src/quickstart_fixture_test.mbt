@@ -7,25 +7,36 @@ struct QuickstartFixedModel {}
 ///|
 pub impl @port.ModelPort for QuickstartFixedModel with fn chat(
   _self,
-  _messages : Array[@types.Message],
-  _tools : Array[@types.ToolDef],
+  _messages : Array[@kernel.Message],
+  _tools : Array[@kernel.ToolDef],
   _options : @types.ChatOptions,
-) -> @types.ModelResponse {
-  let message : @types.Message = {
-    role: @types.Role::Assistant,
-    content: [@types.Content::Text("Hello from Posoco")],
-    tool_calls: [],
-    tool_call_id: None,
-    name: Some("assistant"),
-    reasoning_content: None,
-  }
-  {
-    message,
-    tool_calls: [],
-    finish_reason: @types.FinishReason::Stop,
-    usage: None,
-    reasoning_content: None,
-  }
+  _stream : @types.StreamMode,
+) -> @kernel.ModelCallResult raise @error.ModelError {
+  let completion : @kernel.Completion = @kernel.Completion(
+    content=[@kernel.Text("Hello from Posoco")],
+    tool_calls=[],
+    reasoning=None,
+    finish_reason=@kernel.Stop,
+    usage=None,
+  )
+  { completion, processed_messages: [] }
+}
+
+///|
+pub impl @port.ModelPort for QuickstartFixedModel with fn compact(
+  _self,
+  _messages : Array[@kernel.Message],
+  _options : @types.ChatOptions,
+  _trigger : @kernel.CompactTrigger,
+) -> @kernel.CompactResult raise @error.ModelError {
+  raise @error.ModelError::ResponseParse(
+    "QuickstartFixedModel does not implement compact",
+  )
+}
+
+///|
+pub impl @port.ModelPort for QuickstartFixedModel with fn provider_config(_self) -> @port.ProviderConfig {
+  @port.ProviderConfig::empty()
 }
 
 ///|
@@ -77,9 +88,7 @@ async test "quickstart_fixture_uses_current_public_api" {
   let agent = @posoco.Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", sessions=[store], compressors=[
-        @posoco.NoopCompressor::{  },
-      ]),
+      tk_ext(id="io", sessions=[store]),
     ],
     config={
       max_tool_rounds: 10,
@@ -88,19 +97,17 @@ async test "quickstart_fixture_uses_current_public_api" {
       tool_choice: None,
       reasoning_effort: None,
       model_context_window: None,
+      model: None,
     },
   )
-  let input : @types.Message = {
-    role: @types.Role::User,
-    content: [@types.Content::Text("hello")],
-    tool_calls: [],
-    tool_call_id: None,
-    name: None,
-    reasoning_content: None,
-  }
+  let input : @kernel.Message = @kernel.UserMessage(content=[
+    @kernel.Text("hello"),
+  ])
   let result = agent.run_turn(input, "quickstart-session")
   assert_eq(result.final_session_id, "quickstart-session")
-  assert_true(
-    result.message.content == [@types.Content::Text("Hello from Posoco")],
-  )
+  match result.message {
+    @kernel.AssistantMessage(content~, ..) =>
+      assert_eq(content, [@kernel.Text("Hello from Posoco")])
+    _ => fail("expected AssistantMessage")
+  }
 }

@@ -1,99 +1,34 @@
 ///|
-pub(all) struct NoopCompressor {}
-
-///|
-pub impl @port.Compressor for NoopCompressor with fn compress(
-  _self,
-  _messages : Array[@types.Message],
-  _ctx : @port.CompressContext,
-) -> @port.CompressAction {
-  None
-}
-
-///|
-pub(all) struct NoopHook {}
-
-///|
-pub impl @port.PipelineHook for NoopHook with fn on_stage(
-  _self,
-  stage : @port.Stage,
-) -> Result[@port.Stage, @port.HookError] {
-  Ok(stage)
-}
-
-///|
-/// Internal: chains multiple hooks in sequence.
-pub(all) struct HookChain {
-  hooks : Array[&@port.PipelineHook]
-}
-
-///|
-pub impl @port.PipelineHook for HookChain with fn on_stage(
-  self,
-  stage : @port.Stage,
-) -> Result[@port.Stage, @port.HookError] {
-  let mut current_stage = stage
-  match stage {
-    AfterTurn(_)
-    | AfterModel(_)
-    | AfterTool(_, _)
-    | TurnError(_)
-    | ModelError(_)
-    | ToolError(_, _) => {
-      let mut last_err : @port.HookError? = None
-      let mut i = self.hooks.length() - 1
-      while i >= 0 {
-        match self.hooks[i].on_stage(current_stage) {
-          Ok(s) => current_stage = s
-          Err(e) => last_err = Some(e)
-        }
-        i -= 1
-      }
-      match last_err {
-        Some(e) => Err(e)
-        None => Ok(current_stage)
-      }
-    }
-    _ => {
-      for hook in self.hooks {
-        match hook.on_stage(current_stage) {
-          Ok(s) => current_stage = s
-          Err(e) => return Err(e)
-        }
-      }
-      Ok(current_stage)
-    }
-  }
-}
-
-///|
 pub fn build_tool_result_message(
-  call : @types.ToolCall,
-  result : @types.ToolResult,
-) -> @types.Message {
-  {
-    role: Tool,
-    content: [Text(result.content)],
-    tool_calls: [],
-    tool_call_id: Some(call.id),
-    name: Some(call.name),
-    reasoning_content: None,
+  call : @kernel.ToolCall,
+  result : @kernel.ToolOutcome,
+) -> @kernel.Message {
+  let content : String = match result {
+    @kernel.Success(content~, ..) => content
+    @kernel.ToolReportedError(content~, ..) => content
+    @kernel.RuntimeFailure(message~, ..) => message
+    @kernel.NotExecuted(reason~, ..) => reason.to_string()
   }
+  @kernel.ToolMessage(
+    call_id=call.call_id,
+    tool_name=call.name,
+    outcome=@kernel.Success(content~, structured=None),
+  )
 }
 
 ///|
 pub fn build_error_message(
-  call : @types.ToolCall,
+  call : @kernel.ToolCall,
   error : @error.RuntimeError,
-) -> @types.Message {
-  {
-    role: Tool,
-    content: [Text(error.to_string())],
-    tool_calls: [],
-    tool_call_id: Some(call.id),
-    name: Some(call.name),
-    reasoning_content: None,
-  }
+) -> @kernel.Message {
+  @kernel.ToolMessage(
+    call_id=call.call_id,
+    tool_name=call.name,
+    outcome=@kernel.RuntimeFailure(
+      error_category="RuntimeError",
+      message=error.to_string(),
+    ),
+  )
 }
 
 ///|
@@ -104,7 +39,7 @@ pub(all) struct CompositeToolProvider {
 
 ///|
 pub impl @port.ToolProvider for CompositeToolProvider with fn list_tools(self) {
-  let all : Array[@types.ToolDef] = []
+  let all : Array[@kernel.ToolDef] = []
   for p in self.providers {
     for t in p.list_tools() {
       all.push(t)
@@ -117,8 +52,8 @@ pub impl @port.ToolProvider for CompositeToolProvider with fn list_tools(self) {
 pub impl @port.ToolProvider for CompositeToolProvider with fn execute(
   _self,
   name : String,
-  _call : @types.ToolCall,
-) -> @types.ToolResult raise @error.RuntimeError {
+  _call : @kernel.ToolCall,
+) -> @kernel.ToolOutcome raise @error.RuntimeError {
   raise @error.RuntimeError::UnknownTool(
     "CompositeToolProvider does not route execute(); Agent uses ToolRouting instead. Tool: '\{name}'",
   )
@@ -127,8 +62,8 @@ pub impl @port.ToolProvider for CompositeToolProvider with fn execute(
 ///|
 /// Dynamic runtime tool registration. Implements ToolProvider.
 pub(all) struct ToolRegistry {
-  mut tools : Map[String, @types.ToolDef]
-  mut executors : Map[String, (@types.ToolCall) -> @types.ToolResult]
+  mut tools : Map[String, @kernel.ToolDef]
+  mut executors : Map[String, (@kernel.ToolCall) -> @kernel.ToolOutcome]
 }
 
 ///|
@@ -139,11 +74,11 @@ pub fn ToolRegistry::ToolRegistry() -> ToolRegistry {
 ///|
 pub fn ToolRegistry::register(
   self : ToolRegistry,
-  tool : @types.ToolDef,
-  executor : (@types.ToolCall) -> @types.ToolResult,
+  tool : @kernel.ToolDef,
+  executor : (@kernel.ToolCall) -> @kernel.ToolOutcome,
 ) -> Unit {
-  self.tools[tool.name] = tool
-  self.executors[tool.name] = executor
+  self.tools[tool.name.to_string()] = tool
+  self.executors[tool.name.to_string()] = executor
 }
 
 ///|
@@ -154,7 +89,7 @@ pub fn ToolRegistry::unregister(self : ToolRegistry, name : String) -> Unit {
 
 ///|
 pub impl @port.ToolProvider for ToolRegistry with fn list_tools(self) {
-  let all : Array[@types.ToolDef] = []
+  let all : Array[@kernel.ToolDef] = []
   for v in self.tools.values() {
     all.push(v)
   }
@@ -165,8 +100,8 @@ pub impl @port.ToolProvider for ToolRegistry with fn list_tools(self) {
 pub impl @port.ToolProvider for ToolRegistry with fn execute(
   self,
   name : String,
-  call : @types.ToolCall,
-) -> @types.ToolResult raise @error.RuntimeError {
+  call : @kernel.ToolCall,
+) -> @kernel.ToolOutcome raise @error.RuntimeError {
   match self.executors.get(name) {
     Some(exec) => exec(call)
     None =>
@@ -226,8 +161,7 @@ pub impl @port.CommandPort for NoopCommandPort with fn invoke(
 }
 
 ///|
-/// Tokenize a slash argument string into words, honoring double-quoted spans.
-/// `"a b" c` → ["a b", "c"]. Internal helper for parse_slash_args.
+/// Tokenize a slash argument string, honoring double-quoted spans.
 fn tokenize_args(text : String) -> Array[String] {
   let tokens : Array[String] = []
   let mut current = StringBuilder::new()
@@ -252,7 +186,7 @@ fn tokenize_args(text : String) -> Array[String] {
 }
 
 ///|
-/// Coerce a raw string token into the Json value matching the param's ptype.
+/// Coerce a string token to Json matching the param's ptype.
 fn coerce_param(p : @port.CommandParam, raw : String) -> Result[Json, String] {
   match p.ptype {
     Str => Ok(Json::string(raw))

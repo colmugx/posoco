@@ -282,6 +282,8 @@ pub(all) suberror PuppetError {
   EffectExecutionCancelled(phase~ : String)
   /// Reducer raised KernelError (host-fatal; aborts the product lifecycle).
   ReducerInvariantViolation(category~ : InvariantCategory)
+  /// A pre-model or pre-tool hook aborted the run.
+  HookRejected(reason~ : String)
 }
 
 ///|
@@ -351,6 +353,7 @@ pub impl Show for PuppetError with fn to_string(self : PuppetError) -> String {
       "EffectExecutionCancelled(phase=\{safe_label(phase)})"
     ReducerInvariantViolation(category~) =>
       "ReducerInvariantViolation(\{category.to_string()})"
+    HookRejected(reason~) => "HookRejected(\{safe_label(reason)})"
   }
 }
 

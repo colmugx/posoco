@@ -1,24 +1,19 @@
 ///|
+// Public type re-exports. R3 M3.7: legacy `@types.*` chat/message/tool types
+// are deleted; canonical kernel types are the single protocol. The Kernel
+// concept name "Canonical*" has been dropped in favour of the unqualified
+// name (`Message`, `Content`, ...) so ext authors never see a "Canonical"
+// prefix — one system, one protocol.
 pub using @types {
-  type Role,
-  type Content,
-  type Message,
-  type ToolCall,
-  type ToolDef,
-  type ToolResult,
-  type ModelResponse,
+  type ChatOptions,
+  type StreamMode,
+  type StreamChunk,
+  type StreamAccumulator,
   type Session,
   type TurnEvent,
   type TurnResult,
-  type ChatOptions,
-  type StreamChunk,
-  type StreamAccumulator,
-  type Usage,
   type MemoryEntry,
   type MemoryQuery,
-  type FinishReason,
-  type ReasoningEffort,
-  type ToolChoice,
 }
 
 ///|
@@ -28,8 +23,9 @@ pub using @port {
   trait ToolProvider,
   trait SessionStore,
   trait Observer,
-  trait Compressor,
-  trait PipelineHook,
+  trait PostEventHook,
+  trait PreModelHook,
+  trait PreToolHook,
   trait MemoryPort,
   trait Lifecycle,
   trait CommandPort,
@@ -38,20 +34,19 @@ pub using @port {
   // Self-reporting manifest protocol.
   trait Extension,
   // Port-related enums.
-  type Stage,
-  type HookError,
-  type CompressAction,
   type CommandOutcome,
   type CommandType,
   type CommandParam,
+  type HookAbort,
   type ParamType,
+  type PostStage,
+  type ToolHookDecision,
   type UiHint,
   type UiSlot,
   type UiBody,
   type UiRequest,
   type UiResponse,
   // Port-related structs.
-  type CompressContext,
   type CommandDef,
   type AutocompleteItem,
   type AutocompleteSource,
@@ -60,6 +55,7 @@ pub using @port {
   type SystemPromptHook,
   type SystemPromptSection,
   type ExtensionManifest,
+  type ProviderConfig,
   // Builtin UiPort impls (testkit-grade, also used by hosts without a UI).
   type NoopUiPort,
   type CompositeUiPort,
@@ -78,19 +74,20 @@ pub using @error {
 }
 
 ///|
+// Kernel canonical types — single protocol, no "Canonical" prefix. These are
+// the types ext/agent developers see; `HostRuntime` and other reducer-internal
+// concepts stay here because PortHostAdapter implements the trait, but ext
+// authors typically interact with ModelPort/ToolProvider/SessionStore instead.
 pub using @kernel {
   trait HostRuntime,
   type HostChunkCallback,
-  type AssistantCompletion,
-  type AssistantFinishReason,
-  type CanonicalContent,
-  type CanonicalMessage,
-  type CanonicalToolCall,
-  type CanonicalToolDef,
-  type CanonicalTranscript,
-  type CanonicalUsage,
-  type CallId,
-  type ToolName,
+  type Completion,
+  type CompletionPayload,
+  type Content,
+  type FinishReason,
+  type Message,
+  type ToolCall,
+  type ToolDef,
   type ToolOutcome,
   type NotExecutedReason,
   type ModelFailure,
@@ -110,18 +107,24 @@ pub using @kernel {
   type OwnerId,
   type CancelReason,
   type KernelError,
+  // Model-call + compact protocol (R3 M3.7).
+  type ModelCallResult,
+  type CompactMode,
+  type CompactResult,
+  // Identity newtypes.
+  type CallId,
+  type ToolName,
+  type Reasoning,
+  type Transcript,
+  type Usage,
 }
 
 ///|
 pub using @puppetry {
-  trait ModelBinding,
-  trait ToolBinding,
   trait RunJournal,
   trait EventSubscriber,
   trait JournalContributor,
   trait PuppetLifecycleNode,
-  type CanonicalHost,
-  type CanonicalHostCompositionError,
   type ModelId,
   type Puppet,
   type PuppetConfig,

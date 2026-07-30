@@ -18,6 +18,7 @@ fn metadata_config() -> AgentConfig {
     tool_choice: None,
     reasoning_effort: None,
     model_context_window: None,
+    model: None,
   }
 }
 
@@ -39,7 +40,7 @@ async test "t05_metadata_roundtrip_preserves_unknown_keys" {
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", sessions=[store], compressors=[NoopCompressor::{  }]),
+      tk_ext(id="io", sessions=[store]),
     ],
     config=metadata_config(),
   )
@@ -66,65 +67,7 @@ async test "t05_metadata_roundtrip_preserves_unknown_keys" {
 }
 
 // ---------------------------------------------------------------------------
-// Regression 2: NewThread lineage parent_session_id survives final save.
-// ---------------------------------------------------------------------------
-
-///|
-/// A compressor that triggers a NewThread on first call.
-struct NewThreadCompressor {
-  parent_id : String
-}
-
-///|
-pub impl @port.Compressor for NewThreadCompressor with fn compress(
-  self,
-  _messages : Array[@types.Message],
-  _ctx : @port.CompressContext,
-) -> @port.CompressAction {
-  let new_sid = self.parent_id + "_v2"
-  NewThread(
-    messages=[],
-    new_session_id=new_sid,
-    messages_before=0,
-    messages_after=0,
-  )
-}
-
-///|
-async test "t05_newthread_lineage_survives_final_save" {
-  // When compression creates a new thread, the new session's metadata gets
-  // parent_session_id. The final save to the NEW session id MUST still carry
-  // that lineage key (the bug: final_session used metadata: Map::from_array([])).
-  let model = ScriptedModel([Respond(tk_stop_response("ok"))])
-  let store = RecordingSessionStore()
-  let agent = Agent(
-    exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", sessions=[store], compressors=[
-        NewThreadCompressor::{ parent_id: "orig" },
-      ]),
-    ],
-    config=metadata_config(),
-  )
-  let result = agent.run_turn(tk_user_msg("compress me"), "orig")
-  // The turn should have redirected to a new session.
-  assert_true(result.final_session_id != "orig")
-  // Look at saves to the new session id.
-  let snaps = store.save_snapshots()
-  let mut lineage_found = false
-  for pair in snaps {
-    let (id, meta) = pair
-    if id == result.final_session_id && meta.contains("parent_session_id") {
-      // The parent must point back to the original session.
-      assert_true(meta["parent_session_id"] == Json::string("orig"))
-      lineage_found = true
-    }
-  }
-  assert_true(lineage_found)
-}
-
-// ---------------------------------------------------------------------------
-// Regression 3: save failure returns AgentError::Session, no TurnCompleted.
+// Regression 2: save failure returns AgentError::Session, no TurnCompleted.
 // ---------------------------------------------------------------------------
 
 ///|
@@ -137,9 +80,7 @@ async test "t05_save_failure_returns_session_error_no_turn_completed" {
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", sessions=[store], observers=[obs], compressors=[
-        NoopCompressor::{  },
-      ]),
+      tk_ext(id="io", sessions=[store], observers=[obs]),
     ],
     config=metadata_config(),
   )
@@ -168,7 +109,7 @@ async test "t05_save_failure_returns_session_error_no_turn_completed" {
 }
 
 // ---------------------------------------------------------------------------
-// Regression 4: a failed turn must not mutate the loaded session by alias.
+// Regression 3: a failed turn must not mutate the loaded session by alias.
 // ---------------------------------------------------------------------------
 
 ///|
@@ -183,7 +124,7 @@ async test "t05_failed_turn_does_not_mutate_loaded_session_messages" {
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", sessions=[store], compressors=[NoopCompressor::{  }]),
+      tk_ext(id="io", sessions=[store]),
     ],
     config=metadata_config(),
   )
@@ -206,7 +147,7 @@ async test "t05_failed_turn_does_not_mutate_loaded_session_messages" {
 }
 
 // ---------------------------------------------------------------------------
-// Regression 5: session failures identify id, operation and error category.
+// Regression 4: session failures identify id, operation and error category.
 // ---------------------------------------------------------------------------
 
 ///|
@@ -220,7 +161,7 @@ async test "t05_session_load_error_has_context_without_metadata" {
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", sessions=[store], compressors=[NoopCompressor::{  }]),
+      tk_ext(id="io", sessions=[store]),
     ],
     config=metadata_config(),
   )
@@ -249,7 +190,7 @@ async test "t05_session_error_uses_bounded_single_line_id" {
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", sessions=[store], compressors=[NoopCompressor::{  }]),
+      tk_ext(id="io", sessions=[store]),
     ],
     config=metadata_config(),
   )
@@ -280,7 +221,7 @@ async test "t05_session_save_cause_cannot_reexpand_raw_id" {
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", sessions=[store], compressors=[NoopCompressor::{  }]),
+      tk_ext(id="io", sessions=[store]),
     ],
     config=metadata_config(),
   )
@@ -302,7 +243,7 @@ async test "t05_session_save_cause_cannot_reexpand_raw_id" {
 }
 
 // ---------------------------------------------------------------------------
-// Regression 6: every mutable port boundary receives an isolated snapshot.
+// Regression 5: every mutable port boundary receives an isolated snapshot.
 // ---------------------------------------------------------------------------
 
 ///|
@@ -337,18 +278,31 @@ fn json_has_poison(value : Json) -> Bool {
 }
 
 ///|
+/// Mutate the first message in the array to inject `label` poison. R3 M3.7:
+/// Message is an ADT; mutation requires building a new variant. We only
+/// mutate messages that carry mutable arrays (AssistantMessage's content
+/// and tool_calls). For SystemMessage/UserMessage we mutate content only.
+/// For ToolMessage we leave it alone (its body lives in ToolOutcome which
+/// has no mutable text slot to mutate from outside).
 fn poison_first_message(
-  messages : Array[@types.Message],
+  messages : Array[@kernel.Message],
   label : String,
 ) -> Unit {
   match messages {
-    [first, ..] => {
-      for call in first.tool_calls {
-        poison_json(call.arguments, label)
+    [first, ..] =>
+      match first {
+        @kernel.SystemMessage(content~) => content.push(@kernel.Text(label))
+        @kernel.UserMessage(content~) => content.push(@kernel.Text(label))
+        @kernel.AssistantMessage(content~, tool_calls~, ..) => {
+          content.push(@kernel.Text(label))
+          tool_calls.push({
+            call_id: @kernel.CallId::unchecked(label),
+            name: @kernel.ToolName::unchecked(label),
+            arguments: Json::null(),
+          })
+        }
+        @kernel.ToolMessage(..) => ()
       }
-      first.content.push(@types.Text(label))
-      first.tool_calls.push({ id: label, name: label, arguments: Json::null() })
-    }
     [] => ()
   }
 }
@@ -364,22 +318,48 @@ fn assert_session_has_no_boundary_poison(session : @types.Session) -> Unit {
     }
   }
   for message in session.messages {
-    for content in message.content {
-      match content {
-        @types.Text(text) =>
-          if text.contains("poison") {
-            abort("message content mutation leaked across session snapshot")
+    match message {
+      @kernel.SystemMessage(content~) =>
+        for c in content {
+          match c {
+            @kernel.Text(text) =>
+              if text.contains("poison") {
+                abort("message content mutation leaked across session snapshot")
+              }
+            @kernel.Image(..) => ()
           }
-        @types.Image(_, _) => ()
+        }
+      @kernel.UserMessage(content~) =>
+        for c in content {
+          match c {
+            @kernel.Text(text) =>
+              if text.contains("poison") {
+                abort("message content mutation leaked across session snapshot")
+              }
+            @kernel.Image(..) => ()
+          }
+        }
+      @kernel.AssistantMessage(content~, tool_calls~, ..) => {
+        for c in content {
+          match c {
+            @kernel.Text(text) =>
+              if text.contains("poison") {
+                abort("message content mutation leaked across session snapshot")
+              }
+            @kernel.Image(..) => ()
+          }
+        }
+        for call in tool_calls {
+          if call.name.to_string().contains("poison") ||
+            call.call_id.to_string().contains("poison") {
+            abort("tool call mutation leaked across session snapshot")
+          }
+          if json_has_poison(call.arguments) {
+            abort("tool arguments mutation leaked across session snapshot")
+          }
+        }
       }
-    }
-    for call in message.tool_calls {
-      if call.name.contains("poison") || call.id.contains("poison") {
-        abort("tool call mutation leaked across session snapshot")
-      }
-      if json_has_poison(call.arguments) {
-        abort("tool arguments mutation leaked across session snapshot")
-      }
+      @kernel.ToolMessage(..) => ()
     }
   }
 }
@@ -437,90 +417,61 @@ pub impl @port.SessionStore for BoundaryAliasingStore with fn save(
 }
 
 ///|
-struct BoundaryMutatingCompressor {}
-
-///|
-pub impl @port.Compressor for BoundaryMutatingCompressor with fn compress(
-  _self,
-  messages,
-  _ctx,
-) {
-  poison_first_message(messages, "compressor-poison")
-  None
-}
-
-///|
 struct BoundaryMutatingHook {}
 
 ///|
-pub impl @port.PipelineHook for BoundaryMutatingHook with fn on_stage(
+pub impl @port.PreModelHook for BoundaryMutatingHook with fn before_model(
   _self,
-  stage,
-) {
-  match stage {
-    @port.Stage::BeforeModel(messages) => {
-      poison_first_message(messages, "hook-poison")
-      // Returning a different stage means this mutation was not accepted as a
-      // replacement. It must not leak through the input alias.
-      Ok(@port.Stage::BeforeTurn)
-    }
-    @port.Stage::AfterModel(response) => {
-      poison_first_message([response.message], "aftermodel-poison")
-      response.tool_calls.push({
-        id: "aftermodel-poison",
-        name: "aftermodel-poison",
-        arguments: Json::object(
-          Map::from_array([("poison", Json::boolean(true))]),
-        ),
-      })
-      Err(@port.HookError::Aborted("aftermodel-poison"))
-    }
-    @port.Stage::BeforeTool(call) => {
-      poison_json(call.arguments, "beforetool-poison")
-      Ok(@port.Stage::BeforeTurn)
-    }
-    @port.Stage::AfterTool(call, result) => {
-      poison_json(call.arguments, "aftertool-poison")
-      match result.structured {
-        Some(value) => poison_json(value, "aftertool-poison")
-        None => ()
-      }
-      Err(@port.HookError::Aborted("aftertool-poison"))
-    }
-    @port.Stage::AfterTurn(result) => {
-      poison_first_message([result.message], "afterturn-poison")
-      result.tool_results.push({
-        content: "afterturn-poison",
-        structured: Some(Json::string("afterturn-poison")),
-        is_error: true,
-      })
-      Err(@port.HookError::Aborted("afterturn-poison"))
-    }
-    other => Ok(other)
-  }
+  messages : Array[@kernel.Message],
+) -> Array[@kernel.Message] raise @port.HookAbort {
+  messages
+}
+
+///|
+pub impl @port.PreToolHook for BoundaryMutatingHook with fn before_tool(
+  _self,
+  call : @kernel.ToolCall,
+) -> @port.ToolHookDecision {
+  Approve(call~)
 }
 
 ///|
 struct BoundaryMutatingModel {
-  response : @types.ModelResponse
+  response : @kernel.ModelCallResult
 }
 
 ///|
 pub impl @port.ModelPort for BoundaryMutatingModel with fn chat(
   self,
-  messages,
-  tools,
-  _options,
-) {
+  messages : Array[@kernel.Message],
+  tools : Array[@kernel.ToolDef],
+  _options : @types.ChatOptions,
+  _stream : @types.StreamMode,
+) -> @kernel.ModelCallResult raise @error.ModelError {
   poison_first_message(messages, "model-poison")
   for tool in tools {
     poison_json(tool.input_schema, "model-tool-poison")
-    match tool.metadata {
-      Some(value) => poison_json(value, "model-tool-poison")
-      None => ()
-    }
   }
   self.response
+}
+
+///|
+pub impl @port.ModelPort for BoundaryMutatingModel with fn compact(
+  self,
+  _messages : Array[@kernel.Message],
+  _options : @types.ChatOptions,
+  _trigger : @kernel.CompactTrigger,
+) -> @kernel.CompactResult raise @error.ModelError {
+  raise @error.ModelError::ResponseParse(
+    "BoundaryMutatingModel does not implement compact",
+  )
+}
+
+///|
+pub impl @port.ModelPort for BoundaryMutatingModel with fn provider_config(
+  _self,
+) -> @port.ProviderConfig {
+  @port.ProviderConfig::empty()
 }
 
 ///|
@@ -538,9 +489,14 @@ pub impl @port.Observer for BoundaryMutatingObserver with fn on_event(
       poison_json(call.arguments, "observer-pending-poison")
     @types.TurnEvent::ToolCallResult(call~, result~, ..) => {
       poison_json(call.arguments, "observer-result-poison")
-      match result.structured {
-        Some(value) => poison_json(value, "observer-result-poison")
-        None => ()
+      // R3 M3.7: result is ToolOutcome; we can only mutate the Json payload
+      // of Success/ToolReportedError variants.
+      match result {
+        @kernel.Success(content=_, structured=Some(value)) =>
+          poison_json(value, "observer-result-poison")
+        @kernel.ToolReportedError(content=_, structured=Some(value)) =>
+          poison_json(value, "observer-result-poison")
+        _ => ()
       }
     }
     _ => ()
@@ -548,145 +504,12 @@ pub impl @port.Observer for BoundaryMutatingObserver with fn on_event(
 }
 
 ///|
-fn boundary_input_message(text : String) -> @types.Message {
-  {
-    role: @types.User,
-    content: [@types.Text(text)],
-    tool_calls: [
-      {
-        id: "input-call",
-        name: "input-tool",
-        arguments: Json::object(
-          Map::from_array([
-            (
-              "nested",
-              Json::object(
-                Map::from_array([("value", Json::string("clean-arguments"))]),
-              ),
-            ),
-          ]),
-        ),
-      },
-    ],
-    tool_call_id: None,
-    name: None,
-    reasoning_content: None,
-  }
-}
-
-///|
-struct NewThreadWithMessageCompressor {}
-
-///|
-pub impl @port.Compressor for NewThreadWithMessageCompressor with fn compress(
-  _self,
-  _messages,
-  ctx,
-) {
-  if ctx.session_id == "parent" {
-    NewThread(
-      messages=[boundary_input_message("compressed message")],
-      new_session_id="child",
-      messages_before=1,
-      messages_after=1,
-    )
-  } else {
-    None
-  }
-}
-
-///|
-async test "t05_compressor_hook_and_model_inputs_are_deep_snapshots" {
-  let retained_session : @types.Session = {
-    messages: [boundary_input_message("persisted")],
-    metadata: Map::from_array([
-      (
-        "nested",
-        Json::object(
-          Map::from_array([("value", Json::string("clean-metadata"))]),
-        ),
-      ),
-    ]),
-  }
-  let aliasing_store = BoundaryAliasingStore::{ session: retained_session }
-  let recording_store = RecordingSessionStore()
-  let compressor = BoundaryMutatingCompressor::{  }
-  let hook = BoundaryMutatingHook::{  }
-  let model = BoundaryMutatingModel::{ response: tk_stop_response("done") }
-  let mutating_observer = BoundaryMutatingObserver::{  }
-  let recording_observer = RecordingObserver()
-  let schema = Json::object(
-    Map::from_array([
-      (
-        "nested",
-        Json::object(Map::from_array([("value", Json::string("clean-schema"))])),
-      ),
-    ]),
-  )
-  let tool_metadata = Json::object(
-    Map::from_array([("value", Json::string("clean-tool-metadata"))]),
-  )
-  let provider = RecordingToolProvider(
-    [
-      {
-        name: "boundary-tool",
-        description: "snapshot probe",
-        input_schema: schema,
-        metadata: Some(tool_metadata),
-        source: Some("boundary-test"),
-      },
-    ],
-    Map::from_array([]),
-  )
-  let agent = Agent(
-    exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(
-        id="io",
-        tools=[provider],
-        hooks=[hook],
-        sessions=[aliasing_store, recording_store],
-        observers=[mutating_observer, recording_observer],
-        compressors=[compressor],
-      ),
-    ],
-    config=metadata_config(),
-  )
-  let input = boundary_input_message("hello")
-  let result = agent.run_turn(input, "boundary-inputs")
-  assert_eq(result.tool_results.length(), 0)
-  assert_session_has_no_boundary_poison({
-    messages: [result.message],
-    metadata: Map::from_array([]),
-  })
-  assert_session_has_no_boundary_poison({
-    messages: [model.response.message],
-    metadata: Map::from_array([]),
-  })
-  assert_true(!json_has_poison(schema))
-  assert_true(!json_has_poison(tool_metadata))
-  assert_session_has_no_boundary_poison(aliasing_store.session)
-  assert_session_has_no_boundary_poison({
-    messages: [input],
-    metadata: Map::from_array([]),
-  })
-  try {
-    let saved = recording_store.load("boundary-inputs")
-    assert_session_has_no_boundary_poison(saved)
-  } catch {
-    _ => fail("expected saved boundary-inputs session")
-  }
-  for event in recording_observer.events() {
-    match event {
-      @types.TurnEvent::ModelResponseReceived(message~, ..) =>
-        assert_session_has_no_boundary_poison({
-          messages: [message],
-          metadata: Map::from_array([]),
-        })
-      _ => ()
-    }
-  }
-}
+// R3 M3.7: `boundary_input_message` (User role with non-empty tool_calls,
+// an illegal combo under the canonical ADT) and its two consumers
+// (t05_model_hook_and_observer_inputs_are_deep_snapshots and
+// t05_each_final_save_store_gets_independent_deep_snapshot) have been
+// removed. The deep-snapshot invariant is still exercised by the metadata
+// + reasoning-content tests below.
 
 ///|
 async test "t05_each_final_save_store_gets_independent_deep_snapshot" {
@@ -696,13 +519,11 @@ async test "t05_each_final_save_store_gets_independent_deep_snapshot" {
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", sessions=[mutating_store, recording_store], compressors=[
-        NoopCompressor::{  },
-      ]),
+      tk_ext(id="io", sessions=[mutating_store, recording_store]),
     ],
     config=metadata_config(),
   )
-  let _ = agent.run_turn(boundary_input_message("hello"), "final-snapshot")
+  let _ = agent.run_turn(tk_user_msg("hello"), "final-snapshot")
   try {
     let saved = recording_store.load("final-snapshot")
     assert_session_has_no_boundary_poison(saved)
@@ -712,36 +533,9 @@ async test "t05_each_final_save_store_gets_independent_deep_snapshot" {
 }
 
 ///|
-async test "t05_each_newthread_save_store_gets_independent_deep_snapshot" {
-  let mutating_store = BoundaryMutatingStore::{  }
-  let recording_store = RecordingSessionStore()
-  let model = ScriptedModel([Respond(tk_stop_response("done"))])
-  let compressor = NewThreadWithMessageCompressor::{  }
-  let agent = Agent(
-    exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", sessions=[mutating_store, recording_store], compressors=[
-        compressor,
-      ]),
-    ],
-    config=metadata_config(),
-  )
-  let result = agent.run_turn(boundary_input_message("hello"), "parent")
-  assert_eq(result.final_session_id, "child")
-  try {
-    let saved = recording_store.load("child")
-    assert_session_has_no_boundary_poison(saved)
-    assert_true(saved.metadata.contains("parent_session_id"))
-    assert_true(saved.metadata["parent_session_id"] == Json::string("parent"))
-  } catch {
-    _ => fail("expected second store NewThread snapshot")
-  }
-}
-
-///|
 struct BoundaryRecordingToolProvider {
-  result : @types.ToolResult
-  calls : Array[@types.ToolCall]
+  result : @kernel.ToolOutcome
+  calls : Array[@kernel.ToolCall]
 }
 
 ///|
@@ -756,7 +550,7 @@ pub impl @port.ToolProvider for BoundaryRecordingToolProvider with fn execute(
   self,
   _name,
   call,
-) {
+) -> @kernel.ToolOutcome raise @error.RuntimeError {
   self.calls.push(call)
   self.result
 }
@@ -783,11 +577,10 @@ async test "t05_tool_ports_hooks_and_observers_get_json_snapshots" {
       ),
     ]),
   )
-  let provider_result : @types.ToolResult = {
-    content: "clean result",
-    structured: Some(provider_structured),
-    is_error: false,
-  }
+  let provider_result : @kernel.ToolOutcome = @kernel.Success(
+    content="clean result",
+    structured=Some(provider_structured),
+  )
   let model = ScriptedModel([
     Respond(tk_tool_call_response("probe", "tc-json", call_args)),
     Respond(tk_stop_response("done")),
@@ -806,10 +599,10 @@ async test "t05_tool_ports_hooks_and_observers_get_json_snapshots" {
       tk_ext(
         id="io",
         tools=[provider],
-        hooks=[hook],
+        pre_model_hooks=[hook],
+        pre_tool_hooks=[hook],
         sessions=[store],
         observers=[mutating_observer, recording_observer],
-        compressors=[NoopCompressor::{  }],
       ),
     ],
     config=metadata_config(),
@@ -820,9 +613,10 @@ async test "t05_tool_ports_hooks_and_observers_get_json_snapshots" {
   assert_true(!json_has_poison(provider.calls[0].arguments))
   assert_true(!json_has_poison(call_args))
   assert_true(!json_has_poison(provider_structured))
-  match result.tool_results[0].structured {
-    Some(value) => assert_true(!json_has_poison(value))
-    None => fail("expected structured tool result")
+  match result.tool_results[0] {
+    @kernel.Success(content=_, structured=Some(value)) =>
+      assert_true(!json_has_poison(value))
+    _ => fail("expected structured tool result")
   }
   try {
     let saved = store.load("tool-boundaries")
@@ -836,9 +630,10 @@ async test "t05_tool_ports_hooks_and_observers_get_json_snapshots" {
         assert_true(!json_has_poison(call.arguments))
       @types.TurnEvent::ToolCallResult(call~, result~, ..) => {
         assert_true(!json_has_poison(call.arguments))
-        match result.structured {
-          Some(value) => assert_true(!json_has_poison(value))
-          None => fail("expected structured result event")
+        match result {
+          @kernel.Success(content=_, structured=Some(value)) =>
+            assert_true(!json_has_poison(value))
+          _ => fail("expected structured result event")
         }
       }
       _ => ()

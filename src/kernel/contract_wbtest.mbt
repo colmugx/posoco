@@ -7,11 +7,6 @@
 /// - a legal state can be built
 /// - an illegal state combination raises KernelError::ConstructorInvariant
 /// - the typed IDs and payload fields are accessible
-
-// ──────────────────────────────────────────────────────────────────────────
-// Helpers
-// ──────────────────────────────────────────────────────────────────────────
-
 fn make_call_model_effect(id : EffectId) -> Effect {
   let payload : CallModelPayload = {
     model_step_id: ModelStepId::first(),
@@ -43,7 +38,7 @@ fn try_transition(
   try {
     let next = st.transition(
       phase~,
-      transcript=CanonicalTranscript::empty(),
+      transcript=Transcript::empty(),
       pending_effects=pending,
       next_event_sequence=EventSequence::initial(),
       next_effect_id=EffectId::first(),
@@ -58,10 +53,6 @@ fn try_transition(
     e => Err(e)
   }
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// IDs
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 test "CallId: rejects empty string" {
@@ -108,10 +99,6 @@ test "OwnerId: rejects empty string" {
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Initial state
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 test "RunState::initial: produces Initializing state with zero pending" {
   let st = make_initial_state()
@@ -123,10 +110,6 @@ test "RunState::initial: produces Initializing state with zero pending" {
   assert_eq(st.next_effect_id().to_int(), 1)
   assert_eq(st.transcript().length(), 0)
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// Phase invariants via RunState::transition
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 test "RunState: AwaitingModel accepts exactly 1 CallModel effect" {
@@ -230,10 +213,6 @@ test "RunState: Terminal legal with Completed" {
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Budget state
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 test "BudgetConsumed: WithinBudget when no limit exceeded" {
   let consumed : BudgetConsumed = {
@@ -291,10 +270,6 @@ test "BudgetConsumed: UnknownUsage for tokens when no usage verified" {
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// RunInput kind labels (contract — string form must not drift)
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 test "RunInput: kind labels are stable" {
   let start : RunInput = Start(payload=StartPayload::{
@@ -313,10 +288,6 @@ test "RunInput: kind labels are stable" {
   })
   assert_eq(resume_input.kind(), "Resume")
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// KernelEvent terminal classification
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 test "KernelEvent: terminal events classified correctly" {
@@ -351,10 +322,6 @@ test "KernelEvent: terminal events classified correctly" {
   assert_false(suspended.is_terminal())
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Effect accessor
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 test "Effect: effect_id accessor works for all variants" {
   let cm = make_call_model_effect(EffectId::first())
@@ -373,10 +340,6 @@ test "Effect: effect_id accessor works for all variants" {
     None => ()
   }
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// ToolOutcome summary (sanitisation)
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 test "ToolOutcome: summary excludes raw payloads" {

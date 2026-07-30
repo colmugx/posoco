@@ -7,6 +7,9 @@
 /// blackbox tests: the testkit records call order, arguments, and metadata
 /// snapshots, and fails loudly when a script is exhausted.
 ///
+/// R3 M3.7: all fixtures use canonical kernel types directly. There is no
+/// legacy `@types.Message` / `ModelResponse` / `ToolResult` surface any more.
+///
 /// The testkit is a test/support layer only — it never enters the production
 /// Agent dependency direction.
 
@@ -30,68 +33,91 @@ fn testkit_snapshot_json(value : Json) -> Json {
 }
 
 ///|
-fn testkit_snapshot_tool_call(call : @types.ToolCall) -> @types.ToolCall {
+/// Deep-copy a `@kernel.ToolCall`. The `arguments` Json is recursively copied
+/// so callers cannot mutate the recorded arguments after the fact.
+fn testkit_snapshot_tool_call(call : @kernel.ToolCall) -> @kernel.ToolCall {
   {
-    id: call.id,
+    call_id: call.call_id,
     name: call.name,
     arguments: testkit_snapshot_json(call.arguments),
   }
 }
 
 ///|
-fn testkit_snapshot_tool_def(tool : @types.ToolDef) -> @types.ToolDef {
-  {
-    name: tool.name,
-    description: tool.description,
-    input_schema: testkit_snapshot_json(tool.input_schema),
-    metadata: match tool.metadata {
-      Some(value) => Some(testkit_snapshot_json(value))
-      None => None
-    },
-    source: tool.source,
+/// Deep-copy a `@kernel.ToolDef`.
+fn testkit_snapshot_tool_def(tool : @kernel.ToolDef) -> @kernel.ToolDef {
+  @kernel.ToolDef(
+    name=tool.name,
+    description=tool.description,
+    input_schema=testkit_snapshot_json(tool.input_schema),
+    owner=tool.owner,
+    policy=tool.policy,
+    provenance=tool.provenance,
+  )
+}
+
+///|
+/// Deep-copy a `@kernel.Message`.
+fn testkit_snapshot_message(message : @kernel.Message) -> @kernel.Message {
+  match message {
+    @kernel.SystemMessage(content~) =>
+      @kernel.SystemMessage(content=content.map(testkit_snapshot_content))
+    @kernel.UserMessage(content~) =>
+      @kernel.UserMessage(content=content.map(testkit_snapshot_content))
+    @kernel.AssistantMessage(content~, tool_calls~, reasoning~, finish_reason~) =>
+      @kernel.AssistantMessage(
+        content=content.map(testkit_snapshot_content),
+        tool_calls=tool_calls.map(testkit_snapshot_tool_call),
+        reasoning~,
+        finish_reason~,
+      )
+    @kernel.ToolMessage(call_id~, tool_name~, outcome~) =>
+      @kernel.ToolMessage(call_id~, tool_name~, outcome~)
   }
 }
 
 ///|
-fn testkit_snapshot_message(message : @types.Message) -> @types.Message {
-  {
-    role: message.role,
-    content: message.content.copy(),
-    tool_calls: message.tool_calls.map(testkit_snapshot_tool_call),
-    tool_call_id: message.tool_call_id,
-    name: message.name,
-    reasoning_content: message.reasoning_content,
+fn testkit_snapshot_content(content : @kernel.Content) -> @kernel.Content {
+  match content {
+    @kernel.Text(text) => @kernel.Text(text)
+    @kernel.Image(media_type~, data~) => @kernel.Image(media_type~, data~)
   }
 }
 
 ///|
 fn testkit_snapshot_messages(
-  messages : Array[@types.Message],
-) -> Array[@types.Message] {
+  messages : Array[@kernel.Message],
+) -> Array[@kernel.Message] {
   messages.map(testkit_snapshot_message)
 }
 
 ///|
-fn testkit_snapshot_tool_result(
-  result : @types.ToolResult,
-) -> @types.ToolResult {
-  {
-    content: result.content,
-    structured: match result.structured {
-      Some(value) => Some(testkit_snapshot_json(value))
-      None => None
-    },
-    is_error: result.is_error,
-  }
-}
-
-///|
-fn testkit_snapshot_tool_outcome(
-  outcome : ScriptedToolOutcome,
-) -> ScriptedToolOutcome {
+/// Deep-copy a `@kernel.ToolOutcome`. Structurally equal to the input —
+/// variants carry no caller-mutable references after the copy.
+fn testkit_snapshot_tool_outcome_value(
+  outcome : @kernel.ToolOutcome,
+) -> @kernel.ToolOutcome {
   match outcome {
-    OutcomeOk(result) => OutcomeOk(testkit_snapshot_tool_result(result))
-    OutcomeErr(error) => OutcomeErr(error)
+    @kernel.Success(content~, structured~) =>
+      @kernel.Success(
+        content~,
+        structured=match structured {
+          Some(j) => Some(testkit_snapshot_json(j))
+          None => None
+        },
+      )
+    @kernel.ToolReportedError(content~, structured~) =>
+      @kernel.ToolReportedError(
+        content~,
+        structured=match structured {
+          Some(j) => Some(testkit_snapshot_json(j))
+          None => None
+        },
+      )
+    @kernel.RuntimeFailure(error_category~, message~) =>
+      @kernel.RuntimeFailure(error_category~, message~)
+    @kernel.NotExecuted(reason~, original_call_id~) =>
+      @kernel.NotExecuted(reason~, original_call_id~)
   }
 }
 
@@ -113,49 +139,26 @@ fn testkit_snapshot_session(session : @types.Session) -> @types.Session {
 }
 
 ///|
-fn testkit_snapshot_response(
-  response : @types.ModelResponse,
-) -> @types.ModelResponse {
-  {
-    message: testkit_snapshot_message(response.message),
-    tool_calls: response.tool_calls.map(testkit_snapshot_tool_call),
-    finish_reason: response.finish_reason,
-    usage: response.usage,
-    reasoning_content: response.reasoning_content,
-  }
+fn testkit_snapshot_completion(
+  completion : @kernel.Completion,
+) -> @kernel.Completion {
+  let msg = completion.message
+  @kernel.Completion(
+    content=msg.content.map(testkit_snapshot_content),
+    tool_calls=msg.tool_calls.map(testkit_snapshot_tool_call),
+    reasoning=msg.reasoning,
+    finish_reason=msg.finish_reason,
+    usage=completion.usage,
+  )
 }
 
 ///|
-fn testkit_snapshot_turn_result(
-  result : @types.TurnResult,
-) -> @types.TurnResult {
+fn testkit_snapshot_model_call_result(
+  result : @kernel.ModelCallResult,
+) -> @kernel.ModelCallResult {
   {
-    message: testkit_snapshot_message(result.message),
-    tool_results: result.tool_results.map(testkit_snapshot_tool_result),
-    final_session_id: result.final_session_id,
-  }
-}
-
-///|
-fn testkit_snapshot_stage(stage : @port.Stage) -> @port.Stage {
-  match stage {
-    @port.BeforeTurn => @port.BeforeTurn
-    @port.BeforeModel(messages) =>
-      @port.BeforeModel(testkit_snapshot_messages(messages))
-    @port.AfterModel(response) =>
-      @port.AfterModel(testkit_snapshot_response(response))
-    @port.ModelError(reason) => @port.ModelError(reason)
-    @port.BeforeTool(call) => @port.BeforeTool(testkit_snapshot_tool_call(call))
-    @port.AfterTool(call, result) =>
-      @port.AfterTool(
-        testkit_snapshot_tool_call(call),
-        testkit_snapshot_tool_result(result),
-      )
-    @port.ToolError(call, error) =>
-      @port.ToolError(testkit_snapshot_tool_call(call), error)
-    @port.AfterTurn(result) =>
-      @port.AfterTurn(testkit_snapshot_turn_result(result))
-    @port.TurnError(error) => @port.TurnError(error)
+    completion: testkit_snapshot_completion(result.completion),
+    processed_messages: testkit_snapshot_messages(result.processed_messages),
   }
 }
 
@@ -168,14 +171,13 @@ fn testkit_snapshot_event(event : @types.TurnEvent) -> @types.TurnEvent {
     @types.ToolCallResult(call~, result~, is_error~) =>
       @types.ToolCallResult(
         call=testkit_snapshot_tool_call(call),
-        result=testkit_snapshot_tool_result(result),
+        result=testkit_snapshot_tool_outcome_value(result),
         is_error~,
       )
-    @types.ModelResponseReceived(message~, usage~, reasoning_content~) =>
+    @types.ModelResponseReceived(message~, usage~) =>
       @types.ModelResponseReceived(
         message=testkit_snapshot_message(message),
         usage~,
-        reasoning_content~,
       )
     @types.SessionRedirect(from~, to~, messages_before~, messages_after~) =>
       @types.SessionRedirect(from~, to~, messages_before~, messages_after~)
@@ -184,6 +186,10 @@ fn testkit_snapshot_event(event : @types.TurnEvent) -> @types.TurnEvent {
     @types.ToolCallDeferred(call~, reason~) =>
       @types.ToolCallDeferred(call=testkit_snapshot_tool_call(call), reason~)
     @types.StreamChunkReceived(chunk~) => @types.StreamChunkReceived(chunk~)
+    @types.ConfigWarning(field~, value~, reason~) =>
+      @types.ConfigWarning(field~, value~, reason~)
+    @types.ConfigChanged(field~, old_value~, new_value~) =>
+      @types.ConfigChanged(field~, old_value~, new_value~)
     @types.Custom(source~, label~, data~) =>
       @types.Custom(source~, label~, data=testkit_snapshot_json(data))
   }
@@ -194,20 +200,28 @@ fn testkit_snapshot_event(event : @types.TurnEvent) -> @types.TurnEvent {
 // ---------------------------------------------------------------------------
 
 ///|
-/// A single scripted model interaction: a response, an exact stream transcript,
-/// or a typed error. `Stream` never synthesizes chunks from the final response.
+/// A single scripted model interaction. R3 M3.7: each step produces a
+/// `ModelCallResult` (the canonical chat return type) instead of the deleted
+/// `ModelResponse`. `Stream` carries the chunk sequence plus the final
+/// completion; chunks are emitted to the callback during the call.
 pub(all) enum ScriptedModelStep {
-  Respond(@types.ModelResponse)
-  Stream(chunks~ : Array[@types.StreamChunk], response~ : @types.ModelResponse)
+  Respond(@kernel.ModelCallResult)
+  Stream(
+    chunks~ : Array[@types.StreamChunk],
+    response~ : @kernel.ModelCallResult
+  )
   Fail(@error.ModelError)
 }
 
 ///|
 fn testkit_snapshot_model_step(step : ScriptedModelStep) -> ScriptedModelStep {
   match step {
-    Respond(response) => Respond(testkit_snapshot_response(response))
+    Respond(result) => Respond(testkit_snapshot_model_call_result(result))
     Stream(chunks~, response~) =>
-      Stream(chunks=chunks.copy(), response=testkit_snapshot_response(response))
+      Stream(
+        chunks=chunks.copy(),
+        response=testkit_snapshot_model_call_result(response),
+      )
     Fail(error) => Fail(error)
   }
 }
@@ -221,8 +235,8 @@ pub(all) struct ScriptedModel {
   steps : Array[ScriptedModelStep]
   mut index : Int
   mut calls : Int
-  received_messages : Array[Array[@types.Message]]
-  received_tools : Array[Array[@types.ToolDef]]
+  received_messages : Array[Array[@kernel.Message]]
+  received_tools : Array[Array[@kernel.ToolDef]]
   received_options : Array[@types.ChatOptions]
   received_chunks : Array[@types.StreamChunk]
 }
@@ -243,7 +257,7 @@ pub fn ScriptedModel::ScriptedModel(
 }
 
 ///|
-/// Number of chat/chat_streaming calls observed so far.
+/// Number of chat calls observed so far.
 pub fn ScriptedModel::call_count(self : ScriptedModel) -> Int {
   self.calls
 }
@@ -254,23 +268,11 @@ pub fn ScriptedModel::call_count(self : ScriptedModel) -> Int {
 /// reference; this wrapper lets tests call chat without an Agent.
 pub async fn ScriptedModel::chat_direct(
   self : ScriptedModel,
-  messages : Array[@types.Message],
-  tools : Array[@types.ToolDef],
+  messages : Array[@kernel.Message],
+  tools : Array[@kernel.ToolDef],
   options : @types.ChatOptions,
-) -> @types.ModelResponse raise @error.ModelError {
-  (self as &@port.ModelPort).chat(messages, tools, options)
-}
-
-///|
-/// Direct streaming entry point for testkit self-tests.
-pub async fn ScriptedModel::chat_streaming_direct(
-  self : ScriptedModel,
-  messages : Array[@types.Message],
-  tools : Array[@types.ToolDef],
-  options : @types.ChatOptions,
-  on_chunk : (@types.StreamChunk) -> Unit,
-) -> @types.ModelResponse raise @error.ModelError {
-  (self as &@port.ModelPort).chat_streaming(messages, tools, options, on_chunk)
+) -> @kernel.ModelCallResult raise @error.ModelError {
+  (self as &@port.ModelPort).chat(messages, tools, options, @types.NoStream)
 }
 
 ///|
@@ -284,8 +286,8 @@ pub fn ScriptedModel::options_received(
 ///|
 fn ScriptedModel::take_step(
   self : ScriptedModel,
-  messages : Array[@types.Message],
-  tools : Array[@types.ToolDef],
+  messages : Array[@kernel.Message],
+  tools : Array[@kernel.ToolDef],
   options : @types.ChatOptions,
 ) -> ScriptedModelStep raise @error.ModelError {
   self.calls = self.calls + 1
@@ -306,36 +308,92 @@ fn ScriptedModel::take_step(
 ///|
 pub impl @port.ModelPort for ScriptedModel with fn chat(
   self,
-  messages : Array[@types.Message],
-  tools : Array[@types.ToolDef],
+  messages : Array[@kernel.Message],
+  tools : Array[@kernel.ToolDef],
   options : @types.ChatOptions,
-) -> @types.ModelResponse raise @error.ModelError {
+  stream : @types.StreamMode,
+) -> @kernel.ModelCallResult raise @error.ModelError {
   match self.take_step(messages, tools, options) {
-    Respond(resp) => testkit_snapshot_response(resp)
-    Stream(response~, ..) => testkit_snapshot_response(response)
+    Respond(result) => testkit_snapshot_model_call_result(result)
+    Stream(chunks~, response~) => {
+      match stream {
+        @types.Stream(cb) =>
+          for chunk in chunks {
+            self.received_chunks.push(chunk)
+            // Decode the chunk to a JSON telemetry payload. The HostChunkCallback
+            // consumes raw JSON; we synthesise the same shape
+            // PortHostAdapter used to produce so observers that decode JSON
+            // chunks continue to work.
+            cb(stream_chunk_to_json(chunk))
+          }
+        @types.NoStream => ()
+      }
+      testkit_snapshot_model_call_result(response)
+    }
     Fail(e) => raise e
   }
 }
 
 ///|
-/// Streaming variant replays exactly the configured chunks, in order.
-pub impl @port.ModelPort for ScriptedModel with fn chat_streaming(
+pub impl @port.ModelPort for ScriptedModel with fn compact(
   self,
-  messages : Array[@types.Message],
-  tools : Array[@types.ToolDef],
-  options : @types.ChatOptions,
-  on_chunk : (@types.StreamChunk) -> Unit,
-) -> @types.ModelResponse raise @error.ModelError {
-  match self.take_step(messages, tools, options) {
-    Stream(chunks~, response~) => {
-      for chunk in chunks {
-        self.received_chunks.push(chunk)
-        on_chunk(chunk)
+  _messages : Array[@kernel.Message],
+  _options : @types.ChatOptions,
+  _trigger : @kernel.CompactTrigger,
+) -> @kernel.CompactResult raise @error.ModelError {
+  raise @error.ModelError::ResponseParse(
+    "ScriptedModel does not implement compact",
+  )
+}
+
+///|
+/// ScriptedModel declares no supported reasoning_effort values. Tests that
+/// need to exercise the ConfigWarning path on validation can construct a
+/// custom model impl that returns a non-empty `ProviderConfig`.
+pub impl @port.ModelPort for ScriptedModel with fn provider_config(_self) -> @port.ProviderConfig {
+  @port.ProviderConfig::empty()
+}
+
+///|
+/// Encode a StreamChunk as the same JSON shape PortHostAdapter used to emit.
+/// Used by ScriptedModel when the caller passes StreamMode::Stream.
+fn stream_chunk_to_json(chunk : @types.StreamChunk) -> Json {
+  match chunk {
+    @types.TextDelta(token~) =>
+      Json::object(
+        Map::from_array([
+          ("kind", Json::string("text")),
+          ("token", Json::string(token)),
+        ]),
+      )
+    @types.ReasoningDelta(token~) =>
+      Json::object(
+        Map::from_array([
+          ("kind", Json::string("reasoning")),
+          ("token", Json::string(token)),
+        ]),
+      )
+    @types.ToolCallDelta(index~, id~, name~, arguments_delta~) => {
+      let _ = index
+      let _ = id
+      let _ = name
+      let args = match arguments_delta {
+        Some(s) => s
+        None => ""
       }
-      testkit_snapshot_response(response)
+      Json::object(
+        Map::from_array([
+          ("kind", Json::string("tool_call_delta")),
+          ("args", Json::string(args)),
+        ]),
+      )
     }
-    Respond(response) => testkit_snapshot_response(response)
-    Fail(e) => raise e
+    @types.Usage(..) =>
+      Json::object(Map::from_array([("kind", Json::string("usage"))]))
+    @types.Finish(reason~) => {
+      let _ = reason
+      Json::object(Map::from_array([("kind", Json::string("finish"))]))
+    }
   }
 }
 
@@ -344,16 +402,16 @@ pub impl @port.ModelPort for ScriptedModel with fn chat_streaming(
 // ---------------------------------------------------------------------------
 
 ///|
-/// Configurable outcome for a tool call: success result, or raised runtime error.
-/// Constructors are prefixed with `Outcome` to avoid ambiguity with
+/// Configurable outcome for a tool call: success outcome, or raised runtime
+/// error. Constructors are prefixed with `Outcome` to avoid ambiguity with
 /// `Result::Ok`/`Result::Err` at unqualified call sites.
 pub(all) enum ScriptedToolOutcome {
-  OutcomeOk(@types.ToolResult)
+  OutcomeOk(@kernel.ToolOutcome)
   OutcomeErr(@error.RuntimeError)
 }
 
 ///|
-/// A recorded tool execution: call id, tool name, and outcome category.
+/// A recorded tool execution: call id, tool name, and outcome.
 pub(all) struct ToolExecRecord {
   requested_name : String
   call_id : String
@@ -366,7 +424,7 @@ pub(all) struct ToolExecRecord {
 /// Unified provider operation trace, preserving list/execute interleaving.
 pub(all) enum ToolProviderOp {
   ListTools
-  ExecuteTool(requested_name~ : String, call~ : @types.ToolCall)
+  ExecuteTool(requested_name~ : String, call~ : @kernel.ToolCall)
 }
 
 ///|
@@ -374,7 +432,7 @@ pub(all) enum ToolProviderOp {
 /// tool name through a configurable outcome map. Unknown tools raise
 /// `RuntimeError::UnknownTool`. Every execute is recorded with its call id.
 pub(all) struct RecordingToolProvider {
-  tool_defs : Array[@types.ToolDef]
+  tool_defs : Array[@kernel.ToolDef]
   outcomes : Map[String, ScriptedToolOutcome]
   mut list_calls : Int
   mut exec_records : Array[ToolExecRecord]
@@ -383,7 +441,7 @@ pub(all) struct RecordingToolProvider {
 
 ///|
 pub fn RecordingToolProvider::RecordingToolProvider(
-  tool_defs : Array[@types.ToolDef],
+  tool_defs : Array[@kernel.ToolDef],
   outcomes : Map[String, ScriptedToolOutcome],
 ) -> RecordingToolProvider {
   let copied_outcomes : Map[String, ScriptedToolOutcome] = Map::from_array([])
@@ -396,6 +454,16 @@ pub fn RecordingToolProvider::RecordingToolProvider(
     list_calls: 0,
     exec_records: [],
     ops: [],
+  }
+}
+
+///|
+fn testkit_snapshot_tool_outcome(
+  outcome : ScriptedToolOutcome,
+) -> ScriptedToolOutcome {
+  match outcome {
+    OutcomeOk(value) => OutcomeOk(testkit_snapshot_tool_outcome_value(value))
+    OutcomeErr(error) => OutcomeErr(error)
   }
 }
 
@@ -442,8 +510,8 @@ pub fn RecordingToolProvider::ops(
 pub async fn RecordingToolProvider::execute_direct(
   self : RecordingToolProvider,
   name : String,
-  call : @types.ToolCall,
-) -> @types.ToolResult raise @error.RuntimeError {
+  call : @kernel.ToolCall,
+) -> @kernel.ToolOutcome raise @error.RuntimeError {
   (self as &@port.ToolProvider).execute(name, call)
 }
 
@@ -458,15 +526,15 @@ pub impl @port.ToolProvider for RecordingToolProvider with fn list_tools(self) {
 pub impl @port.ToolProvider for RecordingToolProvider with fn execute(
   self,
   name : String,
-  call : @types.ToolCall,
-) -> @types.ToolResult raise @error.RuntimeError {
-  let lookup = self.outcomes.get(call.name)
-  let outcome = match lookup {
+  call : @kernel.ToolCall,
+) -> @kernel.ToolOutcome raise @error.RuntimeError {
+  let key = call.name.to_string()
+  let outcome = match self.outcomes.get(key) {
     Some(o) => o
     None =>
       OutcomeErr(
         @error.RuntimeError::UnknownTool(
-          "recording_tool: no outcome configured for '\{call.name}'",
+          "recording_tool: no outcome configured for '\{key}'",
         ),
       )
   }
@@ -475,13 +543,13 @@ pub impl @port.ToolProvider for RecordingToolProvider with fn execute(
   )
   self.exec_records.push({
     requested_name: name,
-    call_id: call.id,
-    tool_name: call.name,
+    call_id: call.call_id.to_string(),
+    tool_name: call.name.to_string(),
     arguments: testkit_snapshot_json(call.arguments),
     outcome: testkit_snapshot_tool_outcome(outcome),
   })
   match outcome {
-    OutcomeOk(r) => testkit_snapshot_tool_result(r)
+    OutcomeOk(value) => testkit_snapshot_tool_outcome_value(value)
     OutcomeErr(e) => raise e
   }
 }
@@ -666,40 +734,30 @@ pub impl @port.Observer for RecordingObserver with fn on_event(self, event) {
 }
 
 // ---------------------------------------------------------------------------
-// RecordingHook — records stage inputs and outcomes.
+// RecordingHook — records hook invocations (native hook traits).
 // ---------------------------------------------------------------------------
 
 ///|
 /// The exact decision made by a RecordingHook invocation.
-pub(all) enum RecordedHookOutcome {
-  Returned(@port.Stage)
+pub(all) enum RecordedHookOutcome2 {
+  PassedThrough
   AbortedWith(String)
   DeferredWith(String)
 }
 
 ///|
-fn testkit_snapshot_hook_outcome(
-  outcome : RecordedHookOutcome,
-) -> RecordedHookOutcome {
-  match outcome {
-    Returned(stage) => Returned(testkit_snapshot_stage(stage))
-    AbortedWith(message) => AbortedWith(message)
-    DeferredWith(reason) => DeferredWith(reason)
-  }
+/// A recorded hook invocation: which hook function ran and its decision.
+pub(all) struct HookRecord2 {
+  label : String
+  outcome : RecordedHookOutcome2
 }
 
 ///|
-/// A recorded hook invocation: the stage received and its exact decision.
-pub(all) struct HookRecord {
-  stage_in : @port.Stage
-  outcome : RecordedHookOutcome
-}
-
-///|
-/// PipelineHook fake with configurable per-stage behavior. By default it is
-/// a pass-through (returns the stage unchanged). Records every call.
+/// Multi-hook fake that implements PreModelHook, PreToolHook, and
+/// PostEventHook. By default it is a pass-through (returns messages
+/// unchanged, approves tool calls). Records every call.
 pub(all) struct RecordingHook {
-  mut records : Array[HookRecord]
+  mut records : Array[HookRecord2]
   abort_on : Map[String, String]
   defer_on : Map[String, String]
 }
@@ -710,8 +768,7 @@ pub fn RecordingHook::RecordingHook() -> RecordingHook {
 }
 
 ///|
-/// Configure the hook to abort (HookError::Aborted) when it sees a stage
-/// whose debug string contains `trigger`.
+/// Configure the hook to abort/reject when the label contains `trigger`.
 pub fn RecordingHook::abort_when(
   self : RecordingHook,
   trigger : String,
@@ -721,8 +778,7 @@ pub fn RecordingHook::abort_when(
 }
 
 ///|
-/// Configure the hook to defer when it sees a stage whose label contains
-/// `trigger`.
+/// Configure the hook to defer when the label contains `trigger`.
 pub fn RecordingHook::defer_when(
   self : RecordingHook,
   trigger : String,
@@ -732,59 +788,63 @@ pub fn RecordingHook::defer_when(
 }
 
 ///|
-pub fn RecordingHook::records(self : RecordingHook) -> Array[HookRecord] {
+pub fn RecordingHook::records(self : RecordingHook) -> Array[HookRecord2] {
   self.records.map(fn(record) {
-    {
-      stage_in: testkit_snapshot_stage(record.stage_in),
-      outcome: testkit_snapshot_hook_outcome(record.outcome),
-    }
+    { label: record.label, outcome: record.outcome }
   })
 }
 
 ///|
-pub impl @port.PipelineHook for RecordingHook with fn on_stage(self, stage) {
-  let dbg = stage_to_label(stage)
+pub impl @port.PreModelHook for RecordingHook with fn before_model(
+  self,
+  messages : Array[@kernel.Message],
+) -> Array[@kernel.Message] raise @port.HookAbort {
+  let label = "before_model"
+  for trigger in self.abort_on.keys() {
+    if label.contains(trigger) ||
+      trigger.contains("BeforeModel") ||
+      trigger.contains("BeforeTurn") {
+      let message = self.abort_on[trigger]
+      self.records.push({ label, outcome: AbortedWith(message) })
+      raise @port.HookAbort::Aborted(reason=message)
+    }
+  }
+  self.records.push({ label, outcome: PassedThrough })
+  messages
+}
+
+///|
+pub impl @port.PreToolHook for RecordingHook with fn before_tool(
+  self,
+  call : @kernel.ToolCall,
+) -> @port.ToolHookDecision {
+  let label = "before_tool"
+  let dbg = call.call_id.to_string()
   for trigger in self.abort_on.keys() {
     if dbg.contains(trigger) {
       let message = self.abort_on[trigger]
-      self.records.push({
-        stage_in: testkit_snapshot_stage(stage),
-        outcome: AbortedWith(message),
-      })
-      return Err(@port.HookError::Aborted(message))
+      self.records.push({ label, outcome: AbortedWith(message) })
+      return Reject(reason=message)
     }
   }
   for trigger in self.defer_on.keys() {
     if dbg.contains(trigger) {
       let reason = self.defer_on[trigger]
-      self.records.push({
-        stage_in: testkit_snapshot_stage(stage),
-        outcome: DeferredWith(reason),
-      })
-      return Err(@port.HookError::Deferred(reason~))
+      self.records.push({ label, outcome: DeferredWith(reason) })
+      return Defer(reason~)
     }
   }
-  self.records.push({
-    stage_in: testkit_snapshot_stage(stage),
-    outcome: Returned(testkit_snapshot_stage(stage)),
-  })
-  Ok(stage)
+  self.records.push({ label, outcome: PassedThrough })
+  Approve(call~)
 }
 
 ///|
-/// Minimal label for a Stage variant, used for abort matching.
-fn stage_to_label(stage : @port.Stage) -> String {
-  match stage {
-    @port.BeforeTurn => "BeforeTurn"
-    @port.BeforeModel(_) => "BeforeModel"
-    @port.AfterModel(_) => "AfterModel"
-    @port.ModelError(_) => "ModelError"
-    @port.BeforeTool(_) => "BeforeTool"
-    @port.AfterTool(_, _) => "AfterTool"
-    @port.ToolError(_, _) => "ToolError"
-    @port.AfterTurn(_) => "AfterTurn"
-    @port.TurnError(_) => "TurnError"
-  }
+pub impl @port.PostEventHook for RecordingHook with fn on_post_event(
+  self,
+  _stage : @port.PostStage,
+) -> Unit {
+  let label = "on_post_event"
+  self.records.push({ label, outcome: PassedThrough })
 }
 
 // ---------------------------------------------------------------------------
@@ -873,86 +933,96 @@ pub fn assert_events_contain(
 // ---------------------------------------------------------------------------
 
 ///|
-/// Build a minimal stop response (no tool calls) for scripted tests.
-pub fn tk_stop_response(text : String) -> @types.ModelResponse {
-  {
-    message: {
-      role: @types.Assistant,
-      content: [@types.Text(text)],
-      tool_calls: [],
-      tool_call_id: None,
-      name: Some("assistant"),
-      reasoning_content: None,
-    },
-    tool_calls: [],
-    finish_reason: @types.Stop,
-    usage: None,
-    reasoning_content: None,
-  }
+/// Build a `ModelCallResult` whose completion is a stop-finish text response
+/// with no tool calls. The processed_messages is `None`, signalling to the
+/// pump that the modelport did no preprocessing and the transcript should be
+/// left as-is.
+///
+/// **Important:** because ModelCallResult requires `processed_messages` to be
+/// a concrete array (not Optional), the pump's PortHostAdapter is responsible
+/// for filling it with the input messages when the modelport did not
+/// preprocess. Tests that drive ScriptedModel directly through the agent
+/// pipeline go through PortHostAdapter, which substitutes the actual input
+/// messages when `processed_messages` is empty. See
+/// `PortHostAdapter::call_model` for the substitution logic.
+pub fn tk_stop_response(text : String) -> @kernel.ModelCallResult {
+  let completion : @kernel.Completion = @kernel.Completion(
+    content=[@kernel.Text(text)],
+    tool_calls=[],
+    reasoning=None,
+    finish_reason=@kernel.Stop,
+    usage=None,
+  )
+  { completion, processed_messages: [] }
 }
 
 ///|
-/// Build a response that requests a single tool call.
+/// Build a `ModelCallResult` whose completion requests a single tool call.
 pub fn tk_tool_call_response(
   tool_name : String,
   call_id : String,
   args : Json,
-) -> @types.ModelResponse {
-  {
-    message: {
-      role: @types.Assistant,
-      content: [],
-      tool_calls: [{ id: call_id, name: tool_name, arguments: args }],
-      tool_call_id: None,
-      name: None,
-      reasoning_content: None,
-    },
-    tool_calls: [{ id: call_id, name: tool_name, arguments: args }],
-    finish_reason: @types.ToolCalls,
-    usage: None,
-    reasoning_content: None,
+) -> @kernel.ModelCallResult {
+  let call : @kernel.ToolCall = {
+    call_id: @kernel.CallId::unchecked(call_id),
+    name: @kernel.ToolName::unchecked(tool_name),
+    arguments: args,
   }
+  let completion : @kernel.Completion = @kernel.Completion(
+    content=[],
+    tool_calls=[call],
+    reasoning=None,
+    finish_reason=@kernel.ToolCalls,
+    usage=None,
+  )
+  { completion, processed_messages: [] }
 }
 
 ///|
 /// Build a user message.
-pub fn tk_user_msg(text : String) -> @types.Message {
-  {
-    role: @types.User,
-    content: [@types.Text(text)],
-    tool_calls: [],
-    tool_call_id: None,
-    name: None,
-    reasoning_content: None,
-  }
+pub fn tk_user_msg(text : String) -> @kernel.Message {
+  @kernel.UserMessage(content=[@kernel.Text(text)])
 }
 
 ///|
-/// Build a ToolDef with an empty object schema.
-pub fn tk_tool_def(name : String, description : String) -> @types.ToolDef {
-  {
-    name,
-    description,
-    input_schema: Json::object(Map::from_array([])),
-    metadata: None,
-    source: None,
-  }
+/// Build a system message.
+pub fn tk_system_msg(text : String) -> @kernel.Message {
+  @kernel.SystemMessage(content=[@kernel.Text(text)])
 }
 
 ///|
-/// Build a successful ToolResult.
-pub fn tk_ok_result(content : String) -> @types.ToolResult {
-  { content, structured: None, is_error: false }
+/// Build a ToolDef with an empty object schema. Owner/policy are placeholders
+/// — Agent::build_catalog overwrites them at composition time. Provenance is
+/// `None`.
+pub fn tk_tool_def(name : String, description : String) -> @kernel.ToolDef {
+  @kernel.ToolDef(
+    name=@kernel.ToolName::unchecked(name),
+    description~,
+    input_schema=Json::object(Map::from_array([])),
+    owner=@kernel.OwnerId::unchecked("placeholder"),
+    policy=@kernel.Parallel,
+    provenance=None,
+  )
 }
 
 ///|
-/// Build a business-error ToolResult (provider returns Ok but is_error=true).
-pub fn tk_error_result(content : String) -> @types.ToolResult {
-  { content, structured: None, is_error: true }
+/// Build a successful ToolOutcome.
+pub fn tk_ok_result(content : String) -> @kernel.ToolOutcome {
+  @kernel.Success(content~, structured=None)
 }
 
 ///|
-/// Build a default AgentConfig for scripted tests.
+/// Build a business-error ToolOutcome (provider reports a tool-level failure
+/// the model should see, but the run continues).
+pub fn tk_error_result(content : String) -> @kernel.ToolOutcome {
+  @kernel.ToolReportedError(content~, structured=None)
+}
+
+///|
+/// Build a default AgentConfig for scripted tests. R3 M3.7: `tool_choice`
+/// and `reasoning_effort` are removed from ChatOptions; AgentConfig retains
+/// them as product-level tuning knobs that future milestones may wire through
+/// to modelport via the call_options JSON bag.
 pub fn tk_config() -> AgentConfig {
   {
     max_tool_rounds: 10,
@@ -961,12 +1031,9 @@ pub fn tk_config() -> AgentConfig {
     tool_choice: None,
     reasoning_effort: None,
     model_context_window: None,
+    model: None,
   }
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// ManifestOnly — anonymous Extension stub for tests and prototypes.
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 /// Anonymous Extension wrapper around a pre-built `ExtensionManifest`.
@@ -1008,10 +1075,6 @@ pub impl @port.Extension for ManifestOnly with fn manifest(self) -> @port.Extens
 /// `&ManifestOnly` can be coerced to `&Extension`.
 pub extend ManifestOnly with @port.Extension::{extension_id, manifest}
 
-// ──────────────────────────────────────────────────────────────────────────
-// tk_ext — labeled manifest builder
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 /// Build a `ManifestOnly` extension from labeled optional arguments.
 ///
@@ -1041,8 +1104,9 @@ pub fn tk_ext(
   tools? : Array[&@port.ToolProvider] = [],
   sessions? : Array[&@port.SessionStore] = [],
   observers? : Array[&@port.Observer] = [],
-  compressors? : Array[&@port.Compressor] = [],
-  hooks? : Array[&@port.PipelineHook] = [],
+  pre_model_hooks? : Array[&@port.PreModelHook] = [],
+  pre_tool_hooks? : Array[&@port.PreToolHook] = [],
+  post_event_hooks? : Array[&@port.PostEventHook] = [],
   memory? : Array[&@port.MemoryPort] = [],
   lifecycle? : Array[&@port.Lifecycle] = [],
   commands? : Array[&@port.CommandPort] = [],
@@ -1059,8 +1123,9 @@ pub fn tk_ext(
     tools,
     sessions,
     observers,
-    compressors,
-    hooks,
+    pre_model_hooks,
+    pre_tool_hooks,
+    post_event_hooks,
     memory,
     lifecycle,
     commands,

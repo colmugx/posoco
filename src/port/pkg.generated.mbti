@@ -3,6 +3,7 @@ package "colmugx/posoco/port"
 
 import {
   "colmugx/posoco/error",
+  "colmugx/posoco/kernel",
   "colmugx/posoco/types",
   "moonbitlang/core/debug",
 }
@@ -10,6 +11,10 @@ import {
 // Values
 
 // Errors
+pub(all) suberror HookAbort {
+  Aborted(reason~ : String)
+}
+pub impl Show for HookAbort
 
 // Types and methods
 pub(all) struct AutocompleteItem {
@@ -74,25 +79,15 @@ pub async fn CompositeUiPort::request(Self, UiRequest) -> UiResponse raise @erro
 pub fn CompositeUiPort::ui_descriptor(Self) -> UiDescriptor
 pub impl UiPort for CompositeUiPort
 
-pub(all) enum CompressAction {
-  None
-  Replace(Array[@types.Message])
-  NewThread(messages~ : Array[@types.Message], new_session_id~ : String, messages_before~ : Int, messages_after~ : Int)
-} derive(Eq, @debug.Debug)
-
-pub(all) struct CompressContext {
-  session_id : String
-  model_context_window : Int?
-} derive(Eq, @debug.Debug)
-
 pub(all) struct ExtensionManifest {
   id : String
   models : Array[&ModelPort]
   tools : Array[&ToolProvider]
   sessions : Array[&SessionStore]
   observers : Array[&Observer]
-  compressors : Array[&Compressor]
-  hooks : Array[&PipelineHook]
+  pre_model_hooks : Array[&PreModelHook]
+  pre_tool_hooks : Array[&PreToolHook]
+  post_event_hooks : Array[&PostEventHook]
   memory : Array[&MemoryPort]
   lifecycle : Array[&Lifecycle]
   commands : Array[&CommandPort]
@@ -101,11 +96,12 @@ pub(all) struct ExtensionManifest {
 }
 pub fn ExtensionManifest::empty(id~ : String) -> Self
 
-pub(all) enum HookError {
-  Aborted(String)
-  Deferred(reason~ : String)
-} derive(Eq, @debug.Debug)
-pub impl Show for HookError
+pub(all) struct MemoryRetrievalHook {
+  memories : Array[&MemoryPort]
+  top_k : Int
+}
+pub fn MemoryRetrievalHook::MemoryRetrievalHook(memories~ : Array[&MemoryPort], top_k? : Int) -> Self
+pub impl PreModelHook for MemoryRetrievalHook
 
 pub(all) struct NoopUiPort {
 }
@@ -122,17 +118,21 @@ pub(all) enum ParamType {
   Strs
 } derive(Eq, @debug.Debug)
 
-pub(all) enum Stage {
-  BeforeTurn
-  BeforeModel(Array[@types.Message])
-  AfterModel(@types.ModelResponse)
-  ModelError(String)
-  BeforeTool(@types.ToolCall)
-  AfterTool(@types.ToolCall, @types.ToolResult)
-  ToolError(@types.ToolCall, @error.RuntimeError)
-  AfterTurn(@types.TurnResult)
-  TurnError(@error.AgentError)
+pub(all) enum PostStage {
+  ModelCompleted(completion~ : @kernel.Completion)
+  ToolCompleted(call~ : @kernel.ToolCall, outcome~ : @kernel.ToolOutcome)
+  ToolFailed(call~ : @kernel.ToolCall, reason~ : String)
+  ModelFailed(failure~ : @kernel.ModelFailure)
 } derive(@debug.Debug)
+pub impl Show for PostStage
+
+pub(all) struct ProviderConfig {
+  reasoning_effort_values : Array[String]
+} derive(Eq, @debug.Debug)
+pub fn ProviderConfig::ProviderConfig(reasoning_effort_values~ : Array[String]) -> Self
+pub fn ProviderConfig::accepts_reasoning_effort(Self, String) -> Bool
+pub fn ProviderConfig::empty() -> Self
+pub impl Show for ProviderConfig
 
 pub(all) struct SystemPromptHook {
   base_prompt : String
@@ -140,13 +140,20 @@ pub(all) struct SystemPromptHook {
 }
 pub fn SystemPromptHook::SystemPromptHook(base_prompt~ : String, contributors~ : Array[SystemPromptSection]) -> Self
 pub fn SystemPromptHook::assemble(Self) -> String
-pub impl PipelineHook for SystemPromptHook
+pub impl PreModelHook for SystemPromptHook
 
 pub(all) struct SystemPromptSection {
   id : String
   contributor : &SystemPromptContributor
 }
 pub fn SystemPromptSection::SystemPromptSection(id~ : String, contributor~ : &SystemPromptContributor) -> Self
+
+pub(all) enum ToolHookDecision {
+  Approve(call~ : @kernel.ToolCall)
+  Defer(reason~ : String)
+  Reject(reason~ : String)
+} derive(@debug.Debug)
+pub impl Show for ToolHookDecision
 
 pub(all) enum UiBody {
   Text(String)
@@ -179,6 +186,12 @@ pub(all) struct UiRender {
 } derive(@debug.Debug)
 pub impl Show for UiRender
 
+pub(all) struct UiRenderHook {
+  ui : &UiPort
+}
+pub fn UiRenderHook::UiRenderHook(ui~ : &UiPort) -> Self
+pub impl PostEventHook for UiRenderHook
+
 pub(all) enum UiRequest {
   Input(prompt~ : String, default~ : String?)
   Confirm(prompt~ : String)
@@ -210,10 +223,6 @@ pub(open) trait CommandPort {
   async fn invoke(Self, String, Json) -> CommandOutcome raise @error.CommandError
 }
 
-pub(open) trait Compressor {
-  fn compress(Self, Array[@types.Message], CompressContext) -> CompressAction
-}
-
 pub(open) trait Extension {
   fn extension_id(Self) -> String
   fn manifest(Self) -> ExtensionManifest
@@ -230,21 +239,31 @@ pub(open) trait MemoryPort {
 }
 
 pub(open) trait ModelPort {
-  async fn chat(Self, Array[@types.Message], Array[@types.ToolDef], @types.ChatOptions) -> @types.ModelResponse raise @error.ModelError
-  async fn chat_streaming(Self, Array[@types.Message], Array[@types.ToolDef], @types.ChatOptions, (@types.StreamChunk) -> Unit) -> @types.ModelResponse raise @error.ModelError = _
+  async fn chat(Self, Array[@kernel.Message], Array[@kernel.ToolDef], @types.ChatOptions, @types.StreamMode) -> @kernel.ModelCallResult raise @error.ModelError
+  async fn compact(Self, Array[@kernel.Message], @types.ChatOptions, @kernel.CompactTrigger) -> @kernel.CompactResult raise @error.ModelError
+  fn provider_config(Self) -> ProviderConfig
 }
 
 pub(open) trait Observer {
-  fn on_event(Self, @types.TurnEvent) -> Unit
+  fn on_event(Self, @types.TurnEvent) -> Unit = _
+  fn on_kernel_event(Self, PostStage) -> Unit = _
 }
 
-pub(open) trait PipelineHook {
-  async fn on_stage(Self, Stage) -> Result[Stage, HookError]
+pub(open) trait PostEventHook {
+  fn on_post_event(Self, PostStage) -> Unit
+}
+
+pub(open) trait PreModelHook {
+  fn before_model(Self, Array[@kernel.Message]) -> Array[@kernel.Message] raise HookAbort
+}
+
+pub(open) trait PreToolHook {
+  fn before_tool(Self, @kernel.ToolCall) -> ToolHookDecision
 }
 
 pub(open) trait SessionStore {
-  fn load(Self, String) -> Result[@types.Session, @error.SessionError]
-  fn save(Self, String, @types.Session) -> Result[Unit, @error.SessionError]
+  async fn load(Self, String) -> @types.Session raise @error.SessionError
+  async fn save(Self, String, @types.Session) -> Unit raise @error.SessionError
 }
 
 pub(open) trait SystemPromptContributor {
@@ -252,8 +271,8 @@ pub(open) trait SystemPromptContributor {
 }
 
 pub(open) trait ToolProvider {
-  fn list_tools(Self) -> Array[@types.ToolDef]
-  async fn execute(Self, String, @types.ToolCall) -> @types.ToolResult raise @error.RuntimeError
+  fn list_tools(Self) -> Array[@kernel.ToolDef]
+  async fn execute(Self, String, @kernel.ToolCall) -> @kernel.ToolOutcome raise @error.RuntimeError
 }
 
 pub(open) trait UiPort {

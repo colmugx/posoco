@@ -1,14 +1,7 @@
 ///|
-/// Typed Kernel errors for the M1 functional Kernel.
-///
-/// These errors are returned from constructor validation and from the reducer
-/// when an input combination violates the contract (ADR §2.2, §2.4, §2.5).
-/// The Kernel owns its own typed failures because pure reduction does not
-/// know provider, storage, or product adapter details.
+/// Typed Kernel errors — constructor validation and reducer invariant violations.
 
-// ──────────────────────────────────────────────────────────────────────────
 // Invariant categories (one home per failure — ADR §2.4)
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 /// Why the reducer (or constructor) declared a kernel invariant failure.
@@ -59,9 +52,7 @@ pub impl Show for InvariantCategory with fn to_string(self : InvariantCategory) 
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
 // Failure reasons (terminal Failed outcome — ADR §2.3, §2.4)
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 /// Why a Run terminated with `Failed`. Mirrors ADR §2.4 taxonomy: model
@@ -96,9 +87,7 @@ pub impl Show for FailureReason with fn to_string(self : FailureReason) -> Strin
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
 // KernelError — the unified typed error for Kernel construction + reducer
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 /// Unified error type raised by Kernel constructors (`RunState::*`) and the

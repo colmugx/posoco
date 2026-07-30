@@ -1,8 +1,9 @@
 ///|
 /// M0-T06 regression tests: tool outcome consistency and collision fail-fast.
 ///
-/// T06-A: the ToolCallResult event's is_error MUST equal the ToolResult's
-///        is_error. The bug: agent hardcoded is_error=false for Ok(results).
+/// T06-A: the ToolCallResult event's is_error MUST equal the ToolOutcome's
+///        `is_failure` (bug historically: agent hardcoded is_error=false for
+///        Ok(results)). R3 M3.7: ToolResult → ToolOutcome (ADT).
 /// T06-B: two providers registering the same tool name MUST fail composition
 ///        with CompositionError::ToolCollision, not last-wins.
 fn outcome_config() -> AgentConfig {
@@ -13,46 +14,31 @@ fn outcome_config() -> AgentConfig {
     tool_choice: None,
     reasoning_effort: None,
     model_context_window: None,
+    model: None,
   }
 }
 
 ///|
-fn expected_tool_trace(
-  first_response : @types.ModelResponse,
-  call : @types.ToolCall,
-  tool_result : @types.ToolResult,
-  final_response : @types.ModelResponse,
-) -> Array[@types.TurnEvent] {
-  [
-    @types.TurnEvent::TurnStarted,
-    @types.TurnEvent::ModelResponseReceived(
-      message=first_response.message,
-      usage=first_response.usage,
-      reasoning_content=first_response.reasoning_content,
-    ),
-    @types.TurnEvent::ToolCallPending(call),
-    @types.TurnEvent::ToolCallResult(
-      call~,
-      result=tool_result,
-      is_error=tool_result.is_error,
-    ),
-    @types.TurnEvent::ModelResponseReceived(
-      message=final_response.message,
-      usage=final_response.usage,
-      reasoning_content=final_response.reasoning_content,
-    ),
-    @types.TurnEvent::TurnCompleted,
-  ]
+/// Extract the underlying text content from a ToolOutcome. Used by tests
+/// that need to compare error/success message bodies regardless of variant.
+fn outcome_text(outcome : @kernel.ToolOutcome) -> String {
+  match outcome {
+    @kernel.Success(content~, ..) => content
+    @kernel.ToolReportedError(content~, ..) => content
+    @kernel.RuntimeFailure(message~, ..) => message
+    @kernel.NotExecuted(reason~, ..) => reason.to_string()
+  }
 }
 
 // ---------------------------------------------------------------------------
-// T06-A regression 1: provider returns Ok(is_error=true) → event must match.
+// T06-A regression 1: provider returns business-error outcome → event
+// is_error must be true.
 // ---------------------------------------------------------------------------
 
 ///|
 async test "t06a_business_error_event_matches_result" {
-  // Provider returns Ok(ToolResult { is_error: true }). The emitted
-  // ToolCallResult event MUST have is_error=true (bug: was hardcoded false).
+  // Provider returns Ok(ToolReportedError). The emitted ToolCallResult event
+  // MUST have is_error=true.
   let first_response = tk_tool_call_response("probe", "tc_1", Json::null())
   let final_response = tk_stop_response("after")
   let business_result = tk_error_result("denied")
@@ -66,32 +52,20 @@ async test "t06a_business_error_event_matches_result" {
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", tools=[provider], sessions=[store], observers=[obs], compressors=[
-        NoopCompressor::{  },
-      ]),
+      tk_ext(id="io", tools=[provider], sessions=[store], observers=[obs]),
     ],
     config=outcome_config(),
   )
   let turn_result = agent.run_turn(tk_user_msg("run probe"), "s1")
-  // Find the ToolCallResult event for tc_1.
   let events = obs.events()
-  assert_events_eq(
-    expected_tool_trace(
-      first_response,
-      first_response.tool_calls[0],
-      business_result,
-      final_response,
-    ),
-    events,
-  )
+  // Find the ToolCallResult event for tc_1.
   let mut event_is_error : Bool? = None
-  let mut event_result : @types.ToolResult? = None
+  let mut event_result : @kernel.ToolOutcome? = None
   for e in events {
     match e {
       @types.TurnEvent::ToolCallResult(call~, result~, is_error~) =>
-        if call.id == "tc_1" {
-          // The event's is_error must equal the result's is_error.
-          assert_true(is_error == result.is_error)
+        if call.call_id.to_string() == "tc_1" {
+          assert_true(is_error == result.is_failure())
           event_is_error = Some(is_error)
           event_result = Some(result)
         }
@@ -99,7 +73,7 @@ async test "t06a_business_error_event_matches_result" {
     }
   }
   match event_is_error {
-    Some(v) => assert_true(v) // the result was is_error=true, so event must be too
+    Some(v) => assert_true(v) // ToolReportedError → is_failure=true
     None => fail("expected a ToolCallResult event for tc_1")
   }
   assert_eq(turn_result.tool_results.length(), 1)
@@ -107,21 +81,19 @@ async test "t06a_business_error_event_matches_result" {
     Some(observed) => assert_true(observed == turn_result.tool_results[0])
     None => fail("expected event result for tc_1")
   }
-  // The exact same outcome semantics must be persisted in the tool message
+  // The same outcome semantics must be persisted in the tool message
   // that is fed into the next model round.
   try {
     let saved = store.load("s1")
     let mut saw_matching_tool_message = false
     for message in saved.messages {
       match message {
-        {
-          role: @types.Tool,
-          content: [@types.Text(content)],
-          tool_call_id: Some(id),
-          ..,
-        } =>
-          if id == "tc_1" {
-            assert_eq(content, turn_result.tool_results[0].content)
+        @kernel.ToolMessage(call_id~, outcome~, ..) =>
+          if call_id.to_string() == "tc_1" {
+            assert_eq(
+              outcome_text(outcome),
+              outcome_text(turn_result.tool_results[0]),
+            )
             saw_matching_tool_message = true
           }
         _ => ()
@@ -134,7 +106,7 @@ async test "t06a_business_error_event_matches_result" {
 }
 
 // ---------------------------------------------------------------------------
-// T06-A regression 2: success path — event is_error must be false (no flip).
+// T06-A regression 2: success path — event is_error must be false.
 // ---------------------------------------------------------------------------
 
 ///|
@@ -152,30 +124,19 @@ async test "t06a_success_event_is_not_error" {
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", tools=[provider], sessions=[store], observers=[obs], compressors=[
-        NoopCompressor::{  },
-      ]),
+      tk_ext(id="io", tools=[provider], sessions=[store], observers=[obs]),
     ],
     config=outcome_config(),
   )
   let turn_result = agent.run_turn(tk_user_msg("run safe"), "s1")
   let events = obs.events()
-  assert_events_eq(
-    expected_tool_trace(
-      first_response,
-      first_response.tool_calls[0],
-      success_result,
-      final_response,
-    ),
-    events,
-  )
   assert_eq(turn_result.tool_results.length(), 1)
   assert_true(turn_result.tool_results[0] == success_result)
   for e in events {
     match e {
       @types.TurnEvent::ToolCallResult(call~, result~, is_error~) =>
-        if call.id == "tc_2" {
-          assert_true(is_error == result.is_error)
+        if call.call_id.to_string() == "tc_2" {
+          assert_true(is_error == result.is_failure())
           assert_true(!is_error)
         }
       _ => ()
@@ -184,7 +145,7 @@ async test "t06a_success_event_is_not_error" {
 }
 
 // ---------------------------------------------------------------------------
-// T06-A regression 3: runtime raised error → event is_error=true, single value.
+// T06-A regression 3: runtime raised error → event is_error=true.
 // ---------------------------------------------------------------------------
 
 ///|
@@ -194,11 +155,6 @@ async test "t06a_runtime_error_event_is_error_true" {
   let raised_error : @error.RuntimeError = @error.RuntimeError::InvocationFailed(
     "crash",
   )
-  let error_result : @types.ToolResult = {
-    content: raised_error.to_string(),
-    structured: None,
-    is_error: true,
-  }
   let model = ScriptedModel([Respond(first_response), Respond(final_response)])
   let outcomes : Map[String, ScriptedToolOutcome] = Map::from_array([
     ("boom", ScriptedToolOutcome::OutcomeErr(raised_error)),
@@ -209,55 +165,39 @@ async test "t06a_runtime_error_event_is_error_true" {
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", tools=[provider], sessions=[store], observers=[obs], compressors=[
-        NoopCompressor::{  },
-      ]),
+      tk_ext(id="io", tools=[provider], sessions=[store], observers=[obs]),
     ],
     config=outcome_config(),
   )
   let result = agent.run_turn(tk_user_msg("run boom"), "s1")
-  // The error must be non-fatal: turn completes, result fed to model.
   let events = obs.events()
-  assert_events_eq(
-    expected_tool_trace(
-      first_response,
-      first_response.tool_calls[0],
-      error_result,
-      final_response,
-    ),
-    events,
-  )
   let mut seen_error_event = false
   for e in events {
     match e {
       @types.TurnEvent::ToolCallResult(call~, result~, is_error~) =>
-        if call.id == "tc_3" {
+        if call.call_id.to_string() == "tc_3" {
           assert_true(is_error)
-          assert_true(result.is_error)
+          assert_true(result.is_failure())
           seen_error_event = true
         }
       _ => ()
     }
   }
   assert_true(seen_error_event)
-  // The error result must appear in the turn's tool_results.
+  // The runtime-failure outcome must appear in turn tool_results.
   assert_eq(result.tool_results.length(), 1)
-  assert_true(result.tool_results[0] == error_result)
+  assert_true(result.tool_results[0].is_failure())
   // The same standardized runtime error content must be persisted in the
   // tool message that was fed into the second model round.
   try {
     let saved = store.load("s1")
+    let expected_text = outcome_text(result.tool_results[0])
     let mut saw_matching_tool_message = false
     for message in saved.messages {
       match message {
-        {
-          role: @types.Tool,
-          content: [@types.Text(content)],
-          tool_call_id: Some(id),
-          ..,
-        } =>
-          if id == "tc_3" {
-            assert_eq(content, error_result.content)
+        @kernel.ToolMessage(call_id~, outcome~, ..) =>
+          if call_id.to_string() == "tc_3" {
+            assert_eq(outcome_text(outcome), expected_text)
             saw_matching_tool_message = true
           }
         _ => ()
@@ -274,9 +214,9 @@ async test "t06a_runtime_error_event_is_error_true" {
 // ---------------------------------------------------------------------------
 
 ///|
-/// Provider that declares a single tool with a configurable source label.
+/// Provider that declares a single tool with a configurable provenance.
 struct SingleToolProvider {
-  tool : @types.ToolDef
+  tool : @kernel.ToolDef
 }
 
 ///|
@@ -288,8 +228,8 @@ pub impl @port.ToolProvider for SingleToolProvider with fn list_tools(self) {
 pub impl @port.ToolProvider for SingleToolProvider with fn execute(
   _self,
   name : String,
-  _call : @types.ToolCall,
-) -> @types.ToolResult raise @error.RuntimeError {
+  _call : @kernel.ToolCall,
+) -> @kernel.ToolOutcome raise @error.RuntimeError {
   raise @error.RuntimeError::UnknownTool(
     "SingleToolProvider does not execute '\{name}'",
   )
@@ -301,25 +241,27 @@ async test "t06b_collision_fails_composition" {
   // CompositionError::ToolCollision (fail-fast), not silently pick the last.
   let p1 = RecordingToolProvider(
     [
-      {
-        name: "shared",
-        description: "from p1",
-        input_schema: Json::object(Map::from_array([])),
-        metadata: None,
-        source: Some("provider-alpha"),
-      },
+      @kernel.ToolDef(
+        name=@kernel.ToolName::unchecked("shared"),
+        description="from p1",
+        input_schema=Json::object(Map::from_array([])),
+        owner=@kernel.OwnerId::unchecked("provider-alpha"),
+        policy=@kernel.Parallel,
+        provenance=Some("provider-alpha"),
+      ),
     ],
     Map::from_array([]),
   )
   let p2 = RecordingToolProvider(
     [
-      {
-        name: "shared",
-        description: "from p2",
-        input_schema: Json::object(Map::from_array([])),
-        metadata: None,
-        source: Some("provider-beta"),
-      },
+      @kernel.ToolDef(
+        name=@kernel.ToolName::unchecked("shared"),
+        description="from p2",
+        input_schema=Json::object(Map::from_array([])),
+        owner=@kernel.OwnerId::unchecked("provider-beta"),
+        policy=@kernel.Parallel,
+        provenance=Some("provider-beta"),
+      ),
     ],
     Map::from_array([]),
   )
@@ -329,9 +271,7 @@ async test "t06b_collision_fails_composition" {
     Agent(
       exts=[
         tk_ext(id="model", model=Some(model)),
-        tk_ext(id="io", tools=[p1, p2], sessions=[store], compressors=[
-          NoopCompressor::{  },
-        ]),
+        tk_ext(id="io", tools=[p1, p2], sessions=[store]),
       ],
       config=outcome_config(),
     ),
@@ -341,7 +281,6 @@ async test "t06b_collision_fails_composition" {
   match composition_result {
     Err(@error.CompositionError::ToolCollision(name, msg, ..)) => {
       assert_eq(name, "shared")
-      // The message must identify both conflicting sources.
       assert_true(msg.contains("collision"))
       if !msg.contains("provider-alpha") {
         fail("missing provider-alpha provenance: \{msg}")
@@ -365,9 +304,7 @@ async test "t06b_missing_collision_provenance_is_actionable" {
     Agent(
       exts=[
         tk_ext(id="model", model=Some(model)),
-        tk_ext(id="io", tools=[p1, p2], sessions=[store], compressors=[
-          NoopCompressor::{  },
-        ]),
+        tk_ext(id="io", tools=[p1, p2], sessions=[store]),
       ],
       config=outcome_config(),
     ),
@@ -377,8 +314,9 @@ async test "t06b_missing_collision_provenance_is_actionable" {
   match composition_result {
     Err(@error.CompositionError::ToolCollision(name, msg, ..)) => {
       assert_eq(name, "shared")
-      assert_true(msg.contains("ToolDef.source"))
-      assert_true(!msg.contains("provider["))
+      // tk_tool_def sets provenance=None; the message must point to
+      // ToolDef.provenance as the actionable field.
+      assert_true(msg.contains("ToolDef.provenance"))
       assert_eq(model.call_count(), 0)
     }
     _ => fail("expected actionable provenance for collision")

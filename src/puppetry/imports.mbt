@@ -1,29 +1,20 @@
 ///|
-/// Package-level re-export of Kernel types and functions used across the
-/// Puppetry/Puppet package.
-///
-/// MoonBit `using @kernel { type X }` introduces `X` as a package-local
-/// alias for `@kernel.X`. Declaring these aliases once in this single file
-/// lets every other file in the package reference `RunId`, `Effect`,
-/// `reduce`, etc. unqualified, which keeps the orchestration code readable
-/// without a per-file import dance (and without the package-cycle that
-/// directly importing root compatibility ports would
-/// create — REPAIR D3/D4).
-///
-/// This file MUST stay the single place that re-exports Kernel symbols into
-/// the Puppetry package namespace. Do not duplicate these aliases elsewhere
-/// in this package (the compiler rejects a second definition).
-// Canonical domain types
+/// Package-level re-exports of Kernel types so puppetry files use
+/// unqualified names. Single source of truth — do not duplicate aliases
+/// elsewhere (the compiler rejects a second definition).
 using @kernel {
-  type CanonicalMessage,
-  type CanonicalTranscript,
-  type CanonicalToolDef,
-  type CanonicalToolCall,
-  // Effect + payloads
+  type Message,
+  type Content,
+  type Transcript,
+  type ToolDef,
+  type ToolCall,
+  type Completion,
+  type CompletionPayload,
+  type FinishReason,
+  type Usage,
+  type ToolOutcome,
   type Effect,
-  // RunInput + payloads
   type RunInput,
-  // Run state machine
   type RunState,
   type ReduceOutput,
   type RunOutcome,
@@ -31,20 +22,32 @@ using @kernel {
   type ModelStepId,
   type InvariantCategory,
   type KernelError,
-  // Catalog
   type CatalogVersion,
   type ToolCatalogSnapshot,
   type ExecutionPlan,
   type SchedulingError,
-  // Identity / context
   type RunId,
   type SessionId,
   type Budget,
   type CancelDisposition,
-  // Kernel events
   type KernelEvent,
-  // Reducer entry points
+  type ModelCallResult,
+  type CompactMode,
+  type CompactResult,
+  type CompactTrigger,
   reduce,
   run_model_step,
   schedule,
+}
+
+///|
+using @port {
+  trait PreModelHook,
+  trait PreToolHook,
+  trait PostEventHook,
+  type HookAbort,
+  type PostStage,
+  trait SessionStore,
+  trait CommandPort,
+  trait Observer,
 }

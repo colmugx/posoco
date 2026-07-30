@@ -5,22 +5,18 @@
 /// assistant completion is the single source of truth for tool calls and
 /// reasoning. The canonical type has one authoritative owner for each fact.
 
-// ──────────────────────────────────────────────────────────────────────────
-// Usage
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 /// Token usage reported by the model for a single step. The Kernel only counts
 /// what is actually reported; absent dimensions are `None`, **never** silently
 /// coerced to 0 (ADR §2.9 — unknown usage is never reported as 0).
-pub(all) struct CanonicalUsage {
+pub(all) struct Usage {
   input_tokens : Int?
   output_tokens : Int?
   total_tokens : Int?
 } derive(Eq, Debug)
 
 ///|
-pub impl Show for CanonicalUsage with fn to_string(self : CanonicalUsage) -> String {
+pub impl Show for Usage with fn to_string(self : Usage) -> String {
   let fmt = fn(opt : Int?) -> String {
     match opt {
       Some(n) => n.to_string()
@@ -29,10 +25,6 @@ pub impl Show for CanonicalUsage with fn to_string(self : CanonicalUsage) -> Str
   }
   "Usage(in=\{fmt(self.input_tokens)}, out=\{fmt(self.output_tokens)}, total=\{fmt(self.total_tokens)})"
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// Assistant completion — the single source for tool calls + reasoning
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 /// A completed assistant step. The `message` field is the canonical assistant
@@ -44,37 +36,37 @@ pub impl Show for CanonicalUsage with fn to_string(self : CanonicalUsage) -> Str
 /// Construction note: do NOT build this by hand in production code. The
 /// `from_assistant_message` constructor enforces the invariant that the message
 /// payload is consistent (assistant role, no `ToolMessage` shape, etc.).
-pub(all) struct AssistantCompletion {
-  message : AssistantMessagePayload
-  usage : CanonicalUsage?
+pub(all) struct Completion {
+  message : CompletionPayload
+  usage : Usage?
 } derive(Eq, Debug)
 
 ///|
-/// Re-flattened assistant payload used inside `AssistantCompletion`. We cannot
-/// reuse `CanonicalMessage::AssistantMessage` directly because that variant
+/// Re-flattened assistant payload used inside `Completion`. We cannot
+/// reuse `Message::AssistantMessage` directly because that variant
 /// already carries `finish_reason`; the completion's `message` field is the
 /// transcript entry, while the `usage` lives at the completion level. This
 /// struct mirrors only the fields that travel together as the assistant's
 /// contribution to a single step.
-pub(all) struct AssistantMessagePayload {
-  content : Array[CanonicalContent]
-  tool_calls : Array[CanonicalToolCall]
+pub(all) struct CompletionPayload {
+  content : Array[Content]
+  tool_calls : Array[ToolCall]
   reasoning : Reasoning?
-  finish_reason : AssistantFinishReason
+  finish_reason : FinishReason
 } derive(Eq, Debug)
 
 ///|
-/// Build an `AssistantCompletion` from its parts. The reducer constructs this
+/// Build an `Completion` from its parts. The reducer constructs this
 /// from a `ModelCompleted` input after parsing the model adapter's wire
 /// representation.
-pub fn AssistantCompletion::AssistantCompletion(
-  content~ : Array[CanonicalContent],
-  tool_calls~ : Array[CanonicalToolCall],
+pub fn Completion::Completion(
+  content~ : Array[Content],
+  tool_calls~ : Array[ToolCall],
   reasoning~ : Reasoning?,
-  finish_reason~ : AssistantFinishReason,
-  usage~ : CanonicalUsage?,
-) -> AssistantCompletion {
-  let message : AssistantMessagePayload = {
+  finish_reason~ : FinishReason,
+  usage~ : Usage?,
+) -> Completion {
+  let message : CompletionPayload = {
     content: content.copy(),
     tool_calls: tool_calls.copy(),
     reasoning,
@@ -85,16 +77,14 @@ pub fn AssistantCompletion::AssistantCompletion(
 
 ///|
 /// Convenience: does this completion request any tool calls?
-pub fn AssistantCompletion::has_tool_calls(self : AssistantCompletion) -> Bool {
+pub fn Completion::has_tool_calls(self : Completion) -> Bool {
   !self.message.tool_calls.is_empty()
 }
 
 ///|
 /// Returns the tool calls in source order (already a copy of the internal
 /// array).
-pub fn AssistantCompletion::tool_calls(
-  self : AssistantCompletion,
-) -> Array[CanonicalToolCall] {
+pub fn Completion::tool_calls(self : Completion) -> Array[ToolCall] {
   self.message.tool_calls.copy()
 }
 
@@ -102,15 +92,9 @@ pub fn AssistantCompletion::tool_calls(
 /// Returns the finish reason. `Length` is preserved as a distinct variant so
 /// the reducer can refuse to emit `ExecuteTool` effects for a truncated
 /// completion (ADR §2.7, M0 `StreamAccumulator::to_response` behaviour).
-pub fn AssistantCompletion::finish_reason(
-  self : AssistantCompletion,
-) -> AssistantFinishReason {
+pub fn Completion::finish_reason(self : Completion) -> FinishReason {
   self.message.finish_reason
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// Model-step failure (delivered to the reducer via ModelFailed input)
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 /// Categorises why a model step failed (ADR §2.4). The reducer maps this to a

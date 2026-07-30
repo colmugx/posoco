@@ -6,9 +6,9 @@
 
 ///|
 pub(all) struct FixtureHost {
-  model_results : Array[Result[AssistantCompletion, ModelFailure]]
+  model_results : Array[Result[Completion, ModelFailure]]
   tool_results : Map[String, ToolOutcome]
-  mut definitions : Array[CanonicalToolDef]
+  mut definitions : Array[ToolDef]
   mut model_index : Int
   mut model_call_count : Int
   mut tool_call_count : Int
@@ -18,7 +18,7 @@ pub(all) struct FixtureHost {
 
 ///|
 pub fn FixtureHost::FixtureHost(
-  model_results : Array[Result[AssistantCompletion, ModelFailure]],
+  model_results : Array[Result[Completion, ModelFailure]],
   tool_results : Map[String, ToolOutcome],
 ) -> FixtureHost {
   {
@@ -54,18 +54,13 @@ pub fn FixtureHost::observed_call_options(self : FixtureHost) -> Array[Json] {
 }
 
 ///|
-pub impl ModelBinding for FixtureHost with fn model_id(_self : FixtureHost) -> ModelId {
-  ModelId::unchecked("fixture-model")
-}
-
-///|
-pub impl ModelBinding for FixtureHost with fn complete(
+pub impl @kernel.HostRuntime for FixtureHost with fn call_model(
   self,
-  _messages : Array[CanonicalMessage],
-  tool_definitions : Array[CanonicalToolDef],
+  messages : Array[Message],
+  tool_definitions : Array[ToolDef],
   call_options : Json,
   _on_chunk : HostChunkCallback?,
-) -> Result[AssistantCompletion, ModelFailure] {
+) -> Result[ModelCallResult, ModelFailure] {
   self.model_call_count = self.model_call_count + 1
   self.observed_definition_count = tool_definitions.length()
   self.observed_call_options.push(call_options)
@@ -74,25 +69,18 @@ pub impl ModelBinding for FixtureHost with fn complete(
   if index >= self.model_results.length() {
     Err(Runtime(reason="fixture host exhausted model results"))
   } else {
-    self.model_results[index]
+    match self.model_results[index] {
+      Ok(completion) =>
+        Ok(ModelCallResult::{ completion, processed_messages: messages })
+      Err(failure) => Err(failure)
+    }
   }
 }
 
 ///|
-pub impl ToolBinding for FixtureHost with fn owner_id(_self : FixtureHost) -> OwnerId {
-  OwnerId::unchecked("fixture")
-}
-
-///|
-pub impl ToolBinding for FixtureHost with fn definitions(self : FixtureHost) -> Array[
-  CanonicalToolDef,
-] {
-  self.definitions.copy()
-}
-
-///|
-pub impl ToolBinding for FixtureHost with fn execute(
+pub impl @kernel.HostRuntime for FixtureHost with fn execute_tool(
   self,
+  _owner_id : OwnerId,
   call_id : CallId,
   _tool_name : ToolName,
   _arguments : Json,
@@ -109,17 +97,38 @@ pub impl ToolBinding for FixtureHost with fn execute(
 }
 
 ///|
-fn FixtureHost::bind_catalog(
+pub impl @kernel.HostRuntime for FixtureHost with fn cancel_effects(
   self : FixtureHost,
-  catalog : ToolCatalogSnapshot,
-) -> CanonicalHost raise CanonicalHostCompositionError {
-  self.definitions = catalog.definitions()
-  CanonicalHost::from_catalog(self, catalog, [self])
+  effect_ids : Array[EffectId],
+  _reason : CancelReason,
+) -> Array[(EffectId, CancelDisposition)] {
+  ignore(self)
+  effect_ids.map(id => (id, NotPropagated))
 }
 
 ///|
-fn fixture_stop(text : String) -> AssistantCompletion {
-  AssistantCompletion(
+/// M3.5: compact stub — FixtureHost does not exercise compact.
+pub impl @kernel.HostRuntime for FixtureHost with fn compact(
+  self : FixtureHost,
+  _messages : Array[Message],
+  _call_options : Json,
+  _trigger : @kernel.CompactTrigger,
+) -> Result[CompactResult, ModelFailure] {
+  ignore(self)
+  Err(ModelFailure::Parse(reason="FixtureHost does not implement compact"))
+}
+
+///|
+fn FixtureHost::wire_definitions(
+  self : FixtureHost,
+  catalog : ToolCatalogSnapshot,
+) -> Unit {
+  self.definitions = catalog.definitions()
+}
+
+///|
+fn fixture_stop(text : String) -> Completion {
+  Completion(
     content=[Text(text)],
     tool_calls=[],
     reasoning=None,
@@ -129,8 +138,8 @@ fn fixture_stop(text : String) -> AssistantCompletion {
 }
 
 ///|
-fn fixture_tool_calls(calls : Array[CanonicalToolCall]) -> AssistantCompletion {
-  AssistantCompletion(
+fn fixture_tool_calls(calls : Array[ToolCall]) -> Completion {
+  Completion(
     content=[],
     tool_calls=calls,
     reasoning=None,
@@ -140,7 +149,7 @@ fn fixture_tool_calls(calls : Array[CanonicalToolCall]) -> AssistantCompletion {
 }
 
 ///|
-fn fixture_call(name : String, id : String) -> CanonicalToolCall {
+fn fixture_call(name : String, id : String) -> ToolCall {
   {
     call_id: CallId::unchecked(id),
     name: ToolName::unchecked(name),
@@ -166,7 +175,7 @@ fn fixture_tool_catalog(
   let builder = ToolCatalogBuilder()
   ignore(
     builder.add(
-      CanonicalToolDef(
+      ToolDef(
         name=ToolName::unchecked(name),
         description="fixture tool",
         input_schema=schema,
@@ -181,7 +190,8 @@ fn fixture_tool_catalog(
 
 ///|
 fn canonical_puppet_config(
-  host : CanonicalHost,
+  host : &@kernel.HostRuntime,
+  model_id : String,
   catalog : ToolCatalogSnapshot,
   journal : &RunJournal,
   subscribers : Array[&EventSubscriber],
@@ -189,17 +199,32 @@ fn canonical_puppet_config(
   stream_chunks : HostChunkCallback?,
   call_options : Json,
 ) -> PuppetConfig {
+  // D1: fresh mailbox per config. The mailbox must outlive the Puppet
+  // built from this config; tests that need to inject signals grab the
+  // reference back via `puppet.mailbox()` after construction.
+  let mailbox_instance = ControlMailbox()
+  let mailbox : &Mailbox = mailbox_instance as &Mailbox
   {
     host,
+    model_id,
     catalog,
     journal,
     contributors,
     subscribers,
+    observers: [],
     lifecycle_nodes: [],
     stream_chunks,
     call_options,
+    pre_model_hooks: [],
+    pre_tool_hooks: [],
+    post_event_hooks: [],
     default_budget: Budget::default_run(),
     max_iterations: 50,
+    commands: [],
+    session_store: None,
+    context_window: None,
+    compact_threshold: 0.9,
+    mailbox,
   }
 }
 
@@ -210,9 +235,11 @@ fn fixture_config(
   journal : &RunJournal,
   subscribers : Array[&EventSubscriber],
   contributors : Array[&JournalContributor],
-) -> PuppetConfig raise CanonicalHostCompositionError {
+) -> PuppetConfig {
+  host.wire_definitions(catalog)
   canonical_puppet_config(
-    host.bind_catalog(catalog),
+    host as &@kernel.HostRuntime,
+    "fixture-model",
     catalog,
     journal,
     subscribers,
@@ -577,6 +604,7 @@ test "puppet/C-LATE-COMPLETION" {
       effect_id: effect.effect_id(),
       model_step_id: ModelStepId::first(),
       completion: fixture_stop("done"),
+      processed_messages: waiting.next_state().transcript().messages_snapshot(),
     }),
   )
   let rejected = reduce(
@@ -586,6 +614,10 @@ test "puppet/C-LATE-COMPLETION" {
       effect_id: effect.effect_id(),
       model_step_id: ModelStepId::first(),
       completion: fixture_stop("late"),
+      processed_messages: completed
+      .next_state()
+      .transcript()
+      .messages_snapshot(),
     }),
   )
   // Rejections preserve the terminal result and transcript; only the event
@@ -690,7 +722,7 @@ test "puppet/C-SNAPSHOT-IMMUTABLE" {
   })
   let definitions = snapshot.tool_definitions()
   definitions.push(
-    CanonicalToolDef(
+    ToolDef(
       name=ToolName::unchecked("mutated"),
       description="",
       input_schema=Json::null(),

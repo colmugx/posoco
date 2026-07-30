@@ -24,7 +24,7 @@
 fn make_catalog_v1() -> ToolCatalogSnapshot raise CatalogCompositionError {
   let builder = ToolCatalogBuilder()
   let _ = builder.add(
-    CanonicalToolDef(
+    ToolDef(
       name=ToolName::unchecked("read"),
       description="read a file",
       input_schema=Json::object(
@@ -81,8 +81,8 @@ fn start_input() -> RunInput {
 }
 
 ///|
-fn make_completion_no_tools() -> AssistantCompletion {
-  AssistantCompletion(
+fn make_completion_no_tools() -> Completion {
+  Completion(
     content=[Text("hello")],
     tool_calls=[],
     reasoning=None,
@@ -96,8 +96,8 @@ fn make_completion_with_tool_call(
   call_id : String,
   name : String,
   args : Json,
-) -> AssistantCompletion {
-  AssistantCompletion(
+) -> Completion {
+  Completion(
     content=[Text("calling")],
     tool_calls=[
       {
@@ -141,6 +141,7 @@ test "C-HAPPY-NO-TOOLS: Start → CallModel → ModelCompleted → Terminal(Comp
     effect_id: eff_id,
     model_step_id: step_id,
     completion: make_completion_no_tools(),
+    processed_messages: st_awaiting.transcript().messages_snapshot(),
   })
   let out = reduce(st_awaiting, catalog, input)
   let final_state = out.next_state()
@@ -174,6 +175,7 @@ test "C-HAPPY-ONE-TOOL: model step → tool call → ExecuteTool → ToolComplet
     effect_id: eff_id,
     model_step_id: step_id,
     completion,
+    processed_messages: st_awaiting.transcript().messages_snapshot(),
   })
   let out = reduce(st_awaiting, catalog, input)
   let st_tools = out.next_state()
@@ -189,6 +191,8 @@ test "C-HAPPY-ONE-TOOL: model step → tool call → ExecuteTool → ToolComplet
   let tool_input : RunInput = ToolCompleted(payload=ToolCompletedPayload::{
     effect_id: exec_id,
     call_id: CallId::unchecked("call_1"),
+    tool_name: ToolName::unchecked("read"),
+    arguments: Json::null(),
     outcome: Success(content="data", structured=None),
   })
   let out2 = reduce(st_tools, catalog, tool_input)
@@ -215,7 +219,7 @@ test "C-BUDGET-TOOL-BATCH: count atomically before any tool effect is exposed" {
     CallModel(effect_id~, payload~) => (effect_id, payload.model_step_id)
     _ => fail("expected CallModel effect")
   }
-  let completion = AssistantCompletion(
+  let completion = Completion(
     content=[Text("calling two tools")],
     tool_calls=[
       {
@@ -236,7 +240,12 @@ test "C-BUDGET-TOOL-BATCH: count atomically before any tool effect is exposed" {
   let out = reduce(
     waiting.next_state(),
     catalog,
-    ModelCompleted(payload={ effect_id, model_step_id, completion }),
+    ModelCompleted(payload={
+      effect_id,
+      model_step_id,
+      completion,
+      processed_messages: [],
+    }),
   )
   let terminal = out.next_state()
   assert_eq(out.effects().length(), 0)
@@ -271,6 +280,7 @@ test "C-MODEL-UNKNOWN-TOOL: unknown tool name → NotExecuted(UnknownTool), zero
     effect_id: eff_id,
     model_step_id: step_id,
     completion,
+    processed_messages: st_awaiting.transcript().messages_snapshot(),
   })
   let out = reduce(st_awaiting, catalog, input)
   // Zero ExecuteTool effects declared.
@@ -311,6 +321,7 @@ test "C-MODEL-SCHEMA-MISMATCH: parsed args fail schema → NotExecuted(SchemaMis
     effect_id: eff_id,
     model_step_id: step_id,
     completion,
+    processed_messages: st_awaiting.transcript().messages_snapshot(),
   })
   let out = reduce(st_awaiting, catalog, input)
   assert_eq(out.effects().length(), 0)
@@ -336,7 +347,7 @@ test "C-MODEL-SCHEMA-MISMATCH: parsed args fail schema → NotExecuted(SchemaMis
 test "C-MODEL-LENGTH-FINISH: finish_reason=Length → Terminal(Failed)" {
   let (st_awaiting, eff_id, step_id) = run_until_awaiting_model()
   let catalog = make_catalog_v1()
-  let completion = AssistantCompletion(
+  let completion = Completion(
     content=[Text("truncated")],
     tool_calls=[],
     reasoning=None,
@@ -347,6 +358,7 @@ test "C-MODEL-LENGTH-FINISH: finish_reason=Length → Terminal(Failed)" {
     effect_id: eff_id,
     model_step_id: step_id,
     completion,
+    processed_messages: st_awaiting.transcript().messages_snapshot(),
   })
   let out = reduce(st_awaiting, catalog, input)
   let st = out.next_state()
@@ -388,7 +400,7 @@ test "C-INVARIANT-DUPLICATE-CALL-ID: same call_id twice in one batch → Failed"
   let (st_awaiting, eff_id, step_id) = run_until_awaiting_model()
   let catalog = make_catalog_v1()
   // Two tool calls with the SAME call_id, both valid schema.
-  let completion = AssistantCompletion(
+  let completion = Completion(
     content=[Text("calling")],
     tool_calls=[
       {
@@ -410,6 +422,7 @@ test "C-INVARIANT-DUPLICATE-CALL-ID: same call_id twice in one batch → Failed"
     effect_id: eff_id,
     model_step_id: step_id,
     completion,
+    processed_messages: st_awaiting.transcript().messages_snapshot(),
   })
   let out = reduce(st_awaiting, catalog, input)
   let st = out.next_state()
@@ -489,6 +502,7 @@ test "C-SUSPEND-LATE-COMPLETION-REJECTED: ModelCompleted while Suspended rejecte
     effect_id: eff_id,
     model_step_id: step_id,
     completion: make_completion_no_tools(),
+    processed_messages: st_awaiting.transcript().messages_snapshot(),
   })
   let out = reduce(st_suspended, catalog, stray)
   // State unchanged (still Suspended).
@@ -592,6 +606,7 @@ test "C-POST-TERMINAL-REJECTED: any input after Terminal is rejected" {
     effect_id: eff_id,
     model_step_id: step_id,
     completion,
+    processed_messages: st_awaiting.transcript().messages_snapshot(),
   })
   let out = reduce(st_awaiting, catalog, input)
   let st_terminal = out.next_state()
@@ -601,6 +616,7 @@ test "C-POST-TERMINAL-REJECTED: any input after Terminal is rejected" {
     effect_id: eff_id,
     model_step_id: step_id,
     completion,
+    processed_messages: st_awaiting.transcript().messages_snapshot(),
   })
   let out2 = reduce(st_terminal, catalog, stray)
   assert_eq(out2.next_state().phase(), Terminal) // unchanged
@@ -633,6 +649,7 @@ test "C-TOOL-RUNTIME-FAILURE: ToolFailed(runtime) → RuntimeFailure outcome, Ru
     effect_id: eff_id,
     model_step_id: step_id,
     completion,
+    processed_messages: st_awaiting.transcript().messages_snapshot(),
   })
   let out = reduce(st_awaiting, catalog, input)
   let st_tools = out.next_state()
@@ -644,6 +661,9 @@ test "C-TOOL-RUNTIME-FAILURE: ToolFailed(runtime) → RuntimeFailure outcome, Ru
   let tool_fail : RunInput = ToolFailed(payload=ToolFailedPayload::{
     effect_id: exec_id,
     call_id: CallId::unchecked("call_1"),
+    tool_name: ToolName::unchecked("read"),
+    arguments: Json::null(),
+    reason: "test runtime failure",
     runtime: Some(Transport(reason="connection reset")),
     invariant_failure: None,
   })
@@ -661,4 +681,27 @@ test "C-TOOL-RUNTIME-FAILURE: ToolFailed(runtime) → RuntimeFailure outcome, Ru
       }
     _ => fail("expected ToolMessage with RuntimeFailure")
   }
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// C-COMPRESS-PROCESSED-MESSAGES (M3.4)
+// ModelCompleted with shorter processed_messages → transcript trimmed.
+// ──────────────────────────────────────────────────────────────────────────
+
+///|
+test "C-COMPRESS-PROCESSED-MESSAGES: ModelCompleted processed_messages replaces transcript body" {
+  let (st_awaiting, eff_id, step_id) = run_until_awaiting_model()
+  let catalog = make_catalog_v1()
+  // Simulate a modelport that elided the user message before sending.
+  let trimmed : Array[Message] = []
+  let input : RunInput = ModelCompleted(payload=ModelCompletedPayload::{
+    effect_id: eff_id,
+    model_step_id: step_id,
+    completion: make_completion_no_tools(),
+    processed_messages: trimmed,
+  })
+  let out = reduce(st_awaiting, catalog, input)
+  let final_state = out.next_state()
+  // Transcript should be the trimmed body + the new assistant message = 1 entry.
+  assert_eq(final_state.transcript().length(), 1)
 }

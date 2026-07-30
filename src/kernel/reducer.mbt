@@ -13,27 +13,10 @@
 ///
 /// Purity is enforced by a boundary lint in T03/T09 acceptance.
 
-// ──────────────────────────────────────────────────────────────────────────
-// Output bundle
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 /// Result of a single `reduce(state, input)` call.
-///
-/// - `next_state`: the new RunState (phase may be unchanged if the input was
-///   a typed rejection — see `InputRejected` event).
-/// - `effects`: zero or more Effects the executor should run. These are
-///   correlated back to the reducer via `EffectId`; completions arrive as
-///   future inputs.
-/// - `events`: zero or more KernelEvents the interpreter should publish.
-///   Terminal events (`RunCompleted`/`RunFailed`/`RunCancelled`) appear at
-///   most once per Run.
-///
-/// The reducer never returns errors through MoonBit's raise mechanism — every
-/// invariant violation becomes a typed transition to `Terminal(Failed)` with
-/// `FailureReason::InvariantViolation(...)`. The only `raise` paths are
-/// `KernelError::ConstructorInvariant` from `RunState` constructors, which
-/// surface programming errors (not runtime facts).
+/// `next_state` is the new RunState, `effects` are effects to execute, `events` are domain events to publish.
+/// Terminal events appear at most once per Run. Invariant violations become a typed `Terminal(Failed)` transition.
 pub(all) struct ReduceOutput {
   next_state : RunState
   effects : Array[Effect]
@@ -72,16 +55,9 @@ pub impl Show for ReduceOutput with fn to_string(self : ReduceOutput) -> String 
   "ReduceOutput(state=\{self.next_state.to_string()}, effects=[\{effect_summaries.join(", ")}], events=[\{event_summaries.join(", ")}])"
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Public entry point
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 /// The reducer. Pure: same (state, input) → same (next_state, effects, events).
-///
-/// The catalog is passed separately because the RunState does not own it
-/// (the snapshot may outlive any single Run; M2 may refresh it). The
-/// reducer only reads from the snapshot, never writes.
+/// The catalog is passed separately because the RunState does not own it.
 pub fn reduce(
   state : RunState,
   catalog : ToolCatalogSnapshot,
@@ -100,19 +76,11 @@ pub fn reduce(
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Helpers — emit events with monotonically growing sequence
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 /// Allocate the next event sequence number.
 fn next_seq(state : RunState) -> EventSequence {
   state.next_event_sequence().next()
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// Phase: Terminal (post-terminal rejection)
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 fn reduce_post_terminal(
@@ -138,10 +106,6 @@ fn reduce_post_terminal(
   reduce_output(next_state, [], [event])
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Phase: Initializing — only Start is legal
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 fn reduce_initializing(
   state : RunState,
@@ -150,21 +114,18 @@ fn reduce_initializing(
 ) -> ReduceOutput raise KernelError {
   match input {
     Start(payload~) => reduce_start(state, catalog, payload)
-    _ =>
-      // Reject any non-Start input from Initializing.
-      reject_input(state, input, "Initializing only accepts Start")
+    _ => reject_input(state, input, "Initializing only accepts Start")
   }
 }
 
 ///|
-/// Handle the Start input: seed the transcript, emit RunStarted, transition
-/// to ReadyForModel.
+/// Handle the Start input: seed the transcript, emit RunStarted, transition to ReadyForModel.
 fn reduce_start(
   state : RunState,
   catalog : ToolCatalogSnapshot,
   payload : StartPayload,
 ) -> ReduceOutput raise KernelError {
-  let transcript = CanonicalTranscript::from_array(payload.initial_messages)
+  let transcript = Transcript::from_array(payload.initial_messages)
   let run_started : KernelEvent = RunStarted(details=StartedDetails::{
     run_id: state.run_id(),
     session_id: state.session_id(),
@@ -192,10 +153,6 @@ fn reduce_start(
   reduce_output(next_state, [], [run_started])
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Phase: ReadyForModel
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 fn reduce_ready_for_model(
   state : RunState,
@@ -218,29 +175,11 @@ fn reduce_ready_for_model(
   }
 }
 
-// (The reducer normally needs to know when to issue a CallModel effect;
-// this is driven by a separate Input, RunOnce, that the host sends when it
-// wants the model to make the next step. For M1 simplicity, we add a
-// dedicated path: the host issues ModelStepRequest via Start payload, and
-// the driver issues a synthetic "GoModelStep" by calling `run_model_step`
-// below directly. The reducer itself never invents the decision to issue a
-// CallModel — that decision is external.)
-
 ///|
-/// Issue a CallModel effect. This is the reducer entry point that the
-/// scripted driver / facade uses when it decides the run should advance to
-/// the next model step. The reducer:
-/// - allocates a fresh EffectId and ModelStepId
-/// - builds the CallModelPayload from the current transcript + catalog
-/// - transitions to AwaitingModel
-///
-/// Note: this function is NOT called via `reduce(state, catalog, input)`.
-/// It is a separate entry point because "request the next model step" is
-/// a host decision, not a fact the reducer observed. We expose it this way
-/// so that the reducer remains the single writer of state, but the
-/// triggering decision stays outside (M1 §6: "Reducer 不调用 trait、不读
-/// 时钟"). The host/driver calls this after reducer-declared effects have
-/// completed AND the host has decided more work is needed.
+/// Issue a CallModel effect. Allocates a fresh EffectId and ModelStepId, builds the payload
+/// from the current transcript + catalog, transitions to AwaitingModel.
+/// This is NOT called via `reduce(state, catalog, input)` — the host/driver decides when
+/// to advance; the reducer only writes state.
 pub fn run_model_step(
   state : RunState,
   catalog : ToolCatalogSnapshot,
@@ -284,10 +223,6 @@ pub fn run_model_step(
       )
   }
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// Phase: AwaitingModel
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 fn reduce_awaiting_model(
@@ -350,8 +285,7 @@ fn reduce_model_completed(
     )
   }
   let completion = payload.completion
-  // Length finish reason: terminal failure (M0 StreamAccumulator behavior
-  // preserved; ADR §2.7).
+  // Length finish reason → terminal failure (ADR §2.7).
   match completion.finish_reason() {
     Length =>
       return reduce_terminal_fail(
@@ -360,19 +294,21 @@ fn reduce_model_completed(
       )
     _ => ()
   }
-  // Build the assistant transcript message.
   let assistant_msg = AssistantMessage(
     content=completion.message.content.copy(),
     tool_calls=completion.message.tool_calls.copy(),
     reasoning=completion.message.reasoning,
     finish_reason=completion.message.finish_reason,
   )
-  let transcript = state.transcript().append(assistant_msg)
+  // Replace transcript body with what the modelport actually sent (it may have elided entries),
+  // then append the new assistant message. No-op when no preprocessing occurred.
+  let base_transcript = Transcript::from_array(payload.processed_messages)
+  let transcript = base_transcript.append(assistant_msg)
   let step_completed : KernelEvent = ModelStepCompleted(
     model_step_id=payload.model_step_id,
     completion_summary=completion_summary(completion),
   )
-  // Update budget: model_steps + 1, tool_rounds stays the same, usage if any.
+  // budget: model_steps + 1, tool_rounds unchanged, usage if any.
   let next_consumed = bump_model_step(state.budget_consumed(), completion.usage)
   let usage_check = next_consumed.exceeded(state.budget())
   match usage_check {
@@ -441,8 +377,8 @@ fn reduce_model_completed_with_tools(
   state : RunState,
   catalog : ToolCatalogSnapshot,
   payload : ModelCompletedPayload,
-  completion : AssistantCompletion,
-  initial_transcript : CanonicalTranscript,
+  completion : Completion,
+  initial_transcript : Transcript,
   next_consumed : BudgetConsumed,
   step_completed : KernelEvent,
 ) -> ReduceOutput raise KernelError {
@@ -598,7 +534,7 @@ fn reduce_model_completed_with_tools(
     UnknownUsage(_) | WithinBudget => ()
   }
   // Emit ToolBatchStarted covering only the calls that became effects.
-  let batch_calls : Array[CanonicalToolCall] = []
+  let batch_calls : Array[ToolCall] = []
   for e in effects {
     match e {
       ExecuteTool(payload~, ..) =>
@@ -662,10 +598,6 @@ fn reduce_model_failed(
   }
   reduce_terminal_fail(state, reason)
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// Phase: AwaitingTools
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 fn reduce_awaiting_tools(
@@ -887,10 +819,6 @@ fn reduce_tool_failed(
   reduce_output(next_state, [], events)
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Phase: Suspended
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 fn reduce_suspended(
   state : RunState,
@@ -934,14 +862,8 @@ fn reduce_suspended(
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Suspend transition
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
-/// Enter Suspended from AwaitingModel. Drop the pending CallModel effect,
-/// emit CancelOutstanding for it, emit RunSuspended, transition to Suspended
-/// with zero pending.
+/// Enter Suspended from AwaitingModel. Drop the pending CallModel, emit CancelOutstanding, emit RunSuspended.
 fn reduce_suspend(
   state : RunState,
   requirement : SuspensionRequirement,
@@ -983,10 +905,6 @@ fn reduce_suspend(
   )
   reduce_output(next_state, effects.copy(), events)
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// Cancel transitions
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 /// Cancel when no pending effects (ReadyForModel, Suspended). Just terminate.
@@ -1038,10 +956,6 @@ fn reduce_cancel_with_pending(
   reduce_output(terminal_state, effects.copy(), events)
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Terminal-fail transition
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 /// Terminate the Run with Failed. Clears pending effects, emits RunFailed.
 fn reduce_terminal_fail(
@@ -1062,7 +976,7 @@ fn reduce_terminal_fail(
 /// before the terminal event and a custom transcript/budget.
 fn reduce_terminal_fail_with(
   state : RunState,
-  transcript : CanonicalTranscript,
+  transcript : Transcript,
   budget_consumed : BudgetConsumed,
   reason : FailureReason,
   pre_events : Array[KernelEvent],
@@ -1108,23 +1022,14 @@ fn reduce_terminal_cancel(
   reduce_output(terminal_state, [], [RunCancelled(reason~)])
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Invariant violation — terminal Failed with InvariantViolation reason
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
-/// Convert a kernel-invariant violation to a terminal Failed transition.
-/// The reducer never silently downgrades these to tool errors (ADR §2.4).
+/// Convert a kernel-invariant violation to terminal Failed. Never silently downgraded (ADR §2.4).
 fn reduce_invariant_violation(
   state : RunState,
   category : InvariantCategory,
 ) -> ReduceOutput raise KernelError {
   reduce_terminal_fail(state, InvariantViolation(category~))
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// Typed rejection — state unchanged, InputRejected event emitted
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 fn reject_input(
@@ -1148,14 +1053,10 @@ fn reject_input(
   reduce_output(next_state, [], [event])
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Small helpers
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 fn append_completion_to_state(
   state : RunState,
-  completion : AssistantCompletion,
+  completion : Completion,
 ) -> RunState raise KernelError {
   let msg = AssistantMessage(
     content=completion.message.content.copy(),
@@ -1178,7 +1079,7 @@ fn append_completion_to_state(
 }
 
 ///|
-fn completion_summary(completion : AssistantCompletion) -> String {
+fn completion_summary(completion : Completion) -> String {
   let n_tools = completion.message.tool_calls.length()
   let finish = completion.finish_reason().to_string()
   let reasoning = match completion.message.reasoning {
@@ -1198,10 +1099,7 @@ fn advance_seq_by(state : RunState, n : Int) -> EventSequence {
 }
 
 ///|
-fn bump_model_step(
-  consumed : BudgetConsumed,
-  usage : CanonicalUsage?,
-) -> BudgetConsumed {
+fn bump_model_step(consumed : BudgetConsumed, usage : Usage?) -> BudgetConsumed {
   let model_steps = consumed.model_steps + 1
   match usage {
     Some(u) => {
@@ -1306,10 +1204,7 @@ fn remove_execute_tool_effect(
 /// transcript. Positions span all assistant messages in the Run, so results
 /// from multiple tool rounds remain deterministic as well as results within a
 /// parallel batch.
-fn tool_call_position(
-  transcript : CanonicalTranscript,
-  call_id : CallId,
-) -> Int? {
+fn tool_call_position(transcript : Transcript, call_id : CallId) -> Int? {
   let mut position = 0
   let mut found : Int? = None
   for message in transcript.messages_snapshot() {
@@ -1332,11 +1227,11 @@ fn tool_call_position(
 /// requested it, ordered by the model's source call order rather than host
 /// completion order.
 fn insert_tool_message_in_source_order(
-  transcript : CanonicalTranscript,
+  transcript : Transcript,
   call_id : CallId,
   tool_name : ToolName,
   outcome : ToolOutcome,
-) -> CanonicalTranscript {
+) -> Transcript {
   let messages = transcript.messages_snapshot()
   let target_position = match tool_call_position(transcript, call_id) {
     Some(position) => position
@@ -1374,7 +1269,7 @@ fn insert_tool_message_in_source_order(
     }
   }
   let next_message = ToolMessage(call_id~, tool_name~, outcome~)
-  let out : Array[CanonicalMessage] = []
+  let out : Array[Message] = []
   for i, message in messages {
     if i == insert_at {
       out.push(next_message)
@@ -1384,7 +1279,7 @@ fn insert_tool_message_in_source_order(
   if insert_at == messages.length() {
     out.push(next_message)
   }
-  CanonicalTranscript::from_array(out)
+  Transcript::from_array(out)
 }
 
 ///|
@@ -1392,7 +1287,7 @@ fn insert_tool_message_in_source_order(
 /// canonical transcript. The call id is internal bookkeeping; only outcomes
 /// cross the public terminal boundary.
 fn insert_tool_result_in_source_order(
-  transcript : CanonicalTranscript,
+  transcript : Transcript,
   existing : Array[(CallId, ToolOutcome)],
   call_id : CallId,
   outcome : ToolOutcome,

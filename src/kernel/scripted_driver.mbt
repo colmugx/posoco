@@ -1,47 +1,21 @@
 ///|
-/// Scripted minimal driver for M1 conformance + compatibility (ADR §2.1,
-/// §6 responsibility matrix).
-///
-/// This is the TEMPORARY in-process loop that mechanically drives
-/// `reduce → execute_one → reduce` until the reducer declares no more
-/// pending effects. M2 will replace this with a proper long-lived Harness
-/// pump that owns queues, savepoints, journals and barriers. The M1 driver
-/// owns NONE of those.
-///
-/// Two variants:
-/// - `ScriptedExecutor`: a fake registry that returns scripted outcomes by
-///   effect id. Used by conformance tests (T09) and the reducer end-to-end
-///   golden suite.
-/// - `scripted_driver_run`: the mechanical pump. Given an initial state,
-///   catalog and a scripted executor, drive the run to terminal.
-///
-/// Mechanical contract (verified by boundary lint):
-/// - The driver loops ONLY over reducer-declared effects. It never looks at
-///   `response.tool_calls` to decide the next phase.
-/// - It owns no queue, no savepoint, no journal, no subscriber barrier.
-/// - Each loop iteration: (a) collect reducer-declared effects, (b) execute
-///   each via the scripted/real executor, (c) feed the resulting Input back
-///   to the reducer. If the reducer declares zero new effects and is not
-///   terminal, the host must explicitly call `run_model_step` to advance —
-///   the driver does NOT decide to advance on its own.
-
-// ──────────────────────────────────────────────────────────────────────────
-// ScriptedExecutor — fake registry + scripted outcomes
-// ──────────────────────────────────────────────────────────────────────────
+/// Scripted test executor + mechanical driver for M1 conformance (ADR §2.1, §6).
+/// Temporary in-process loop: loops over reducer-declared effects, resolves each
+/// via a scripted outcome registry, feeds the resulting Input back to reduce.
+/// M2 replaces this with a proper long-lived Harness pump.
 
 ///|
 /// What the scripted executor returns for a given effect id.
 pub(all) enum ScriptedOutcome {
   /// ModelCompleted with the supplied completion.
-  ScriptedModelCompleted(AssistantCompletion)
+  ScriptedModelCompleted(Completion)
   /// ModelFailed with the supplied failure.
   ScriptedModelFailed(ModelFailure)
   /// ToolCompleted with the supplied outcome.
   ScriptedToolCompleted(ToolOutcome)
   /// ToolFailed with runtime detail.
   ScriptedToolRuntime(ModelFailure)
-  /// ToolFailed with invariant category (simulates registry invariant
-  /// failure reaching the reducer).
+  /// ToolFailed with invariant category.
   ScriptedToolInvariant(InvariantCategory)
 }
 
@@ -71,28 +45,19 @@ pub fn ScriptedExecutor::on(
 
 ///|
 /// Look up the scripted outcome for an effect. Returns the configured
-/// outcome or a default invariant failure if not configured (so tests fail
-/// loudly rather than silently passing).
+/// outcome or a default invariant failure.
 pub fn ScriptedExecutor::lookup(
   self : ScriptedExecutor,
   effect_id : EffectId,
 ) -> ScriptedOutcome {
   match self.outcomes.get(effect_id.to_string()) {
     Some(o) => o
-    None =>
-      // Loud default: tests that forget to script an outcome get a typed
-      // invariant failure that terminates the Run.
-      ScriptedToolInvariant(StaleCorrelation(effect_id~))
+    None => ScriptedToolInvariant(StaleCorrelation(effect_id~))
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Driver trace record (for conformance goldens)
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
-/// Single step in the driver's mechanical execution log. Used by T09
-/// goldens to assert ordering and content without exposing payloads.
+/// Single step in the driver's mechanical execution log for conformance goldens.
 pub(all) struct DriverStep {
   effect_id : EffectId
   effect_kind : String
@@ -126,22 +91,11 @@ pub fn DriverTrace::final_state(self : DriverTrace) -> RunState {
   self.final_state
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Mechanical scripted driver
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
-/// Drive a Run mechanically using the scripted executor. The driver:
-/// 1. Calls `reduce(state, catalog, Start)` to seed the run.
-/// 2. Repeats until state is Terminal OR no further model step is requested:
-///    a. If state is ReadyForModel, call `run_model_step` to declare a
-///       CallModel effect.
-///    b. For each declared effect, look up the scripted outcome and feed
-///       the resulting Input back to `reduce`.
-/// 3. Returns a `DriverTrace` with steps, events and the final state.
-///
-/// `max_iterations` is a safety guard: if the run does not terminate, the
-/// driver aborts by returning the last state.
+/// Drive a Run mechanically using the scripted executor: reduce(Start),
+/// then loop over declared effects, feeding scripted outcomes back to
+/// reduce until Terminal. Returns `DriverTrace` with steps, events,
+/// and final state. `max_iterations` is a safety guard.
 pub fn scripted_driver_run(
   initial_state : RunState,
   catalog : ToolCatalogSnapshot,
@@ -158,17 +112,14 @@ pub fn scripted_driver_run(
   }
   let steps : Array[DriverStep] = []
   let mut iter = 0
-  // Drive: while state is not Terminal and iterations remain.
   while state.phase() != Terminal && iter < max_iterations {
     iter = iter + 1
-    // If ReadyForModel, the host must request the next model step.
     if state.phase() == ReadyForModel {
       let out_step = run_model_step(state, catalog, Json::null())
       state = out_step.next_state()
       for e in out_step.events() {
         events.push(e)
       }
-      // Collect declared effects (just CallModel here).
       for eff in out_step.effects() {
         let input = input_for_effect(scripted, eff, steps)
         let out_reduce = reduce(state, catalog, input)
@@ -178,7 +129,6 @@ pub fn scripted_driver_run(
         }
       }
     } else if state.phase() == AwaitingModel || state.phase() == AwaitingTools {
-      // Process each pending effect.
       let pending = state.pending_effects()
       for eff in pending {
         let input = input_for_effect(scripted, eff, steps)
@@ -189,7 +139,6 @@ pub fn scripted_driver_run(
         }
       }
     } else {
-      // Suspended or unknown: stop.
       break
     }
   }
@@ -211,6 +160,7 @@ fn input_for_effect(
           effect_id,
           model_step_id: payload.model_step_id,
           completion,
+          processed_messages: payload.messages,
         }),
         "CallModel",
         "ModelCompleted",
@@ -230,6 +180,8 @@ fn input_for_effect(
         ToolCompleted(payload=ToolCompletedPayload::{
           effect_id,
           call_id: payload.call_id,
+          tool_name: payload.tool_name,
+          arguments: payload.arguments,
           outcome,
         }),
         "ExecuteTool",
@@ -240,6 +192,9 @@ fn input_for_effect(
         ToolFailed(payload=ToolFailedPayload::{
           effect_id,
           call_id: payload.call_id,
+          tool_name: payload.tool_name,
+          arguments: payload.arguments,
+          reason: "scripted runtime: " + failure.to_string(),
           runtime: Some(failure),
           invariant_failure: None,
         }),
@@ -251,6 +206,9 @@ fn input_for_effect(
         ToolFailed(payload=ToolFailedPayload::{
           effect_id,
           call_id: payload.call_id,
+          tool_name: payload.tool_name,
+          arguments: payload.arguments,
+          reason: "scripted invariant: " + cat.to_string(),
           runtime: None,
           invariant_failure: Some(cat),
         }),
@@ -263,6 +221,8 @@ fn input_for_effect(
         ToolCompleted(payload=ToolCompletedPayload::{
           effect_id: EffectId::first(),
           call_id: CallId::unchecked("__cancel_ack__"),
+          tool_name: ToolName::unchecked("__cancel__"),
+          arguments: Json::null(),
           outcome: RuntimeFailure(
             error_category="CancelAck",
             message="cancel recorded",
@@ -287,6 +247,9 @@ fn input_for_effect(
         ToolFailed(payload=ToolFailedPayload::{
           effect_id,
           call_id: payload.call_id,
+          tool_name: payload.tool_name,
+          arguments: payload.arguments,
+          reason: "scripted outcome mismatch",
           runtime: None,
           invariant_failure: Some(StaleCorrelation(effect_id~)),
         }),

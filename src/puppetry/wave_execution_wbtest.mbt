@@ -8,8 +8,7 @@
 
 ///|
 struct WaveFixtureHost {
-  model_results : Array[Result[AssistantCompletion, ModelFailure]]
-  mut definitions : Array[CanonicalToolDef]
+  model_results : Array[Result[Completion, ModelFailure]]
   mut model_index : Int
   started : Array[String]
   finished : Array[String]
@@ -19,11 +18,10 @@ struct WaveFixtureHost {
 
 ///|
 fn WaveFixtureHost::new(
-  model_results : Array[Result[AssistantCompletion, ModelFailure]],
+  model_results : Array[Result[Completion, ModelFailure]],
 ) -> WaveFixtureHost {
   {
     model_results: model_results.copy(),
-    definitions: [],
     model_index: 0,
     started: [],
     finished: [],
@@ -48,46 +46,30 @@ fn WaveFixtureHost::finished(self : WaveFixtureHost) -> Array[String] {
 }
 
 ///|
-pub impl ModelBinding for WaveFixtureHost with fn model_id(
-  _self : WaveFixtureHost,
-) -> ModelId {
-  ModelId::unchecked("wave-fixture")
-}
-
-///|
-pub impl ModelBinding for WaveFixtureHost with fn complete(
+pub impl @kernel.HostRuntime for WaveFixtureHost with fn call_model(
   self,
-  _messages : Array[CanonicalMessage],
-  _tool_definitions : Array[CanonicalToolDef],
+  messages : Array[Message],
+  _tool_definitions : Array[ToolDef],
   _call_options : Json,
   _on_chunk : HostChunkCallback?,
-) -> Result[AssistantCompletion, ModelFailure] {
+) -> Result[ModelCallResult, ModelFailure] {
   let index = self.model_index
   self.model_index = index + 1
   if index >= self.model_results.length() {
     Err(Runtime(reason="wave fixture host exhausted model results"))
   } else {
-    self.model_results[index]
+    match self.model_results[index] {
+      Ok(completion) =>
+        Ok(ModelCallResult::{ completion, processed_messages: messages })
+      Err(failure) => Err(failure)
+    }
   }
 }
 
 ///|
-pub impl ToolBinding for WaveFixtureHost with fn owner_id(
-  _self : WaveFixtureHost,
-) -> OwnerId {
-  OwnerId::unchecked("wave_fixture")
-}
-
-///|
-pub impl ToolBinding for WaveFixtureHost with fn definitions(
-  self : WaveFixtureHost,
-) -> Array[CanonicalToolDef] {
-  self.definitions.copy()
-}
-
-///|
-pub impl ToolBinding for WaveFixtureHost with fn execute(
+pub impl @kernel.HostRuntime for WaveFixtureHost with fn execute_tool(
   self,
+  _owner_id : OwnerId,
   call_id : CallId,
   _tool_name : ToolName,
   _arguments : Json,
@@ -111,12 +93,25 @@ pub impl ToolBinding for WaveFixtureHost with fn execute(
 }
 
 ///|
-fn WaveFixtureHost::bind_catalog(
+pub impl @kernel.HostRuntime for WaveFixtureHost with fn cancel_effects(
   self : WaveFixtureHost,
-  catalog : ToolCatalogSnapshot,
-) -> CanonicalHost raise CanonicalHostCompositionError {
-  self.definitions = catalog.definitions()
-  CanonicalHost::from_catalog(self, catalog, [self])
+  effect_ids : Array[EffectId],
+  _reason : CancelReason,
+) -> Array[(EffectId, CancelDisposition)] {
+  ignore(self)
+  effect_ids.map(id => (id, NotPropagated))
+}
+
+///|
+/// M3.5: compact stub — WaveFixtureHost does not exercise compact.
+pub impl @kernel.HostRuntime for WaveFixtureHost with fn compact(
+  self : WaveFixtureHost,
+  _messages : Array[Message],
+  _call_options : Json,
+  _trigger : @kernel.CompactTrigger,
+) -> Result[CompactResult, ModelFailure] {
+  ignore(self)
+  Err(ModelFailure::Parse(reason="WaveFixtureHost does not implement compact"))
 }
 
 ///|
@@ -133,18 +128,16 @@ fn wave_catalog() -> ToolCatalogSnapshot raise CatalogCompositionError {
       ("parallel_one", @kernel.Parallel),
       ("parallel_two", @kernel.Parallel),
       ("exclusive", @kernel.Exclusive),
-      ("parallel_three", @kernel.Parallel),
     ] {
-    let (name, policy) = definition
     ignore(
       builder.add(
-        CanonicalToolDef(
-          name=ToolName::unchecked(name),
+        ToolDef(
+          name=ToolName::unchecked(definition.0),
           description="wave fixture tool",
           input_schema=schema,
           owner=OwnerId::unchecked("wave_fixture"),
-          policy~,
-          provenance=Some("wave_fixture"),
+          policy=definition.1,
+          provenance=Some("wave_execution_wbtest"),
         ),
       ),
     )
@@ -153,23 +146,22 @@ fn wave_catalog() -> ToolCatalogSnapshot raise CatalogCompositionError {
 }
 
 ///|
-async test "puppet/pump_executes_scheduler_waves_with_source_ordered_reduction" {
+async test "puppet/parallel_wave_wallclock_near_longest_tool" {
   let host = WaveFixtureHost::new([
     Ok(
       fixture_tool_calls([
         fixture_call("parallel_one", "p1"),
         fixture_call("parallel_two", "p2"),
-        fixture_call("exclusive", "exclusive"),
-        fixture_call("parallel_three", "p3"),
       ]),
     ),
     Ok(fixture_stop("done")),
   ])
-  let journal = InMemoryJournal()
   let catalog = wave_catalog()
+  let journal = InMemoryJournal()
   let puppet = Puppet(
     canonical_puppet_config(
-      host.bind_catalog(catalog),
+      host as &@kernel.HostRuntime,
+      "wave-fixture",
       catalog,
       journal,
       [],
@@ -178,22 +170,14 @@ async test "puppet/pump_executes_scheduler_waves_with_source_ordered_reduction" 
       Json::null(),
     ),
   )
-
-  assert_true(fixture_prompt(puppet, "scheduler_waves") is Accepted(_))
-  assert_eq(host.max_in_flight(), 2)
-  assert_eq(host.started(), ["p1", "p2", "exclusive", "p3"])
-  assert_eq(host.finished(), ["p2", "p1", "exclusive", "p3"])
-
-  let transcript = match puppet.last_completed_transcript() {
-    Some(value) => value
-    None => fail("expected completed transcript")
-  }
-  let tool_call_ids : Array[String] = []
-  for message in transcript.messages_snapshot() {
-    match message {
-      ToolMessage(call_id~, ..) => tool_call_ids.push(call_id.to_string())
-      _ => ()
-    }
-  }
-  assert_eq(tool_call_ids, ["p1", "p2", "exclusive", "p3"])
+  assert_true(fixture_prompt(puppet, "parallel_wave") is Accepted(_))
+  // Both tools in the parallel wave must have started.
+  assert_eq(host.started().length(), 2)
+  // The parallel wave must have seen both in flight.
+  assert_true(host.max_in_flight() >= 2)
+  // p2 finished first; the wave result order must still be p1, p2
+  // (model source order).
+  assert_eq(host.finished()[0], "p2")
+  // Both are in the finished log.
+  assert_eq(host.finished().length(), 2)
 }

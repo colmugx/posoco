@@ -1,25 +1,4 @@
 ///|
-/// ToolCatalogSnapshot — the immutable, versioned catalog handed to the
-/// model and the executor (ADR §2.6, §2.7, §2.8).
-///
-/// The catalog is the single source of truth for:
-/// - tool definitions (what the model sees)
-/// - tool owners (who executes the tool)
-/// - tool execution policy (Sequential / Parallel / Exclusive)
-/// - input schemas (validated once at composition; the reducer re-validates
-///   parsed arguments against the same version)
-///
-/// A snapshot is **atomic**: composition failures raise typed
-/// `CatalogCompositionError` and produce NO partial snapshot. The reducer
-/// and executor only ever receive a successful snapshot; if a snapshot
-/// failure somehow reaches them, it is treated as a kernel invariant
-/// failure (ADR §2.7).
-
-// ──────────────────────────────────────────────────────────────────────────
-// Composition errors
-// ──────────────────────────────────────────────────────────────────────────
-
-///|
 /// Why catalog composition failed. Each variant is a composition hard
 /// failure: the catalog was not built, no Run was started, no model/tool
 /// effect was declared.
@@ -68,24 +47,16 @@ pub impl Show for CatalogCompositionError with fn to_string(
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Catalog entry — what the snapshot stores per tool
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
-/// Internal entry: bundles a `CanonicalToolDef` with its position in the
+/// Internal entry: bundles a `ToolDef` with its position in the
 /// catalog (for stable enumeration). The snapshot exposes read-only
 /// accessors; callers cannot mutate entries.
 pub(all) struct CatalogEntry {
   /// Stable 0-based position in declaration order. Used by the scheduler
   /// (T06) to preserve source order across execution waves.
   position : Int
-  definition : CanonicalToolDef
+  definition : ToolDef
 } derive(Eq, Debug)
-
-// ──────────────────────────────────────────────────────────────────────────
-// Snapshot
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 /// Immutable, versioned catalog. Built by `ToolCatalogBuilder`; consumed
@@ -95,10 +66,6 @@ pub struct ToolCatalogSnapshot {
   entries : Array[CatalogEntry]
   by_name : Map[String, CatalogEntry]
 } derive(Eq, Debug)
-
-// ──────────────────────────────────────────────────────────────────────────
-// Builder
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 /// Incremental builder for `ToolCatalogSnapshot`. Validates each insertion
@@ -125,7 +92,7 @@ pub fn ToolCatalogBuilder::ToolCatalogBuilder() -> ToolCatalogBuilder {
 
 ///|
 /// Add a tool definition. Validates:
-/// - non-empty name (already enforced by `CanonicalToolDef`, but double-check)
+/// - non-empty name (already enforced by `ToolDef`, but double-check)
 /// - no name collision
 /// - no duplicate provenance+name
 /// - supported schema keywords only
@@ -135,7 +102,7 @@ pub fn ToolCatalogBuilder::ToolCatalogBuilder() -> ToolCatalogBuilder {
 /// any composition hard failure.
 pub fn ToolCatalogBuilder::add(
   self : ToolCatalogBuilder,
-  def : CanonicalToolDef,
+  def : ToolDef,
 ) -> ToolCatalogBuilder raise CatalogCompositionError {
   if self.finished {
     raise InvalidToolName(detail="builder is finished (finish() was called)")
@@ -193,10 +160,6 @@ pub fn ToolCatalogBuilder::finish(
   { version, entries: self.entries.copy(), by_name: self.by_name.copy() }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Snapshot accessors
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 pub fn ToolCatalogSnapshot::version(
   self : ToolCatalogSnapshot,
@@ -236,8 +199,8 @@ pub fn ToolCatalogSnapshot::contains(
 /// adapter should be prompted with.
 pub fn ToolCatalogSnapshot::definitions(
   self : ToolCatalogSnapshot,
-) -> Array[CanonicalToolDef] {
-  let out : Array[CanonicalToolDef] = []
+) -> Array[ToolDef] {
+  let out : Array[ToolDef] = []
   for entry in self.entries {
     out.push(entry.definition)
   }
@@ -274,10 +237,6 @@ pub fn ToolCatalogSnapshot::validate_arguments(
       })
   }
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// Top-level schema check (must be object or boolean)
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 fn check_schema_top_level(schema : Json) -> Result[Unit, String] {

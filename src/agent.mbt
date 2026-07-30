@@ -1,21 +1,49 @@
 ///|
+/// Agent-level runtime config: model, tuning knobs, and budget.
+/// Config changes propagate via setters that emit `TurnEvent` for observers.
 pub(all) struct AgentConfig {
   max_tool_rounds : Int
   temperature : Double?
   max_output_tokens : Int?
-  tool_choice : @types.ToolChoice?
-  reasoning_effort : @types.ReasoningEffort?
+  mut tool_choice : String?
+  mut reasoning_effort : String?
   model_context_window : Int?
+  /// Active model name. Read from `call_options` by the ModelPort on next `chat()`.
+  mut model : String?
 }
 
 ///|
 pub fn AgentConfig::to_chat_options(self : AgentConfig) -> @types.ChatOptions {
-  {
-    temperature: self.temperature,
-    max_output_tokens: self.max_output_tokens,
-    tool_choice: self.tool_choice,
-    reasoning_effort: self.reasoning_effort,
+  { temperature: self.temperature, max_output_tokens: self.max_output_tokens }
+}
+
+///|
+/// Encode the chat options as an opaque JSON blob for the Puppet's
+/// `call_options` field. The PortHostAdapter passes this blob through to the
+/// modelport; the modelport decodes whatever fields it understands.
+pub fn AgentConfig::to_chat_options_to_json(self : AgentConfig) -> Json {
+  let fields : Map[String, Json] = Map::from_array([])
+  match self.temperature {
+    Some(t) => fields["temperature"] = Json::number(t)
+    None => ()
   }
+  match self.max_output_tokens {
+    Some(n) => fields["max_output_tokens"] = Json::number(n.to_double())
+    None => ()
+  }
+  match self.tool_choice {
+    Some(s) => fields["tool_choice"] = Json::string(s)
+    None => ()
+  }
+  match self.reasoning_effort {
+    Some(s) => fields["reasoning_effort"] = Json::string(s)
+    None => ()
+  }
+  match self.model {
+    Some(s) => fields["model"] = Json::string(s)
+    None => ()
+  }
+  Json::object(fields)
 }
 
 ///|
@@ -63,30 +91,45 @@ fn agent_snapshot_json(value : Json) -> Json {
 }
 
 ///|
-fn agent_snapshot_tool_call(call : @types.ToolCall) -> @types.ToolCall {
+fn agent_snapshot_tool_call(call : @kernel.ToolCall) -> @kernel.ToolCall {
   {
-    id: call.id,
+    call_id: call.call_id,
     name: call.name,
     arguments: agent_snapshot_json(call.arguments),
   }
 }
 
 ///|
-fn agent_snapshot_message(message : @types.Message) -> @types.Message {
-  {
-    role: message.role,
-    content: message.content.copy(),
-    tool_calls: message.tool_calls.map(agent_snapshot_tool_call),
-    tool_call_id: message.tool_call_id,
-    name: message.name,
-    reasoning_content: message.reasoning_content,
+fn agent_snapshot_content(content : @kernel.Content) -> @kernel.Content {
+  match content {
+    @kernel.Text(text) => @kernel.Text(text)
+    @kernel.Image(media_type~, data~) => @kernel.Image(media_type~, data~)
+  }
+}
+
+///|
+fn agent_snapshot_message(message : @kernel.Message) -> @kernel.Message {
+  match message {
+    @kernel.SystemMessage(content~) =>
+      @kernel.SystemMessage(content=content.map(agent_snapshot_content))
+    @kernel.UserMessage(content~) =>
+      @kernel.UserMessage(content=content.map(agent_snapshot_content))
+    @kernel.AssistantMessage(content~, tool_calls~, reasoning~, finish_reason~) =>
+      @kernel.AssistantMessage(
+        content=content.map(agent_snapshot_content),
+        tool_calls=tool_calls.map(agent_snapshot_tool_call),
+        reasoning~,
+        finish_reason~,
+      )
+    @kernel.ToolMessage(call_id~, tool_name~, outcome~) =>
+      @kernel.ToolMessage(call_id~, tool_name~, outcome~)
   }
 }
 
 ///|
 fn agent_snapshot_messages(
-  messages : Array[@types.Message],
-) -> Array[@types.Message] {
+  messages : Array[@kernel.Message],
+) -> Array[@kernel.Message] {
   messages.map(agent_snapshot_message)
 }
 
@@ -101,7 +144,7 @@ fn agent_snapshot_metadata(metadata : Map[String, Json]) -> Map[String, Json] {
 
 ///|
 fn agent_snapshot_session(
-  messages : Array[@types.Message],
+  messages : Array[@kernel.Message],
   metadata : Map[String, Json],
 ) -> @types.Session {
   {
@@ -111,60 +154,40 @@ fn agent_snapshot_session(
 }
 
 ///|
-fn agent_snapshot_tool_result(result : @types.ToolResult) -> @types.ToolResult {
-  {
-    content: result.content,
-    structured: match result.structured {
-      Some(value) => Some(agent_snapshot_json(value))
-      None => None
-    },
-    is_error: result.is_error,
+fn agent_snapshot_tool_outcome(
+  outcome : @kernel.ToolOutcome,
+) -> @kernel.ToolOutcome {
+  match outcome {
+    @kernel.Success(content~, structured~) =>
+      @kernel.Success(
+        content~,
+        structured=match structured {
+          Some(j) => Some(agent_snapshot_json(j))
+          None => None
+        },
+      )
+    @kernel.ToolReportedError(content~, structured~) =>
+      @kernel.ToolReportedError(
+        content~,
+        structured=match structured {
+          Some(j) => Some(agent_snapshot_json(j))
+          None => None
+        },
+      )
+    @kernel.RuntimeFailure(error_category~, message~) =>
+      @kernel.RuntimeFailure(error_category~, message~)
+    @kernel.NotExecuted(reason~, original_call_id~) =>
+      @kernel.NotExecuted(reason~, original_call_id~)
   }
 }
 
 ///|
-fn agent_snapshot_tool_def(tool : @types.ToolDef) -> @types.ToolDef {
-  {
-    name: tool.name,
-    description: tool.description,
-    input_schema: agent_snapshot_json(tool.input_schema),
-    metadata: match tool.metadata {
-      Some(value) => Some(agent_snapshot_json(value))
-      None => None
-    },
-    source: tool.source,
-  }
-}
-
-///|
-fn agent_snapshot_model_response(
-  response : @types.ModelResponse,
-) -> @types.ModelResponse {
-  {
-    message: agent_snapshot_message(response.message),
-    tool_calls: response.tool_calls.map(agent_snapshot_tool_call),
-    finish_reason: response.finish_reason,
-    usage: response.usage,
-    reasoning_content: response.reasoning_content,
-  }
-}
-
-///|
-fn agent_snapshot_turn_result(result : @types.TurnResult) -> @types.TurnResult {
-  {
-    message: agent_snapshot_message(result.message),
-    tool_results: result.tool_results.map(agent_snapshot_tool_result),
-    final_session_id: result.final_session_id,
-  }
-}
-
-///|
-fn tool_provenance(tool : @types.ToolDef) -> String {
-  match tool.source {
+fn tool_provenance(tool : @kernel.ToolDef) -> String {
+  match tool.provenance {
     Some(source) if source != "" =>
-      "ToolDef.source='\{safe_error_label(source)}'"
+      "ToolDef.provenance='\{safe_error_label(source)}'"
     _ =>
-      "unlabeled provider declaring '\{safe_error_label(tool.name)}' (set ToolDef.source to a stable provider id)"
+      "unlabeled provider declaring '\{safe_error_label(tool.name.to_string())}' (set ToolDef.provenance to a stable provider id)"
   }
 }
 
@@ -172,7 +195,7 @@ fn tool_provenance(tool : @types.ToolDef) -> String {
 /// Build the tool routing table. Raises CompositionError::ToolCollision on
 /// the FIRST name collision (fail-fast), rather than last-wins. The
 /// collision message identifies the tool name and a provenance hint for each
-/// conflicting provider (ToolDef.source if present, else an actionable marker).
+/// conflicting provider (ToolDef.provenance if present, else an actionable marker).
 fn build_tool_routing(
   tools : Array[&@port.ToolProvider],
 ) -> ToolRouting raise @error.CompositionError {
@@ -181,80 +204,117 @@ fn build_tool_routing(
   for provider in tools {
     let tool_defs = provider.list_tools()
     for tool in tool_defs {
+      let name = tool.name.to_string()
       let provenance = tool_provenance(tool)
-      if tool_map.contains(tool.name) {
+      if tool_map.contains(name) {
         // T06-B: fail-fast on collision. The error names the tool and both
         // sources so the caller can locate the conflict without guessing.
-        let prev_source = match owner_source.get(tool.name) {
+        let prev_source = match owner_source.get(name) {
           Some(s) => s
           None => "(unknown)"
         }
         raise @error.CompositionError::ToolCollision(
-          safe_error_label(tool.name),
+          safe_error_label(name),
           "tool collision; first declaration: \{prev_source}; conflicting declaration: \{provenance}",
           manifests=[],
         )
       }
-      tool_map[tool.name] = provider
-      owner_source[tool.name] = provenance
+      tool_map[name] = provider
+      owner_source[name] = provenance
     }
   }
   { tool_map, providers: tools }
 }
 
 ///|
-/// Agent — array-based composition: tools routed by name, hooks chained,
-/// observers fan-out, compressors first-wins, sessions write-all/read-first.
+/// Agent — composed from extensions. Routes tools by name, hooks array-based,
+/// observers fan-out, sessions write-all/read-first. `config` is mutable for
+/// runtime setting changes; `model_port` is immutable.
 pub(all) struct Agent {
   model_port : &@port.ModelPort
   tool_routing : ToolRouting
-  pipeline_hook : &@port.PipelineHook?
-  compressors : Array[&@port.Compressor]
+  pre_model_hooks : Array[&@port.PreModelHook]
+  pre_tool_hooks : Array[&@port.PreToolHook]
+  post_event_hooks : Array[&@port.PostEventHook]
   observers : Array[&@port.Observer]
   memories : Array[&@port.MemoryPort]
   sessions : Array[&@port.SessionStore]
   lifecycle : &@port.Lifecycle?
-  config : AgentConfig
+  commands : Array[&@port.CommandPort]
+  builtin_command_port : BuiltinCommandPort
+  mailbox : @puppetry.ControlMailbox
+  mut config : AgentConfig
 }
 
 ///|
-/// Construct an Agent from extensions.
-///
-/// `exts` is the single composition surface: every port the agent will use
-/// comes from one of the extensions, discovered via its `Extension::manifest`
-/// implementation. Aggregation order is the array order; tool and
-/// slash-command collisions fail-fast with manifest-id-attributed errors.
-///
-/// At least one extension MUST contribute a `ModelPort`. Multi-model routing
-/// is solved inside a meta-extension (e.g. posoco-ext-llm), not by declaring
-/// multiple top-level models — `MultipleModels` is raised otherwise.
-///
-/// The internal execution engine (currently the legacy run loop; transitioning
-/// to Puppetry in R3) consumes the aggregated ports directly.
+/// Construct an Agent from an array of extensions.
+/// Aggregation order is the array order; collisions fail-fast.
+/// At least one extension must contribute a `ModelPort`.
 pub fn Agent::Agent(
   exts~ : Array[&@port.Extension],
   config~ : AgentConfig,
 ) -> Agent raise @error.CompositionError {
   let agg = aggregate_extensions(exts)
   let tool_routing = build_tool_routing(agg.tools)
-  let pipeline_hook : &@port.PipelineHook? = match agg.hooks.length() {
-    0 => None
-    1 => Some(agg.hooks[0])
-    _ => Some(HookChain::{ hooks: agg.hooks.copy() })
-  }
   let lifecycle : &@port.Lifecycle? = match agg.lifecycle.length() {
     0 => None
     _ => Some(agg.lifecycle[0])
   }
+  let composed_pre_model : Array[&@port.PreModelHook] = []
+  // 1. System prompt projection (if any contributors are configured).
+  if not(agg.prompt_contributors.is_empty()) {
+    let sections : Array[@port.SystemPromptSection] = []
+    let mut idx = 0
+    for c in agg.prompt_contributors {
+      sections.push(
+        @port.SystemPromptSection::SystemPromptSection(
+          id="section_\{idx}",
+          contributor=c,
+        ),
+      )
+      idx = idx + 1
+    }
+    let sys_hook = @port.SystemPromptHook::SystemPromptHook(
+      base_prompt="", // base comes from a contributor if desired
+      contributors=sections,
+    )
+    composed_pre_model.push(sys_hook as &@port.PreModelHook)
+  }
+
+  if not(agg.memory.is_empty()) {
+    let mem_hook = @port.MemoryRetrievalHook::MemoryRetrievalHook(
+      memories=agg.memory,
+    )
+    composed_pre_model.push(mem_hook as &@port.PreModelHook)
+  }
+
+  for h in agg.pre_model_hooks {
+    composed_pre_model.push(h)
+  }
+
+  let composed_post_event : Array[&@port.PostEventHook] = []
+  for h in agg.post_event_hooks {
+    composed_post_event.push(h)
+  }
+  let ui_hook = @port.UiRenderHook::UiRenderHook(ui=agg.ui)
+  composed_post_event.push(ui_hook as &@port.PostEventHook)
+
+  let mailbox = @puppetry.ControlMailbox::ControlMailbox()
+  let mailbox_ref : &@puppetry.Mailbox = mailbox as &@puppetry.Mailbox
+  let builtin_command_port = BuiltinCommandPort(mailbox_ref)
   {
     model_port: agg.model,
     tool_routing,
-    pipeline_hook,
-    compressors: agg.compressors,
+    pre_model_hooks: composed_pre_model,
+    pre_tool_hooks: agg.pre_tool_hooks,
+    post_event_hooks: composed_post_event,
     observers: agg.observers,
     memories: agg.memory,
     sessions: agg.sessions,
     lifecycle,
+    commands: agg.commands,
+    builtin_command_port,
+    mailbox,
     config,
   }
 }
@@ -270,20 +330,82 @@ pub async fn Agent::shutdown(self : Agent) -> Unit {
 }
 
 ///|
-async fn call_hook(
-  hook : &@port.PipelineHook,
-  stage : @port.Stage,
-) -> Result[@port.Stage, @port.HookError] raise @error.AgentError {
-  hook.on_stage(stage) catch {
-    e => raise @error.AgentError::HookAborted(safe_error_label(e.to_string()))
+/// Switch the active model by name at runtime. Updates `config.model`,
+/// emits `ConfigChanged`, and re-validates `reasoning_effort`.
+pub fn Agent::update_model(self : Agent, name : String) -> Unit {
+  let old = self.config.model
+  self.config.model = Some(name)
+  // Emit ConfigChanged so subscribers (persistence, UI) update.
+  let change : @types.TurnEvent = @types.ConfigChanged(
+    field="model",
+    old_value=match old {
+      Some(s) => s
+      None => ""
+    },
+    new_value=name,
+  )
+  self.emit_turn_event(change)
+  // Re-validate reasoning_effort: the router may now route to a provider
+  // whose accepted values differ. Use the ModelPort's current
+  // `ProviderConfig` as a hint; in production, a router ModelPort would
+  // re-evaluate this per chat() call anyway, but warning early is better UX.
+  self.validate_reasoning_effort_after_change()
+}
+
+///|
+/// Update `reasoning_effort` at runtime. Validates against the ModelPort's
+/// `ProviderConfig`; emits `ConfigWarning` on invalid value.
+pub fn Agent::update_reasoning_effort(self : Agent, value : String) -> Unit {
+  let provider_config = self.model_port.provider_config()
+  if provider_config.reasoning_effort_values.contains(value) {
+    let old = self.config.reasoning_effort
+    self.config.reasoning_effort = Some(value)
+    let change : @types.TurnEvent = @types.ConfigChanged(
+      field="reasoning_effort",
+      old_value=match old {
+        Some(s) => s
+        None => ""
+      },
+      new_value=value,
+    )
+    self.emit_turn_event(change)
+  } else {
+    // Reject and warn. The field stays at its prior value.
+    let accepted = provider_config.reasoning_effort_values.copy().join(", ")
+    let warning : @types.TurnEvent = @types.ConfigWarning(
+      field="reasoning_effort",
+      value~,
+      reason="active modelport does not accept this value (accepted: [\{accepted}])",
+    )
+    self.emit_turn_event(warning)
   }
 }
 
 ///|
-fn hook_error_category(error : @port.HookError) -> String {
-  match error {
-    Aborted(_) => "HookError::Aborted"
-    Deferred(..) => "HookError::Deferred"
+/// Check `reasoning_effort` is still valid after a config change; reset if not.
+fn Agent::validate_reasoning_effort_after_change(self : Agent) -> Unit {
+  match self.config.reasoning_effort {
+    Some(value) => {
+      let provider_config = self.model_port.provider_config()
+      if !provider_config.reasoning_effort_values.contains(value) {
+        let accepted = provider_config.reasoning_effort_values.copy().join(", ")
+        let warning : @types.TurnEvent = @types.ConfigWarning(
+          field="reasoning_effort",
+          value~,
+          reason="current modelport does not support this value (accepted: [\{accepted}]); reset to None",
+        )
+        self.emit_turn_event(warning)
+        // Reset and broadcast the auto-correction.
+        self.config.reasoning_effort = None
+        let reset : @types.TurnEvent = @types.ConfigChanged(
+          field="reasoning_effort",
+          old_value=value,
+          new_value="",
+        )
+        self.emit_turn_event(reset)
+      }
+    }
+    None => ()
   }
 }
 
@@ -322,65 +444,11 @@ fn contextualize_session_error(
 }
 
 ///|
-fn secondary_failure_event(
-  stage : String,
-  operation : String,
-  error_category : String,
-) -> @types.TurnEvent {
-  Custom(
-    source="posoco.core",
-    label="secondary_failure",
-    data=Json::object(
-      Map::from_array([
-        ("stage", Json::string(stage)),
-        ("operation", Json::string(operation)),
-        ("error_category", Json::string(error_category)),
-      ]),
-    ),
-  )
-}
-
-///|
-fn Agent::record_secondary_failure(
-  self : Agent,
-  stage : String,
-  operation : String,
-  error_category : String,
-) -> Unit {
-  let event = secondary_failure_event(stage, operation, error_category)
-  self.emit_turn_event(event)
-}
-
-///|
-async fn Agent::record_secondary_hook(
-  self : Agent,
-  hook : &@port.PipelineHook,
-  stage : @port.Stage,
-  stage_name : String,
-) -> Unit {
-  let error_category : String? = try {
-    match hook.on_stage(stage) {
-      Ok(_) => None
-      Err(error) => Some(hook_error_category(error))
-    }
-  } catch {
-    _ => Some("UnhandledHookError")
-  }
-  match error_category {
-    Some(category) =>
-      self.record_secondary_failure(
-        stage_name, "PipelineHook.on_stage", category,
-      )
-    None => ()
-  }
-}
-
-///|
 fn @types.TurnEvent::tool_call_result(
-  call : @types.ToolCall,
-  result : @types.ToolResult,
+  call : @kernel.ToolCall,
+  result : @kernel.ToolOutcome,
 ) -> @types.TurnEvent {
-  ToolCallResult(call~, result~, is_error=result.is_error)
+  ToolCallResult(call~, result~, is_error=result.is_failure())
 }
 
 ///|
@@ -388,17 +456,13 @@ fn agent_snapshot_turn_event(event : @types.TurnEvent) -> @types.TurnEvent {
   match event {
     TurnStarted => TurnStarted
     ToolCallPending(call) => ToolCallPending(agent_snapshot_tool_call(call))
-    ToolCallResult(call~, result~, ..) =>
+    ToolCallResult(call~, result~, is_error~) =>
       @types.TurnEvent::tool_call_result(
         agent_snapshot_tool_call(call),
-        agent_snapshot_tool_result(result),
+        agent_snapshot_tool_outcome(result),
       )
-    ModelResponseReceived(message~, usage~, reasoning_content~) =>
-      ModelResponseReceived(
-        message=agent_snapshot_message(message),
-        usage~,
-        reasoning_content~,
-      )
+    ModelResponseReceived(message~, usage~) =>
+      ModelResponseReceived(message=agent_snapshot_message(message), usage~)
     SessionRedirect(from~, to~, messages_before~, messages_after~) =>
       SessionRedirect(from~, to~, messages_before~, messages_after~)
     TurnCompleted => TurnCompleted
@@ -406,6 +470,10 @@ fn agent_snapshot_turn_event(event : @types.TurnEvent) -> @types.TurnEvent {
     ToolCallDeferred(call~, reason~) =>
       ToolCallDeferred(call=agent_snapshot_tool_call(call), reason~)
     StreamChunkReceived(chunk~) => StreamChunkReceived(chunk~)
+    ConfigWarning(field~, value~, reason~) =>
+      ConfigWarning(field~, value~, reason~)
+    ConfigChanged(field~, old_value~, new_value~) =>
+      ConfigChanged(field~, old_value~, new_value~)
     Custom(source~, label~, data~) =>
       Custom(source~, label~, data=agent_snapshot_json(data))
   }
@@ -419,402 +487,22 @@ fn Agent::emit_turn_event(self : Agent, event : @types.TurnEvent) -> Unit {
 }
 
 ///|
-/// Run one full agent turn. Tool calls execute in parallel via @async.all.
+/// Run one agent turn. Delegates to Puppet; emits start/end events for observers.
 pub async fn Agent::run_turn(
   self : Agent,
-  input : @types.Message,
+  input : @kernel.Message,
   session_id : String,
 ) -> @types.TurnResult raise @error.AgentError {
-  match self.pipeline_hook {
-    Some(hook) =>
-      match call_hook(hook, BeforeTurn) {
-        Ok(_) => ()
-        Err(error) => {
-          let primary = @error.AgentError::HookAborted(error.to_string())
-          self.record_secondary_hook(hook, TurnError(primary), "TurnError") catch {
-            _ =>
-              self.record_secondary_failure(
-                "TurnError", "PipelineHook.on_stage", "AsyncHookDiagnosticError",
-              )
-          }
-          raise primary
-        }
-      }
-    None => ()
-  }
-
   self.emit_turn_event(TurnStarted)
 
-  let result = self.run_turn_inner(input, session_id) catch {
+  let result = self.run_turn_via_puppet(input, session_id) catch {
     primary => {
-      match self.pipeline_hook {
-        Some(hook) =>
-          self.record_secondary_hook(hook, TurnError(primary), "TurnError") catch {
-            _ =>
-              self.record_secondary_failure(
-                "TurnError", "PipelineHook.on_stage", "AsyncHookDiagnosticError",
-              )
-          }
-        None => ()
-      }
       let safe_reason = "turn failed: " + agent_error_category(primary)
       self.emit_turn_event(TurnFailed(safe_reason))
       raise primary
     }
   }
 
-  match self.pipeline_hook {
-    Some(hook) =>
-      self.record_secondary_hook(
-        hook,
-        AfterTurn(agent_snapshot_turn_result(result)),
-        "AfterTurn",
-      ) catch {
-        _ =>
-          self.record_secondary_failure(
-            "AfterTurn", "PipelineHook.on_stage", "AsyncHookDiagnosticError",
-          )
-      }
-    None => ()
-  }
-
   self.emit_turn_event(TurnCompleted)
-  result
-}
-
-///|
-async fn Agent::run_turn_inner(
-  self : Agent,
-  input : @types.Message,
-  session_id : String,
-) -> @types.TurnResult raise @error.AgentError {
-  let session = match self.sessions {
-    [first, ..] =>
-      first.load(session_id) catch {
-        error => raise contextualize_session_error(error, session_id, "load")
-      }
-    [] =>
-      raise contextualize_session_error(
-        @error.SessionError::Load("no session store configured"),
-        session_id,
-        "load",
-      )
-  }
-
-  let mut current_session_id = session_id
-  let mut messages = agent_snapshot_messages(session.messages)
-  messages.push(agent_snapshot_message(input))
-
-  // T05 data-fidelity: carry loaded session metadata through the turn so the
-  // final save preserves unknown (user-owned) keys. Framework lineage keys
-  // (e.g. parent_session_id) are added by compression and must not be
-  // overwritten by the final save either.
-  let mut current_metadata = agent_snapshot_metadata(session.metadata)
-
-  let tools : Array[@types.ToolDef] = []
-  for provider in self.tool_routing.providers {
-    let provider_tools = provider.list_tools()
-    for t in provider_tools {
-      tools.push(agent_snapshot_tool_def(t))
-    }
-  }
-  let mut tool_round = 0
-  let all_results : Array[@types.ToolResult] = []
-  let mut resolution_required = false
-  let initial_msg : @types.Message = {
-    role: Assistant,
-    content: [],
-    tool_calls: [],
-    tool_call_id: None,
-    name: None,
-    reasoning_content: None,
-  }
-  let mut response : @types.ModelResponse = {
-    message: initial_msg,
-    tool_calls: [],
-    finish_reason: Stop,
-    usage: None,
-    reasoning_content: None,
-  }
-
-  while true {
-    let ctx : @port.CompressContext = {
-      session_id: current_session_id,
-      model_context_window: self.config.model_context_window,
-    }
-    let mut compress_done = false
-    for comp in self.compressors {
-      if compress_done {
-        break
-      }
-      let action = comp.compress(agent_snapshot_messages(messages), ctx)
-      match action {
-        NewThread(
-          messages=msgs,
-          new_session_id=new_sid,
-          messages_before=before,
-          messages_after=after
-        ) => {
-          let parent_id = current_session_id
-          let new_metadata = Map::from_array([
-            ("parent_session_id", Json::string(parent_id)),
-          ])
-          for store in self.sessions {
-            store.save(new_sid, agent_snapshot_session(msgs, new_metadata)) catch {
-              error =>
-                raise contextualize_session_error(
-                  error, new_sid, "compression_new_thread_save",
-                )
-            }
-          }
-          self.emit_turn_event(
-            SessionRedirect(
-              from=parent_id,
-              to=new_sid,
-              messages_before=before,
-              messages_after=after,
-            ),
-          )
-          current_session_id = new_sid
-          messages = agent_snapshot_messages(msgs)
-          // T05 lineage: the new thread starts with only the lineage key;
-          // user-owned metadata does not carry across a thread boundary
-          // (it belongs to the parent thread's persistence). The lineage
-          // key points to the parent, preserved through the final save.
-          current_metadata = agent_snapshot_metadata(new_metadata)
-          compress_done = true
-        }
-        Replace(msgs) => {
-          messages = agent_snapshot_messages(msgs)
-          compress_done = true
-        }
-        None => ()
-      }
-    }
-
-    match self.pipeline_hook {
-      Some(hook) =>
-        match call_hook(hook, BeforeModel(agent_snapshot_messages(messages))) {
-          Ok(BeforeModel(msgs)) => messages = agent_snapshot_messages(msgs)
-          Ok(_) => ()
-          Err(e) => raise @error.AgentError::HookAborted(e.to_string())
-        }
-      None => ()
-    }
-
-    response = self.model_port.chat_streaming(
-      agent_snapshot_messages(messages),
-      tools.map(agent_snapshot_tool_def),
-      self.config.to_chat_options(),
-      fn(chunk : @types.StreamChunk) {
-        self.emit_turn_event(StreamChunkReceived(chunk~))
-      },
-    ) catch {
-      e => {
-        let reason = e.to_string()
-        match self.pipeline_hook {
-          Some(hook) =>
-            self.record_secondary_hook(hook, ModelError(reason), "ModelError") catch {
-              _ =>
-                self.record_secondary_failure(
-                  "ModelError", "PipelineHook.on_stage", "AsyncHookDiagnosticError",
-                )
-            }
-          None => ()
-        }
-        raise @error.AgentError::Model(reason)
-      }
-    }
-    response = agent_snapshot_model_response(response)
-
-    self.emit_turn_event(
-      ModelResponseReceived(
-        message=response.message,
-        usage=response.usage,
-        reasoning_content=response.reasoning_content,
-      ),
-    )
-
-    match self.pipeline_hook {
-      Some(hook) =>
-        self.record_secondary_hook(
-          hook,
-          AfterModel(agent_snapshot_model_response(response)),
-          "AfterModel",
-        ) catch {
-          _ =>
-            self.record_secondary_failure(
-              "AfterModel", "PipelineHook.on_stage", "AsyncHookDiagnosticError",
-            )
-        }
-      None => ()
-    }
-
-    messages.push(response.message)
-
-    if response.tool_calls.is_empty() {
-      break
-    }
-
-    tool_round = tool_round + 1
-    if tool_round > self.config.max_tool_rounds {
-      raise @error.AgentError::ToolLoopExceeded
-    }
-
-    let approved_calls : Array[@types.ToolCall] = []
-    for tool_call in response.tool_calls {
-      self.emit_turn_event(ToolCallPending(tool_call))
-
-      let mut effective_call = tool_call
-      let mut skip_tool = false
-      match self.pipeline_hook {
-        Some(hook) =>
-          match
-            call_hook(
-              hook,
-              BeforeTool(agent_snapshot_tool_call(effective_call)),
-            ) {
-            Ok(BeforeTool(tc)) => effective_call = agent_snapshot_tool_call(tc)
-            Ok(_) => ()
-            Err(Deferred(reason~)) => {
-              self.emit_turn_event(
-                ToolCallDeferred(call=effective_call, reason~),
-              )
-              let rejection = @types.ToolResult::{
-                content: "Tool rejected (needs approval): " + reason,
-                structured: None,
-                is_error: true,
-              }
-              all_results.push(rejection)
-              messages.push(
-                build_tool_result_message(effective_call, rejection),
-              )
-              skip_tool = true
-              resolution_required = true
-            }
-            Err(Aborted(msg)) => raise @error.AgentError::HookAborted(msg)
-          }
-        None => ()
-      }
-      if skip_tool == false {
-        approved_calls.push(effective_call)
-      }
-    }
-
-    let mut exec_results : Array[Result[@types.ToolResult, @error.RuntimeError]] = []
-    if !approved_calls.is_empty() {
-      exec_results = @async.all(
-        approved_calls.map(fn(call) {
-          async fn() -> Result[@types.ToolResult, @error.RuntimeError] {
-            match self.tool_routing.tool_map.get(call.name) {
-              Some(provider) =>
-                Ok(
-                  agent_snapshot_tool_result(
-                    provider.execute(call.name, agent_snapshot_tool_call(call)),
-                  ),
-                ) catch {
-                  e => Err(e)
-                }
-              None =>
-                Err(
-                  @error.RuntimeError::UnknownTool(
-                    "No provider for tool '\{call.name}'",
-                  ),
-                )
-            }
-          }
-        }),
-      ) catch {
-        e =>
-          raise @error.AgentError::Runtime(
-            @error.RuntimeError::InvocationFailed(
-              "parallel tool execution failed: \{safe_error_label(e.to_string())}",
-            ),
-          )
-      }
-    }
-
-    for i = 0; i < approved_calls.length(); i = i + 1 {
-      let call = approved_calls[i]
-      match exec_results[i] {
-        Ok(result) => {
-          // T06-A: the event's is_error MUST be derived from the ToolResult,
-          // not hardcoded. A provider may return Ok(is_error=true) to signal
-          // a business-level failure; that status must propagate to observers
-          // and match what is fed to the model.
-          self.emit_turn_event(@types.TurnEvent::tool_call_result(call, result))
-          match self.pipeline_hook {
-            Some(hook) =>
-              self.record_secondary_hook(
-                hook,
-                AfterTool(
-                  agent_snapshot_tool_call(call),
-                  agent_snapshot_tool_result(result),
-                ),
-                "AfterTool",
-              ) catch {
-                _ =>
-                  self.record_secondary_failure(
-                    "AfterTool", "PipelineHook.on_stage", "AsyncHookDiagnosticError",
-                  )
-              }
-            None => ()
-          }
-          all_results.push(result)
-          messages.push(build_tool_result_message(call, result))
-        }
-        Err(e) => {
-          let error_result : @types.ToolResult = {
-            content: e.to_string(),
-            structured: None,
-            is_error: true,
-          }
-          self.emit_turn_event(
-            @types.TurnEvent::tool_call_result(call, error_result),
-          )
-          match self.pipeline_hook {
-            Some(hook) =>
-              self.record_secondary_hook(
-                hook,
-                ToolError(agent_snapshot_tool_call(call), e),
-                "ToolError",
-              ) catch {
-                _ =>
-                  self.record_secondary_failure(
-                    "ToolError", "PipelineHook.on_stage", "AsyncHookDiagnosticError",
-                  )
-              }
-            None => ()
-          }
-          all_results.push(error_result)
-          messages.push(build_tool_result_message(call, error_result))
-        }
-      }
-    }
-
-    if resolution_required {
-      break
-    }
-  }
-
-  // T05: final save uses the carried metadata, not a freshly-empty Map.
-  for store in self.sessions {
-    store.save(
-      current_session_id,
-      agent_snapshot_session(messages, current_metadata),
-    ) catch {
-      error =>
-        raise contextualize_session_error(
-          error, current_session_id, "final_save",
-        )
-    }
-  }
-
-  let result : @types.TurnResult = {
-    message: response.message,
-    tool_results: all_results,
-    final_session_id: current_session_id,
-  }
-
   result
 }

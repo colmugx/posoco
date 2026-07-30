@@ -14,7 +14,8 @@ async test "puppet/call_options_reach_model_effect" {
   )
   let catalog = fixture_empty_catalog()
   let config = canonical_puppet_config(
-    host.bind_catalog(catalog),
+    host as &@kernel.HostRuntime,
+    "fixture-model",
     catalog,
     journal,
     [],

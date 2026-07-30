@@ -11,10 +11,6 @@
 /// state through methods (`rendered_intents`, `next_request_response`, etc.)
 /// so the recording layout can evolve without breaking tests.
 
-// ──────────────────────────────────────────────────────────────────────────
-// RecordingUiPort
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 pub(all) struct RecordingUiPort {
   mut rendered : Array[@port.UiRender]

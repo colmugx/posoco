@@ -5,10 +5,6 @@
 /// These tests are whitebox (same-package, no prefix) so they exercise types as
 /// an extension author would see them.
 
-// ──────────────────────────────────────────────────────────────────────────
-// NoopUiPort
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 test "noop_ui_port_render_is_silent" {
   let ui = NoopUiPort()
@@ -44,10 +40,6 @@ async test "noop_ui_port_request_raises_unsupported" {
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// CompositeUiPort — render broadcast
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 test "composite_ui_port_render_broadcasts_in_order" {
   let a = RecordingUiPort()
@@ -66,10 +58,6 @@ test "composite_ui_port_render_broadcasts_in_order" {
   assert_eq(b.render_count(), 1)
   assert_eq(c.render_count(), 1)
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// CompositeUiPort — request falls through Unsupported
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 async test "composite_ui_port_request_first_supporting_wins" {
@@ -107,10 +95,6 @@ async test "composite_ui_port_request_propagates_non_unsupported_error" {
   assert_true(resp is UiResponse::Cancelled)
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// CompositeUiPort — descriptor aggregation
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 test "composite_ui_port_descriptor_concatenates_sources" {
   let with_one_source_a = RecordingUiPort()
@@ -131,10 +115,6 @@ test "composite_ui_port_descriptor_concatenates_sources" {
   assert_eq(d.autocomplete_sources[0].trigger, "/")
   assert_eq(d.autocomplete_sources[1].trigger, "@")
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// RecordingUiPort — script + record
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 test "recording_ui_port_records_render_in_order" {
@@ -224,10 +204,6 @@ test "recording_ui_port_rendered_in_slot_filters_by_slot" {
   let statuses = r.rendered_in_slot(UiSlot::Status)
   assert_eq(statuses.length(), 2)
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// UiRequest / UiResponse round-trip
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 test "ui_request_show_round_trip" {

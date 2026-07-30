@@ -40,7 +40,7 @@ pub struct TurnSnapshot {
   catalog_version : CatalogVersion
   /// Deep-copied canonical tool definitions. Mutating the original catalog
   /// after capture does not change this array.
-  tool_definitions : Array[CanonicalToolDef]
+  tool_definitions : Array[ToolDef]
   /// Model id used for this turn (provenance string; not a port ref).
   model_id : String
   /// Deep-copied opaque call options (Json). Mutations to the original Json
@@ -124,7 +124,7 @@ pub fn TurnSnapshot::capture(
     None => ()
   }
   // Deep-copy catalog definitions.
-  let copied_defs : Array[CanonicalToolDef] = []
+  let copied_defs : Array[ToolDef] = []
   for entry in input.catalog.entries() {
     copied_defs.push(entry.definition)
   }
@@ -288,9 +288,7 @@ pub fn TurnSnapshot::catalog_version(self : TurnSnapshot) -> CatalogVersion {
 /// Tool definitions owned by the snapshot. Mutating the returned array does
 /// not change the snapshot (the array is a fresh copy on each call, matching
 /// `RunState::pending_effects` convention).
-pub fn TurnSnapshot::tool_definitions(
-  self : TurnSnapshot,
-) -> Array[CanonicalToolDef] {
+pub fn TurnSnapshot::tool_definitions(self : TurnSnapshot) -> Array[ToolDef] {
   self.tool_definitions.copy()
 }
 

@@ -6,8 +6,7 @@
 ///|
 struct BoundaryProbeHost {
   journal : InMemoryJournal
-  model_results : Array[Result[AssistantCompletion, ModelFailure]]
-  mut definitions : Array[CanonicalToolDef]
+  model_results : Array[Result[Completion, ModelFailure]]
   mut model_index : Int
   append_counts_at_model_call : Array[Int]
 }
@@ -15,12 +14,11 @@ struct BoundaryProbeHost {
 ///|
 fn BoundaryProbeHost::new(
   journal : InMemoryJournal,
-  model_results : Array[Result[AssistantCompletion, ModelFailure]],
+  model_results : Array[Result[Completion, ModelFailure]],
 ) -> BoundaryProbeHost {
   {
     journal,
     model_results: model_results.copy(),
-    definitions: [],
     model_index: 0,
     append_counts_at_model_call: [],
   }
@@ -34,47 +32,31 @@ fn BoundaryProbeHost::append_counts_at_model_call(
 }
 
 ///|
-pub impl ModelBinding for BoundaryProbeHost with fn model_id(
-  _self : BoundaryProbeHost,
-) -> ModelId {
-  ModelId::unchecked("boundary-probe")
-}
-
-///|
-pub impl ModelBinding for BoundaryProbeHost with fn complete(
+pub impl @kernel.HostRuntime for BoundaryProbeHost with fn call_model(
   self,
-  _messages : Array[CanonicalMessage],
-  _tool_definitions : Array[CanonicalToolDef],
+  messages : Array[Message],
+  _tool_definitions : Array[ToolDef],
   _call_options : Json,
   _on_chunk : HostChunkCallback?,
-) -> Result[AssistantCompletion, ModelFailure] {
+) -> Result[ModelCallResult, ModelFailure] {
   self.append_counts_at_model_call.push(self.journal.append_count())
   let index = self.model_index
   self.model_index = index + 1
   if index >= self.model_results.length() {
     Err(Runtime(reason="boundary probe exhausted model results"))
   } else {
-    self.model_results[index]
+    match self.model_results[index] {
+      Ok(completion) =>
+        Ok(ModelCallResult::{ completion, processed_messages: messages })
+      Err(failure) => Err(failure)
+    }
   }
 }
 
 ///|
-pub impl ToolBinding for BoundaryProbeHost with fn owner_id(
-  _self : BoundaryProbeHost,
-) -> OwnerId {
-  OwnerId::unchecked("fixture")
-}
-
-///|
-pub impl ToolBinding for BoundaryProbeHost with fn definitions(
-  self : BoundaryProbeHost,
-) -> Array[CanonicalToolDef] {
-  self.definitions.copy()
-}
-
-///|
-pub impl ToolBinding for BoundaryProbeHost with fn execute(
+pub impl @kernel.HostRuntime for BoundaryProbeHost with fn execute_tool(
   _self,
+  _owner_id : OwnerId,
   call_id : CallId,
   _tool_name : ToolName,
   _arguments : Json,
@@ -83,12 +65,27 @@ pub impl ToolBinding for BoundaryProbeHost with fn execute(
 }
 
 ///|
-fn BoundaryProbeHost::bind_catalog(
+pub impl @kernel.HostRuntime for BoundaryProbeHost with fn cancel_effects(
   self : BoundaryProbeHost,
-  catalog : ToolCatalogSnapshot,
-) -> CanonicalHost raise CanonicalHostCompositionError {
-  self.definitions = catalog.definitions()
-  CanonicalHost::from_catalog(self, catalog, [self])
+  effect_ids : Array[EffectId],
+  _reason : CancelReason,
+) -> Array[(EffectId, CancelDisposition)] {
+  ignore(self)
+  effect_ids.map(id => (id, NotPropagated))
+}
+
+///|
+/// M3.5: compact stub — BoundaryProbeHost does not exercise compact.
+pub impl @kernel.HostRuntime for BoundaryProbeHost with fn compact(
+  self : BoundaryProbeHost,
+  _messages : Array[Message],
+  _call_options : Json,
+  _trigger : @kernel.CompactTrigger,
+) -> Result[CompactResult, ModelFailure] {
+  ignore(self)
+  Err(
+    ModelFailure::Parse(reason="BoundaryProbeHost does not implement compact"),
+  )
 }
 
 ///|
@@ -101,7 +98,8 @@ async test "puppet/boundary_commits_intent_before_each_model_effect" {
   let catalog = fixture_tool_catalog("echo")
   let puppet = Puppet(
     canonical_puppet_config(
-      host.bind_catalog(catalog),
+      host as &@kernel.HostRuntime,
+      "boundary-probe",
       catalog,
       journal,
       [],
@@ -110,8 +108,7 @@ async test "puppet/boundary_commits_intent_before_each_model_effect" {
       Json::null(),
     ),
   )
-
-  assert_true(fixture_prompt(puppet, "boundary_intent") is Accepted(_))
+  assert_true(fixture_prompt(puppet, "boundary") is Accepted(_))
   // Initial InputAccepted boundary exists before the first model effect. The
   // final tool outcome and second model intent share the third boundary.
   assert_eq(host.append_counts_at_model_call(), [1, 3])

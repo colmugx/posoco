@@ -8,15 +8,10 @@
 /// These tests are the END-TO-END integration layer for the M1 Kernel.
 /// The reducer's per-transition tests (kernel_reducer_wbtest.mbt) cover
 /// individual state changes; these tests verify the whole mechanical loop.
-
-// ──────────────────────────────────────────────────────────────────────────
-// Fixtures
-// ──────────────────────────────────────────────────────────────────────────
-
 fn golden_catalog() -> ToolCatalogSnapshot raise CatalogCompositionError {
   let builder = ToolCatalogBuilder()
   let _ = builder.add(
-    CanonicalToolDef(
+    ToolDef(
       name=ToolName::unchecked("read"),
       description="read file",
       input_schema=Json::object(
@@ -44,7 +39,7 @@ fn golden_catalog() -> ToolCatalogSnapshot raise CatalogCompositionError {
     ),
   )
   let _ = builder.add(
-    CanonicalToolDef(
+    ToolDef(
       name=ToolName::unchecked("write"),
       description="write file",
       input_schema=Json::object(
@@ -76,8 +71,8 @@ fn golden_start() -> StartPayload {
 }
 
 ///|
-fn completion_no_tools(text : String) -> AssistantCompletion {
-  AssistantCompletion(
+fn completion_no_tools(text : String) -> Completion {
+  Completion(
     content=[Text(text)],
     tool_calls=[],
     reasoning=None,
@@ -91,8 +86,8 @@ fn completion_with_tool_call(
   call_id : String,
   name : String,
   args : Json,
-) -> AssistantCompletion {
-  AssistantCompletion(
+) -> Completion {
+  Completion(
     content=[Text("calling")],
     tool_calls=[
       {
@@ -106,10 +101,6 @@ fn completion_with_tool_call(
     usage=None,
   )
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// C-HAPPY-NO-TOOLS (golden)
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 test "GOLDEN C-HAPPY-NO-TOOLS: Start → Model → Completed" {
@@ -134,10 +125,6 @@ test "GOLDEN C-HAPPY-NO-TOOLS: Start → Model → Completed" {
     _ => fail("expected RunCompleted terminal event")
   }
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// C-HAPPY-ONE-TOOL (golden)
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 test "GOLDEN C-HAPPY-ONE-TOOL: Model → Tool → Model → Completed" {
@@ -183,10 +170,6 @@ test "GOLDEN C-HAPPY-ONE-TOOL: Model → Tool → Model → Completed" {
   assert_eq(trace.steps().length(), 3)
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// C-MODEL-UNKNOWN-TOOL (golden)
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 test "GOLDEN C-MODEL-UNKNOWN-TOOL: NotExecuted, zero ExecuteTool, then re-prompt" {
   let catalog = golden_catalog()
@@ -227,10 +210,6 @@ test "GOLDEN C-MODEL-UNKNOWN-TOOL: NotExecuted, zero ExecuteTool, then re-prompt
   assert_eq(kinds, "CallModel,CallModel")
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// C-MODEL-TRANSPORT-FAILURE (golden)
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 test "GOLDEN C-MODEL-TRANSPORT-FAILURE: ModelFailed → Terminal(Failed)" {
   let catalog = golden_catalog()
@@ -247,10 +226,6 @@ test "GOLDEN C-MODEL-TRANSPORT-FAILURE: ModelFailed → Terminal(Failed)" {
     _ => fail("expected Failed(ModelTransport)")
   }
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// C-TOOL-RUNTIME-FAILURE (golden, non-terminal)
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 test "GOLDEN C-TOOL-RUNTIME-FAILURE: tool runtime error → Run continues" {
@@ -295,10 +270,6 @@ test "GOLDEN C-TOOL-RUNTIME-FAILURE: tool runtime error → Run continues" {
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// C-TERMINAL-EXACTLY-ONCE (golden invariant)
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 test "GOLDEN C-TERMINAL-EXACTLY-ONCE: every Run ends with exactly 1 terminal event" {
   let catalog = golden_catalog()
@@ -311,10 +282,6 @@ test "GOLDEN C-TERMINAL-EXACTLY-ONCE: every Run ends with exactly 1 terminal eve
   let terminals = trace.events().filter(fn(e) { e.is_terminal() })
   assert_eq(terminals.length(), 1)
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// C-MISSING-OWNER (golden — invariant failure via scripted)
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 test "GOLDEN C-INVARIANT-MISSING-OWNER: scripted MissingOwner → Terminal(Failed)" {
@@ -350,10 +317,6 @@ test "GOLDEN C-INVARIANT-MISSING-OWNER: scripted MissingOwner → Terminal(Faile
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// C-MULTI-TOOL PARALLEL (golden — both tools in one batch)
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 test "GOLDEN C-HAPPY-MULTI-TOOL: two parallel tools in one batch" {
   let catalog = golden_catalog()
@@ -362,7 +325,7 @@ test "GOLDEN C-HAPPY-MULTI-TOOL: two parallel tools in one batch" {
     .on(
       EffectId::first(),
       ScriptedModelCompleted(
-        AssistantCompletion(
+        Completion(
           content=[Text("calling both")],
           tool_calls=[
             {
@@ -434,7 +397,7 @@ test "GOLDEN C-HAPPY-REVERSE-TOOL-COMPLETION: terminal results preserve call ord
     CallModel(effect_id~, payload~) => (effect_id, payload.model_step_id)
     _ => fail("expected initial CallModel effect")
   }
-  let completion = AssistantCompletion(
+  let completion = Completion(
     content=[Text("calling")],
     tool_calls=[
       {
@@ -459,6 +422,7 @@ test "GOLDEN C-HAPPY-REVERSE-TOOL-COMPLETION: terminal results preserve call ord
       effect_id: model_effect_id,
       model_step_id,
       completion,
+      processed_messages: waiting.next_state().transcript().messages_snapshot(),
     }),
   )
   let tools_state = tools_out.next_state()
@@ -480,6 +444,8 @@ test "GOLDEN C-HAPPY-REVERSE-TOOL-COMPLETION: terminal results preserve call ord
     ToolCompleted(payload={
       effect_id: second_effect_id,
       call_id: second_call_id,
+      tool_name: ToolName::unchecked("read"),
+      arguments: Json::null(),
       outcome: Success(content="second", structured=None),
     }),
   )
@@ -489,6 +455,8 @@ test "GOLDEN C-HAPPY-REVERSE-TOOL-COMPLETION: terminal results preserve call ord
     ToolCompleted(payload={
       effect_id: first_effect_id,
       call_id: first_call_id,
+      tool_name: ToolName::unchecked("read"),
+      arguments: Json::null(),
       outcome: Success(content="first", structured=None),
     }),
   )
@@ -509,6 +477,10 @@ test "GOLDEN C-HAPPY-REVERSE-TOOL-COMPLETION: terminal results preserve call ord
       effect_id: final_effect_id,
       model_step_id: final_step_id,
       completion: completion_no_tools("done"),
+      processed_messages: final_waiting
+      .next_state()
+      .transcript()
+      .messages_snapshot(),
     }),
   ).next_state()
   match terminal_state.outcome() {
@@ -529,10 +501,6 @@ test "GOLDEN C-HAPPY-REVERSE-TOOL-COMPLETION: terminal results preserve call ord
     _ => fail("expected terminal Completed outcome")
   }
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// C-UNSCRIPTED-EFFECT (fixture setup must fail loudly)
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 test "GOLDEN C-UNSCRIPTED-EFFECT: missing script raises fixture error" {

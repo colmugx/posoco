@@ -6,140 +6,92 @@
 /// next state, declared effects and emitted events are deterministic. The
 /// reducer never reads a clock; deadlines and budgets arrive as inputs.
 
-// ──────────────────────────────────────────────────────────────────────────
-// Start — the only legal input against `Initializing`
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 /// The initial input that drives a Run out of `Initializing`. Carries the
 /// initial transcript seed (system prompt, user message, etc.) and the
 /// catalog version to use.
 pub(all) struct StartPayload {
-  initial_messages : Array[CanonicalMessage]
+  initial_messages : Array[Message]
   catalog_version : CatalogVersion
 } derive(Eq, Debug)
 
-// ──────────────────────────────────────────────────────────────────────────
-// ModelCompleted payload — the canonical assistant completion
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
-/// A successful model step completion. The reducer correlates this to the
-/// pending `CallModel` effect via `effect_id` and to the model step via
-/// `model_step_id`. Both must match.
+/// A successful model step completion. Correlates to pending `CallModel` via `effect_id`.
+/// `processed_messages` carries the transcript actually sent to the provider so the pump can write it back at commit boundary.
 pub(all) struct ModelCompletedPayload {
   effect_id : EffectId
   model_step_id : ModelStepId
-  completion : AssistantCompletion
+  completion : Completion
+  processed_messages : Array[Message]
 } derive(Eq, Debug)
 
-// ──────────────────────────────────────────────────────────────────────────
-// ModelFailed payload
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
-/// A failed model step. The reducer transitions to `Terminal(Failed)` with
-/// the matching `FailureReason` variant.
+/// A failed model step. The reducer transitions to `Terminal(Failed)`.
 pub(all) struct ModelFailedPayload {
   effect_id : EffectId
   model_step_id : ModelStepId
   failure : ModelFailure
 } derive(Eq, Debug)
 
-// ──────────────────────────────────────────────────────────────────────────
-// ToolCompleted payload
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
-/// A successful or business-failed tool outcome. Runtime failures arrive as
-/// `ToolFailed` instead. The reducer correlates this to the pending
-/// `ExecuteTool` effect via `effect_id`; the `call_id` must also match the
-/// effect's payload.
+/// A successful or business-failed tool outcome. Runtime failures arrive as `ToolFailed`.
+/// Correlates to pending `ExecuteTool` via `effect_id`; `call_id` must match.
 pub(all) struct ToolCompletedPayload {
   effect_id : EffectId
   call_id : CallId
+  tool_name : ToolName
+  arguments : Json
   outcome : ToolOutcome
 } derive(Eq, Debug)
 
-// ──────────────────────────────────────────────────────────────────────────
-// ToolFailed payload — adapter runtime failure
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
-/// The adapter could not produce a `ToolOutcome` (e.g. provider raised a
-/// `RuntimeError`). The reducer converts this into a canonical
-/// `ToolOutcome::RuntimeFailure` and continues the Run — non-terminal.
-///
-/// Kernel-invariant failures (MissingOwner, StaleSnapshot) also arrive
-/// through this variant, carrying the matching `InvariantCategory`; the
-/// reducer then transitions to `Terminal(Failed)` (ADR §2.4). This is the
-/// single channel by which executor-side invariants reach the reducer.
+/// Adapter runtime failure or kernel-invariant failure. Runtime → `ToolOutcome::RuntimeFailure`
+/// and continues; invariant → `Terminal(Failed)`.
 pub(all) struct ToolFailedPayload {
   effect_id : EffectId
   call_id : CallId
-  /// Non-invariant runtime failure → reducer builds `RuntimeFailure` outcome.
+  tool_name : ToolName
+  arguments : Json
+  reason : String
+  /// Non-invariant → builds `RuntimeFailure` outcome.
   runtime : ModelFailure?
-  /// Invariant failure → reducer transitions to `Terminal(Failed)` with
-  /// `InvariantViolation(category)`.
+  /// Invariant → transitions to `Terminal(Failed)`.
   invariant_failure : InvariantCategory?
 } derive(Eq, Debug)
 
-// ──────────────────────────────────────────────────────────────────────────
-// Cancel / Deadline / Budget inputs
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
-/// Host or adapter requested cancellation. The reducer applies ADR §2.5 race
-/// rules: if the cancel arrives strictly before a queued completion, the
-/// cancel wins; otherwise the completion wins and the cancel becomes a
-/// post-terminal rejection.
+/// Host or adapter requested cancellation. ADR §2.5 race rules apply.
 pub(all) struct CancelRequestedPayload {
   detail : String?
 } derive(Eq, Debug)
 
 ///|
-/// Deadline reached. Always wins against queued completions for the same
-/// reducer tick (ADR §2.5 rule 2).
+/// Deadline reached. Wins against queued completions (ADR §2.5 rule 2).
 pub(all) struct DeadlineReachedPayload {
-  /// Opaque reason for diagnostics.
   detail : String
 } derive(Eq, Debug)
 
 ///|
-/// External observation that a budget dimension was crossed. M1 fakes use
-/// this for token tracking; rounds/steps/calls are tracked internally by
-/// the reducer.
+/// External observation that a budget dimension was crossed.
 pub(all) struct BudgetExhaustedPayload {
   dimension : BudgetDimension
   consumed : Int
   limit : Int
 } derive(Eq, Debug)
 
-// ──────────────────────────────────────────────────────────────────────────
-// Suspension / Resume inputs
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
-/// Suspend requested. Only legal from `AwaitingModel` with the single
-/// `CallModel` effect pending (ADR §2.6). The reducer drops the pending
-/// effect (emitting a `CancelOutstanding` for it), emits `RunSuspended`, and
-/// enters `Suspended` with zero pending effects.
+/// Suspend requested. Only legal from `AwaitingModel` with a single pending `CallModel` (ADR §2.6).
+/// Drops the pending effect, emits `CancelOutstanding`, enters `Suspended`.
 pub(all) struct SuspendRequestedPayload {
   requirement : SuspensionRequirement
 } derive(Eq, Debug)
 
 ///|
-/// Resume. Only legal from `Suspended`. The reducer emits `RunResumed` and
-/// transitions back to `ReadyForModel` to re-issue the model step.
+/// Resume. Only legal from `Suspended`. Emits `RunResumed`, transitions to `ReadyForModel`.
 pub(all) struct ResumePayload {
-  /// Opaque payload the host wants to inject into the run after resume. The
-  /// Kernel stores it but does not interpret it in M1.
+  /// Opaque payload the host injects after resume.
   payload : Json
 } derive(Eq, Debug)
-
-// ──────────────────────────────────────────────────────────────────────────
-// RunInput ADT
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 /// Discriminator for RunInput variants. The reducer pattern-matches on this

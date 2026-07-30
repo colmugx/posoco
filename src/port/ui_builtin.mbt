@@ -1,22 +1,11 @@
 ///|
-/// Built-in UiPort implementations: a no-op default and a fan-out composite.
-///
-/// `NoopUiPort` is the safe default — `render` is dropped, `request` raises
-/// `Unsupported` so callers see clearly that no UI is wired. `CompositeUiPort`
-/// broadcasts `render` to every contributor and routes `request` to the first
-/// contributor that does not raise `Unsupported`.
+/// Built-in UiPort implementations: no-op default and fan-out composite.
 
-// ──────────────────────────────────────────────────────────────────────────
 // NoopUiPort
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
-/// Default UiPort for hosts that have no UI (headless test, batch job, etc.).
-/// `request` raises `UiError::Unsupported` so a `CompositeUiPort` can
-/// fall through, and so callers cannot mistake "no UI" for "user said no".
-pub(all) struct NoopUiPort {
-  // stateless
-}
+/// Default UiPort for headless hosts. `request` raises `Unsupported`.
+pub(all) struct NoopUiPort {}
 
 ///|
 pub fn NoopUiPort::NoopUiPort() -> NoopUiPort {
@@ -30,8 +19,7 @@ pub impl UiPort for NoopUiPort with fn ui_descriptor(_self) -> UiDescriptor {
 
 ///|
 pub impl UiPort for NoopUiPort with fn render(_self, _intent) -> Unit {
-  // Drop silently. Logs/telemetry are host concerns; the core must not
-  // second-guess the host's rendering policy.
+
 }
 
 ///|
@@ -40,25 +28,13 @@ pub impl UiPort for NoopUiPort with fn request(_self, _req) -> UiResponse {
 }
 
 ///|
-/// Expose UiPort methods on NoopUiPort for dot-syntax callers.
 pub extend NoopUiPort with UiPort::{ui_descriptor, render, request}
 
-// ──────────────────────────────────────────────────────────────────────────
 // CompositeUiPort
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
-/// Fan-out UiPort over multiple contributors. `render` is delivered to every
-/// contributor in registration order. `request` is tried against each
-/// contributor in order; the first one that returns a response wins, and the
-/// first one that raises a non-`Unsupported` error short-circuits the chain.
-///
-/// If every contributor raises `Unsupported`, the composite raises
-/// `Unsupported` itself so a nested composite can fall through.
-///
-/// De-duplication of same-key renders is explicitly *not* done here. Key
-/// namespaces are owned by extensions; the host decides whether two
-/// contributors rendering the same key collide, replace, or stack.
+/// Fan-out UiPort: `render` delivers to every contributor; `request` tries
+/// each in order, first non-`Unsupported` wins.
 pub(all) struct CompositeUiPort {
   contributors : Array[&UiPort]
 }
@@ -76,9 +52,7 @@ pub fn CompositeUiPort::contributors(self : CompositeUiPort) -> Array[&UiPort] {
 }
 
 ///|
-/// Aggregate descriptors by concatenating autocomplete sources in registration
-/// order. Duplicate triggers across contributors are kept — the host decides
-/// how to merge them.
+/// Concatenate autocomplete sources in registration order.
 pub impl UiPort for CompositeUiPort with fn ui_descriptor(self) -> UiDescriptor {
   let sources : Array[AutocompleteSource] = []
   for c in self.contributors {
@@ -91,9 +65,7 @@ pub impl UiPort for CompositeUiPort with fn ui_descriptor(self) -> UiDescriptor 
 }
 
 ///|
-/// Broadcast to every contributor in registration order. Best-effort: a
-/// contributor raising from `render` is observable but cannot abort the
-/// broadcast (render is one-way intent, not a request).
+/// Broadcast to every contributor in registration order. Best-effort.
 pub impl UiPort for CompositeUiPort with fn render(self, intent) -> Unit {
   for c in self.contributors {
     c.render(intent)
@@ -101,9 +73,8 @@ pub impl UiPort for CompositeUiPort with fn render(self, intent) -> Unit {
 }
 
 ///|
-/// Try each contributor in order. First non-`Unsupported` result wins.
-/// First non-`Unsupported` error short-circuits. All-`Unsupported` raises
-/// `Unsupported`.
+/// Try each contributor in order. First non-`Unsupported` result wins;
+/// all-`Unsupported` raises `Unsupported`.
 pub impl UiPort for CompositeUiPort with fn request(self, req) -> UiResponse {
   let mut last_unsupported_detail = "no contributors"
   for c in self.contributors {
@@ -124,5 +95,4 @@ pub impl UiPort for CompositeUiPort with fn request(self, req) -> UiResponse {
 }
 
 ///|
-/// Expose UiPort methods on CompositeUiPort for dot-syntax callers.
 pub extend CompositeUiPort with UiPort::{ui_descriptor, render, request}

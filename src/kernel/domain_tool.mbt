@@ -6,10 +6,6 @@
 /// reducer/executor never re-resolves owners from a separate routing cache.
 /// Tool execution policy is explicit data — not inferred from the tool name.
 
-// ──────────────────────────────────────────────────────────────────────────
-// Execution policy
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 /// How a tool may be batched with other tools in the same model completion.
 ///
@@ -35,10 +31,6 @@ pub impl Show for ExecutionPolicy with fn to_string(self : ExecutionPolicy) -> S
     Exclusive => "Exclusive"
   }
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// Tool definition
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 /// Stable identifier for the provider that owns a tool. The Kernel uses this
@@ -94,7 +86,7 @@ pub impl Show for CatalogVersion with fn to_string(self : CatalogVersion) -> Str
 ///|
 /// A single tool's definition as the model and the executor see it. Owned by
 /// the catalog snapshot (T05), not by individual providers.
-pub(all) struct CanonicalToolDef {
+pub(all) struct ToolDef {
   name : ToolName
   description : String
   input_schema : Json
@@ -108,30 +100,26 @@ pub(all) struct CanonicalToolDef {
 ///|
 /// Internal builder used by the catalog. Most fields are required; provenance
 /// is optional. The catalog builder (T05) validates the schema and policy
-/// before constructing this, so by the time a `CanonicalToolDef` reaches the
+/// before constructing this, so by the time a `ToolDef` reaches the
 /// reducer, it has already passed composition.
-pub fn CanonicalToolDef::CanonicalToolDef(
+pub fn ToolDef::ToolDef(
   name~ : ToolName,
   description~ : String,
   input_schema~ : Json,
   owner~ : OwnerId,
   policy~ : ExecutionPolicy,
   provenance~ : String?,
-) -> CanonicalToolDef {
+) -> ToolDef {
   { name, description, input_schema, owner, policy, provenance }
 }
 
 ///|
-pub impl Show for CanonicalToolDef with fn to_string(self : CanonicalToolDef) -> String {
+pub impl Show for ToolDef with fn to_string(self : ToolDef) -> String {
   "Tool(\{self.name.to_string()} @ \{self.owner.to_string()}, policy=\{self.policy.to_string()})"
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Schema validation outcome (used by reducer to build NotExecuted outcomes)
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
-/// Result of validating parsed tool arguments against a `CanonicalToolDef`'s
+/// Result of validating parsed tool arguments against a `ToolDef`'s
 /// input schema. The validator (T05) returns this; the reducer (T03) maps
 /// `Err` into a `ToolOutcome::NotExecuted(SchemaMismatch)` carrying the
 /// original call id.

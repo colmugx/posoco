@@ -1,31 +1,6 @@
 ///|
-/// Manifest aggregation — turns `Array[&Extension]` into a single
-/// `AggregatedPorts` value that the agent constructor consumes.
-///
-/// This is the single composition-time step that decides which extensions
-/// contribute which ports. After aggregation the agent never re-visits
-/// manifests; the resulting `AggregatedPorts` is what the internal Puppet
-/// consumes directly.
-///
-/// Hard-fail semantics (preserved from 0.5.x):
-/// - missing ModelPort → `CompositionError::MissingModel`
-/// - more than one ModelPort → `MultipleModels` (multi-model routing is an
-///   in-extension concern, e.g. posoco-ext-llm)
-/// - tool name collision across extensions → `ToolCollision`
-/// - slash-command id collision → `CommandCollision`
-/// - empty extension list → `EmptyManifests`
-/// - extension returning manifest with empty id → `ManifestSchemaError`
-///
-/// Concat semantics (preserved from 0.5.x per-port behavior):
-/// - tools/sessions/observers/compressors/hooks/memory/lifecycle/commands/
-///   prompt_contributors are concatenated in extension order
-/// - ui: 0 → NoopUiPort, 1 → passthrough, 2+ → CompositeUiPort
-/// - lifecycle ordering: startup runs in aggregate order, shutdown in reverse
-///   (enforced by the agent's lifecycle driver, not here)
-
-// ──────────────────────────────────────────────────────────────────────────
-// AggregatedPorts — the result of aggregation
-// ──────────────────────────────────────────────────────────────────────────
+/// Manifest aggregation — merges `Array[&Extension]` into a single
+/// `AggregatedPorts` value for the agent constructor.
 
 ///|
 /// Flattened port bundle ready for the agent constructor. The `model` field
@@ -36,8 +11,9 @@ pub(all) struct AggregatedPorts {
   tools : Array[&@port.ToolProvider]
   sessions : Array[&@port.SessionStore]
   observers : Array[&@port.Observer]
-  compressors : Array[&@port.Compressor]
-  hooks : Array[&@port.PipelineHook]
+  pre_model_hooks : Array[&@port.PreModelHook]
+  pre_tool_hooks : Array[&@port.PreToolHook]
+  post_event_hooks : Array[&@port.PostEventHook]
   memory : Array[&@port.MemoryPort]
   lifecycle : Array[&@port.Lifecycle]
   commands : Array[&@port.CommandPort]
@@ -48,17 +24,9 @@ pub(all) struct AggregatedPorts {
   contributor_ids : Array[String]
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// aggregate_extensions — the entry point
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 /// Aggregate every extension's manifest into one port bundle.
-///
-/// Order matters: extension arrays are concatenated in the order extensions
-/// appear in the input array, and within each manifest in the order the
-/// manifest lists them. Tool/command collisions name the offending extension
-/// ids in their error variants.
+/// Order follows extension array order; collisions fail fast.
 pub fn aggregate_extensions(
   exts : Array[&@port.Extension],
 ) -> AggregatedPorts raise @error.CompositionError {
@@ -72,8 +40,9 @@ pub fn aggregate_extensions(
   let tool_manifests : Map[String, Array[String]] = Map::from_array([])
   let sessions : Array[&@port.SessionStore] = []
   let observers : Array[&@port.Observer] = []
-  let compressors : Array[&@port.Compressor] = []
-  let hooks : Array[&@port.PipelineHook] = []
+  let pre_model_hooks : Array[&@port.PreModelHook] = []
+  let pre_tool_hooks : Array[&@port.PreToolHook] = []
+  let post_event_hooks : Array[&@port.PostEventHook] = []
   let memory : Array[&@port.MemoryPort] = []
   let lifecycle : Array[&@port.Lifecycle] = []
   let commands : Array[&@port.CommandPort] = []
@@ -94,8 +63,9 @@ pub fn aggregate_extensions(
       manifest.tools.length() +
       manifest.sessions.length() +
       manifest.observers.length() +
-      manifest.compressors.length() +
-      manifest.hooks.length() +
+      manifest.pre_model_hooks.length() +
+      manifest.pre_tool_hooks.length() +
+      manifest.post_event_hooks.length() +
       manifest.memory.length() +
       manifest.lifecycle.length() +
       manifest.commands.length() +
@@ -112,15 +82,15 @@ pub fn aggregate_extensions(
     // tools: collect + collision check by tool name
     for provider in manifest.tools {
       for tool_def in provider.list_tools() {
-        let name = tool_def.name
-        let source_label = match tool_def.source {
+        let name = tool_def.name.to_string()
+        let source_label = match tool_def.provenance {
           Some(s) if s != "" => s
           _ =>
-            "ToolDef.source is empty for tool '" +
+            "ToolDef.provenance is empty for tool '" +
             name +
             "' in manifest '" +
             mid +
-            "' (set ToolDef.source to a stable provider id to disambiguate)"
+            "' (set ToolDef.provenance to a stable provider id to disambiguate)"
         }
         if tool_manifests.contains(name) {
           let existing = tool_manifests[name]
@@ -163,11 +133,14 @@ pub fn aggregate_extensions(
     for o in manifest.observers {
       observers.push(o)
     }
-    for c in manifest.compressors {
-      compressors.push(c)
+    for h in manifest.pre_model_hooks {
+      pre_model_hooks.push(h)
     }
-    for h in manifest.hooks {
-      hooks.push(h)
+    for h in manifest.pre_tool_hooks {
+      pre_tool_hooks.push(h)
+    }
+    for h in manifest.post_event_hooks {
+      post_event_hooks.push(h)
     }
     for m in manifest.memory {
       memory.push(m)
@@ -209,8 +182,9 @@ pub fn aggregate_extensions(
     tools,
     sessions,
     observers,
-    compressors,
-    hooks,
+    pre_model_hooks,
+    pre_tool_hooks,
+    post_event_hooks,
     memory,
     lifecycle,
     commands,

@@ -18,7 +18,7 @@
 fn snapshot_catalog() -> ToolCatalogSnapshot raise CatalogCompositionError {
   let builder = ToolCatalogBuilder()
   let _ = builder.add(
-    CanonicalToolDef(
+    ToolDef(
       name=ToolName::unchecked("read"),
       description="read a file",
       input_schema=Json::object(
@@ -137,7 +137,7 @@ test "puppet_snapshot/mutation_of_original_array_does_not_affect_snapshot" {
   let defs2 = snap.tool_definitions()
   // Pushing to defs1 must not affect defs2 (proves copy semantics).
   defs1.push(
-    CanonicalToolDef(
+    ToolDef(
       name=ToolName::unchecked("injected"),
       description="",
       input_schema=Json::null(),

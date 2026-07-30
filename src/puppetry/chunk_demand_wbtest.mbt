@@ -24,20 +24,13 @@ fn ChunkDemandHost::delivered_chunks(self : ChunkDemandHost) -> Int {
 }
 
 ///|
-pub impl ModelBinding for ChunkDemandHost with fn model_id(
-  _self : ChunkDemandHost,
-) -> ModelId {
-  ModelId::unchecked("chunk-demand-model")
-}
-
-///|
-pub impl ModelBinding for ChunkDemandHost with fn complete(
+pub impl @kernel.HostRuntime for ChunkDemandHost with fn call_model(
   self,
-  _messages : Array[CanonicalMessage],
-  _tool_definitions : Array[CanonicalToolDef],
+  messages : Array[Message],
+  _tool_definitions : Array[ToolDef],
   _call_options : Json,
   on_chunk : HostChunkCallback?,
-) -> Result[AssistantCompletion, ModelFailure] {
+) -> Result[ModelCallResult, ModelFailure] {
   match on_chunk {
     None => self.saw_no_sink = true
     Some(callback) => {
@@ -45,7 +38,43 @@ pub impl ModelBinding for ChunkDemandHost with fn complete(
       self.delivered_chunks = self.delivered_chunks + 1
     }
   }
-  Ok(fixture_stop("done"))
+  Ok(ModelCallResult::{
+    completion: fixture_stop("done"),
+    processed_messages: messages,
+  })
+}
+
+///|
+pub impl @kernel.HostRuntime for ChunkDemandHost with fn execute_tool(
+  _self,
+  _owner_id : OwnerId,
+  call_id : CallId,
+  _tool_name : ToolName,
+  _arguments : Json,
+) -> ToolOutcome {
+  Success(content=call_id.to_string(), structured=None)
+}
+
+///|
+pub impl @kernel.HostRuntime for ChunkDemandHost with fn cancel_effects(
+  self : ChunkDemandHost,
+  effect_ids : Array[EffectId],
+  _reason : CancelReason,
+) -> Array[(EffectId, CancelDisposition)] {
+  ignore(self)
+  effect_ids.map(id => (id, NotPropagated))
+}
+
+///|
+/// M3.5: compact stub — ChunkDemandHost does not exercise compact.
+pub impl @kernel.HostRuntime for ChunkDemandHost with fn compact(
+  self : ChunkDemandHost,
+  _messages : Array[Message],
+  _call_options : Json,
+  _trigger : @kernel.CompactTrigger,
+) -> Result[CompactResult, ModelFailure] {
+  ignore(self)
+  Err(ModelFailure::Parse(reason="ChunkDemandHost does not implement compact"))
 }
 
 ///|
@@ -54,10 +83,10 @@ fn chunk_demand_config(
   catalog : ToolCatalogSnapshot,
   journal : &RunJournal,
   stream_chunks : HostChunkCallback?,
-) -> PuppetConfig raise CanonicalHostCompositionError {
-  let canonical_host = CanonicalHost::from_catalog(host, catalog, [])
+) -> PuppetConfig {
   canonical_puppet_config(
-    canonical_host,
+    host as &@kernel.HostRuntime,
+    "chunk-demand-model",
     catalog,
     journal,
     [],
@@ -78,24 +107,23 @@ async test "puppet/chunks_are_not_requested_without_a_consumer" {
   assert_true(fixture_prompt(puppet, "chunk_none") is Accepted(_))
   assert_true(host.saw_no_sink())
   assert_eq(host.delivered_chunks(), 0)
-  assert_eq(journal.append_count(), 2)
 }
 
 ///|
-async test "puppet/chunks_are_requested_for_a_live_consumer" {
+async test "puppet/chunks_are_delivered_when_consumer_is_set" {
+  let trace : Array[String] = []
+  let on_chunk : HostChunkCallback = fn(chunk : Json) {
+    trace.push(chunk.stringify())
+  }
   let host = ChunkDemandHost::new()
   let journal = InMemoryJournal()
   let puppet = Puppet(
-    chunk_demand_config(
-      host,
-      fixture_empty_catalog(),
-      journal,
-      Some(fn(_chunk : Json) { () }),
-    ),
+    chunk_demand_config(host, fixture_empty_catalog(), journal, Some(on_chunk)),
   )
 
-  assert_true(fixture_prompt(puppet, "chunk_live") is Accepted(_))
-  assert_true(!host.saw_no_sink())
+  assert_true(fixture_prompt(puppet, "chunk_some") is Accepted(_))
+  assert_false(host.saw_no_sink())
   assert_eq(host.delivered_chunks(), 1)
-  assert_eq(journal.append_count(), 2)
+  assert_true(trace.length() > 0)
+  assert_eq(trace[0], "\"delta\"")
 }

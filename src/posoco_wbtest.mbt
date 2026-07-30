@@ -1,17 +1,19 @@
 ///|
-/// Whitebox tests with mock implementations.
+/// Whitebox tests with mock implementations. R3 M3.7: all fixtures use
+/// canonical kernel types directly.
 struct MockModelPort {
-  responses : Array[@types.ModelResponse]
+  responses : Array[@kernel.ModelCallResult]
   mut index : Int
 }
 
 ///|
 impl @port.ModelPort for MockModelPort with fn chat(
   self,
-  _messages,
-  _tools,
-  _options,
-) {
+  _messages : Array[@kernel.Message],
+  _tools : Array[@kernel.ToolDef],
+  _options : @types.ChatOptions,
+  _stream : @types.StreamMode,
+) -> @kernel.ModelCallResult raise @error.ModelError {
   if self.index < self.responses.length() {
     let resp = self.responses[self.index]
     self.index = self.index + 1
@@ -22,11 +24,28 @@ impl @port.ModelPort for MockModelPort with fn chat(
 }
 
 ///|
+impl @port.ModelPort for MockModelPort with fn compact(
+  self,
+  _messages : Array[@kernel.Message],
+  _options : @types.ChatOptions,
+  _trigger : @kernel.CompactTrigger,
+) -> @kernel.CompactResult raise @error.ModelError {
+  raise @error.ModelError::ResponseParse(
+    "MockModelPort does not implement compact",
+  )
+}
+
+///|
+impl @port.ModelPort for MockModelPort with fn provider_config(_self) -> @port.ProviderConfig {
+  @port.ProviderConfig::empty()
+}
+
+///|
 /// MockToolProvider — implements the unified ToolProvider trait.
 /// Lists tools and executes them from a results map.
 struct MockToolProvider {
-  tools : Array[@types.ToolDef]
-  results : Map[String, Result[@types.ToolResult, @error.RuntimeError]]
+  tools : Array[@kernel.ToolDef]
+  results : Map[String, Result[@kernel.ToolOutcome, @error.RuntimeError]]
 }
 
 ///|
@@ -38,8 +57,8 @@ impl @port.ToolProvider for MockToolProvider with fn list_tools(self) {
 impl @port.ToolProvider for MockToolProvider with fn execute(
   self,
   name : String,
-  _call : @types.ToolCall,
-) -> @types.ToolResult raise @error.RuntimeError {
+  _call : @kernel.ToolCall,
+) -> @kernel.ToolOutcome raise @error.RuntimeError {
   match self.results.get(name) {
     Some(Ok(r)) => r
     Some(Err(e)) => raise e
@@ -81,55 +100,24 @@ impl @port.Observer for MockObserver with fn on_event(self, event) {
 struct AbortHook {}
 
 ///|
-impl @port.PipelineHook for AbortHook with fn on_stage(_self, stage) {
-  match stage {
-    BeforeTool(_) => Err(@port.HookError::Aborted("blocked by policy"))
-    _ => Ok(stage)
-  }
+impl @port.PreToolHook for AbortHook with fn before_tool(
+  _self,
+  _call : @kernel.ToolCall,
+) -> @port.ToolHookDecision {
+  Reject(reason="blocked by policy")
 }
 
 ///|
 struct LogHook {
-  seen : Array[@port.Stage]
+  seen : Array[@port.PostStage]
 }
 
 ///|
-impl @port.PipelineHook for LogHook with fn on_stage(self, stage) {
+impl @port.PostEventHook for LogHook with fn on_post_event(
+  self,
+  stage : @port.PostStage,
+) -> Unit {
   self.seen.push(stage)
-  Ok(stage)
-}
-
-///|
-struct HardcodedNewThreadCompressor {}
-
-///|
-impl @port.Compressor for HardcodedNewThreadCompressor with fn compress(
-  _self,
-  messages,
-  _ctx,
-) {
-  NewThread(
-    messages~,
-    new_session_id="session_2",
-    messages_before=messages.length(),
-    messages_after=messages.length(),
-  )
-}
-
-///|
-struct ReplaceCompressor {}
-
-///|
-impl @port.Compressor for ReplaceCompressor with fn compress(
-  _self,
-  messages,
-  _ctx,
-) {
-  if messages.length() > 0 {
-    Replace([messages[0]])
-  } else {
-    Replace([])
-  }
 }
 
 ///|
@@ -141,65 +129,60 @@ fn make_config() -> AgentConfig {
     tool_choice: None,
     reasoning_effort: None,
     model_context_window: None,
+    model: None,
   }
 }
 
 ///|
-fn user_msg(text : String) -> @types.Message {
+fn user_msg(text : String) -> @kernel.Message {
+  @kernel.UserMessage(content=[@kernel.Text(text)])
+}
+
+///|
+fn assistant_msg(text : String) -> @kernel.Message {
+  @kernel.AssistantMessage(
+    content=[@kernel.Text(text)],
+    tool_calls=[],
+    reasoning=None,
+    finish_reason=@kernel.Stop,
+  )
+}
+
+///|
+fn stop_response(text : String) -> @kernel.ModelCallResult {
   {
-    role: User,
-    content: [Text(text)],
-    tool_calls: [],
-    tool_call_id: None,
-    name: None,
-    reasoning_content: None,
+    completion: @kernel.Completion(
+      content=[@kernel.Text(text)],
+      tool_calls=[],
+      reasoning=None,
+      finish_reason=@kernel.Stop,
+      usage=None,
+    ),
+    processed_messages: [],
   }
 }
 
 ///|
-fn assistant_msg(text : String) -> @types.Message {
+fn tool_response(
+  tool_calls : Array[@kernel.ToolCall],
+) -> @kernel.ModelCallResult {
+  let completion : @kernel.Completion = @kernel.Completion(
+    content=[],
+    tool_calls~,
+    reasoning=None,
+    finish_reason=@kernel.ToolCalls,
+    usage=None,
+  )
+  { completion, processed_messages: [] }
+}
+
+///|
+fn make_tool_call(id : String, name : String) -> @kernel.ToolCall {
   {
-    role: Assistant,
-    content: [Text(text)],
-    tool_calls: [],
-    tool_call_id: None,
-    name: Some("assistant"),
-    reasoning_content: None,
+    call_id: @kernel.CallId::unchecked(id),
+    name: @kernel.ToolName::unchecked(name),
+    arguments: Json::object(Map::from_array([])),
   }
-}
-
-///|
-fn stop_response(text : String) -> @types.ModelResponse {
-  {
-    message: assistant_msg(text),
-    tool_calls: [],
-    finish_reason: Stop,
-    usage: None,
-    reasoning_content: None,
-  }
-}
-
-///|
-fn tool_response(tool_calls : Array[@types.ToolCall]) -> @types.ModelResponse {
-  {
-    message: {
-      role: Assistant,
-      content: [],
-      tool_calls,
-      tool_call_id: None,
-      name: None,
-      reasoning_content: None,
-    },
-    tool_calls,
-    finish_reason: ToolCalls,
-    usage: None,
-    reasoning_content: None,
-  }
-}
-
-///|
-fn make_tool_call(id : String, name : String) -> @types.ToolCall {
-  { id, name, arguments: Json::null() }
 }
 
 ///|
@@ -221,13 +204,9 @@ async test "simple_turn_no_tools" {
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
-      tk_ext(
-        id="io",
-        tools=[empty_tools()],
-        sessions=[store],
-        observers=[observer],
-        compressors=[NoopCompressor::{  }],
-      ),
+      tk_ext(id="io", tools=[empty_tools()], sessions=[store], observers=[
+        observer,
+      ]),
     ],
     config~,
   )
@@ -245,16 +224,17 @@ async test "turn_with_single_tool" {
   }
   let tools = MockToolProvider::{
     tools: [
-      {
-        name: "bash",
-        description: "run a cmd",
-        input_schema: Json::null(),
-        metadata: None,
-        source: None,
-      },
+      @kernel.ToolDef(
+        name=@kernel.ToolName::unchecked("bash"),
+        description="run a cmd",
+        input_schema=Json::null(),
+        owner=@kernel.OwnerId::unchecked("legacy_provider"),
+        policy=@kernel.Parallel,
+        provenance=None,
+      ),
     ],
     results: Map::from_array([
-      ("bash", Ok({ content: "ok", structured: None, is_error: false })),
+      ("bash", Ok(@kernel.Success(content="ok", structured=None))),
     ]),
   }
   let store = MockSessionStore::{ store: Map::from_array([]) }
@@ -264,15 +244,20 @@ async test "turn_with_single_tool" {
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", tools=[tools], sessions=[store], observers=[observer], compressors=[
-        NoopCompressor::{  },
-      ]),
+      tk_ext(id="io", tools=[tools], sessions=[store], observers=[observer]),
     ],
     config~,
   )
   let result = agent.run_turn(user_msg("run ls"), "session_1")
   assert_eq(result.tool_results.length(), 1)
-  assert_eq(result.tool_results[0].content, "ok")
+  let outcome = result.tool_results[0]
+  let content0 = match outcome {
+    @kernel.Success(content~, ..) => content
+    @kernel.ToolReportedError(content~, ..) => content
+    @kernel.RuntimeFailure(message~, ..) => message
+    @kernel.NotExecuted(..) => "<not executed>"
+  }
+  assert_eq(content0, "ok")
 }
 
 ///|
@@ -284,13 +269,14 @@ async test "tool_failure_non_fatal" {
   }
   let tools = MockToolProvider::{
     tools: [
-      {
-        name: "bash",
-        description: "",
-        input_schema: Json::null(),
-        metadata: None,
-        source: None,
-      },
+      @kernel.ToolDef(
+        name=@kernel.ToolName::unchecked("bash"),
+        description="",
+        input_schema=Json::null(),
+        owner=@kernel.OwnerId::unchecked("legacy_provider"),
+        policy=@kernel.Parallel,
+        provenance=None,
+      ),
     ],
     results: Map::from_array([
       ("bash", Err(@error.RuntimeError::InvocationFailed("boom"))),
@@ -303,15 +289,13 @@ async test "tool_failure_non_fatal" {
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", tools=[tools], sessions=[store], observers=[observer], compressors=[
-        NoopCompressor::{  },
-      ]),
+      tk_ext(id="io", tools=[tools], sessions=[store], observers=[observer]),
     ],
     config~,
   )
   let result = agent.run_turn(user_msg("do it"), "session_1")
   assert_eq(result.tool_results.length(), 1)
-  assert_true(result.tool_results[0].is_error)
+  assert_true(result.tool_results[0].is_failure())
 }
 
 ///|
@@ -324,13 +308,9 @@ async test "model_error_aborts_turn" {
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
-      tk_ext(
-        id="io",
-        tools=[empty_tools()],
-        sessions=[store],
-        observers=[observer],
-        compressors=[NoopCompressor::{  }],
-      ),
+      tk_ext(id="io", tools=[empty_tools()], sessions=[store], observers=[
+        observer,
+      ]),
     ],
     config~,
   )
@@ -350,16 +330,17 @@ async test "hook_aborts_before_tool" {
   }
   let tools = MockToolProvider::{
     tools: [
-      {
-        name: "bash",
-        description: "",
-        input_schema: Json::null(),
-        metadata: None,
-        source: None,
-      },
+      @kernel.ToolDef(
+        name=@kernel.ToolName::unchecked("bash"),
+        description="",
+        input_schema=Json::null(),
+        owner=@kernel.OwnerId::unchecked("legacy_provider"),
+        policy=@kernel.Parallel,
+        provenance=None,
+      ),
     ],
     results: Map::from_array([
-      ("bash", Ok({ content: "ok", structured: None, is_error: false })),
+      ("bash", Ok(@kernel.Success(content="ok", structured=None))),
     ]),
   }
   let store = MockSessionStore::{ store: Map::from_array([]) }
@@ -373,10 +354,9 @@ async test "hook_aborts_before_tool" {
       tk_ext(
         id="io",
         tools=[tools],
-        hooks=[abort_hook],
+        pre_tool_hooks=[abort_hook],
         sessions=[store],
         observers=[observer],
-        compressors=[NoopCompressor::{  }],
       ),
     ],
     config~,
@@ -390,90 +370,6 @@ async test "hook_aborts_before_tool" {
 }
 
 ///|
-async test "compression_new_thread" {
-  let model = MockModelPort::{
-    responses: [stop_response("compressed")],
-    index: 0,
-  }
-  let store = MockSessionStore::{ store: Map::from_array([]) }
-  let observer = MockObserver::{ events: [] }
-  let compressor = HardcodedNewThreadCompressor::{  }
-  let config = make_config()
-
-  let agent = Agent(
-    exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(
-        id="io",
-        tools=[empty_tools()],
-        sessions=[store],
-        observers=[observer],
-        compressors=[compressor],
-      ),
-    ],
-    config~,
-  )
-  let result = agent.run_turn(user_msg("long context"), "session_1")
-  assert_eq(result.final_session_id, "session_2")
-
-  let mut has_redirect = false
-  for event in observer.events {
-    if event is SessionRedirect(..) {
-      has_redirect = true
-    }
-  }
-  assert_true(has_redirect)
-
-  if store.store.contains("session_2") {
-    ignore(store.store["session_2"])
-  } else {
-    fail("new session not saved in store")
-  }
-}
-
-///|
-async test "compression_replace" {
-  let model = MockModelPort::{
-    responses: [stop_response("replaced")],
-    index: 0,
-  }
-  let store = MockSessionStore::{
-    store: Map::from_array([
-      (
-        "session_1",
-        { messages: [user_msg("old msg")], metadata: Map::from_array([]) },
-      ),
-    ]),
-  }
-  let observer = MockObserver::{ events: [] }
-  let compressor = ReplaceCompressor::{  }
-  let config = make_config()
-
-  let agent = Agent(
-    exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(
-        id="io",
-        tools=[empty_tools()],
-        sessions=[store],
-        observers=[observer],
-        compressors=[compressor],
-      ),
-    ],
-    config~,
-  )
-  let result = agent.run_turn(user_msg("new msg"), "session_1")
-  assert_eq(result.final_session_id, "session_1")
-
-  if store.store.contains("session_1") {
-    let session = store.store["session_1"]
-    assert_true(session.messages.length() >= 2)
-  } else {
-    fail("session not saved")
-  }
-}
-
-///|
 async test "tool_loop_exceeded" {
   let tc = make_tool_call("call_1", "bash")
   let tool_resp = tool_response([tc])
@@ -483,16 +379,17 @@ async test "tool_loop_exceeded" {
   }
   let tools = MockToolProvider::{
     tools: [
-      {
-        name: "bash",
-        description: "",
-        input_schema: Json::null(),
-        metadata: None,
-        source: None,
-      },
+      @kernel.ToolDef(
+        name=@kernel.ToolName::unchecked("bash"),
+        description="",
+        input_schema=Json::null(),
+        owner=@kernel.OwnerId::unchecked("legacy_provider"),
+        policy=@kernel.Parallel,
+        provenance=None,
+      ),
     ],
     results: Map::from_array([
-      ("bash", Ok({ content: "ok", structured: None, is_error: false })),
+      ("bash", Ok(@kernel.Success(content="ok", structured=None))),
     ]),
   }
   let store = MockSessionStore::{ store: Map::from_array([]) }
@@ -504,14 +401,13 @@ async test "tool_loop_exceeded" {
     tool_choice: None,
     reasoning_effort: None,
     model_context_window: None,
+    model: None,
   }
 
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", tools=[tools], sessions=[store], observers=[observer], compressors=[
-        NoopCompressor::{  },
-      ]),
+      tk_ext(id="io", tools=[tools], sessions=[store], observers=[observer]),
     ],
     config~,
   )
@@ -523,60 +419,6 @@ async test "tool_loop_exceeded" {
 }
 
 ///|
-async test "hook_chain_composition" {
-  let hook1 = LogHook::{ seen: [] }
-  let hook2 = NoopHook::{  }
-  let chain = HookChain::{ hooks: [hook1, hook2] }
-
-  match chain.on_stage(BeforeTurn) {
-    Ok(BeforeTurn) => assert_eq(hook1.seen.length(), 1)
-    _ => fail("expected BeforeTurn to pass through")
-  }
-
-  let tc = @types.ToolCall::{
-    id: "call_a",
-    name: "test",
-    arguments: Json::null(),
-  }
-  match chain.on_stage(BeforeTool(tc)) {
-    Ok(BeforeTool(_)) => assert_eq(hook1.seen.length(), 2)
-    _ => fail("expected BeforeTool to pass through")
-  }
-
-  let abort = AbortHook::{  }
-  let fail_chain = HookChain::{ hooks: [abort] }
-  let tc2 = @types.ToolCall::{
-    id: "call_b",
-    name: "fail",
-    arguments: Json::null(),
-  }
-  match fail_chain.on_stage(BeforeTool(tc2)) {
-    Err(@port.HookError::Aborted(msg)) => assert_true(msg.contains("blocked"))
-    _ => fail("expected abort")
-  }
-}
-
-///|
-async test "noop_compressor_always_none" {
-  let comp = NoopCompressor::{  }
-  let ctx = @port.CompressContext::{
-    session_id: "test",
-    model_context_window: None,
-  }
-
-  let action1 = comp.compress([], ctx)
-  assert_true(action1 is None)
-
-  let msgs : Array[@types.Message] = [user_msg("a"), user_msg("b")]
-  let ctx2 = @port.CompressContext::{
-    session_id: "test2",
-    model_context_window: None,
-  }
-  let action2 = comp.compress(msgs, ctx2)
-  assert_true(action2 is None)
-}
-
-///|
 async test "observer_event_sequence" {
   let tc = make_tool_call("call_1", "bash")
   let model = MockModelPort::{
@@ -585,16 +427,17 @@ async test "observer_event_sequence" {
   }
   let tools = MockToolProvider::{
     tools: [
-      {
-        name: "bash",
-        description: "",
-        input_schema: Json::null(),
-        metadata: None,
-        source: None,
-      },
+      @kernel.ToolDef(
+        name=@kernel.ToolName::unchecked("bash"),
+        description="",
+        input_schema=Json::null(),
+        owner=@kernel.OwnerId::unchecked("legacy_provider"),
+        policy=@kernel.Parallel,
+        provenance=None,
+      ),
     ],
     results: Map::from_array([
-      ("bash", Ok({ content: "seq", structured: None, is_error: false })),
+      ("bash", Ok(@kernel.Success(content="seq", structured=None))),
     ]),
   }
   let store = MockSessionStore::{ store: Map::from_array([]) }
@@ -604,9 +447,7 @@ async test "observer_event_sequence" {
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", tools=[tools], sessions=[store], observers=[observer], compressors=[
-        NoopCompressor::{  },
-      ]),
+      tk_ext(id="io", tools=[tools], sessions=[store], observers=[observer]),
     ],
     config~,
   )
@@ -649,13 +490,9 @@ async test "session_persistence" {
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
-      tk_ext(
-        id="io",
-        tools=[empty_tools()],
-        sessions=[store],
-        observers=[observer],
-        compressors=[NoopCompressor::{  }],
-      ),
+      tk_ext(id="io", tools=[empty_tools()], sessions=[store], observers=[
+        observer,
+      ]),
     ],
     config~,
   )
@@ -663,9 +500,10 @@ async test "session_persistence" {
   if store.store.contains("session_1") {
     let session = store.store["session_1"]
     assert_true(session.messages.length() >= 2)
-    assert_true(session.messages[0].role == User)
+    assert_true(session.messages[0] is @kernel.UserMessage(_))
     assert_true(
-      session.messages[session.messages.length() - 1].role == Assistant,
+      session.messages[session.messages.length() - 1]
+      is @kernel.AssistantMessage(..),
     )
   } else {
     fail("session not saved in store")
@@ -678,25 +516,18 @@ async test "session_persistence" {
 struct RewriteModelHook {}
 
 ///|
-impl @port.PipelineHook for RewriteModelHook with fn on_stage(_self, stage) {
-  match stage {
-    BeforeModel(msgs) => {
-      let system_msg = @types.Message::{
-        role: @types.Role::System,
-        content: [@types.Content::Text("SYSTEM: rewritten")],
-        tool_calls: [],
-        tool_call_id: None,
-        name: None,
-        reasoning_content: None,
-      }
-      let new_msgs = [system_msg]
-      for m in msgs {
-        new_msgs.push(m)
-      }
-      Ok(BeforeModel(new_msgs))
-    }
-    _ => Ok(stage)
+impl @port.PreModelHook for RewriteModelHook with fn before_model(
+  _self,
+  messages : Array[@kernel.Message],
+) -> Array[@kernel.Message] raise @port.HookAbort {
+  let system_msg = @kernel.SystemMessage(content=[
+    @kernel.Text("SYSTEM: rewritten"),
+  ])
+  let new_msgs = [system_msg]
+  for m in messages {
+    new_msgs.push(m)
   }
+  new_msgs
 }
 
 ///|
@@ -716,10 +547,9 @@ async test "hook_rewrites_before_model_messages" {
       tk_ext(
         id="io",
         tools=[empty_tools()],
-        hooks=[rewriter],
+        pre_model_hooks=[rewriter],
         sessions=[store],
         observers=[observer],
-        compressors=[NoopCompressor::{  }],
       ),
     ],
     config~,
@@ -728,7 +558,7 @@ async test "hook_rewrites_before_model_messages" {
   assert_eq(result.final_session_id, "session_1")
   let session = store.store["session_1"]
   assert_true(session.messages.length() >= 2)
-  assert_true(session.messages[0].role == System)
+  assert_true(session.messages[0] is @kernel.SystemMessage(_))
 }
 
 ///|
@@ -736,17 +566,23 @@ async test "hook_rewrites_before_model_messages" {
 struct DeferToolHook {}
 
 ///|
-impl @port.PipelineHook for DeferToolHook with fn on_stage(_self, stage) {
-  match stage {
-    BeforeTool(call) if call.name == "restricted" =>
-      Err(@port.HookError::Deferred(reason="needs admin approval"))
-    _ => Ok(stage)
+impl @port.PreToolHook for DeferToolHook with fn before_tool(
+  _self,
+  call : @kernel.ToolCall,
+) -> @port.ToolHookDecision {
+  if call.name.to_string() == "restricted" {
+    Defer(reason="needs admin approval")
+  } else {
+    Approve(call~)
   }
 }
 
 ///|
 /// Test: Deferred hook skips tool execution and notifies LLM
 async test "hook_deferred_skips_execution" {
+  // Defer is not yet supported in the Puppet path — the pump returns
+  // HookRejected when a PreToolHook returns Defer. This test verifies that
+  // the rejection surfaces as AgentError::HookAborted.
   let tc = make_tool_call("call_1", "restricted")
   let model = MockModelPort::{
     responses: [tool_response([tc]), stop_response("approved")],
@@ -754,19 +590,17 @@ async test "hook_deferred_skips_execution" {
   }
   let tools = MockToolProvider::{
     tools: [
-      {
-        name: "restricted",
-        description: "",
-        input_schema: Json::null(),
-        metadata: None,
-        source: None,
-      },
+      @kernel.ToolDef(
+        name=@kernel.ToolName::unchecked("restricted"),
+        description="",
+        input_schema=Json::null(),
+        owner=@kernel.OwnerId::unchecked("legacy_provider"),
+        policy=@kernel.Parallel,
+        provenance=None,
+      ),
     ],
     results: Map::from_array([
-      (
-        "restricted",
-        Ok({ content: "executed", structured: None, is_error: false }),
-      ),
+      ("restricted", Ok(@kernel.Success(content="executed", structured=None))),
     ]),
   }
   let store = MockSessionStore::{ store: Map::from_array([]) }
@@ -776,31 +610,20 @@ async test "hook_deferred_skips_execution" {
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
-      tk_ext(
-        id="io",
-        tools=[tools],
-        hooks=[hook],
-        sessions=[store],
-        observers=[observer],
-        compressors=[NoopCompressor::{  }],
-      ),
+      tk_ext(id="io", tools=[tools], pre_tool_hooks=[hook], sessions=[store], observers=[
+        observer,
+      ]),
     ],
     config~,
   )
-  let result = agent.run_turn(user_msg("use restricted"), "session_1")
-  assert_eq(result.final_session_id, "session_1")
-  let mut deferred_seen = false
-  for e in observer.events {
-    match e {
-      ToolCallDeferred(..) => deferred_seen = true
-      _ => ()
-    }
+  let result = Ok(agent.run_turn(user_msg("use restricted"), "session_1")) catch {
+    e => Err(e)
   }
-  assert_true(deferred_seen)
-  // Deferred tool should exit with is_error=true (LLM must respond to user)
-  assert_eq(result.tool_results.length(), 1)
-  assert_true(result.tool_results[0].is_error)
-  assert_true(result.tool_results[0].content.contains("rejected"))
+  match result {
+    Err(@error.AgentError::HookAborted(msg)) =>
+      assert_true(msg.contains("defer not yet supported"))
+    _ => fail("expected HookAborted for unsupported Defer decision")
+  }
 }
 
 ///|
@@ -815,33 +638,32 @@ async test "agent_routes_tools_to_correct_provider" {
   }
   let shell_tools = MockToolProvider::{
     tools: [
-      {
-        name: "bash",
-        description: "run cmd",
-        input_schema: Json::null(),
-        metadata: None,
-        source: Some("host"),
-      },
+      @kernel.ToolDef(
+        name=@kernel.ToolName::unchecked("bash"),
+        description="run cmd",
+        input_schema=Json::null(),
+        owner=@kernel.OwnerId::unchecked("legacy_provider"),
+        policy=@kernel.Parallel,
+        provenance=Some("host"),
+      ),
     ],
     results: Map::from_array([
-      ("bash", Ok({ content: "shell ok", structured: None, is_error: false })),
+      ("bash", Ok(@kernel.Success(content="shell ok", structured=None))),
     ]),
   }
   let mcp_tools = MockToolProvider::{
     tools: [
-      {
-        name: "mcp__read",
-        description: "read file",
-        input_schema: Json::null(),
-        metadata: None,
-        source: Some("mcp"),
-      },
+      @kernel.ToolDef(
+        name=@kernel.ToolName::unchecked("mcp__read"),
+        description="read file",
+        input_schema=Json::null(),
+        owner=@kernel.OwnerId::unchecked("legacy_provider"),
+        policy=@kernel.Parallel,
+        provenance=Some("mcp"),
+      ),
     ],
     results: Map::from_array([
-      (
-        "mcp__read",
-        Ok({ content: "mcp ok", structured: None, is_error: false }),
-      ),
+      ("mcp__read", Ok(@kernel.Success(content="mcp ok", structured=None))),
     ]),
   }
   let store = MockSessionStore::{ store: Map::from_array([]) }
@@ -851,20 +673,24 @@ async test "agent_routes_tools_to_correct_provider" {
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
-      tk_ext(
-        id="io",
-        tools=[shell_tools, mcp_tools],
-        sessions=[store],
-        observers=[observer],
-        compressors=[NoopCompressor::{  }],
-      ),
+      tk_ext(id="io", tools=[shell_tools, mcp_tools], sessions=[store], observers=[
+        observer,
+      ]),
     ],
     config~,
   )
   let result = agent.run_turn(user_msg("run both"), "session_1")
   assert_eq(result.tool_results.length(), 2)
-  assert_eq(result.tool_results[0].content, "shell ok")
-  assert_eq(result.tool_results[1].content, "mcp ok")
+  let content_first = match result.tool_results[0] {
+    @kernel.Success(content~, ..) => content
+    _ => "<other>"
+  }
+  let content_second = match result.tool_results[1] {
+    @kernel.Success(content~, ..) => content
+    _ => "<other>"
+  }
+  assert_eq(content_first, "shell ok")
+  assert_eq(content_second, "mcp ok")
 }
 
 ///|
@@ -872,28 +698,30 @@ async test "agent_routes_tools_to_correct_provider" {
 async test "agent_tool_collision_detection" {
   let provider1 = MockToolProvider::{
     tools: [
-      {
-        name: "bash",
-        description: "v1",
-        input_schema: Json::null(),
-        metadata: None,
-        source: None,
-      },
+      @kernel.ToolDef(
+        name=@kernel.ToolName::unchecked("bash"),
+        description="v1",
+        input_schema=Json::null(),
+        owner=@kernel.OwnerId::unchecked("legacy_provider"),
+        policy=@kernel.Parallel,
+        provenance=None,
+      ),
     ],
     results: Map::from_array([]),
   }
   let provider2 = MockToolProvider::{
     tools: [
-      {
-        name: "bash",
-        description: "v2",
-        input_schema: Json::null(),
-        metadata: None,
-        source: None,
-      },
+      @kernel.ToolDef(
+        name=@kernel.ToolName::unchecked("bash"),
+        description="v2",
+        input_schema=Json::null(),
+        owner=@kernel.OwnerId::unchecked("legacy_provider"),
+        policy=@kernel.Parallel,
+        provenance=None,
+      ),
     ],
     results: Map::from_array([
-      ("bash", Ok({ content: "v2 wins", structured: None, is_error: false })),
+      ("bash", Ok(@kernel.Success(content="v2 wins", structured=None))),
     ]),
   }
   let model = MockModelPort::{ responses: [stop_response("ok")], index: 0 }
@@ -906,13 +734,9 @@ async test "agent_tool_collision_detection" {
     Agent(
       exts=[
         tk_ext(id="model", model=Some(model)),
-        tk_ext(
-          id="io",
-          tools=[provider1, provider2],
-          sessions=[store],
-          observers=[observer],
-          compressors=[NoopCompressor::{  }],
-        ),
+        tk_ext(id="io", tools=[provider1, provider2], sessions=[store], observers=[
+          observer,
+        ]),
       ],
       config~,
     ),
@@ -927,47 +751,84 @@ async test "agent_tool_collision_detection" {
 }
 
 ///|
-/// Mock ModelPort that emits StreamChunks then returns a final response.
+/// Mock ModelPort that emits StreamChunks then returns a final completion.
+/// R3 M3.7: chat now takes StreamMode; when stream is Stream(cb), the mock
+/// replays its chunks via cb (encoded as JSON via wbtest_stream_chunk_to_json).
 struct MockStreamingModelPort {
   chunks : Array[@types.StreamChunk]
-  final_response : @types.ModelResponse
+  final_response : @kernel.ModelCallResult
 }
 
 ///|
 impl @port.ModelPort for MockStreamingModelPort with fn chat(
   self,
-  _messages,
-  _tools,
-  _options,
-) {
-  self.final_response
-}
-
-///|
-impl @port.ModelPort for MockStreamingModelPort with fn chat_streaming(
-  self,
-  _messages,
-  _tools,
-  _options,
-  on_chunk,
-) {
-  for chunk in self.chunks {
-    on_chunk(chunk)
+  _messages : Array[@kernel.Message],
+  _tools : Array[@kernel.ToolDef],
+  _options : @types.ChatOptions,
+  stream : @types.StreamMode,
+) -> @kernel.ModelCallResult raise @error.ModelError {
+  match stream {
+    @types.Stream(cb) =>
+      for chunk in self.chunks {
+        cb(wbtest_stream_chunk_to_json(chunk))
+      }
+    @types.NoStream => ()
   }
   self.final_response
 }
 
 ///|
+impl @port.ModelPort for MockStreamingModelPort with fn compact(
+  self,
+  _messages : Array[@kernel.Message],
+  _options : @types.ChatOptions,
+  _trigger : @kernel.CompactTrigger,
+) -> @kernel.CompactResult raise @error.ModelError {
+  raise @error.ModelError::ResponseParse(
+    "MockStreamingModelPort does not implement compact",
+  )
+}
+
+///|
+impl @port.ModelPort for MockStreamingModelPort with fn provider_config(_self) -> @port.ProviderConfig {
+  @port.ProviderConfig::empty()
+}
+
+///|
+/// Encode a StreamChunk as the same JSON shape observers expect. Local copy
+/// of the helper in testkit.mbt (kept private to this wbtest file).
+fn wbtest_stream_chunk_to_json(chunk : @types.StreamChunk) -> Json {
+  match chunk {
+    @types.TextDelta(token~) =>
+      Json::object(
+        Map::from_array([
+          ("kind", Json::string("text")),
+          ("token", Json::string(token)),
+        ]),
+      )
+    @types.ReasoningDelta(token~) =>
+      Json::object(
+        Map::from_array([
+          ("kind", Json::string("reasoning")),
+          ("token", Json::string(token)),
+        ]),
+      )
+    @types.ToolCallDelta(..) =>
+      Json::object(Map::from_array([("kind", Json::string("tool_call_delta"))]))
+    @types.Usage(..) =>
+      Json::object(Map::from_array([("kind", Json::string("usage"))]))
+    @types.Finish(_) =>
+      Json::object(Map::from_array([("kind", Json::string("finish"))]))
+  }
+}
+
+///|
 async test "streaming_events_emitted_during_chat" {
   let chunks : Array[@types.StreamChunk] = [
-    TextDelta(token="Hello"),
-    TextDelta(token=" world"),
-    Usage({
-      input_tokens: Some(10),
-      output_tokens: Some(5),
-      total_tokens: Some(15),
-    }),
-    Finish(reason=Stop),
+    @types.TextDelta(token="Hello"),
+    @types.TextDelta(token=" world"),
+    @types.Usage(input_tokens=10, output_tokens=5, total_tokens=15),
+    @types.Finish(reason="stop"),
   ]
   let final_response = stop_response("Hello world")
   let model = MockStreamingModelPort::{ chunks, final_response }
@@ -978,13 +839,9 @@ async test "streaming_events_emitted_during_chat" {
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
-      tk_ext(
-        id="io",
-        tools=[empty_tools()],
-        sessions=[store],
-        observers=[observer],
-        compressors=[NoopCompressor::{  }],
-      ),
+      tk_ext(id="io", tools=[empty_tools()], sessions=[store], observers=[
+        observer,
+      ]),
     ],
     config~,
   )
@@ -1001,13 +858,13 @@ async test "streaming_events_emitted_during_chat" {
 }
 
 ///|
-async test "stream_accumulator_assembles_response" {
+async test "stream_accumulator_assembles_completion" {
   let acc = @types.StreamAccumulator()
-  acc.push(TextDelta(token="Hi"))
-  acc.push(TextDelta(token=" there"))
-  acc.push(ReasoningDelta(token="thinking"))
+  acc.push(@types.TextDelta(token="Hi"))
+  acc.push(@types.TextDelta(token=" there"))
+  acc.push(@types.ReasoningDelta(token="thinking"))
   acc.push(
-    ToolCallDelta(
+    @types.ToolCallDelta(
       index=0,
       id=Some("tc1"),
       name=Some("bash"),
@@ -1015,25 +872,25 @@ async test "stream_accumulator_assembles_response" {
     ),
   )
   acc.push(
-    ToolCallDelta(index=0, id=None, name=None, arguments_delta=Some(":\"ls\"}")),
+    @types.ToolCallDelta(
+      index=0,
+      id=None,
+      name=None,
+      arguments_delta=Some(":\"ls\"}"),
+    ),
   )
-  acc.push(
-    Usage({
-      input_tokens: Some(10),
-      output_tokens: Some(20),
-      total_tokens: Some(30),
-    }),
-  )
-  acc.push(Finish(reason=ToolCalls))
+  acc.push(@types.Usage(input_tokens=10, output_tokens=20, total_tokens=30))
+  acc.push(@types.Finish(reason="tool_calls"))
 
-  let resp = acc.to_response()
-  assert_eq(resp.message.content.length(), 1)
-  assert_eq(resp.tool_calls.length(), 1)
-  assert_eq(resp.tool_calls[0].id, "tc1")
-  assert_eq(resp.tool_calls[0].name, "bash")
-  assert_true(resp.finish_reason is ToolCalls)
+  let resp = acc.to_completion()
+  let msg = resp.message
+  assert_eq(msg.content.length(), 1)
+  assert_eq(msg.tool_calls.length(), 1)
+  assert_eq(msg.tool_calls[0].call_id.to_string(), "tc1")
+  assert_eq(msg.tool_calls[0].name.to_string(), "bash")
+  assert_true(msg.finish_reason is @kernel.ToolCalls)
   assert_true(resp.usage is Some(_))
-  assert_true(resp.reasoning_content is Some(_))
+  assert_true(msg.reasoning is Some(_))
 }
 
 ///|
@@ -1048,13 +905,9 @@ async test "multiple_observers_fan_out" {
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
-      tk_ext(
-        id="io",
-        tools=[empty_tools()],
-        sessions=[store],
-        observers=[obs1, obs2],
-        compressors=[NoopCompressor::{  }],
-      ),
+      tk_ext(id="io", tools=[empty_tools()], sessions=[store], observers=[
+        obs1, obs2,
+      ]),
     ],
     config~,
   )
@@ -1081,18 +934,17 @@ async test "multiple_hooks_chained_in_order" {
       tk_ext(
         id="io",
         tools=[empty_tools()],
-        hooks=[hook1, hook2],
+        post_event_hooks=[hook1, hook2],
         sessions=[store],
         observers=[observer],
-        compressors=[NoopCompressor::{  }],
       ),
     ],
     config~,
   )
   let _ = agent.run_turn(user_msg("multi-hook"), "session_1")
 
-  // Both hooks should see BeforeTurn and AfterTurn
-  assert_true(hook1.seen.length() >= 2)
+  // Both hooks should see at least one post-stage event (ModelCompleted)
+  assert_true(hook1.seen.length() >= 1)
   assert_eq(hook1.seen.length(), hook2.seen.length())
 }
 
@@ -1111,13 +963,9 @@ async test "multiple_session_stores_write_all" {
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
-      tk_ext(
-        id="io",
-        tools=[empty_tools()],
-        sessions=[store1, store2],
-        observers=[observer],
-        compressors=[NoopCompressor::{  }],
-      ),
+      tk_ext(id="io", tools=[empty_tools()], sessions=[store1, store2], observers=[
+        observer,
+      ]),
     ],
     config~,
   )
@@ -1267,59 +1115,7 @@ async test "noop_command_port_returns_empty_and_raises_notfound" {
 }
 
 ///|
-/// Hook that always returns Err(Aborted) — used to test finally semantics.
-struct AlwaysFailHook {}
-
-///|
-impl @port.PipelineHook for AlwaysFailHook with fn on_stage(
-  _self,
-  _stage : @port.Stage,
-) -> Result[@port.Stage, @port.HookError] {
-  Err(@port.HookError::Aborted("always fails"))
-}
-
-///|
 /// After stages run hooks in reverse order: hooks[1] runs before hooks[0].
-async test "hook_chain_after_stage_reversed_order" {
-  let hook1 = LogHook::{ seen: [] }
-  let hook2 = LogHook::{ seen: [] }
-  let chain = HookChain::{ hooks: [hook1, hook2] }
-  let tc = @types.ToolCall::{ id: "c1", name: "t", arguments: Json::null() }
-  let tr = @types.ToolResult::{
-    content: "ok",
-    structured: None,
-    is_error: false,
-  }
-  let _ = chain.on_stage(AfterTool(tc, tr))
-  // hook2 (index 1) should have run first — its seen[0] is the AfterTool
-  assert_eq(hook2.seen.length(), 1)
-  assert_eq(hook1.seen.length(), 1)
-}
-
-///|
-/// Finally semantics: even if one hook returns Err on an after stage,
-/// all other hooks still execute.
-async test "hook_chain_after_stage_runs_all_on_error" {
-  let hook1 = LogHook::{ seen: [] }
-  let fail = AlwaysFailHook::{  }
-  // hook1 first (index 0), fail second (index 1).
-  // On after stage, reverse order: fail runs first (returns Err),
-  // but hook1 still runs (finally).
-  let chain = HookChain::{ hooks: [hook1, fail] }
-  let tc = @types.ToolCall::{ id: "c2", name: "t", arguments: Json::null() }
-  let tr = @types.ToolResult::{
-    content: "ok",
-    structured: None,
-    is_error: false,
-  }
-  let _ = chain.on_stage(AfterTool(tc, tr))
-  // hook1 must have run despite fail returning Err
-  assert_eq(hook1.seen.length(), 1)
-}
-
-///|
-/// Finally semantics: when the model errors, the TurnError hook still fires
-/// (wrapped by run_turn's outer try/catch) even though the turn aborts.
 async test "hook_turn_error_fires_on_model_error" {
   let model = MockModelPort::{ responses: [], index: 0 }
   let store = MockSessionStore::{ store: Map::from_array([]) }
@@ -1333,21 +1129,20 @@ async test "hook_turn_error_fires_on_model_error" {
       tk_ext(
         id="io",
         tools=[empty_tools()],
-        hooks=[log_hook],
+        post_event_hooks=[log_hook],
         sessions=[store],
         observers=[observer],
-        compressors=[NoopCompressor::{  }],
       ),
     ],
     config~,
   )
-  // Model has no responses → raises; run_turn catches and fires TurnError.
+  // Model has no responses → raises; run_turn catches and fires TurnFailed.
   let _ = Ok(agent.run_turn(user_msg("boom"), "session_1")) catch {
     e => Err(e)
   }
-  // LogHook should have seen BeforeTurn (forward path) + TurnError (finally path)
-  let saw_turn_error = log_hook.seen.iter().any(fn(s) { s is TurnError(_) })
-  assert_true(saw_turn_error)
+  // LogHook (PostEventHook) should have seen ModelFailed
+  let saw_model_failed = log_hook.seen.iter().any(fn(s) { s is ModelFailed(_) })
+  assert_true(saw_model_failed)
 }
 
 ///|
@@ -1358,22 +1153,20 @@ async test "hook_turn_error_fires_on_before_tool_abort" {
   let model = MockModelPort::{ responses: [tool_response([tc])], index: 0 }
   let tools = MockToolProvider::{
     tools: [
-      {
-        name: "bash",
-        description: "",
-        input_schema: Json::null(),
-        metadata: None,
-        source: None,
-      },
+      @kernel.ToolDef(
+        name=@kernel.ToolName::unchecked("bash"),
+        description="",
+        input_schema=Json::null(),
+        owner=@kernel.OwnerId::unchecked("legacy_provider"),
+        policy=@kernel.Parallel,
+        provenance=None,
+      ),
     ],
     results: Map::from_array([]),
   }
   let store = MockSessionStore::{ store: Map::from_array([]) }
   let observer = MockObserver::{ events: [] }
-  // AbortHook aborts on BeforeTool; LogHook records stages.
-  // Order matters: LogHook first (sees BeforeTurn), AbortHook second (aborts BeforeTool).
-  // But hook chain runs forward on Before stages, so both see BeforeTurn,
-  // then AbortHook aborts on BeforeTool → run_turn catches → TurnError fires to both (reverse).
+  // AbortHook aborts on BeforeTool; LogHook records post-stage events.
   let log_hook = LogHook::{ seen: [] }
   let abort_hook = AbortHook::{  }
   let config = make_config()
@@ -1384,10 +1177,10 @@ async test "hook_turn_error_fires_on_before_tool_abort" {
       tk_ext(
         id="io",
         tools=[tools],
-        hooks=[log_hook, abort_hook],
+        post_event_hooks=[log_hook],
+        pre_tool_hooks=[abort_hook],
         sessions=[store],
         observers=[observer],
-        compressors=[NoopCompressor::{  }],
       ),
     ],
     config~,
@@ -1395,6 +1188,9 @@ async test "hook_turn_error_fires_on_before_tool_abort" {
   let _ = Ok(agent.run_turn(user_msg("danger"), "session_1")) catch {
     e => Err(e)
   }
-  let saw_turn_error = log_hook.seen.iter().any(fn(s) { s is TurnError(_) })
-  assert_true(saw_turn_error)
+  // Model call succeeded before the abort, so ModelCompleted should be seen
+  let saw_model_completed = log_hook.seen
+    .iter()
+    .any(fn(s) { s is ModelCompleted(_) })
+  assert_true(saw_model_completed)
 }

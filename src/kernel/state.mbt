@@ -1,24 +1,7 @@
 ///|
-/// RunState — the single source of truth for a Run (ADR §2.2, §2.6).
-///
-/// The reducer is the ONLY writer of RunState. Every transition produces a
-/// fresh RunState; the caller's input arrays/maps are never mutated.
-///
-/// Construction invariants (ADR §2.2):
-/// - `Initializing` → no pending effects, no outcome, sequence starts at 0.
-/// - `ReadyForModel` → zero pending effects.
-/// - `AwaitingModel` → exactly one pending `CallModel` effect.
-/// - `AwaitingTools` → at least one pending `ExecuteTool` effect.
-/// - `Suspended` → zero pending effects, no terminal outcome.
-/// - `Terminal` → zero pending effects, exactly one `RunOutcome`.
-///
-/// Phase type is `pub(all)` so conformance tests can pattern-match; the
-/// constructors below enforce the invariants and are the only sanctioned way
-/// to build a state.
-
-// ──────────────────────────────────────────────────────────────────────────
-// Phase
-// ──────────────────────────────────────────────────────────────────────────
+/// RunState — single source of truth for a Run (ADR §2.2, §2.6).
+/// The reducer is the ONLY writer. Every transition produces a fresh RunState.
+/// Phase invariants: Initializing/ReadyForModel/AwaitingModel/AwaitingTools/Suspended/Terminal.
 
 ///|
 pub(all) enum Phase {
@@ -42,18 +25,10 @@ pub impl Show for Phase with fn to_string(self : Phase) -> String {
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// RunOutcome (terminal only — Suspended is NOT an outcome)
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
-/// Terminal outcome of a Run (ADR §2.3). Exactly one per Run; carried by
-/// the Terminal phase.
+/// Terminal outcome of a Run (ADR §2.3). Exactly one per Run.
 pub(all) enum RunOutcome {
-  Completed(
-    final_message~ : CanonicalMessage,
-    tool_results~ : Array[ToolOutcome]
-  )
+  Completed(final_message~ : Message, tool_results~ : Array[ToolOutcome])
   Failed(reason~ : FailureReason)
   Cancelled(reason~ : CancelReason)
 } derive(Eq, Debug)
@@ -67,62 +42,42 @@ pub impl Show for RunOutcome with fn to_string(self : RunOutcome) -> String {
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// RunState
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
-/// The Run's full state. Field visibility is `priv` (no `pub(all)` on the
-/// struct itself) so callers cannot construct illegal combinations; the
-/// constructors below enforce invariants.
-///
-/// Note: MoonBit struct fields default to package-private, so within `src/`
-/// tests can still read them via accessors. The constructors are the only
-/// sanctioned way to produce a legal state.
+/// The Run's full state. Field visibility is `priv` so callers cannot construct illegal combinations.
+/// MoonBit struct fields default to package-private; constructors enforce invariants.
 pub struct RunState {
-  /// Constant after construction (until Terminal). The same id survives
-  /// Suspended/resume.
+  /// Run id. Survives suspend/resume.
   run_id : RunId
-  /// Constant after Start.
+  /// Session id. Set by Start.
   session_id : SessionId
-  /// Constant budget envelope.
+  /// Budget envelope. Constant after construction.
   budget : Budget
-  /// Current phase. Mutated by reducer only.
+  /// Current phase.
   phase : Phase
-  /// Canonical transcript. Appended by reducer only.
-  transcript : CanonicalTranscript
-  /// Pending effects awaiting completion inputs. Length is phase-dependent
-  /// (see invariants above).
+  /// Canonical transcript.
+  transcript : Transcript
+  /// Pending effects. Length is phase-dependent.
   pending_effects : Array[Effect]
   /// Monotonic event sequence for the next emitted event.
   next_event_sequence : EventSequence
-  /// Next effect id to allocate. Incremented by reducer.
+  /// Next effect id.
   next_effect_id : EffectId
-  /// Current model step id. Incremented by reducer when emitting CallModel.
+  /// Current model step id.
   current_model_step_id : ModelStepId
-  /// Catalog version in force. Set by Start; the reducer never changes it
-  /// within a Run (dynamic refresh is M2).
+  /// Catalog version. Set by Start; unchanged within a Run.
   catalog_version : CatalogVersion
   /// Budget consumed so far.
   budget_consumed : BudgetConsumed
-  /// Terminal outcome. `None` in every phase except `Terminal`.
+  /// Terminal outcome. `None` except in `Terminal`.
   outcome : RunOutcome?
-  /// Tool outcomes produced by this Run, kept separately from the full
-  /// transcript so a terminal outcome never replays historical session
-  /// messages as current-turn results.
+  /// Tool outcomes kept separately from transcript.
   tool_results : Array[(CallId, ToolOutcome)]
-  /// Requirement carried across the Suspended phase. `None` outside Suspended.
+  /// Suspension requirement. `None` outside `Suspended`.
   suspension_requirement : SuspensionRequirement?
 } derive(Eq, Debug)
 
-// ──────────────────────────────────────────────────────────────────────────
-// Constructor: Initializing
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
-/// Construct the initial `Initializing` state. The reducer accepts exactly
-/// one input against this state: `Start`. Any other input is a typed
-/// rejection.
+/// Construct the initial `Initializing` state. Accepts only `Start` input.
 pub fn RunState::initial(
   run_id~ : RunId,
   session_id~ : SessionId,
@@ -133,7 +88,7 @@ pub fn RunState::initial(
     session_id,
     budget,
     phase: Initializing,
-    transcript: CanonicalTranscript::empty(),
+    transcript: Transcript::empty(),
     pending_effects: [],
     next_event_sequence: EventSequence::initial(),
     next_effect_id: EffectId::first(),
@@ -147,20 +102,14 @@ pub fn RunState::initial(
   st.validate()
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Internal constructor used by reducer transitions
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
-/// Internal: build a RunState from raw fields and run invariants. The
-/// reducer uses this after computing the next-state values; if invariants
-/// fail, the function raises `KernelError::ConstructorInvariant`.
+/// Internal: build a RunState from raw fields and run invariants.
 fn RunState::mk(
   run_id~ : RunId,
   session_id~ : SessionId,
   budget~ : Budget,
   phase~ : Phase,
-  transcript~ : CanonicalTranscript,
+  transcript~ : Transcript,
   pending_effects~ : Array[Effect],
   next_event_sequence~ : EventSequence,
   next_effect_id~ : EffectId,
@@ -190,14 +139,8 @@ fn RunState::mk(
   st.validate()
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Invariant validation
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
-/// Check phase/pending/outcome invariants (ADR §2.2). Raises
-/// `KernelError::ConstructorInvariant` on violation. Returns `self` on
-/// success so callers can chain.
+/// Check phase/pending/outcome invariants (ADR §2.2). Raises `KernelError::ConstructorInvariant` on violation.
 fn RunState::validate(self : RunState) -> RunState raise KernelError {
   match self.phase {
     Initializing => {
@@ -351,10 +294,6 @@ fn count_execute_tool(effects : Array[Effect]) -> Int {
   n
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Accessors (read-only) — used by tests, executor, driver
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 pub fn RunState::run_id(self : RunState) -> RunId {
   self.run_id
@@ -371,7 +310,7 @@ pub fn RunState::phase(self : RunState) -> Phase {
 }
 
 ///|
-pub fn RunState::transcript(self : RunState) -> CanonicalTranscript {
+pub fn RunState::transcript(self : RunState) -> Transcript {
   self.transcript
 }
 
@@ -422,10 +361,6 @@ pub fn RunState::budget(self : RunState) -> Budget {
   self.budget
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Show (debug) — compact, payload-free
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 pub impl Show for RunState with fn to_string(self : RunState) -> String {
   let outcome_str = match self.outcome {
@@ -439,19 +374,13 @@ pub impl Show for RunState with fn to_string(self : RunState) -> String {
   "RunState(run=\{self.run_id.to_string()}, phase=\{self.phase.to_string()}, messages=\{self.transcript.length()}, pending=\{self.pending_effects.length()}, seq=\{self.next_event_sequence.to_int()}, outcome=\{outcome_str}, suspended_req=\{req_str})"
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Re-export constructors the reducer needs (so reducer only imports
-// `RunState` and `KernelError`, not internal helpers)
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
-/// Internal: produce the next state from raw fields, running invariants.
-/// Exposed at package level so the reducer (in `kernel_reducer.mbt`) can use
-/// it without re-implementing validation.
+/// Produce the next state from raw fields, running invariants.
+/// Exposed at package level for the reducer.
 pub fn RunState::transition(
   self : RunState,
   phase~ : Phase,
-  transcript~ : CanonicalTranscript,
+  transcript~ : Transcript,
   pending_effects~ : Array[Effect],
   next_event_sequence~ : EventSequence,
   next_effect_id~ : EffectId,
@@ -484,10 +413,7 @@ pub fn RunState::transition(
 }
 
 ///|
-/// Internal reducer helper: replace the run-local tool-result ledger while
-/// preserving every other validated state field. The ledger is deliberately
-/// not part of the public transition contract; callers can only change it
-/// through reducer-owned code.
+/// Replace the run-local tool-result ledger while preserving other state fields.
 fn RunState::with_tool_results(
   self : RunState,
   tool_results : Array[(CallId, ToolOutcome)],

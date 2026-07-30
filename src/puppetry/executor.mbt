@@ -93,6 +93,11 @@ fn ExecutionContext::new(
 /// - `CancelOutstanding` → delegates to `HostRuntime::cancel_effects`. The
 ///   reducer treats cancel as fire-and-forget (it has already terminal-
 ///   transitioned); the driver therefore drops the returned RunInput.
+///
+/// Returns `RunInput` for the reducer. (R3 M3.7: the previous
+/// `(RunInput, NewThreadSpec?)` tuple has been removed — compact is now a
+/// separate `ModelPort::compact` method driven by posoco, not a side-channel
+/// of `CallModel`.)
 async fn execute_one(
   effect : @kernel.Effect,
   ctx : ExecutionContext,
@@ -122,11 +127,8 @@ async fn execute_call_model(
   // explicitly forbidden (REPAIR §6.3) to pass an empty array here — that
   // would hide a missing-catalog bug as a successful but tool-blind model
   // call. The snapshot owns the definitions; we project them out.
-  let tool_definitions : Array[@kernel.CanonicalToolDef] = ctx.catalog.definitions()
-  let attempted : Result[
-    Result[@kernel.AssistantCompletion, @kernel.ModelFailure],
-    Error,
-  ] = Ok(
+  let tool_definitions : Array[@kernel.ToolDef] = ctx.catalog.definitions()
+  let attempted : Result[Result[ModelCallResult, @kernel.ModelFailure], Error] = Ok(
     ctx.host.call_model(
       payload.messages,
       tool_definitions,
@@ -139,11 +141,12 @@ async fn execute_call_model(
   match attempted {
     Err(error) =>
       raise EffectExecutionFailed(phase="CallModel", cause=error.to_string())
-    Ok(Ok(completion)) =>
+    Ok(Ok(result)) =>
       @kernel.ModelCompleted(payload=@kernel.ModelCompletedPayload::{
         effect_id,
         model_step_id: payload.model_step_id,
-        completion,
+        completion: result.completion,
+        processed_messages: result.processed_messages,
       })
     Ok(Err(failure)) =>
       @kernel.ModelFailed(payload=@kernel.ModelFailedPayload::{
@@ -192,6 +195,9 @@ async fn execute_execute_tool(
       @kernel.ToolFailed(payload=@kernel.ToolFailedPayload::{
         effect_id,
         call_id: payload.call_id,
+        tool_name: payload.tool_name,
+        arguments: payload.arguments,
+        reason: "host returned NotExecuted: " + reason.to_string(),
         runtime: Some(
           @kernel.Parse(
             reason="host returned NotExecuted: " + reason.to_string(),
@@ -206,6 +212,9 @@ async fn execute_execute_tool(
       @kernel.ToolFailed(payload=@kernel.ToolFailedPayload::{
         effect_id,
         call_id: payload.call_id,
+        tool_name: payload.tool_name,
+        arguments: payload.arguments,
+        reason: "missing owner: " + payload.owner.to_string(),
         runtime: None,
         invariant_failure: Some(@kernel.MissingOwner(owner=payload.owner)),
       })
@@ -213,6 +222,8 @@ async fn execute_execute_tool(
       @kernel.ToolCompleted(payload=@kernel.ToolCompletedPayload::{
         effect_id,
         call_id: payload.call_id,
+        tool_name: payload.tool_name,
+        arguments: payload.arguments,
         outcome,
       })
   }

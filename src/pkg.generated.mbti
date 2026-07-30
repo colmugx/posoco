@@ -16,9 +16,9 @@ pub fn assert_events_contain(Array[@types.TurnEvent], Array[@types.TurnEvent]) -
 
 pub fn assert_events_eq(Array[@types.TurnEvent], Array[@types.TurnEvent]) -> Unit
 
-pub fn build_error_message(@types.ToolCall, @error.RuntimeError) -> @types.Message
+pub fn build_error_message(@kernel.ToolCall, @error.RuntimeError) -> @kernel.Message
 
-pub fn build_tool_result_message(@types.ToolCall, @types.ToolResult) -> @types.Message
+pub fn build_tool_result_message(@kernel.ToolCall, @kernel.ToolOutcome) -> @kernel.Message
 
 pub fn event_trace_mismatch(Array[@types.TurnEvent], Array[@types.TurnEvent]) -> String?
 
@@ -26,19 +26,21 @@ pub fn parse_slash_args(String, Array[@port.CommandParam]) -> Result[Json, Strin
 
 pub fn tk_config() -> AgentConfig
 
-pub fn tk_error_result(String) -> @types.ToolResult
+pub fn tk_error_result(String) -> @kernel.ToolOutcome
 
-pub fn tk_ext(id~ : String, model? : &@port.ModelPort?, tools? : Array[&@port.ToolProvider], sessions? : Array[&@port.SessionStore], observers? : Array[&@port.Observer], compressors? : Array[&@port.Compressor], hooks? : Array[&@port.PipelineHook], memory? : Array[&@port.MemoryPort], lifecycle? : Array[&@port.Lifecycle], commands? : Array[&@port.CommandPort], ui? : Array[&@port.UiPort], prompt_contributors? : Array[&@port.SystemPromptContributor]) -> ManifestOnly
+pub fn tk_ext(id~ : String, model? : &@port.ModelPort?, tools? : Array[&@port.ToolProvider], sessions? : Array[&@port.SessionStore], observers? : Array[&@port.Observer], pre_model_hooks? : Array[&@port.PreModelHook], pre_tool_hooks? : Array[&@port.PreToolHook], post_event_hooks? : Array[&@port.PostEventHook], memory? : Array[&@port.MemoryPort], lifecycle? : Array[&@port.Lifecycle], commands? : Array[&@port.CommandPort], ui? : Array[&@port.UiPort], prompt_contributors? : Array[&@port.SystemPromptContributor]) -> ManifestOnly
 
-pub fn tk_ok_result(String) -> @types.ToolResult
+pub fn tk_ok_result(String) -> @kernel.ToolOutcome
 
-pub fn tk_stop_response(String) -> @types.ModelResponse
+pub fn tk_stop_response(String) -> @kernel.ModelCallResult
 
-pub fn tk_tool_call_response(String, String, Json) -> @types.ModelResponse
+pub fn tk_system_msg(String) -> @kernel.Message
 
-pub fn tk_tool_def(String, String) -> @types.ToolDef
+pub fn tk_tool_call_response(String, String, Json) -> @kernel.ModelCallResult
 
-pub fn tk_user_msg(String) -> @types.Message
+pub fn tk_tool_def(String, String) -> @kernel.ToolDef
+
+pub fn tk_user_msg(String) -> @kernel.Message
 
 pub fn validate_args(@port.CommandDef, Json) -> Result[Json, String]
 
@@ -48,35 +50,45 @@ pub fn validate_args(@port.CommandDef, Json) -> Result[Json, String]
 pub(all) struct Agent {
   model_port : &@port.ModelPort
   tool_routing : ToolRouting
-  pipeline_hook : &@port.PipelineHook?
-  compressors : Array[&@port.Compressor]
+  pre_model_hooks : Array[&@port.PreModelHook]
+  pre_tool_hooks : Array[&@port.PreToolHook]
+  post_event_hooks : Array[&@port.PostEventHook]
   observers : Array[&@port.Observer]
   memories : Array[&@port.MemoryPort]
   sessions : Array[&@port.SessionStore]
   lifecycle : &@port.Lifecycle?
-  config : AgentConfig
+  commands : Array[&@port.CommandPort]
+  builtin_command_port : BuiltinCommandPort
+  mailbox : @puppetry.ControlMailbox
+  mut config : AgentConfig
 }
 pub fn Agent::Agent(exts~ : Array[&@port.Extension], config~ : AgentConfig) -> Self raise @error.CompositionError
-pub async fn Agent::run_turn(Self, @types.Message, String) -> @types.TurnResult raise @error.AgentError
+pub fn Agent::commands_with_builtins(Self) -> Array[&@port.CommandPort]
+pub async fn Agent::run_turn(Self, @kernel.Message, String) -> @types.TurnResult raise @error.AgentError
 pub async fn Agent::shutdown(Self) -> Unit
+pub fn Agent::update_model(Self, String) -> Unit
+pub fn Agent::update_reasoning_effort(Self, String) -> Unit
 
 pub(all) struct AgentConfig {
   max_tool_rounds : Int
   temperature : Double?
   max_output_tokens : Int?
-  tool_choice : @types.ToolChoice?
-  reasoning_effort : @types.ReasoningEffort?
+  mut tool_choice : String?
+  mut reasoning_effort : String?
   model_context_window : Int?
+  mut model : String?
 }
 pub fn AgentConfig::to_chat_options(Self) -> @types.ChatOptions
+pub fn AgentConfig::to_chat_options_to_json(Self) -> Json
 
 pub(all) struct AggregatedPorts {
   model : &@port.ModelPort
   tools : Array[&@port.ToolProvider]
   sessions : Array[&@port.SessionStore]
   observers : Array[&@port.Observer]
-  compressors : Array[&@port.Compressor]
-  hooks : Array[&@port.PipelineHook]
+  pre_model_hooks : Array[&@port.PreModelHook]
+  pre_tool_hooks : Array[&@port.PreToolHook]
+  post_event_hooks : Array[&@port.PostEventHook]
   memory : Array[&@port.MemoryPort]
   lifecycle : Array[&@port.Lifecycle]
   commands : Array[&@port.CommandPort]
@@ -85,20 +97,28 @@ pub(all) struct AggregatedPorts {
   contributor_ids : Array[String]
 }
 
+pub(all) struct BuiltinCommandPort {
+  mailbox : &@puppetry.Mailbox
+  mut seq : Int
+}
+pub fn BuiltinCommandPort::BuiltinCommandPort(&@puppetry.Mailbox) -> Self
+pub impl @port.CommandPort for BuiltinCommandPort
+
 pub(all) struct CompositeToolProvider {
   providers : Array[&@port.ToolProvider]
 }
 pub impl @port.ToolProvider for CompositeToolProvider
 
-pub(all) struct HookChain {
-  hooks : Array[&@port.PipelineHook]
+pub(all) struct HookRecord2 {
+  label : String
+  outcome : RecordedHookOutcome2
 }
-pub impl @port.PipelineHook for HookChain
 
-pub(all) struct HookRecord {
-  stage_in : @port.Stage
-  outcome : RecordedHookOutcome
+pub struct LegacyEventProjector {
+  observers : Array[&@port.Observer]
 }
+pub fn LegacyEventProjector::LegacyEventProjector(Array[&@port.Observer]) -> Self
+pub impl @puppetry.EventSubscriber for LegacyEventProjector
 
 pub(all) struct ManifestOnly {
   cached : @port.ExtensionManifest
@@ -112,14 +132,6 @@ pub(all) struct NoopCommandPort {
 }
 pub impl @port.CommandPort for NoopCommandPort
 
-pub(all) struct NoopCompressor {
-}
-pub impl @port.Compressor for NoopCompressor
-
-pub(all) struct NoopHook {
-}
-pub impl @port.PipelineHook for NoopHook
-
 pub(all) struct NoopLifecycle {
 }
 pub impl @port.Lifecycle for NoopLifecycle
@@ -128,22 +140,34 @@ pub(all) struct NoopMemoryPort {
 }
 pub impl @port.MemoryPort for NoopMemoryPort
 
-pub(all) enum RecordedHookOutcome {
-  Returned(@port.Stage)
+pub(all) struct PortHostAdapter {
+  model : &@port.ModelPort
+  tools : Map[String, &@port.ToolProvider]
+  model_id : String
+}
+pub fn PortHostAdapter::from_agent(Agent) -> Self
+pub fn PortHostAdapter::model_id(Self) -> String
+pub fn PortHostAdapter::new(model~ : &@port.ModelPort, tools~ : Map[String, &@port.ToolProvider], model_id~ : String) -> Self
+pub impl @kernel.HostRuntime for PortHostAdapter
+
+pub(all) enum RecordedHookOutcome2 {
+  PassedThrough
   AbortedWith(String)
   DeferredWith(String)
 }
 
 pub(all) struct RecordingHook {
-  mut records : Array[HookRecord]
+  mut records : Array[HookRecord2]
   abort_on : Map[String, String]
   defer_on : Map[String, String]
 }
 pub fn RecordingHook::RecordingHook() -> Self
 pub fn RecordingHook::abort_when(Self, String, String) -> Unit
 pub fn RecordingHook::defer_when(Self, String, String) -> Unit
-pub fn RecordingHook::records(Self) -> Array[HookRecord]
-pub impl @port.PipelineHook for RecordingHook
+pub fn RecordingHook::records(Self) -> Array[HookRecord2]
+pub impl @port.PostEventHook for RecordingHook
+pub impl @port.PreModelHook for RecordingHook
+pub impl @port.PreToolHook for RecordingHook
 
 pub(all) struct RecordingObserver {
   mut events : Array[@types.TurnEvent]
@@ -167,15 +191,15 @@ pub fn RecordingSessionStore::seed(Self, String, @types.Session) -> Unit
 pub impl @port.SessionStore for RecordingSessionStore
 
 pub(all) struct RecordingToolProvider {
-  tool_defs : Array[@types.ToolDef]
+  tool_defs : Array[@kernel.ToolDef]
   outcomes : Map[String, ScriptedToolOutcome]
   mut list_calls : Int
   mut exec_records : Array[ToolExecRecord]
   mut ops : Array[ToolProviderOp]
 }
-pub fn RecordingToolProvider::RecordingToolProvider(Array[@types.ToolDef], Map[String, ScriptedToolOutcome]) -> Self
+pub fn RecordingToolProvider::RecordingToolProvider(Array[@kernel.ToolDef], Map[String, ScriptedToolOutcome]) -> Self
 pub fn RecordingToolProvider::exec_records(Self) -> Array[ToolExecRecord]
-pub async fn RecordingToolProvider::execute_direct(Self, String, @types.ToolCall) -> @types.ToolResult raise @error.RuntimeError
+pub async fn RecordingToolProvider::execute_direct(Self, String, @kernel.ToolCall) -> @kernel.ToolOutcome raise @error.RuntimeError
 pub fn RecordingToolProvider::list_call_count(Self) -> Int
 pub fn RecordingToolProvider::ops(Self) -> Array[ToolProviderOp]
 pub impl @port.ToolProvider for RecordingToolProvider
@@ -202,26 +226,25 @@ pub(all) struct ScriptedModel {
   steps : Array[ScriptedModelStep]
   mut index : Int
   mut calls : Int
-  received_messages : Array[Array[@types.Message]]
-  received_tools : Array[Array[@types.ToolDef]]
+  received_messages : Array[Array[@kernel.Message]]
+  received_tools : Array[Array[@kernel.ToolDef]]
   received_options : Array[@types.ChatOptions]
   received_chunks : Array[@types.StreamChunk]
 }
 pub fn ScriptedModel::ScriptedModel(Array[ScriptedModelStep]) -> Self
 pub fn ScriptedModel::call_count(Self) -> Int
-pub async fn ScriptedModel::chat_direct(Self, Array[@types.Message], Array[@types.ToolDef], @types.ChatOptions) -> @types.ModelResponse raise @error.ModelError
-pub async fn ScriptedModel::chat_streaming_direct(Self, Array[@types.Message], Array[@types.ToolDef], @types.ChatOptions, (@types.StreamChunk) -> Unit) -> @types.ModelResponse raise @error.ModelError
+pub async fn ScriptedModel::chat_direct(Self, Array[@kernel.Message], Array[@kernel.ToolDef], @types.ChatOptions) -> @kernel.ModelCallResult raise @error.ModelError
 pub fn ScriptedModel::options_received(Self) -> Array[@types.ChatOptions]
 pub impl @port.ModelPort for ScriptedModel
 
 pub(all) enum ScriptedModelStep {
-  Respond(@types.ModelResponse)
-  Stream(chunks~ : Array[@types.StreamChunk], response~ : @types.ModelResponse)
+  Respond(@kernel.ModelCallResult)
+  Stream(chunks~ : Array[@types.StreamChunk], response~ : @kernel.ModelCallResult)
   Fail(@error.ModelError)
 }
 
 pub(all) enum ScriptedToolOutcome {
-  OutcomeOk(@types.ToolResult)
+  OutcomeOk(@kernel.ToolOutcome)
   OutcomeErr(@error.RuntimeError)
 }
 
@@ -240,15 +263,15 @@ pub(all) struct ToolExecRecord {
 
 pub(all) enum ToolProviderOp {
   ListTools
-  ExecuteTool(requested_name~ : String, call~ : @types.ToolCall)
+  ExecuteTool(requested_name~ : String, call~ : @kernel.ToolCall)
 }
 
 pub(all) struct ToolRegistry {
-  mut tools : Map[String, @types.ToolDef]
-  mut executors : Map[String, (@types.ToolCall) -> @types.ToolResult]
+  mut tools : Map[String, @kernel.ToolDef]
+  mut executors : Map[String, (@kernel.ToolCall) -> @kernel.ToolOutcome]
 }
 pub fn ToolRegistry::ToolRegistry() -> Self
-pub fn ToolRegistry::register(Self, @types.ToolDef, (@types.ToolCall) -> @types.ToolResult) -> Unit
+pub fn ToolRegistry::register(Self, @kernel.ToolDef, (@kernel.ToolCall) -> @kernel.ToolOutcome) -> Unit
 pub fn ToolRegistry::unregister(Self, String) -> Unit
 pub impl @port.ToolProvider for ToolRegistry
 
@@ -256,10 +279,6 @@ type ToolRouting
 
 // Type aliases
 pub using @error {type AgentError}
-
-pub using @kernel {type AssistantCompletion}
-
-pub using @kernel {type AssistantFinishReason}
 
 pub using @port {type AutocompleteItem}
 
@@ -272,22 +291,6 @@ pub using @kernel {type BudgetDimension}
 pub using @kernel {type CallId}
 
 pub using @kernel {type CancelReason}
-
-pub using @kernel {type CanonicalContent}
-
-pub using @puppetry {type CanonicalHost}
-
-pub using @puppetry {type CanonicalHostCompositionError}
-
-pub using @kernel {type CanonicalMessage}
-
-pub using @kernel {type CanonicalToolCall}
-
-pub using @kernel {type CanonicalToolDef}
-
-pub using @kernel {type CanonicalTranscript}
-
-pub using @kernel {type CanonicalUsage}
 
 pub using @kernel {type CatalogCompositionError}
 
@@ -305,15 +308,19 @@ pub using @port {type CommandParam}
 
 pub using @port {type CommandType}
 
+pub using @kernel {type CompactMode}
+
+pub using @kernel {type CompactResult}
+
+pub using @kernel {type Completion}
+
+pub using @kernel {type CompletionPayload}
+
 pub using @port {type CompositeUiPort}
 
 pub using @error {type CompositionError}
 
-pub using @port {type CompressAction}
-
-pub using @port {type CompressContext}
-
-pub using @types {type Content}
+pub using @kernel {type Content}
 
 pub using @kernel {type EffectId}
 
@@ -323,9 +330,9 @@ pub using @kernel {type ExecutionPolicy}
 
 pub using @port {type ExtensionManifest}
 
-pub using @types {type FinishReason}
+pub using @kernel {type FinishReason}
 
-pub using @port {type HookError}
+pub using @port {type HookAbort}
 
 pub type HostChunkCallback = (Json) -> Unit
 
@@ -341,15 +348,15 @@ pub using @error {type MemoryError}
 
 pub using @types {type MemoryQuery}
 
-pub using @types {type Message}
+pub using @kernel {type Message}
+
+pub using @kernel {type ModelCallResult}
 
 pub using @error {type ModelError}
 
 pub using @kernel {type ModelFailure}
 
 pub using @puppetry {type ModelId}
-
-pub using @types {type ModelResponse}
 
 pub using @kernel {type ModelStepId}
 
@@ -365,7 +372,11 @@ pub using @kernel {type OwnerId}
 
 pub using @port {type ParamType}
 
+pub using @port {type PostStage}
+
 pub using @puppetry {type PromptResult}
+
+pub using @port {type ProviderConfig}
 
 pub using @puppetry {type Puppet}
 
@@ -375,9 +386,7 @@ pub using @puppetry {type PuppetError}
 
 pub using @puppetry {type QuiescentStatus}
 
-pub using @types {type ReasoningEffort}
-
-pub using @types {type Role}
+pub using @kernel {type Reasoning}
 
 pub using @kernel {type RunId}
 
@@ -391,11 +400,11 @@ pub using @error {type SessionError}
 
 pub using @kernel {type SessionId}
 
-pub using @port {type Stage}
-
 pub using @types {type StreamAccumulator}
 
 pub using @types {type StreamChunk}
+
+pub using @types {type StreamMode}
 
 pub using @puppetry {type SubscriberError}
 
@@ -403,21 +412,21 @@ pub using @port {type SystemPromptHook}
 
 pub using @port {type SystemPromptSection}
 
-pub using @types {type ToolCall}
+pub using @kernel {type ToolCall}
 
 pub using @kernel {type ToolCatalogBuilder}
 
 pub using @kernel {type ToolCatalogSnapshot}
 
-pub using @types {type ToolChoice}
+pub using @kernel {type ToolDef}
 
-pub using @types {type ToolDef}
+pub using @port {type ToolHookDecision}
 
 pub using @kernel {type ToolName}
 
 pub using @kernel {type ToolOutcome}
 
-pub using @types {type ToolResult}
+pub using @kernel {type Transcript}
 
 pub using @types {type TurnEvent}
 
@@ -441,11 +450,9 @@ pub using @port {type UiResponse}
 
 pub using @port {type UiSlot}
 
-pub using @types {type Usage}
+pub using @kernel {type Usage}
 
 pub using @port {trait CommandPort}
-
-pub using @port {trait Compressor}
 
 pub using @puppetry {trait EventSubscriber}
 
@@ -459,13 +466,15 @@ pub using @port {trait Lifecycle}
 
 pub using @port {trait MemoryPort}
 
-pub using @puppetry {trait ModelBinding}
-
 pub using @port {trait ModelPort}
 
 pub using @port {trait Observer}
 
-pub using @port {trait PipelineHook}
+pub using @port {trait PostEventHook}
+
+pub using @port {trait PreModelHook}
+
+pub using @port {trait PreToolHook}
 
 pub using @puppetry {trait PuppetLifecycleNode}
 
@@ -474,8 +483,6 @@ pub using @puppetry {trait RunJournal}
 pub using @port {trait SessionStore}
 
 pub using @port {trait SystemPromptContributor}
-
-pub using @puppetry {trait ToolBinding}
 
 pub using @port {trait ToolProvider}
 

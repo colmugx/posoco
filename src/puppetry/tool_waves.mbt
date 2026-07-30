@@ -10,7 +10,7 @@ fn scheduled_tool_effect_waves(
   catalog : ToolCatalogSnapshot,
   expected_version : CatalogVersion,
 ) -> Array[Array[Effect]] raise PuppetError {
-  let calls : Array[CanonicalToolCall] = []
+  let calls : Array[ToolCall] = []
   for effect in pending {
     match effect {
       @kernel.ExecuteTool(payload~, ..) =>
@@ -94,7 +94,7 @@ fn scheduled_tool_effect_waves(
 /// arbitrary effect or drops a declared one.
 fn find_pending_effect_for_call(
   pending : Array[Effect],
-  call : CanonicalToolCall,
+  call : ToolCall,
 ) -> Effect raise PuppetError {
   let mut matched : Effect? = None
   for effect in pending {

@@ -12,7 +12,7 @@ fn make_catalog(
   for pair in defs {
     let (name, policy) = pair
     let _ = builder.add(
-      CanonicalToolDef(
+      ToolDef(
         name=ToolName::unchecked(name),
         description="test",
         input_schema=Json::object(
@@ -28,7 +28,7 @@ fn make_catalog(
 }
 
 ///|
-fn make_call(call_id : String, name : String) -> CanonicalToolCall {
+fn make_call(call_id : String, name : String) -> ToolCall {
   {
     call_id: CallId::unchecked(call_id),
     name: ToolName::unchecked(name),

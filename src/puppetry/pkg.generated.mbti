@@ -3,6 +3,7 @@ package "colmugx/posoco/puppetry"
 
 import {
   "colmugx/posoco/kernel",
+  "colmugx/posoco/port",
   "moonbitlang/async/aqueue",
   "moonbitlang/async/cond_var",
   "moonbitlang/core/debug",
@@ -14,15 +15,6 @@ pub fn commit_batch(&RunJournal, FrozenBatch) -> Int raise PuppetError
 pub fn prepare_batch(PreCommitContext, Array[&JournalContributor]) -> FrozenBatch raise PuppetError
 
 // Errors
-pub(all) suberror CanonicalHostCompositionError {
-  OwnerMismatch(tool_name~ : String, declared_owner~ : String, binding_owner~ : String)
-  DuplicateBinding(tool_name~ : String)
-  MissingFromCatalog(tool_name~ : String)
-  DefinitionMismatch(tool_name~ : String)
-  CatalogToolUnbound(tool_name~ : String)
-}
-pub impl Show for CanonicalHostCompositionError
-
 pub(all) suberror ContributionError {
   Internal(contributor_id~ : String, detail~ : String)
   Inconsistent(contributor_id~ : String, detail~ : String)
@@ -60,6 +52,7 @@ pub(all) suberror PuppetError {
   EffectExecutionFailed(phase~ : String, cause~ : String)
   EffectExecutionCancelled(phase~ : String)
   ReducerInvariantViolation(category~ : @kernel.InvariantCategory)
+  HookRejected(reason~ : String)
 }
 pub impl Show for PuppetError
 
@@ -79,14 +72,6 @@ pub fn AbortCommand::command_id(Self) -> CommandId
 pub fn AbortCommand::detail(Self) -> String?
 pub fn AbortCommand::target_run_id(Self) -> @kernel.RunId
 
-pub struct CanonicalHost {
-  model : &ModelBinding
-  tools_by_name : Map[String, &ToolBinding]
-}
-pub fn CanonicalHost::from_catalog(&ModelBinding, @kernel.ToolCatalogSnapshot, Array[&ToolBinding]) -> Self raise CanonicalHostCompositionError
-pub fn CanonicalHost::model_id(Self) -> ModelId
-pub impl @kernel.HostRuntime for CanonicalHost
-
 pub(all) struct CommandId {
   value : String
 } derive(Eq, Hash, @debug.Debug)
@@ -95,11 +80,28 @@ pub fn CommandId::to_string(Self) -> String
 pub fn CommandId::unchecked(String) -> Self
 pub impl Show for CommandId
 
+pub(all) struct CompactCommand {
+  command_id : CommandId
+  target_run_id : @kernel.RunId
+  target_turn_id : TurnId
+  trigger : @kernel.CompactTrigger
+} derive(Eq, @debug.Debug)
+pub fn CompactCommand::command_id(Self) -> CommandId
+pub fn CompactCommand::target_run_id(Self) -> @kernel.RunId
+pub fn CompactCommand::target_turn_id(Self) -> TurnId
+pub fn CompactCommand::trigger(Self) -> @kernel.CompactTrigger
+
+type CompactFlow
+
 pub struct ControlMailbox {
   mut steer_queue : @aqueue.Queue[SteerCommand]
   mut follow_up_queue : @aqueue.Queue[FollowUpCommand]
   mut steer_depth : Int
   mut follow_up_depth : Int
+  mut fork_queue : @aqueue.Queue[ForkCommand]
+  mut fork_depth : Int
+  mut compact_queue : @aqueue.Queue[CompactCommand]
+  mut compact_depth : Int
   resume_pending : Map[String, ResumeCommand]
   mut abort_requested : Bool
   mut active_run_id : @kernel.RunId?
@@ -109,23 +111,7 @@ pub struct ControlMailbox {
   max_depth : Int
 }
 pub fn ControlMailbox::ControlMailbox() -> Self
-pub fn ControlMailbox::abort_requested(Self) -> Bool
-pub fn ControlMailbox::active_run_id(Self) -> @kernel.RunId?
-pub fn ControlMailbox::active_turn_id(Self) -> TurnId?
-pub fn ControlMailbox::bind_run(Self, @kernel.RunId, TurnId) -> Unit
-pub fn ControlMailbox::clear_run(Self) -> Unit
-pub fn ControlMailbox::consume_one_follow_up(Self) -> FollowUpCommand?
-pub fn ControlMailbox::consume_steers(Self) -> Array[SteerCommand]
-pub fn ControlMailbox::enqueue_abort(Self, AbortCommand) -> EnqueueResult
-pub fn ControlMailbox::enqueue_follow_up(Self, FollowUpCommand) -> EnqueueResult
-pub fn ControlMailbox::enqueue_resume(Self, ResumeCommand) -> EnqueueResult
-pub fn ControlMailbox::enqueue_steer(Self, SteerCommand) -> EnqueueResult
-pub fn ControlMailbox::follow_up_depth(Self) -> Int
-pub fn ControlMailbox::quiescent_status(Self) -> QuiescentStatus
-pub fn ControlMailbox::set_quiescent(Self, QuiescentStatus) -> Unit
-pub fn ControlMailbox::steer_depth(Self) -> Int
-pub fn ControlMailbox::take_resume(Self, String) -> ResumeCommand?
-pub async fn ControlMailbox::wait_idle(Self) -> QuiescentStatus
+pub impl Mailbox for ControlMailbox
 
 pub(all) enum EnqueueResult {
   Accepted(command_id~ : CommandId)
@@ -175,6 +161,8 @@ pub struct FailOnNthJournal {
 pub fn FailOnNthJournal::FailOnNthJournal(InMemoryJournal, Int) -> Self
 pub impl RunJournal for FailOnNthJournal
 
+type FoldOutcome
+
 pub(all) struct FollowUpCommand {
   command_id : CommandId
   target_run_id : @kernel.RunId
@@ -185,6 +173,17 @@ pub fn FollowUpCommand::command_id(Self) -> CommandId
 pub fn FollowUpCommand::payload(Self) -> Json
 pub fn FollowUpCommand::source_turn_id(Self) -> TurnId
 pub fn FollowUpCommand::target_run_id(Self) -> @kernel.RunId
+
+pub(all) struct ForkCommand {
+  command_id : CommandId
+  target_run_id : @kernel.RunId
+  target_turn_id : TurnId
+  fork_index : Int
+} derive(Eq, @debug.Debug)
+pub fn ForkCommand::command_id(Self) -> CommandId
+pub fn ForkCommand::fork_index(Self) -> Int
+pub fn ForkCommand::target_run_id(Self) -> @kernel.RunId
+pub fn ForkCommand::target_turn_id(Self) -> TurnId
 
 pub(all) struct FrozenBatch {
   savepoint_id : String
@@ -365,36 +364,51 @@ pub(all) enum PromptResult {
   Accepted(run_id~ : @kernel.RunId, turn_id~ : TurnId)
   LeaseBusy(held_by~ : String)
   Rejected(error~ : PuppetError)
+  ForkCompleted(run_id~ : @kernel.RunId, turn_id~ : TurnId, parent_session_id~ : String, new_session_id~ : String, forked_messages~ : Array[@kernel.Message])
+  CompactCompleted(run_id~ : @kernel.RunId, turn_id~ : TurnId, mode~ : @kernel.CompactMode, trigger~ : @kernel.CompactTrigger, new_session_id~ : String?, compacted_messages~ : Array[@kernel.Message])
 }
 pub impl Show for PromptResult
 
 pub struct Puppet {
   config : PuppetConfig
   mut phase_gate : PhaseGate
-  mailbox : ControlMailbox
+  mailbox : &Mailbox
   lifecycle : LifecycleCollection
-  mut last_completed_transcript : @kernel.CanonicalTranscript?
+  mut last_completed_transcript : @kernel.Transcript?
+  mut last_outcome : @kernel.RunOutcome?
 }
 pub fn Puppet::Puppet(PuppetConfig) -> Self
 pub fn Puppet::is_quiescent(Self) -> Bool
-pub fn Puppet::last_completed_transcript(Self) -> @kernel.CanonicalTranscript?
+pub fn Puppet::last_completed_transcript(Self) -> @kernel.Transcript?
+pub fn Puppet::last_terminal_outcome(Self) -> @kernel.RunOutcome?
+pub fn Puppet::mailbox(Self) -> &Mailbox
 pub fn Puppet::phase(Self) -> PuppetPhase
-pub async fn Puppet::prompt(Self, @kernel.RunId, TurnId, @kernel.SessionId, Array[@kernel.CanonicalMessage], String) -> PromptResult raise PuppetError
+pub async fn Puppet::prompt(Self, @kernel.RunId, TurnId, @kernel.SessionId, Array[@kernel.Message], String) -> PromptResult raise PuppetError
 pub async fn Puppet::shutdown(Self) -> Unit raise PuppetError
 pub async fn Puppet::startup(Self) -> Unit raise PuppetError
 pub async fn Puppet::wait_idle(Self) -> QuiescentStatus
 
 pub(all) struct PuppetConfig {
-  host : CanonicalHost
+  host : &@kernel.HostRuntime
+  model_id : String
   catalog : @kernel.ToolCatalogSnapshot
   journal : &RunJournal
   contributors : Array[&JournalContributor]
   subscribers : Array[&EventSubscriber]
+  observers : Array[&@port.Observer]
   lifecycle_nodes : Array[&PuppetLifecycleNode]
   stream_chunks : ((Json) -> Unit)?
+  pre_model_hooks : Array[&@port.PreModelHook]
+  pre_tool_hooks : Array[&@port.PreToolHook]
+  post_event_hooks : Array[&@port.PostEventHook]
   call_options : Json
   default_budget : @kernel.Budget
   max_iterations : Int
+  commands : Array[&@port.CommandPort]
+  session_store : &@port.SessionStore?
+  context_window : Int?
+  compact_threshold : Double
+  mailbox : &Mailbox
 }
 
 pub(all) enum PuppetPhase {
@@ -478,7 +492,7 @@ pub struct TurnSnapshot {
   turn_id : TurnId
   session_id : @kernel.SessionId
   catalog_version : @kernel.CatalogVersion
-  tool_definitions : Array[@kernel.CanonicalToolDef]
+  tool_definitions : Array[@kernel.ToolDef]
   model_id : String
   call_options : Json
   budget : @kernel.Budget
@@ -501,7 +515,7 @@ pub fn TurnSnapshot::run_id(Self) -> @kernel.RunId
 pub fn TurnSnapshot::session_id(Self) -> @kernel.SessionId
 pub fn TurnSnapshot::subscriber_provenance(Self) -> Array[String]
 pub fn TurnSnapshot::to_redacted_string(Self) -> String
-pub fn TurnSnapshot::tool_definitions(Self) -> Array[@kernel.CanonicalToolDef]
+pub fn TurnSnapshot::tool_definitions(Self) -> Array[@kernel.ToolDef]
 pub fn TurnSnapshot::turn_id(Self) -> TurnId
 pub impl Show for TurnSnapshot
 
@@ -534,9 +548,30 @@ pub(open) trait JournalContributor {
   fn contribute(Self, PreCommitContext) -> JournalContribution raise ContributionError
 }
 
-pub(open) trait ModelBinding {
-  fn model_id(Self) -> ModelId
-  async fn complete(Self, Array[@kernel.CanonicalMessage], Array[@kernel.CanonicalToolDef], Json, ((Json) -> Unit)?) -> Result[@kernel.AssistantCompletion, @kernel.ModelFailure]
+pub(open) trait Mailbox {
+  fn bind_run(Self, @kernel.RunId, TurnId) -> Unit
+  fn clear_run(Self) -> Unit
+  fn active_run_id(Self) -> @kernel.RunId?
+  fn active_turn_id(Self) -> TurnId?
+  fn abort_requested(Self) -> Bool
+  fn steer_depth(Self) -> Int
+  fn follow_up_depth(Self) -> Int
+  fn fork_depth(Self) -> Int
+  fn compact_depth(Self) -> Int
+  fn enqueue_steer(Self, SteerCommand) -> EnqueueResult
+  fn enqueue_follow_up(Self, FollowUpCommand) -> EnqueueResult
+  fn enqueue_resume(Self, ResumeCommand) -> EnqueueResult
+  fn enqueue_abort(Self, AbortCommand) -> EnqueueResult
+  fn enqueue_fork(Self, ForkCommand) -> EnqueueResult
+  fn enqueue_compact(Self, CompactCommand) -> EnqueueResult
+  fn consume_steers(Self) -> Array[SteerCommand]
+  fn consume_one_follow_up(Self) -> FollowUpCommand?
+  fn consume_one_fork(Self) -> ForkCommand?
+  fn consume_one_compact(Self) -> CompactCommand?
+  fn take_resume(Self, String) -> ResumeCommand?
+  fn quiescent_status(Self) -> QuiescentStatus
+  fn set_quiescent(Self, QuiescentStatus) -> Unit
+  async fn wait_idle(Self) -> QuiescentStatus
 }
 
 pub(open) trait PuppetLifecycleNode {
@@ -551,11 +586,5 @@ pub(open) trait RunJournal {
   fn revision(Self) -> Int
   fn entries_for_run(Self, @kernel.RunId) -> Array[JournalEntry]
   fn entries_for_savepoint(Self, @kernel.RunId, String) -> Array[JournalEntry]
-}
-
-pub(open) trait ToolBinding {
-  fn owner_id(Self) -> @kernel.OwnerId
-  fn definitions(Self) -> Array[@kernel.CanonicalToolDef]
-  async fn execute(Self, @kernel.CallId, @kernel.ToolName, Json) -> @kernel.ToolOutcome
 }
 

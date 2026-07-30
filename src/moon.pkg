@@ -4,12 +4,21 @@ import {
   "colmugx/posoco/kernel",
   "colmugx/posoco/error",
   "colmugx/posoco/puppetry",
-  "moonbitlang/async",
   "moonbitlang/core/json",
   "moonbitlang/core/strconv",
   "moonbitlang/core/string",
 }
 
-options(
-  targets: { "error_transparency_shutdown_native_test.mbt": [ "native" ] },
-)
+import {
+  "colmugx/posoco/port",
+  "colmugx/posoco/types",
+  "colmugx/posoco/error",
+  "moonbitlang/async",
+} for "test"
+
+import {
+  "colmugx/posoco/port",
+  "colmugx/posoco/kernel",
+  "colmugx/posoco/puppetry",
+  "moonbitlang/async",
+} for "wbtest"
