@@ -25,7 +25,7 @@ impl @port.ModelPort for MockModelPort with fn chat(
 
 ///|
 impl @port.ModelPort for MockModelPort with fn compact(
-  self,
+  _self,
   _messages : Array[@kernel.Message],
   _options : @types.ChatOptions,
   _trigger : @kernel.CompactTrigger,

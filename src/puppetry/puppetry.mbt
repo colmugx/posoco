@@ -978,7 +978,7 @@ async fn Puppet::drive_run(
 /// `PromptResult` (compact::NewThread stops the turn with CompactCompleted),
 /// or it should adopt the new `RunState` and continue the loop (Replace /
 /// Append), or it should reject the run (compact failed).
-enum CompactFlow {
+priv enum CompactFlow {
   ReturnedResult(PromptResult)
   UpdatedState(RunState)
   Failed(PuppetError)
@@ -1220,7 +1220,7 @@ fn Puppet::check_auto_compact(
 /// Outcome of `fold_effect_input`. Either the next state to drive, or a
 /// terminal PromptResult to return early (used by auto-compact when the
 /// modelport chose NewThread — the run stops with CompactCompleted).
-enum FoldOutcome {
+priv enum FoldOutcome {
   Continue(RunState)
   Return(PromptResult)
 }

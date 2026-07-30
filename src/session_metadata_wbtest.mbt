@@ -396,27 +396,6 @@ pub impl @port.SessionStore for BoundaryMutatingStore with fn save(
 }
 
 ///|
-struct BoundaryAliasingStore {
-  session : @types.Session
-}
-
-///|
-pub impl @port.SessionStore for BoundaryAliasingStore with fn load(self, _id) {
-  // Deliberately return the retained value directly. Agent must detach from
-  // this implementation even when the store itself provides no snapshot.
-  self.session
-}
-
-///|
-pub impl @port.SessionStore for BoundaryAliasingStore with fn save(
-  _self,
-  _id,
-  _session,
-) {
-  ()
-}
-
-///|
 struct BoundaryMutatingHook {}
 
 ///|
@@ -433,45 +412,6 @@ pub impl @port.PreToolHook for BoundaryMutatingHook with fn before_tool(
   call : @kernel.ToolCall,
 ) -> @port.ToolHookDecision {
   Approve(call~)
-}
-
-///|
-struct BoundaryMutatingModel {
-  response : @kernel.ModelCallResult
-}
-
-///|
-pub impl @port.ModelPort for BoundaryMutatingModel with fn chat(
-  self,
-  messages : Array[@kernel.Message],
-  tools : Array[@kernel.ToolDef],
-  _options : @types.ChatOptions,
-  _stream : @types.StreamMode,
-) -> @kernel.ModelCallResult raise @error.ModelError {
-  poison_first_message(messages, "model-poison")
-  for tool in tools {
-    poison_json(tool.input_schema, "model-tool-poison")
-  }
-  self.response
-}
-
-///|
-pub impl @port.ModelPort for BoundaryMutatingModel with fn compact(
-  self,
-  _messages : Array[@kernel.Message],
-  _options : @types.ChatOptions,
-  _trigger : @kernel.CompactTrigger,
-) -> @kernel.CompactResult raise @error.ModelError {
-  raise @error.ModelError::ResponseParse(
-    "BoundaryMutatingModel does not implement compact",
-  )
-}
-
-///|
-pub impl @port.ModelPort for BoundaryMutatingModel with fn provider_config(
-  _self,
-) -> @port.ProviderConfig {
-  @port.ProviderConfig::empty()
 }
 
 ///|

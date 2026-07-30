@@ -35,7 +35,7 @@ pub impl @port.MemoryPort for FixedMemoryPort with fn search(
 
 ///|
 pub impl @port.MemoryPort for FixedMemoryPort with fn store(
-  self : FixedMemoryPort,
+  _self : FixedMemoryPort,
   _entry : @types.MemoryEntry,
 ) -> String raise @error.MemoryError {
   raise @error.MemoryError::Store("store not supported in FixedMemoryPort")
@@ -43,7 +43,7 @@ pub impl @port.MemoryPort for FixedMemoryPort with fn store(
 
 ///|
 pub impl @port.MemoryPort for FixedMemoryPort with fn delete(
-  self : FixedMemoryPort,
+  _self : FixedMemoryPort,
   _id : String,
 ) -> Unit raise @error.MemoryError {
   raise @error.MemoryError::Delete("delete not supported in FixedMemoryPort")
@@ -52,12 +52,12 @@ pub impl @port.MemoryPort for FixedMemoryPort with fn delete(
 ///|
 /// MemoryPort whose search always raises MemoryError.
 struct FailingMemoryPort {
-  dummy : Unit
+  _dummy : Unit
 }
 
 ///|
 pub impl @port.MemoryPort for FailingMemoryPort with fn search(
-  self : FailingMemoryPort,
+  _self : FailingMemoryPort,
   _query : @types.MemoryQuery,
 ) -> Array[@types.MemoryEntry] raise @error.MemoryError {
   raise @error.MemoryError::Search("always fails")
@@ -65,7 +65,7 @@ pub impl @port.MemoryPort for FailingMemoryPort with fn search(
 
 ///|
 pub impl @port.MemoryPort for FailingMemoryPort with fn store(
-  self : FailingMemoryPort,
+  _self : FailingMemoryPort,
   _entry : @types.MemoryEntry,
 ) -> String raise @error.MemoryError {
   raise @error.MemoryError::Store("not supported")
@@ -73,7 +73,7 @@ pub impl @port.MemoryPort for FailingMemoryPort with fn store(
 
 ///|
 pub impl @port.MemoryPort for FailingMemoryPort with fn delete(
-  self : FailingMemoryPort,
+  _self : FailingMemoryPort,
   _id : String,
 ) -> Unit raise @error.MemoryError {
   raise @error.MemoryError::Delete("not supported")
@@ -209,7 +209,7 @@ test "m38_memory/idempotent_replaces_prior_memory_message" {
 /// Memory search failure is swallowed — the turn is not aborted and
 /// messages pass through unchanged.
 test "m38_memory/swallows_search_failure" {
-  let mem : &@port.MemoryPort = FailingMemoryPort::{ dummy: () }
+  let mem : &@port.MemoryPort = FailingMemoryPort::{ _dummy: () }
   let hook = @port.MemoryRetrievalHook::MemoryRetrievalHook(memories=[mem])
   let user : @kernel.Message = @kernel.UserMessage(content=[
     @kernel.Text("query"),

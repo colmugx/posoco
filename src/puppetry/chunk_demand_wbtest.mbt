@@ -51,7 +51,7 @@ pub impl @kernel.HostRuntime for ChunkDemandHost with fn execute_tool(
   call_id : CallId,
   _tool_name : ToolName,
   _arguments : Json,
-) -> ToolOutcome {
+) -> @kernel.ToolOutcome {
   Success(content=call_id.to_string(), structured=None)
 }
 

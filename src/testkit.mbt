@@ -336,7 +336,7 @@ pub impl @port.ModelPort for ScriptedModel with fn chat(
 
 ///|
 pub impl @port.ModelPort for ScriptedModel with fn compact(
-  self,
+  _self,
   _messages : Array[@kernel.Message],
   _options : @types.ChatOptions,
   _trigger : @kernel.CompactTrigger,

@@ -25,7 +25,7 @@ impl @port.ModelPort for MockModelPort with fn chat(
 
 ///|
 impl @port.ModelPort for MockModelPort with fn compact(
-  self,
+  _self,
   _messages : Array[@kernel.Message],
   _options : @types.ChatOptions,
   _trigger : @kernel.CompactTrigger,
@@ -139,7 +139,7 @@ fn user_msg(text : String) -> @kernel.Message {
 }
 
 ///|
-fn assistant_msg(text : String) -> @kernel.Message {
+fn _assistant_msg(text : String) -> @kernel.Message {
   @kernel.AssistantMessage(
     content=[@kernel.Text(text)],
     tool_calls=[],
@@ -779,7 +779,7 @@ impl @port.ModelPort for MockStreamingModelPort with fn chat(
 
 ///|
 impl @port.ModelPort for MockStreamingModelPort with fn compact(
-  self,
+  _self,
   _messages : Array[@kernel.Message],
   _options : @types.ChatOptions,
   _trigger : @kernel.CompactTrigger,

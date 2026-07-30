@@ -6,7 +6,7 @@
 ///|
 struct BoundaryProbeHost {
   journal : InMemoryJournal
-  model_results : Array[Result[Completion, ModelFailure]]
+  model_results : Array[Result[@kernel.Completion, ModelFailure]]
   mut model_index : Int
   append_counts_at_model_call : Array[Int]
 }
@@ -14,7 +14,7 @@ struct BoundaryProbeHost {
 ///|
 fn BoundaryProbeHost::new(
   journal : InMemoryJournal,
-  model_results : Array[Result[Completion, ModelFailure]],
+  model_results : Array[Result[@kernel.Completion, ModelFailure]],
 ) -> BoundaryProbeHost {
   {
     journal,
@@ -60,7 +60,7 @@ pub impl @kernel.HostRuntime for BoundaryProbeHost with fn execute_tool(
   call_id : CallId,
   _tool_name : ToolName,
   _arguments : Json,
-) -> ToolOutcome {
+) -> @kernel.ToolOutcome {
   Success(content=call_id.to_string(), structured=None)
 }
 

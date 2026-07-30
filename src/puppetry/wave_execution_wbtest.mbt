@@ -8,7 +8,7 @@
 
 ///|
 struct WaveFixtureHost {
-  model_results : Array[Result[Completion, ModelFailure]]
+  model_results : Array[Result[@kernel.Completion, ModelFailure]]
   mut model_index : Int
   started : Array[String]
   finished : Array[String]
@@ -18,7 +18,7 @@ struct WaveFixtureHost {
 
 ///|
 fn WaveFixtureHost::new(
-  model_results : Array[Result[Completion, ModelFailure]],
+  model_results : Array[Result[@kernel.Completion, ModelFailure]],
 ) -> WaveFixtureHost {
   {
     model_results: model_results.copy(),
@@ -73,7 +73,7 @@ pub impl @kernel.HostRuntime for WaveFixtureHost with fn execute_tool(
   call_id : CallId,
   _tool_name : ToolName,
   _arguments : Json,
-) -> ToolOutcome {
+) -> @kernel.ToolOutcome {
   let id = call_id.to_string()
   self.started.push(id)
   let now_in_flight = self.in_flight + 1

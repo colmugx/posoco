@@ -23,7 +23,7 @@ let memory_marker : String = "[MEMORY]"
 ///|
 /// Build a SystemMessage from retrieved entries. Returns `None` if empty.
 fn MemoryRetrievalHook::build_memory_message(
-  self : MemoryRetrievalHook,
+  _self : MemoryRetrievalHook,
   entries : Array[@types.MemoryEntry],
 ) -> @kernel.Message? {
   if entries.is_empty() {
@@ -39,7 +39,7 @@ fn MemoryRetrievalHook::build_memory_message(
 ///|
 /// Extract query from the last UserMessage. Returns `None` if absent.
 fn MemoryRetrievalHook::extract_query(
-  self : MemoryRetrievalHook,
+  _self : MemoryRetrievalHook,
   messages : Array[@kernel.Message],
 ) -> String? {
   let mut i = messages.length() - 1
@@ -87,7 +87,7 @@ fn MemoryRetrievalHook::search_all(
 /// Idempotent injection: replace existing memory SystemMessage or insert
 /// after the system-prompt message.
 fn MemoryRetrievalHook::inject(
-  self : MemoryRetrievalHook,
+  _self : MemoryRetrievalHook,
   messages : Array[@kernel.Message],
   memory_msg : @kernel.Message,
 ) -> Array[@kernel.Message] {
@@ -109,7 +109,7 @@ fn MemoryRetrievalHook::inject(
       out.push(m)
     }
   }
-  if not(injected) {
+  if !injected {
     let final_out : Array[@kernel.Message] = []
     if out.length() > 0 {
       match out[0] {

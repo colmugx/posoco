@@ -22,7 +22,7 @@ struct FixedEffortModel {
 
 ///|
 impl @port.ModelPort for FixedEffortModel with fn chat(
-  self,
+  _self,
   _messages : Array[@kernel.Message],
   _tools : Array[@kernel.ToolDef],
   _options : @types.ChatOptions,
@@ -35,7 +35,7 @@ impl @port.ModelPort for FixedEffortModel with fn chat(
 
 ///|
 impl @port.ModelPort for FixedEffortModel with fn compact(
-  self,
+  _self,
   _messages : Array[@kernel.Message],
   _options : @types.ChatOptions,
   _trigger : @kernel.CompactTrigger,

@@ -94,26 +94,20 @@ async test "tk_model_stream_replays_exact_chunks_in_order" {
         Json::Object(map) =>
           if map.contains("kind") {
             match map["kind"] {
-              Json::String(v) if v == "text" =>
-                try {
-                  let t = map["token"]
-                  match t {
-                    Json::String(s) => TextDelta(token=s)
-                    _ => TextDelta(token="")
-                  }
-                } catch {
+              Json::String(v) if v == "text" => {
+                let t = map["token"]
+                match t {
+                  Json::String(s) => TextDelta(token=s)
                   _ => TextDelta(token="")
                 }
-              Json::String(v) if v == "reasoning" =>
-                try {
-                  let t = map["token"]
-                  match t {
-                    Json::String(s) => ReasoningDelta(token=s)
-                    _ => ReasoningDelta(token="")
-                  }
-                } catch {
+              }
+              Json::String(v) if v == "reasoning" => {
+                let t = map["token"]
+                match t {
+                  Json::String(s) => ReasoningDelta(token=s)
                   _ => ReasoningDelta(token="")
                 }
+              }
               Json::String(v) if v == "finish" => Finish(reason="stop")
               _ => TextDelta(token="")
             }
@@ -275,7 +269,7 @@ async test "tk_tool_records_are_recursive_json_snapshots" {
   }
   let result = provider.execute_direct("lookup", call)
   argument_map["query"] = Json::string("mutated after execute")
-  guard result is Success(structured=Some(Object(result_map))) else {
+  guard result is Success(content=_, structured=Some(Object(result_map))) else {
     fail("expected structured object result")
   }
   assert_true(result_map["status"] == Json::string("original"))
@@ -386,7 +380,10 @@ async test "tk_store_snapshots_nested_json_and_tool_arguments" {
     fail("expected nested metadata object")
   }
   guard first.messages[0]
-    is AssistantMessage(tool_calls=[{ arguments: Object(first_arguments), .. }]) else {
+    is AssistantMessage(
+      tool_calls=[{ arguments: Object(first_arguments), .. }],
+      ..
+    ) else {
     fail("expected nested arguments object")
   }
   assert_true(first_metadata["value"] == Json::string("metadata-original"))
@@ -401,7 +398,8 @@ async test "tk_store_snapshots_nested_json_and_tool_arguments" {
   }
   guard second.messages[0]
     is AssistantMessage(
-      tool_calls=[{ arguments: Object(second_arguments), .. }]
+      tool_calls=[{ arguments: Object(second_arguments), .. }],
+      ..
     ) else {
     fail("expected second nested arguments object")
   }

@@ -110,11 +110,11 @@ pub impl @port.CommandPort for BuiltinCommandPort with fn invoke(
                 structured=None,
                 ui_hint=Some(@port.UiHint::Toast),
               )
-            RejectedStale(reason~) =>
+            RejectedStale(reason~, ..) =>
               @port.CommandOutcome::Failure(
                 reason="compact rejected: " + reason,
               )
-            RejectedQueueFull(depth~) =>
+            RejectedQueueFull(depth~, ..) =>
               @port.CommandOutcome::Failure(
                 reason="compact queue full (depth=\{depth})",
               )
@@ -140,9 +140,9 @@ pub impl @port.CommandPort for BuiltinCommandPort with fn invoke(
                 structured=None,
                 ui_hint=Some(@port.UiHint::Toast),
               )
-            RejectedStale(reason~) =>
+            RejectedStale(reason~, ..) =>
               @port.CommandOutcome::Failure(reason="fork rejected: " + reason)
-            RejectedQueueFull(depth~) =>
+            RejectedQueueFull(depth~, ..) =>
               @port.CommandOutcome::Failure(
                 reason="fork queue full (depth=\{depth})",
               )
@@ -176,13 +176,13 @@ fn parse_fork_index(args : Json) -> Int {
     Json::Object(map) =>
       if map.contains("index") {
         match map["index"] {
-          Json::Number(n) => n.to_int()
+          Json::Number(n, ..) => n.to_int()
           _ => 0
         }
       } else {
         0
       }
-    Json::Number(n) => n.to_int()
+    Json::Number(n, ..) => n.to_int()
     _ => 0
   }
 }

@@ -6,8 +6,8 @@
 
 ///|
 pub(all) struct FixtureHost {
-  model_results : Array[Result[Completion, ModelFailure]]
-  tool_results : Map[String, ToolOutcome]
+  model_results : Array[Result[@kernel.Completion, ModelFailure]]
+  tool_results : Map[String, @kernel.ToolOutcome]
   mut definitions : Array[ToolDef]
   mut model_index : Int
   mut model_call_count : Int
@@ -18,8 +18,8 @@ pub(all) struct FixtureHost {
 
 ///|
 pub fn FixtureHost::FixtureHost(
-  model_results : Array[Result[Completion, ModelFailure]],
-  tool_results : Map[String, ToolOutcome],
+  model_results : Array[Result[@kernel.Completion, ModelFailure]],
+  tool_results : Map[String, @kernel.ToolOutcome],
 ) -> FixtureHost {
   {
     model_results: model_results.copy(),
@@ -84,7 +84,7 @@ pub impl @kernel.HostRuntime for FixtureHost with fn execute_tool(
   call_id : CallId,
   _tool_name : ToolName,
   _arguments : Json,
-) -> ToolOutcome {
+) -> @kernel.ToolOutcome {
   self.tool_call_count = self.tool_call_count + 1
   match self.tool_results.get(call_id.to_string()) {
     Some(outcome) => outcome
@@ -127,7 +127,7 @@ fn FixtureHost::wire_definitions(
 }
 
 ///|
-fn fixture_stop(text : String) -> Completion {
+fn fixture_stop(text : String) -> @kernel.Completion {
   Completion(
     content=[Text(text)],
     tool_calls=[],
@@ -138,7 +138,7 @@ fn fixture_stop(text : String) -> Completion {
 }
 
 ///|
-fn fixture_tool_calls(calls : Array[ToolCall]) -> Completion {
+fn fixture_tool_calls(calls : Array[ToolCall]) -> @kernel.Completion {
   Completion(
     content=[],
     tool_calls=calls,

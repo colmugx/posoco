@@ -4,15 +4,9 @@
 /// elsewhere (the compiler rejects a second definition).
 using @kernel {
   type Message,
-  type Content,
   type Transcript,
   type ToolDef,
   type ToolCall,
-  type Completion,
-  type CompletionPayload,
-  type FinishReason,
-  type Usage,
-  type ToolOutcome,
   type Effect,
   type RunInput,
   type RunState,
@@ -32,9 +26,7 @@ using @kernel {
   type CancelDisposition,
   type KernelEvent,
   type ModelCallResult,
-  type CompactMode,
   type CompactResult,
-  type CompactTrigger,
   reduce,
   run_model_step,
   schedule,
@@ -49,5 +41,4 @@ using @port {
   type PostStage,
   trait SessionStore,
   trait CommandPort,
-  trait Observer,
 }

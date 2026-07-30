@@ -262,7 +262,7 @@ pub fn Agent::Agent(
   }
   let composed_pre_model : Array[&@port.PreModelHook] = []
   // 1. System prompt projection (if any contributors are configured).
-  if not(agg.prompt_contributors.is_empty()) {
+  if !agg.prompt_contributors.is_empty() {
     let sections : Array[@port.SystemPromptSection] = []
     let mut idx = 0
     for c in agg.prompt_contributors {
@@ -281,7 +281,7 @@ pub fn Agent::Agent(
     composed_pre_model.push(sys_hook as &@port.PreModelHook)
   }
 
-  if not(agg.memory.is_empty()) {
+  if !agg.memory.is_empty() {
     let mem_hook = @port.MemoryRetrievalHook::MemoryRetrievalHook(
       memories=agg.memory,
     )
@@ -456,7 +456,7 @@ fn agent_snapshot_turn_event(event : @types.TurnEvent) -> @types.TurnEvent {
   match event {
     TurnStarted => TurnStarted
     ToolCallPending(call) => ToolCallPending(agent_snapshot_tool_call(call))
-    ToolCallResult(call~, result~, is_error~) =>
+    ToolCallResult(call~, result~, ..) =>
       @types.TurnEvent::tool_call_result(
         agent_snapshot_tool_call(call),
         agent_snapshot_tool_outcome(result),
