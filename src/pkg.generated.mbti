@@ -312,6 +312,8 @@ pub using @kernel {type CompactMode}
 
 pub using @kernel {type CompactResult}
 
+pub using @kernel {type CompactTrigger}
+
 pub using @kernel {type Completion}
 
 pub using @kernel {type CompletionPayload}

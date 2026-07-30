@@ -111,6 +111,7 @@ pub using @kernel {
   type ModelCallResult,
   type CompactMode,
   type CompactResult,
+  type CompactTrigger,
   // Identity newtypes.
   type CallId,
   type ToolName,
