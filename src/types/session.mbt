@@ -71,21 +71,17 @@ pub(all) enum TurnEvent {
   TurnFailed(String)
   ToolCallDeferred(call~ : @kernel.ToolCall, reason~ : String)
   StreamChunkReceived(chunk~ : StreamChunk)
-  /// Runtime configuration warning. Emitted when a setting change
-  /// (model switch, reasoning_effort change, ...) conflicts with the active
-  /// modelport's `ProviderConfig`. Posoco has already auto-corrected the
-  /// config (reset the offending field); this event lets the product layer
-  /// surface what happened to the user.
+  /// Configuration warning emitted by an extension or product configuration
+  /// flow when a requested setting cannot be applied. This event lets
+  /// subscribers surface the warning without coupling to the configuration
+  /// source.
   ///
-  /// `field` is the config field name (e.g. "reasoning_effort").
-  /// `value` is the value the user tried to set.
-  /// `reason` is a human-readable explanation including the modelport's
-  /// accepted values.
+  /// `field` identifies the configuration field, `value` is the requested
+  /// value, and `reason` explains why it could not be applied.
   ConfigWarning(field~ : String, value~ : String, reason~ : String)
-  /// A runtime config field changed value. Emitted by `Agent::update_model`
-  /// / `Agent::update_reasoning_effort` (and by auto-resets after a
-  /// `ConfigWarning`). Subscribers (cetas persistence, UI, ...) use this to
-  /// stay in sync without polling.
+  /// Configuration change notification emitted by an extension or product
+  /// configuration flow. Persistence, UI, and other subscribers use it to
+  /// stay in sync without polling or coupling to the configuration source.
   ///
   /// `old_value` is empty when the field was previously unset.
   /// `new_value` is empty when the field was reset to `None`.

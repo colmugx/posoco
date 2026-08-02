@@ -191,13 +191,11 @@ fn fixture_tool_catalog(
 ///|
 fn canonical_puppet_config(
   host : &@kernel.HostRuntime,
-  model_id : String,
   catalog : ToolCatalogSnapshot,
   journal : &RunJournal,
   subscribers : Array[&EventSubscriber],
   contributors : Array[&JournalContributor],
   stream_chunks : HostChunkCallback?,
-  call_options : Json,
 ) -> PuppetConfig {
   // D1: fresh mailbox per config. The mailbox must outlive the Puppet
   // built from this config; tests that need to inject signals grab the
@@ -206,7 +204,6 @@ fn canonical_puppet_config(
   let mailbox : &Mailbox = mailbox_instance as &Mailbox
   {
     host,
-    model_id,
     catalog,
     journal,
     contributors,
@@ -214,17 +211,24 @@ fn canonical_puppet_config(
     observers: [],
     lifecycle_nodes: [],
     stream_chunks,
-    call_options,
     pre_model_hooks: [],
     pre_tool_hooks: [],
     post_event_hooks: [],
-    default_budget: Budget::default_run(),
     max_iterations: 50,
     commands: [],
     session_store: None,
+    mailbox,
+  }
+}
+
+///|
+fn fixture_run_policy(model_id : String, call_options : Json) -> RunPolicy {
+  {
+    model_id,
+    call_options,
+    budget: Budget::default_run(),
     context_window: None,
     compact_threshold: 0.9,
-    mailbox,
   }
 }
 
@@ -239,13 +243,11 @@ fn fixture_config(
   host.wire_definitions(catalog)
   canonical_puppet_config(
     host as &@kernel.HostRuntime,
-    "fixture-model",
     catalog,
     journal,
     subscribers,
     contributors,
     None,
-    Json::null(),
   )
 }
 
@@ -254,13 +256,14 @@ async fn fixture_prompt(
   puppet : Puppet,
   suffix : String,
 ) -> PromptResult raise PuppetError {
-  puppet.prompt(
-    RunId::unchecked("run_" + suffix),
-    TurnId::unchecked("turn_" + suffix),
-    SessionId::unchecked("session_" + suffix),
-    [UserMessage(content=[Text("hello")])],
-    "operation_" + suffix,
-  )
+  puppet.prompt({
+    run_id: RunId::unchecked("run_" + suffix),
+    turn_id: TurnId::unchecked("turn_" + suffix),
+    session_id: SessionId::unchecked("session_" + suffix),
+    initial_messages: [UserMessage(content=[Text("hello")])],
+    operation_id: "operation_" + suffix,
+    policy: fixture_run_policy("fixture-model", Json::null()),
+  })
 }
 
 ///|
@@ -712,9 +715,7 @@ test "puppet/C-SNAPSHOT-IMMUTABLE" {
     turn_id: TurnId::unchecked("turn_snapshot"),
     session_id: SessionId::unchecked("session_snapshot"),
     catalog,
-    model_id: "model",
-    call_options: Json::null(),
-    budget: Budget::default_run(),
+    policy: fixture_run_policy("model", Json::null()),
     deadline: None,
     hook_provenance: [],
     lifecycle_provenance: [],

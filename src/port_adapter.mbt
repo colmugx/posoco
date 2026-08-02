@@ -14,49 +14,96 @@ fn model_error_to_failure(error : @error.ModelError) -> @kernel.ModelFailure {
 }
 
 ///|
-pub(all) struct PortHostAdapter {
+/// Decode the provider-agnostic subset of the canonical call-options bag.
+///
+/// `ChatOptions` intentionally cannot represent provider-specific fields. Do
+/// not drop those fields: reject them at this boundary so the caller can route
+/// the original bag to a host that understands it.
+fn decode_chat_options(
+  call_options : Json,
+) -> Result[@types.ChatOptions, @kernel.ModelFailure] {
+  let fields = match call_options {
+    Json::Null => return Ok({ temperature: None, max_output_tokens: None })
+    Json::Object(fields) => fields
+    _ =>
+      return Err(
+        @kernel.RequestBuild(reason="call_options must be null or an object"),
+      )
+  }
+  for key in fields.keys() {
+    if key != "temperature" && key != "max_output_tokens" {
+      return Err(
+        @kernel.RequestBuild(
+          reason="unsupported call_options field '" + key + "'",
+        ),
+      )
+    }
+  }
+  let temperature = match fields.get("temperature") {
+    None => None
+    Some(Json::Number(value, ..)) =>
+      if (value - value).is_nan() {
+        return Err(
+          @kernel.RequestBuild(
+            reason="call_options.temperature must be a finite number",
+          ),
+        )
+      } else {
+        Some(value)
+      }
+    Some(_) =>
+      return Err(
+        @kernel.RequestBuild(reason="call_options.temperature must be a number"),
+      )
+  }
+  let max_output_tokens = match fields.get("max_output_tokens") {
+    None => None
+    Some(Json::Number(value, ..)) => {
+      let converted = value.to_int()
+      if converted.to_double() != value {
+        return Err(
+          @kernel.RequestBuild(
+            reason="call_options.max_output_tokens must be an integer in Int range",
+          ),
+        )
+      }
+      Some(converted)
+    }
+    Some(_) =>
+      return Err(
+        @kernel.RequestBuild(
+          reason="call_options.max_output_tokens must be a number",
+        ),
+      )
+  }
+  Ok({ temperature, max_output_tokens })
+}
+
+///|
+priv struct PortHostAdapter {
   model : &@port.ModelPort
   tools : Map[String, &@port.ToolProvider]
-  model_id : String
 }
 
 ///|
-pub fn PortHostAdapter::new(
+fn PortHostAdapter::new(
   model~ : &@port.ModelPort,
   tools~ : Map[String, &@port.ToolProvider],
-  model_id~ : String,
 ) -> PortHostAdapter {
-  { model, tools, model_id }
+  { model, tools }
 }
 
 ///|
-/// Construct a PortHostAdapter from an Agent's aggregated ports. Used by
-/// M3.6's `Agent.run_turn_via_puppet`.
-pub fn PortHostAdapter::from_agent(agent : Agent) -> PortHostAdapter {
-  PortHostAdapter::new(
-    model=agent.model_port,
-    tools=agent.tool_routing.tool_map.copy(),
-    model_id="legacy_agent",
-  )
-}
-
-///|
-pub fn PortHostAdapter::model_id(self : PortHostAdapter) -> String {
-  self.model_id
-}
-
-///|
-pub impl @kernel.HostRuntime for PortHostAdapter with fn call_model(
+impl @kernel.HostRuntime for PortHostAdapter with fn call_model(
   self,
   messages : Array[@kernel.Message],
   tool_definitions : Array[@kernel.ToolDef],
   call_options : Json,
   on_chunk : @kernel.HostChunkCallback?,
 ) -> Result[@kernel.ModelCallResult, @kernel.ModelFailure] {
-  let _ = call_options
-  let options : @types.ChatOptions = {
-    temperature: None,
-    max_output_tokens: None,
+  let options = match decode_chat_options(call_options) {
+    Ok(options) => options
+    Err(failure) => return Err(failure)
   }
   let stream : @types.StreamMode = match on_chunk {
     Some(cb) => @types.Stream(cb)
@@ -82,7 +129,7 @@ pub impl @kernel.HostRuntime for PortHostAdapter with fn call_model(
 }
 
 ///|
-pub impl @kernel.HostRuntime for PortHostAdapter with fn execute_tool(
+impl @kernel.HostRuntime for PortHostAdapter with fn execute_tool(
   self,
   _owner_id : @kernel.OwnerId,
   call_id : @kernel.CallId,
@@ -109,7 +156,7 @@ pub impl @kernel.HostRuntime for PortHostAdapter with fn execute_tool(
 }
 
 ///|
-pub impl @kernel.HostRuntime for PortHostAdapter with fn cancel_effects(
+impl @kernel.HostRuntime for PortHostAdapter with fn cancel_effects(
   self : PortHostAdapter,
   effect_ids : Array[@kernel.EffectId],
   _reason : @kernel.CancelReason,
@@ -120,16 +167,15 @@ pub impl @kernel.HostRuntime for PortHostAdapter with fn cancel_effects(
 
 ///|
 /// Forward `HostRuntime::compact` to `ModelPort::compact`.
-pub impl @kernel.HostRuntime for PortHostAdapter with fn compact(
+impl @kernel.HostRuntime for PortHostAdapter with fn compact(
   self,
   messages : Array[@kernel.Message],
   call_options : Json,
   trigger : @kernel.CompactTrigger,
 ) -> Result[@kernel.CompactResult, @kernel.ModelFailure] {
-  let _ = call_options // M3.5: future work — decode into ChatOptions
-  let options : @types.ChatOptions = {
-    temperature: None,
-    max_output_tokens: None,
+  let options = match decode_chat_options(call_options) {
+    Ok(options) => options
+    Err(failure) => return Err(failure)
   }
   let result = self.model.compact(messages, options, trigger) catch {
     error => return Err(model_error_to_failure(error))

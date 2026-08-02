@@ -126,10 +126,7 @@ fn make_config() -> AgentConfig {
     max_tool_rounds: 10,
     temperature: None,
     max_output_tokens: None,
-    tool_choice: None,
-    reasoning_effort: None,
     model_context_window: None,
-    model: None,
   }
 }
 
@@ -398,10 +395,7 @@ async test "tool_loop_exceeded" {
     max_tool_rounds: 2,
     temperature: None,
     max_output_tokens: None,
-    tool_choice: None,
-    reasoning_effort: None,
     model_context_window: None,
-    model: None,
   }
 
   let agent = Agent(

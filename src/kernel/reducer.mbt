@@ -306,7 +306,7 @@ fn reduce_model_completed(
   let transcript = base_transcript.append(assistant_msg)
   let step_completed : KernelEvent = ModelStepCompleted(
     model_step_id=payload.model_step_id,
-    completion_summary=completion_summary(completion),
+    completion~,
   )
   // budget: model_steps + 1, tool_rounds unchanged, usage if any.
   let next_consumed = bump_model_step(state.budget_consumed(), completion.usage)
@@ -1081,7 +1081,7 @@ fn append_completion_to_state(
 ///|
 fn completion_summary(completion : Completion) -> String {
   let n_tools = completion.message.tool_calls.length()
-  let finish = completion.finish_reason().to_string()
+  let finish = safe_event_label(completion.finish_reason().to_string())
   let reasoning = match completion.message.reasoning {
     Some(_) => ", reasoning=present"
     None => ""

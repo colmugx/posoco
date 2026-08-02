@@ -2,30 +2,31 @@
 /// Built-in slash command port for `/compact` and `/fork-here`.
 /// `invoke` enqueues a signal on the ControlMailbox for the pump's safe points.
 /// The BuiltinCommandPort holds a reference to the Puppet's ControlMailbox.
-/// It is constructed per turn by `Agent::builtin_commands` from the live
-/// mailbox reference, then merged with the agent's extension commands when
-/// the PuppetConfig is assembled. Extension commands with the same id
+/// It is constructed once by `Agent::Agent` from the long-lived mailbox
+/// reference, then merged with extension commands when the one PuppetConfig
+/// is assembled. Extension commands with the same id
 /// (`compact` / `fork-here`) take precedence — the product layer can
 /// override the builtins by declaring a command with that id.
 
 ///|
 /// Built-in command processor. Holds a borrowed `&Mailbox` so `/compact`
 /// and `/fork-here` can enqueue fork/compact signals. The mailbox
-/// reference is shared with the Puppet and the Agent (D1 fix): one
-/// `ControlMailbox` instance, three views. Constructed each turn from
-/// `Agent.mailbox` (the Agent owns the concrete instance).
-pub(all) struct BuiltinCommandPort {
+/// reference is shared with the Puppet and the Agent: one `ControlMailbox`
+/// instance, three views. The Agent owns the concrete composition.
+priv struct BuiltinCommandPort {
   mailbox : &@puppetry.Mailbox
   /// Monotonic counter for command ids. Lives on the port so successive
   /// invokes produce distinct ids without needing wall-clock time.
   mut seq : Int
+  mut compact_enabled : Bool
+  mut fork_enabled : Bool
 }
 
 ///|
-pub fn BuiltinCommandPort::BuiltinCommandPort(
+fn BuiltinCommandPort::BuiltinCommandPort(
   mailbox : &@puppetry.Mailbox,
 ) -> BuiltinCommandPort {
-  { mailbox, seq: 0 }
+  { mailbox, seq: 0, compact_enabled: true, fork_enabled: true }
 }
 
 ///|
@@ -40,11 +41,12 @@ fn BuiltinCommandPort::next_command_id(
 }
 
 ///|
-pub impl @port.CommandPort for BuiltinCommandPort with fn commands(
-  _self : BuiltinCommandPort,
+impl @port.CommandPort for BuiltinCommandPort with fn commands(
+  self : BuiltinCommandPort,
 ) -> Array[@port.CommandDef] {
-  [
-    @port.CommandDef::{
+  let definitions : Array[@port.CommandDef] = []
+  if self.compact_enabled {
+    definitions.push(@port.CommandDef::{
       id: "compact",
       label: "Compact",
       description: "Compact the conversation (the modelport decides the strategy)",
@@ -56,8 +58,10 @@ pub impl @port.CommandPort for BuiltinCommandPort with fn commands(
       icon: None,
       visible: true,
       metadata: None,
-    },
-    @port.CommandDef::{
+    })
+  }
+  if self.fork_enabled {
+    definitions.push(@port.CommandDef::{
       id: "fork-here",
       label: "Fork Here",
       description: "Fork the conversation at the given message index (0-based)",
@@ -80,12 +84,13 @@ pub impl @port.CommandPort for BuiltinCommandPort with fn commands(
       icon: None,
       visible: true,
       metadata: None,
-    },
-  ]
+    })
+  }
+  definitions
 }
 
 ///|
-pub impl @port.CommandPort for BuiltinCommandPort with fn invoke(
+impl @port.CommandPort for BuiltinCommandPort with fn invoke(
   self : BuiltinCommandPort,
   id : String,
   args : Json,
@@ -93,6 +98,8 @@ pub impl @port.CommandPort for BuiltinCommandPort with fn invoke(
   match (self.mailbox.active_run_id(), self.mailbox.active_turn_id()) {
     (Some(run_id), Some(turn_id)) =>
       match id {
+        "compact" if !self.compact_enabled =>
+          raise @error.CommandError::NotFound(id)
         "compact" => {
           // Manual compact: trigger=Manual. The modelport can pick a
           // thorough strategy (LLM summary, OpenAI compat compact endpoint).
@@ -122,6 +129,8 @@ pub impl @port.CommandPort for BuiltinCommandPort with fn invoke(
               @port.CommandOutcome::Failure(reason="compact already requested")
           }
         }
+        "fork-here" if !self.fork_enabled =>
+          raise @error.CommandError::NotFound(id)
         "fork-here" => {
           // Parse optional `index` from args. Default is the current
           // transcript length (fork at the tail).
@@ -164,6 +173,10 @@ pub impl @port.CommandPort for BuiltinCommandPort with fn invoke(
 }
 
 ///|
+#warnings("-unused_value")
+extend BuiltinCommandPort with @port.CommandPort::{commands, invoke}
+
+///|
 /// Parse the optional `index` argument for `/fork-here`. Recognises:
 /// - `{"index": N}` (object form)
 /// - `N` (bare number, used by positional slash parsers)
@@ -188,7 +201,7 @@ fn parse_fork_index(args : Json) -> Int {
 }
 
 ///|
-/// Build the agent's full command list for a turn: the builtins
+/// Build the agent's full command list: the builtins
 /// (`/compact`, `/fork-here`) registered first, followed by the extension
 /// commands. Extensions that declare a command with id `compact` or
 /// `fork-here` are dropped from the list — they override the builtins by
@@ -199,11 +212,13 @@ fn parse_fork_index(args : Json) -> Int {
 /// `Agent::Agent`), so its `seq` counter stays monotonic across turns.
 /// This method merely borrows it into the per-turn command list — it does
 /// NOT reconstruct the port.
-pub fn Agent::commands_with_builtins(self : Agent) -> Array[&@port.CommandPort] {
-  let builtin : &@port.CommandPort = self.builtin_command_port
-    as &@port.CommandPort
+fn compose_agent_commands(
+  commands : Array[&@port.CommandPort],
+  builtin_command_port : BuiltinCommandPort,
+) -> Array[&@port.CommandPort] {
+  let builtin : &@port.CommandPort = builtin_command_port as &@port.CommandPort
   let extension_ids : Map[String, Unit] = Map::from_array([])
-  for cmd_port in self.commands {
+  for cmd_port in commands {
     for def in cmd_port.commands() {
       extension_ids[def.id] = ()
     }
@@ -211,27 +226,22 @@ pub fn Agent::commands_with_builtins(self : Agent) -> Array[&@port.CommandPort] 
   // If any extension declares `compact` or `fork-here`, the builtin is
   // skipped — the extension version wins. Otherwise the builtin is the
   // default.
-  let builtin_ids = ["compact", "fork-here"]
-  let mut has_compact_override = false
-  let mut has_fork_override = false
-  for id in builtin_ids {
-    if extension_ids.contains(id) {
-      match id {
-        "compact" => has_compact_override = true
-        "fork-here" => has_fork_override = true
-        _ => ()
-      }
-    }
+  builtin_command_port.compact_enabled = !extension_ids.contains("compact")
+  builtin_command_port.fork_enabled = !extension_ids.contains("fork-here")
+  let result : Array[&@port.CommandPort] = []
+  if builtin_command_port.compact_enabled || builtin_command_port.fork_enabled {
+    result.push(builtin)
   }
-  let _ = has_compact_override
-  let _ = has_fork_override
-  // For simplicity, register the builtin unconditionally and rely on
-  // manifest aggregation's command-id collision check to surface any
-  // accidental duplication. The override story is handled at the product
-  // layer by NOT re-declaring these ids in cetas commands.
-  let result : Array[&@port.CommandPort] = [builtin]
-  for cmd in self.commands {
+  for cmd in commands {
     result.push(cmd)
   }
   result
+}
+
+///|
+pub fn Agent::commands(self : Agent) -> Array[&@port.CommandPort] {
+  compose_agent_commands(
+    self.runtime.commands,
+    self.runtime.builtin_command_port,
+  )
 }

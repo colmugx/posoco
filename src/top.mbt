@@ -74,13 +74,10 @@ pub using @error {
 }
 
 ///|
-// Kernel canonical types — single protocol, no "Canonical" prefix. These are
-// the types ext/agent developers see; `HostRuntime` and other reducer-internal
-// concepts stay here because PortHostAdapter implements the trait, but ext
-// authors typically interact with ModelPort/ToolProvider/SessionStore instead.
+// Canonical domain types used by public extension ports. Reducer identities,
+// catalogs, effects, HostRuntime, journals and Puppet remain internal to
+// Posoco's Agent implementation and are intentionally not re-exported here.
 pub using @kernel {
-  trait HostRuntime,
-  type HostChunkCallback,
   type Completion,
   type CompletionPayload,
   type Content,
@@ -91,23 +88,9 @@ pub using @kernel {
   type ToolOutcome,
   type NotExecutedReason,
   type ModelFailure,
-  type ModelStepId,
-  type EffectId,
-  type RunId,
-  type SessionId,
-  type RunOutcome,
-  type KernelEvent,
-  type Budget,
-  type BudgetDimension,
-  type CatalogVersion,
-  type ToolCatalogBuilder,
-  type ToolCatalogSnapshot,
-  type CatalogCompositionError,
   type ExecutionPolicy,
   type OwnerId,
-  type CancelReason,
-  type KernelError,
-  // Model-call + compact protocol (R3 M3.7).
+  // Model-call + compact protocol used by ModelPort.
   type ModelCallResult,
   type CompactMode,
   type CompactResult,
@@ -118,24 +101,4 @@ pub using @kernel {
   type Reasoning,
   type Transcript,
   type Usage,
-}
-
-///|
-pub using @puppetry {
-  trait RunJournal,
-  trait EventSubscriber,
-  trait JournalContributor,
-  trait PuppetLifecycleNode,
-  type ModelId,
-  type Puppet,
-  type PuppetConfig,
-  type PuppetError,
-  type PromptResult,
-  type TurnId,
-  type QuiescentStatus,
-  type InMemoryJournal,
-  type EventEnvelope,
-  type SubscriberError,
-  type NoopSubscriber,
-  type NoopContributor,
 }

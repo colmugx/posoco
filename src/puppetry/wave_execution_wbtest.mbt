@@ -161,13 +161,11 @@ async test "puppet/parallel_wave_wallclock_near_longest_tool" {
   let puppet = Puppet(
     canonical_puppet_config(
       host as &@kernel.HostRuntime,
-      "wave-fixture",
       catalog,
       journal,
       [],
       [],
       None,
-      Json::null(),
     ),
   )
   assert_true(fixture_prompt(puppet, "parallel_wave") is Accepted(_))

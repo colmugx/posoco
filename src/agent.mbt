@@ -1,27 +1,17 @@
 ///|
-/// Agent-level runtime config: model, tuning knobs, and budget.
-/// Config changes propagate via setters that emit `TurnEvent` for observers.
+/// Agent-level runtime config: provider-agnostic tuning and run budget.
 pub(all) struct AgentConfig {
   max_tool_rounds : Int
   temperature : Double?
   max_output_tokens : Int?
-  mut tool_choice : String?
-  mut reasoning_effort : String?
   model_context_window : Int?
-  /// Active model name. Read from `call_options` by the ModelPort on next `chat()`.
-  mut model : String?
 }
 
 ///|
-pub fn AgentConfig::to_chat_options(self : AgentConfig) -> @types.ChatOptions {
-  { temperature: self.temperature, max_output_tokens: self.max_output_tokens }
-}
-
-///|
-/// Encode the chat options as an opaque JSON blob for the Puppet's
-/// `call_options` field. The PortHostAdapter passes this blob through to the
-/// modelport; the modelport decodes whatever fields it understands.
-pub fn AgentConfig::to_chat_options_to_json(self : AgentConfig) -> Json {
+/// Encode the provider-agnostic chat options for `RunPolicy.call_options`.
+/// Provider-specific configuration belongs to the ModelPort extension and
+/// never crosses the canonical HostRuntime seam.
+fn AgentConfig::to_chat_options_to_json(self : AgentConfig) -> Json {
   let fields : Map[String, Json] = Map::from_array([])
   match self.temperature {
     Some(t) => fields["temperature"] = Json::number(t)
@@ -31,24 +21,12 @@ pub fn AgentConfig::to_chat_options_to_json(self : AgentConfig) -> Json {
     Some(n) => fields["max_output_tokens"] = Json::number(n.to_double())
     None => ()
   }
-  match self.tool_choice {
-    Some(s) => fields["tool_choice"] = Json::string(s)
-    None => ()
-  }
-  match self.reasoning_effort {
-    Some(s) => fields["reasoning_effort"] = Json::string(s)
-    None => ()
-  }
-  match self.model {
-    Some(s) => fields["model"] = Json::string(s)
-    None => ()
-  }
   Json::object(fields)
 }
 
 ///|
 /// Internal routing table: tool name → owning provider. Built during Agent::new.
-struct ToolRouting {
+priv struct ToolRouting {
   tool_map : Map[String, &@port.ToolProvider]
   providers : Array[&@port.ToolProvider]
 }
@@ -227,23 +205,27 @@ fn build_tool_routing(
 }
 
 ///|
-/// Agent — composed from extensions. Routes tools by name, hooks array-based,
-/// observers fan-out, sessions write-all/read-first. `config` is mutable for
-/// runtime setting changes; `model_port` is immutable.
-pub(all) struct Agent {
-  model_port : &@port.ModelPort
-  tool_routing : ToolRouting
-  pre_model_hooks : Array[&@port.PreModelHook]
-  pre_tool_hooks : Array[&@port.PreToolHook]
-  post_event_hooks : Array[&@port.PostEventHook]
+/// Private mutable implementation owned by the Agent facade.
+priv struct AgentRuntime {
+  puppet : @puppetry.Puppet
   observers : Array[&@port.Observer]
-  memories : Array[&@port.MemoryPort]
   sessions : Array[&@port.SessionStore]
-  lifecycle : &@port.Lifecycle?
+  lifecycle : Array[&@port.Lifecycle]
   commands : Array[&@port.CommandPort]
   builtin_command_port : BuiltinCommandPort
-  mailbox : @puppetry.ControlMailbox
-  mut config : AgentConfig
+  config : AgentConfig
+  mut next_run_seq : Int
+  mut puppet_started : Bool
+  mut shutdown_started : Bool
+  mut shutdown_complete : Bool
+  mut next_lifecycle_shutdown : Int
+}
+
+///|
+/// Public deep module for agent developers. The runtime representation is a
+/// private handle so canonical execution machinery never enters the interface.
+pub struct Agent {
+  priv runtime : AgentRuntime
 }
 
 ///|
@@ -255,11 +237,25 @@ pub fn Agent::Agent(
   config~ : AgentConfig,
 ) -> Agent raise @error.CompositionError {
   let agg = aggregate_extensions(exts)
-  let tool_routing = build_tool_routing(agg.tools)
-  let lifecycle : &@port.Lifecycle? = match agg.lifecycle.length() {
-    0 => None
-    _ => Some(agg.lifecycle[0])
+  if config.max_tool_rounds < 0 {
+    raise @error.CompositionError::ManifestSchemaError(
+      manifest_id="agent.config",
+      detail="max_tool_rounds must be non-negative",
+    )
   }
+  match config.model_context_window {
+    Some(value) if value <= 0 =>
+      raise @error.CompositionError::ManifestSchemaError(
+        manifest_id="agent.config",
+        detail="model_context_window must be positive",
+      )
+    _ => ()
+  }
+  if agg.sessions.is_empty() {
+    raise @error.CompositionError::EmptyPort("SessionStore")
+  }
+  let tool_routing = build_tool_routing(agg.tools)
+  let catalog = build_agent_catalog(tool_routing.providers)
   let composed_pre_model : Array[&@port.PreModelHook] = []
   // 1. System prompt projection (if any contributors are configured).
   if !agg.prompt_contributors.is_empty() {
@@ -302,111 +298,76 @@ pub fn Agent::Agent(
   let mailbox = @puppetry.ControlMailbox::ControlMailbox()
   let mailbox_ref : &@puppetry.Mailbox = mailbox as &@puppetry.Mailbox
   let builtin_command_port = BuiltinCommandPort(mailbox_ref)
-  {
-    model_port: agg.model,
-    tool_routing,
+  let command_ports = compose_agent_commands(agg.commands, builtin_command_port)
+  let host_adapter = PortHostAdapter::new(
+    model=agg.model,
+    tools=tool_routing.tool_map.copy(),
+  )
+  let journal = @puppetry.InMemoryJournal::InMemoryJournal()
+  let event_subscriber = AgentEventSubscriber(agg.observers)
+  let session_store : &@port.SessionStore? = match agg.sessions {
+    [first, ..] => Some(first)
+    [] => None
+  }
+  let puppet_config : @puppetry.PuppetConfig = {
+    host: host_adapter as &@kernel.HostRuntime,
+    catalog,
+    journal: journal as &@puppetry.RunJournal,
+    contributors: [],
+    subscribers: [event_subscriber as &@puppetry.EventSubscriber],
+    observers: agg.observers,
+    lifecycle_nodes: [],
+    stream_chunks: create_agent_stream_callback(agg.observers),
     pre_model_hooks: composed_pre_model,
     pre_tool_hooks: agg.pre_tool_hooks,
     post_event_hooks: composed_post_event,
+    max_iterations: config.max_tool_rounds + 1,
+    commands: command_ports,
+    session_store,
+    mailbox: mailbox_ref,
+  }
+  let runtime : AgentRuntime = {
+    puppet: @puppetry.Puppet(puppet_config),
     observers: agg.observers,
-    memories: agg.memory,
     sessions: agg.sessions,
-    lifecycle,
+    lifecycle: agg.lifecycle,
     commands: agg.commands,
     builtin_command_port,
-    mailbox,
     config,
+    next_run_seq: 1,
+    puppet_started: false,
+    shutdown_started: false,
+    shutdown_complete: false,
+    next_lifecycle_shutdown: agg.lifecycle.length() - 1,
   }
+  { runtime, }
 }
 
 ///|
-pub async fn Agent::shutdown(self : Agent) -> Unit {
-  match self.lifecycle {
-    // Lifecycle has no typed error channel today. Do not catch runtime
-    // failures here: cleanup failure must remain loud to the caller.
-    Some(lc) => lc.on_shutdown()
-    None => ()
+async fn AgentRuntime::shutdown(self : AgentRuntime) -> Unit {
+  if self.shutdown_complete {
+    return
   }
-}
-
-///|
-/// Switch the active model by name at runtime. Updates `config.model`,
-/// emits `ConfigChanged`, and re-validates `reasoning_effort`.
-pub fn Agent::update_model(self : Agent, name : String) -> Unit {
-  let old = self.config.model
-  self.config.model = Some(name)
-  // Emit ConfigChanged so subscribers (persistence, UI) update.
-  let change : @types.TurnEvent = @types.ConfigChanged(
-    field="model",
-    old_value=match old {
-      Some(s) => s
-      None => ""
-    },
-    new_value=name,
-  )
-  self.emit_turn_event(change)
-  // Re-validate reasoning_effort: the router may now route to a provider
-  // whose accepted values differ. Use the ModelPort's current
-  // `ProviderConfig` as a hint; in production, a router ModelPort would
-  // re-evaluate this per chat() call anyway, but warning early is better UX.
-  self.validate_reasoning_effort_after_change()
-}
-
-///|
-/// Update `reasoning_effort` at runtime. Validates against the ModelPort's
-/// `ProviderConfig`; emits `ConfigWarning` on invalid value.
-pub fn Agent::update_reasoning_effort(self : Agent, value : String) -> Unit {
-  let provider_config = self.model_port.provider_config()
-  if provider_config.reasoning_effort_values.contains(value) {
-    let old = self.config.reasoning_effort
-    self.config.reasoning_effort = Some(value)
-    let change : @types.TurnEvent = @types.ConfigChanged(
-      field="reasoning_effort",
-      old_value=match old {
-        Some(s) => s
-        None => ""
-      },
-      new_value=value,
-    )
-    self.emit_turn_event(change)
-  } else {
-    // Reject and warn. The field stays at its prior value.
-    let accepted = provider_config.reasoning_effort_values.copy().join(", ")
-    let warning : @types.TurnEvent = @types.ConfigWarning(
-      field="reasoning_effort",
-      value~,
-      reason="active modelport does not accept this value (accepted: [\{accepted}])",
-    )
-    self.emit_turn_event(warning)
-  }
-}
-
-///|
-/// Check `reasoning_effort` is still valid after a config change; reset if not.
-fn Agent::validate_reasoning_effort_after_change(self : Agent) -> Unit {
-  match self.config.reasoning_effort {
-    Some(value) => {
-      let provider_config = self.model_port.provider_config()
-      if !provider_config.reasoning_effort_values.contains(value) {
-        let accepted = provider_config.reasoning_effort_values.copy().join(", ")
-        let warning : @types.TurnEvent = @types.ConfigWarning(
-          field="reasoning_effort",
-          value~,
-          reason="current modelport does not support this value (accepted: [\{accepted}]); reset to None",
+  self.shutdown_started = true
+  if self.puppet_started {
+    self.puppet.shutdown() catch {
+      error =>
+        raise @error.AgentError::Runtime(
+          @error.RuntimeError::InvocationFailed(
+            "puppet shutdown: " + safe_error_label(error.to_string()),
+          ),
         )
-        self.emit_turn_event(warning)
-        // Reset and broadcast the auto-correction.
-        self.config.reasoning_effort = None
-        let reset : @types.TurnEvent = @types.ConfigChanged(
-          field="reasoning_effort",
-          old_value=value,
-          new_value="",
-        )
-        self.emit_turn_event(reset)
-      }
     }
-    None => ()
+    self.puppet_started = false
   }
+  while self.next_lifecycle_shutdown >= 0 {
+    // Advance the cursor only after successful cleanup. If an extension
+    // shutdown fails, the error remains loud and a retry resumes at the
+    // failing extension instead of skipping it or repeating completed ones.
+    self.lifecycle[self.next_lifecycle_shutdown].on_shutdown()
+    self.next_lifecycle_shutdown = self.next_lifecycle_shutdown - 1
+  }
+  self.shutdown_complete = true
 }
 
 ///|
@@ -480,19 +441,45 @@ fn agent_snapshot_turn_event(event : @types.TurnEvent) -> @types.TurnEvent {
 }
 
 ///|
-fn Agent::emit_turn_event(self : Agent, event : @types.TurnEvent) -> Unit {
+fn AgentRuntime::emit_turn_event(
+  self : AgentRuntime,
+  event : @types.TurnEvent,
+) -> Unit {
   for observer in self.observers {
     observer.on_event(agent_snapshot_turn_event(event))
   }
 }
 
 ///|
+async fn AgentRuntime::ensure_puppet_started(
+  self : AgentRuntime,
+) -> Unit raise @error.AgentError {
+  if self.shutdown_started {
+    raise @error.AgentError::Runtime(
+      @error.RuntimeError::InvocationFailed("agent is shut down"),
+    )
+  }
+  if !self.puppet_started {
+    self.puppet.startup() catch {
+      error =>
+        raise @error.AgentError::Runtime(
+          @error.RuntimeError::InvocationFailed(
+            "puppet startup: " + safe_error_label(error.to_string()),
+          ),
+        )
+    }
+    self.puppet_started = true
+  }
+}
+
+///|
 /// Run one agent turn. Delegates to Puppet; emits start/end events for observers.
-pub async fn Agent::run_turn(
-  self : Agent,
+async fn AgentRuntime::run_turn(
+  self : AgentRuntime,
   input : @kernel.Message,
   session_id : String,
 ) -> @types.TurnResult raise @error.AgentError {
+  self.ensure_puppet_started()
   self.emit_turn_event(TurnStarted)
 
   let result = self.run_turn_via_puppet(input, session_id) catch {
@@ -505,4 +492,18 @@ pub async fn Agent::run_turn(
 
   self.emit_turn_event(TurnCompleted)
   result
+}
+
+///|
+pub async fn Agent::run_turn(
+  self : Agent,
+  input : @kernel.Message,
+  session_id : String,
+) -> @types.TurnResult raise @error.AgentError {
+  self.runtime.run_turn(input, session_id)
+}
+
+///|
+pub async fn Agent::shutdown(self : Agent) -> Unit {
+  self.runtime.shutdown()
 }

@@ -7,7 +7,7 @@
 ///
 /// The snapshot captures:
 /// - run/turn identity (typed wrappers)
-/// - model selection + opaque call options (deep-copied Json)
+/// - immutable per-turn run policy (including deep-copied call options)
 /// - tool catalog identity (CatalogVersion + copied definitions array)
 /// - budget envelope (immutable struct)
 /// - deadline (optional)
@@ -41,13 +41,9 @@ pub struct TurnSnapshot {
   /// Deep-copied canonical tool definitions. Mutating the original catalog
   /// after capture does not change this array.
   tool_definitions : Array[ToolDef]
-  /// Model id used for this turn (provenance string; not a port ref).
-  model_id : String
-  /// Deep-copied opaque call options (Json). Mutations to the original Json
-  /// do not affect the snapshot.
-  call_options : Json
-  /// Budget envelope for the run.
-  budget : Budget
+  /// Immutable policy captured specifically for this turn. It is never read
+  /// from PuppetConfig while the run is active.
+  policy : RunPolicy
   /// Optional deadline wall-clock timestamp. Carried verbatim from the
   /// host; the Kernel sees it via RunInput::DeadlineReached.
   deadline : Int?
@@ -67,6 +63,20 @@ pub struct TurnSnapshot {
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
+/// Policy that may vary between prompts on the same long-lived Puppet.
+/// `TurnSnapshot::capture` validates this value and recursively copies its
+/// `call_options`.
+pub(all) struct RunPolicy {
+  model_id : String
+  call_options : Json
+  budget : Budget
+  /// Token budget ceiling for auto-compact. `None` disables auto-compact.
+  context_window : Int?
+  /// Fraction of `context_window` at which auto-compact fires.
+  compact_threshold : Double
+} derive(Eq, Debug)
+
+///|
 /// Inputs to `TurnSnapshot::capture`. Kept separate from the snapshot struct
 /// so callers cannot accidentally construct a snapshot with un-validated
 /// fields; they go through `capture`, which copies and fingerprints.
@@ -75,9 +85,7 @@ pub(all) struct TurnSnapshotInput {
   turn_id : TurnId
   session_id : SessionId
   catalog : ToolCatalogSnapshot
-  model_id : String
-  call_options : Json
-  budget : Budget
+  policy : RunPolicy
   deadline : Int?
   hook_provenance : Array[String]
   lifecycle_provenance : Array[String]
@@ -103,16 +111,29 @@ pub fn TurnSnapshot::capture(
   input : TurnSnapshotInput,
 ) -> TurnSnapshot raise PuppetError {
   // Validate inputs.
-  if input.model_id == "" {
+  if input.policy.model_id == "" {
     raise SnapshotInvalid(detail="model_id must be non-empty")
   }
   // Empty catalog is legal — a pure-chat run with no tools is valid. The
   // snapshot records zero definitions; the reducer's unknown-tool path
   // handles any tool calls emitted despite the empty catalog.
   // Validate budget dimensions are non-negative where Some.
-  match check_budget(input.budget) {
+  match check_budget(input.policy.budget) {
     Err(e) => raise e
     Ok(_) => ()
+  }
+  match input.policy.context_window {
+    Some(value) if value <= 0 =>
+      raise SnapshotInvalid(detail="context_window must be positive")
+    _ => ()
+  }
+  if not(
+      input.policy.compact_threshold > 0.0 &&
+      input.policy.compact_threshold <= 1.0,
+    ) {
+    raise SnapshotInvalid(
+      detail="compact_threshold must be greater than 0.0 and at most 1.0",
+    )
   }
   match input.deadline {
     Some(d) => {
@@ -128,22 +149,48 @@ pub fn TurnSnapshot::capture(
   for entry in input.catalog.entries() {
     copied_defs.push(entry.definition)
   }
-  // Compute fingerprint.
-  let fp = compute_fingerprint(input)
+  let captured_policy : RunPolicy = {
+    model_id: input.policy.model_id,
+    call_options: snapshot_json(input.policy.call_options),
+    budget: input.policy.budget,
+    context_window: input.policy.context_window,
+    compact_threshold: input.policy.compact_threshold,
+  }
+  // Compute fingerprint from the captured values, never caller-owned Json.
+  let fp = compute_fingerprint(input, captured_policy)
   {
     run_id: input.run_id,
     turn_id: input.turn_id,
     session_id: input.session_id,
     catalog_version: input.catalog.version(),
     tool_definitions: copied_defs,
-    model_id: input.model_id,
-    call_options: input.call_options,
-    budget: input.budget,
+    policy: captured_policy,
     deadline: input.deadline,
     hook_provenance: input.hook_provenance.copy(),
     lifecycle_provenance: input.lifecycle_provenance.copy(),
     subscriber_provenance: input.subscriber_provenance.copy(),
     fingerprint: fp,
+  }
+}
+
+///|
+/// Recursively copy Json so mutable Array/Map backing storage cannot cross the
+/// turn-capture seam in either direction.
+fn snapshot_json(value : Json) -> Json {
+  match value {
+    Null => Json::null()
+    True => Json::boolean(true)
+    False => Json::boolean(false)
+    Number(number, repr~) => Json::number(number, repr?)
+    String(text) => Json::string(text)
+    Array(values) => Json::array(values.map(snapshot_json))
+    Object(values) => {
+      let copied : Map[String, Json] = Map::from_array([])
+      for key in values.keys() {
+        copied[key] = snapshot_json(values[key])
+      }
+      Json::object(copied)
+    }
   }
 }
 
@@ -204,7 +251,7 @@ fn check_budget(budget : Budget) -> Result[Unit, PuppetError] {
 /// Deterministic fingerprint. Inputs are concatenated in a fixed order;
 /// Map iteration order does NOT contribute (we use only the catalog version
 /// + sorted definition names).
-fn compute_fingerprint(input : TurnSnapshotInput) -> String {
+fn compute_fingerprint(input : TurnSnapshotInput, policy : RunPolicy) -> String {
   let parts : Array[String] = []
   parts.push("v1")
   parts.push("run=" + input.run_id.to_string())
@@ -218,15 +265,17 @@ fn compute_fingerprint(input : TurnSnapshotInput) -> String {
   }
   names.sort_by(compare_strings)
   parts.push("tools=[" + names.join(",") + "]")
-  parts.push("model=" + input.model_id)
+  parts.push("model=" + policy.model_id)
   // Fingerprint requires deterministic string form; `Json::stringify`
   // gives canonical JSON (no Debug-style formatting).
-  parts.push("options=" + input.call_options.stringify())
+  parts.push("options=" + policy.call_options.stringify())
   // Budget dimensions in canonical order.
-  parts.push("budget_steps=" + opt_to_str(input.budget.max_model_steps))
-  parts.push("budget_rounds=" + opt_to_str(input.budget.max_tool_rounds))
-  parts.push("budget_calls=" + opt_to_str(input.budget.max_tool_calls))
-  parts.push("budget_tokens=" + opt_to_str(input.budget.max_total_tokens))
+  parts.push("budget_steps=" + opt_to_str(policy.budget.max_model_steps))
+  parts.push("budget_rounds=" + opt_to_str(policy.budget.max_tool_rounds))
+  parts.push("budget_calls=" + opt_to_str(policy.budget.max_tool_calls))
+  parts.push("budget_tokens=" + opt_to_str(policy.budget.max_total_tokens))
+  parts.push("context_window=" + opt_to_str(policy.context_window))
+  parts.push("compact_threshold=" + policy.compact_threshold.to_string())
   parts.push("deadline=" + opt_to_str(input.deadline))
   // Provenance lists sorted for determinism.
   let hp = input.hook_provenance.copy()
@@ -294,17 +343,27 @@ pub fn TurnSnapshot::tool_definitions(self : TurnSnapshot) -> Array[ToolDef] {
 
 ///|
 pub fn TurnSnapshot::model_id(self : TurnSnapshot) -> String {
-  self.model_id
+  self.policy.model_id
 }
 
 ///|
 pub fn TurnSnapshot::call_options(self : TurnSnapshot) -> Json {
-  self.call_options
+  snapshot_json(self.policy.call_options)
 }
 
 ///|
 pub fn TurnSnapshot::budget(self : TurnSnapshot) -> Budget {
-  self.budget
+  self.policy.budget
+}
+
+///|
+pub fn TurnSnapshot::context_window(self : TurnSnapshot) -> Int? {
+  self.policy.context_window
+}
+
+///|
+pub fn TurnSnapshot::compact_threshold(self : TurnSnapshot) -> Double {
+  self.policy.compact_threshold
 }
 
 ///|
@@ -355,8 +414,8 @@ pub fn TurnSnapshot::to_redacted_string(self : TurnSnapshot) -> String {
   for def in self.tool_definitions {
     names.push(def.name.to_string())
   }
-  let limits = self.budget
-  "TurnSnapshot(run=\{self.run_id.to_string()}, turn=\{self.turn_id.to_string()}, session=\{self.session_id.to_string()}, catalog=\{self.catalog_version.to_int()}, model=\{self.model_id}, tools=[\{names.join(",")}], budget=(steps=\{opt_to_str(limits.max_model_steps)},rounds=\{opt_to_str(limits.max_tool_rounds)},calls=\{opt_to_str(limits.max_tool_calls)},tokens=\{opt_to_str(limits.max_total_tokens)}), deadline=\{opt_to_str(self.deadline)}, fp=\{fp_prefix(self.fingerprint)})"
+  let limits = self.policy.budget
+  "TurnSnapshot(run=\{self.run_id.to_string()}, turn=\{self.turn_id.to_string()}, session=\{self.session_id.to_string()}, catalog=\{self.catalog_version.to_int()}, model=\{self.policy.model_id}, tools=[\{names.join(",")}], budget=(steps=\{opt_to_str(limits.max_model_steps)},rounds=\{opt_to_str(limits.max_tool_rounds)},calls=\{opt_to_str(limits.max_tool_calls)},tokens=\{opt_to_str(limits.max_total_tokens)}), deadline=\{opt_to_str(self.deadline)}, fp=\{fp_prefix(self.fingerprint)})"
 }
 
 ///|

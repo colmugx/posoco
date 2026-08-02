@@ -1,10 +1,10 @@
 ///|
 /// Observer: read-only event listener. Two event channels:
 ///
-/// - **Session-level** (`on_event`): TurnStarted / TurnCompleted / TurnFailed
-///   etc. Fired at turn boundaries. Projection is currently batched at
-///   turn end (see `LegacyEventProjector`); a future revision may deliver
-///   these in real time.
+/// - **Agent-level** (`on_event`): TurnStarted / model response / tool pending
+///   and result / TurnCompleted / TurnFailed. Agent projects these directly
+///   from committed runtime events; it never reconstructs them by scanning a
+///   terminal transcript.
 ///
 /// - **Effect-level** (`on_kernel_event`): ModelCompleted / ToolCompleted /
 ///   ToolFailed / ModelFailed. Fired by the pump immediately after each

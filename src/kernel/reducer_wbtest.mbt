@@ -137,10 +137,11 @@ fn run_until_awaiting_model() -> (RunState, EffectId, ModelStepId) raise {
 test "C-HAPPY-NO-TOOLS: Start → CallModel → ModelCompleted → Terminal(Completed)" {
   let (st_awaiting, eff_id, step_id) = run_until_awaiting_model()
   let catalog = make_catalog_v1()
+  let completion = make_completion_no_tools()
   let input : RunInput = ModelCompleted(payload=ModelCompletedPayload::{
     effect_id: eff_id,
     model_step_id: step_id,
-    completion: make_completion_no_tools(),
+    completion,
     processed_messages: st_awaiting.transcript().messages_snapshot(),
   })
   let out = reduce(st_awaiting, catalog, input)
@@ -153,6 +154,15 @@ test "C-HAPPY-NO-TOOLS: Start → CallModel → ModelCompleted → Terminal(Comp
   // Exactly one terminal event.
   let terminal_events = out.events().filter(fn(e) { e.is_terminal() })
   assert_eq(terminal_events.length(), 1)
+  // The committed event carries the exact canonical completion, including
+  // usage, instead of forcing subscribers to scan the transcript.
+  match out.events()[0] {
+    ModelStepCompleted(model_step_id~, completion=committed) => {
+      assert_eq(model_step_id, step_id)
+      assert_eq(committed, completion)
+    }
+    _ => fail("expected ModelStepCompleted first")
+  }
   // No further effects.
   assert_eq(out.effects().length(), 0)
 }

@@ -10,10 +10,7 @@ fn err_config() -> @posoco.AgentConfig {
     max_tool_rounds: 10,
     temperature: None,
     max_output_tokens: None,
-    tool_choice: None,
-    reasoning_effort: None,
     model_context_window: None,
-    model: None,
   }
 }
 
@@ -487,10 +484,7 @@ async test "t07_tool_loop_emits_exactly_one_turnfailed" {
     max_tool_rounds: 0,
     temperature: None,
     max_output_tokens: None,
-    tool_choice: None,
-    reasoning_effort: None,
     model_context_window: None,
-    model: None,
   }
   let agent = @posoco.Agent(
     exts=[

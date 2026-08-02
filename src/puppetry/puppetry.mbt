@@ -32,9 +32,6 @@
 /// contract. Catalog-composition validation is the caller's responsibility.
 pub(all) struct PuppetConfig {
   host : &@kernel.HostRuntime
-  /// Stable model identifier for diagnostics and turn snapshots. The host
-  /// does not expose this via HostRuntime; it is supplied separately.
-  model_id : String
   catalog : @kernel.ToolCatalogSnapshot
   journal : &RunJournal
   contributors : Array[&JournalContributor]
@@ -58,11 +55,6 @@ pub(all) struct PuppetConfig {
   pre_tool_hooks : Array[&PreToolHook]
   /// Post-event hooks called after each effect completes (read-only).
   post_event_hooks : Array[&PostEventHook]
-  /// Opaque provider options captured at composition. They are carried into
-  /// every reducer-declared CallModel effect unchanged.
-  call_options : Json
-  /// Default budget for new runs.
-  default_budget : @kernel.Budget
   /// Max iterations before the pump declares PumpLoopExceeded.
   max_iterations : Int
   /// Slash command processors. The pump does NOT invoke these —
@@ -77,19 +69,10 @@ pub(all) struct PuppetConfig {
   /// (the new session id is returned via `PromptResult::ForkCompleted`),
   /// but nothing is durably saved.
   session_store : &SessionStore?
-  /// Token budget ceiling for auto-compact. When
-  /// `BudgetConsumed.observed_total_tokens` reaches 90% of this value, the
-  /// pump auto-triggers `ModelPort::compact(trigger=Auto)`. `None` disables
-  /// auto-compact (manual `/compact` still works).
-  context_window : Int?
-  /// Configurable auto-compact threshold (default 0.9). The pump multiplies
-  /// `context_window * threshold` to get the trigger point.
-  compact_threshold : Double
-  /// The shared control mailbox. The Agent owns the concrete
-  /// `ControlMailbox` instance and borrows it here so the Puppet, the
-  /// BuiltinCommandPort (constructed from the same instance), and the
-  /// product layer all see ONE mailbox. Signals enqueued by the product
-  /// layer reach the pump's safe points.
+  /// The shared control mailbox. Product composition owns the concrete
+  /// `ControlMailbox` instance and lends the same mailbox to the Puppet,
+  /// command ports, and any product-layer controllers. Signals enqueued by
+  /// those callers reach the pump's safe points.
   mailbox : &Mailbox
 }
 
@@ -103,7 +86,8 @@ pub(all) struct PuppetConfig {
 ///
 /// The Puppet owns:
 /// - PhaseGate (mutable)
-/// - &Mailbox (borrowed from `PuppetConfig`; the Agent owns the concrete
+/// - &Mailbox (borrowed from `PuppetConfig`; product composition owns the
+///   concrete mailbox)
 /// - LifecycleCollection (mutable)
 ///
 /// The Puppet borrows:
@@ -115,8 +99,8 @@ pub(all) struct PuppetConfig {
 pub struct Puppet {
   config : PuppetConfig
   mut phase_gate : PhaseGate
-  /// Borrowed from `PuppetConfig.mailbox` so the Puppet, the Agent, and
-  /// any BuiltinCommandPort all share the SAME `ControlMailbox` instance.
+  /// Borrowed from `PuppetConfig.mailbox` so the Puppet, command ports, and
+  /// product layer all share the SAME `ControlMailbox` instance.
   mailbox : &Mailbox
   lifecycle : LifecycleCollection
   /// Last terminal transcript. The Kernel owns the live transcript while a
@@ -219,6 +203,19 @@ pub async fn Puppet::shutdown(self : Puppet) -> Unit raise PuppetError {
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
+/// Complete input for one prompt on a long-lived Puppet. Composition-static
+/// ports and catalog wiring remain in `PuppetConfig`; every value that may
+/// differ from one turn to the next travels through this request.
+pub(all) struct PromptRequest {
+  run_id : RunId
+  turn_id : TurnId
+  session_id : SessionId
+  initial_messages : Array[Message]
+  operation_id : String
+  policy : RunPolicy
+} derive(Eq, Debug)
+
+///|
 /// Result of `prompt`.
 pub(all) enum PromptResult {
   /// Run accepted; the puppet has entered Active phase and is driving.
@@ -312,15 +309,14 @@ pub impl Show for PromptResult with fn to_string(self : PromptResult) -> String 
 /// possible without a central id factory.
 pub async fn Puppet::prompt(
   self : Puppet,
-  run_id : RunId,
-  turn_id : TurnId,
-  session_id : SessionId,
-  initial_messages : Array[Message],
-  operation_id : String,
+  request : PromptRequest,
 ) -> PromptResult raise PuppetError {
+  let run_id = request.run_id
+  let turn_id = request.turn_id
+  let session_id = request.session_id
   // Step 1: acquire lease.
   let acquire_result : Result[(PhaseGate, OperationLease), PuppetError] = Ok(
-    self.phase_gate.acquire_prompt(operation_id, run_id, turn_id),
+    self.phase_gate.acquire_prompt(request.operation_id, run_id, turn_id),
   ) catch {
     e => Err(e)
   }
@@ -336,9 +332,7 @@ pub async fn Puppet::prompt(
     turn_id,
     session_id,
     catalog: self.config.catalog,
-    model_id: self.config.model_id,
-    call_options: self.config.call_options,
-    budget: self.config.default_budget,
+    policy: request.policy,
     deadline: None,
     hook_provenance: [],
     lifecycle_provenance: [],
@@ -365,7 +359,11 @@ pub async fn Puppet::prompt(
   self.phase_gate = self.phase_gate.transition(Active)
   // Step 5: run the pump.
   let result = self.drive_run(
-    run_id, turn_id, session_id, initial_messages, snap,
+    run_id,
+    turn_id,
+    session_id,
+    request.initial_messages.copy(),
+    snap,
   )
   // Step 7: release lease and return.
   result
@@ -619,7 +617,7 @@ async fn Puppet::drive_run(
     match self.mailbox.consume_one_compact() {
       Some(compact_cmd) => {
         let compact_outcome = self.handle_compact(
-          state, compact_cmd, run_id, turn_id, session_id, dispatcher,
+          state, compact_cmd, run_id, turn_id, session_id, dispatcher, snap,
         )
         match compact_outcome {
           CompactFlow::ReturnedResult(r) => return r
@@ -767,7 +765,7 @@ async fn Puppet::drive_run(
             turn_id,
             session_id,
             "sp_model_effect_\{iter}",
-            snap.call_options(),
+            snap,
           ),
         ) catch {
           error => Err(error)
@@ -881,7 +879,7 @@ async fn Puppet::drive_run(
                 turn_id,
                 session_id,
                 "sp_tool_wave_\{wave_index}",
-                snap.call_options(),
+                snap,
               ),
             ) catch {
               error => Err(error)
@@ -1001,12 +999,13 @@ async fn Puppet::handle_compact(
   turn_id : TurnId,
   session_id : SessionId,
   _dispatcher : EventDispatcher,
+  snap : TurnSnapshot,
 ) -> CompactFlow raise PuppetError {
   let messages = state.transcript().messages_snapshot()
   let attempted : Result[Result[CompactResult, @kernel.ModelFailure], Error] = Ok(
     self.config.host.compact(
       messages,
-      self.config.call_options,
+      snap.call_options(),
       compact_cmd.trigger(),
     ),
   ) catch {
@@ -1159,8 +1158,9 @@ async fn Puppet::handle_compact(
 fn Puppet::check_auto_compact(
   self : Puppet,
   state : RunState,
+  snap : TurnSnapshot,
 ) -> CompactCommand? {
-  let context_window = match self.config.context_window {
+  let context_window = match snap.context_window() {
     Some(w) => w
     None => return None
   }
@@ -1173,8 +1173,8 @@ fn Puppet::check_auto_compact(
   if not(consumed.any_usage_verified) {
     return None
   }
-  // threshold * 100 rounded — compact_threshold is a Double (default 0.9).
-  let threshold_units = (self.config.compact_threshold * 100.0).to_int()
+  // threshold * 100 rounded — compact_threshold is validated at capture.
+  let threshold_units = (snap.compact_threshold() * 100.0).to_int()
   // total_units = context_window * threshold; floor at 0.
   let limit = context_window * threshold_units / 100
   if consumed.observed_total_tokens >= limit {
@@ -1229,7 +1229,7 @@ async fn Puppet::fold_effect_input(
   turn_id : TurnId,
   session_id : SessionId,
   savepoint_id_prefix : String,
-  call_options : Json,
+  snap : TurnSnapshot,
 ) -> FoldOutcome raise PuppetError {
   let reduced : Result[ReduceOutput, KernelError] = Ok(
     reduce(state, self.config.catalog, input),
@@ -1250,7 +1250,7 @@ async fn Puppet::fold_effect_input(
   // updates the state and we proceed to declare_model_effect_if_ready
   // on the post-compact transcript.
   let state_after_auto_compact = if output.next_state().phase() == ReadyForModel {
-    match self.check_auto_compact(output.next_state()) {
+    match self.check_auto_compact(output.next_state(), snap) {
       Some(compact_cmd) => {
         let compact_outcome = self.handle_compact(
           output.next_state(),
@@ -1259,6 +1259,7 @@ async fn Puppet::fold_effect_input(
           turn_id,
           session_id,
           dispatcher,
+          snap,
         )
         match compact_outcome {
           CompactFlow::ReturnedResult(r) => return FoldOutcome::Return(r)
@@ -1277,7 +1278,7 @@ async fn Puppet::fold_effect_input(
     state_after_auto_compact,
     output.events(),
     self.config.catalog,
-    call_options,
+    snap.call_options(),
   )
   let committed : Result[Unit, PuppetError] = Ok(
     self.commit_boundary(
@@ -1659,12 +1660,13 @@ fn kernel_event_payload(event : KernelEvent) -> Json {
           ("effect_id", Json::number(effect_id.to_int().to_double())),
         ]),
       )
-    ModelStepCompleted(model_step_id~, completion_summary~) =>
+    ModelStepCompleted(model_step_id~, ..) =>
       Json::object(
         Map::from_array([
           ("kind", Json::string("ModelStepCompleted")),
           ("model_step_id", Json::number(model_step_id.to_int().to_double())),
-          ("summary", Json::string(completion_summary)),
+          // KernelEvent::Show intentionally excludes message/provider payloads.
+          ("summary", Json::string(event.to_string())),
         ]),
       )
     ToolBatchStarted(model_step_id~, calls~) =>

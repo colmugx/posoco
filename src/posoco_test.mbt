@@ -101,10 +101,7 @@ fn make_config() -> @posoco.AgentConfig {
     max_tool_rounds: 10,
     temperature: None,
     max_output_tokens: None,
-    tool_choice: None,
-    reasoning_effort: None,
     model_context_window: None,
-    model: None,
   }
 }
 
@@ -246,5 +243,52 @@ async test "b9_model_error_aborts" {
     (Ok(agent.run_turn(user_msg("boom"), "session_b9")) catch { e => Err(e) }) {
     Err(@error.AgentError::Model(_)) => ()
     _ => fail("expected Model error")
+  }
+}
+
+///|
+async test "b10_agent_reuses_one_puppet_across_turns" {
+  let model = MockModelPort::{
+    responses: [stop_response("first"), stop_response("second")],
+    index: 0,
+  }
+  let store = MockSessionStore::{ store: Map::from_array([]) }
+  let observer = MockObserver::{ events: [] }
+  let agent = @posoco.Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", tools=[empty_tools()], sessions=[store], observers=[
+        observer,
+      ]),
+    ],
+    config=make_config(),
+  )
+
+  let first = agent.run_turn(user_msg("one"), "session_b10")
+  assert_eq(model.index, 1)
+  assert_eq(first.final_session_id, "session_b10")
+  assert_true(store.store.contains("session_b10"))
+  assert_eq(store.store["session_b10"].messages.length(), 2)
+
+  let second = agent.run_turn(user_msg("two"), "session_b10")
+  assert_eq(model.index, 2)
+  assert_eq(second.final_session_id, "session_b10")
+  assert_eq(store.store["session_b10"].messages.length(), 4)
+}
+
+///|
+test "b11_agent_requires_session_store_at_composition" {
+  let model = MockModelPort::{ responses: [], index: 0 }
+  let result = Ok(
+    @posoco.Agent(
+      exts=[tk_ext(id="model", model=Some(model))],
+      config=make_config(),
+    ),
+  ) catch {
+    error => Err(error)
+  }
+  match result {
+    Err(@error.CompositionError::EmptyPort("SessionStore")) => ()
+    _ => fail("expected missing SessionStore to fail composition")
   }
 }

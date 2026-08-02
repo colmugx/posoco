@@ -86,13 +86,11 @@ fn chunk_demand_config(
 ) -> PuppetConfig {
   canonical_puppet_config(
     host as &@kernel.HostRuntime,
-    "chunk-demand-model",
     catalog,
     journal,
     [],
     [],
     stream_chunks,
-    Json::null(),
   )
 }
 

@@ -1019,19 +1019,13 @@ pub fn tk_error_result(content : String) -> @kernel.ToolOutcome {
 }
 
 ///|
-/// Build a default AgentConfig for scripted tests. R3 M3.7: `tool_choice`
-/// and `reasoning_effort` are removed from ChatOptions; AgentConfig retains
-/// them as product-level tuning knobs that future milestones may wire through
-/// to modelport via the call_options JSON bag.
+/// Build a default universal AgentConfig for scripted tests.
 pub fn tk_config() -> AgentConfig {
   {
     max_tool_rounds: 10,
     temperature: None,
     max_output_tokens: None,
-    tool_choice: None,
-    reasoning_effort: None,
     model_context_window: None,
-    model: None,
   }
 }
 

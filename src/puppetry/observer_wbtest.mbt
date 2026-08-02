@@ -47,7 +47,6 @@ async test "d5_observer/model_only_turn_fires_model_completed" {
   let host_ref : &@kernel.HostRuntime = host as &@kernel.HostRuntime
   let cfg : PuppetConfig = {
     host: host_ref,
-    model_id: "d5-observer",
     catalog: fixture_empty_catalog(),
     journal,
     contributors: [],
@@ -55,16 +54,12 @@ async test "d5_observer/model_only_turn_fires_model_completed" {
     observers: [recorder_ref],
     lifecycle_nodes: [],
     stream_chunks: None,
-    call_options: Json::null(),
     pre_model_hooks: [],
     pre_tool_hooks: [],
     post_event_hooks: [],
-    default_budget: Budget::default_run(),
     max_iterations: 10,
     commands: [],
     session_store: None,
-    context_window: None,
-    compact_threshold: 0.9,
     mailbox,
   }
   let puppet = Puppet(cfg)
@@ -100,7 +95,6 @@ async test "d5_observer/tool_turn_fires_model_then_tool" {
   let host_ref : &@kernel.HostRuntime = host as &@kernel.HostRuntime
   let cfg : PuppetConfig = {
     host: host_ref,
-    model_id: "d5-observer-tool",
     catalog: fixture_tool_catalog("echo"),
     journal,
     contributors: [],
@@ -108,16 +102,12 @@ async test "d5_observer/tool_turn_fires_model_then_tool" {
     observers: [recorder_ref],
     lifecycle_nodes: [],
     stream_chunks: None,
-    call_options: Json::null(),
     pre_model_hooks: [],
     pre_tool_hooks: [],
     post_event_hooks: [],
-    default_budget: Budget::default_run(),
     max_iterations: 10,
     commands: [],
     session_store: None,
-    context_window: None,
-    compact_threshold: 0.9,
     mailbox,
   }
   let puppet = Puppet(cfg)

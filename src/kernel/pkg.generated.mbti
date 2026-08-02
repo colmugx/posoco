@@ -284,7 +284,7 @@ pub impl Show for InvariantCategory
 pub(all) enum KernelEvent {
   RunStarted(details~ : StartedDetails)
   ModelStepStarted(model_step_id~ : ModelStepId, effect_id~ : EffectId)
-  ModelStepCompleted(model_step_id~ : ModelStepId, completion_summary~ : String)
+  ModelStepCompleted(model_step_id~ : ModelStepId, completion~ : Completion)
   ToolBatchStarted(model_step_id~ : ModelStepId, calls~ : Array[ToolCall])
   ToolCompleted(call_id~ : CallId, outcome~ : ToolOutcome)
   RunSuspended(requirement~ : SuspensionRequirement, model_step_id~ : ModelStepId)

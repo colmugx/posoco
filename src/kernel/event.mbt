@@ -38,8 +38,10 @@ pub(all) enum KernelEvent {
   RunStarted(details~ : StartedDetails)
   /// Emitted each time the reducer declares a `CallModel` effect.
   ModelStepStarted(model_step_id~ : ModelStepId, effect_id~ : EffectId)
-  /// Emitted when a model completion is folded into the transcript.
-  ModelStepCompleted(model_step_id~ : ModelStepId, completion_summary~ : String)
+  /// Emitted when a model completion is folded into the transcript. Carries
+  /// the same canonical completion committed by the reducer so ordered
+  /// subscribers do not need to reconstruct it from the transcript.
+  ModelStepCompleted(model_step_id~ : ModelStepId, completion~ : Completion)
   /// Emitted when a tool batch is dispatched (one event per batch, not per
   /// tool). The calls retain their names and parsed arguments so a committed
   /// product subscriber can render the exact pending work without querying a
@@ -86,8 +88,8 @@ pub impl Show for KernelEvent with fn to_string(self : KernelEvent) -> String {
       "RunStarted(run=\{details.run_id.to_string()}, session=\{details.session_id.to_string()})"
     ModelStepStarted(model_step_id~, effect_id~) =>
       "ModelStepStarted(step=\{model_step_id.to_int()}, effect=\{effect_id.to_int()})"
-    ModelStepCompleted(model_step_id~, completion_summary~) =>
-      "ModelStepCompleted(step=\{model_step_id.to_int()}, \{completion_summary})"
+    ModelStepCompleted(model_step_id~, completion~) =>
+      "ModelStepCompleted(step=\{model_step_id.to_int()}, \{completion_summary(completion)})"
     ToolBatchStarted(model_step_id~, calls~) =>
       "ToolBatchStarted(step=\{model_step_id.to_int()}, \{calls.length()} calls)"
     ToolCompleted(call_id~, outcome~) =>

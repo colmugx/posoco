@@ -321,10 +321,9 @@ pub impl Show for EnqueueResult with fn to_string(self : EnqueueResult) -> Strin
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Mailbox trait — lets Agent (owns the instance), Puppet (reads at safe
-// points), and BuiltinCommandPort (enqueues from the product layer) all
-// share one `ControlMailbox`. `pub(open)` so alternative implementations
-// (recorded replay, clustered) can substitute without touching the pump.
+// Mailbox trait — lets the long-lived Puppet and product command ports share
+// one `ControlMailbox`. `pub(open)` so alternative implementations (recorded
+// replay, clustered) can substitute without touching the pump.
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|

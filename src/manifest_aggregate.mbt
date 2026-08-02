@@ -6,7 +6,7 @@
 /// Flattened port bundle ready for the agent constructor. The `model` field
 /// is a single value (multi-model routing is solved in-extension), and `ui`
 /// is wrapped into one UiPort reference (the agent never sees a bare array).
-pub(all) struct AggregatedPorts {
+priv struct AggregatedPorts {
   model : &@port.ModelPort
   tools : Array[&@port.ToolProvider]
   sessions : Array[&@port.SessionStore]
@@ -19,15 +19,12 @@ pub(all) struct AggregatedPorts {
   commands : Array[&@port.CommandPort]
   ui : &@port.UiPort
   prompt_contributors : Array[&@port.SystemPromptContributor]
-  /// IDs of every extension that contributed at least one port. Useful for
-  /// diagnostics and for the agent's startup banner.
-  contributor_ids : Array[String]
 }
 
 ///|
 /// Aggregate every extension's manifest into one port bundle.
 /// Order follows extension array order; collisions fail fast.
-pub fn aggregate_extensions(
+fn aggregate_extensions(
   exts : Array[&@port.Extension],
 ) -> AggregatedPorts raise @error.CompositionError {
   if exts.length() == 0 {
@@ -49,7 +46,6 @@ pub fn aggregate_extensions(
   let command_manifests : Map[String, Array[String]] = Map::from_array([])
   let ui : Array[&@port.UiPort] = []
   let prompt_contributors : Array[&@port.SystemPromptContributor] = []
-  let contributor_ids : Array[String] = []
   for ext in exts {
     let manifest = ext.manifest()
     let mid = manifest.id
@@ -58,21 +54,6 @@ pub fn aggregate_extensions(
         manifest_id="",
         detail="extension returned a manifest with empty id",
       )
-    }
-    let contributed = manifest.models.length() +
-      manifest.tools.length() +
-      manifest.sessions.length() +
-      manifest.observers.length() +
-      manifest.pre_model_hooks.length() +
-      manifest.pre_tool_hooks.length() +
-      manifest.post_event_hooks.length() +
-      manifest.memory.length() +
-      manifest.lifecycle.length() +
-      manifest.commands.length() +
-      manifest.ui.length() +
-      manifest.prompt_contributors.length()
-    if contributed > 0 {
-      contributor_ids.push(mid)
     }
     // models: collect for later cardinality check
     for m in manifest.models {
@@ -190,6 +171,5 @@ pub fn aggregate_extensions(
     commands,
     ui: ui_ref,
     prompt_contributors,
-    contributor_ids,
   }
 }

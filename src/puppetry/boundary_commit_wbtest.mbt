@@ -99,13 +99,11 @@ async test "puppet/boundary_commits_intent_before_each_model_effect" {
   let puppet = Puppet(
     canonical_puppet_config(
       host as &@kernel.HostRuntime,
-      "boundary-probe",
       catalog,
       journal,
       [],
       [],
       None,
-      Json::null(),
     ),
   )
   assert_true(fixture_prompt(puppet, "boundary") is Accepted(_))

@@ -1,23 +1,9 @@
 ///|
-/// M3.7 — Agent.run_turn Puppet wrapper (canonical-only).
+/// Agent-owned Puppet composition and per-prompt projection.
 ///
-/// R3 M3.7 reset: with ModelPort::chat returning `ModelCallResult` and
-/// `Session.messages` carrying `@kernel.Message` directly, there is no more
-/// legacy ↔ canonical conversion. The wrapper:
-///   1. loads the session (canonical messages),
-///   2. appends the input message,
-///   3. builds the catalog (owner/policy synthesis happens here),
-///   4. drives one Puppet prompt,
-///   5. reconstructs the legacy observer event order from the final
-///      transcript (ToolCallPending / ToolCallResult / ModelResponseReceived),
-///   6. saves the session (write-all),
-///   7. returns TurnResult.
-///
-/// Event projection: the wrapper translates the final transcript into the
-/// `TurnEvent` stream observers depend on. `ModelResponseReceived` is
-/// projected per AssistantMessage; tool calls are paired with subsequent
-/// ToolMessage entries to emit ToolCallPending + ToolCallResult in legacy
-/// order.
+/// Composition-static state is built exactly once in `Agent::Agent`: catalog,
+/// HostRuntime adapter, journal, committed-event subscriber, mailbox and
+/// Puppet. This file only creates per-prompt identities and `RunPolicy` data.
 
 ///|
 /// Normalise a tool schema into the canonical form the Kernel catalog
@@ -38,11 +24,11 @@ fn normalize_tool_schema(schema : Json) -> Json {
 /// `@async.all`-every-batch behaviour). Owner is derived from the ToolDef's
 /// own `owner` field if it is non-placeholder, else from provenance, else
 /// `legacy_provider`.
-fn Agent::build_catalog(
-  self : Agent,
-) -> @kernel.ToolCatalogSnapshot raise @error.AgentError {
+fn build_agent_catalog(
+  providers : Array[&@port.ToolProvider],
+) -> @kernel.ToolCatalogSnapshot raise @error.CompositionError {
   let builder = @kernel.ToolCatalogBuilder()
-  for provider in self.tool_routing.providers {
+  for provider in providers {
     for tool in provider.list_tools() {
       let owner_str = tool.owner.to_string()
       let owner : @kernel.OwnerId = if owner_str == "placeholder" ||
@@ -66,63 +52,103 @@ fn Agent::build_catalog(
         let _ = builder.add(def)
       } catch {
         e =>
-          raise @error.AgentError::Runtime(
-            @error.RuntimeError::InvocationFailed(
-              "catalog add '\{tool.name.to_string()}': " +
+          raise @error.CompositionError::ManifestSchemaError(
+            manifest_id="agent.catalog",
+            detail="catalog add '\{tool.name.to_string()}': " +
               safe_error_label(e.to_string()),
-            ),
           )
       }
     }
   }
   builder.finish(version=@kernel.CatalogVersion(1)) catch {
     e =>
-      raise @error.AgentError::Runtime(
-        @error.RuntimeError::InvocationFailed(
-          "catalog finish: " + safe_error_label(e.to_string()),
-        ),
+      raise @error.CompositionError::ManifestSchemaError(
+        manifest_id="agent.catalog",
+        detail="catalog finish: " + safe_error_label(e.to_string()),
       )
   }
 }
 
 ///|
-/// Event subscriber placeholder. M3.6 reconstruction: the legacy event order
-/// (MRR → ToolCallPending → ToolCallResult → MRR) cannot be preserved via
-/// the kernel event stream because the reducer batches ModelStepCompleted +
-/// ToolBatchStarted in one commit. So this subscriber is a no-op for event
-/// projection; the wrapper reconstructs the full sequence from the final
-/// transcript at turn end. It exists only to satisfy PuppetConfig.subscribers.
-pub struct LegacyEventProjector {
+/// Agent-facing projection of committed Puppet envelopes. It never scans a
+/// final transcript. The pending call cache is correlation state populated by
+/// `ToolBatchStarted` and consumed by `ToolCompleted`.
+priv struct AgentEventSubscriber {
   observers : Array[&@port.Observer]
+  pending_calls : Map[String, @kernel.ToolCall]
 }
 
 ///|
-pub fn LegacyEventProjector::LegacyEventProjector(
+fn AgentEventSubscriber::AgentEventSubscriber(
   observers : Array[&@port.Observer],
-) -> LegacyEventProjector {
-  { observers, }
+) -> AgentEventSubscriber {
+  { observers, pending_calls: Map::from_array([]) }
 }
 
 ///|
-pub impl @puppetry.EventSubscriber for LegacyEventProjector with fn subscriber_id(
-  _self : LegacyEventProjector,
+impl @puppetry.EventSubscriber for AgentEventSubscriber with fn subscriber_id(
+  _self : AgentEventSubscriber,
 ) -> String {
-  "legacy_event_projector"
+  "agent_committed_event_projection"
 }
 
 ///|
-pub impl @puppetry.EventSubscriber for LegacyEventProjector with fn provenance(
-  _self : LegacyEventProjector,
+impl @puppetry.EventSubscriber for AgentEventSubscriber with fn provenance(
+  _self : AgentEventSubscriber,
 ) -> String {
-  "m3_7_projection"
+  "posoco.agent"
 }
 
 ///|
-pub impl @puppetry.EventSubscriber for LegacyEventProjector with fn on_event(
-  _self : LegacyEventProjector,
-  _envelope : @puppetry.EventEnvelope,
+fn AgentEventSubscriber::emit(
+  self : AgentEventSubscriber,
+  event : @types.TurnEvent,
+) -> Unit {
+  for observer in self.observers {
+    observer.on_event(agent_snapshot_turn_event(event))
+  }
+}
+
+///|
+impl @puppetry.EventSubscriber for AgentEventSubscriber with fn on_event(
+  self : AgentEventSubscriber,
+  envelope : @puppetry.EventEnvelope,
 ) -> Unit raise @puppetry.SubscriberError {
-  ()
+  let event = envelope.event()
+  match event {
+    @kernel.RunStarted(..) => self.pending_calls.clear()
+    @kernel.ModelStepCompleted(completion~, ..) => {
+      let payload = completion.message
+      let message : @kernel.Message = @kernel.AssistantMessage(
+        content=payload.content,
+        tool_calls=payload.tool_calls,
+        reasoning=payload.reasoning,
+        finish_reason=payload.finish_reason,
+      )
+      self.emit(@types.ModelResponseReceived(message~, usage=completion.usage))
+    }
+    @kernel.ToolBatchStarted(calls~, ..) =>
+      for call in calls {
+        let snapshot = agent_snapshot_tool_call(call)
+        self.pending_calls[snapshot.call_id.to_string()] = snapshot
+        self.emit(@types.ToolCallPending(snapshot))
+      }
+    @kernel.ToolCompleted(call_id~, outcome~) => {
+      let key = call_id.to_string()
+      let call = match self.pending_calls.get(key) {
+        Some(call) => call
+        None =>
+          raise @puppetry.SubscriberError::ContractViolation(
+            subscriber_id="agent_committed_event_projection",
+            detail="ToolCompleted without committed ToolBatchStarted for call " +
+              key,
+          )
+      }
+      self.pending_calls.remove(key)
+      self.emit(@types.TurnEvent::tool_call_result(call, outcome))
+    }
+    _ => ()
+  }
 }
 
 ///|
@@ -131,11 +157,12 @@ pub impl @puppetry.EventSubscriber for LegacyEventProjector with fn on_event(
 /// `StreamChunkReceived`. The JSON shape is a private contract between the
 /// modelport and this wrapper; we recognise the same `{kind, token}` layout
 /// PortHostAdapter and ScriptedModel emit.
-fn Agent::create_stream_callback(self : Agent) -> @kernel.HostChunkCallback? {
-  if self.observers.is_empty() {
+fn create_agent_stream_callback(
+  observers : Array[&@port.Observer],
+) -> @kernel.HostChunkCallback? {
+  if observers.is_empty() {
     return None
   }
-  let observers = self.observers
   let cb = fn(json_chunk : Json) {
     let chunk : @types.StreamChunk = match json_chunk {
       Json::Object(map) =>
@@ -182,15 +209,13 @@ fn Agent::create_stream_callback(self : Agent) -> @kernel.HostChunkCallback? {
 /// Drive one full turn through the Puppet. Steps:
 /// 1. load session
 /// 2. snapshot session.messages (deep copy) + append input
-/// 3. build catalog (owner/policy synthesis)
-/// 4. PortHostAdapter → HostRuntime
-/// 5. construct Puppet, drive one prompt
-/// 6. translate non-Accepted PromptResult → AgentError
-/// 7. reconstruct observer event order from the final transcript
-/// 8. save session (write-all)
-/// 9. return TurnResult
-async fn Agent::run_turn_via_puppet(
-  self : Agent,
+/// 3. allocate unique run/turn identities and capture a per-prompt RunPolicy
+/// 4. drive the Agent-owned long-lived Puppet
+/// 5. translate non-Accepted PromptResult → AgentError
+/// 6. materialize and save the canonical terminal transcript (write-all)
+/// 7. return TurnResult
+async fn AgentRuntime::run_turn_via_puppet(
+  self : AgentRuntime,
   input : @kernel.Message,
   session_id : String,
 ) -> @types.TurnResult raise @error.AgentError {
@@ -211,69 +236,42 @@ async fn Agent::run_turn_via_puppet(
   // Step 2: snapshot + append input. Deep-copy so callers cannot mutate
   // recorded state via the recorded arrays.
   let messages = agent_snapshot_messages(session.messages)
+  let current_turn_start = messages.length()
   messages.push(agent_snapshot_message(input))
   let current_metadata = agent_snapshot_metadata(session.metadata)
 
-  // Step 3: catalog.
-  let catalog = self.build_catalog()
-
-  // Step 4: PortHostAdapter as HostRuntime.
-  let host_adapter = PortHostAdapter::from_agent(self)
-  let host : &@kernel.HostRuntime = host_adapter as &@kernel.HostRuntime
-
-  // Step 5: journal + subscriber + Puppet.
-  let journal = InMemoryJournal()
-  let projector = LegacyEventProjector(self.observers)
-  let call_options = self.config.to_chat_options_to_json()
-  // M3.5: pass the agent's command ports (the BuiltinCommandPort and any
-  // extension-provided commands) plus a session store reference so the
-  // pump can fork/compact. The first session store (if any) is the
-  // canonical persistence target — write-all semantics belong to the
-  // agent wrapper, but the pump only needs ONE store for fork to write
-  // the new session lineage.
-  let session_store_ref : &@port.SessionStore? = match self.sessions {
-    [first, ..] => Some(first)
-    [] => None
+  // Step 3: per-prompt identity and policy. The counter is Agent-owned and
+  // monotonic, so two calls on the same Agent never share run/turn ids while
+  // still using the same Puppet and journal.
+  let seq = self.next_run_seq
+  self.next_run_seq = seq + 1
+  let run_id = @kernel.RunId::unchecked("agent_run_\{seq}")
+  let turn_id = @puppetry.TurnId::unchecked("agent_turn_\{seq}")
+  let session_id_kernel = @kernel.SessionId::unchecked(session_id)
+  let budget : @kernel.Budget = {
+    max_model_steps: None,
+    max_tool_rounds: Some(self.config.max_tool_rounds),
+    max_tool_calls: None,
+    max_total_tokens: None,
   }
-  let puppet_config : @puppetry.PuppetConfig = {
-    host,
-    model_id: "legacy_agent",
-    catalog,
-    journal,
-    contributors: [],
-    subscribers: [projector as &@puppetry.EventSubscriber],
-    observers: self.observers,
-    lifecycle_nodes: [],
-    stream_chunks: self.create_stream_callback(),
-    pre_model_hooks: self.pre_model_hooks,
-    pre_tool_hooks: self.pre_tool_hooks,
-    post_event_hooks: self.post_event_hooks,
-    call_options,
-    default_budget: @kernel.Budget::default_run(),
-    max_iterations: self.config.max_tool_rounds + 1,
-    commands: self.commands_with_builtins(),
-    session_store: session_store_ref,
+  let policy : @puppetry.RunPolicy = {
+    model_id: "agent",
+    call_options: self.config.to_chat_options_to_json(),
+    budget,
     context_window: self.config.model_context_window,
     compact_threshold: 0.9,
-    mailbox: self.mailbox as &@puppetry.Mailbox,
   }
-  let puppet = @puppetry.Puppet(puppet_config)
-  puppet.startup() catch {
-    e =>
-      raise @error.AgentError::Runtime(
-        @error.RuntimeError::InvocationFailed(
-          "puppet startup: " + safe_error_label(e.to_string()),
-        ),
-      )
+  let request : @puppetry.PromptRequest = {
+    run_id,
+    turn_id,
+    session_id: session_id_kernel,
+    initial_messages: messages,
+    operation_id: "agent_run_turn_\{seq}",
+    policy,
   }
 
-  // Step 6: drive one prompt.
-  let run_id = @kernel.RunId::unchecked("agent_run")
-  let turn_id = @puppetry.TurnId::unchecked("agent_turn")
-  let session_id_kernel = @kernel.SessionId::unchecked(session_id)
-  let prompt_result = puppet.prompt(
-    run_id, turn_id, session_id_kernel, messages, "agent_run_turn",
-  ) catch {
+  // Step 4: drive the already-started, Agent-owned Puppet.
+  let prompt_result = self.puppet.prompt(request) catch {
     e =>
       raise @error.AgentError::Runtime(
         @error.RuntimeError::InvocationFailed(
@@ -282,7 +280,7 @@ async fn Agent::run_turn_via_puppet(
       )
   }
 
-  // Step 6b: handle non-Accepted prompt results.
+  // Step 5: handle non-Accepted prompt results.
   match prompt_result {
     @puppetry.Rejected(error=@puppetry.HookRejected(reason~)) =>
       raise @error.AgentError::HookAborted(reason)
@@ -432,7 +430,7 @@ async fn Agent::run_turn_via_puppet(
     }
     @puppetry.Accepted(..) =>
       // Check terminal outcome for model failures.
-      match puppet.last_terminal_outcome() {
+      match self.puppet.last_terminal_outcome() {
         Some(@kernel.Failed(reason=@kernel.ModelTransport(detail~))) =>
           raise @error.AgentError::Model("model transport: " + detail)
         Some(@kernel.Failed(reason=@kernel.ModelParseFailure(detail~))) =>
@@ -453,17 +451,10 @@ async fn Agent::run_turn_via_puppet(
       )
   }
 
-  // Step 7: reconstruct observer event order from the final transcript.
-  //
-  // Observer event sequence:
-  //   TurnStarted (already emitted by outer run_turn)
-  //   For each AssistantMessage:
-  //     ModelResponseReceived (the assistant message)
-  //     For each tool_call in the message:
-  //       ToolCallPending
-  //       ToolCallResult (matched to subsequent ToolMessage by call_id)
-  //   TurnCompleted (already emitted by outer run_turn)
-  let final_transcript = match puppet.last_completed_transcript() {
+  // Step 6: materialize the terminal transcript for persistence and the
+  // TurnResult. Observer projection already happened from committed envelopes;
+  // this traversal has no side effects and only selects this turn's result.
+  let final_transcript = match self.puppet.last_completed_transcript() {
     Some(t) => t
     None =>
       raise @error.AgentError::Runtime(
@@ -475,66 +466,16 @@ async fn Agent::run_turn_via_puppet(
   let transcript_msgs = final_transcript.messages_snapshot()
   let mut final_message : @kernel.Message = input
   let all_results : Array[@kernel.ToolOutcome] = []
-  let mut i = 0
-  let n = transcript_msgs.length()
-  while i < n {
-    let cm = transcript_msgs[i]
-    match cm {
-      @kernel.AssistantMessage(content~, tool_calls~, reasoning~, ..) => {
-        let _ = content
-        let projected_mrr : @types.TurnEvent = ModelResponseReceived(
-          message=cm,
-          usage=None,
-        )
-        for observer in self.observers {
-          observer.on_event(agent_snapshot_turn_event(projected_mrr))
-        }
-        final_message = cm
-        // For each tool call, find the matching ToolMessage and emit
-        // ToolCallPending + ToolCallResult in legacy order.
-        for tc in tool_calls {
-          let pending : @types.TurnEvent = ToolCallPending(tc)
-          for observer in self.observers {
-            observer.on_event(agent_snapshot_turn_event(pending))
-          }
-          let mut found_outcome : @kernel.ToolOutcome? = None
-          let mut j = i + 1
-          while j < n {
-            match transcript_msgs[j] {
-              @kernel.ToolMessage(call_id~, outcome~, ..) =>
-                if call_id.to_string() == tc.call_id.to_string() {
-                  found_outcome = Some(outcome)
-                  break
-                }
-              _ => ()
-            }
-            j = j + 1
-          }
-          let outcome = match found_outcome {
-            Some(o) => o
-            None =>
-              @kernel.RuntimeFailure(
-                error_category="MissingToolOutcome",
-                message="no ToolMessage for call " + tc.call_id.to_string(),
-              )
-          }
-          let result_event : @types.TurnEvent = @types.TurnEvent::tool_call_result(
-            tc, outcome,
-          )
-          for observer in self.observers {
-            observer.on_event(agent_snapshot_turn_event(result_event))
-          }
-          all_results.push(outcome)
-        }
-        let _ = reasoning
-      }
-      @kernel.ToolMessage(..) => () // Already paired above.
+  for i in current_turn_start..<transcript_msgs.length() {
+    let message = transcript_msgs[i]
+    match message {
+      @kernel.AssistantMessage(..) => final_message = message
+      @kernel.ToolMessage(outcome~, ..) => all_results.push(outcome)
       _ => ()
     }
-    i = i + 1
   }
 
-  // Step 8: save session (write-all, with carried metadata).
+  // Save session (write-all, with carried metadata).
   let saved_messages = agent_snapshot_messages(transcript_msgs)
   for store in self.sessions {
     store.save(
@@ -546,7 +487,7 @@ async fn Agent::run_turn_via_puppet(
     }
   }
 
-  // Step 9: build TurnResult.
+  // Step 7: build TurnResult.
   let result : @types.TurnResult = {
     message: final_message,
     tool_results: all_results,

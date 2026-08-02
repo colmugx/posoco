@@ -356,6 +356,15 @@ pub fn PreCommitContext::savepoint_kind(Self) -> SavepointKind
 pub fn PreCommitContext::session_id(Self) -> @kernel.SessionId
 pub fn PreCommitContext::turn_id(Self) -> TurnId
 
+pub(all) struct PromptRequest {
+  run_id : @kernel.RunId
+  turn_id : TurnId
+  session_id : @kernel.SessionId
+  initial_messages : Array[@kernel.Message]
+  operation_id : String
+  policy : RunPolicy
+} derive(Eq, @debug.Debug)
+
 pub(all) enum PromptResult {
   Accepted(run_id~ : @kernel.RunId, turn_id~ : TurnId)
   LeaseBusy(held_by~ : String)
@@ -379,14 +388,13 @@ pub fn Puppet::last_completed_transcript(Self) -> @kernel.Transcript?
 pub fn Puppet::last_terminal_outcome(Self) -> @kernel.RunOutcome?
 pub fn Puppet::mailbox(Self) -> &Mailbox
 pub fn Puppet::phase(Self) -> PuppetPhase
-pub async fn Puppet::prompt(Self, @kernel.RunId, TurnId, @kernel.SessionId, Array[@kernel.Message], String) -> PromptResult raise PuppetError
+pub async fn Puppet::prompt(Self, PromptRequest) -> PromptResult raise PuppetError
 pub async fn Puppet::shutdown(Self) -> Unit raise PuppetError
 pub async fn Puppet::startup(Self) -> Unit raise PuppetError
 pub async fn Puppet::wait_idle(Self) -> QuiescentStatus
 
 pub(all) struct PuppetConfig {
   host : &@kernel.HostRuntime
-  model_id : String
   catalog : @kernel.ToolCatalogSnapshot
   journal : &RunJournal
   contributors : Array[&JournalContributor]
@@ -397,13 +405,9 @@ pub(all) struct PuppetConfig {
   pre_model_hooks : Array[&@port.PreModelHook]
   pre_tool_hooks : Array[&@port.PreToolHook]
   post_event_hooks : Array[&@port.PostEventHook]
-  call_options : Json
-  default_budget : @kernel.Budget
   max_iterations : Int
   commands : Array[&@port.CommandPort]
   session_store : &@port.SessionStore?
-  context_window : Int?
-  compact_threshold : Double
   mailbox : &Mailbox
 }
 
@@ -443,6 +447,14 @@ pub fn ResumeCommand::command_id(Self) -> CommandId
 pub fn ResumeCommand::payload(Self) -> Json
 pub fn ResumeCommand::suspension_id(Self) -> String
 pub fn ResumeCommand::target_run_id(Self) -> @kernel.RunId
+
+pub(all) struct RunPolicy {
+  model_id : String
+  call_options : Json
+  budget : @kernel.Budget
+  context_window : Int?
+  compact_threshold : Double
+} derive(Eq, @debug.Debug)
 
 pub(all) enum SavepointFailureCause {
   ContributorRaised(contributor_id~ : String, detail~ : String)
@@ -489,9 +501,7 @@ pub struct TurnSnapshot {
   session_id : @kernel.SessionId
   catalog_version : @kernel.CatalogVersion
   tool_definitions : Array[@kernel.ToolDef]
-  model_id : String
-  call_options : Json
-  budget : @kernel.Budget
+  policy : RunPolicy
   deadline : Int?
   hook_provenance : Array[String]
   lifecycle_provenance : Array[String]
@@ -502,6 +512,8 @@ pub fn TurnSnapshot::budget(Self) -> @kernel.Budget
 pub fn TurnSnapshot::call_options(Self) -> Json
 pub fn TurnSnapshot::capture(TurnSnapshotInput) -> Self raise PuppetError
 pub fn TurnSnapshot::catalog_version(Self) -> @kernel.CatalogVersion
+pub fn TurnSnapshot::compact_threshold(Self) -> Double
+pub fn TurnSnapshot::context_window(Self) -> Int?
 pub fn TurnSnapshot::deadline(Self) -> Int?
 pub fn TurnSnapshot::fingerprint(Self) -> String
 pub fn TurnSnapshot::hook_provenance(Self) -> Array[String]
@@ -520,9 +532,7 @@ pub(all) struct TurnSnapshotInput {
   turn_id : TurnId
   session_id : @kernel.SessionId
   catalog : @kernel.ToolCatalogSnapshot
-  model_id : String
-  call_options : Json
-  budget : @kernel.Budget
+  policy : RunPolicy
   deadline : Int?
   hook_provenance : Array[String]
   lifecycle_provenance : Array[String]

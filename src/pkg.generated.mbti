@@ -5,13 +5,10 @@ import {
   "colmugx/posoco/error",
   "colmugx/posoco/kernel",
   "colmugx/posoco/port",
-  "colmugx/posoco/puppetry",
   "colmugx/posoco/types",
 }
 
 // Values
-pub fn aggregate_extensions(Array[&@port.Extension]) -> AggregatedPorts raise @error.CompositionError
-
 pub fn assert_events_contain(Array[@types.TurnEvent], Array[@types.TurnEvent]) -> Unit
 
 pub fn assert_events_eq(Array[@types.TurnEvent], Array[@types.TurnEvent]) -> Unit
@@ -47,62 +44,20 @@ pub fn validate_args(@port.CommandDef, Json) -> Result[Json, String]
 // Errors
 
 // Types and methods
-pub(all) struct Agent {
-  model_port : &@port.ModelPort
-  tool_routing : ToolRouting
-  pre_model_hooks : Array[&@port.PreModelHook]
-  pre_tool_hooks : Array[&@port.PreToolHook]
-  post_event_hooks : Array[&@port.PostEventHook]
-  observers : Array[&@port.Observer]
-  memories : Array[&@port.MemoryPort]
-  sessions : Array[&@port.SessionStore]
-  lifecycle : &@port.Lifecycle?
-  commands : Array[&@port.CommandPort]
-  builtin_command_port : BuiltinCommandPort
-  mailbox : @puppetry.ControlMailbox
-  mut config : AgentConfig
+pub struct Agent {
+  // private fields
 }
 pub fn Agent::Agent(exts~ : Array[&@port.Extension], config~ : AgentConfig) -> Self raise @error.CompositionError
-pub fn Agent::commands_with_builtins(Self) -> Array[&@port.CommandPort]
+pub fn Agent::commands(Self) -> Array[&@port.CommandPort]
 pub async fn Agent::run_turn(Self, @kernel.Message, String) -> @types.TurnResult raise @error.AgentError
 pub async fn Agent::shutdown(Self) -> Unit
-pub fn Agent::update_model(Self, String) -> Unit
-pub fn Agent::update_reasoning_effort(Self, String) -> Unit
 
 pub(all) struct AgentConfig {
   max_tool_rounds : Int
   temperature : Double?
   max_output_tokens : Int?
-  mut tool_choice : String?
-  mut reasoning_effort : String?
   model_context_window : Int?
-  mut model : String?
 }
-pub fn AgentConfig::to_chat_options(Self) -> @types.ChatOptions
-pub fn AgentConfig::to_chat_options_to_json(Self) -> Json
-
-pub(all) struct AggregatedPorts {
-  model : &@port.ModelPort
-  tools : Array[&@port.ToolProvider]
-  sessions : Array[&@port.SessionStore]
-  observers : Array[&@port.Observer]
-  pre_model_hooks : Array[&@port.PreModelHook]
-  pre_tool_hooks : Array[&@port.PreToolHook]
-  post_event_hooks : Array[&@port.PostEventHook]
-  memory : Array[&@port.MemoryPort]
-  lifecycle : Array[&@port.Lifecycle]
-  commands : Array[&@port.CommandPort]
-  ui : &@port.UiPort
-  prompt_contributors : Array[&@port.SystemPromptContributor]
-  contributor_ids : Array[String]
-}
-
-pub(all) struct BuiltinCommandPort {
-  mailbox : &@puppetry.Mailbox
-  mut seq : Int
-}
-pub fn BuiltinCommandPort::BuiltinCommandPort(&@puppetry.Mailbox) -> Self
-pub impl @port.CommandPort for BuiltinCommandPort
 
 pub(all) struct CompositeToolProvider {
   providers : Array[&@port.ToolProvider]
@@ -113,12 +68,6 @@ pub(all) struct HookRecord2 {
   label : String
   outcome : RecordedHookOutcome2
 }
-
-pub struct LegacyEventProjector {
-  observers : Array[&@port.Observer]
-}
-pub fn LegacyEventProjector::LegacyEventProjector(Array[&@port.Observer]) -> Self
-pub impl @puppetry.EventSubscriber for LegacyEventProjector
 
 pub(all) struct ManifestOnly {
   cached : @port.ExtensionManifest
@@ -139,16 +88,6 @@ pub impl @port.Lifecycle for NoopLifecycle
 pub(all) struct NoopMemoryPort {
 }
 pub impl @port.MemoryPort for NoopMemoryPort
-
-pub(all) struct PortHostAdapter {
-  model : &@port.ModelPort
-  tools : Map[String, &@port.ToolProvider]
-  model_id : String
-}
-pub fn PortHostAdapter::from_agent(Agent) -> Self
-pub fn PortHostAdapter::model_id(Self) -> String
-pub fn PortHostAdapter::new(model~ : &@port.ModelPort, tools~ : Map[String, &@port.ToolProvider], model_id~ : String) -> Self
-pub impl @kernel.HostRuntime for PortHostAdapter
 
 pub(all) enum RecordedHookOutcome2 {
   PassedThrough
@@ -275,8 +214,6 @@ pub fn ToolRegistry::register(Self, @kernel.ToolDef, (@kernel.ToolCall) -> @kern
 pub fn ToolRegistry::unregister(Self, String) -> Unit
 pub impl @port.ToolProvider for ToolRegistry
 
-type ToolRouting
-
 // Type aliases
 pub using @error {type AgentError}
 
@@ -284,17 +221,7 @@ pub using @port {type AutocompleteItem}
 
 pub using @port {type AutocompleteSource}
 
-pub using @kernel {type Budget}
-
-pub using @kernel {type BudgetDimension}
-
 pub using @kernel {type CallId}
-
-pub using @kernel {type CancelReason}
-
-pub using @kernel {type CatalogCompositionError}
-
-pub using @kernel {type CatalogVersion}
 
 pub using @types {type ChatOptions}
 
@@ -324,10 +251,6 @@ pub using @error {type CompositionError}
 
 pub using @kernel {type Content}
 
-pub using @kernel {type EffectId}
-
-pub using @puppetry {type EventEnvelope}
-
 pub using @kernel {type ExecutionPolicy}
 
 pub using @port {type ExtensionManifest}
@@ -335,14 +258,6 @@ pub using @port {type ExtensionManifest}
 pub using @kernel {type FinishReason}
 
 pub using @port {type HookAbort}
-
-pub type HostChunkCallback = (Json) -> Unit
-
-pub using @puppetry {type InMemoryJournal}
-
-pub using @kernel {type KernelError}
-
-pub using @kernel {type KernelEvent}
 
 pub using @types {type MemoryEntry}
 
@@ -358,14 +273,6 @@ pub using @error {type ModelError}
 
 pub using @kernel {type ModelFailure}
 
-pub using @puppetry {type ModelId}
-
-pub using @kernel {type ModelStepId}
-
-pub using @puppetry {type NoopContributor}
-
-pub using @puppetry {type NoopSubscriber}
-
 pub using @port {type NoopUiPort}
 
 pub using @kernel {type NotExecutedReason}
@@ -376,23 +283,9 @@ pub using @port {type ParamType}
 
 pub using @port {type PostStage}
 
-pub using @puppetry {type PromptResult}
-
 pub using @port {type ProviderConfig}
 
-pub using @puppetry {type Puppet}
-
-pub using @puppetry {type PuppetConfig}
-
-pub using @puppetry {type PuppetError}
-
-pub using @puppetry {type QuiescentStatus}
-
 pub using @kernel {type Reasoning}
-
-pub using @kernel {type RunId}
-
-pub using @kernel {type RunOutcome}
 
 pub using @error {type RuntimeError}
 
@@ -400,25 +293,17 @@ pub using @types {type Session}
 
 pub using @error {type SessionError}
 
-pub using @kernel {type SessionId}
-
 pub using @types {type StreamAccumulator}
 
 pub using @types {type StreamChunk}
 
 pub using @types {type StreamMode}
 
-pub using @puppetry {type SubscriberError}
-
 pub using @port {type SystemPromptHook}
 
 pub using @port {type SystemPromptSection}
 
 pub using @kernel {type ToolCall}
-
-pub using @kernel {type ToolCatalogBuilder}
-
-pub using @kernel {type ToolCatalogSnapshot}
 
 pub using @kernel {type ToolDef}
 
@@ -431,8 +316,6 @@ pub using @kernel {type ToolOutcome}
 pub using @kernel {type Transcript}
 
 pub using @types {type TurnEvent}
-
-pub using @puppetry {type TurnId}
 
 pub using @types {type TurnResult}
 
@@ -456,13 +339,7 @@ pub using @kernel {type Usage}
 
 pub using @port {trait CommandPort}
 
-pub using @puppetry {trait EventSubscriber}
-
 pub using @port {trait Extension}
-
-pub using @kernel {trait HostRuntime}
-
-pub using @puppetry {trait JournalContributor}
 
 pub using @port {trait Lifecycle}
 
@@ -477,10 +354,6 @@ pub using @port {trait PostEventHook}
 pub using @port {trait PreModelHook}
 
 pub using @port {trait PreToolHook}
-
-pub using @puppetry {trait PuppetLifecycleNode}
-
-pub using @puppetry {trait RunJournal}
 
 pub using @port {trait SessionStore}
 
