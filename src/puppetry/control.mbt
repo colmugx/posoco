@@ -321,27 +321,15 @@ pub impl Show for EnqueueResult with fn to_string(self : EnqueueResult) -> Strin
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Mailbox trait — the control-plane abstraction shared by Agent / Puppet /
-// BuiltinCommandPort so they all see the SAME mailbox instance.
-//
-// D1 fix (2026-07-30): previously `Puppet.mailbox` and `Agent.mailbox` were
-// independent `ControlMailbox` value fields, so signals enqueued by the
-// product layer (BuiltinCommandPort on Agent.mailbox) never reached the
-// pump (which reads Puppet.mailbox). Exposing the full surface as a trait
-// lets `Puppet` borrow `&Mailbox` from `PuppetConfig.mailbox` while `Agent`
-// owns the concrete `ControlMailbox` — one instance, three views.
+// Mailbox trait — lets Agent (owns the instance), Puppet (reads at safe
+// points), and BuiltinCommandPort (enqueues from the product layer) all
+// share one `ControlMailbox`. `pub(open)` so alternative implementations
+// (recorded replay, clustered) can substitute without touching the pump.
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
 /// Control-plane abstraction over the run's command queues and idle
-/// barrier. The Puppet pump calls the consume / depth / quiescent methods
-/// at its safe points; the product layer (via `BuiltinCommandPort` and
-/// any extension command ports) calls the enqueue methods to inject
-/// steer / fork / compact / abort / resume / follow-up signals.
-///
-/// `pub(open)` so that future mailbox implementations (e.g. a clustered
-/// mailbox, a recorded mailbox for replay) can substitute for
-/// `ControlMailbox` without touching the pump.
+/// barrier.
 pub(open) trait Mailbox {
   // ── Run binding (pump owns; called at prompt / terminal boundaries) ──
   /// Bind the mailbox to a new active run/turn. Clears leftover state.

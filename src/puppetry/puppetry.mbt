@@ -1,16 +1,15 @@
 ///|
-/// Puppet orchestration — the single long-lived pump (M2-T06, ADR §2.1,
-/// §4, §6).
+/// Puppet orchestration — the single long-lived pump (ADR §2.1, §4, §6).
 ///
 /// The Puppet is the ONLY loop in the product that drives RunState forward
 /// across model/tool rounds. It composes:
-/// - PhaseGate (T02) — macro-phase gating + lease
-/// - TurnSnapshot (T02) — immutable turn capture
-/// - ControlMailbox (T03) — steer/follow-up/resume/abort + idle barrier
-/// - RunJournal + SavepointCoordinator (T04) — append-only journal
-/// - LifecycleCollection (T05) — top-level lifecycle executor
-/// - EventDispatcher (T05) — post-commit event dispatch
-/// - M1 reducer + execute_one (M1-T08) — reused unchanged
+/// - PhaseGate — macro-phase gating + lease
+/// - TurnSnapshot — immutable turn capture
+/// - ControlMailbox — steer/follow-up/resume/abort + idle barrier
+/// - RunJournal + SavepointCoordinator — append-only journal
+/// - LifecycleCollection — top-level lifecycle executor
+/// - EventDispatcher — post-commit event dispatch
+/// - reducer + execute_one — reused unchanged
 ///
 /// The pump NEVER decides termination by inspecting `tool_calls.is_empty()`.
 /// It only drives reducer-declared effects. If the reducer declares zero
@@ -40,7 +39,7 @@ pub(all) struct PuppetConfig {
   journal : &RunJournal
   contributors : Array[&JournalContributor]
   subscribers : Array[&EventSubscriber]
-  /// D5: real-time effect-level observers. The pump fires each Observer's
+  /// Real-time effect-level observers. The pump fires each Observer's
   /// `on_kernel_event(PostStage)` immediately after every effect commits,
   /// right after the PostEventHook handlers. This gives extensions a
   /// read-only real-time channel without forcing them to register a
@@ -66,33 +65,31 @@ pub(all) struct PuppetConfig {
   default_budget : @kernel.Budget
   /// Max iterations before the pump declares PumpLoopExceeded.
   max_iterations : Int
-  /// M3.5: slash command processors. The pump does NOT invoke these —
+  /// Slash command processors. The pump does NOT invoke these —
   /// `BuiltinCommandPort` is registered here so product code can reach it
   /// through `puppet.commands()`. The BuiltinCommandPort holds a reference
   /// to the Puppet's ControlMailbox so its `/compact` and `/fork-here`
   /// enqueue fork/compact signals for the pump's safe points.
   commands : Array[&CommandPort]
-  /// M3.5: session store used by fork (and by compact::NewThread) to write
-  /// the new session carrying `parent_thread_id` lineage. `None` means the
+  /// Session store used by fork (and by compact::NewThread) to write the
+  /// new session carrying `parent_thread_id` lineage. `None` means the
   /// product did not configure persistence — fork still works in-memory
   /// (the new session id is returned via `PromptResult::ForkCompleted`),
   /// but nothing is durably saved.
   session_store : &SessionStore?
-  /// M3.5: token budget ceiling for auto-compact. When
+  /// Token budget ceiling for auto-compact. When
   /// `BudgetConsumed.observed_total_tokens` reaches 90% of this value, the
   /// pump auto-triggers `ModelPort::compact(trigger=Auto)`. `None` disables
   /// auto-compact (manual `/compact` still works).
   context_window : Int?
-  /// M3.5: configurable auto-compact threshold (default 0.9). Product
-  /// code can tune this; the pump multiplies `context_window * threshold`
-  /// to get the trigger point.
+  /// Configurable auto-compact threshold (default 0.9). The pump multiplies
+  /// `context_window * threshold` to get the trigger point.
   compact_threshold : Double
-  /// D1: the shared control mailbox. The Agent owns the concrete
+  /// The shared control mailbox. The Agent owns the concrete
   /// `ControlMailbox` instance and borrows it here so the Puppet, the
   /// BuiltinCommandPort (constructed from the same instance), and the
   /// product layer all see ONE mailbox. Signals enqueued by the product
-  /// layer reach the pump's safe points. Previously each Puppet
-  /// constructed its own mailbox, severing the product→pump signal path.
+  /// layer reach the pump's safe points.
   mailbox : &Mailbox
 }
 
@@ -118,11 +115,8 @@ pub(all) struct PuppetConfig {
 pub struct Puppet {
   config : PuppetConfig
   mut phase_gate : PhaseGate
-  /// D1: borrowed from `PuppetConfig.mailbox` so the Puppet, the Agent,
-  /// and any BuiltinCommandPort all share the SAME `ControlMailbox`
-  /// instance. Previously this was an owned value, which gave the Puppet
-  /// a private mailbox distinct from the Agent's — signals enqueued by
-  /// the product layer never reached the pump.
+  /// Borrowed from `PuppetConfig.mailbox` so the Puppet, the Agent, and
+  /// any BuiltinCommandPort all share the SAME `ControlMailbox` instance.
   mailbox : &Mailbox
   lifecycle : LifecycleCollection
   /// Last terminal transcript. The Kernel owns the live transcript while a
@@ -166,7 +160,7 @@ pub fn Puppet::phase(self : Puppet) -> PuppetPhase {
 }
 
 ///|
-/// D1: borrow the Puppet's mailbox. Product code (BuiltinCommandPort, test
+/// Borrow the Puppet's mailbox. Product code (BuiltinCommandPort, test
 /// harness) uses this to enqueue fork/compact/steer/abort commands that
 /// the pump consumes at its safe points. Returns `&Mailbox` so the caller
 /// and the pump observe the same underlying `ControlMailbox` instance —
@@ -395,8 +389,8 @@ pub async fn Puppet::prompt(
 /// 6. If Terminal: dispatch terminal event, release lease, set quiescent.
 ///
 /// This is the ONLY loop in the product that drives RunState. It reuses
-/// M1-T08's `execute_one` (stateless single-effect executor) and never
-/// inspects `tool_calls.is_empty()` to decide termination.
+/// `execute_one` (stateless single-effect executor) and never inspects
+/// `tool_calls.is_empty()` to decide termination.
 async fn Puppet::drive_run(
   self : Puppet,
   run_id : RunId,

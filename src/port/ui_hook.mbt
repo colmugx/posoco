@@ -11,30 +11,6 @@ pub fn UiRenderHook::UiRenderHook(ui~ : &UiPort) -> UiRenderHook {
 }
 
 ///|
-/// Render a model-completed stage to the Status slot.
-fn UiRenderHook::render_model_completed(
-  self : UiRenderHook,
-  completion : @kernel.Completion,
-) -> Unit {
-  let tool_count = completion.tool_calls().length()
-  let body : UiBody = if tool_count > 0 {
-    Text(
-      "model responded (requested " + tool_count.to_string() + " tool calls)",
-    )
-  } else {
-    Text("model responded")
-  }
-  let intent : UiRender = {
-    slot: Status,
-    key: "model_status",
-    title: None,
-    body,
-    ttl_ms: None,
-  }
-  self.ui.render(intent)
-}
-
-///|
 /// Render a tool-completed stage to the Notice slot.
 fn UiRenderHook::render_tool_completed(
   self : UiRenderHook,
@@ -76,7 +52,13 @@ pub impl PostEventHook for UiRenderHook with fn on_post_event(
   stage : PostStage,
 ) -> Unit {
   match stage {
-    ModelCompleted(completion~) => self.render_model_completed(completion)
+    // ModelCompleted is intentionally NOT rendered: it is an intermediate
+    // state in every tool→model round-trip, and a persistent "model
+    // responded" status misleads the user into thinking the turn stalled
+    // (QA issue: status shows model response while tools feed back to the
+    // LLM). Hosts own progress/status; this hook surfaces tool outcomes and
+    // typed failures only.
+    ModelCompleted(..) => ()
     ToolCompleted(call~, outcome~) => self.render_tool_completed(call, outcome)
     ToolFailed(call~, reason~) =>
       self.render_failure(

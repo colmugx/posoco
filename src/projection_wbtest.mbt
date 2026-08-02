@@ -220,8 +220,10 @@ test "m38_memory/swallows_search_failure" {
 }
 
 ///|
-/// ModelCompleted stage renders a Status slot intent.
-test "m38_ui/model_completed_renders_status" {
+/// ModelCompleted stage emits NO render intent: it is an intermediate state
+/// in every tool→model round-trip; a persistent "model responded" Status
+/// intent misleads the host UI into showing a stalled final state mid-turn.
+test "m38_ui/model_completed_renders_nothing" {
   let ui = RecordingUiPort::new_unsupported()
   let hook = @port.UiRenderHook::UiRenderHook(ui=ui as &@port.UiPort)
   let completion : @kernel.Completion = @kernel.Completion::Completion(
@@ -233,12 +235,7 @@ test "m38_ui/model_completed_renders_status" {
   )
   let stage : @port.PostStage = ModelCompleted(completion~)
   hook.on_post_event(stage)
-  let intents = ui.rendered_intents()
-  assert_true(intents.length() == 1)
-  match intents[0] {
-    { slot: Status, .. } => ()
-    other => fail("expected Status slot, got " + other.to_string())
-  }
+  assert_true(ui.rendered_intents().length() == 0)
 }
 
 ///|
