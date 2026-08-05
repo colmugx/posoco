@@ -55,6 +55,9 @@ jobs:
       - name: Toolchain version
         run: moon version --all
 
+      - name: Update registry index
+        run: moon update
+
       # `rtk` is a local wrapper some contributors use; the two Posoco
       # baseline scripts call `rtk moon ...`. Provide a PATH shim that
       # forwards to plain `moon` so the scripts run unchanged on runners.
@@ -139,6 +142,9 @@ jobs:
 
       - name: Toolchain version
         run: moon version --all
+
+      - name: Update registry index
+        run: moon update
 
       - name: Check (${{ matrix.target }})
         run: moon check --target ${{ matrix.target }} --output-json

@@ -36,6 +36,9 @@ jobs:
       - name: Toolchain version
         run: moon version --all
 
+      - name: Update registry index
+        run: moon update
+
       - name: Test with coverage (native)
         run: moon test --target native --enable-coverage
 
