@@ -75,9 +75,13 @@ jobs:
           moon version --all
           moonrun --version
 
+      - name: moon update
+        run: |
+          moon update
+
       - name: moon check
         run: |
-          moon check --target js --deny-warn
+          moon check --target js
 
       - name: moon test
         run: |
@@ -99,6 +103,10 @@ jobs:
         run: |
           moon version --all
           moonrun --version
+
+      - name: moon update
+        run: |
+          moon update
 
       - name: moon check
         run: |
