@@ -1,0 +1,13 @@
+import {
+  "colmugx/posoco/kernel",
+  "colmugx/posoco/port",
+  "colmugx/posoco/types",
+  "colmugx/posoco/error",
+  "colmugx/posoco/internal/puppetry",
+  "moonbitlang/async/aqueue",
+}
+
+import {
+  "colmugx/posoco/kernel",
+  "colmugx/posoco/internal/puppetry",
+} for "test"

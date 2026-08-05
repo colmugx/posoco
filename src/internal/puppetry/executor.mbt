@@ -174,6 +174,7 @@ async fn execute_execute_tool(
   // success — REPAIR §11 forbids masking such cases.
   let attempted : Result[@kernel.ToolOutcome, Error] = Ok(
     ctx.host.execute_tool(
+      effect_id,
       payload.owner,
       payload.call_id,
       payload.tool_name,

@@ -29,8 +29,12 @@ pub(open) trait HostRuntime {
   /// and maps the result to a canonical `ToolOutcome`. Missing owner /
   /// stale registration → `RuntimeFailure("MissingOwner")`; business errors
   /// → `ToolReportedError`; transport errors → `RuntimeFailure`.
+  /// `effect_id` is the reducer-allocated identity of this `ExecuteTool`
+  /// effect; hosts that propagate cancellation use it to correlate
+  /// `cancel_effects` calls with in-flight executions.
   async fn execute_tool(
     Self,
+    effect_id : EffectId,
     owner_id : @kernel.OwnerId,
     call_id : @kernel.CallId,
     tool_name : @kernel.ToolName,

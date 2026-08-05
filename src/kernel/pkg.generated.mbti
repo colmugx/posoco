@@ -17,6 +17,26 @@ pub fn CallId::new(String) -> Result[Self, String]
 pub fn CallId::to_string(Self) -> String
 pub fn CallId::unchecked(String) -> Self
 
+pub(all) enum CancelDisposition {
+  Propagated
+  NotPropagated
+  AlreadySettled
+} derive(Eq, @debug.Debug)
+pub impl Show for CancelDisposition
+
+pub(all) enum CancelReason {
+  HostRequested(detail~ : String?)
+  DeadlineReached
+} derive(Eq, @debug.Debug)
+pub impl Show for CancelReason
+
+pub(all) struct CatalogVersion {
+  value : Int
+} derive(Eq, @debug.Debug)
+pub fn CatalogVersion::CatalogVersion(Int) -> Self
+pub fn CatalogVersion::to_int(Self) -> Int
+pub impl Show for CatalogVersion
+
 pub(all) enum CompactMode {
   NewThread
   Replace
@@ -57,6 +77,14 @@ pub(all) enum Content {
   Image(media_type~ : String, data~ : String)
 } derive(Eq, @debug.Debug)
 pub impl Show for Content
+
+pub(all) struct EffectId {
+  value : Int
+} derive(Eq, Hash, @debug.Debug)
+pub fn EffectId::first() -> Self
+pub fn EffectId::next(Self) -> Self
+pub fn EffectId::to_int(Self) -> Int
+pub impl Show for EffectId
 
 pub(all) enum ExecutionPolicy {
   Sequential
@@ -113,12 +141,27 @@ pub(all) struct Reasoning {
 } derive(Eq, @debug.Debug)
 pub impl Show for Reasoning
 
+pub(all) struct RunId {
+  value : String
+} derive(Eq, Hash, @debug.Debug)
+pub fn RunId::new(String) -> Result[Self, String]
+pub fn RunId::to_string(Self) -> String
+pub fn RunId::unchecked(String) -> Self
+pub impl Show for RunId
+
 pub(all) struct SchemaDiagnostic {
   json_path : String
   expected : String
   actual : String
 } derive(Eq, @debug.Debug)
 pub impl Show for SchemaDiagnostic
+
+pub(all) struct SessionId {
+  value : String
+} derive(Eq, Hash, @debug.Debug)
+pub fn SessionId::new(String) -> Result[Self, String]
+pub fn SessionId::to_string(Self) -> String
+pub fn SessionId::unchecked(String) -> Self
 
 pub(all) struct ToolCall {
   call_id : CallId
@@ -164,6 +207,14 @@ pub fn Transcript::empty() -> Self
 pub fn Transcript::from_array(Array[Message]) -> Self
 pub fn Transcript::length(Self) -> Int
 pub fn Transcript::messages_snapshot(Self) -> Array[Message]
+
+pub(all) struct TurnId {
+  value : String
+} derive(Eq, Hash, @debug.Debug)
+pub fn TurnId::new(String) -> Result[Self, String]
+pub fn TurnId::to_string(Self) -> String
+pub fn TurnId::unchecked(String) -> Self
+pub impl Show for TurnId
 
 pub(all) struct Usage {
   input_tokens : Int?

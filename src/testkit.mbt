@@ -939,12 +939,12 @@ pub fn assert_events_contain(
 /// left as-is.
 ///
 /// **Important:** because ModelCallResult requires `processed_messages` to be
-/// a concrete array (not Optional), the pump's PortHostAdapter is responsible
-/// for filling it with the input messages when the modelport did not
-/// preprocess. Tests that drive ScriptedModel directly through the agent
-/// pipeline go through PortHostAdapter, which substitutes the actual input
+/// a concrete array (not Optional), the default `@runtime.PortRuntime` is
+/// responsible for filling it with the input messages when the modelport did
+/// not preprocess. Tests that drive ScriptedModel directly through the agent
+/// pipeline go through `PortRuntime`, which substitutes the actual input
 /// messages when `processed_messages` is empty. See
-/// `PortHostAdapter::call_model` for the substitution logic.
+/// `PortRuntime::call_model` for the substitution logic.
 pub fn tk_stop_response(text : String) -> @kernel.ModelCallResult {
   let completion : @kernel.Completion = @kernel.Completion(
     content=[@kernel.Text(text)],

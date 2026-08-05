@@ -213,7 +213,16 @@ priv struct AgentRuntime {
   lifecycle : Array[&@port.Lifecycle]
   commands : Array[&@port.CommandPort]
   builtin_command_port : BuiltinCommandPort
+  control : @runtime.RuntimeControl
   config : AgentConfig
+  /// Host-owned versioned catalog (experimental runtime seam). `None` keeps
+  /// the static composition-time snapshot for the Agent's lifetime.
+  catalog_source : &@runtime.CatalogSource?
+  /// The source revision last read (0 = no source / not yet read).
+  mut last_catalog_revision : Int
+  /// Next monotonic catalog version to assign on a successful refresh.
+  /// Composition builds version 1; refreshes hand out 2, 3, ...
+  mut next_catalog_version : Int
   mut next_run_seq : Int
   mut shutdown_started : Bool
   mut shutdown_complete : Bool
@@ -228,20 +237,23 @@ pub struct Agent {
 }
 
 ///|
-/// Construct an Agent from an array of extensions.
-/// Aggregation order is the array order; collisions fail-fast.
-/// At least one extension must contribute a `ModelPort`.
+/// Shared composition path for both public constructors. `host_override`
+/// is `Some(shimmed runtime)` for `Agent::with_runtime`; `None` builds the
+/// default `PortRuntime` over the aggregated ports and shims it through the
+/// same path — there is exactly one way to assemble an Agent.
 ///
-/// `ui_projection` (default `false`, BR-5): when `true`, Posoco's built-in
-/// render policy (`UiRenderHook` over the aggregated `UiPort`) is appended
-/// to the hook chain. Hosts with their own UI policy leave it off and
-/// register their own `Hook` instead.
-pub fn Agent::Agent(
-  exts~ : Array[&@port.Extension],
-  config~ : AgentConfig,
-  ui_projection? : Bool = false,
+/// `catalog_source` (experimental runtime seam): when `Some`, the tool
+/// catalog is owned by the source — built from its definitions at
+/// composition and rebuilt at prompt boundaries when its revision changes.
+/// When `None`, the catalog is the static snapshot of the aggregated
+/// `ToolProvider` declarations.
+fn AgentRuntime::compose(
+  agg : AggregatedPorts,
+  config : AgentConfig,
+  ui_projection : Bool,
+  host_override : &@kernel_exec.HostRuntime?,
+  catalog_source : &@runtime.CatalogSource?,
 ) -> Agent raise @error.CompositionError {
-  let agg = aggregate_extensions(exts)
   if config.max_tool_rounds < 0 {
     raise @error.CompositionError::ManifestSchemaError(
       manifest_id="agent.config",
@@ -260,7 +272,18 @@ pub fn Agent::Agent(
     raise @error.CompositionError::EmptyPort("SessionStore")
   }
   let tool_routing = build_tool_routing(agg.tools)
-  let catalog = build_agent_catalog(tool_routing.providers)
+  // A wired CatalogSource owns the catalog from the start: the initial
+  // snapshot comes from its definitions (version 1), and the composition
+  // fails fast if those definitions are invalid. Otherwise the catalog is
+  // the static port-derived snapshot.
+  let (catalog, initial_catalog_revision) = match catalog_source {
+    Some(source) =>
+      (
+        build_catalog_from_defs(source.tools(), @kernel.CatalogVersion(1)),
+        source.revision(),
+      )
+    None => (build_agent_catalog(tool_routing.providers), 0)
+  }
   // One composed hook chain, in interception order: system-prompt
   // projection first, memory retrieval second, extension-registered hooks
   // next, UI rendering last (opt-in, so extensions see events before the
@@ -308,10 +331,17 @@ pub fn Agent::Agent(
   let mailbox_ref : &@puppetry.Mailbox = mailbox as &@puppetry.Mailbox
   let builtin_command_port = BuiltinCommandPort(mailbox_ref)
   let command_ports = compose_agent_commands(agg.commands, builtin_command_port)
-  let host_adapter = PortHostAdapter::new(
-    model=agg.model,
-    tools=tool_routing.tool_map.copy(),
-  )
+  let host : &@kernel_exec.HostRuntime = match host_override {
+    Some(h) => h
+    None => {
+      let port_runtime = @runtime.PortRuntime::new(
+        model=agg.model,
+        tools=tool_routing.tool_map.copy(),
+      )
+      RuntimeHostShim::new(port_runtime as &@runtime.Runtime)
+      as &@kernel_exec.HostRuntime
+    }
+  }
   let journal = @puppetry.InMemoryJournal::InMemoryJournal()
   let event_subscriber = AgentEventSubscriber(agg.observers)
   let session_store : &@port.SessionStore? = match agg.sessions {
@@ -319,7 +349,7 @@ pub fn Agent::Agent(
     [] => None
   }
   let puppet_config : @puppetry.PuppetConfig = {
-    host: host_adapter as &@kernel_exec.HostRuntime,
+    host,
     catalog,
     journal: journal as &@puppetry.RunJournal,
     contributors: [],
@@ -338,13 +368,66 @@ pub fn Agent::Agent(
     lifecycle: agg.lifecycle,
     commands: agg.commands,
     builtin_command_port,
+    control: @runtime.RuntimeControl::new(mailbox_ref),
     config,
+    catalog_source,
+    last_catalog_revision: initial_catalog_revision,
+    next_catalog_version: 2,
     next_run_seq: 1,
     shutdown_started: false,
     shutdown_complete: false,
     next_lifecycle_shutdown: agg.lifecycle.length() - 1,
   }
   { runtime, }
+}
+
+///|
+/// Construct an Agent from an array of extensions.
+/// Aggregation order is the array order; collisions fail-fast.
+/// At least one extension must contribute a `ModelPort`.
+///
+/// `ui_projection` (default `false`, BR-5): when `true`, Posoco's built-in
+/// render policy (`UiRenderHook` over the aggregated `UiPort`) is appended
+/// to the hook chain. Hosts with their own UI policy leave it off and
+/// register their own `Hook` instead.
+pub fn Agent::Agent(
+  exts~ : Array[&@port.Extension],
+  config~ : AgentConfig,
+  ui_projection? : Bool = false,
+) -> Agent raise @error.CompositionError {
+  let agg = aggregate_extensions(exts)
+  AgentRuntime::compose(agg, config, ui_projection, None, None)
+}
+
+///|
+/// Advanced constructor (experimental runtime seam): same Agent, same
+/// default assembly, but the caller supplies the effect-execution runtime.
+/// `runtime` is typically a wrapper around `@runtime.PortRuntime` that
+/// overrides only the methods it needs (e.g. `execute_tool` +
+/// `cancel_effects` for cancellation propagation). Plain extension authors
+/// do not need this — see `docs/RUNTIME.md`.
+///
+/// `catalog_source` (optional): when supplied, the source owns the tool
+/// catalog — Posoco reads it at construction and re-reads it at each prompt
+/// boundary whose `revision()` changed, swapping the refreshed snapshot in
+/// for subsequent runs while in-flight runs keep their version. Definitions
+/// are taken verbatim (owner/policy respected). Without it, the catalog is
+/// the static snapshot of the aggregated `ToolProvider` declarations.
+pub fn Agent::with_runtime(
+  exts~ : Array[&@port.Extension],
+  config~ : AgentConfig,
+  runtime~ : &@runtime.Runtime,
+  ui_projection? : Bool = false,
+  catalog_source? : &@runtime.CatalogSource,
+) -> Agent raise @error.CompositionError {
+  let agg = aggregate_extensions(exts)
+  AgentRuntime::compose(
+    agg,
+    config,
+    ui_projection,
+    Some(RuntimeHostShim::new(runtime) as &@kernel_exec.HostRuntime),
+    catalog_source,
+  )
 }
 
 ///|
@@ -490,8 +573,39 @@ fn AgentRuntime::ensure_agent_running(
 }
 
 ///|
-/// Run one agent turn. Delegates to Puppet; emits start/end events for observers.
+/// Cap on follow-up turns drained within a single `run_turn` call, aligned
+/// with the control queue bound. Prevents an unbounded follow-up chain from
+/// monopolising one call; leftovers stay queued for the next call.
+let follow_up_drain_limit : Int = 64
+
+///|
+/// Run one agent turn, then drain any follow-ups submitted while it (or a
+/// drained follow-up turn) was in flight. Each drained follow-up drives its
+/// own full turn on the same session — same boundaries, same observer
+/// events — and the last turn's `TurnResult` is returned.
 async fn AgentRuntime::run_turn(
+  self : AgentRuntime,
+  input : @kernel.Message,
+  session_id : String,
+) -> @types.TurnResult raise @error.AgentError {
+  let mut result = self.run_single_turn(input, session_id)
+  let mut drained = 0
+  while drained < follow_up_drain_limit {
+    match self.control.take_follow_up() {
+      Some(message) => {
+        drained = drained + 1
+        result = self.run_single_turn(message, session_id)
+      }
+      None => break
+    }
+  }
+  result
+}
+
+///|
+/// Run exactly one turn: delegate to Puppet; emit start/end events for
+/// observers.
+async fn AgentRuntime::run_single_turn(
   self : AgentRuntime,
   input : @kernel.Message,
   session_id : String,
@@ -523,4 +637,13 @@ pub async fn Agent::run_turn(
 ///|
 pub async fn Agent::shutdown(self : Agent) -> Unit {
   self.runtime.shutdown()
+}
+
+///|
+/// The Agent's control handle (experimental runtime seam). Advanced hosts
+/// use it to abort the active run or to submit follow-up messages that the
+/// Agent consumes at turn boundaries. The handle is identity-guarded:
+/// submissions against a stale or absent run are rejected at enqueue time.
+pub fn Agent::control(self : Agent) -> @runtime.RuntimeControl {
+  self.runtime.control
 }

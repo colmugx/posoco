@@ -247,27 +247,3 @@ fn check_schema_top_level(schema : Json) -> Result[Unit, String] {
     _ => Err("schema must be JSON object or boolean at top level")
   }
 }
-
-///|
-/// Catalog version — bumped every time a snapshot is built. The reducer and
-/// executor correlate `CallModel` and `ExecuteTool` effects back to the exact
-/// snapshot version the model was prompted against; a mismatch is a kernel
-/// invariant failure (`InvariantViolation::StaleSnapshot`).
-pub(all) struct CatalogVersion {
-  value : Int
-} derive(Eq, Debug)
-
-///|
-pub fn CatalogVersion::CatalogVersion(value : Int) -> CatalogVersion {
-  CatalogVersion::{ value, }
-}
-
-///|
-pub fn CatalogVersion::to_int(self : CatalogVersion) -> Int {
-  self.value
-}
-
-///|
-pub impl Show for CatalogVersion with fn to_string(self : CatalogVersion) -> String {
-  "CatalogVersion(\{self.value})"
-}

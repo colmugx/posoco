@@ -19,6 +19,46 @@ fn normalize_tool_schema(schema : Json) -> Json {
 }
 
 ///|
+/// Build a `ToolCatalogSnapshot` from canonical definitions. Used both for
+/// the port-derived catalog (at composition) and for `CatalogSource`
+/// refreshes (at prompt boundaries, with a bumped version). The schema is
+/// normalised into the Kernel's required object/boolean form; `owner` and
+/// `policy` are taken verbatim from each definition.
+fn build_catalog_from_defs(
+  defs : Array[@kernel.ToolDef],
+  version : @kernel.CatalogVersion,
+) -> @kernel_exec.ToolCatalogSnapshot raise @error.CompositionError {
+  let builder = @kernel_exec.ToolCatalogBuilder()
+  for tool in defs {
+    let def = @kernel.ToolDef(
+      name=tool.name,
+      description=tool.description,
+      input_schema=normalize_tool_schema(tool.input_schema),
+      owner=tool.owner,
+      policy=tool.policy,
+      provenance=tool.provenance,
+    )
+    try {
+      let _ = builder.add(def)
+    } catch {
+      e =>
+        raise @error.CompositionError::ManifestSchemaError(
+          manifest_id="agent.catalog",
+          detail="catalog add '\{tool.name.to_string()}': " +
+            safe_error_label(e.to_string()),
+        )
+    }
+  }
+  builder.finish(version~) catch {
+    e =>
+      raise @error.CompositionError::ManifestSchemaError(
+        manifest_id="agent.catalog",
+        detail="catalog finish: " + safe_error_label(e.to_string()),
+      )
+  }
+}
+
+///|
 /// Build a `ToolCatalogSnapshot` from the agent's aggregated tool providers.
 /// All tools are pinned to `Parallel` execution policy (matching the legacy
 /// `@async.all`-every-batch behaviour). Owner is derived from the ToolDef's
@@ -27,7 +67,7 @@ fn normalize_tool_schema(schema : Json) -> Json {
 fn build_agent_catalog(
   providers : Array[&@port.ToolProvider],
 ) -> @kernel_exec.ToolCatalogSnapshot raise @error.CompositionError {
-  let builder = @kernel_exec.ToolCatalogBuilder()
+  let defs : Array[@kernel.ToolDef] = []
   for provider in providers {
     for tool in provider.list_tools() {
       let owner_str = tool.owner.to_string()
@@ -40,33 +80,19 @@ fn build_agent_catalog(
       } else {
         tool.owner
       }
-      let def = @kernel.ToolDef(
-        name=tool.name,
-        description=tool.description,
-        input_schema=normalize_tool_schema(tool.input_schema),
-        owner~,
-        policy=@kernel.Parallel,
-        provenance=tool.provenance,
+      defs.push(
+        @kernel.ToolDef(
+          name=tool.name,
+          description=tool.description,
+          input_schema=tool.input_schema,
+          owner~,
+          policy=@kernel.Parallel,
+          provenance=tool.provenance,
+        ),
       )
-      try {
-        let _ = builder.add(def)
-      } catch {
-        e =>
-          raise @error.CompositionError::ManifestSchemaError(
-            manifest_id="agent.catalog",
-            detail="catalog add '\{tool.name.to_string()}': " +
-              safe_error_label(e.to_string()),
-          )
-      }
     }
   }
-  builder.finish(version=@kernel_exec.CatalogVersion(1)) catch {
-    e =>
-      raise @error.CompositionError::ManifestSchemaError(
-        manifest_id="agent.catalog",
-        detail="catalog finish: " + safe_error_label(e.to_string()),
-      )
-  }
+  build_catalog_from_defs(defs, @kernel.CatalogVersion(1))
 }
 
 ///|
@@ -156,7 +182,7 @@ impl @puppetry.EventSubscriber for AgentEventSubscriber with fn on_event(
 /// to a `@types.StreamChunk` and re-emitted to observers as
 /// `StreamChunkReceived`. The JSON shape is a private contract between the
 /// modelport and this wrapper; we recognise the same `{kind, token}` layout
-/// PortHostAdapter and ScriptedModel emit.
+/// `PortRuntime` and ScriptedModel emit.
 fn create_agent_stream_callback(
   observers : Array[&@port.Observer],
 ) -> @kernel_exec.HostChunkCallback? {
@@ -206,7 +232,55 @@ fn create_agent_stream_callback(
 }
 
 ///|
+/// Catalog refresh at a prompt boundary (experimental runtime seam). With
+/// no `CatalogSource` wired this is a no-op and the catalog stays the
+/// static composition snapshot. Otherwise a changed `revision()` triggers
+/// exactly one rebuild attempt:
+/// - success → the new snapshot (next monotonic catalog version) is swapped
+///   into the Puppet; subsequent runs see it, in-flight runs never do;
+/// - validation failure or a busy pump → the previous snapshot stays in
+///   effect and the failure is surfaced as a `secondary_failure` observer
+///   event. The turn is never aborted by a catalog problem.
+/// The revision tracker advances on every attempt, so a deterministically
+/// bad definition set is not re-validated (and re-reported) on every turn;
+/// the source retries by changing `revision()` again.
+fn AgentRuntime::refresh_catalog_if_changed(self : AgentRuntime) -> Unit {
+  match self.catalog_source {
+    None => ()
+    Some(source) => {
+      let revision = source.revision()
+      if revision == self.last_catalog_revision {
+        return
+      }
+      self.last_catalog_revision = revision
+      let version = @kernel.CatalogVersion(self.next_catalog_version)
+      let snapshot = build_catalog_from_defs(source.tools(), version) catch {
+        error => {
+          emit_secondary_failure(
+            self.observers,
+            "catalog_refresh",
+            "catalog revision \{revision} rejected: " +
+            safe_error_label(error.to_string()),
+          )
+          return
+        }
+      }
+      if self.puppet.replace_catalog(snapshot) {
+        self.next_catalog_version = self.next_catalog_version + 1
+      } else {
+        emit_secondary_failure(
+          self.observers,
+          "catalog_refresh",
+          "catalog revision \{revision} deferred: a run is active",
+        )
+      }
+    }
+  }
+}
+
+///|
 /// Drive one full turn through the Puppet. Steps:
+/// 0. refresh the catalog when a CatalogSource's revision changed
 /// 1. load session
 /// 2. snapshot session.messages (deep copy) + append input
 /// 3. allocate unique run/turn identities and capture a per-prompt RunPolicy
@@ -219,6 +293,11 @@ async fn AgentRuntime::run_turn_via_puppet(
   input : @kernel.Message,
   session_id : String,
 ) -> @types.TurnResult raise @error.AgentError {
+  // Step 0: catalog refresh at the prompt boundary. No run is active yet,
+  // so a swap cannot disturb an in-flight run; a failed rebuild keeps the
+  // previous snapshot and is surfaced as a secondary failure.
+  self.refresh_catalog_if_changed()
+
   // Step 1: load session.
   let session = match self.sessions {
     [first, ..] =>
@@ -245,9 +324,9 @@ async fn AgentRuntime::run_turn_via_puppet(
   // still using the same Puppet and journal.
   let seq = self.next_run_seq
   self.next_run_seq = seq + 1
-  let run_id = @kernel_exec.RunId::unchecked("agent_run_\{seq}")
-  let turn_id = @puppetry.TurnId::unchecked("agent_turn_\{seq}")
-  let session_id_kernel = @kernel_exec.SessionId::unchecked(session_id)
+  let run_id = @kernel.RunId::unchecked("agent_run_\{seq}")
+  let turn_id = @kernel.TurnId::unchecked("agent_turn_\{seq}")
+  let session_id_kernel = @kernel.SessionId::unchecked(session_id)
   let budget : @kernel_exec.Budget = {
     max_model_steps: None,
     max_tool_rounds: Some(self.config.max_tool_rounds),

@@ -10,63 +10,10 @@
 ///   dimension. Unknown usage is NEVER reported as 0 (ADR §2.9).
 /// - Cancel is idempotent: the second `CancelRequested` after
 ///   `Terminal(Cancelled)` is a typed rejection, not a new terminal event.
-
-///|
-/// Stable identifier for a single Run. Supplied by the host in the `Start` input and carried through every state.
-pub(all) struct RunId {
-  value : String
-} derive(Eq, Hash, Debug)
-
-///|
-pub fn RunId::new(value : String) -> Result[RunId, String] {
-  if value == "" {
-    Err("RunId must be non-empty")
-  } else {
-    Ok(RunId::{ value, })
-  }
-}
-
-///|
-pub fn RunId::unchecked(value : String) -> RunId {
-  RunId::{ value, }
-}
-
-///|
-pub fn RunId::to_string(self : RunId) -> String {
-  self.value
-}
-
-///|
-pub impl Show for RunId with fn to_string(self : RunId) -> String {
-  "RunId(\{self.value})"
-}
-
-///|
-/// Stable identifier for a product session. The Kernel never opens or
-/// materializes session storage; it carries this identity through effects,
-/// journal entries, and committed event envelopes.
-pub(all) struct SessionId {
-  value : String
-} derive(Eq, Hash, Debug)
-
-///|
-pub fn SessionId::new(value : String) -> Result[SessionId, String] {
-  if value == "" {
-    Err("SessionId must be non-empty")
-  } else {
-    Ok(SessionId::{ value, })
-  }
-}
-
-///|
-pub fn SessionId::unchecked(value : String) -> SessionId {
-  SessionId::{ value, }
-}
-
-///|
-pub fn SessionId::to_string(self : SessionId) -> String {
-  self.value
-}
+///
+/// Run/Session/Effect identity and the Cancel contracts are canonical wire
+/// types defined in `@kernel` (`domain_run.mbt`) and re-exported via this
+/// package's `imports.mbt` — single source of truth lives in `@kernel`.
 
 ///|
 /// Identifier for a single model step within a Run. Monotonic per Run; the
@@ -94,34 +41,6 @@ pub fn ModelStepId::to_int(self : ModelStepId) -> Int {
 ///|
 pub impl Show for ModelStepId with fn to_string(self : ModelStepId) -> String {
   "ModelStepId(\{self.value})"
-}
-
-///|
-/// Identifier for a single declared Effect. Monotonic per Run. Each completion
-/// input must correlate to a pending effect with this id; a mismatch is
-/// `InvariantViolation::StaleCorrelation`.
-pub(all) struct EffectId {
-  value : Int
-} derive(Eq, Hash, Debug)
-
-///|
-pub fn EffectId::first() -> EffectId {
-  { value: 1 }
-}
-
-///|
-pub fn EffectId::next(self : EffectId) -> EffectId {
-  { value: self.value + 1 }
-}
-
-///|
-pub fn EffectId::to_int(self : EffectId) -> Int {
-  self.value
-}
-
-///|
-pub impl Show for EffectId with fn to_string(self : EffectId) -> String {
-  "EffectId(\{self.value})"
 }
 
 ///|
@@ -296,49 +215,4 @@ pub fn RunContext::RunContext(
   budget~ : Budget,
 ) -> RunContext {
   { run_id, session_id, budget }
-}
-
-///|
-/// Why a Run was cancelled.
-pub(all) enum CancelReason {
-  /// Host explicitly cancelled.
-  HostRequested(detail~ : String?)
-  /// Adapter/host observed the deadline.
-  DeadlineReached
-} derive(Eq, Debug)
-
-///|
-pub impl Show for CancelReason with fn to_string(self : CancelReason) -> String {
-  match self {
-    HostRequested(detail~) => "HostRequested(\{detail_or_empty(detail)})"
-    DeadlineReached => "DeadlineReached"
-  }
-}
-
-///|
-fn detail_or_empty(detail : String?) -> String {
-  match detail {
-    Some(s) => s
-    None => ""
-  }
-}
-
-///|
-/// What an adapter reports after a `CancelOutstanding` effect. The reducer never waits for this.
-pub(all) enum CancelDisposition {
-  /// Cancel signal propagated.
-  Propagated
-  /// Cancel not propagated; only stops the reducer waiting.
-  NotPropagated
-  /// Effect already settled before cancel arrived.
-  AlreadySettled
-} derive(Eq, Debug)
-
-///|
-pub impl Show for CancelDisposition with fn to_string(self : CancelDisposition) -> String {
-  match self {
-    Propagated => "Propagated"
-    NotPropagated => "NotPropagated"
-    AlreadySettled => "AlreadySettled"
-  }
 }

@@ -31,7 +31,10 @@
 /// contract. Catalog-composition validation is the caller's responsibility.
 pub(all) struct PuppetConfig {
   host : &@kernel_exec.HostRuntime
-  catalog : @kernel_exec.ToolCatalogSnapshot
+  /// Mutable so the Agent can swap in a refreshed snapshot at prompt
+  /// boundaries via `Puppet::replace_catalog`. An in-flight run is
+  /// unaffected: its RunState pinned the catalog version it started with.
+  mut catalog : @kernel_exec.ToolCatalogSnapshot
   journal : &RunJournal
   contributors : Array[&JournalContributor]
   subscribers : Array[&EventSubscriber]
@@ -122,6 +125,25 @@ pub fn Puppet::last_completed_transcript(self : Puppet) -> Transcript? {
 /// run has completed since construction or the current run is suspended.
 pub fn Puppet::last_terminal_outcome(self : Puppet) -> RunOutcome? {
   self.last_outcome
+}
+
+///|
+/// Swap the tool catalog snapshot between runs. Returns `false` without
+/// swapping when a run is active — an in-flight run always keeps the
+/// snapshot (and catalog version) its RunState started with. Callers are
+/// expected to swap only at prompt boundaries; the active-run guard is
+/// defence in depth.
+pub fn Puppet::replace_catalog(
+  self : Puppet,
+  catalog : @kernel_exec.ToolCatalogSnapshot,
+) -> Bool {
+  match self.mailbox.active_run_id() {
+    Some(_) => false
+    None => {
+      self.config.catalog = catalog
+      true
+    }
+  }
 }
 
 ///|

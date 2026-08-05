@@ -69,6 +69,7 @@ pub impl @kernel_exec.HostRuntime for WaveFixtureHost with fn call_model(
 ///|
 pub impl @kernel_exec.HostRuntime for WaveFixtureHost with fn execute_tool(
   self,
+  _effect_id : EffectId,
   _owner_id : OwnerId,
   call_id : CallId,
   _tool_name : ToolName,

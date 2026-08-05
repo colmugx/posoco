@@ -47,6 +47,7 @@ pub impl @kernel_exec.HostRuntime for ChunkDemandHost with fn call_model(
 ///|
 pub impl @kernel_exec.HostRuntime for ChunkDemandHost with fn execute_tool(
   _self,
+  _effect_id : EffectId,
   _owner_id : OwnerId,
   call_id : CallId,
   _tool_name : ToolName,

@@ -1,6 +1,11 @@
 ///|
-/// Port Host Adapter — wraps `ModelPort` + `ToolProvider` into the canonical
-/// `HostRuntime` contract for the Puppet.
+/// `PortRuntime` — the default `Runtime`: delegates every effect to the
+/// composed extension ports (`ModelPort` + `ToolProvider`s). This is exactly
+/// the behaviour of the historical internal port adapter; cancellation is
+/// `NotPropagated` because plain `ToolProvider`s receive no cancel signal.
+///
+/// Host builders wrap this type and override the methods they need instead
+/// of implementing `Runtime` from scratch.
 
 ///|
 /// Map `@error.ModelError` (raised by ModelPort) to the kernel's
@@ -80,26 +85,27 @@ fn decode_chat_options(
 }
 
 ///|
-priv struct PortHostAdapter {
-  model : &@port.ModelPort
-  tools : Map[String, &@port.ToolProvider]
+/// The default runtime, built from the composed extension ports.
+pub struct PortRuntime {
+  priv model : &@port.ModelPort
+  priv tools : Map[String, &@port.ToolProvider]
 }
 
 ///|
-fn PortHostAdapter::new(
+pub fn PortRuntime::new(
   model~ : &@port.ModelPort,
   tools~ : Map[String, &@port.ToolProvider],
-) -> PortHostAdapter {
+) -> PortRuntime {
   { model, tools }
 }
 
 ///|
-impl @kernel_exec.HostRuntime for PortHostAdapter with fn call_model(
+pub impl Runtime for PortRuntime with fn call_model(
   self,
   messages : Array[@kernel.Message],
   tool_definitions : Array[@kernel.ToolDef],
   call_options : Json,
-  on_chunk : @kernel_exec.HostChunkCallback?,
+  on_chunk : ((Json) -> Unit)?,
 ) -> Result[@kernel.ModelCallResult, @kernel.ModelFailure] {
   let options = match decode_chat_options(call_options) {
     Ok(options) => options
@@ -112,11 +118,10 @@ impl @kernel_exec.HostRuntime for PortHostAdapter with fn call_model(
   let result = self.model.chat(messages, tool_definitions, options, stream) catch {
     error => return Err(model_error_to_failure(error))
   }
-  // R3 M3.7: when the modelport returns no preprocessing (empty
-  // processed_messages), substitute the input messages so the reducer's
-  // transcript-replace step is a no-op. Real modelports that actually
-  // preprocess (DeepSeek dynamic tool-result elision) return their processed
-  // tree here and we honour it.
+  // When the modelport returns no preprocessing (empty processed_messages),
+  // substitute the input messages so the reducer's transcript-replace step
+  // is a no-op. Real modelports that actually preprocess return their
+  // processed tree here and we honour it.
   let final_result : @kernel.ModelCallResult = if result.processed_messages.is_empty() {
     @kernel.ModelCallResult::{
       completion: result.completion,
@@ -129,14 +134,8 @@ impl @kernel_exec.HostRuntime for PortHostAdapter with fn call_model(
 }
 
 ///|
-impl @kernel_exec.HostRuntime for PortHostAdapter with fn execute_tool(
-  self,
-  _owner_id : @kernel.OwnerId,
-  call_id : @kernel.CallId,
-  tool_name : @kernel.ToolName,
-  arguments : Json,
-) -> @kernel.ToolOutcome {
-  let name = tool_name.to_string()
+pub impl Runtime for PortRuntime with fn execute_tool(self, ctx : EffectContext) -> @kernel.ToolOutcome {
+  let name = ctx.tool_name.to_string()
   let provider = match self.tools.get(name) {
     Some(p) => p
     None =>
@@ -145,7 +144,11 @@ impl @kernel_exec.HostRuntime for PortHostAdapter with fn execute_tool(
         message="no tool provider for '" + name + "'",
       )
   }
-  let call : @kernel.ToolCall = { call_id, name: tool_name, arguments }
+  let call : @kernel.ToolCall = {
+    call_id: ctx.call_id,
+    name: ctx.tool_name,
+    arguments: ctx.arguments,
+  }
   provider.execute(name, call) catch {
     error =>
       @kernel.RuntimeFailure(
@@ -156,18 +159,21 @@ impl @kernel_exec.HostRuntime for PortHostAdapter with fn execute_tool(
 }
 
 ///|
-impl @kernel_exec.HostRuntime for PortHostAdapter with fn cancel_effects(
-  self : PortHostAdapter,
-  effect_ids : Array[@kernel_exec.EffectId],
-  _reason : @kernel_exec.CancelReason,
-) -> Array[(@kernel_exec.EffectId, @kernel_exec.CancelDisposition)] {
+/// Plain `ToolProvider`s receive no cancel signal, so the default runtime
+/// reports `NotPropagated` for every effect. Runtimes with real cancellation
+/// wrap this method.
+pub impl Runtime for PortRuntime with fn cancel_effects(
+  self : PortRuntime,
+  effect_ids : Array[@kernel.EffectId],
+  _reason : @kernel.CancelReason,
+) -> Array[(@kernel.EffectId, @kernel.CancelDisposition)] {
   ignore(self)
-  effect_ids.map(id => (id, @kernel_exec.NotPropagated))
+  effect_ids.map(id => (id, @kernel.NotPropagated))
 }
 
 ///|
-/// Forward `HostRuntime::compact` to `ModelPort::compact`.
-impl @kernel_exec.HostRuntime for PortHostAdapter with fn compact(
+/// Forward compact to `ModelPort::compact`.
+pub impl Runtime for PortRuntime with fn compact(
   self,
   messages : Array[@kernel.Message],
   call_options : Json,

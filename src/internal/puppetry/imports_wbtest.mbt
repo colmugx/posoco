@@ -10,12 +10,17 @@
 ///
 /// BR-1/BR-2: canonical types come from the public `kernel` package; the
 /// catalog/host machinery comes from `internal/kernel_exec`.
-using @kernel {type ModelFailure, type CallId, type ToolName, type OwnerId}
+using @kernel {
+  type ModelFailure,
+  type CallId,
+  type ToolName,
+  type OwnerId,
+  type CancelReason,
+}
 
 ///|
 using @kernel_exec {
   type ToolCatalogBuilder,
   type CatalogCompositionError,
   type HostChunkCallback,
-  type CancelReason,
 }

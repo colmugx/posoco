@@ -153,40 +153,9 @@ pub fn OperationLease::acquired_phase(self : OperationLease) -> PuppetPhase {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// TurnId — typed wrapper (sibling of RunId)
+// TurnId — canonical definition lives in `@kernel` (`domain_run.mbt`);
+// this package aliases it via `imports.mbt`.
 // ──────────────────────────────────────────────────────────────────────────
-
-///|
-/// Identifier for a single turn within a Run. A Run may contain multiple
-/// turns (initial prompt + follow-ups); turns never outlive their Run.
-/// follow_up allocates a new TurnId under the same RunId.
-pub(all) struct TurnId {
-  value : String
-} derive(Eq, Hash, Debug)
-
-///|
-pub fn TurnId::new(value : String) -> Result[TurnId, String] {
-  if value == "" {
-    Err("TurnId must be non-empty")
-  } else {
-    Ok(TurnId::{ value, })
-  }
-}
-
-///|
-pub fn TurnId::unchecked(value : String) -> TurnId {
-  TurnId::{ value, }
-}
-
-///|
-pub fn TurnId::to_string(self : TurnId) -> String {
-  self.value
-}
-
-///|
-pub impl Show for TurnId with fn to_string(self : TurnId) -> String {
-  self.value
-}
 
 // ──────────────────────────────────────────────────────────────────────────
 // PuppetError (phase gate subset; extended by T04/T05)

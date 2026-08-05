@@ -14,6 +14,9 @@ pub(all) struct FixtureHost {
   mut tool_call_count : Int
   mut observed_definition_count : Int
   observed_call_options : Array[Json]
+  /// Effect ids received via `execute_tool`, in execution order. Used to
+  /// verify the host receives the reducer-allocated effect identity.
+  executed_effect_ids : Array[EffectId]
 }
 
 ///|
@@ -30,6 +33,7 @@ pub fn FixtureHost::FixtureHost(
     tool_call_count: 0,
     observed_definition_count: -1,
     observed_call_options: [],
+    executed_effect_ids: [],
   }
 }
 
@@ -51,6 +55,11 @@ pub fn FixtureHost::observed_definition_count(self : FixtureHost) -> Int {
 ///|
 pub fn FixtureHost::observed_call_options(self : FixtureHost) -> Array[Json] {
   self.observed_call_options.copy()
+}
+
+///|
+pub fn FixtureHost::executed_effect_ids(self : FixtureHost) -> Array[EffectId] {
+  self.executed_effect_ids.copy()
 }
 
 ///|
@@ -80,12 +89,14 @@ pub impl @kernel_exec.HostRuntime for FixtureHost with fn call_model(
 ///|
 pub impl @kernel_exec.HostRuntime for FixtureHost with fn execute_tool(
   self,
+  effect_id : EffectId,
   _owner_id : OwnerId,
   call_id : CallId,
   _tool_name : ToolName,
   _arguments : Json,
 ) -> @kernel.ToolOutcome {
   self.tool_call_count = self.tool_call_count + 1
+  self.executed_effect_ids.push(effect_id)
   match self.tool_results.get(call_id.to_string()) {
     Some(outcome) => outcome
     None =>
@@ -370,6 +381,38 @@ async test "puppet/C-PARALLEL-TOOLS" {
     }
   }
   assert_eq(committed, 2)
+}
+
+///|
+/// The host must receive the reducer-allocated effect identity with each
+/// `execute_tool` call. Allocation is deterministic per run: CallModel is
+/// effect 1, the tool batch follows as effects 2..N. Hosts that propagate
+/// cancellation correlate `cancel_effects` with these ids, so a wrong or
+/// missing id here would break the cancel seam end to end.
+async test "puppet/C-EFFECT-ID-PROPAGATION" {
+  let host = FixtureHost(
+    [
+      Ok(
+        fixture_tool_calls([
+          fixture_call("echo", "one"),
+          fixture_call("echo", "two"),
+        ]),
+      ),
+      Ok(fixture_stop("done")),
+    ],
+    Map::from_array([
+      ("one", Success(content="one", structured=None)),
+      ("two", Success(content="two", structured=None)),
+    ]),
+  )
+  let journal = InMemoryJournal()
+  let puppet = Puppet(
+    fixture_config(host, fixture_tool_catalog("echo"), journal, [], []),
+  )
+  assert_true(fixture_prompt(puppet, "effect_ids") is Accepted(_))
+  let ids = host.executed_effect_ids().map(id => id.to_int())
+  ids.sort()
+  assert_eq(ids, [2, 3])
 }
 
 ///|

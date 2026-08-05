@@ -1,0 +1,63 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "colmugx/posoco/runtime"
+
+import {
+  "colmugx/posoco/internal/puppetry",
+  "colmugx/posoco/kernel",
+  "colmugx/posoco/port",
+  "moonbitlang/core/debug",
+}
+
+// Values
+
+// Errors
+
+// Types and methods
+pub(all) struct EffectContext {
+  effect_id : @kernel.EffectId
+  owner : @kernel.OwnerId
+  call_id : @kernel.CallId
+  tool_name : @kernel.ToolName
+  arguments : Json
+}
+
+pub(all) enum EnqueueOutcome {
+  Accepted(command_id~ : String)
+  RejectedStale(reason~ : String)
+  RejectedQueueFull(depth~ : Int)
+  AbortAlreadyRequested
+} derive(Eq, @debug.Debug)
+pub impl Show for EnqueueOutcome
+
+pub struct PortRuntime {
+  // private fields
+}
+pub fn PortRuntime::new(model~ : &@port.ModelPort, tools~ : Map[String, &@port.ToolProvider]) -> Self
+pub impl Runtime for PortRuntime
+
+pub struct RuntimeControl {
+  // private fields
+}
+pub fn RuntimeControl::abort_active(Self, String?) -> EnqueueOutcome
+pub fn RuntimeControl::active_run_id(Self) -> @kernel.RunId?
+pub fn RuntimeControl::active_turn_id(Self) -> @kernel.TurnId?
+pub fn RuntimeControl::enqueue_follow_up(Self, @kernel.Message) -> EnqueueOutcome
+pub fn RuntimeControl::new(&@puppetry.Mailbox) -> Self
+pub fn RuntimeControl::pending_follow_ups(Self) -> Int
+pub fn RuntimeControl::take_follow_up(Self) -> @kernel.Message?
+
+// Type aliases
+
+// Traits
+pub(open) trait CatalogSource {
+  fn revision(Self) -> Int
+  fn tools(Self) -> Array[@kernel.ToolDef]
+}
+
+pub(open) trait Runtime {
+  async fn call_model(Self, Array[@kernel.Message], Array[@kernel.ToolDef], Json, ((Json) -> Unit)?) -> Result[@kernel.ModelCallResult, @kernel.ModelFailure]
+  async fn execute_tool(Self, EffectContext) -> @kernel.ToolOutcome
+  async fn cancel_effects(Self, Array[@kernel.EffectId], @kernel.CancelReason) -> Array[(@kernel.EffectId, @kernel.CancelDisposition)]
+  async fn compact(Self, Array[@kernel.Message], Json, @kernel.CompactTrigger) -> Result[@kernel.CompactResult, @kernel.ModelFailure]
+}
+
