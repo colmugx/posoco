@@ -1,0 +1,54 @@
+name: coverage
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: coverage-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-coverage:
+    name: native coverage / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up MoonBit
+        run: |
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+
+      - name: Set up Node (for moonrun)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Toolchain version
+        run: moon version --all
+
+      - name: Test with coverage (native)
+        run: moon test --target native --enable-coverage
+
+      - name: Coverage summary
+        run: moon coverage report -f summary
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.os }}
+          path: |
+            _build/moonbit_coverage_*
+            coverage_report.*
+          if-no-files-found: ignore
+          retention-days: 14

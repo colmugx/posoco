@@ -1,0 +1,147 @@
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────────
+  # Required gate: root core + external sub-workspace, native, 3-OS matrix.
+  # Mirrors moonbitlang/async's check.yml, plus Posoco-specific gates.
+  # ──────────────────────────────────────────────────────────────────────
+  native:
+    name: native / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Configure git (Windows)
+        if: runner.os == 'Windows'
+        run: git config --global core.autocrlf false
+
+      - name: Set up MSVC dev cmd (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Set up MoonBit (unix)
+        if: runner.os != 'Windows'
+        run: |
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+
+      - name: Set up MoonBit (windows)
+        if: runner.os == 'Windows'
+        run: |
+          iex "& {$(irm https://cli.moonbitlang.com/install/powershell.ps1)}"
+          echo "C:\Users\runneradmin\.moon\bin" >> "$env:GITHUB_PATH"
+
+      - name: Set up Node (for moonrun)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Toolchain version
+        run: moon version --all
+
+      # `rtk` is a local wrapper some contributors use; the two Posoco
+      # baseline scripts call `rtk moon ...`. Provide a PATH shim that
+      # forwards to plain `moon` so the scripts run unchanged on runners.
+      - name: rtk shim (unix)
+        if: runner.os != 'Windows'
+        run: |
+          printf '#!/usr/bin/env bash\nexec moon "$@"\n' > "$HOME/.local/bin/rtk"
+          chmod +x "$HOME/.local/bin/rtk"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          mkdir -p "$HOME/.local/bin"
+
+      - name: rtk shim (windows)
+        if: runner.os == 'Windows'
+        run: |
+          $d = "$env:USERPROFILE\.moon\bin"
+          New-Item -ItemType Directory -Force -Path $d | Out-Null
+          '@echo off
+          moon %*' | Out-File -Encoding ascii "$d\rtk.cmd"
+          echo "$d" >> "$env:GITHUB_PATH"
+
+      - name: Check (native, 0-error 0-warning)
+        run: moon check --target native --output-json --deny-warn
+
+      - name: Test (native)
+        run: moon test --target native --output-json
+
+      - name: Test (native, release)
+        run: moon test --target native --output-json --release
+
+      - name: Generated interface in sync
+        run: |
+          moon info --target native
+          git diff --exit-code -- '**/pkg.generated.mbti'
+
+      # Posoco-specific gates run only on ubuntu (bash + no flakiness on
+      # Windows paths) to keep the matrix fast.
+      - name: Local-resolution check (M0-T02)
+        if: runner.os == 'Linux'
+        run: ./scripts/check-local-resolution.sh
+
+      - name: Test-count anti-regression (M0-T03)
+        if: runner.os == 'Linux'
+        run: ./scripts/check-test-baseline.sh
+
+      - name: Check external sub-workspace (native)
+        if: runner.os == 'Linux'
+        working-directory: external
+        run: moon check --target native --output-json
+
+      - name: Test external sub-workspace (native)
+        if: runner.os == 'Linux'
+        working-directory: external
+        run: moon test --target native --output-json
+
+  # ──────────────────────────────────────────────────────────────────────
+  # Informational: other targets. Does not block merge, but surfaces real
+  # status instead of hiding it. wasm/js async tests are known-unsupported.
+  # ──────────────────────────────────────────────────────────────────────
+  other-targets:
+    name: ${{ matrix.target }} (informational)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [js, wasm-gc, wasm]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up MoonBit
+        run: |
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+
+      - name: Set up Node (for moonrun)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Toolchain version
+        run: moon version --all
+
+      - name: Check (${{ matrix.target }})
+        run: moon check --target ${{ matrix.target }} --output-json
+
+      - name: Test (${{ matrix.target }})
+        run: moon test --target ${{ matrix.target }} --output-json
