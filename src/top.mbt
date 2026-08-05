@@ -23,9 +23,7 @@ pub using @port {
   trait ToolProvider,
   trait SessionStore,
   trait Observer,
-  trait PostEventHook,
-  trait PreModelHook,
-  trait PreToolHook,
+  trait Hook,
   trait MemoryPort,
   trait Lifecycle,
   trait CommandPort,
@@ -39,7 +37,7 @@ pub using @port {
   type CommandParam,
   type HookAbort,
   type ParamType,
-  type PostStage,
+  type HookStage,
   type ToolHookDecision,
   type UiHint,
   type UiSlot,
@@ -52,13 +50,8 @@ pub using @port {
   type AutocompleteSource,
   type UiDescriptor,
   type UiRender,
-  type SystemPromptHook,
-  type SystemPromptSection,
   type ExtensionManifest,
   type ProviderConfig,
-  // Builtin UiPort impls (testkit-grade, also used by hosts without a UI).
-  type NoopUiPort,
-  type CompositeUiPort,
 }
 
 ///|

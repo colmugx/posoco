@@ -15,9 +15,11 @@ pub(all) struct ExtensionManifest {
   tools : Array[&ToolProvider]
   sessions : Array[&SessionStore]
   observers : Array[&Observer]
-  pre_model_hooks : Array[&PreModelHook]
-  pre_tool_hooks : Array[&PreToolHook]
-  post_event_hooks : Array[&PostEventHook]
+  /// Pipeline interception points. One array for every hook kind: the pump
+  /// calls `Hook::before_model` / `before_tool` / `on_post_event` on each
+  /// entry in registration order. An extension that intercepts several
+  /// points puts `self` here once and overrides the methods it needs.
+  hooks : Array[&Hook]
   memory : Array[&MemoryPort]
   lifecycle : Array[&Lifecycle]
   commands : Array[&CommandPort]
@@ -35,9 +37,7 @@ pub fn ExtensionManifest::empty(id~ : String) -> ExtensionManifest {
     tools: [],
     sessions: [],
     observers: [],
-    pre_model_hooks: [],
-    pre_tool_hooks: [],
-    post_event_hooks: [],
+    hooks: [],
     memory: [],
     lifecycle: [],
     commands: [],

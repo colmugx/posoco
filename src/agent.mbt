@@ -215,7 +215,6 @@ priv struct AgentRuntime {
   builtin_command_port : BuiltinCommandPort
   config : AgentConfig
   mut next_run_seq : Int
-  mut puppet_started : Bool
   mut shutdown_started : Bool
   mut shutdown_complete : Bool
   mut next_lifecycle_shutdown : Int
@@ -232,9 +231,15 @@ pub struct Agent {
 /// Construct an Agent from an array of extensions.
 /// Aggregation order is the array order; collisions fail-fast.
 /// At least one extension must contribute a `ModelPort`.
+///
+/// `ui_projection` (default `false`, BR-5): when `true`, Posoco's built-in
+/// render policy (`UiRenderHook` over the aggregated `UiPort`) is appended
+/// to the hook chain. Hosts with their own UI policy leave it off and
+/// register their own `Hook` instead.
 pub fn Agent::Agent(
   exts~ : Array[&@port.Extension],
   config~ : AgentConfig,
+  ui_projection? : Bool = false,
 ) -> Agent raise @error.CompositionError {
   let agg = aggregate_extensions(exts)
   if config.max_tool_rounds < 0 {
@@ -256,44 +261,48 @@ pub fn Agent::Agent(
   }
   let tool_routing = build_tool_routing(agg.tools)
   let catalog = build_agent_catalog(tool_routing.providers)
-  let composed_pre_model : Array[&@port.PreModelHook] = []
+  // One composed hook chain, in interception order: system-prompt
+  // projection first, memory retrieval second, extension-registered hooks
+  // next, UI rendering last (opt-in, so extensions see events before the
+  // renderer).
+  let composed_hooks : Array[&@port.Hook] = []
   // 1. System prompt projection (if any contributors are configured).
   if !agg.prompt_contributors.is_empty() {
-    let sections : Array[@port.SystemPromptSection] = []
-    let mut idx = 0
-    for c in agg.prompt_contributors {
+    let sections : Array[SystemPromptSection] = []
+    for pair in agg.prompt_contributors {
+      let (mid, contributor) = pair
       sections.push(
-        @port.SystemPromptSection::SystemPromptSection(
-          id="section_\{idx}",
-          contributor=c,
-        ),
+        SystemPromptSection::SystemPromptSection(id=mid, contributor~),
       )
-      idx = idx + 1
     }
-    let sys_hook = @port.SystemPromptHook::SystemPromptHook(
+    let sys_hook = SystemPromptHook::SystemPromptHook(
       base_prompt="", // base comes from a contributor if desired
       contributors=sections,
     )
-    composed_pre_model.push(sys_hook as &@port.PreModelHook)
+    composed_hooks.push(sys_hook as &@port.Hook)
   }
 
   if !agg.memory.is_empty() {
-    let mem_hook = @port.MemoryRetrievalHook::MemoryRetrievalHook(
+    let observers = agg.observers
+    let mem_hook = MemoryRetrievalHook::MemoryRetrievalHook(
       memories=agg.memory,
+      on_failure=fn(reason) {
+        emit_secondary_failure(observers, "memory_retrieval", reason)
+      },
     )
-    composed_pre_model.push(mem_hook as &@port.PreModelHook)
+    composed_hooks.push(mem_hook as &@port.Hook)
   }
 
-  for h in agg.pre_model_hooks {
-    composed_pre_model.push(h)
+  for h in agg.hooks {
+    composed_hooks.push(h)
   }
 
-  let composed_post_event : Array[&@port.PostEventHook] = []
-  for h in agg.post_event_hooks {
-    composed_post_event.push(h)
+  // UI projection is opt-in (BR-5): the built-in render policy is installed
+  // only when the host asks for it via `ui_projection=true`.
+  if ui_projection {
+    let ui_hook = UiRenderHook::UiRenderHook(ui=agg.ui)
+    composed_hooks.push(ui_hook as &@port.Hook)
   }
-  let ui_hook = @port.UiRenderHook::UiRenderHook(ui=agg.ui)
-  composed_post_event.push(ui_hook as &@port.PostEventHook)
 
   let mailbox = @puppetry.ControlMailbox::ControlMailbox()
   let mailbox_ref : &@puppetry.Mailbox = mailbox as &@puppetry.Mailbox
@@ -310,17 +319,13 @@ pub fn Agent::Agent(
     [] => None
   }
   let puppet_config : @puppetry.PuppetConfig = {
-    host: host_adapter as &@kernel.HostRuntime,
+    host: host_adapter as &@kernel_exec.HostRuntime,
     catalog,
     journal: journal as &@puppetry.RunJournal,
     contributors: [],
     subscribers: [event_subscriber as &@puppetry.EventSubscriber],
-    observers: agg.observers,
-    lifecycle_nodes: [],
     stream_chunks: create_agent_stream_callback(agg.observers),
-    pre_model_hooks: composed_pre_model,
-    pre_tool_hooks: agg.pre_tool_hooks,
-    post_event_hooks: composed_post_event,
+    hooks: composed_hooks,
     max_iterations: config.max_tool_rounds + 1,
     commands: command_ports,
     session_store,
@@ -335,7 +340,6 @@ pub fn Agent::Agent(
     builtin_command_port,
     config,
     next_run_seq: 1,
-    puppet_started: false,
     shutdown_started: false,
     shutdown_complete: false,
     next_lifecycle_shutdown: agg.lifecycle.length() - 1,
@@ -349,16 +353,13 @@ async fn AgentRuntime::shutdown(self : AgentRuntime) -> Unit {
     return
   }
   self.shutdown_started = true
-  if self.puppet_started {
-    self.puppet.shutdown() catch {
-      error =>
-        raise @error.AgentError::Runtime(
-          @error.RuntimeError::InvocationFailed(
-            "puppet shutdown: " + safe_error_label(error.to_string()),
-          ),
-        )
-    }
-    self.puppet_started = false
+  self.puppet.shutdown() catch {
+    error =>
+      raise @error.AgentError::Runtime(
+        @error.RuntimeError::InvocationFailed(
+          "puppet shutdown: " + safe_error_label(error.to_string()),
+        ),
+      )
   }
   while self.next_lifecycle_shutdown >= 0 {
     // Advance the cursor only after successful cleanup. If an extension
@@ -451,24 +452,40 @@ fn AgentRuntime::emit_turn_event(
 }
 
 ///|
-async fn AgentRuntime::ensure_puppet_started(
+/// Emit a sanitized secondary-failure diagnostic to every observer's
+/// session-level channel. Secondary failures never replace the primary
+/// outcome; the payload carries only a bounded category label, never the
+/// failing component's raw payload. (`Observer::on_event` is non-raising
+/// by contract — a violating observer aborts loudly, which the ADR's
+/// error-transparency rules intentionally preserve.)
+fn emit_secondary_failure(
+  observers : Array[&@port.Observer],
+  hook_point : String,
+  detail : String,
+) -> Unit {
+  let event : @types.TurnEvent = Custom(
+    source="posoco.core",
+    label="secondary_failure",
+    data=Json::object(
+      Map::from_array([
+        ("hook_point", Json::string(hook_point)),
+        ("error", Json::string(safe_error_label(detail))),
+      ]),
+    ),
+  )
+  for observer in observers {
+    observer.on_event(agent_snapshot_turn_event(event))
+  }
+}
+
+///|
+fn AgentRuntime::ensure_agent_running(
   self : AgentRuntime,
 ) -> Unit raise @error.AgentError {
   if self.shutdown_started {
     raise @error.AgentError::Runtime(
       @error.RuntimeError::InvocationFailed("agent is shut down"),
     )
-  }
-  if !self.puppet_started {
-    self.puppet.startup() catch {
-      error =>
-        raise @error.AgentError::Runtime(
-          @error.RuntimeError::InvocationFailed(
-            "puppet startup: " + safe_error_label(error.to_string()),
-          ),
-        )
-    }
-    self.puppet_started = true
   }
 }
 
@@ -479,7 +496,7 @@ async fn AgentRuntime::run_turn(
   input : @kernel.Message,
   session_id : String,
 ) -> @types.TurnResult raise @error.AgentError {
-  self.ensure_puppet_started()
+  self.ensure_agent_running()
   self.emit_turn_event(TurnStarted)
 
   let result = self.run_turn_via_puppet(input, session_id) catch {

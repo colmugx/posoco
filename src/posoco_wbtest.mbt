@@ -100,7 +100,7 @@ impl @port.Observer for MockObserver with fn on_event(self, event) {
 struct AbortHook {}
 
 ///|
-impl @port.PreToolHook for AbortHook with fn before_tool(
+impl @port.Hook for AbortHook with fn before_tool(
   _self,
   _call : @kernel.ToolCall,
 ) -> @port.ToolHookDecision {
@@ -109,14 +109,11 @@ impl @port.PreToolHook for AbortHook with fn before_tool(
 
 ///|
 struct LogHook {
-  seen : Array[@port.PostStage]
+  seen : Array[@port.HookStage]
 }
 
 ///|
-impl @port.PostEventHook for LogHook with fn on_post_event(
-  self,
-  stage : @port.PostStage,
-) -> Unit {
+impl @port.Hook for LogHook with fn on_post_event(self, stage : @port.HookStage) -> Unit {
   self.seen.push(stage)
 }
 
@@ -348,13 +345,9 @@ async test "hook_aborts_before_tool" {
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
-      tk_ext(
-        id="io",
-        tools=[tools],
-        pre_tool_hooks=[abort_hook],
-        sessions=[store],
-        observers=[observer],
-      ),
+      tk_ext(id="io", tools=[tools], hooks=[abort_hook], sessions=[store], observers=[
+        observer,
+      ]),
     ],
     config~,
   )
@@ -510,7 +503,7 @@ async test "session_persistence" {
 struct RewriteModelHook {}
 
 ///|
-impl @port.PreModelHook for RewriteModelHook with fn before_model(
+impl @port.Hook for RewriteModelHook with fn before_model(
   _self,
   messages : Array[@kernel.Message],
 ) -> Array[@kernel.Message] raise @port.HookAbort {
@@ -541,7 +534,7 @@ async test "hook_rewrites_before_model_messages" {
       tk_ext(
         id="io",
         tools=[empty_tools()],
-        pre_model_hooks=[rewriter],
+        hooks=[rewriter],
         sessions=[store],
         observers=[observer],
       ),
@@ -560,7 +553,7 @@ async test "hook_rewrites_before_model_messages" {
 struct DeferToolHook {}
 
 ///|
-impl @port.PreToolHook for DeferToolHook with fn before_tool(
+impl @port.Hook for DeferToolHook with fn before_tool(
   _self,
   call : @kernel.ToolCall,
 ) -> @port.ToolHookDecision {
@@ -604,7 +597,7 @@ async test "hook_deferred_skips_execution" {
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", tools=[tools], pre_tool_hooks=[hook], sessions=[store], observers=[
+      tk_ext(id="io", tools=[tools], hooks=[hook], sessions=[store], observers=[
         observer,
       ]),
     ],
@@ -618,6 +611,119 @@ async test "hook_deferred_skips_execution" {
       assert_true(msg.contains("defer not yet supported"))
     _ => fail("expected HookAborted for unsupported Defer decision")
   }
+}
+
+///|
+/// ApproveAllToolHook — overrides only `before_tool`; `before_model` and
+/// `on_post_event` are inherited from the trait's default implementations.
+struct ApproveAllToolHook {}
+
+///|
+impl @port.Hook for ApproveAllToolHook with fn before_tool(
+  _self,
+  call : @kernel.ToolCall,
+) -> @port.ToolHookDecision {
+  Approve(call~)
+}
+
+///|
+/// Test: Hook default methods pass through — a hook that overrides only
+/// `before_tool` inherits the default `before_model` (identity) and
+/// `on_post_event` (noop), so the user message reaches the transcript
+/// unchanged and the turn completes normally.
+async test "hook_default_methods_pass_through" {
+  let tc = make_tool_call("call_1", "echo")
+  let model = MockModelPort::{
+    responses: [tool_response([tc]), stop_response("done")],
+    index: 0,
+  }
+  let tools = MockToolProvider::{
+    tools: [
+      @kernel.ToolDef(
+        name=@kernel.ToolName::unchecked("echo"),
+        description="",
+        input_schema=Json::null(),
+        owner=@kernel.OwnerId::unchecked("legacy_provider"),
+        policy=@kernel.Parallel,
+        provenance=None,
+      ),
+    ],
+    results: Map::from_array([
+      ("echo", Ok(@kernel.Success(content="echoed", structured=None))),
+    ]),
+  }
+  let store = MockSessionStore::{ store: Map::from_array([]) }
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", tools=[tools], hooks=[ApproveAllToolHook::{  }], sessions=[
+        store,
+      ]),
+    ],
+    config=make_config(),
+  )
+  let result = agent.run_turn(user_msg("hello"), "session_1")
+  assert_eq(result.final_session_id, "session_1")
+  let session = store.store["session_1"]
+  // The default before_model passed the messages through unchanged: the
+  // first transcript entry is still the original user message.
+  match session.messages[0] {
+    @kernel.UserMessage(content~) =>
+      assert_true(
+        content
+        .iter()
+        .any(fn(part) {
+          match part {
+            @kernel.Text(t) => t == "hello"
+            _ => false
+          }
+        }),
+      )
+    _ => fail("expected original user message first (default pass-through)")
+  }
+}
+
+///|
+/// Test: one Hook implementor receives every interception point through a
+/// single trait impl — before_model, before_tool and on_post_event all land
+/// on the same RecordingHook instance in one turn.
+async test "hook_single_impl_receives_all_points" {
+  let tc = make_tool_call("call_1", "echo")
+  let model = MockModelPort::{
+    responses: [tool_response([tc]), stop_response("done")],
+    index: 0,
+  }
+  let tools = MockToolProvider::{
+    tools: [
+      @kernel.ToolDef(
+        name=@kernel.ToolName::unchecked("echo"),
+        description="",
+        input_schema=Json::null(),
+        owner=@kernel.OwnerId::unchecked("legacy_provider"),
+        policy=@kernel.Parallel,
+        provenance=None,
+      ),
+    ],
+    results: Map::from_array([
+      ("echo", Ok(@kernel.Success(content="echoed", structured=None))),
+    ]),
+  }
+  let hook = RecordingHook::RecordingHook()
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", tools=[tools], hooks=[hook], sessions=[
+        MockSessionStore::{ store: Map::from_array([]) },
+      ]),
+    ],
+    config=make_config(),
+  )
+  let result = agent.run_turn(user_msg("hi"), "session_1")
+  assert_eq(result.final_session_id, "session_1")
+  let labels = hook.records().map(fn(record) { record.label })
+  assert_true(labels.contains("before_model"))
+  assert_true(labels.contains("before_tool"))
+  assert_true(labels.contains("on_post_event"))
 }
 
 ///|
@@ -928,7 +1034,7 @@ async test "multiple_hooks_chained_in_order" {
       tk_ext(
         id="io",
         tools=[empty_tools()],
-        post_event_hooks=[hook1, hook2],
+        hooks=[hook1, hook2],
         sessions=[store],
         observers=[observer],
       ),
@@ -1123,7 +1229,7 @@ async test "hook_turn_error_fires_on_model_error" {
       tk_ext(
         id="io",
         tools=[empty_tools()],
-        post_event_hooks=[log_hook],
+        hooks=[log_hook],
         sessions=[store],
         observers=[observer],
       ),
@@ -1171,8 +1277,7 @@ async test "hook_turn_error_fires_on_before_tool_abort" {
       tk_ext(
         id="io",
         tools=[tools],
-        post_event_hooks=[log_hook],
-        pre_tool_hooks=[abort_hook],
+        hooks=[log_hook, abort_hook],
         sessions=[store],
         observers=[observer],
       ),

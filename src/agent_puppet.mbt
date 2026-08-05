@@ -26,8 +26,8 @@ fn normalize_tool_schema(schema : Json) -> Json {
 /// `legacy_provider`.
 fn build_agent_catalog(
   providers : Array[&@port.ToolProvider],
-) -> @kernel.ToolCatalogSnapshot raise @error.CompositionError {
-  let builder = @kernel.ToolCatalogBuilder()
+) -> @kernel_exec.ToolCatalogSnapshot raise @error.CompositionError {
+  let builder = @kernel_exec.ToolCatalogBuilder()
   for provider in providers {
     for tool in provider.list_tools() {
       let owner_str = tool.owner.to_string()
@@ -60,7 +60,7 @@ fn build_agent_catalog(
       }
     }
   }
-  builder.finish(version=@kernel.CatalogVersion(1)) catch {
+  builder.finish(version=@kernel_exec.CatalogVersion(1)) catch {
     e =>
       raise @error.CompositionError::ManifestSchemaError(
         manifest_id="agent.catalog",
@@ -116,8 +116,8 @@ impl @puppetry.EventSubscriber for AgentEventSubscriber with fn on_event(
 ) -> Unit raise @puppetry.SubscriberError {
   let event = envelope.event()
   match event {
-    @kernel.RunStarted(..) => self.pending_calls.clear()
-    @kernel.ModelStepCompleted(completion~, ..) => {
+    @kernel_exec.RunStarted(..) => self.pending_calls.clear()
+    @kernel_exec.ModelStepCompleted(completion~, ..) => {
       let payload = completion.message
       let message : @kernel.Message = @kernel.AssistantMessage(
         content=payload.content,
@@ -127,13 +127,13 @@ impl @puppetry.EventSubscriber for AgentEventSubscriber with fn on_event(
       )
       self.emit(@types.ModelResponseReceived(message~, usage=completion.usage))
     }
-    @kernel.ToolBatchStarted(calls~, ..) =>
+    @kernel_exec.ToolBatchStarted(calls~, ..) =>
       for call in calls {
         let snapshot = agent_snapshot_tool_call(call)
         self.pending_calls[snapshot.call_id.to_string()] = snapshot
         self.emit(@types.ToolCallPending(snapshot))
       }
-    @kernel.ToolCompleted(call_id~, outcome~) => {
+    @kernel_exec.ToolCompleted(call_id~, outcome~) => {
       let key = call_id.to_string()
       let call = match self.pending_calls.get(key) {
         Some(call) => call
@@ -159,7 +159,7 @@ impl @puppetry.EventSubscriber for AgentEventSubscriber with fn on_event(
 /// PortHostAdapter and ScriptedModel emit.
 fn create_agent_stream_callback(
   observers : Array[&@port.Observer],
-) -> @kernel.HostChunkCallback? {
+) -> @kernel_exec.HostChunkCallback? {
   if observers.is_empty() {
     return None
   }
@@ -245,10 +245,10 @@ async fn AgentRuntime::run_turn_via_puppet(
   // still using the same Puppet and journal.
   let seq = self.next_run_seq
   self.next_run_seq = seq + 1
-  let run_id = @kernel.RunId::unchecked("agent_run_\{seq}")
+  let run_id = @kernel_exec.RunId::unchecked("agent_run_\{seq}")
   let turn_id = @puppetry.TurnId::unchecked("agent_turn_\{seq}")
-  let session_id_kernel = @kernel.SessionId::unchecked(session_id)
-  let budget : @kernel.Budget = {
+  let session_id_kernel = @kernel_exec.SessionId::unchecked(session_id)
+  let budget : @kernel_exec.Budget = {
     max_model_steps: None,
     max_tool_rounds: Some(self.config.max_tool_rounds),
     max_tool_calls: None,
@@ -431,15 +431,16 @@ async fn AgentRuntime::run_turn_via_puppet(
     @puppetry.Accepted(..) =>
       // Check terminal outcome for model failures.
       match self.puppet.last_terminal_outcome() {
-        Some(@kernel.Failed(reason=@kernel.ModelTransport(detail~))) =>
+        Some(@kernel_exec.Failed(reason=@kernel_exec.ModelTransport(detail~))) =>
           raise @error.AgentError::Model("model transport: " + detail)
-        Some(@kernel.Failed(reason=@kernel.ModelParseFailure(detail~))) =>
-          raise @error.AgentError::Model("model parse failure: " + detail)
-        Some(@kernel.Failed(reason=@kernel.ModelRuntime(detail~))) =>
+        Some(
+          @kernel_exec.Failed(reason=@kernel_exec.ModelParseFailure(detail~))
+        ) => raise @error.AgentError::Model("model parse failure: " + detail)
+        Some(@kernel_exec.Failed(reason=@kernel_exec.ModelRuntime(detail~))) =>
           raise @error.AgentError::Model("model runtime failure: " + detail)
-        Some(@kernel.Failed(reason=@kernel.BudgetExhausted(..))) =>
+        Some(@kernel_exec.Failed(reason=@kernel_exec.BudgetExhausted(..))) =>
           raise @error.AgentError::ToolLoopExceeded
-        Some(@kernel.Failed(..)) =>
+        Some(@kernel_exec.Failed(..)) =>
           raise @error.AgentError::Runtime(
             @error.RuntimeError::InvocationFailed("run failed"),
           )

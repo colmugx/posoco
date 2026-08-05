@@ -1,0 +1,548 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "colmugx/posoco/internal/puppetry"
+
+import {
+  "colmugx/posoco/internal/kernel_exec",
+  "colmugx/posoco/kernel",
+  "colmugx/posoco/port",
+  "moonbitlang/async/aqueue",
+  "moonbitlang/async/cond_var",
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub fn commit_batch(&RunJournal, FrozenBatch) -> Int raise PuppetError
+
+pub fn prepare_batch(PreCommitContext, Array[&JournalContributor]) -> FrozenBatch raise PuppetError
+
+// Errors
+pub(all) suberror ContributionError {
+  Internal(contributor_id~ : String, detail~ : String)
+  Inconsistent(contributor_id~ : String, detail~ : String)
+}
+pub impl Show for ContributionError
+
+pub(all) suberror PuppetError {
+  IllegalPhaseTransition(from~ : PuppetPhase, to~ : PuppetPhase, operation~ : OperationClass, detail~ : String)
+  OperationNotAllowedInPhase(phase~ : PuppetPhase, operation~ : OperationClass, detail~ : String)
+  LeaseHeld(operation_id~ : String, held_by~ : String)
+  LeaseNotHeld(operation_id~ : String, detail~ : String)
+  AfterShutdown(command~ : String)
+  SnapshotInvalid(detail~ : String)
+  StaleIdentity(kind~ : String, expected~ : String, actual~ : String)
+  QueueFull(kind~ : String, depth~ : Int)
+  SuspensionPayloadMismatch(suspension_id~ : String, expected_kind~ : String)
+  SuspensionIdMismatch(target_run_id~ : @kernel_exec.RunId, expected~ : String, actual~ : String)
+  AbortNoActiveRun(run_id~ : @kernel_exec.RunId)
+  SavepointFailed(kind~ : String, cause~ : SavepointFailureCause)
+  ContributionInvalid(contributor_id~ : String, detail~ : String)
+  SubscriberJournalMutation(subscriber_id~ : String)
+  LifecycleStartupFailed(node_id~ : String, cause~ : String, rollback_failures~ : Array[(String, String)])
+  LifecycleShutdownFailed(node_id~ : String, cause~ : String, other_failures~ : Array[(String, String)])
+  LifecycleDuplicate(node_id~ : String)
+  SubscriberFailed(subscriber_id~ : String, cause~ : String, committed_revision~ : Int)
+  PumpLoopExceeded(iterations~ : Int)
+  DuplicateOrLateCompletion(effect_id~ : @kernel_exec.EffectId, detail~ : String)
+  EffectExecutionFailed(phase~ : String, cause~ : String)
+  EffectExecutionCancelled(phase~ : String)
+  ReducerInvariantViolation(category~ : @kernel_exec.InvariantCategory)
+  HookRejected(reason~ : String)
+}
+pub impl Show for PuppetError
+
+pub(all) suberror SubscriberError {
+  Internal(subscriber_id~ : String, detail~ : String)
+  ContractViolation(subscriber_id~ : String, detail~ : String)
+}
+pub impl Show for SubscriberError
+
+// Types and methods
+pub(all) struct AbortCommand {
+  command_id : CommandId
+  target_run_id : @kernel_exec.RunId
+  detail : String?
+} derive(Eq, @debug.Debug)
+pub fn AbortCommand::command_id(Self) -> CommandId
+pub fn AbortCommand::detail(Self) -> String?
+pub fn AbortCommand::target_run_id(Self) -> @kernel_exec.RunId
+
+pub(all) struct CommandId {
+  value : String
+} derive(Eq, Hash, @debug.Debug)
+pub fn CommandId::new(String) -> Result[Self, String]
+pub fn CommandId::to_string(Self) -> String
+pub fn CommandId::unchecked(String) -> Self
+pub impl Show for CommandId
+
+pub(all) struct CompactCommand {
+  command_id : CommandId
+  target_run_id : @kernel_exec.RunId
+  target_turn_id : TurnId
+  trigger : @kernel.CompactTrigger
+} derive(Eq, @debug.Debug)
+pub fn CompactCommand::command_id(Self) -> CommandId
+pub fn CompactCommand::target_run_id(Self) -> @kernel_exec.RunId
+pub fn CompactCommand::target_turn_id(Self) -> TurnId
+pub fn CompactCommand::trigger(Self) -> @kernel.CompactTrigger
+
+pub struct ControlMailbox {
+  mut steer_queue : @aqueue.Queue[SteerCommand]
+  mut follow_up_queue : @aqueue.Queue[FollowUpCommand]
+  mut steer_depth : Int
+  mut follow_up_depth : Int
+  mut fork_queue : @aqueue.Queue[ForkCommand]
+  mut fork_depth : Int
+  mut compact_queue : @aqueue.Queue[CompactCommand]
+  mut compact_depth : Int
+  resume_pending : Map[String, ResumeCommand]
+  mut abort_requested : Bool
+  mut active_run_id : @kernel_exec.RunId?
+  mut active_turn_id : TurnId?
+  idle_cond : @cond_var.Cond
+  mut quiescent_status : QuiescentStatus
+  max_depth : Int
+}
+pub fn ControlMailbox::ControlMailbox() -> Self
+pub impl Mailbox for ControlMailbox
+
+pub(all) enum EnqueueResult {
+  Accepted(command_id~ : CommandId)
+  RejectedStale(command_id~ : CommandId, reason~ : String)
+  RejectedQueueFull(command_id~ : CommandId, depth~ : Int)
+  AbortAlreadyRequested(command_id~ : CommandId)
+} derive(Eq, @debug.Debug)
+pub impl Show for EnqueueResult
+
+pub struct EventDispatcher {
+  subscribers : Array[&EventSubscriber]
+  mut next_seq : Int
+  mut last_committed_revision : Int
+  run_id : @kernel_exec.RunId
+  turn_id : TurnId
+  session_id : @kernel_exec.SessionId
+}
+pub fn EventDispatcher::EventDispatcher(@kernel_exec.RunId, TurnId, @kernel_exec.SessionId) -> Self
+pub async fn EventDispatcher::dispatch(Self, @kernel_exec.KernelEvent, Int) -> Unit raise PuppetError
+pub fn EventDispatcher::next_seq(Self) -> Int
+pub fn EventDispatcher::register(Self, &EventSubscriber) -> Unit
+pub fn EventDispatcher::subscriber_count(Self) -> Int
+
+pub(all) struct EventEnvelope {
+  run_id : @kernel_exec.RunId
+  turn_id : TurnId
+  session_id : @kernel_exec.SessionId
+  seq : Int
+  committed_revision : Int
+  event : @kernel_exec.KernelEvent
+} derive(Eq, @debug.Debug)
+pub fn EventEnvelope::EventEnvelope(run_id~ : @kernel_exec.RunId, turn_id~ : TurnId, session_id~ : @kernel_exec.SessionId, seq~ : Int, committed_revision~ : Int, event~ : @kernel_exec.KernelEvent) -> Self
+pub fn EventEnvelope::committed_revision(Self) -> Int
+pub fn EventEnvelope::event(Self) -> @kernel_exec.KernelEvent
+pub fn EventEnvelope::is_terminal(Self) -> Bool
+pub fn EventEnvelope::run_id(Self) -> @kernel_exec.RunId
+pub fn EventEnvelope::seq(Self) -> Int
+pub fn EventEnvelope::session_id(Self) -> @kernel_exec.SessionId
+pub fn EventEnvelope::turn_id(Self) -> TurnId
+pub impl Show for EventEnvelope
+
+pub struct FailOnNthJournal {
+  inner : InMemoryJournal
+  fail_on : Int
+  mut call_count : Int
+}
+pub fn FailOnNthJournal::FailOnNthJournal(InMemoryJournal, Int) -> Self
+pub impl RunJournal for FailOnNthJournal
+
+pub(all) struct FollowUpCommand {
+  command_id : CommandId
+  target_run_id : @kernel_exec.RunId
+  source_turn_id : TurnId
+  payload : Json
+} derive(Eq, @debug.Debug)
+pub fn FollowUpCommand::command_id(Self) -> CommandId
+pub fn FollowUpCommand::payload(Self) -> Json
+pub fn FollowUpCommand::source_turn_id(Self) -> TurnId
+pub fn FollowUpCommand::target_run_id(Self) -> @kernel_exec.RunId
+
+pub(all) struct ForkCommand {
+  command_id : CommandId
+  target_run_id : @kernel_exec.RunId
+  target_turn_id : TurnId
+  fork_index : Int
+} derive(Eq, @debug.Debug)
+pub fn ForkCommand::command_id(Self) -> CommandId
+pub fn ForkCommand::fork_index(Self) -> Int
+pub fn ForkCommand::target_run_id(Self) -> @kernel_exec.RunId
+pub fn ForkCommand::target_turn_id(Self) -> TurnId
+
+pub(all) struct FrozenBatch {
+  savepoint_id : String
+  savepoint_kind : SavepointKind
+  expected_revision : Int
+  entries : Array[JournalEntry]
+  frozen_entry_keys : Array[String]
+} derive(Eq, @debug.Debug)
+pub fn FrozenBatch::entries(Self) -> Array[JournalEntry]
+pub fn FrozenBatch::expected_revision(Self) -> Int
+pub fn FrozenBatch::length(Self) -> Int
+pub fn FrozenBatch::savepoint_id(Self) -> String
+pub fn FrozenBatch::savepoint_kind(Self) -> SavepointKind
+
+pub struct InMemoryJournal {
+  entries : Array[JournalEntry]
+  seen_ids : Map[String, Bool]
+  terminal_runs : Map[String, Bool]
+  mut append_count : Int
+}
+pub fn InMemoryJournal::InMemoryJournal() -> Self
+pub fn InMemoryJournal::append_count(Self) -> Int
+pub fn InMemoryJournal::append_impl(Self, Array[JournalEntry]) -> Int raise PuppetError
+pub fn InMemoryJournal::entries_for_run_impl(Self, @kernel_exec.RunId) -> Array[JournalEntry]
+pub fn InMemoryJournal::entries_for_savepoint_impl(Self, @kernel_exec.RunId, String) -> Array[JournalEntry]
+pub fn InMemoryJournal::revision_impl(Self) -> Int
+pub impl RunJournal for InMemoryJournal
+
+pub(all) struct JournalContribution {
+  contributor_id : String
+  provenance : String
+  proposed_entries : Array[JournalEntry]
+} derive(Eq, @debug.Debug)
+pub fn JournalContribution::contributor_id(Self) -> String
+pub fn JournalContribution::empty(String, String) -> Self
+pub fn JournalContribution::proposed_entries(Self) -> Array[JournalEntry]
+pub fn JournalContribution::provenance(Self) -> String
+pub fn JournalContribution::with_entries(String, String, Array[JournalEntry]) -> Self
+
+pub(all) struct JournalEntry {
+  identity : JournalEntryIdentity
+  revision : Int
+  summary : String
+  payload : Json
+} derive(Eq, @debug.Debug)
+pub fn JournalEntry::identity(Self) -> JournalEntryIdentity
+pub fn JournalEntry::payload(Self) -> Json
+pub fn JournalEntry::revision(Self) -> Int
+pub fn JournalEntry::summary(Self) -> String
+
+pub(all) struct JournalEntryIdentity {
+  run_id : @kernel_exec.RunId
+  turn_id : TurnId
+  session_id : @kernel_exec.SessionId
+  savepoint_id : String
+  entry_seq : Int
+  kind : SavepointKind
+} derive(Eq, @debug.Debug)
+pub fn JournalEntryIdentity::entry_seq(Self) -> Int
+pub fn JournalEntryIdentity::kind(Self) -> SavepointKind
+pub fn JournalEntryIdentity::run_id(Self) -> @kernel_exec.RunId
+pub fn JournalEntryIdentity::savepoint_id(Self) -> String
+pub fn JournalEntryIdentity::session_id(Self) -> @kernel_exec.SessionId
+pub fn JournalEntryIdentity::turn_id(Self) -> TurnId
+pub impl Show for JournalEntryIdentity
+
+pub(all) struct ModelId {
+  value : String
+} derive(Eq, Hash, @debug.Debug)
+pub fn ModelId::new(String) -> Result[Self, String]
+pub fn ModelId::to_string(Self) -> String
+pub fn ModelId::unchecked(String) -> Self
+
+pub(all) struct NoopContributor {
+  id : String
+}
+pub fn NoopContributor::NoopContributor() -> Self
+pub fn NoopContributor::with_id(String) -> Self
+pub impl JournalContributor for NoopContributor
+
+pub(all) struct NoopSubscriber {
+  id : String
+}
+pub fn NoopSubscriber::NoopSubscriber() -> Self
+pub fn NoopSubscriber::with_id(String) -> Self
+pub impl EventSubscriber for NoopSubscriber
+
+pub(all) enum OperationClass {
+  Prompt
+  InFlight
+  Structural
+} derive(Eq, @debug.Debug)
+pub impl Show for OperationClass
+
+pub(all) struct OperationLease {
+  operation_id : String
+  acquired_phase : PuppetPhase
+  run_id : @kernel_exec.RunId
+  turn_id : TurnId
+} derive(Eq, @debug.Debug)
+pub fn OperationLease::acquired_phase(Self) -> PuppetPhase
+pub fn OperationLease::operation_id(Self) -> String
+pub fn OperationLease::run_id(Self) -> @kernel_exec.RunId
+pub fn OperationLease::turn_id(Self) -> TurnId
+pub impl Show for OperationLease
+
+pub struct PhaseGate {
+  phase : PuppetPhase
+  lease : OperationLease?
+  active_run_id : @kernel_exec.RunId?
+  active_turn_id : TurnId?
+  active_suspension_id : String?
+}
+pub fn PhaseGate::acquire_prompt(Self, String, @kernel_exec.RunId, TurnId) -> (Self, OperationLease) raise PuppetError
+pub fn PhaseGate::acquire_resume(Self, String, String) -> (Self, OperationLease) raise PuppetError
+pub fn PhaseGate::active_run_id(Self) -> @kernel_exec.RunId?
+pub fn PhaseGate::active_suspension_id(Self) -> String?
+pub fn PhaseGate::active_turn_id(Self) -> TurnId?
+pub fn PhaseGate::authorise(Self, OperationClass) -> Result[Unit, PuppetError]
+pub fn PhaseGate::enter_suspended(Self, String) -> Self raise PuppetError
+pub fn PhaseGate::idle() -> Self
+pub fn PhaseGate::is_quiescent(Self) -> Bool
+pub fn PhaseGate::lease(Self) -> OperationLease?
+pub fn PhaseGate::phase(Self) -> PuppetPhase
+pub fn PhaseGate::release(Self, String) -> Unit raise PuppetError
+pub fn PhaseGate::rotate_turn(Self, TurnId) -> Self raise PuppetError
+pub fn PhaseGate::transition(Self, PuppetPhase) -> Self raise PuppetError
+
+pub(all) struct PreCommitContext {
+  run_id : @kernel_exec.RunId
+  turn_id : TurnId
+  session_id : @kernel_exec.SessionId
+  savepoint_id : String
+  savepoint_kind : SavepointKind
+  base_entries : Array[JournalEntry]
+  current_revision : Int
+  catalog_version : @kernel_exec.CatalogVersion
+} derive(Eq, @debug.Debug)
+pub fn PreCommitContext::base_entries(Self) -> Array[JournalEntry]
+pub fn PreCommitContext::catalog_version(Self) -> @kernel_exec.CatalogVersion
+pub fn PreCommitContext::current_revision(Self) -> Int
+pub fn PreCommitContext::run_id(Self) -> @kernel_exec.RunId
+pub fn PreCommitContext::savepoint_id(Self) -> String
+pub fn PreCommitContext::savepoint_kind(Self) -> SavepointKind
+pub fn PreCommitContext::session_id(Self) -> @kernel_exec.SessionId
+pub fn PreCommitContext::turn_id(Self) -> TurnId
+
+pub(all) struct PromptRequest {
+  run_id : @kernel_exec.RunId
+  turn_id : TurnId
+  session_id : @kernel_exec.SessionId
+  initial_messages : Array[@kernel.Message]
+  operation_id : String
+  policy : RunPolicy
+} derive(Eq, @debug.Debug)
+
+pub(all) enum PromptResult {
+  Accepted(run_id~ : @kernel_exec.RunId, turn_id~ : TurnId)
+  LeaseBusy(held_by~ : String)
+  Rejected(error~ : PuppetError)
+  ForkCompleted(run_id~ : @kernel_exec.RunId, turn_id~ : TurnId, parent_session_id~ : String, new_session_id~ : String, forked_messages~ : Array[@kernel.Message])
+  CompactCompleted(run_id~ : @kernel_exec.RunId, turn_id~ : TurnId, mode~ : @kernel.CompactMode, trigger~ : @kernel.CompactTrigger, new_session_id~ : String?, compacted_messages~ : Array[@kernel.Message])
+}
+pub impl Show for PromptResult
+
+pub struct Puppet {
+  config : PuppetConfig
+  mut phase_gate : PhaseGate
+  mailbox : &Mailbox
+  mut last_completed_transcript : @kernel.Transcript?
+  mut last_outcome : @kernel_exec.RunOutcome?
+}
+pub fn Puppet::Puppet(PuppetConfig) -> Self
+pub fn Puppet::is_quiescent(Self) -> Bool
+pub fn Puppet::last_completed_transcript(Self) -> @kernel.Transcript?
+pub fn Puppet::last_terminal_outcome(Self) -> @kernel_exec.RunOutcome?
+pub fn Puppet::mailbox(Self) -> &Mailbox
+pub fn Puppet::phase(Self) -> PuppetPhase
+pub async fn Puppet::prompt(Self, PromptRequest) -> PromptResult raise PuppetError
+pub fn Puppet::shutdown(Self) -> Unit raise PuppetError
+pub async fn Puppet::wait_idle(Self) -> QuiescentStatus
+
+pub(all) struct PuppetConfig {
+  host : &@kernel_exec.HostRuntime
+  catalog : @kernel_exec.ToolCatalogSnapshot
+  journal : &RunJournal
+  contributors : Array[&JournalContributor]
+  subscribers : Array[&EventSubscriber]
+  stream_chunks : ((Json) -> Unit)?
+  hooks : Array[&@port.Hook]
+  max_iterations : Int
+  commands : Array[&@port.CommandPort]
+  session_store : &@port.SessionStore?
+  mailbox : &Mailbox
+}
+
+pub(all) enum PuppetPhase {
+  Idle
+  Active
+  Suspended
+  Terminalizing
+  ShuttingDown
+  Shutdown
+} derive(Eq, @debug.Debug)
+pub fn PuppetPhase::is_accepting(Self) -> Bool
+pub fn PuppetPhase::is_quiescent(Self) -> Bool
+pub impl Show for PuppetPhase
+
+pub(all) enum QueuePolicy {
+  All
+  OneAtATime
+} derive(Eq, @debug.Debug)
+pub impl Show for QueuePolicy
+
+pub(all) enum QuiescentStatus {
+  Idle
+  Suspended(run_id~ : @kernel_exec.RunId, suspension_id~ : String, requirement_kind~ : String)
+  Terminal(outcome~ : @kernel_exec.RunOutcome)
+  Shutdown
+} derive(Eq, @debug.Debug)
+pub impl Show for QuiescentStatus
+
+pub(all) struct ResumeCommand {
+  command_id : CommandId
+  target_run_id : @kernel_exec.RunId
+  suspension_id : String
+  payload : Json
+} derive(Eq, @debug.Debug)
+pub fn ResumeCommand::command_id(Self) -> CommandId
+pub fn ResumeCommand::payload(Self) -> Json
+pub fn ResumeCommand::suspension_id(Self) -> String
+pub fn ResumeCommand::target_run_id(Self) -> @kernel_exec.RunId
+
+pub(all) struct RunPolicy {
+  model_id : String
+  call_options : Json
+  budget : @kernel_exec.Budget
+  context_window : Int?
+  compact_threshold : Double
+} derive(Eq, @debug.Debug)
+
+pub(all) enum SavepointFailureCause {
+  ContributorRaised(contributor_id~ : String, detail~ : String)
+  ValidationFailed(detail~ : String)
+  BarrierFailed(detail~ : String)
+} derive(Eq, @debug.Debug)
+pub impl Show for SavepointFailureCause
+
+pub(all) enum SavepointKind {
+  InputAccepted
+  AssistantCommitted
+  ToolCommitted
+  RunSuspended
+  RunTerminal
+} derive(Eq, @debug.Debug)
+pub impl Show for SavepointKind
+
+pub(all) struct SteerCommand {
+  command_id : CommandId
+  target_run_id : @kernel_exec.RunId
+  target_turn_id : TurnId
+  observed_tool_batch_id : String
+  observed_model_step_id : @kernel_exec.ModelStepId
+  payload : Json
+} derive(Eq, @debug.Debug)
+pub fn SteerCommand::command_id(Self) -> CommandId
+pub fn SteerCommand::observed_model_step_id(Self) -> @kernel_exec.ModelStepId
+pub fn SteerCommand::observed_tool_batch_id(Self) -> String
+pub fn SteerCommand::payload(Self) -> Json
+pub fn SteerCommand::target_run_id(Self) -> @kernel_exec.RunId
+pub fn SteerCommand::target_turn_id(Self) -> TurnId
+
+pub(all) struct TurnId {
+  value : String
+} derive(Eq, Hash, @debug.Debug)
+pub fn TurnId::new(String) -> Result[Self, String]
+pub fn TurnId::to_string(Self) -> String
+pub fn TurnId::unchecked(String) -> Self
+pub impl Show for TurnId
+
+pub struct TurnSnapshot {
+  run_id : @kernel_exec.RunId
+  turn_id : TurnId
+  session_id : @kernel_exec.SessionId
+  catalog_version : @kernel_exec.CatalogVersion
+  tool_definitions : Array[@kernel.ToolDef]
+  policy : RunPolicy
+  deadline : Int?
+  hook_provenance : Array[String]
+  lifecycle_provenance : Array[String]
+  subscriber_provenance : Array[String]
+  fingerprint : String
+} derive(Eq, @debug.Debug)
+pub fn TurnSnapshot::budget(Self) -> @kernel_exec.Budget
+pub fn TurnSnapshot::call_options(Self) -> Json
+pub fn TurnSnapshot::capture(TurnSnapshotInput) -> Self raise PuppetError
+pub fn TurnSnapshot::catalog_version(Self) -> @kernel_exec.CatalogVersion
+pub fn TurnSnapshot::compact_threshold(Self) -> Double
+pub fn TurnSnapshot::context_window(Self) -> Int?
+pub fn TurnSnapshot::deadline(Self) -> Int?
+pub fn TurnSnapshot::fingerprint(Self) -> String
+pub fn TurnSnapshot::hook_provenance(Self) -> Array[String]
+pub fn TurnSnapshot::lifecycle_provenance(Self) -> Array[String]
+pub fn TurnSnapshot::model_id(Self) -> String
+pub fn TurnSnapshot::run_id(Self) -> @kernel_exec.RunId
+pub fn TurnSnapshot::session_id(Self) -> @kernel_exec.SessionId
+pub fn TurnSnapshot::subscriber_provenance(Self) -> Array[String]
+pub fn TurnSnapshot::to_redacted_string(Self) -> String
+pub fn TurnSnapshot::tool_definitions(Self) -> Array[@kernel.ToolDef]
+pub fn TurnSnapshot::turn_id(Self) -> TurnId
+pub impl Show for TurnSnapshot
+
+pub(all) struct TurnSnapshotInput {
+  run_id : @kernel_exec.RunId
+  turn_id : TurnId
+  session_id : @kernel_exec.SessionId
+  catalog : @kernel_exec.ToolCatalogSnapshot
+  policy : RunPolicy
+  deadline : Int?
+  hook_provenance : Array[String]
+  lifecycle_provenance : Array[String]
+  subscriber_provenance : Array[String]
+} derive(Eq, @debug.Debug)
+
+// Type aliases
+
+// Traits
+pub(open) trait EventSubscriber {
+  fn subscriber_id(Self) -> String
+  fn provenance(Self) -> String
+  async fn on_event(Self, EventEnvelope) -> Unit raise SubscriberError
+}
+
+pub(open) trait JournalContributor {
+  fn contributor_id(Self) -> String
+  fn provenance(Self) -> String
+  fn contribute(Self, PreCommitContext) -> JournalContribution raise ContributionError
+}
+
+pub(open) trait Mailbox {
+  fn bind_run(Self, @kernel_exec.RunId, TurnId) -> Unit
+  fn clear_run(Self) -> Unit
+  fn active_run_id(Self) -> @kernel_exec.RunId?
+  fn active_turn_id(Self) -> TurnId?
+  fn abort_requested(Self) -> Bool
+  fn steer_depth(Self) -> Int
+  fn follow_up_depth(Self) -> Int
+  fn fork_depth(Self) -> Int
+  fn compact_depth(Self) -> Int
+  fn enqueue_steer(Self, SteerCommand) -> EnqueueResult
+  fn enqueue_follow_up(Self, FollowUpCommand) -> EnqueueResult
+  fn enqueue_resume(Self, ResumeCommand) -> EnqueueResult
+  fn enqueue_abort(Self, AbortCommand) -> EnqueueResult
+  fn enqueue_fork(Self, ForkCommand) -> EnqueueResult
+  fn enqueue_compact(Self, CompactCommand) -> EnqueueResult
+  fn consume_steers(Self) -> Array[SteerCommand]
+  fn consume_one_follow_up(Self) -> FollowUpCommand?
+  fn consume_one_fork(Self) -> ForkCommand?
+  fn consume_one_compact(Self) -> CompactCommand?
+  fn take_resume(Self, String) -> ResumeCommand?
+  fn quiescent_status(Self) -> QuiescentStatus
+  fn set_quiescent(Self, QuiescentStatus) -> Unit
+  async fn wait_idle(Self) -> QuiescentStatus
+}
+
+pub(open) trait RunJournal {
+  fn append(Self, Array[JournalEntry]) -> Int raise PuppetError
+  fn revision(Self) -> Int
+  fn entries_for_run(Self, @kernel_exec.RunId) -> Array[JournalEntry]
+  fn entries_for_savepoint(Self, @kernel_exec.RunId, String) -> Array[JournalEntry]
+}
+

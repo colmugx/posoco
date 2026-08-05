@@ -2,8 +2,9 @@ import {
   "colmugx/posoco/port",
   "colmugx/posoco/types",
   "colmugx/posoco/kernel",
+  "colmugx/posoco/internal/kernel_exec",
   "colmugx/posoco/error",
-  "colmugx/posoco/puppetry",
+  "colmugx/posoco/internal/puppetry",
   "moonbitlang/core/json",
   "moonbitlang/core/strconv",
   "moonbitlang/core/string",
@@ -19,6 +20,7 @@ import {
 import {
   "colmugx/posoco/port",
   "colmugx/posoco/kernel",
-  "colmugx/posoco/puppetry",
+  "colmugx/posoco/internal/kernel_exec",
+  "colmugx/posoco/internal/puppetry",
   "moonbitlang/async",
 } for "wbtest"

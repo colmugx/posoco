@@ -396,7 +396,7 @@ pub impl @port.SessionStore for BoundaryMutatingStore with fn save(
 struct BoundaryMutatingHook {}
 
 ///|
-pub impl @port.PreModelHook for BoundaryMutatingHook with fn before_model(
+pub impl @port.Hook for BoundaryMutatingHook with fn before_model(
   _self,
   messages : Array[@kernel.Message],
 ) -> Array[@kernel.Message] raise @port.HookAbort {
@@ -404,7 +404,7 @@ pub impl @port.PreModelHook for BoundaryMutatingHook with fn before_model(
 }
 
 ///|
-pub impl @port.PreToolHook for BoundaryMutatingHook with fn before_tool(
+pub impl @port.Hook for BoundaryMutatingHook with fn before_tool(
   _self,
   call : @kernel.ToolCall,
 ) -> @port.ToolHookDecision {
@@ -533,14 +533,9 @@ async test "t05_tool_ports_hooks_and_observers_get_json_snapshots" {
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
-      tk_ext(
-        id="io",
-        tools=[provider],
-        pre_model_hooks=[hook],
-        pre_tool_hooks=[hook],
-        sessions=[store],
-        observers=[mutating_observer, recording_observer],
-      ),
+      tk_ext(id="io", tools=[provider], hooks=[hook], sessions=[store], observers=[
+        mutating_observer, recording_observer,
+      ]),
     ],
     config=metadata_config(),
   )

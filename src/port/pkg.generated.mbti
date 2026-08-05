@@ -69,25 +69,13 @@ pub(all) enum CommandType {
   MultiStep
 } derive(Eq, @debug.Debug)
 
-pub(all) struct CompositeUiPort {
-  contributors : Array[&UiPort]
-}
-pub fn CompositeUiPort::CompositeUiPort(Array[&UiPort]) -> Self
-pub fn CompositeUiPort::contributors(Self) -> Array[&UiPort]
-pub fn CompositeUiPort::render(Self, UiRender) -> Unit
-pub async fn CompositeUiPort::request(Self, UiRequest) -> UiResponse raise @error.UiError
-pub fn CompositeUiPort::ui_descriptor(Self) -> UiDescriptor
-pub impl UiPort for CompositeUiPort
-
 pub(all) struct ExtensionManifest {
   id : String
   models : Array[&ModelPort]
   tools : Array[&ToolProvider]
   sessions : Array[&SessionStore]
   observers : Array[&Observer]
-  pre_model_hooks : Array[&PreModelHook]
-  pre_tool_hooks : Array[&PreToolHook]
-  post_event_hooks : Array[&PostEventHook]
+  hooks : Array[&Hook]
   memory : Array[&MemoryPort]
   lifecycle : Array[&Lifecycle]
   commands : Array[&CommandPort]
@@ -96,20 +84,13 @@ pub(all) struct ExtensionManifest {
 }
 pub fn ExtensionManifest::empty(id~ : String) -> Self
 
-pub(all) struct MemoryRetrievalHook {
-  memories : Array[&MemoryPort]
-  top_k : Int
-}
-pub fn MemoryRetrievalHook::MemoryRetrievalHook(memories~ : Array[&MemoryPort], top_k? : Int) -> Self
-pub impl PreModelHook for MemoryRetrievalHook
-
-pub(all) struct NoopUiPort {
-}
-pub fn NoopUiPort::NoopUiPort() -> Self
-pub fn NoopUiPort::render(Self, UiRender) -> Unit
-pub async fn NoopUiPort::request(Self, UiRequest) -> UiResponse raise @error.UiError
-pub fn NoopUiPort::ui_descriptor(Self) -> UiDescriptor
-pub impl UiPort for NoopUiPort
+pub(all) enum HookStage {
+  ModelCompleted(completion~ : @kernel.Completion)
+  ToolCompleted(call~ : @kernel.ToolCall, outcome~ : @kernel.ToolOutcome)
+  ToolFailed(call~ : @kernel.ToolCall, reason~ : String)
+  ModelFailed(failure~ : @kernel.ModelFailure)
+} derive(@debug.Debug)
+pub impl Show for HookStage
 
 pub(all) enum ParamType {
   Str
@@ -118,14 +99,6 @@ pub(all) enum ParamType {
   Strs
 } derive(Eq, @debug.Debug)
 
-pub(all) enum PostStage {
-  ModelCompleted(completion~ : @kernel.Completion)
-  ToolCompleted(call~ : @kernel.ToolCall, outcome~ : @kernel.ToolOutcome)
-  ToolFailed(call~ : @kernel.ToolCall, reason~ : String)
-  ModelFailed(failure~ : @kernel.ModelFailure)
-} derive(@debug.Debug)
-pub impl Show for PostStage
-
 pub(all) struct ProviderConfig {
   reasoning_effort_values : Array[String]
 } derive(Eq, @debug.Debug)
@@ -133,20 +106,6 @@ pub fn ProviderConfig::ProviderConfig(reasoning_effort_values~ : Array[String]) 
 pub fn ProviderConfig::accepts_reasoning_effort(Self, String) -> Bool
 pub fn ProviderConfig::empty() -> Self
 pub impl Show for ProviderConfig
-
-pub(all) struct SystemPromptHook {
-  base_prompt : String
-  contributors : Array[SystemPromptSection]
-}
-pub fn SystemPromptHook::SystemPromptHook(base_prompt~ : String, contributors~ : Array[SystemPromptSection]) -> Self
-pub fn SystemPromptHook::assemble(Self) -> String
-pub impl PreModelHook for SystemPromptHook
-
-pub(all) struct SystemPromptSection {
-  id : String
-  contributor : &SystemPromptContributor
-}
-pub fn SystemPromptSection::SystemPromptSection(id~ : String, contributor~ : &SystemPromptContributor) -> Self
 
 pub(all) enum ToolHookDecision {
   Approve(call~ : @kernel.ToolCall)
@@ -186,12 +145,6 @@ pub(all) struct UiRender {
 } derive(@debug.Debug)
 pub impl Show for UiRender
 
-pub(all) struct UiRenderHook {
-  ui : &UiPort
-}
-pub fn UiRenderHook::UiRenderHook(ui~ : &UiPort) -> Self
-pub impl PostEventHook for UiRenderHook
-
 pub(all) enum UiRequest {
   Input(prompt~ : String, default~ : String?)
   Confirm(prompt~ : String)
@@ -228,6 +181,12 @@ pub(open) trait Extension {
   fn manifest(Self) -> ExtensionManifest
 }
 
+pub(open) trait Hook {
+  fn before_model(Self, Array[@kernel.Message]) -> Array[@kernel.Message] raise HookAbort = _
+  fn before_tool(Self, @kernel.ToolCall) -> ToolHookDecision = _
+  fn on_post_event(Self, HookStage) -> Unit = _
+}
+
 pub(open) trait Lifecycle {
   async fn on_shutdown(Self) -> Unit
 }
@@ -246,19 +205,6 @@ pub(open) trait ModelPort {
 
 pub(open) trait Observer {
   fn on_event(Self, @types.TurnEvent) -> Unit = _
-  fn on_kernel_event(Self, PostStage) -> Unit = _
-}
-
-pub(open) trait PostEventHook {
-  fn on_post_event(Self, PostStage) -> Unit
-}
-
-pub(open) trait PreModelHook {
-  fn before_model(Self, Array[@kernel.Message]) -> Array[@kernel.Message] raise HookAbort
-}
-
-pub(open) trait PreToolHook {
-  fn before_tool(Self, @kernel.ToolCall) -> ToolHookDecision
 }
 
 pub(open) trait SessionStore {

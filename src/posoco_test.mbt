@@ -292,3 +292,46 @@ test "b11_agent_requires_session_store_at_composition" {
     _ => fail("expected missing SessionStore to fail composition")
   }
 }
+
+// ──────────────────────────────────────────────────────────────────────────
+// ToolRegistry — register vs register_strict collision semantics
+// ──────────────────────────────────────────────────────────────────────────
+
+///|
+fn registry_test_tool(name : String) -> @kernel.ToolDef {
+  @kernel.ToolDef(
+    name=@kernel.ToolName::unchecked(name),
+    description="registry test tool",
+    input_schema=Json::null(),
+    owner=@kernel.OwnerId::unchecked("test"),
+    policy=@kernel.Parallel,
+    provenance=None,
+  )
+}
+
+///|
+fn registry_test_executor(_call : @kernel.ToolCall) -> @kernel.ToolOutcome {
+  @kernel.Success(content="ok", structured=None)
+}
+
+///|
+test "tool_registry/register_overwrites_deliberately_strict_fails_fast" {
+  let registry = @posoco.ToolRegistry::ToolRegistry()
+  let tool = registry_test_tool("dup")
+  registry.register(tool, registry_test_executor)
+  // Lenient register is deliberate hot-replacement: same name overwrites.
+  registry.register(tool, registry_test_executor)
+  assert_eq(registry.list_tools().length(), 1)
+  // Strict registration fails fast on the same name (M0-T06-B parity: a
+  // name collision is never silently resolved by last-wins).
+  let rejected = Ok(registry.register_strict(tool, registry_test_executor)) catch {
+    e => Err(e)
+  }
+  match rejected {
+    Err(@error.RuntimeError::ToolAlreadyRegistered(_)) => ()
+    _ => fail("expected RuntimeError::ToolAlreadyRegistered")
+  }
+  // Strict registration of a fresh name succeeds.
+  registry.register_strict(registry_test_tool("fresh"), registry_test_executor)
+  assert_eq(registry.list_tools().length(), 2)
+}

@@ -261,9 +261,7 @@ async test "t07_afterturn_hook_failure_is_observable_but_nonfatal" {
   let agent = @posoco.Agent(
     exts=[
       @posoco.tk_ext(id="model", model=Some(model)),
-      @posoco.tk_ext(id="io", pre_model_hooks=[hook], sessions=[store], observers=[
-        obs,
-      ]),
+      @posoco.tk_ext(id="io", hooks=[hook], sessions=[store], observers=[obs]),
     ],
     config=err_config(),
   )
@@ -299,9 +297,7 @@ async test "t07_error_hook_failure_preserves_primary_and_is_observable" {
   let agent = @posoco.Agent(
     exts=[
       @posoco.tk_ext(id="model", model=Some(model)),
-      @posoco.tk_ext(id="io", pre_model_hooks=[hook], sessions=[store], observers=[
-        obs,
-      ]),
+      @posoco.tk_ext(id="io", hooks=[hook], sessions=[store], observers=[obs]),
     ],
     config=err_config(),
   )
@@ -328,9 +324,7 @@ async test "t07_turnerror_hook_failure_preserves_primary_and_is_observable" {
   let agent = @posoco.Agent(
     exts=[
       @posoco.tk_ext(id="model", model=Some(model)),
-      @posoco.tk_ext(id="io", pre_model_hooks=[hook], sessions=[store], observers=[
-        obs,
-      ]),
+      @posoco.tk_ext(id="io", hooks=[hook], sessions=[store], observers=[obs]),
     ],
     config=err_config(),
   )
@@ -375,7 +369,7 @@ async test "t07_aftertool_hook_failure_is_observable_but_nonfatal" {
       @posoco.tk_ext(
         id="io",
         tools=[provider],
-        pre_model_hooks=[hook],
+        hooks=[hook],
         sessions=[store],
         observers=[obs],
       ),
@@ -403,9 +397,7 @@ async test "t07_beforemodel_abort_emits_exactly_one_turnfailed" {
   let agent = @posoco.Agent(
     exts=[
       @posoco.tk_ext(id="model", model=Some(model)),
-      @posoco.tk_ext(id="io", pre_model_hooks=[hook], sessions=[store], observers=[
-        obs,
-      ]),
+      @posoco.tk_ext(id="io", hooks=[hook], sessions=[store], observers=[obs]),
     ],
     config=err_config(),
   )
@@ -433,7 +425,7 @@ async test "t07_beforemodel_abort_emits_exactly_one_turnfailed" {
 }
 
 ///|
-async test "t07_beforeturn_abort_does_not_start_or_terminalize_turn" {
+async test "t07_premodel_abort_emits_turnstarted_and_one_terminal_event" {
   let model = @posoco.ScriptedModel([])
   let store = @posoco.RecordingSessionStore()
   let obs = @posoco.RecordingObserver()
@@ -442,18 +434,18 @@ async test "t07_beforeturn_abort_does_not_start_or_terminalize_turn" {
   let agent = @posoco.Agent(
     exts=[
       @posoco.tk_ext(id="model", model=Some(model)),
-      @posoco.tk_ext(id="io", pre_model_hooks=[hook], sessions=[store], observers=[
-        obs,
-      ]),
+      @posoco.tk_ext(id="io", hooks=[hook], sessions=[store], observers=[obs]),
     ],
     config=err_config(),
   )
-  let result = Ok(agent.run_turn(@posoco.tk_user_msg("hello"), "beforeturn")) catch {
+  let result = Ok(
+    agent.run_turn(@posoco.tk_user_msg("hello"), "premodel_abort"),
+  ) catch {
     e => Err(e)
   }
   match result {
     Err(@error.AgentError::HookAborted(_)) => ()
-    _ => fail("expected BeforeTurn hook abort")
+    _ => fail("expected PreModelHook abort")
   }
   let events = obs.events()
   // TurnStarted IS emitted by run_turn before the Puppet starts.

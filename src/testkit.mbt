@@ -747,17 +747,17 @@ pub(all) enum RecordedHookOutcome2 {
 
 ///|
 /// A recorded hook invocation: which hook function ran and its decision.
-pub(all) struct HookRecord2 {
+pub(all) struct HookRecord {
   label : String
   outcome : RecordedHookOutcome2
 }
 
 ///|
-/// Multi-hook fake that implements PreModelHook, PreToolHook, and
-/// PostEventHook. By default it is a pass-through (returns messages
-/// unchanged, approves tool calls). Records every call.
+/// Multi-hook fake that implements `Hook` at all three interception points.
+/// By default it is a pass-through (returns messages unchanged, approves
+/// tool calls). Records every call.
 pub(all) struct RecordingHook {
-  mut records : Array[HookRecord2]
+  mut records : Array[HookRecord]
   abort_on : Map[String, String]
   defer_on : Map[String, String]
 }
@@ -788,14 +788,14 @@ pub fn RecordingHook::defer_when(
 }
 
 ///|
-pub fn RecordingHook::records(self : RecordingHook) -> Array[HookRecord2] {
+pub fn RecordingHook::records(self : RecordingHook) -> Array[HookRecord] {
   self.records.map(fn(record) {
     { label: record.label, outcome: record.outcome }
   })
 }
 
 ///|
-pub impl @port.PreModelHook for RecordingHook with fn before_model(
+pub impl @port.Hook for RecordingHook with fn before_model(
   self,
   messages : Array[@kernel.Message],
 ) -> Array[@kernel.Message] raise @port.HookAbort {
@@ -814,7 +814,7 @@ pub impl @port.PreModelHook for RecordingHook with fn before_model(
 }
 
 ///|
-pub impl @port.PreToolHook for RecordingHook with fn before_tool(
+pub impl @port.Hook for RecordingHook with fn before_tool(
   self,
   call : @kernel.ToolCall,
 ) -> @port.ToolHookDecision {
@@ -839,9 +839,9 @@ pub impl @port.PreToolHook for RecordingHook with fn before_tool(
 }
 
 ///|
-pub impl @port.PostEventHook for RecordingHook with fn on_post_event(
+pub impl @port.Hook for RecordingHook with fn on_post_event(
   self,
-  _stage : @port.PostStage,
+  _stage : @port.HookStage,
 ) -> Unit {
   let label = "on_post_event"
   self.records.push({ label, outcome: PassedThrough })
@@ -1098,9 +1098,7 @@ pub fn tk_ext(
   tools? : Array[&@port.ToolProvider] = [],
   sessions? : Array[&@port.SessionStore] = [],
   observers? : Array[&@port.Observer] = [],
-  pre_model_hooks? : Array[&@port.PreModelHook] = [],
-  pre_tool_hooks? : Array[&@port.PreToolHook] = [],
-  post_event_hooks? : Array[&@port.PostEventHook] = [],
+  hooks? : Array[&@port.Hook] = [],
   memory? : Array[&@port.MemoryPort] = [],
   lifecycle? : Array[&@port.Lifecycle] = [],
   commands? : Array[&@port.CommandPort] = [],
@@ -1117,9 +1115,7 @@ pub fn tk_ext(
     tools,
     sessions,
     observers,
-    pre_model_hooks,
-    pre_tool_hooks,
-    post_event_hooks,
+    hooks,
     memory,
     lifecycle,
     commands,

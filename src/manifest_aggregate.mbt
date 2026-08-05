@@ -11,14 +11,14 @@ priv struct AggregatedPorts {
   tools : Array[&@port.ToolProvider]
   sessions : Array[&@port.SessionStore]
   observers : Array[&@port.Observer]
-  pre_model_hooks : Array[&@port.PreModelHook]
-  pre_tool_hooks : Array[&@port.PreToolHook]
-  post_event_hooks : Array[&@port.PostEventHook]
+  hooks : Array[&@port.Hook]
   memory : Array[&@port.MemoryPort]
   lifecycle : Array[&@port.Lifecycle]
   commands : Array[&@port.CommandPort]
   ui : &@port.UiPort
-  prompt_contributors : Array[&@port.SystemPromptContributor]
+  /// Contributor paired with its manifest id (used as the prompt section
+  /// header so the assembled prompt names its source).
+  prompt_contributors : Array[(String, &@port.SystemPromptContributor)]
 }
 
 ///|
@@ -37,15 +37,13 @@ fn aggregate_extensions(
   let tool_manifests : Map[String, Array[String]] = Map::from_array([])
   let sessions : Array[&@port.SessionStore] = []
   let observers : Array[&@port.Observer] = []
-  let pre_model_hooks : Array[&@port.PreModelHook] = []
-  let pre_tool_hooks : Array[&@port.PreToolHook] = []
-  let post_event_hooks : Array[&@port.PostEventHook] = []
+  let hooks : Array[&@port.Hook] = []
   let memory : Array[&@port.MemoryPort] = []
   let lifecycle : Array[&@port.Lifecycle] = []
   let commands : Array[&@port.CommandPort] = []
   let command_manifests : Map[String, Array[String]] = Map::from_array([])
   let ui : Array[&@port.UiPort] = []
-  let prompt_contributors : Array[&@port.SystemPromptContributor] = []
+  let prompt_contributors : Array[(String, &@port.SystemPromptContributor)] = []
   for ext in exts {
     let manifest = ext.manifest()
     let mid = manifest.id
@@ -114,14 +112,8 @@ fn aggregate_extensions(
     for o in manifest.observers {
       observers.push(o)
     }
-    for h in manifest.pre_model_hooks {
-      pre_model_hooks.push(h)
-    }
-    for h in manifest.pre_tool_hooks {
-      pre_tool_hooks.push(h)
-    }
-    for h in manifest.post_event_hooks {
-      post_event_hooks.push(h)
+    for h in manifest.hooks {
+      hooks.push(h)
     }
     for m in manifest.memory {
       memory.push(m)
@@ -133,7 +125,7 @@ fn aggregate_extensions(
       ui.push(u)
     }
     for p in manifest.prompt_contributors {
-      prompt_contributors.push(p)
+      prompt_contributors.push((mid, p))
     }
   }
   // Model cardinality: exactly 1.
@@ -163,9 +155,7 @@ fn aggregate_extensions(
     tools,
     sessions,
     observers,
-    pre_model_hooks,
-    pre_tool_hooks,
-    post_event_hooks,
+    hooks,
     memory,
     lifecycle,
     commands,

@@ -13,7 +13,7 @@
 fn bind_test_mailbox() -> @puppetry.ControlMailbox {
   let mb = @puppetry.ControlMailbox::ControlMailbox()
   mb.bind_run(
-    @kernel.RunId::unchecked("run_b"),
+    @kernel_exec.RunId::unchecked("run_b"),
     @puppetry.TurnId::unchecked("turn_b"),
   )
   mb
@@ -172,7 +172,7 @@ test "d1_mailbox/trait_ref_and_concrete_share_state" {
   // Enqueue via the &Mailbox trait reference...
   let result = mailbox_ref.enqueue_fork({
     command_id: @puppetry.CommandId::unchecked("d1_fk"),
-    target_run_id: @kernel.RunId::unchecked("run_b"),
+    target_run_id: @kernel_exec.RunId::unchecked("run_b"),
     target_turn_id: @puppetry.TurnId::unchecked("turn_b"),
     fork_index: 2,
   })

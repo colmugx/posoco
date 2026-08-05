@@ -94,12 +94,12 @@ fn PortHostAdapter::new(
 }
 
 ///|
-impl @kernel.HostRuntime for PortHostAdapter with fn call_model(
+impl @kernel_exec.HostRuntime for PortHostAdapter with fn call_model(
   self,
   messages : Array[@kernel.Message],
   tool_definitions : Array[@kernel.ToolDef],
   call_options : Json,
-  on_chunk : @kernel.HostChunkCallback?,
+  on_chunk : @kernel_exec.HostChunkCallback?,
 ) -> Result[@kernel.ModelCallResult, @kernel.ModelFailure] {
   let options = match decode_chat_options(call_options) {
     Ok(options) => options
@@ -129,7 +129,7 @@ impl @kernel.HostRuntime for PortHostAdapter with fn call_model(
 }
 
 ///|
-impl @kernel.HostRuntime for PortHostAdapter with fn execute_tool(
+impl @kernel_exec.HostRuntime for PortHostAdapter with fn execute_tool(
   self,
   _owner_id : @kernel.OwnerId,
   call_id : @kernel.CallId,
@@ -156,18 +156,18 @@ impl @kernel.HostRuntime for PortHostAdapter with fn execute_tool(
 }
 
 ///|
-impl @kernel.HostRuntime for PortHostAdapter with fn cancel_effects(
+impl @kernel_exec.HostRuntime for PortHostAdapter with fn cancel_effects(
   self : PortHostAdapter,
-  effect_ids : Array[@kernel.EffectId],
-  _reason : @kernel.CancelReason,
-) -> Array[(@kernel.EffectId, @kernel.CancelDisposition)] {
+  effect_ids : Array[@kernel_exec.EffectId],
+  _reason : @kernel_exec.CancelReason,
+) -> Array[(@kernel_exec.EffectId, @kernel_exec.CancelDisposition)] {
   ignore(self)
-  effect_ids.map(id => (id, @kernel.NotPropagated))
+  effect_ids.map(id => (id, @kernel_exec.NotPropagated))
 }
 
 ///|
 /// Forward `HostRuntime::compact` to `ModelPort::compact`.
-impl @kernel.HostRuntime for PortHostAdapter with fn compact(
+impl @kernel_exec.HostRuntime for PortHostAdapter with fn compact(
   self,
   messages : Array[@kernel.Message],
   call_options : Json,

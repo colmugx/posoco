@@ -33,6 +33,8 @@ pub(all) suberror RuntimeError {
   UnknownTool(String)
   InvocationFailed(String)
   Transport(String)
+  /// `ToolRegistry::register_strict` rejected a duplicate tool name.
+  ToolAlreadyRegistered(String)
 } derive(Debug)
 
 ///|
@@ -41,6 +43,7 @@ pub impl Show for RuntimeError with fn to_string(self) -> String {
     UnknownTool(msg) => "RuntimeError::UnknownTool(\{msg})"
     InvocationFailed(msg) => "RuntimeError::InvocationFailed(\{msg})"
     Transport(msg) => "RuntimeError::Transport(\{msg})"
+    ToolAlreadyRegistered(msg) => "RuntimeError::ToolAlreadyRegistered(\{msg})"
   }
 }
 

@@ -60,30 +60,6 @@ pub fn OwnerId::to_string(self : OwnerId) -> String {
 }
 
 ///|
-/// Catalog version — bumped every time a snapshot is built. The reducer and
-/// executor correlate `CallModel` and `ExecuteTool` effects back to the exact
-/// snapshot version the model was prompted against; a mismatch is a kernel
-/// invariant failure (`InvariantViolation::StaleSnapshot`).
-pub(all) struct CatalogVersion {
-  value : Int
-} derive(Eq, Debug)
-
-///|
-pub fn CatalogVersion::CatalogVersion(value : Int) -> CatalogVersion {
-  CatalogVersion::{ value, }
-}
-
-///|
-pub fn CatalogVersion::to_int(self : CatalogVersion) -> Int {
-  self.value
-}
-
-///|
-pub impl Show for CatalogVersion with fn to_string(self : CatalogVersion) -> String {
-  "CatalogVersion(\{self.value})"
-}
-
-///|
 /// A single tool's definition as the model and the executor see it. Owned by
 /// the catalog snapshot (T05), not by individual providers.
 pub(all) struct ToolDef {

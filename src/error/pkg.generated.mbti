@@ -53,6 +53,7 @@ pub(all) suberror RuntimeError {
   UnknownTool(String)
   InvocationFailed(String)
   Transport(String)
+  ToolAlreadyRegistered(String)
 } derive(@debug.Debug)
 pub impl Show for RuntimeError
 

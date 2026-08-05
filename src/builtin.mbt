@@ -72,6 +72,11 @@ pub fn ToolRegistry::ToolRegistry() -> ToolRegistry {
 }
 
 ///|
+/// Register (or deliberately replace) a tool at runtime. Re-registering an
+/// existing name overwrites both the definition and the executor — that is
+/// intentional hot-replacement semantics for dynamic registries. Callers
+/// that did NOT mean to replace should use `register_strict`, which fails
+/// fast on a name collision instead of silently shadowing the prior tool.
 pub fn ToolRegistry::register(
   self : ToolRegistry,
   tool : @kernel.ToolDef,
@@ -79,6 +84,25 @@ pub fn ToolRegistry::register(
 ) -> Unit {
   self.tools[tool.name.to_string()] = tool
   self.executors[tool.name.to_string()] = executor
+}
+
+///|
+/// Register a tool, failing fast with `RuntimeError::ToolAlreadyRegistered`
+/// when the name is already taken. This mirrors the composition-time rule
+/// (M0-T06-B): a name collision is never silently resolved by last-wins.
+pub fn ToolRegistry::register_strict(
+  self : ToolRegistry,
+  tool : @kernel.ToolDef,
+  executor : (@kernel.ToolCall) -> @kernel.ToolOutcome,
+) -> Unit raise @error.RuntimeError {
+  let key = tool.name.to_string()
+  if self.tools.contains(key) {
+    raise @error.RuntimeError::ToolAlreadyRegistered(
+      "tool '\{key}' is already registered",
+    )
+  }
+  self.tools[key] = tool
+  self.executors[key] = executor
 }
 
 ///|

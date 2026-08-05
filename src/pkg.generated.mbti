@@ -25,7 +25,7 @@ pub fn tk_config() -> AgentConfig
 
 pub fn tk_error_result(String) -> @kernel.ToolOutcome
 
-pub fn tk_ext(id~ : String, model? : &@port.ModelPort?, tools? : Array[&@port.ToolProvider], sessions? : Array[&@port.SessionStore], observers? : Array[&@port.Observer], pre_model_hooks? : Array[&@port.PreModelHook], pre_tool_hooks? : Array[&@port.PreToolHook], post_event_hooks? : Array[&@port.PostEventHook], memory? : Array[&@port.MemoryPort], lifecycle? : Array[&@port.Lifecycle], commands? : Array[&@port.CommandPort], ui? : Array[&@port.UiPort], prompt_contributors? : Array[&@port.SystemPromptContributor]) -> ManifestOnly
+pub fn tk_ext(id~ : String, model? : &@port.ModelPort?, tools? : Array[&@port.ToolProvider], sessions? : Array[&@port.SessionStore], observers? : Array[&@port.Observer], hooks? : Array[&@port.Hook], memory? : Array[&@port.MemoryPort], lifecycle? : Array[&@port.Lifecycle], commands? : Array[&@port.CommandPort], ui? : Array[&@port.UiPort], prompt_contributors? : Array[&@port.SystemPromptContributor]) -> ManifestOnly
 
 pub fn tk_ok_result(String) -> @kernel.ToolOutcome
 
@@ -47,7 +47,7 @@ pub fn validate_args(@port.CommandDef, Json) -> Result[Json, String]
 pub struct Agent {
   // private fields
 }
-pub fn Agent::Agent(exts~ : Array[&@port.Extension], config~ : AgentConfig) -> Self raise @error.CompositionError
+pub fn Agent::Agent(exts~ : Array[&@port.Extension], config~ : AgentConfig, ui_projection? : Bool) -> Self raise @error.CompositionError
 pub fn Agent::commands(Self) -> Array[&@port.CommandPort]
 pub async fn Agent::run_turn(Self, @kernel.Message, String) -> @types.TurnResult raise @error.AgentError
 pub async fn Agent::shutdown(Self) -> Unit
@@ -64,7 +64,17 @@ pub(all) struct CompositeToolProvider {
 }
 pub impl @port.ToolProvider for CompositeToolProvider
 
-pub(all) struct HookRecord2 {
+pub(all) struct CompositeUiPort {
+  contributors : Array[&@port.UiPort]
+}
+pub fn CompositeUiPort::CompositeUiPort(Array[&@port.UiPort]) -> Self
+pub fn CompositeUiPort::contributors(Self) -> Array[&@port.UiPort]
+pub fn CompositeUiPort::render(Self, @port.UiRender) -> Unit
+pub async fn CompositeUiPort::request(Self, @port.UiRequest) -> @port.UiResponse raise @error.UiError
+pub fn CompositeUiPort::ui_descriptor(Self) -> @port.UiDescriptor
+pub impl @port.UiPort for CompositeUiPort
+
+pub(all) struct HookRecord {
   label : String
   outcome : RecordedHookOutcome2
 }
@@ -76,6 +86,14 @@ pub fn ManifestOnly::ManifestOnly(@port.ExtensionManifest) -> Self
 pub fn ManifestOnly::extension_id(Self) -> String
 pub fn ManifestOnly::manifest(Self) -> @port.ExtensionManifest
 pub impl @port.Extension for ManifestOnly
+
+pub(all) struct MemoryRetrievalHook {
+  memories : Array[&@port.MemoryPort]
+  top_k : Int
+  on_failure : (String) -> Unit
+}
+pub fn MemoryRetrievalHook::MemoryRetrievalHook(memories~ : Array[&@port.MemoryPort], top_k? : Int, on_failure? : (String) -> Unit) -> Self
+pub impl @port.Hook for MemoryRetrievalHook
 
 pub(all) struct NoopCommandPort {
 }
@@ -89,6 +107,14 @@ pub(all) struct NoopMemoryPort {
 }
 pub impl @port.MemoryPort for NoopMemoryPort
 
+pub(all) struct NoopUiPort {
+}
+pub fn NoopUiPort::NoopUiPort() -> Self
+pub fn NoopUiPort::render(Self, @port.UiRender) -> Unit
+pub async fn NoopUiPort::request(Self, @port.UiRequest) -> @port.UiResponse raise @error.UiError
+pub fn NoopUiPort::ui_descriptor(Self) -> @port.UiDescriptor
+pub impl @port.UiPort for NoopUiPort
+
 pub(all) enum RecordedHookOutcome2 {
   PassedThrough
   AbortedWith(String)
@@ -96,17 +122,15 @@ pub(all) enum RecordedHookOutcome2 {
 }
 
 pub(all) struct RecordingHook {
-  mut records : Array[HookRecord2]
+  mut records : Array[HookRecord]
   abort_on : Map[String, String]
   defer_on : Map[String, String]
 }
 pub fn RecordingHook::RecordingHook() -> Self
 pub fn RecordingHook::abort_when(Self, String, String) -> Unit
 pub fn RecordingHook::defer_when(Self, String, String) -> Unit
-pub fn RecordingHook::records(Self) -> Array[HookRecord2]
-pub impl @port.PostEventHook for RecordingHook
-pub impl @port.PreModelHook for RecordingHook
-pub impl @port.PreToolHook for RecordingHook
+pub fn RecordingHook::records(Self) -> Array[HookRecord]
+pub impl @port.Hook for RecordingHook
 
 pub(all) struct RecordingObserver {
   mut events : Array[@types.TurnEvent]
@@ -192,6 +216,20 @@ pub(all) enum SessionOp {
   OpSave(id~ : String, metadata~ : Map[String, Json], result~ : Result[Unit, @error.SessionError])
 }
 
+pub(all) struct SystemPromptHook {
+  base_prompt : String
+  contributors : Array[SystemPromptSection]
+}
+pub fn SystemPromptHook::SystemPromptHook(base_prompt~ : String, contributors~ : Array[SystemPromptSection]) -> Self
+pub fn SystemPromptHook::assemble(Self) -> String
+pub impl @port.Hook for SystemPromptHook
+
+pub(all) struct SystemPromptSection {
+  id : String
+  contributor : &@port.SystemPromptContributor
+}
+pub fn SystemPromptSection::SystemPromptSection(id~ : String, contributor~ : &@port.SystemPromptContributor) -> Self
+
 pub(all) struct ToolExecRecord {
   requested_name : String
   call_id : String
@@ -211,8 +249,15 @@ pub(all) struct ToolRegistry {
 }
 pub fn ToolRegistry::ToolRegistry() -> Self
 pub fn ToolRegistry::register(Self, @kernel.ToolDef, (@kernel.ToolCall) -> @kernel.ToolOutcome) -> Unit
+pub fn ToolRegistry::register_strict(Self, @kernel.ToolDef, (@kernel.ToolCall) -> @kernel.ToolOutcome) -> Unit raise @error.RuntimeError
 pub fn ToolRegistry::unregister(Self, String) -> Unit
 pub impl @port.ToolProvider for ToolRegistry
+
+pub(all) struct UiRenderHook {
+  ui : &@port.UiPort
+}
+pub fn UiRenderHook::UiRenderHook(ui~ : &@port.UiPort) -> Self
+pub impl @port.Hook for UiRenderHook
 
 // Type aliases
 pub using @error {type AgentError}
@@ -245,8 +290,6 @@ pub using @kernel {type Completion}
 
 pub using @kernel {type CompletionPayload}
 
-pub using @port {type CompositeUiPort}
-
 pub using @error {type CompositionError}
 
 pub using @kernel {type Content}
@@ -258,6 +301,8 @@ pub using @port {type ExtensionManifest}
 pub using @kernel {type FinishReason}
 
 pub using @port {type HookAbort}
+
+pub using @port {type HookStage}
 
 pub using @types {type MemoryEntry}
 
@@ -273,15 +318,11 @@ pub using @error {type ModelError}
 
 pub using @kernel {type ModelFailure}
 
-pub using @port {type NoopUiPort}
-
 pub using @kernel {type NotExecutedReason}
 
 pub using @kernel {type OwnerId}
 
 pub using @port {type ParamType}
-
-pub using @port {type PostStage}
 
 pub using @port {type ProviderConfig}
 
@@ -298,10 +339,6 @@ pub using @types {type StreamAccumulator}
 pub using @types {type StreamChunk}
 
 pub using @types {type StreamMode}
-
-pub using @port {type SystemPromptHook}
-
-pub using @port {type SystemPromptSection}
 
 pub using @kernel {type ToolCall}
 
@@ -341,6 +378,8 @@ pub using @port {trait CommandPort}
 
 pub using @port {trait Extension}
 
+pub using @port {trait Hook}
+
 pub using @port {trait Lifecycle}
 
 pub using @port {trait MemoryPort}
@@ -348,12 +387,6 @@ pub using @port {trait MemoryPort}
 pub using @port {trait ModelPort}
 
 pub using @port {trait Observer}
-
-pub using @port {trait PostEventHook}
-
-pub using @port {trait PreModelHook}
-
-pub using @port {trait PreToolHook}
 
 pub using @port {trait SessionStore}
 

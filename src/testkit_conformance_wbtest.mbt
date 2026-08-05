@@ -608,7 +608,7 @@ test "tk_hook_record_accessor_is_deep_snapshot" {
     _ => fail("expected PassedThrough outcome")
   }
   // Mutate the returned array to prove snapshot isolation
-  first[0] = HookRecord2::{ label: "tampered", outcome: PassedThrough }
+  first[0] = HookRecord::{ label: "tampered", outcome: PassedThrough }
   let second = hook.records()
   assert_eq(second.length(), 1)
   assert_eq(second[0].label, "before_model")

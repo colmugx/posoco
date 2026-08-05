@@ -1,0 +1,16 @@
+import {
+  "colmugx/posoco/error",
+  "colmugx/posoco/internal/kernel_exec",
+  "colmugx/posoco/kernel",
+  "colmugx/posoco/port",
+  "colmugx/posoco/types",
+  "moonbitlang/async",
+  "moonbitlang/async/aqueue",
+  "moonbitlang/async/cond_var",
+}
+
+import {
+  "colmugx/posoco/error",
+  "colmugx/posoco/internal/kernel_exec",
+  "colmugx/posoco/kernel",
+} for "wbtest"
