@@ -40,12 +40,12 @@ test "runtime control/follow_up accepted and drained FIFO" {
   match control.take_follow_up() {
     Some(@kernel.UserMessage(content=[@kernel.Text(text)])) =>
       assert_eq(text, "first")
-    other => fail("expected first follow-up, got \{Repr(other)}")
+    other => fail("expected first follow-up, got \{repr(other)}")
   }
   match control.take_follow_up() {
     Some(@kernel.UserMessage(content=[@kernel.Text(text)])) =>
       assert_eq(text, "second")
-    other => fail("expected second follow-up, got \{Repr(other)}")
+    other => fail("expected second follow-up, got \{repr(other)}")
   }
   assert_true(control.take_follow_up() is None)
   assert_eq(control.pending_follow_ups(), 0)
