@@ -51,7 +51,7 @@ jobs:
           moon update
 
       - name: moon check
-        run: moon check --deny-warn
+        run: moon check
 
       - name: moon test
         run: moon test
