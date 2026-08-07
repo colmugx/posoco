@@ -183,7 +183,7 @@ pub(open) trait Extension {
 
 pub(open) trait Hook {
   fn before_model(Self, Array[@kernel.Message]) -> Array[@kernel.Message] raise HookAbort = _
-  fn before_tool(Self, @kernel.ToolCall) -> ToolHookDecision = _
+  async fn before_tool(Self, @kernel.ToolCall) -> ToolHookDecision = _
   fn on_post_event(Self, HookStage) -> Unit = _
 }
 
@@ -226,4 +226,3 @@ pub(open) trait UiPort {
   fn render(Self, UiRender) -> Unit
   async fn request(Self, UiRequest) -> UiResponse raise @error.UiError
 }
-

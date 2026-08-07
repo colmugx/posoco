@@ -553,7 +553,7 @@ test "tk_hook_records_stage_and_configured_abort" {
 }
 
 ///|
-test "tk_hook_records_stage_and_configured_deferral" {
+async test "tk_hook_records_stage_and_configured_deferral" {
   let hook = RecordingHook()
   hook.defer_when("tc_defer", "approval required")
   let call = @kernel.ToolCall::{

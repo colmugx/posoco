@@ -94,7 +94,13 @@ pub(open) trait Hook {
   fn before_model(Self, messages : Array[@kernel.Message]) -> Array[
     @kernel.Message,
   ] raise HookAbort = _
-  fn before_tool(Self, call : @kernel.ToolCall) -> ToolHookDecision = _
+  /// `before_tool` is `async` so hooks that need host interaction (e.g. an
+  /// approval prompt over `UiPort::request`) can suspend. Hooks that decide
+  /// synchronously implement it as a plain `fn` — a sync `fn` satisfies an
+  /// `async` trait slot under MoonBit's colorless-coroutine model. Raising
+  /// from `before_tool` aborts the run as a terminal `HookRejected`; a
+  /// cancellation error stays classified as cancellation, not a hook defect.
+  async fn before_tool(Self, call : @kernel.ToolCall) -> ToolHookDecision = _
   fn on_post_event(Self, stage : HookStage) -> Unit = _
 }
 

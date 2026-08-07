@@ -109,8 +109,16 @@ pub impl Show for ToolCall with fn to_string(self) -> String {
 /// chain-of-thought, OpenAI o-series reasoning content). The Kernel never
 /// interprets the content; it stores and replays it. `None` means the assistant
 /// produced no reasoning for this step.
+///
+/// `raw` is a provider-defined replay payload: OpenAI Responses API
+/// reasoning items must be replayed verbatim when the host manually manages
+/// conversation state (per the official reasoning guide), so the adapter
+/// stores the raw items here. The kernel never interprets it; providers that
+/// replay plain `content` text (DeepSeek, Kimi, OpenAI-compatible) leave it
+/// `None`.
 pub(all) struct Reasoning {
   content : String
+  raw : Json?
 } derive(Eq, Debug)
 
 ///|

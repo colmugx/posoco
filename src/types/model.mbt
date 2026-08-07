@@ -149,7 +149,7 @@ pub fn StreamAccumulator::to_completion(
   let reasoning_opt : @kernel.Reasoning? = if self.reasoning == "" {
     None
   } else {
-    Some(@kernel.Reasoning::{ content: self.reasoning })
+    Some(@kernel.Reasoning::{ content: self.reasoning, raw: None })
   }
   let content : Array[@kernel.Content] = if self.text == "" {
     []

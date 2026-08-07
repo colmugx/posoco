@@ -98,4 +98,3 @@ pub(all) struct TurnResult {
 // Type aliases
 
 // Traits
-

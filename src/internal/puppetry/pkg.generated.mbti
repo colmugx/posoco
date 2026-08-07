@@ -538,4 +538,3 @@ pub(open) trait RunJournal {
   fn entries_for_run(Self, @kernel.RunId) -> Array[JournalEntry]
   fn entries_for_savepoint(Self, @kernel.RunId, String) -> Array[JournalEntry]
 }
-

@@ -138,6 +138,7 @@ pub fn OwnerId::unchecked(String) -> Self
 
 pub(all) struct Reasoning {
   content : String
+  raw : Json?
 } derive(Eq, @debug.Debug)
 pub impl Show for Reasoning
 
@@ -226,4 +227,3 @@ pub impl Show for Usage
 // Type aliases
 
 // Traits
-

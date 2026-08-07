@@ -360,6 +360,224 @@ async test "hook_aborts_before_tool" {
 }
 
 ///|
+/// RecordingExecProvider — records executed tool names in order, so tests
+/// can observe exactly when the tool wave ran relative to a suspending hook.
+struct RecordingExecProvider {
+  tools : Array[@kernel.ToolDef]
+  results : Map[String, Result[@kernel.ToolOutcome, @error.RuntimeError]]
+  executed : Array[String]
+}
+
+///|
+impl @port.ToolProvider for RecordingExecProvider with fn list_tools(self) {
+  self.tools
+}
+
+///|
+impl @port.ToolProvider for RecordingExecProvider with fn execute(
+  self,
+  name : String,
+  _call : @kernel.ToolCall,
+) -> @kernel.ToolOutcome raise @error.RuntimeError {
+  self.executed.push(name)
+  match self.results.get(name) {
+    Some(Ok(r)) => r
+    Some(Err(e)) => raise e
+    None =>
+      raise @error.RuntimeError::InvocationFailed("tool not found: \{name}")
+  }
+}
+
+///|
+/// GateHook — an async `before_tool` that suspends until the test releases
+/// it. Proves the pump genuinely waits on a suspending hook: the tool wave
+/// must not start while the hook is still blocked (e.g. a permission prompt
+/// waiting on user input over UiPort).
+struct GateHook {
+  entered : @aqueue.Queue[Int]
+  release : @aqueue.Queue[Int]
+}
+
+///|
+impl @port.Hook for GateHook with fn before_tool(
+  self : GateHook,
+  call : @kernel.ToolCall,
+) -> @port.ToolHookDecision {
+  self.entered.put(1)
+  ignore(self.release.get())
+  Approve(call~)
+}
+
+///|
+async test "async_before_tool_gates_tool_wave" {
+  let tc = make_tool_call("call_1", "echo")
+  let model = MockModelPort::{
+    responses: [tool_response([tc]), stop_response("done")],
+    index: 0,
+  }
+  let tools = RecordingExecProvider::{
+    tools: [
+      @kernel.ToolDef(
+        name=@kernel.ToolName::unchecked("echo"),
+        description="",
+        input_schema=Json::null(),
+        owner=@kernel.OwnerId::unchecked("legacy_provider"),
+        policy=@kernel.Parallel,
+        provenance=None,
+      ),
+    ],
+    results: Map::from_array([
+      ("echo", Ok(@kernel.Success(content="echoed", structured=None))),
+    ]),
+    executed: [],
+  }
+  let store = MockSessionStore::{ store: Map::from_array([]) }
+  let entered : @aqueue.Queue[Int] = @aqueue.Queue::Queue(
+    kind=@aqueue.Unbounded,
+  )
+  let release : @aqueue.Queue[Int] = @aqueue.Queue::Queue(
+    kind=@aqueue.Unbounded,
+  )
+  let gate_hook = GateHook::{ entered, release }
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", tools=[tools], hooks=[gate_hook], sessions=[store]),
+    ],
+    config=make_config(),
+  )
+  @async.with_task_group(group => {
+    let task = group.spawn(async fn() {
+      agent.run_turn(user_msg("hello"), "session_1")
+    })
+    // Wait until the hook is inside `before_tool`. At this point the hook is
+    // suspended, so the tool wave must NOT have executed anything yet.
+    ignore(entered.get())
+    assert_eq(tools.executed.length(), 0)
+    release.put(1)
+    let result = task.wait()
+    assert_eq(result.final_session_id, "session_1")
+  })
+  assert_eq(tools.executed, ["echo"])
+}
+
+///|
+/// Marker error for the raising-hook test.
+suberror ApprovalPromptFailed {
+  ApprovalPromptFailed
+}
+
+///|
+/// RaisingToolHook — an async `before_tool` that fails instead of deciding
+/// (e.g. the approval UI errored). The pump converts the raise into a
+/// terminal HookRejected, surfaced to the caller as AgentError::HookAborted.
+struct RaisingToolHook {}
+
+///|
+impl @port.Hook for RaisingToolHook with fn before_tool(
+  _self : RaisingToolHook,
+  _call : @kernel.ToolCall,
+) -> @port.ToolHookDecision {
+  raise ApprovalPromptFailed::ApprovalPromptFailed
+}
+
+///|
+async test "hook_before_tool_raise_aborts_run" {
+  let tc = make_tool_call("call_1", "bash")
+  let model = MockModelPort::{
+    responses: [tool_response([tc]), stop_response("should not reach")],
+    index: 0,
+  }
+  let tools = MockToolProvider::{
+    tools: [
+      @kernel.ToolDef(
+        name=@kernel.ToolName::unchecked("bash"),
+        description="",
+        input_schema=Json::null(),
+        owner=@kernel.OwnerId::unchecked("legacy_provider"),
+        policy=@kernel.Parallel,
+        provenance=None,
+      ),
+    ],
+    results: Map::from_array([
+      ("bash", Ok(@kernel.Success(content="ok", structured=None))),
+    ]),
+  }
+  let store = MockSessionStore::{ store: Map::from_array([]) }
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", tools=[tools], hooks=[RaisingToolHook::{  }], sessions=[
+        store,
+      ]),
+    ],
+    config=make_config(),
+  )
+  match
+    (Ok(agent.run_turn(user_msg("danger"), "session_1")) catch { e => Err(e) }) {
+    Err(@error.AgentError::HookAborted(msg)) =>
+      assert_true(msg.contains("pre_tool_hook raised"))
+    _ => fail("expected HookAborted from raising before_tool")
+  }
+}
+
+///|
+/// Canonical-type contract: `Reasoning.raw` is an opaque provider replay
+/// payload (OpenAI Responses API reasoning items). The kernel never
+/// interprets it, but it MUST store and replay it verbatim — provider
+/// adapters and session stores rely on that guarantee.
+async test "reasoning_raw_replayed_verbatim_into_saved_session" {
+  let raw_items = Json::array([
+    Json::object(
+      Map::from_array([
+        ("type", Json::string("reasoning")),
+        ("id", Json::string("rs_1")),
+      ]),
+    ),
+  ])
+  let model = MockModelPort::{
+    responses: [
+      {
+        completion: @kernel.Completion(
+          content=[@kernel.Text("done")],
+          tool_calls=[],
+          reasoning=Some(@kernel.Reasoning::{
+            content: "thinking",
+            raw: Some(raw_items),
+          }),
+          finish_reason=@kernel.Stop,
+          usage=None,
+        ),
+        processed_messages: [],
+      },
+    ],
+    index: 0,
+  }
+  let store = MockSessionStore::{ store: Map::from_array([]) }
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", sessions=[store]),
+    ],
+    config=make_config(),
+  )
+  let result = agent.run_turn(user_msg("hi"), "session_1")
+  assert_eq(result.final_session_id, "session_1")
+  let session = store.store["session_1"]
+  let mut found = false
+  for msg in session.messages {
+    match msg {
+      @kernel.AssistantMessage(reasoning=Some(r), ..) => {
+        found = true
+        assert_eq(r.raw, Some(raw_items))
+      }
+      _ => ()
+    }
+  }
+  assert_true(found)
+}
+
+///|
 async test "tool_loop_exceeded" {
   let tc = make_tool_call("call_1", "bash")
   let tool_resp = tool_response([tc])

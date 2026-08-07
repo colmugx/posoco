@@ -818,7 +818,24 @@ async fn Puppet::drive_run(
                 let mut aborted = false
                 let mut deferred_reason : String? = None
                 for hook in self.config.hooks {
-                  match hook.before_tool(current_call) {
+                  let decision = hook.before_tool(current_call) catch {
+                    err => {
+                      // Keep the `execution_error` classification: a
+                      // cancellation raised inside the hook (e.g. the host
+                      // aborts an approval prompt) is NOT a hook defect.
+                      if @async.is_cancellation_error(err) {
+                        return self.reject_run(
+                          error=EffectExecutionCancelled(phase="AwaitingTools"),
+                        )
+                      }
+                      return self.reject_run(
+                        error=HookRejected(
+                          reason="pre_tool_hook raised: " + err.to_string(),
+                        ),
+                      )
+                    }
+                  }
+                  match decision {
                     Approve(call~) => {
                       current_call = call
                       continue
