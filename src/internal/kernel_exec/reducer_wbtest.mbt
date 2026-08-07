@@ -215,11 +215,13 @@ test "C-HAPPY-ONE-TOOL: model step → tool call → ExecuteTool → ToolComplet
 ///|
 test "C-BUDGET-TOOL-BATCH: count atomically before any tool effect is exposed" {
   let catalog = make_catalog_v1()
+  // Exclusive limit semantics: the 2-call batch crosses max_tool_calls=1 and
+  // must be rejected atomically, before any tool effect is exposed.
   let initial = fresh_state_with_budget(
     Budget::bounded(
       max_model_steps=10,
       max_tool_rounds=10,
-      max_tool_calls=2,
+      max_tool_calls=1,
       max_total_tokens=1000,
     ),
   )

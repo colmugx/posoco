@@ -10,6 +10,7 @@
 priv struct FakeRuntime {
   inner : @runtime.PortRuntime
   seen_contexts : Array[@runtime.EffectContext]
+  seen_scopes : Array[@kernel.InvocationScope]
   mut cancel_calls : Int
   cancel_seen : Array[Array[@kernel.EffectId]]
   mut control : @runtime.RuntimeControl?
@@ -26,6 +27,7 @@ fn FakeRuntime::new(inner : @runtime.PortRuntime) -> FakeRuntime {
   {
     inner,
     seen_contexts: [],
+    seen_scopes: [],
     cancel_calls: 0,
     cancel_seen: [],
     control: None,
@@ -39,12 +41,16 @@ fn FakeRuntime::new(inner : @runtime.PortRuntime) -> FakeRuntime {
 ///|
 impl @runtime.Runtime for FakeRuntime with fn call_model(
   self,
+  scope : @kernel.InvocationScope,
   messages : Array[@kernel.Message],
   tool_definitions : Array[@kernel.ToolDef],
   call_options : Json,
   on_chunk : ((Json) -> Unit)?,
 ) -> Result[@kernel.ModelCallResult, @kernel.ModelFailure] {
-  self.inner.call_model(messages, tool_definitions, call_options, on_chunk)
+  self.seen_scopes.push(scope)
+  return self.inner.call_model(
+    scope, messages, tool_definitions, call_options, on_chunk,
+  )
 }
 
 ///|
@@ -97,11 +103,12 @@ impl @runtime.Runtime for FakeRuntime with fn cancel_effects(
 ///|
 impl @runtime.Runtime for FakeRuntime with fn compact(
   self,
+  scope : @kernel.InvocationScope,
   messages : Array[@kernel.Message],
   call_options : Json,
   trigger : @kernel.CompactTrigger,
 ) -> Result[@kernel.CompactResult, @kernel.ModelFailure] {
-  self.inner.compact(messages, call_options, trigger)
+  self.inner.compact(scope, messages, call_options, trigger)
 }
 
 ///|
@@ -152,6 +159,17 @@ async test "runtime seam/custom runtime receives full effect context" {
   // Reducer allocation order: CallModel = effect 1, first ExecuteTool = 2.
   assert_eq(ctx.effect_id.to_int(), 2)
   assert_true(ctx.owner.to_string() != "")
+  // Both CallModel effects crossed the seam carrying this run's identity:
+  // the session the product passed, one shared run id, and the reducer-
+  // allocated effect ids 1 and 3 (ExecuteTool was 2).
+  let scopes = fake.seen_scopes
+  assert_eq(scopes.length(), 2)
+  assert_eq(scopes[0].session_id.to_string(), "session_seam_ctx")
+  assert_eq(scopes[0].run_id, scopes[1].run_id)
+  assert_eq(scopes.map(fn(s) { s.effect_id.map(fn(id) { id.to_int() }) }), [
+    Some(1),
+    Some(3),
+  ])
 }
 
 ///|

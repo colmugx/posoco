@@ -55,8 +55,8 @@ pub(open) trait CatalogSource {
 }
 
 pub(open) trait Runtime {
-  async fn call_model(Self, Array[@kernel.Message], Array[@kernel.ToolDef], Json, ((Json) -> Unit)?) -> Result[@kernel.ModelCallResult, @kernel.ModelFailure]
+  async fn call_model(Self, @kernel.InvocationScope, Array[@kernel.Message], Array[@kernel.ToolDef], Json, ((Json) -> Unit)?) -> Result[@kernel.ModelCallResult, @kernel.ModelFailure]
   async fn execute_tool(Self, EffectContext) -> @kernel.ToolOutcome
   async fn cancel_effects(Self, Array[@kernel.EffectId], @kernel.CancelReason) -> Array[(@kernel.EffectId, @kernel.CancelDisposition)]
-  async fn compact(Self, Array[@kernel.Message], Json, @kernel.CompactTrigger) -> Result[@kernel.CompactResult, @kernel.ModelFailure]
+  async fn compact(Self, @kernel.InvocationScope, Array[@kernel.Message], Json, @kernel.CompactTrigger) -> Result[@kernel.CompactResult, @kernel.ModelFailure]
 }

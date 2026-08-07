@@ -329,7 +329,7 @@ async fn AgentRuntime::run_turn_via_puppet(
   let session_id_kernel = @kernel.SessionId::unchecked(session_id)
   let budget : @kernel_exec.Budget = {
     max_model_steps: None,
-    max_tool_rounds: Some(self.config.max_tool_rounds),
+    max_tool_rounds: self.config.max_tool_rounds,
     max_tool_calls: None,
     max_total_tokens: None,
   }
@@ -364,7 +364,14 @@ async fn AgentRuntime::run_turn_via_puppet(
     @puppetry.Rejected(error=@puppetry.HookRejected(reason~)) =>
       raise @error.AgentError::HookAborted(reason)
     @puppetry.Rejected(error=@puppetry.PumpLoopExceeded(..)) =>
-      raise @error.AgentError::ToolLoopExceeded
+      // With a correctly sized backstop (2 * rounds + 1) the kernel budget
+      // always fires first; reaching this branch means a livelock or an
+      // internal accounting defect, not a budget hit.
+      raise @error.AgentError::Runtime(
+        @error.RuntimeError::InvocationFailed(
+          "pump loop exceeded (internal livelock guard)",
+        ),
+      )
     @puppetry.Rejected(error=@puppetry.ReducerInvariantViolation(..)) =>
       raise @error.AgentError::Runtime(
         @error.RuntimeError::InvocationFailed("puppet invariant violation"),
@@ -517,8 +524,33 @@ async fn AgentRuntime::run_turn_via_puppet(
         ) => raise @error.AgentError::Model("model parse failure: " + detail)
         Some(@kernel_exec.Failed(reason=@kernel_exec.ModelRuntime(detail~))) =>
           raise @error.AgentError::Model("model runtime failure: " + detail)
+        Some(
+          @kernel_exec.Failed(
+            reason=@kernel_exec.BudgetExhausted(
+              dimension=@kernel_exec.BudgetDimension::ToolRounds
+            )
+          )
+        ) =>
+          // The reducer rejects exactly the batch that would push consumed
+          // to limit + 1, so consumed is derivable; Agent only ever wires
+          // the ToolRounds dimension (other budget dims are None here).
+          match self.config.max_tool_rounds {
+            Some(limit) =>
+              raise @error.AgentError::ToolLoopExceeded(
+                consumed=limit + 1,
+                limit~,
+              )
+            None =>
+              raise @error.AgentError::Runtime(
+                @error.RuntimeError::InvocationFailed(
+                  "tool-round budget exhausted without a configured limit",
+                ),
+              )
+          }
         Some(@kernel_exec.Failed(reason=@kernel_exec.BudgetExhausted(..))) =>
-          raise @error.AgentError::ToolLoopExceeded
+          raise @error.AgentError::Runtime(
+            @error.RuntimeError::InvocationFailed("budget exhausted"),
+          )
         Some(@kernel_exec.Failed(..)) =>
           raise @error.AgentError::Runtime(
             @error.RuntimeError::InvocationFailed("run failed"),

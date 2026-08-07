@@ -26,6 +26,7 @@ fn ChunkDemandHost::delivered_chunks(self : ChunkDemandHost) -> Int {
 ///|
 pub impl @kernel_exec.HostRuntime for ChunkDemandHost with fn call_model(
   self,
+  _scope : InvocationScope,
   messages : Array[Message],
   _tool_definitions : Array[ToolDef],
   _call_options : Json,
@@ -70,6 +71,7 @@ pub impl @kernel_exec.HostRuntime for ChunkDemandHost with fn cancel_effects(
 /// M3.5: compact stub — ChunkDemandHost does not exercise compact.
 pub impl @kernel_exec.HostRuntime for ChunkDemandHost with fn compact(
   self : ChunkDemandHost,
+  _scope : InvocationScope,
   _messages : Array[Message],
   _call_options : Json,
   _trigger : @kernel.CompactTrigger,

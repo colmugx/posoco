@@ -67,9 +67,9 @@ pub using @error {
 }
 
 ///|
-// Canonical domain types used by public extension ports. Reducer identities,
-// catalogs, effects, HostRuntime, journals and Puppet remain internal to
-// Posoco's Agent implementation and are intentionally not re-exported here.
+// Canonical domain types used by public extension ports. Catalogs, effects,
+// HostRuntime, journals and Puppet remain internal to Posoco's Agent
+// implementation and are intentionally not re-exported here.
 pub using @kernel {
   type Completion,
   type CompletionPayload,
@@ -94,4 +94,8 @@ pub using @kernel {
   type Reasoning,
   type Transcript,
   type Usage,
+  // Invocation identity passed to model-side port calls (wire contract).
+  type InvocationScope,
+  type SessionId,
+  type RunId,
 }

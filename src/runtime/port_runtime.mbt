@@ -102,6 +102,7 @@ pub fn PortRuntime::new(
 ///|
 pub impl Runtime for PortRuntime with fn call_model(
   self,
+  scope : @kernel.InvocationScope,
   messages : Array[@kernel.Message],
   tool_definitions : Array[@kernel.ToolDef],
   call_options : Json,
@@ -115,7 +116,9 @@ pub impl Runtime for PortRuntime with fn call_model(
     Some(cb) => @types.Stream(cb)
     None => @types.NoStream
   }
-  let result = self.model.chat(messages, tool_definitions, options, stream) catch {
+  let result = self.model.chat(
+    scope, messages, tool_definitions, options, stream,
+  ) catch {
     error => return Err(model_error_to_failure(error))
   }
   // When the modelport returns no preprocessing (empty processed_messages),
@@ -175,6 +178,7 @@ pub impl Runtime for PortRuntime with fn cancel_effects(
 /// Forward compact to `ModelPort::compact`.
 pub impl Runtime for PortRuntime with fn compact(
   self,
+  scope : @kernel.InvocationScope,
   messages : Array[@kernel.Message],
   call_options : Json,
   trigger : @kernel.CompactTrigger,
@@ -183,7 +187,7 @@ pub impl Runtime for PortRuntime with fn compact(
     Ok(options) => options
     Err(failure) => return Err(failure)
   }
-  let result = self.model.compact(messages, options, trigger) catch {
+  let result = self.model.compact(scope, messages, options, trigger) catch {
     error => return Err(model_error_to_failure(error))
   }
   Ok(result)

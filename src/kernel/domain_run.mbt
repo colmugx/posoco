@@ -196,3 +196,27 @@ pub impl Show for CancelDisposition with fn to_string(self : CancelDisposition) 
     AlreadySettled => "AlreadySettled"
   }
 }
+
+///|
+/// Invocation identity for a single model-side call (`ModelPort::chat` /
+/// `ModelPort::compact`, and their `Runtime` correspondences). Constructed by
+/// posoco at the effect-interpretation layer and passed down unchanged; ports
+/// and hosts MUST treat it as read-only.
+///
+/// This is the canonical answer to "which session/run is this call serving":
+/// adapters that key behaviour on session identity (continuity, telemetry,
+/// cost attribution, per-session policy) read it from here instead of
+/// smuggling it through messages or config.
+///
+/// Invariants:
+/// - `session_id` / `run_id` always identify the Run that issued the call,
+///   including `compact` (compact is host-driven but still scoped to a Run).
+/// - `effect_id` is `Some` iff the call executes a reducer-allocated
+///   `CallModel` effect; it is `None` for `compact`, which is not an effect.
+///   Hosts that propagate cancellation key in-flight model calls by this id,
+///   mirroring the tool side's `EffectContext.effect_id`.
+pub(all) struct InvocationScope {
+  session_id : SessionId
+  run_id : RunId
+  effect_id : EffectId?
+} derive(Eq, Debug)

@@ -232,19 +232,30 @@ test "BudgetConsumed: WithinBudget when no limit exceeded" {
 }
 
 ///|
-test "BudgetConsumed: Exceeded when tool_rounds hits limit" {
-  let consumed : BudgetConsumed = {
+test "BudgetConsumed: exclusive limit semantics for tool_rounds" {
+  let budget = Budget::default_run() // max_tool_rounds=Some(32)
+  let at_limit : BudgetConsumed = {
     model_steps: 0,
     tool_rounds: 32,
     tool_calls: 0,
     observed_total_tokens: 0,
     any_usage_verified: false,
   }
-  let budget = Budget::default_run() // max_tool_rounds=Some(32)
-  let state = consumed.exceeded(budget)
-  match state {
+  // Limit N allows N full rounds: 32 == 32 is within budget.
+  match at_limit.exceeded(budget) {
+    WithinBudget => ()
+    _ => fail("expected WithinBudget at the limit")
+  }
+  let past_limit : BudgetConsumed = {
+    model_steps: 0,
+    tool_rounds: 33,
+    tool_calls: 0,
+    observed_total_tokens: 0,
+    any_usage_verified: false,
+  }
+  match past_limit.exceeded(budget) {
     Exceeded(ToolRounds) => ()
-    _ => fail("expected Exceeded(ToolRounds)")
+    _ => fail("expected Exceeded(ToolRounds) past the limit")
   }
 }
 

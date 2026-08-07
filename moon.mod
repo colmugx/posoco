@@ -1,9 +1,9 @@
 name = "colmugx/posoco"
 
-version = "0.10.0"
+version = "0.10.1"
 
 import {
-  "moonbitlang/async@0.20.3",
+  "moonbitlang/async@0.20.4",
 }
 
 readme = "README.mbt.md"

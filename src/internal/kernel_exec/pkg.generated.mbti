@@ -381,8 +381,8 @@ pub using @kernel {type SessionId}
 
 // Traits
 pub(open) trait HostRuntime {
-  async fn call_model(Self, Array[@kernel.Message], Array[@kernel.ToolDef], Json, ((Json) -> Unit)?) -> Result[@kernel.ModelCallResult, @kernel.ModelFailure]
+  async fn call_model(Self, @kernel.InvocationScope, Array[@kernel.Message], Array[@kernel.ToolDef], Json, ((Json) -> Unit)?) -> Result[@kernel.ModelCallResult, @kernel.ModelFailure]
   async fn execute_tool(Self, @kernel.EffectId, @kernel.OwnerId, @kernel.CallId, @kernel.ToolName, Json) -> @kernel.ToolOutcome
   async fn cancel_effects(Self, Array[@kernel.EffectId], @kernel.CancelReason) -> Array[(@kernel.EffectId, @kernel.CancelDisposition)]
-  async fn compact(Self, Array[@kernel.Message], Json, @kernel.CompactTrigger) -> Result[@kernel.CompactResult, @kernel.ModelFailure]
+  async fn compact(Self, @kernel.InvocationScope, Array[@kernel.Message], Json, @kernel.CompactTrigger) -> Result[@kernel.CompactResult, @kernel.ModelFailure]
 }

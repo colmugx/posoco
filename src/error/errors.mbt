@@ -52,7 +52,9 @@ pub(all) suberror AgentError {
   Model(String)
   Session(SessionError)
   Runtime(RuntimeError)
-  ToolLoopExceeded
+  /// The kernel tool-round budget rejected a batch. `consumed` is the round
+  /// count at rejection (`limit + 1`); `limit` is the configured bound.
+  ToolLoopExceeded(consumed~ : Int, limit~ : Int)
   HookAborted(String)
 } derive(Debug)
 
@@ -62,7 +64,8 @@ pub impl Show for AgentError with fn to_string(self) -> String {
     Model(msg) => "AgentError::Model(\{msg})"
     Session(err) => "AgentError::Session(\{err.to_string()})"
     Runtime(err) => "AgentError::Runtime(\{err.to_string()})"
-    ToolLoopExceeded => "AgentError::ToolLoopExceeded"
+    ToolLoopExceeded(consumed~, limit~) =>
+      "AgentError::ToolLoopExceeded(consumed=\{consumed}, limit=\{limit}; raise AgentConfig.max_tool_rounds or set None for unbounded)"
     HookAborted(msg) => "AgentError::HookAborted(\{msg})"
   }
 }

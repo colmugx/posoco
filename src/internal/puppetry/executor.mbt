@@ -63,17 +63,25 @@ pub fn ModelId::to_string(self : ModelId) -> String {
 /// reducer already validated against `catalog_version`; the executor forwards
 /// the same definitions so the model sees what was validated (ADR §2.7, §6.3 —
 /// forbidden to substitute an empty tool list).
+///
+/// `run_id`/`session_id` are the Run's identity: the executor folds them
+/// (plus the per-effect `effect_id`) into the `InvocationScope` passed to
+/// `HostRuntime::call_model`.
 priv struct ExecutionContext {
   host : &@kernel_exec.HostRuntime
   catalog : @kernel_exec.ToolCatalogSnapshot
+  run_id : RunId
+  session_id : SessionId
 }
 
 ///|
 fn ExecutionContext::new(
   host : &@kernel_exec.HostRuntime,
   catalog~ : @kernel_exec.ToolCatalogSnapshot,
+  run_id~ : RunId,
+  session_id~ : SessionId,
 ) -> ExecutionContext {
-  { host, catalog }
+  { host, catalog, run_id, session_id }
 }
 
 ///|
@@ -128,8 +136,17 @@ async fn execute_call_model(
   // would hide a missing-catalog bug as a successful but tool-blind model
   // call. The snapshot owns the definitions; we project them out.
   let tool_definitions : Array[@kernel.ToolDef] = ctx.catalog.definitions()
+  // Fold the Run identity (carried by the context) and this effect's id into
+  // the invocation scope handed to the host — the canonical answer to
+  // "which session/run is this model call serving".
+  let scope : InvocationScope = {
+    session_id: ctx.session_id,
+    run_id: ctx.run_id,
+    effect_id: Some(effect_id),
+  }
   let attempted : Result[Result[ModelCallResult, @kernel.ModelFailure], Error] = Ok(
     ctx.host.call_model(
+      scope,
       payload.messages,
       tool_definitions,
       payload.call_options,

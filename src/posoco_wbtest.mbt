@@ -9,6 +9,7 @@ struct MockModelPort {
 ///|
 impl @port.ModelPort for MockModelPort with fn chat(
   self,
+  _scope : @kernel.InvocationScope,
   _messages : Array[@kernel.Message],
   _tools : Array[@kernel.ToolDef],
   _options : @types.ChatOptions,
@@ -26,6 +27,7 @@ impl @port.ModelPort for MockModelPort with fn chat(
 ///|
 impl @port.ModelPort for MockModelPort with fn compact(
   _self,
+  _scope : @kernel.InvocationScope,
   _messages : Array[@kernel.Message],
   _options : @types.ChatOptions,
   _trigger : @kernel.CompactTrigger,
@@ -120,7 +122,7 @@ impl @port.Hook for LogHook with fn on_post_event(self, stage : @port.HookStage)
 ///|
 fn make_config() -> AgentConfig {
   {
-    max_tool_rounds: 10,
+    max_tool_rounds: Some(10),
     temperature: None,
     max_output_tokens: None,
     model_context_window: None,
@@ -603,7 +605,7 @@ async test "tool_loop_exceeded" {
   let store = MockSessionStore::{ store: Map::from_array([]) }
   let observer = MockObserver::{ events: [] }
   let config = {
-    max_tool_rounds: 2,
+    max_tool_rounds: Some(2),
     temperature: None,
     max_output_tokens: None,
     model_context_window: None,
@@ -618,9 +620,105 @@ async test "tool_loop_exceeded" {
   )
   match
     (Ok(agent.run_turn(user_msg("loop"), "session_1")) catch { e => Err(e) }) {
-    Err(@error.AgentError::ToolLoopExceeded) => ()
+    Err(@error.AgentError::ToolLoopExceeded(..)) => ()
     _ => fail("expected ToolLoopExceeded")
   }
+}
+
+///|
+/// Regression: with `max_tool_rounds=None` the turn is unbounded — a 40-round
+/// single-call turn must complete. Previously the pump backstop
+/// (`max_iterations = rounds + 1` while the pump burns 2 iterations per round)
+/// silently killed such turns at ~11 batches and mislabeled the failure
+/// ToolLoopExceeded.
+async test "unbounded_tool_rounds_complete_long_turn" {
+  let rounds = 40
+  let steps : Array[ScriptedModelStep] = []
+  for i in 0..<rounds {
+    steps.push(
+      Respond(tk_tool_call_response("probe", "unbounded_\{i}", Json::null())),
+    )
+  }
+  steps.push(Respond(tk_stop_response("done")))
+  let model = ScriptedModel(steps)
+  let tools = RecordingToolProvider(
+    [tk_tool_def("probe", "")],
+    Map::from_array([
+      ("probe", ScriptedToolOutcome::OutcomeOk(tk_ok_result("ok"))),
+    ]),
+  )
+  let store = RecordingSessionStore()
+  let observer = RecordingObserver()
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", tools=[tools], sessions=[store], observers=[observer]),
+    ],
+    config={
+      max_tool_rounds: None,
+      temperature: None,
+      max_output_tokens: None,
+      model_context_window: None,
+    },
+  )
+  // Any raise (ToolLoopExceeded or otherwise) fails the test with the error.
+  let _ = agent.run_turn(tk_user_msg("long loop"), "session_unbounded")
+  assert_eq(model.call_count(), rounds + 1)
+  assert_eq(tools.exec_records().length(), rounds)
+  let mut completions = 0
+  for event in observer.events() {
+    if event is @types.TurnEvent::TurnCompleted {
+      completions = completions + 1
+    }
+  }
+  assert_eq(completions, 1)
+}
+
+///|
+/// Bounded semantics: `Some(n)` allows exactly n full tool rounds; the
+/// (n+1)-th batch is rejected atomically (never executed) and the error
+/// reports consumed/limit.
+async test "bounded_tool_rounds_allows_exactly_n_rounds" {
+  let steps : Array[ScriptedModelStep] = []
+  for i in 0..<10 {
+    steps.push(
+      Respond(tk_tool_call_response("probe", "bounded_\{i}", Json::null())),
+    )
+  }
+  let model = ScriptedModel(steps)
+  let tools = RecordingToolProvider(
+    [tk_tool_def("probe", "")],
+    Map::from_array([
+      ("probe", ScriptedToolOutcome::OutcomeOk(tk_ok_result("ok"))),
+    ]),
+  )
+  let store = RecordingSessionStore()
+  let observer = RecordingObserver()
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", tools=[tools], sessions=[store], observers=[observer]),
+    ],
+    config={
+      max_tool_rounds: Some(2),
+      temperature: None,
+      max_output_tokens: None,
+      model_context_window: None,
+    },
+  )
+  match
+    (Ok(agent.run_turn(tk_user_msg("loop"), "session_bounded")) catch {
+      e => Err(e)
+    }) {
+    Err(@error.AgentError::ToolLoopExceeded(consumed~, limit~)) => {
+      assert_eq(consumed, 3)
+      assert_eq(limit, 2)
+    }
+    _ => fail("expected ToolLoopExceeded(consumed=3, limit=2)")
+  }
+  // Two full rounds executed; the third batch was rejected before execution.
+  assert_eq(tools.exec_records().length(), 2)
+  assert_eq(model.call_count(), 3)
 }
 
 ///|
@@ -1080,6 +1178,7 @@ struct MockStreamingModelPort {
 ///|
 impl @port.ModelPort for MockStreamingModelPort with fn chat(
   self,
+  _scope : @kernel.InvocationScope,
   _messages : Array[@kernel.Message],
   _tools : Array[@kernel.ToolDef],
   _options : @types.ChatOptions,
@@ -1098,6 +1197,7 @@ impl @port.ModelPort for MockStreamingModelPort with fn chat(
 ///|
 impl @port.ModelPort for MockStreamingModelPort with fn compact(
   _self,
+  _scope : @kernel.InvocationScope,
   _messages : Array[@kernel.Message],
   _options : @types.ChatOptions,
   _trigger : @kernel.CompactTrigger,

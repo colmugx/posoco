@@ -136,13 +136,16 @@ pub fn BudgetConsumed::zero() -> BudgetConsumed {
 
 ///|
 /// Returns the dimension that is now exceeded (if any), or `UnknownUsage` if token budget exists but no usage verified.
+/// Limit semantics are exclusive: limit N allows N full units and rejects the
+/// declaration that would push consumption to N+1. (Token observation keeps
+/// `>=`: it compares an observed reading, not a declaration count.)
 pub fn BudgetConsumed::exceeded(
   self : BudgetConsumed,
   limit : Budget,
 ) -> BudgetState {
   let check = fn(consumed : Int, max_opt : Int?) -> Bool {
     match max_opt {
-      Some(max) => consumed >= max
+      Some(max) => consumed > max
       None => false
     }
   }

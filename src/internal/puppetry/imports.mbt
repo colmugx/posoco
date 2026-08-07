@@ -16,6 +16,7 @@ using @kernel {
   type TurnId,
   type SessionId,
   type EffectId,
+  type InvocationScope,
   type CancelDisposition,
   type CatalogVersion,
 }

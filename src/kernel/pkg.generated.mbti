@@ -101,6 +101,12 @@ pub(all) enum FinishReason {
 } derive(Eq, @debug.Debug)
 pub impl Show for FinishReason
 
+pub(all) struct InvocationScope {
+  session_id : SessionId
+  run_id : RunId
+  effect_id : EffectId?
+} derive(Eq, @debug.Debug)
+
 pub(all) enum Message {
   SystemMessage(content~ : Array[Content])
   UserMessage(content~ : Array[Content])

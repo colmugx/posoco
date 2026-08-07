@@ -365,7 +365,7 @@ pub(all) struct PuppetConfig {
   subscribers : Array[&EventSubscriber]
   stream_chunks : ((Json) -> Unit)?
   hooks : Array[&@port.Hook]
-  max_iterations : Int
+  max_iterations : Int?
   commands : Array[&@port.CommandPort]
   session_store : &@port.SessionStore?
   mailbox : &Mailbox

@@ -30,6 +30,8 @@ pub fn tk_ext(id~ : String, model? : &@port.ModelPort?, tools? : Array[&@port.To
 
 pub fn tk_ok_result(String) -> @kernel.ToolOutcome
 
+pub fn tk_scope(session_id? : String, run_id? : String) -> @kernel.InvocationScope
+
 pub fn tk_stop_response(String) -> @kernel.ModelCallResult
 
 pub fn tk_system_msg(String) -> @kernel.Message
@@ -56,7 +58,7 @@ pub async fn Agent::shutdown(Self) -> Unit
 pub fn Agent::with_runtime(exts~ : Array[&@port.Extension], config~ : AgentConfig, runtime~ : &@runtime.Runtime, ui_projection? : Bool, catalog_source? : &@runtime.CatalogSource) -> Self raise @error.CompositionError
 
 pub(all) struct AgentConfig {
-  max_tool_rounds : Int
+  max_tool_rounds : Int?
   temperature : Double?
   max_output_tokens : Int?
   model_context_window : Int?
@@ -188,6 +190,17 @@ pub fn RecordingUiPort::ui_descriptor(Self) -> @port.UiDescriptor
 pub fn RecordingUiPort::unconsumed_response_count(Self) -> Int
 pub impl @port.UiPort for RecordingUiPort
 
+pub struct ScopeRecordingModel {
+  scripted : ScriptedModel
+  compact_result : @kernel.CompactResult?
+  chat_scopes : Array[@kernel.InvocationScope]
+  compact_scopes : Array[@kernel.InvocationScope]
+}
+pub fn ScopeRecordingModel::ScopeRecordingModel(Array[ScriptedModelStep], compact_result? : @kernel.CompactResult) -> Self
+pub fn ScopeRecordingModel::chat_scopes(Self) -> Array[@kernel.InvocationScope]
+pub fn ScopeRecordingModel::compact_scopes(Self) -> Array[@kernel.InvocationScope]
+pub impl @port.ModelPort for ScopeRecordingModel
+
 pub(all) struct ScriptedModel {
   steps : Array[ScriptedModelStep]
   mut index : Int
@@ -307,6 +320,8 @@ pub using @port {type HookAbort}
 
 pub using @port {type HookStage}
 
+pub using @kernel {type InvocationScope}
+
 pub using @types {type MemoryEntry}
 
 pub using @error {type MemoryError}
@@ -331,11 +346,15 @@ pub using @port {type ProviderConfig}
 
 pub using @kernel {type Reasoning}
 
+pub using @kernel {type RunId}
+
 pub using @error {type RuntimeError}
 
 pub using @types {type Session}
 
 pub using @error {type SessionError}
+
+pub using @kernel {type SessionId}
 
 pub using @types {type StreamAccumulator}
 

@@ -1,7 +1,12 @@
 ///|
 /// Agent-level runtime config: provider-agnostic tuning and run budget.
+/// `max_tool_rounds` bounds the tool rounds of one turn: `Some(n)` allows n
+/// full rounds and rejects the (n+1)-th batch atomically; `Some(0)` forbids
+/// tool execution; `None` is unbounded (the recommended product default —
+/// the human abort and compaction govern loop length, matching peer coding
+/// agents).
 pub(all) struct AgentConfig {
-  max_tool_rounds : Int
+  max_tool_rounds : Int?
   temperature : Double?
   max_output_tokens : Int?
   model_context_window : Int?
@@ -254,11 +259,13 @@ fn AgentRuntime::compose(
   host_override : &@kernel_exec.HostRuntime?,
   catalog_source : &@runtime.CatalogSource?,
 ) -> Agent raise @error.CompositionError {
-  if config.max_tool_rounds < 0 {
-    raise @error.CompositionError::ManifestSchemaError(
-      manifest_id="agent.config",
-      detail="max_tool_rounds must be non-negative",
-    )
+  match config.max_tool_rounds {
+    Some(value) if value < 0 =>
+      raise @error.CompositionError::ManifestSchemaError(
+        manifest_id="agent.config",
+        detail="max_tool_rounds must be non-negative",
+      )
+    _ => ()
   }
   match config.model_context_window {
     Some(value) if value <= 0 =>
@@ -356,7 +363,14 @@ fn AgentRuntime::compose(
     subscribers: [event_subscriber as &@puppetry.EventSubscriber],
     stream_chunks: create_agent_stream_callback(agg.observers),
     hooks: composed_hooks,
-    max_iterations: config.max_tool_rounds + 1,
+    max_iterations: match config.max_tool_rounds {
+      // The pump burns 2 iterations per tool round (AwaitingModel +
+      // AwaitingTools) plus one terminal iteration. Size the backstop so
+      // the kernel budget is always the limit that fires first; with an
+      // unbounded budget there is no pump cap either.
+      Some(rounds) => Some(2 * rounds + 1)
+      None => None
+    },
     commands: command_ports,
     session_store,
     mailbox: mailbox_ref,
@@ -460,7 +474,7 @@ fn agent_error_category(error : @error.AgentError) -> String {
     Model(_) => "AgentError::Model"
     Session(_) => "AgentError::Session"
     Runtime(_) => "AgentError::Runtime"
-    ToolLoopExceeded => "AgentError::ToolLoopExceeded"
+    ToolLoopExceeded(..) => "AgentError::ToolLoopExceeded"
     HookAborted(_) => "AgentError::HookAborted"
   }
 }

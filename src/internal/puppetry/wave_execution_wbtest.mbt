@@ -48,6 +48,7 @@ fn WaveFixtureHost::finished(self : WaveFixtureHost) -> Array[String] {
 ///|
 pub impl @kernel_exec.HostRuntime for WaveFixtureHost with fn call_model(
   self,
+  _scope : InvocationScope,
   messages : Array[Message],
   _tool_definitions : Array[ToolDef],
   _call_options : Json,
@@ -107,6 +108,7 @@ pub impl @kernel_exec.HostRuntime for WaveFixtureHost with fn cancel_effects(
 /// M3.5: compact stub — WaveFixtureHost does not exercise compact.
 pub impl @kernel_exec.HostRuntime for WaveFixtureHost with fn compact(
   self : WaveFixtureHost,
+  _scope : InvocationScope,
   _messages : Array[Message],
   _call_options : Json,
   _trigger : @kernel.CompactTrigger,

@@ -12,7 +12,7 @@
 ///|
 fn metadata_config() -> AgentConfig {
   {
-    max_tool_rounds: 10,
+    max_tool_rounds: Some(10),
     temperature: None,
     max_output_tokens: None,
     model_context_window: None,

@@ -17,8 +17,12 @@ pub(open) trait HostRuntime {
   /// The pump always replaces the transcript body with the returned value.
   /// When the modelport initiates a compact, it fills `new_thread` and the
   /// pump starts a new thread using `processed_messages` as the new body.
+  /// `scope` carries the run/session identity; `scope.effect_id` is always
+  /// `Some` here and hosts that propagate cancellation key in-flight model
+  /// calls by it, mirroring the tool side's `effect_id`.
   async fn call_model(
     Self,
+    scope : @kernel.InvocationScope,
     messages : Array[@kernel.Message],
     tool_definitions : Array[@kernel.ToolDef],
     call_options : Json,
@@ -51,8 +55,11 @@ pub(open) trait HostRuntime {
   /// Compact the conversation. Forwards to `ModelPort::compact` and returns
   /// the compacted message body plus a `CompactMode`. `trigger` lets the
   /// modelport pick a strategy (Auto = cheap elision, Manual = thorough).
+  /// `scope.effect_id` is always `None` here: compact is host-driven, not a
+  /// reducer-allocated effect.
   async fn compact(
     Self,
+    scope : @kernel.InvocationScope,
     messages : Array[@kernel.Message],
     call_options : Json,
     trigger : @kernel.CompactTrigger,

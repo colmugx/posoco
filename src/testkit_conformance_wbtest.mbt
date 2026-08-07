@@ -84,6 +84,7 @@ async test "tk_model_stream_replays_exact_chunks_in_order" {
   let observed : Array[StreamChunk] = []
   let host_chunks : Array[Json] = []
   let _ = (model as &@port.ModelPort).chat(
+    tk_scope(),
     [],
     [],
     tk_opts(),
@@ -131,6 +132,7 @@ async test "tk_model_stream_does_not_synthesize_chunks_for_response_step" {
   // invoked only inside Stream steps. Driving chat with StreamMode::Stream
   // on a Respond step must not produce any chunks.
   let _ = (model as &@port.ModelPort).chat(
+    tk_scope(),
     [],
     [],
     tk_opts(),

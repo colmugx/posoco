@@ -33,9 +33,13 @@ pub(all) struct EffectContext {
 /// `docs/RUNTIME.md`.
 pub(open) trait Runtime {
   /// Execute a `CallModel` effect. `on_chunk` is the live streaming sink;
-  /// `None` means the product did not enable streaming.
+  /// `None` means the product did not enable streaming. `scope` carries the
+  /// run/session identity; `scope.effect_id` is always `Some` here and hosts
+  /// that propagate cancellation MUST key in-flight model calls by it,
+  /// mirroring `EffectContext.effect_id` on the tool side.
   async fn call_model(
     Self,
+    scope : @kernel.InvocationScope,
     messages : Array[@kernel.Message],
     tool_definitions : Array[@kernel.ToolDef],
     call_options : Json,
@@ -60,9 +64,11 @@ pub(open) trait Runtime {
 
   /// Compact the conversation. Forwarded to the model side; `trigger` lets
   /// the implementation pick a strategy (Auto = cheap elision, Manual =
-  /// thorough).
+  /// thorough). `scope.effect_id` is always `None` here: compact is
+  /// host-driven, not a reducer-allocated effect.
   async fn compact(
     Self,
+    scope : @kernel.InvocationScope,
     messages : Array[@kernel.Message],
     call_options : Json,
     trigger : @kernel.CompactTrigger,

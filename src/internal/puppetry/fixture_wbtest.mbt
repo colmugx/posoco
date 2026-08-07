@@ -65,6 +65,7 @@ pub fn FixtureHost::executed_effect_ids(self : FixtureHost) -> Array[EffectId] {
 ///|
 pub impl @kernel_exec.HostRuntime for FixtureHost with fn call_model(
   self,
+  _scope : InvocationScope,
   messages : Array[Message],
   tool_definitions : Array[ToolDef],
   call_options : Json,
@@ -121,6 +122,7 @@ pub impl @kernel_exec.HostRuntime for FixtureHost with fn cancel_effects(
 /// M3.5: compact stub — FixtureHost does not exercise compact.
 pub impl @kernel_exec.HostRuntime for FixtureHost with fn compact(
   self : FixtureHost,
+  _scope : InvocationScope,
   _messages : Array[Message],
   _call_options : Json,
   _trigger : @kernel.CompactTrigger,
@@ -221,7 +223,7 @@ fn canonical_puppet_config(
     subscribers,
     stream_chunks,
     hooks: [],
-    max_iterations: 50,
+    max_iterations: Some(50),
     commands: [],
     session_store: None,
     mailbox,

@@ -263,6 +263,20 @@ pub fn ScriptedModel::call_count(self : ScriptedModel) -> Int {
 }
 
 ///|
+/// Fabricated `InvocationScope` for tests that drive a `ModelPort` directly
+/// (no reducer in play, so `effect_id` is `None`).
+pub fn tk_scope(
+  session_id? : String = "tk_session",
+  run_id? : String = "tk_run",
+) -> @kernel.InvocationScope {
+  {
+    session_id: @kernel.SessionId::unchecked(session_id),
+    run_id: @kernel.RunId::unchecked(run_id),
+    effect_id: None,
+  }
+}
+
+///|
 /// Direct (non-trait) chat entry point for testkit self-tests.
 /// Trait methods on concrete types must be dispatched through a `&ModelPort`
 /// reference; this wrapper lets tests call chat without an Agent.
@@ -272,7 +286,13 @@ pub async fn ScriptedModel::chat_direct(
   tools : Array[@kernel.ToolDef],
   options : @types.ChatOptions,
 ) -> @kernel.ModelCallResult raise @error.ModelError {
-  (self as &@port.ModelPort).chat(messages, tools, options, @types.NoStream)
+  (self as &@port.ModelPort).chat(
+    tk_scope(),
+    messages,
+    tools,
+    options,
+    @types.NoStream,
+  )
 }
 
 ///|
@@ -308,6 +328,7 @@ fn ScriptedModel::take_step(
 ///|
 pub impl @port.ModelPort for ScriptedModel with fn chat(
   self,
+  _scope : @kernel.InvocationScope,
   messages : Array[@kernel.Message],
   tools : Array[@kernel.ToolDef],
   options : @types.ChatOptions,
@@ -337,6 +358,7 @@ pub impl @port.ModelPort for ScriptedModel with fn chat(
 ///|
 pub impl @port.ModelPort for ScriptedModel with fn compact(
   _self,
+  _scope : @kernel.InvocationScope,
   _messages : Array[@kernel.Message],
   _options : @types.ChatOptions,
   _trigger : @kernel.CompactTrigger,
@@ -351,6 +373,90 @@ pub impl @port.ModelPort for ScriptedModel with fn compact(
 /// need to exercise the ConfigWarning path on validation can construct a
 /// custom model impl that returns a non-empty `ProviderConfig`.
 pub impl @port.ModelPort for ScriptedModel with fn provider_config(_self) -> @port.ProviderConfig {
+  @port.ProviderConfig::empty()
+}
+
+// ---------------------------------------------------------------------------
+// ScopeRecordingModel — records the InvocationScope of every model-side call.
+// ---------------------------------------------------------------------------
+
+///|
+/// ModelPort fake that records the `InvocationScope` received by every
+/// `chat`/`compact` call. Chat behaviour is scripted like `ScriptedModel`;
+/// `compact` returns `compact_result` when set, otherwise raises
+/// `ResponseParse` (same contract as `ScriptedModel`). Use it to pin the
+/// scope-flow contract end to end.
+pub struct ScopeRecordingModel {
+  scripted : ScriptedModel
+  compact_result : @kernel.CompactResult?
+  chat_scopes : Array[@kernel.InvocationScope]
+  compact_scopes : Array[@kernel.InvocationScope]
+}
+
+///|
+pub fn ScopeRecordingModel::ScopeRecordingModel(
+  steps : Array[ScriptedModelStep],
+  compact_result? : @kernel.CompactResult,
+) -> ScopeRecordingModel {
+  {
+    scripted: ScriptedModel(steps),
+    compact_result,
+    chat_scopes: [],
+    compact_scopes: [],
+  }
+}
+
+///|
+/// Scopes observed by `chat`, in call order.
+pub fn ScopeRecordingModel::chat_scopes(
+  self : ScopeRecordingModel,
+) -> Array[@kernel.InvocationScope] {
+  self.chat_scopes.copy()
+}
+
+///|
+/// Scopes observed by `compact`, in call order.
+pub fn ScopeRecordingModel::compact_scopes(
+  self : ScopeRecordingModel,
+) -> Array[@kernel.InvocationScope] {
+  self.compact_scopes.copy()
+}
+
+///|
+pub impl @port.ModelPort for ScopeRecordingModel with fn chat(
+  self,
+  scope : @kernel.InvocationScope,
+  messages : Array[@kernel.Message],
+  tools : Array[@kernel.ToolDef],
+  options : @types.ChatOptions,
+  stream : @types.StreamMode,
+) -> @kernel.ModelCallResult raise @error.ModelError {
+  self.chat_scopes.push(scope)
+  (self.scripted as &@port.ModelPort).chat(
+    scope, messages, tools, options, stream,
+  )
+}
+
+///|
+pub impl @port.ModelPort for ScopeRecordingModel with fn compact(
+  self,
+  scope : @kernel.InvocationScope,
+  _messages : Array[@kernel.Message],
+  _options : @types.ChatOptions,
+  _trigger : @kernel.CompactTrigger,
+) -> @kernel.CompactResult raise @error.ModelError {
+  self.compact_scopes.push(scope)
+  match self.compact_result {
+    Some(result) => result
+    None =>
+      raise @error.ModelError::ResponseParse(
+        "ScopeRecordingModel has no compact_result",
+      )
+  }
+}
+
+///|
+pub impl @port.ModelPort for ScopeRecordingModel with fn provider_config(_self) -> @port.ProviderConfig {
   @port.ProviderConfig::empty()
 }
 
@@ -1022,7 +1128,7 @@ pub fn tk_error_result(content : String) -> @kernel.ToolOutcome {
 /// Build a default universal AgentConfig for scripted tests.
 pub fn tk_config() -> AgentConfig {
   {
-    max_tool_rounds: 10,
+    max_tool_rounds: Some(10),
     temperature: None,
     max_output_tokens: None,
     model_context_window: None,

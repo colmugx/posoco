@@ -198,8 +198,8 @@ pub(open) trait MemoryPort {
 }
 
 pub(open) trait ModelPort {
-  async fn chat(Self, Array[@kernel.Message], Array[@kernel.ToolDef], @types.ChatOptions, @types.StreamMode) -> @kernel.ModelCallResult raise @error.ModelError
-  async fn compact(Self, Array[@kernel.Message], @types.ChatOptions, @kernel.CompactTrigger) -> @kernel.CompactResult raise @error.ModelError
+  async fn chat(Self, @kernel.InvocationScope, Array[@kernel.Message], Array[@kernel.ToolDef], @types.ChatOptions, @types.StreamMode) -> @kernel.ModelCallResult raise @error.ModelError
+  async fn compact(Self, @kernel.InvocationScope, Array[@kernel.Message], @types.ChatOptions, @kernel.CompactTrigger) -> @kernel.CompactResult raise @error.ModelError
   fn provider_config(Self) -> ProviderConfig
 }
 

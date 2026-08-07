@@ -7,7 +7,7 @@
 ///        (TurnFailed OR TurnCompleted, never both).
 fn err_config() -> @posoco.AgentConfig {
   {
-    max_tool_rounds: 10,
+    max_tool_rounds: Some(10),
     temperature: None,
     max_output_tokens: None,
     model_context_window: None,
@@ -473,7 +473,7 @@ async test "t07_tool_loop_emits_exactly_one_turnfailed" {
   let store = @posoco.RecordingSessionStore()
   let obs = @posoco.RecordingObserver()
   let config : AgentConfig = {
-    max_tool_rounds: 0,
+    max_tool_rounds: Some(0),
     temperature: None,
     max_output_tokens: None,
     model_context_window: None,
@@ -491,7 +491,7 @@ async test "t07_tool_loop_emits_exactly_one_turnfailed" {
     e => Err(e)
   }
   match result {
-    Err(@error.AgentError::ToolLoopExceeded) => ()
+    Err(@error.AgentError::ToolLoopExceeded(..)) => ()
     _ => fail("expected tool loop failure")
   }
   assert_eq(count_terminal_events(obs.events()), 1)

@@ -34,6 +34,7 @@ fn BoundaryProbeHost::append_counts_at_model_call(
 ///|
 pub impl @kernel_exec.HostRuntime for BoundaryProbeHost with fn call_model(
   self,
+  _scope : InvocationScope,
   messages : Array[Message],
   _tool_definitions : Array[ToolDef],
   _call_options : Json,
@@ -79,6 +80,7 @@ pub impl @kernel_exec.HostRuntime for BoundaryProbeHost with fn cancel_effects(
 /// M3.5: compact stub — BoundaryProbeHost does not exercise compact.
 pub impl @kernel_exec.HostRuntime for BoundaryProbeHost with fn compact(
   self : BoundaryProbeHost,
+  _scope : InvocationScope,
   _messages : Array[Message],
   _call_options : Json,
   _trigger : @kernel.CompactTrigger,
@@ -166,6 +168,7 @@ fn CompactReplaceHost::new(
 ///|
 pub impl @kernel_exec.HostRuntime for CompactReplaceHost with fn call_model(
   self,
+  _scope : InvocationScope,
   messages : Array[Message],
   _tool_definitions : Array[ToolDef],
   _call_options : Json,
@@ -210,6 +213,7 @@ pub impl @kernel_exec.HostRuntime for CompactReplaceHost with fn cancel_effects(
 ///|
 pub impl @kernel_exec.HostRuntime for CompactReplaceHost with fn compact(
   _self,
+  _scope : InvocationScope,
   _messages : Array[Message],
   _call_options : Json,
   _trigger : @kernel.CompactTrigger,
@@ -256,7 +260,7 @@ async test "puppet/boundary_journals_auto_compact_replace_rewrite" {
     subscribers: [subscriber as &EventSubscriber],
     stream_chunks: None,
     hooks: [],
-    max_iterations: 50,
+    max_iterations: Some(50),
     commands: [],
     session_store: None,
     mailbox: mailbox_instance as &Mailbox,

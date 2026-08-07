@@ -9,6 +9,7 @@ struct MockModelPort {
 ///|
 impl @port.ModelPort for MockModelPort with fn chat(
   self,
+  _scope : @kernel.InvocationScope,
   _messages : Array[@kernel.Message],
   _tools : Array[@kernel.ToolDef],
   _options : @types.ChatOptions,
@@ -26,6 +27,7 @@ impl @port.ModelPort for MockModelPort with fn chat(
 ///|
 impl @port.ModelPort for MockModelPort with fn compact(
   _self,
+  _scope : @kernel.InvocationScope,
   _messages : Array[@kernel.Message],
   _options : @types.ChatOptions,
   _trigger : @kernel.CompactTrigger,
@@ -98,7 +100,7 @@ impl @port.Observer for MockObserver with fn on_event(self, event) {
 ///|
 fn make_config() -> @posoco.AgentConfig {
   {
-    max_tool_rounds: 10,
+    max_tool_rounds: Some(10),
     temperature: None,
     max_output_tokens: None,
     model_context_window: None,

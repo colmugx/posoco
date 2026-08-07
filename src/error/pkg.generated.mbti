@@ -12,7 +12,7 @@ pub(all) suberror AgentError {
   Model(String)
   Session(SessionError)
   Runtime(RuntimeError)
-  ToolLoopExceeded
+  ToolLoopExceeded(consumed~ : Int, limit~ : Int)
   HookAborted(String)
 } derive(@debug.Debug)
 pub impl Show for AgentError

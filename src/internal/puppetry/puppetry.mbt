@@ -47,8 +47,12 @@ pub(all) struct PuppetConfig {
   /// tool execution (first non-Approve decision wins), and
   /// `Hook::on_post_event` after each effect commits (read-only).
   hooks : Array[&Hook]
-  /// Max iterations before the pump declares PumpLoopExceeded.
-  max_iterations : Int
+  /// Livelock backstop only: max pump iterations before the pump declares
+  /// PumpLoopExceeded. `None` disables the backstop. The kernel budget is
+  /// the sole semantic limit; when a budget is configured this is derived
+  /// generously from it (2 iterations per round + terminal iteration) so the
+  /// budget always fires first.
+  max_iterations : Int?
   /// Slash command processors. The pump does NOT invoke these —
   /// `BuiltinCommandPort` is registered here so product code can reach it
   /// through `puppet.commands()`. The BuiltinCommandPort holds a reference
@@ -398,9 +402,12 @@ async fn Puppet::drive_run(
   }
   // Build the execution context from the host runtime + catalog snapshot.
   // Puppetry forwards canonical values without product-specific conversion.
+  // The Run identity is carried so CallModel effects can be scoped.
   let exec_ctx = ExecutionContext::new(
     self.config.host,
     catalog=self.config.catalog,
+    run_id~,
+    session_id~,
   )
   // Build the event dispatcher.
   let dispatcher = EventDispatcher(run_id, turn_id, session_id)
@@ -477,8 +484,10 @@ async fn Puppet::drive_run(
   let max_iter = self.config.max_iterations
   while state.phase() != Terminal && state.phase() != Suspended {
     iter = iter + 1
-    if iter > max_iter {
-      return self.reject_run(error=PumpLoopExceeded(iterations=iter))
+    match max_iter {
+      Some(m) if iter > m =>
+        return self.reject_run(error=PumpLoopExceeded(iterations=iter))
+      _ => ()
     }
     // Check abort.
     if self.mailbox.abort_requested() {
@@ -1033,8 +1042,12 @@ async fn Puppet::handle_compact(
   snap : TurnSnapshot,
 ) -> CompactFlow raise PuppetError {
   let messages = state.transcript().messages_snapshot()
+  // Compact is host-driven (a mailbox command), not a reducer-allocated
+  // effect — hence `effect_id: None`. Run/session identity still applies.
+  let scope : InvocationScope = { session_id, run_id, effect_id: None }
   let attempted : Result[Result[CompactResult, @kernel.ModelFailure], Error] = Ok(
     self.config.host.compact(
+      scope,
       messages,
       snap.call_options(),
       compact_cmd.trigger(),

@@ -7,6 +7,7 @@ struct QuickstartFixedModel {}
 ///|
 pub impl @port.ModelPort for QuickstartFixedModel with fn chat(
   _self,
+  _scope : @kernel.InvocationScope,
   _messages : Array[@kernel.Message],
   _tools : Array[@kernel.ToolDef],
   _options : @types.ChatOptions,
@@ -25,6 +26,7 @@ pub impl @port.ModelPort for QuickstartFixedModel with fn chat(
 ///|
 pub impl @port.ModelPort for QuickstartFixedModel with fn compact(
   _self,
+  _scope : @kernel.InvocationScope,
   _messages : Array[@kernel.Message],
   _options : @types.ChatOptions,
   _trigger : @kernel.CompactTrigger,
@@ -91,7 +93,7 @@ async test "quickstart_fixture_uses_current_public_api" {
       tk_ext(id="io", sessions=[store]),
     ],
     config={
-      max_tool_rounds: 10,
+      max_tool_rounds: Some(10),
       temperature: None,
       max_output_tokens: None,
       model_context_window: None,

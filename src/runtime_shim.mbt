@@ -17,12 +17,15 @@ fn RuntimeHostShim::new(inner : &@runtime.Runtime) -> RuntimeHostShim {
 ///|
 impl @kernel_exec.HostRuntime for RuntimeHostShim with fn call_model(
   self,
+  scope : @kernel.InvocationScope,
   messages : Array[@kernel.Message],
   tool_definitions : Array[@kernel.ToolDef],
   call_options : Json,
   on_chunk : @kernel_exec.HostChunkCallback?,
 ) -> Result[@kernel.ModelCallResult, @kernel.ModelFailure] {
-  self.inner.call_model(messages, tool_definitions, call_options, on_chunk)
+  self.inner.call_model(
+    scope, messages, tool_definitions, call_options, on_chunk,
+  )
 }
 
 ///|
@@ -55,9 +58,10 @@ impl @kernel_exec.HostRuntime for RuntimeHostShim with fn cancel_effects(
 ///|
 impl @kernel_exec.HostRuntime for RuntimeHostShim with fn compact(
   self,
+  scope : @kernel.InvocationScope,
   messages : Array[@kernel.Message],
   call_options : Json,
   trigger : @kernel.CompactTrigger,
 ) -> Result[@kernel.CompactResult, @kernel.ModelFailure] {
-  self.inner.compact(messages, call_options, trigger)
+  self.inner.compact(scope, messages, call_options, trigger)
 }

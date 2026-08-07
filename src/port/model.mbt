@@ -1,10 +1,17 @@
 ///|
 /// ModelPort: LLM calling interface. Decides HOW to compact; posoco decides
 /// WHEN. `chat` returns `ModelCallResult` with `processed_messages`.
+///
+/// Both model-side entry points receive an `InvocationScope` identifying the
+/// session/run the call serves (`chat` additionally carries the reducer-
+/// allocated effect id). Adapters that key behaviour on session identity —
+/// continuity, telemetry, cost attribution, per-session policy — read it from
+/// `scope`; scope-agnostic adapters ignore it. Treat it as read-only.
 pub(open) trait ModelPort {
   /// One chat call. `Stream(cb)` emits chunks; `NoStream` skips chunk work.
   async fn chat(
     Self,
+    scope : @kernel.InvocationScope,
     messages : Array[@kernel.Message],
     tools : Array[@kernel.ToolDef],
     options : @types.ChatOptions,
@@ -14,8 +21,11 @@ pub(open) trait ModelPort {
   /// Compact the conversation. `trigger` (Auto/Manual) is advisory — the
   /// modelport MAY use a cheaper strategy for Auto. Modelports that do not
   /// support compact should raise `ModelError::ResponseParse`.
+  /// `scope.effect_id` is always `None` here: compact is host-driven, not a
+  /// reducer-allocated effect.
   async fn compact(
     Self,
+    scope : @kernel.InvocationScope,
     messages : Array[@kernel.Message],
     options : @types.ChatOptions,
     trigger : @kernel.CompactTrigger,
