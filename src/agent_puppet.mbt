@@ -382,9 +382,11 @@ async fn AgentRuntime::run_turn_via_puppet(
           "puppet effect execution: " + safe_error_label(cause),
         ),
       )
-    @puppetry.Rejected(..) =>
+    @puppetry.Rejected(error~) =>
       raise @error.AgentError::Runtime(
-        @error.RuntimeError::InvocationFailed("puppet rejected the prompt"),
+        @error.RuntimeError::InvocationFailed(
+          "puppet rejected the prompt: " + error.to_string(),
+        ),
       )
     @puppetry.ForkCompleted(
       run_id~,
