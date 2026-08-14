@@ -1,0 +1,27 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "colmugx/posoco-quickstart"
+
+import {
+  "colmugx/posoco/error",
+  "colmugx/posoco/kernel",
+  "colmugx/posoco/port",
+  "colmugx/posoco/types",
+}
+
+// Values
+
+// Errors
+
+// Types and methods
+type QuickstartExtension
+pub impl @port.Extension for QuickstartExtension
+
+type QuickstartModel
+pub impl @port.ModelPort for QuickstartModel
+
+type QuickstartSessionStore
+pub impl @port.SessionStore for QuickstartSessionStore
+
+// Type aliases
+
+// Traits

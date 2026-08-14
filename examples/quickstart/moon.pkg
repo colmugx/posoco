@@ -1,0 +1,6 @@
+import {
+  "colmugx/posoco",
+  "moonbitlang/async",
+}
+
+pkgtype(kind: "executable")
