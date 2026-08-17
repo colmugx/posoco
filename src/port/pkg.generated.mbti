@@ -30,6 +30,11 @@ pub(all) struct AutocompleteSource {
   fetch : (String) -> Array[AutocompleteItem]
 } derive(@debug.Debug)
 
+pub(all) enum Capability {
+  Model
+  Ui
+} derive(Eq, @debug.Debug)
+
 pub(all) struct CommandDef {
   id : String
   label : String
@@ -69,6 +74,13 @@ pub(all) enum CommandType {
   MultiStep
 } derive(Eq, @debug.Debug)
 
+pub struct CompositionView {
+  // private fields
+}
+pub fn CompositionView::model(Self) -> &ModelPort?
+pub fn CompositionView::resolve(requires~ : Array[Capability], model~ : &ModelPort, ui~ : &UiPort) -> Self
+pub fn CompositionView::ui(Self) -> &UiPort?
+
 pub(all) struct ExtensionManifest {
   id : String
   models : Array[&ModelPort]
@@ -81,6 +93,7 @@ pub(all) struct ExtensionManifest {
   commands : Array[&CommandPort]
   ui : Array[&UiPort]
   prompt_contributors : Array[&SystemPromptContributor]
+  requires : Array[Capability]
 }
 pub fn ExtensionManifest::empty(id~ : String) -> Self
 
@@ -185,9 +198,12 @@ pub(open) trait Hook {
   fn before_model(Self, Array[@kernel.Message]) -> Array[@kernel.Message] raise HookAbort = _
   async fn before_tool(Self, @kernel.ToolCall) -> ToolHookDecision = _
   fn on_post_event(Self, HookStage) -> Unit = _
+  fn on_post_event_at(Self, @types.EventScope?, HookStage) -> Unit = _
 }
 
 pub(open) trait Lifecycle {
+  fn on_compose(Self, CompositionView) -> Unit raise @error.CompositionError = _
+  async fn on_start(Self) -> Unit = _
   async fn on_shutdown(Self) -> Unit
 }
 
@@ -205,6 +221,7 @@ pub(open) trait ModelPort {
 
 pub(open) trait Observer {
   fn on_event(Self, @types.TurnEvent) -> Unit = _
+  fn on_event_at(Self, @types.EventScope?, @types.TurnEvent) -> Unit = _
 }
 
 pub(open) trait SessionStore {

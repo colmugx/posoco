@@ -1,0 +1,235 @@
+///|
+/// Proof-side predicates for the RunState phase invariant.
+///
+/// `phase_fields_ok` / `phase_inv` translate `RunState::validate`
+/// (state.mbt) into pure logic: the six-phase legal domains
+/// (pending-effect counts per phase, outcome present ⇔ Terminal,
+/// suspension requirement ⇔ Suspended), with `pending_effects` observed
+/// only through `FixedArray` length and the prefix counters
+/// `count_call_model_upto` / `count_execute_tool_upto`. The transcript and
+/// the tool-result ledger are opaque to the phase invariant — no predicate
+/// here talks about their contents.
+///
+/// `phase_inv` is deliberately one step STRONGER than runtime `validate`:
+/// `validate` leaves `suspension_requirement` unconstrained outside
+/// Suspended/Terminal, while the spec pins it to `None` there (the ⇔
+/// reading). The reducer maintains the stronger law on every
+/// path — suspension is only ever set together with `phase=Suspended` and
+/// the rejection paths carry phase and suspension over together — so
+/// `validate` remains a strictly defensive layer.
+///
+/// Predicates match constructor TAGS only (bare constructor names: the
+/// proof frontend rejects `..` rest patterns and `label~` patterns in
+/// `.mbtp`), so payload types (Message / Json / arrays) never enter the
+/// logic bodies.
+
+///|
+/// The terminal outcome is absent.
+predicate outcome_none(outcome : Option[RunOutcome]) {
+  match outcome {
+    None => true
+    Some(_) => false
+  }
+}
+
+///|
+/// The suspension requirement is absent.
+predicate suspension_none(req : Option[SuspensionRequirement]) {
+  match req {
+    None => true
+    Some(_) => false
+  }
+}
+
+///|
+/// The suspension requirement is present.
+predicate suspension_some(req : Option[SuspensionRequirement]) {
+  match req {
+    None => false
+    Some(_) => true
+  }
+}
+
+///|
+/// Number of `CallModel` effects among the first `upto` elements
+/// (0 when `upto` lies outside the array's index range). Prefix recursion:
+/// the count at `upto` is the count at `upto - 1` plus one when the
+/// element at `upto - 1` is a `CallModel`. `proof_decrease: upto` gives
+/// why3 the termination variant (recursing to `upto - 1` under the
+/// `upto > 0` guard).
+fn count_call_model_upto(effects : FixedArray[Effect], upto : Int) -> Int where {
+  proof_decrease: upto,
+} {
+  if upto > 0 && upto <= effects.length() {
+    match effects[upto - 1] {
+      CallModel => count_call_model_upto(effects, upto - 1) + 1
+      _ => count_call_model_upto(effects, upto - 1)
+    }
+  } else {
+    0
+  }
+}
+
+///|
+/// Number of `ExecuteTool` effects among the first `upto` elements
+/// (0 when `upto` lies outside the array's index range).
+fn count_execute_tool_upto(effects : FixedArray[Effect], upto : Int) -> Int where {
+  proof_decrease: upto,
+} {
+  if upto > 0 && upto <= effects.length() {
+    match effects[upto - 1] {
+      ExecuteTool => count_execute_tool_upto(effects, upto - 1) + 1
+      _ => count_execute_tool_upto(effects, upto - 1)
+    }
+  } else {
+    0
+  }
+}
+
+///|
+/// Tag test: the effect is a `CallModel` declaration.
+predicate effect_is_call_model(e : Effect) {
+  match e {
+    CallModel => true
+    _ => false
+  }
+}
+
+///|
+/// Tag test: the effect is an `ExecuteTool` declaration.
+predicate effect_is_execute_tool(e : Effect) {
+  match e {
+    ExecuteTool => true
+    _ => false
+  }
+}
+
+///|
+/// The one-step unfolding statement, in predicate form (lemma where-clauses
+/// only accept predicate calls; predicate bodies accept the full grammar).
+predicate count_call_model_step_ok(effects : FixedArray[Effect], upto : Int) {
+  (effect_is_call_model(effects[upto - 1]) &&
+    count_call_model_upto(effects, upto) ==
+      count_call_model_upto(effects, upto - 1) + 1) ||
+  (!effect_is_call_model(effects[upto - 1]) &&
+    count_call_model_upto(effects, upto) == count_call_model_upto(effects, upto - 1))
+}
+
+///|
+/// One-step unfolding of `count_call_model_upto` under the guard, stated as
+/// a lemma so the loop step VC can chain the invariant (the raw recursive
+/// definition's axioms do not fire inside the loop VC on their own).
+lemma count_call_model_step(effects : FixedArray[Effect], upto : Int) where {
+  proof_require: 0 < upto,
+  proof_require: upto <= effects.length(),
+  proof_ensure: count_call_model_step_ok(effects, upto),
+} {
+}
+
+///|
+/// The one-step unfolding statement, in predicate form.
+predicate count_execute_tool_step_ok(effects : FixedArray[Effect], upto : Int) {
+  (effect_is_execute_tool(effects[upto - 1]) &&
+    count_execute_tool_upto(effects, upto) ==
+      count_execute_tool_upto(effects, upto - 1) + 1) ||
+  (!effect_is_execute_tool(effects[upto - 1]) &&
+    count_execute_tool_upto(effects, upto) == count_execute_tool_upto(effects, upto - 1))
+}
+
+///|
+/// One-step unfolding of `count_execute_tool_upto` under the guard.
+lemma count_execute_tool_step(effects : FixedArray[Effect], upto : Int) where {
+  proof_require: 0 < upto,
+  proof_require: upto <= effects.length(),
+  proof_ensure: count_execute_tool_step_ok(effects, upto),
+} {
+}
+
+///|
+/// Phase law over the four phase-relevant fields, mirroring
+/// `RunState::validate` plus the suspension ⇔ Suspended closure:
+/// - Initializing / ReadyForModel: no pending effects, no outcome, no
+///   suspension.
+/// - AwaitingModel: exactly one pending `CallModel` (other effects are not
+///   constrained — `validate` counts only `CallModel` here too), no
+///   outcome, no suspension.
+/// - AwaitingTools: at least one pending `ExecuteTool`, no outcome, no
+///   suspension.
+/// - Suspended: no pending effects, no outcome, suspension present.
+/// - Terminal: no pending effects, outcome present, no suspension.
+predicate phase_fields_ok(
+  phase : Phase,
+  pending_effects : FixedArray[Effect],
+  outcome : Option[RunOutcome],
+  suspension_requirement : Option[SuspensionRequirement],
+) {
+  match phase {
+    Initializing =>
+      pending_effects.length() == 0 &&
+      outcome_none(outcome) &&
+      suspension_none(suspension_requirement)
+    ReadyForModel =>
+      pending_effects.length() == 0 &&
+      outcome_none(outcome) &&
+      suspension_none(suspension_requirement)
+    AwaitingModel =>
+      count_call_model_upto(pending_effects, pending_effects.length()) == 1 &&
+      outcome_none(outcome) &&
+      suspension_none(suspension_requirement)
+    AwaitingTools =>
+      count_execute_tool_upto(pending_effects, pending_effects.length()) >= 1 &&
+      outcome_none(outcome) &&
+      suspension_none(suspension_requirement)
+    Suspended =>
+      pending_effects.length() == 0 &&
+      outcome_none(outcome) &&
+      suspension_some(suspension_requirement)
+    Terminal =>
+      pending_effects.length() == 0 &&
+      (!outcome_none(outcome)) &&
+      suspension_none(suspension_requirement)
+  }
+}
+
+///|
+/// The state satisfies the phase invariant: `phase_fields_ok` read off the
+/// state's own fields, so the two unfold into each other definitionally.
+predicate phase_inv(s : RunState) {
+  phase_fields_ok(
+    s.phase,
+    s.pending_effects,
+    s.outcome,
+    s.suspension_requirement,
+  )
+}
+
+///|
+/// Componentwise equality of budget-consumption snapshots.
+predicate consumed_eq(a : BudgetConsumed, b : BudgetConsumed) {
+  a.model_steps == b.model_steps &&
+  a.tool_rounds == b.tool_rounds &&
+  a.tool_calls == b.tool_calls &&
+  a.observed_total_tokens == b.observed_total_tokens &&
+  a.any_usage_verified == b.any_usage_verified
+}
+
+///|
+/// Consumption ordering across a transition: the counted dimensions never
+/// decrease, the observed token reading never decreases, and the
+/// verified-usage flag may only flip false → true (never revoked).
+/// (Param names avoid the WhyML reserved word `old`; renaming back breaks
+/// the generated proof scripts.)
+predicate consumed_le(prev : BudgetConsumed, curr : BudgetConsumed) {
+  curr.model_steps >= prev.model_steps &&
+  curr.tool_rounds >= prev.tool_rounds &&
+  curr.tool_calls >= prev.tool_calls &&
+  curr.observed_total_tokens >= prev.observed_total_tokens &&
+  (prev.any_usage_verified || curr.any_usage_verified)
+}
+
+///|
+/// Budget monotonicity across a transition: the next state's
+/// consumption is non-decreasing and verified usage is never revoked.
+predicate budget_monotone(prev : RunState, curr : RunState) {
+  consumed_le(prev.budget_consumed, curr.budget_consumed)
+}

@@ -112,6 +112,11 @@ pub(all) suberror CompositionError {
   /// Legacy: a required port had zero contributors. Kept for compatibility
   /// with older composition paths that do not use manifests.
   EmptyPort(String)
+  /// An extension's `Lifecycle::on_compose` raised, failing the composition
+  /// loudly. No partial Agent is produced. Extensions raise this themselves
+  /// when a capability they need reads `None` in the `CompositionView`
+  /// (typically because it was not declared in `requires`).
+  ExtensionComposeFailed(manifest_id~ : String, detail~ : String)
 } derive(Debug)
 
 ///|
@@ -128,6 +133,8 @@ pub impl Show for CompositionError with fn to_string(self) -> String {
     ManifestSchemaError(manifest_id~, detail~) =>
       "CompositionError::ManifestSchemaError(manifest=\{manifest_id}, detail=\{detail})"
     EmptyPort(port) => "CompositionError::EmptyPort(\{port})"
+    ExtensionComposeFailed(manifest_id~, detail~) =>
+      "CompositionError::ExtensionComposeFailed(manifest=\{manifest_id}, detail=\{detail})"
   }
 }
 

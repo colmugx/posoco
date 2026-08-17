@@ -136,6 +136,10 @@ pub impl Show for Reasoning with fn to_string(self : Reasoning) -> String {
 ///   ONLY variant that carries reasoning.
 /// - `ToolMessage` is the ONLY variant that carries a `call_id` correlation
 ///   and a `ToolOutcome`. It never carries tool calls.
+// Proof-side token model: no contract inspects message internals; the int
+// mapping is a trusted opaque bridge. A future spec that reasons about
+// message order or contents needs a real sequence model here first.
+#proof_external("int.Int", "int")
 pub(all) enum Message {
   SystemMessage(content~ : Array[Content])
   UserMessage(content~ : Array[Content])
@@ -283,6 +287,9 @@ fn safe_outcome_label(value : String) -> String {
 /// Canonical conversation transcript. Every transition produces a fresh array
 /// (the reducer never mutates caller-owned arrays, ADR §2.10). The reducer is
 /// the only writer.
+// Proof-side token model: phase_inv carries the transcript opaquely; the
+// int mapping is a trusted opaque bridge (see state_proof.mbtp).
+#proof_external("int.Int", "int")
 pub(all) struct Transcript {
   messages : Array[Message]
 } derive(Eq, Debug)

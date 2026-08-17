@@ -192,7 +192,7 @@ pub fn run_model_step(
       let effect_id = state.next_effect_id()
       let payload : CallModelPayload = {
         model_step_id: step_id,
-        messages: state.transcript().messages_snapshot(),
+        messages: FixedArray::from_array(state.transcript().messages_snapshot()),
         catalog_version: catalog.version(),
         call_options,
       }
@@ -389,7 +389,7 @@ fn reduce_model_completed_with_tools(
   let events : Array[KernelEvent] = [step_completed]
   let effects : Array[Effect] = []
   let mut transcript = initial_transcript
-  let mut tool_results = state.tool_results.copy()
+  let mut tool_results = state.tool_results_snapshot()
   let calls = completion.tool_calls()
   // Pre-pass: split into NotExecuted outcomes (written to transcript) and
   // validated calls (become ExecuteTool effects). Duplicate call_id is an
@@ -674,7 +674,7 @@ fn reduce_tool_completed(
   )
   let new_tool_results = insert_tool_result_in_source_order(
     new_transcript,
-    state.tool_results,
+    state.tool_results_snapshot(),
     payload.call_id,
     payload.outcome,
   )
@@ -788,7 +788,7 @@ fn reduce_tool_failed(
   )
   let new_tool_results = insert_tool_result_in_source_order(
     new_transcript,
-    state.tool_results,
+    state.tool_results_snapshot(),
     payload.call_id,
     outcome,
   )
@@ -884,7 +884,7 @@ fn reduce_suspend(
   if !pending.is_empty() {
     let cancel_effect_id = state.next_effect_id()
     let cancel_payload : CancelOutstandingPayload = {
-      effect_ids: pending.map(fn(e) { e.effect_id() }),
+      effect_ids: FixedArray::from_array(pending.map(fn(e) { e.effect_id() })),
       reason: HostRequested(detail=None),
     }
     effects.push(
@@ -892,7 +892,7 @@ fn reduce_suspend(
     )
     events.push(
       CancelRequested(
-        effect_ids=cancel_payload.effect_ids.copy(),
+        effect_ids=Array::from_iter(cancel_payload.effect_ids.iter()),
         reason=HostRequested(detail=None),
       ),
     )
@@ -939,14 +939,17 @@ fn reduce_cancel_with_pending(
   if !pending.is_empty() {
     let cancel_effect_id = state.next_effect_id()
     let cancel_payload : CancelOutstandingPayload = {
-      effect_ids: pending.map(fn(e) { e.effect_id() }),
+      effect_ids: FixedArray::from_array(pending.map(fn(e) { e.effect_id() })),
       reason,
     }
     effects.push(
       CancelOutstanding(effect_id=cancel_effect_id, payload=cancel_payload),
     )
     events.push(
-      CancelRequested(effect_ids=cancel_payload.effect_ids.copy(), reason~),
+      CancelRequested(
+        effect_ids=Array::from_iter(cancel_payload.effect_ids.iter()),
+        reason~,
+      ),
     )
   }
   let terminal_state = state.transition(
@@ -1369,14 +1372,14 @@ fn insert_tool_result_in_source_order(
 ///|
 /// Project the run-local ledger into the public terminal result shape.
 fn tool_outcomes(
-  records : Array[(@kernel.CallId, @kernel.ToolOutcome)],
-) -> Array[@kernel.ToolOutcome] {
+  records : FixedArray[(@kernel.CallId, @kernel.ToolOutcome)],
+) -> FixedArray[@kernel.ToolOutcome] {
   let out : Array[@kernel.ToolOutcome] = []
-  for record in records {
-    let (_, outcome) = record
+  for i in 0..<records.length() {
+    let (_, outcome) = records[i]
     out.push(outcome)
   }
-  out
+  FixedArray::from_array(out)
 }
 
 ///|

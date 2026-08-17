@@ -3,6 +3,18 @@
 /// `AggregatedPorts` value for the agent constructor.
 
 ///|
+/// A registered Lifecycle contributor paired with its declared capability
+/// requirements. The pairing survives aggregation so the composition can
+/// gate each contributor's `CompositionView` on its own declared `requires`
+/// at `Lifecycle::on_compose` delivery time. (The manifest id is not carried:
+/// an extension that fails composition identifies itself through the
+/// `manifest_id` of the `CompositionError` it raises.)
+priv struct LifecycleEntry {
+  requires : Array[@port.Capability]
+  port : &@port.Lifecycle
+}
+
+///|
 /// Flattened port bundle ready for the agent constructor. The `model` field
 /// is a single value (multi-model routing is solved in-extension), and `ui`
 /// is wrapped into one UiPort reference (the agent never sees a bare array).
@@ -13,7 +25,7 @@ priv struct AggregatedPorts {
   observers : Array[&@port.Observer]
   hooks : Array[&@port.Hook]
   memory : Array[&@port.MemoryPort]
-  lifecycle : Array[&@port.Lifecycle]
+  lifecycle : Array[LifecycleEntry]
   commands : Array[&@port.CommandPort]
   ui : &@port.UiPort
   /// Contributor paired with its manifest id (used as the prompt section
@@ -39,7 +51,7 @@ fn aggregate_extensions(
   let observers : Array[&@port.Observer] = []
   let hooks : Array[&@port.Hook] = []
   let memory : Array[&@port.MemoryPort] = []
-  let lifecycle : Array[&@port.Lifecycle] = []
+  let lifecycle : Array[LifecycleEntry] = []
   let commands : Array[&@port.CommandPort] = []
   let command_manifests : Map[String, Array[String]] = Map::from_array([])
   let ui : Array[&@port.UiPort] = []
@@ -119,7 +131,7 @@ fn aggregate_extensions(
       memory.push(m)
     }
     for l in manifest.lifecycle {
-      lifecycle.push(l)
+      lifecycle.push({ requires: manifest.requires.copy(), port: l })
     }
     for u in manifest.ui {
       ui.push(u)

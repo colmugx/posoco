@@ -7,8 +7,25 @@
 // ExtensionManifest — value type returned by Extension::manifest
 
 ///|
+/// A composed capability an extension declares it consumes. Declaring is what
+/// populates the `CompositionView` delivered at `Lifecycle::on_compose` — the
+/// view gates on this declaration, so an undeclared capability reads as
+/// `None`. Extensible by adding variants; existing manifests are unaffected.
+pub(all) enum Capability {
+  /// The single composed ModelPort (post cardinality gate, source-agnostic).
+  Model
+  /// The composed UiPort (single / Composite / Noop), for human interaction.
+  Ui
+} derive(Eq, Debug)
+
+///|
 /// Self-reported port contributions. All fields default to empty arrays;
 /// multi-trait extensions put `self` under each applicable field.
+///
+/// `requires` is the consumption direction: the extension declares which
+/// composed capabilities it wants delivered at `Lifecycle::on_compose`.
+/// The declaration is load-bearing (the view gates on it) and auditable
+/// (composition can answer "which extensions declared model access").
 pub(all) struct ExtensionManifest {
   id : String
   models : Array[&ModelPort]
@@ -25,6 +42,7 @@ pub(all) struct ExtensionManifest {
   commands : Array[&CommandPort]
   ui : Array[&UiPort]
   prompt_contributors : Array[&SystemPromptContributor]
+  requires : Array[Capability]
 }
 
 ///|
@@ -43,6 +61,7 @@ pub fn ExtensionManifest::empty(id~ : String) -> ExtensionManifest {
     commands: [],
     ui: [],
     prompt_contributors: [],
+    requires: [],
   }
 }
 

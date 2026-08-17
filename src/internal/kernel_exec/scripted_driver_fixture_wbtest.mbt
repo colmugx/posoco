@@ -161,7 +161,7 @@ fn input_for_effect(
           effect_id,
           model_step_id: payload.model_step_id,
           completion,
-          processed_messages: payload.messages,
+          processed_messages: Array::from_iter(payload.messages.iter()),
         }),
         "CallModel",
         "ModelCompleted",

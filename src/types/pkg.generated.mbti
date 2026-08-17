@@ -18,6 +18,12 @@ pub(all) struct ChatOptions {
   max_output_tokens : Int?
 } derive(Eq, @debug.Debug)
 
+pub(all) struct EventScope {
+  session_id : @kernel.SessionId
+  run_id : @kernel.RunId
+  turn_id : @kernel.TurnId
+} derive(Eq, @debug.Debug)
+
 pub(all) struct MemoryEntry {
   id : String
   content : String

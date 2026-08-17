@@ -108,17 +108,32 @@ pub(all) struct EffectId {
 } derive(Eq, Hash, Debug)
 
 ///|
-pub fn EffectId::first() -> EffectId {
+/// Contract: the counter origin is exactly 1 (strictly positive start).
+pub fn EffectId::first() -> EffectId where {
+  proof_ensure: result => effect_id_first_ok(result),
+} {
   { value: 1 }
 }
 
 ///|
-pub fn EffectId::next(self : EffectId) -> EffectId {
+/// Contract: strictly monotonic — the next id is exactly the current id
+/// plus 1, so ids never repeat going forward.
+pub fn EffectId::next(
+  self : EffectId,
+) -> EffectId where {
+  proof_ensure: result => effect_id_next_ok(self, result),
+} {
   { value: self.value + 1 }
 }
 
 ///|
-pub fn EffectId::to_int(self : EffectId) -> Int {
+/// Contract: projection identity — `to_int` exposes the underlying counter
+/// unchanged.
+pub fn EffectId::to_int(
+  self : EffectId,
+) -> Int where {
+  proof_ensure: result => effect_id_to_int_ok(self, result),
+} {
   self.value
 }
 
@@ -137,12 +152,23 @@ pub(all) struct CatalogVersion {
 } derive(Eq, Debug)
 
 ///|
-pub fn CatalogVersion::CatalogVersion(value : Int) -> CatalogVersion {
+/// Contract: the canonical constructor wraps its argument unchanged.
+pub fn CatalogVersion::CatalogVersion(
+  value : Int,
+) -> CatalogVersion where {
+  proof_ensure: result => catalog_version_mk_ok(result, value),
+} {
   CatalogVersion::{ value, }
 }
 
 ///|
-pub fn CatalogVersion::to_int(self : CatalogVersion) -> Int {
+/// Contract: projection identity — `to_int` exposes the wrapped version
+/// unchanged.
+pub fn CatalogVersion::to_int(
+  self : CatalogVersion,
+) -> Int where {
+  proof_ensure: result => catalog_version_to_int_ok(self, result),
+} {
   self.value
 }
 

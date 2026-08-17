@@ -1,0 +1,43 @@
+///|
+/// Proof-side predicates for the identity-counter contracts.
+///
+/// The reducer is the sole allocator of `EffectId`s: they start at 1 and each
+/// allocation is exactly the predecessor plus one, so ids never repeat within
+/// a Run and completion correlation (`StaleCorrelation`) can rely on strict
+/// monotonicity. `CatalogVersion` is a pure wrapper around its integer —
+/// snapshot correlation (`StaleSnapshot`) compares versions, so the wrap and
+/// unwrap projections must be faithful. Integers are modeled as mathematical
+/// integers (no machine overflow; counters are small in practice).
+
+///|
+/// The first effect identity is the counter origin 1: strictly positive, so
+/// every id reachable from `first` via `next` is positive.
+predicate effect_id_first_ok(id : EffectId) {
+  id.value == 1
+}
+
+///|
+/// `EffectId::next` is the strict monotonic successor: every allocated id is
+/// exactly one greater than its predecessor (hence strictly greater, ids
+/// never repeat going forward).
+predicate effect_id_next_ok(prev : EffectId, next : EffectId) {
+  next.value == prev.value + 1
+}
+
+///|
+/// `EffectId::to_int` is a faithful projection of the wrapped counter.
+predicate effect_id_to_int_ok(id : EffectId, result : Int) {
+  result == id.value
+}
+
+///|
+/// The canonical `CatalogVersion` constructor wraps its argument unchanged.
+predicate catalog_version_mk_ok(version : CatalogVersion, value : Int) {
+  version.value == value
+}
+
+///|
+/// `CatalogVersion::to_int` is a faithful projection of the wrapped version.
+predicate catalog_version_to_int_ok(version : CatalogVersion, result : Int) {
+  result == version.value
+}

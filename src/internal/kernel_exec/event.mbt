@@ -130,11 +130,23 @@ pub impl Show for KernelEvent with fn to_string(self : KernelEvent) -> String {
 ///|
 /// Whether this event is terminal (one of RunCompleted/RunFailed/RunCancelled).
 /// Used by conformance tests to assert exactly-once terminal semantics.
-pub fn KernelEvent::is_terminal(self : KernelEvent) -> Bool {
+///
+/// Contract: the classifier agrees with the structural spec predicate
+/// `is_terminal_event` (event_proof.mbtp) on every event — the anchor for
+/// the "exactly one terminal event per Run" theorem. `RunSuspended`
+/// (quiescent, non-terminal) and `InputRejected` (never terminal, never
+/// state-changing) are deliberately excluded.
+/// (Body patterns use explicit `label = _` wildcards — the proof frontend
+/// rejects `..` rest patterns inside contracted function bodies.)
+pub fn KernelEvent::is_terminal(
+  self : KernelEvent,
+) -> Bool where {
+  proof_ensure: result => result == is_terminal_event(self),
+} {
   match self {
-    RunCompleted(..) => true
-    RunFailed(..) => true
-    RunCancelled(..) => true
+    RunCompleted(final_message_summary=_, model_steps=_, tool_calls=_) => true
+    RunFailed(reason=_) => true
+    RunCancelled(reason=_) => true
     _ => false
   }
 }

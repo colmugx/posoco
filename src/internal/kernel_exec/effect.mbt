@@ -12,11 +12,16 @@
 /// re-derive the same definitions the model was prompted against; a stale
 /// version returned by the executor would be a kernel invariant failure
 /// detected at completion correlation.
+// Proof-side token model: contracts only tag-match `Effect` variants and
+// never read payload fields; the int mapping is a trusted opaque bridge.
+#proof_external("int.Int", "int")
 pub(all) struct CallModelPayload {
   model_step_id : ModelStepId
   /// Read-only snapshot of the messages to send to the model. The executor
-  /// must NOT mutate this array.
-  messages : Array[@kernel.Message]
+  /// must NOT mutate this array. `FixedArray` keeps `Effect` pure in the
+  /// proof lowering (mutable `Array` would make the whole enum a mutable
+  /// Why3 type and unprefiable).
+  messages : FixedArray[@kernel.Message]
   /// Catalog version this prompt was built against.
   catalog_version : CatalogVersion
   /// Opaque provider-call options (temperature, max_tokens, etc.) — carried
@@ -29,6 +34,7 @@ pub(all) struct CallModelPayload {
 /// `catalog_version`+`owner` in the runtime registry; if either is missing,
 /// the executor returns a typed `ToolFailed` input carrying an
 /// `InvariantCategory::MissingOwner`/`StaleSnapshot` (ADR §2.5).
+#proof_external("int.Int", "int")
 pub(all) struct ExecuteToolPayload {
   model_step_id : ModelStepId
   call_id : @kernel.CallId
@@ -46,10 +52,13 @@ pub(all) struct ExecuteToolPayload {
 /// wants the executor to stop; the executor records a `CancelDisposition`
 /// per id (M1 fakes report `Propagated`; real adapters in M3 may report
 /// `NotPropagated`).
+#proof_external("int.Int", "int")
 pub(all) struct CancelOutstandingPayload {
   /// Effect ids that should be cancelled. May be empty (the executor should
   /// still return `CancelAcked` for idempotency, ADR §2.5 rule 5).
-  effect_ids : Array[EffectId]
+  /// `FixedArray` for the same proof-purity reason as
+  /// `CallModelPayload.messages`.
+  effect_ids : FixedArray[EffectId]
   /// Why the cancel was issued. Mirrors the terminal CancelReason for
   /// observability — the reducer does not branch on this.
   reason : CancelReason

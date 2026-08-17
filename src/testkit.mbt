@@ -1097,9 +1097,10 @@ pub fn tk_system_msg(text : String) -> @kernel.Message {
 }
 
 ///|
-/// Build a ToolDef with an empty object schema. Owner/policy are placeholders
-/// — Agent::build_catalog overwrites them at composition time. Provenance is
-/// `None`.
+/// Build a ToolDef with an empty object schema. Owner is a placeholder —
+/// `Agent::build_catalog` derives the catalog owner at composition time.
+/// Policy is `Parallel` (the declared default; composition honors it
+/// as-is). Provenance is `None`.
 pub fn tk_tool_def(name : String, description : String) -> @kernel.ToolDef {
   @kernel.ToolDef(
     name=@kernel.ToolName::unchecked(name),
@@ -1210,6 +1211,7 @@ pub fn tk_ext(
   commands? : Array[&@port.CommandPort] = [],
   ui? : Array[&@port.UiPort] = [],
   prompt_contributors? : Array[&@port.SystemPromptContributor] = [],
+  requires? : Array[@port.Capability] = [],
 ) -> ManifestOnly {
   let models : Array[&@port.ModelPort] = match model {
     Some(m) => [m]
@@ -1227,5 +1229,67 @@ pub fn tk_ext(
     commands,
     ui,
     prompt_contributors,
+    requires,
   })
+}
+
+///|
+/// Build a `CompositionView` for unit-testing `Lifecycle::on_compose`
+/// implementations: `requires` plays the role of the fake manifest's
+/// declaration, and the composed ports stand in for what the composition
+/// would have delivered.
+pub fn tk_view(
+  requires~ : Array[@port.Capability],
+  model~ : &@port.ModelPort,
+  ui~ : &@port.UiPort,
+) -> @port.CompositionView {
+  @port.CompositionView::resolve(requires~, model~, ui~)
+}
+
+///|
+/// RecordingLifecycle — records `Lifecycle` phase invocations for post-hoc
+/// assertions. Log entries are `"<id>:compose(model=<Bool>,ui=<Bool>)"`,
+/// `"<id>:start"`, `"<id>:shutdown"` in call order. Share one
+/// `Array[String]` across several fakes (and other recorders writing the
+/// same log) to assert interleaving and ordering.
+pub(all) struct RecordingLifecycle {
+  id : String
+  log : Array[String]
+  mut seen_model : Bool
+  mut seen_ui : Bool
+}
+
+///|
+pub fn RecordingLifecycle::RecordingLifecycle(
+  id~ : String,
+  log~ : Array[String],
+) -> RecordingLifecycle {
+  { id, log, seen_model: false, seen_ui: false }
+}
+
+///|
+pub impl @port.Lifecycle for RecordingLifecycle with fn on_compose(self, ctx) {
+  self.seen_model = ctx.model() is Some(_)
+  self.seen_ui = ctx.ui() is Some(_)
+  self.log.push(
+    "\{self.id}:compose(model=\{self.seen_model},ui=\{self.seen_ui})",
+  )
+}
+
+///|
+pub impl @port.Lifecycle for RecordingLifecycle with fn on_start(self) {
+  self.log.push("\{self.id}:start")
+}
+
+///|
+pub impl @port.Lifecycle for RecordingLifecycle with fn on_shutdown(self) {
+  self.log.push("\{self.id}:shutdown")
+}
+
+///|
+/// Expose Lifecycle methods on RecordingLifecycle for dot-syntax callers.
+pub extend RecordingLifecycle with @port.Lifecycle::{
+  on_compose,
+  on_start,
+  on_shutdown,
 }

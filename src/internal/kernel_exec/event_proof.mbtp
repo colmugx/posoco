@@ -1,0 +1,24 @@
+///|
+/// Proof-side classifier spec for `KernelEvent::is_terminal`.
+///
+/// Terminal means exactly one of the three terminal constructors
+/// (RunCompleted / RunFailed / RunCancelled); every other event — including
+/// the quiescent `RunSuspended` and the never-state-changing `InputRejected`
+/// — is non-terminal. The predicate matches constructor tags only (bare
+/// constructor names: the proof frontend rejects `..` rest patterns and
+/// `label~` patterns, and labeled constructors take no positional arguments
+/// in `.mbtp`), so payload types (String / Json / arrays) never enter the
+/// logic body.
+
+///|
+/// Spec of `KernelEvent::is_terminal`: true iff the event is one of the three
+/// terminal constructors; false for all run-lifecycle, model, tool, budget,
+/// suspension and rejection events.
+predicate is_terminal_event(e : KernelEvent) {
+  match e {
+    RunCompleted => true
+    RunFailed => true
+    RunCancelled => true
+    _ => false
+  }
+}

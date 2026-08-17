@@ -90,6 +90,10 @@ pub impl Show for HookStage with fn to_string(self : HookStage) -> String {
 ///   handler cannot fail in a typed way, and a contract violation aborts
 ///   loudly by design. For interception or abortion use `before_model` /
 ///   `before_tool`.
+/// - `on_post_event_at`: scoped variant of `on_post_event`, additionally
+///   carrying the `EventScope` attribution of the run that committed the
+///   effect. The core dispatches ONLY this variant; its default delegates
+///   to `on_post_event`, so pre-scope hooks keep working unchanged.
 pub(open) trait Hook {
   fn before_model(Self, messages : Array[@kernel.Message]) -> Array[
     @kernel.Message,
@@ -102,6 +106,7 @@ pub(open) trait Hook {
   /// cancellation error stays classified as cancellation, not a hook defect.
   async fn before_tool(Self, call : @kernel.ToolCall) -> ToolHookDecision = _
   fn on_post_event(Self, stage : HookStage) -> Unit = _
+  fn on_post_event_at(Self, scope : @types.EventScope?, stage : HookStage) -> Unit = _
 }
 
 ///|
@@ -122,4 +127,15 @@ impl Hook with fn before_tool(_self, call : @kernel.ToolCall) -> ToolHookDecisio
 /// Default `on_post_event`: no-op.
 impl Hook with fn on_post_event(_self, _stage : HookStage) -> Unit {
   ()
+}
+
+///|
+/// Default `on_post_event_at`: drop the scope and delegate to
+/// `on_post_event`. Override this instead when run attribution matters.
+impl Hook with fn on_post_event_at(
+  self,
+  _scope : @types.EventScope?,
+  stage : HookStage,
+) -> Unit {
+  self.on_post_event(stage)
 }

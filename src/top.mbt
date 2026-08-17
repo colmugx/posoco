@@ -12,6 +12,7 @@ pub using @types {
   type Session,
   type TurnEvent,
   type TurnResult,
+  type EventScope,
   type MemoryEntry,
   type MemoryQuery,
 }
@@ -52,6 +53,10 @@ pub using @port {
   type UiRender,
   type ExtensionManifest,
   type ProviderConfig,
+  // Consumption direction: declared capability requirements and the curated
+  // composed-capability view delivered at Lifecycle::on_compose.
+  type Capability,
+  type CompositionView,
 }
 
 ///|

@@ -232,6 +232,10 @@ priv struct AgentRuntime {
   mut shutdown_started : Bool
   mut shutdown_complete : Bool
   mut next_lifecycle_shutdown : Int
+  /// Whether lifecycle contributors have received their once-per-Agent
+  /// `on_start` notification. Fired inside the first `run_single_turn`,
+  /// after the shutdown guard and before the first `TurnStarted`.
+  mut start_notified : Bool
 }
 
 ///|
@@ -375,11 +379,25 @@ fn AgentRuntime::compose(
     session_store,
     mailbox: mailbox_ref,
   }
+  // Deliver composed capabilities to lifecycle contributors, in
+  // registration order. Every composition gate has passed by this point
+  // (config checks, session presence, collision checks, atomic catalog), so
+  // the view carries the final composed ports. An extension raising here
+  // (e.g. CompositionError::ExtensionComposeFailed for an undeclared
+  // capability) fails the composition loudly; no partial Agent is produced.
+  for entry in agg.lifecycle {
+    let view = @port.CompositionView::resolve(
+      requires=entry.requires,
+      model=agg.model,
+      ui=agg.ui,
+    )
+    entry.port.on_compose(view)
+  }
   let runtime : AgentRuntime = {
     puppet: @puppetry.Puppet(puppet_config),
     observers: agg.observers,
     sessions: agg.sessions,
-    lifecycle: agg.lifecycle,
+    lifecycle: agg.lifecycle.map(fn(entry) { entry.port }),
     commands: agg.commands,
     builtin_command_port,
     control: @runtime.RuntimeControl::new(mailbox_ref),
@@ -391,6 +409,7 @@ fn AgentRuntime::compose(
     shutdown_started: false,
     shutdown_complete: false,
     next_lifecycle_shutdown: agg.lifecycle.length() - 1,
+    start_notified: false,
   }
   { runtime, }
 }
@@ -541,10 +560,11 @@ fn agent_snapshot_turn_event(event : @types.TurnEvent) -> @types.TurnEvent {
 ///|
 fn AgentRuntime::emit_turn_event(
   self : AgentRuntime,
+  scope : @types.EventScope?,
   event : @types.TurnEvent,
 ) -> Unit {
   for observer in self.observers {
-    observer.on_event(agent_snapshot_turn_event(event))
+    observer.on_event_at(scope, agent_snapshot_turn_event(event))
   }
 }
 
@@ -571,7 +591,9 @@ fn emit_secondary_failure(
     ),
   )
   for observer in observers {
-    observer.on_event(agent_snapshot_turn_event(event))
+    // Secondary failures are emitted from hook closures and refresh paths
+    // that hold no run identity — scope is None by design (v1).
+    observer.on_event_at(None, agent_snapshot_turn_event(event))
   }
 }
 
@@ -625,17 +647,37 @@ async fn AgentRuntime::run_single_turn(
   session_id : String,
 ) -> @types.TurnResult raise @error.AgentError {
   self.ensure_agent_running()
-  self.emit_turn_event(TurnStarted)
+  if !self.start_notified {
+    // Once-per-Agent boot notification, in registration order, before the
+    // first TurnStarted is projected. A raised error is wrapped loud and the
+    // turn fails before any terminal event (consistent with pre-TurnStarted
+    // failures emitting neither TurnStarted nor TurnFailed).
+    for lc in self.lifecycle {
+      lc.on_start() catch {
+        error =>
+          raise @error.AgentError::Runtime(
+            @error.RuntimeError::InvocationFailed(
+              "lifecycle on_start: " + safe_error_label(error.to_string()),
+            ),
+          )
+      }
+    }
+    self.start_notified = true
+  }
+  // Mint run/turn identity up front so even TurnStarted carries attribution
+  // scope; the same identity drives the Puppet request below.
+  let identity = self.mint_turn_identity(session_id)
+  self.emit_turn_event(Some(identity.scope()), TurnStarted)
 
-  let result = self.run_turn_via_puppet(input, session_id) catch {
+  let result = self.run_turn_via_puppet(input, session_id, identity) catch {
     primary => {
       let safe_reason = "turn failed: " + agent_error_category(primary)
-      self.emit_turn_event(TurnFailed(safe_reason))
+      self.emit_turn_event(Some(identity.scope()), TurnFailed(safe_reason))
       raise primary
     }
   }
 
-  self.emit_turn_event(TurnCompleted)
+  self.emit_turn_event(Some(identity.scope()), TurnCompleted)
   result
 }
 

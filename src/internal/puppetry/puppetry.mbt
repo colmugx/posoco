@@ -414,6 +414,9 @@ async fn Puppet::drive_run(
   for sub in self.config.subscribers {
     dispatcher.register(sub)
   }
+  // Attribution scope for post-event hook dispatch: inside a run the
+  // identity is always known, so hooks always see `Some`.
+  let hook_scope : @types.EventScope = { session_id, run_id, turn_id }
   // Seed the reducer with Start.
   // Run before_model hooks on the initial messages — they can modify or abort.
   let mut seeded_messages = initial_messages.copy()
@@ -789,7 +792,7 @@ async fn Puppet::drive_run(
           Err(error) => return self.reject_run(error~)
           Ok(FoldOutcome::Return(r)) => return r
           Ok(FoldOutcome::Continue(next_state)) => {
-            self.fire_post_event_hooks(input)
+            self.fire_post_event_hooks(input, hook_scope)
             state = next_state
           }
         }
@@ -923,7 +926,7 @@ async fn Puppet::drive_run(
               Err(error) => return self.reject_run(error~)
               Ok(FoldOutcome::Return(r)) => return r
               Ok(FoldOutcome::Continue(next_state)) => {
-                self.fire_post_event_hooks(input)
+                self.fire_post_event_hooks(input, hook_scope)
                 state = next_state
               }
             }
@@ -1423,8 +1426,9 @@ async fn propagate_terminal_cancellations(
   for effect in effects {
     match effect {
       @kernel_exec.CancelOutstanding(payload~, ..) => {
+        let cancel_ids = Array::from_iter(payload.effect_ids.iter())
         let attempted : Result[Array[(EffectId, CancelDisposition)], Error] = Ok(
-          context.host.cancel_effects(payload.effect_ids, payload.reason),
+          context.host.cancel_effects(cancel_ids, payload.reason),
         ) catch {
           error => Err(error)
         }
@@ -1436,7 +1440,7 @@ async fn propagate_terminal_cancellations(
               cause=error.to_string(),
             )
         }
-        validate_cancel_dispositions(payload.effect_ids, dispositions)
+        validate_cancel_dispositions(cancel_ids, dispositions)
       }
       other =>
         raise EffectExecutionFailed(
@@ -1828,15 +1832,20 @@ pub async fn Puppet::wait_idle(self : Puppet) -> QuiescentStatus {
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-/// Fire every registered hook's `on_post_event` for a completed effect.
-/// The `Hook::on_post_event` contract is non-raising: handlers cannot fail
+/// Fire every registered hook's `on_post_event_at` for a completed effect.
+/// The `Hook::on_post_event_at` contract is non-raising: handlers cannot fail
 /// in a typed way, and a contract violation aborts loudly (aborts are not
 /// catchable). Components with fallible internal work must catch it
 /// themselves and surface it as a `secondary_failure` observer event —
-/// see `MemoryRetrievalHook`.
+/// see `MemoryRetrievalHook`. Post-event stages only exist inside a run, so
+/// the attribution scope is always delivered as `Some`.
 
 ///|
-fn Puppet::fire_post_event_hooks(self : Puppet, input : RunInput) -> Unit {
+fn Puppet::fire_post_event_hooks(
+  self : Puppet,
+  input : RunInput,
+  scope : @types.EventScope,
+) -> Unit {
   // Fast path: skip stage translation entirely when no hook could care
   // about post-effect events.
   if self.config.hooks.is_empty() {
@@ -1867,6 +1876,6 @@ fn Puppet::fire_post_event_hooks(self : Puppet, input : RunInput) -> Unit {
     _ => return
   }
   for hook in self.config.hooks {
-    hook.on_post_event(stage)
+    hook.on_post_event_at(Some(scope), stage)
   }
 }

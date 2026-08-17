@@ -32,6 +32,7 @@ pub(all) suberror CompositionError {
   EmptyManifests
   ManifestSchemaError(manifest_id~ : String, detail~ : String)
   EmptyPort(String)
+  ExtensionComposeFailed(manifest_id~ : String, detail~ : String)
 } derive(@debug.Debug)
 pub impl Show for CompositionError
 

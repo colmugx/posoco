@@ -30,7 +30,7 @@ pub impl Show for Phase with fn to_string(self : Phase) -> String {
 pub(all) enum RunOutcome {
   Completed(
     final_message~ : @kernel.Message,
-    tool_results~ : Array[@kernel.ToolOutcome]
+    tool_results~ : FixedArray[@kernel.ToolOutcome]
   )
   Failed(reason~ : FailureReason)
   Cancelled(reason~ : CancelReason)
@@ -60,7 +60,9 @@ pub struct RunState {
   /// Canonical transcript.
   transcript : @kernel.Transcript
   /// Pending effects. Length is phase-dependent.
-  pending_effects : Array[Effect]
+  /// `FixedArray` so the representation can carry proof contracts:
+  /// the builder boundary (`mk`/`transition`) converts from `Array`.
+  pending_effects : FixedArray[Effect]
   /// Monotonic event sequence for the next emitted event.
   next_event_sequence : EventSequence
   /// Next effect id.
@@ -74,56 +76,101 @@ pub struct RunState {
   /// Terminal outcome. `None` except in `Terminal`.
   outcome : RunOutcome?
   /// Tool outcomes kept separately from transcript.
-  tool_results : Array[(@kernel.CallId, @kernel.ToolOutcome)]
+  /// `FixedArray` for the same proof-contract reason as `pending_effects`.
+  tool_results : FixedArray[(@kernel.CallId, @kernel.ToolOutcome)]
   /// Suspension requirement. `None` outside `Suspended`.
   suspension_requirement : SuspensionRequirement?
 } derive(Eq, Debug)
 
 ///|
 /// Construct the initial `Initializing` state. Accepts only `Start` input.
+/// Thin raising wrapper over `initial_core`: everything
+/// except the defensive `validate` lives in the pure, contracted core. The
+/// empty `Transcript` is built here because `@kernel.Transcript::empty`
+/// carries no contract and therefore cannot appear in a contracted body.
 pub fn RunState::initial(
   run_id~ : RunId,
   session_id~ : SessionId,
   budget~ : Budget,
 ) -> RunState raise KernelError {
-  let st : RunState = {
-    run_id,
-    session_id,
-    budget,
-    phase: Initializing,
-    transcript: @kernel.Transcript::empty(),
-    pending_effects: [],
-    next_event_sequence: EventSequence::initial(),
-    next_effect_id: EffectId::first(),
-    current_model_step_id: ModelStepId::first(),
-    catalog_version: CatalogVersion(0),
-    budget_consumed: BudgetConsumed::zero(),
-    outcome: None,
-    tool_results: [],
-    suspension_requirement: None,
-  }
-  st.validate()
+  RunState::initial_core(
+    run_id~,
+    session_id~,
+    budget~,
+    transcript=@kernel.Transcript::empty(),
+  ).validate()
 }
 
 ///|
-/// Internal: build a RunState from raw fields and run invariants.
-fn RunState::mk(
+/// Pure core of `initial`: assemble the `Initializing` seed state. Every
+/// field value is either a literal (empty effect/tool ledgers, `None`
+/// outcome/suspension) or a zero-argument contracted constructor
+/// (`EventSequence::initial` / `EffectId::first` / `ModelStepId::first` /
+/// `BudgetConsumed::zero` / `CatalogVersion(0)`), so the whole body
+/// lowerers to the proof backend.
+///
+/// Contract: the seed state satisfies the phase invariant (empty pending
+/// effects, no outcome, no suspension — the `Initializing` domain).
+fn RunState::initial_core(
   run_id~ : RunId,
   session_id~ : SessionId,
   budget~ : Budget,
-  phase~ : Phase,
   transcript~ : @kernel.Transcript,
-  pending_effects~ : Array[Effect],
-  next_event_sequence~ : EventSequence,
-  next_effect_id~ : EffectId,
-  current_model_step_id~ : ModelStepId,
-  catalog_version~ : CatalogVersion,
-  budget_consumed~ : BudgetConsumed,
-  outcome~ : RunOutcome?,
-  tool_results~ : Array[(@kernel.CallId, @kernel.ToolOutcome)],
-  suspension_requirement~ : SuspensionRequirement?,
-) -> RunState raise KernelError {
-  let st : RunState = {
+) -> RunState where {
+  proof_ensure: result => phase_inv(result),
+} {
+  RunState::mk_core(
+    run_id,
+    session_id,
+    budget,
+    Initializing,
+    transcript,
+    [],
+    EventSequence::initial(),
+    EffectId::first(),
+    ModelStepId::first(),
+    CatalogVersion(0),
+    BudgetConsumed::zero(),
+    None,
+    [],
+    None,
+  )
+}
+
+///|
+/// Pure construction core: build a RunState directly from `FixedArray`
+/// fields, POSITIONALLY (contracted bodies may only make positional calls,
+/// so the label-free parameter order — mirroring the struct field order
+/// exactly — is part of this seam). No raise, no validation: the caller
+/// supplies phase-consistent fields and the constructor law below turns
+/// them into `phase_inv` of the result, plus a faithful move of the
+/// budget-consumption snapshot. All raising entry points
+/// (`initial`/`transition`/`with_tool_results`) go through the pure cores
+/// and run `validate` defensively.
+fn RunState::mk_core(
+  run_id : RunId,
+  session_id : SessionId,
+  budget : Budget,
+  phase : Phase,
+  transcript : @kernel.Transcript,
+  pending_effects : FixedArray[Effect],
+  next_event_sequence : EventSequence,
+  next_effect_id : EffectId,
+  current_model_step_id : ModelStepId,
+  catalog_version : CatalogVersion,
+  budget_consumed : BudgetConsumed,
+  outcome : RunOutcome?,
+  tool_results : FixedArray[(@kernel.CallId, @kernel.ToolOutcome)],
+  suspension_requirement : SuspensionRequirement?,
+) -> RunState where {
+  proof_require: phase_fields_ok(
+    phase, pending_effects, outcome, suspension_requirement,
+  ),
+  proof_ensure: result => {
+    phase_inv(result) && consumed_eq(result.budget_consumed, budget_consumed)
+  },
+} {
+  {
     run_id,
     session_id,
     budget,
@@ -139,7 +186,6 @@ fn RunState::mk(
     tool_results,
     suspension_requirement,
   }
-  st.validate()
 }
 
 ///|
@@ -274,27 +320,64 @@ fn RunState::validate(self : RunState) -> RunState raise KernelError {
 }
 
 ///|
-fn count_call_model(effects : Array[Effect]) -> Int {
-  let mut n = 0
-  for e in effects {
-    match e {
-      CallModel(..) => n = n + 1
-      _ => ()
+/// Count pending `CallModel` effects.
+///
+/// Contract: the runtime counter agrees with the logic-side prefix counter
+/// `count_call_model_upto` (state_proof.mbtp) over the full array. The
+/// functional loop carries `acc == count_call_model_upto(effects, i)` as
+/// its invariant; `validate` (an uncontracted caller) keeps using this as
+/// its phase-domain check. (Body patterns use explicit `label = _`
+/// wildcards — the proof frontend rejects `..` rest patterns inside
+/// contracted function bodies.)
+fn count_call_model(
+  effects : FixedArray[Effect],
+) -> Int where {
+  proof_ensure: result => {
+    result == count_call_model_upto(effects, effects.length())
+  },
+} {
+  for i = 0, acc = 0; i < effects.length(); {
+    match effects[i] {
+      CallModel(effect_id=_, payload=_) => continue i + 1, acc + 1
+      _ => continue i + 1, acc
     }
+  } nobreak {
+    acc
+  } where {
+    proof_invariant: 0 <= i,
+    proof_invariant: i <= effects.length(),
+    proof_invariant: acc == count_call_model_upto(effects, i),
+    proof_yield: res => res == count_call_model_upto(effects, effects.length()),
   }
-  n
 }
 
 ///|
-fn count_execute_tool(effects : Array[Effect]) -> Int {
-  let mut n = 0
-  for e in effects {
-    match e {
-      ExecuteTool(..) => n = n + 1
-      _ => ()
+/// Count pending `ExecuteTool` effects.
+///
+/// Contract: the runtime counter agrees with the logic-side prefix counter
+/// `count_execute_tool_upto` over the full array.
+fn count_execute_tool(
+  effects : FixedArray[Effect],
+) -> Int where {
+  proof_ensure: result => {
+    result == count_execute_tool_upto(effects, effects.length())
+  },
+} {
+  for i = 0, acc = 0; i < effects.length(); {
+    match effects[i] {
+      ExecuteTool(effect_id=_, payload=_) => continue i + 1, acc + 1
+      _ => continue i + 1, acc
     }
+  } nobreak {
+    acc
+  } where {
+    proof_invariant: 0 <= i,
+    proof_invariant: i <= effects.length(),
+    proof_invariant: acc == count_execute_tool_upto(effects, i),
+    proof_yield: res => {
+      res == count_execute_tool_upto(effects, effects.length())
+    },
   }
-  n
 }
 
 ///|
@@ -319,7 +402,17 @@ pub fn RunState::transcript(self : RunState) -> @kernel.Transcript {
 
 ///|
 pub fn RunState::pending_effects(self : RunState) -> Array[Effect] {
-  self.pending_effects.copy()
+  Array::from_iter(self.pending_effects.iter())
+}
+
+///|
+/// Internal read-only snapshot of the tool-result ledger as an `Array`.
+/// `tool_results` stays `FixedArray` internally (proof representation);
+/// reducer-side builders keep working on `Array` and convert at this boundary.
+fn RunState::tool_results_snapshot(
+  self : RunState,
+) -> Array[(@kernel.CallId, @kernel.ToolOutcome)] {
+  Array::from_iter(self.tool_results.iter())
 }
 
 ///|
@@ -380,6 +473,10 @@ pub impl Show for RunState with fn to_string(self : RunState) -> String {
 ///|
 /// Produce the next state from raw fields, running invariants.
 /// Exposed at package level for the reducer.
+/// Thin raising wrapper over `transition_core`: the
+/// `Array` boundary converts to `FixedArray` exactly once here, and
+/// `tool_results` moves into the next state as the same `FixedArray`.
+/// `validate` stays as the defensive bottom layer.
 pub fn RunState::transition(
   self : RunState,
   phase~ : Phase,
@@ -393,48 +490,108 @@ pub fn RunState::transition(
   outcome~ : RunOutcome?,
   suspension_requirement~ : SuspensionRequirement?,
 ) -> RunState raise KernelError {
+  RunState::transition_core(
+    self,
+    phase~,
+    transcript~,
+    pending_effects=FixedArray::from_array(pending_effects),
+    next_event_sequence~,
+    next_effect_id~,
+    current_model_step_id~,
+    catalog_version~,
+    budget_consumed~,
+    outcome~,
+    suspension_requirement~,
+  ).validate()
+}
+
+///|
+/// Pure core of `transition`: reassemble the state from explicit
+/// next-step fields while carrying `run_id`/`session_id`/`budget` and the
+/// tool-result ledger over from `self` unchanged.
+///
+/// Contract: given a phase-invariant `self`, phase-consistent next fields
+/// (`phase_fields_ok`) and non-decreasing consumption
+/// (`consumed_le`), the result satisfies `phase_inv` and is
+/// budget-monotone (`budget_monotone`) — the constructive preservation
+/// law that lets runtime `validate` degrade to a defensive layer.
+fn RunState::transition_core(
+  self : RunState,
+  phase~ : Phase,
+  transcript~ : @kernel.Transcript,
+  pending_effects~ : FixedArray[Effect],
+  next_event_sequence~ : EventSequence,
+  next_effect_id~ : EffectId,
+  current_model_step_id~ : ModelStepId,
+  catalog_version~ : CatalogVersion?,
+  budget_consumed~ : BudgetConsumed,
+  outcome~ : RunOutcome?,
+  suspension_requirement~ : SuspensionRequirement?,
+) -> RunState where {
+  proof_require: phase_inv(self) &&
+  phase_fields_ok(phase, pending_effects, outcome, suspension_requirement) &&
+  consumed_le(self.budget_consumed, budget_consumed),
+  proof_ensure: result => phase_inv(result) && budget_monotone(self, result),
+} {
   let cv = match catalog_version {
     Some(v) => v
     None => self.catalog_version
   }
-  RunState::mk(
-    run_id=self.run_id,
-    session_id=self.session_id,
-    budget=self.budget,
-    phase~,
-    transcript~,
-    pending_effects~,
-    next_event_sequence~,
-    next_effect_id~,
-    current_model_step_id~,
-    catalog_version=cv,
-    budget_consumed~,
-    outcome~,
-    tool_results=self.tool_results.copy(),
-    suspension_requirement~,
+  RunState::mk_core(
+    self.run_id,
+    self.session_id,
+    self.budget,
+    phase,
+    transcript,
+    pending_effects,
+    next_event_sequence,
+    next_effect_id,
+    current_model_step_id,
+    cv,
+    budget_consumed,
+    outcome,
+    self.tool_results,
+    suspension_requirement,
   )
 }
 
 ///|
 /// Replace the run-local tool-result ledger while preserving other state fields.
+/// Thin raising wrapper over `with_tool_results_core`: the
+/// `Array` boundary converts once; every other field — including the
+/// pending-effects `FixedArray` — moves without copying.
 fn RunState::with_tool_results(
   self : RunState,
   tool_results : Array[(@kernel.CallId, @kernel.ToolOutcome)],
 ) -> RunState raise KernelError {
-  RunState::mk(
-    run_id=self.run_id,
-    session_id=self.session_id,
-    budget=self.budget,
-    phase=self.phase,
-    transcript=self.transcript,
-    pending_effects=self.pending_effects,
-    next_event_sequence=self.next_event_sequence,
-    next_effect_id=self.next_effect_id,
-    current_model_step_id=self.current_model_step_id,
-    catalog_version=self.catalog_version,
-    budget_consumed=self.budget_consumed,
-    outcome=self.outcome,
-    tool_results=tool_results.copy(),
-    suspension_requirement=self.suspension_requirement,
+  RunState::with_tool_results_core(self, FixedArray::from_array(tool_results)).validate()
+}
+
+///|
+/// Pure core of `with_tool_results`: same phase domain, fresh ledger.
+/// The tool-result ledger is not part of `phase_inv`, so preserving every
+/// phase-relevant field verbatim preserves the invariant.
+fn RunState::with_tool_results_core(
+  self : RunState,
+  tool_results : FixedArray[(@kernel.CallId, @kernel.ToolOutcome)],
+) -> RunState where {
+  proof_require: phase_inv(self),
+  proof_ensure: result => phase_inv(result),
+} {
+  RunState::mk_core(
+    self.run_id,
+    self.session_id,
+    self.budget,
+    self.phase,
+    self.transcript,
+    self.pending_effects,
+    self.next_event_sequence,
+    self.next_effect_id,
+    self.current_model_step_id,
+    self.catalog_version,
+    self.budget_consumed,
+    self.outcome,
+    tool_results,
+    self.suspension_requirement,
   )
 }

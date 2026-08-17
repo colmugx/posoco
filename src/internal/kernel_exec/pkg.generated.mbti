@@ -86,13 +86,13 @@ pub impl Show for BudgetState
 
 pub(all) struct CallModelPayload {
   model_step_id : ModelStepId
-  messages : Array[@kernel.Message]
+  messages : FixedArray[@kernel.Message]
   catalog_version : @kernel.CatalogVersion
   call_options : Json
 } derive(Eq, @debug.Debug)
 
 pub(all) struct CancelOutstandingPayload {
-  effect_ids : Array[@kernel.EffectId]
+  effect_ids : FixedArray[@kernel.EffectId]
   reason : @kernel.CancelReason
 } derive(Eq, @debug.Debug)
 
@@ -261,7 +261,7 @@ pub fn RunInput::kind(Self) -> String
 pub impl Show for RunInput
 
 pub(all) enum RunOutcome {
-  Completed(final_message~ : @kernel.Message, tool_results~ : Array[@kernel.ToolOutcome])
+  Completed(final_message~ : @kernel.Message, tool_results~ : FixedArray[@kernel.ToolOutcome])
   Failed(reason~ : FailureReason)
   Cancelled(reason~ : @kernel.CancelReason)
 } derive(Eq, @debug.Debug)
@@ -273,14 +273,14 @@ pub struct RunState {
   budget : Budget
   phase : Phase
   transcript : @kernel.Transcript
-  pending_effects : Array[Effect]
+  pending_effects : FixedArray[Effect]
   next_event_sequence : EventSequence
   next_effect_id : @kernel.EffectId
   current_model_step_id : ModelStepId
   catalog_version : @kernel.CatalogVersion
   budget_consumed : BudgetConsumed
   outcome : RunOutcome?
-  tool_results : Array[(@kernel.CallId, @kernel.ToolOutcome)]
+  tool_results : FixedArray[(@kernel.CallId, @kernel.ToolOutcome)]
   suspension_requirement : SuspensionRequirement?
 } derive(Eq, @debug.Debug)
 pub fn RunState::budget(Self) -> Budget

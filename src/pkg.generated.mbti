@@ -26,7 +26,7 @@ pub fn tk_config() -> AgentConfig
 
 pub fn tk_error_result(String) -> @kernel.ToolOutcome
 
-pub fn tk_ext(id~ : String, model? : &@port.ModelPort?, tools? : Array[&@port.ToolProvider], sessions? : Array[&@port.SessionStore], observers? : Array[&@port.Observer], hooks? : Array[&@port.Hook], memory? : Array[&@port.MemoryPort], lifecycle? : Array[&@port.Lifecycle], commands? : Array[&@port.CommandPort], ui? : Array[&@port.UiPort], prompt_contributors? : Array[&@port.SystemPromptContributor]) -> ManifestOnly
+pub fn tk_ext(id~ : String, model? : &@port.ModelPort?, tools? : Array[&@port.ToolProvider], sessions? : Array[&@port.SessionStore], observers? : Array[&@port.Observer], hooks? : Array[&@port.Hook], memory? : Array[&@port.MemoryPort], lifecycle? : Array[&@port.Lifecycle], commands? : Array[&@port.CommandPort], ui? : Array[&@port.UiPort], prompt_contributors? : Array[&@port.SystemPromptContributor], requires? : Array[@port.Capability]) -> ManifestOnly
 
 pub fn tk_ok_result(String) -> @kernel.ToolOutcome
 
@@ -41,6 +41,8 @@ pub fn tk_tool_call_response(String, String, Json) -> @kernel.ModelCallResult
 pub fn tk_tool_def(String, String) -> @kernel.ToolDef
 
 pub fn tk_user_msg(String) -> @kernel.Message
+
+pub fn tk_view(requires~ : Array[@port.Capability], model~ : &@port.ModelPort, ui~ : &@port.UiPort) -> @port.CompositionView
 
 pub fn validate_args(@port.CommandDef, Json) -> Result[Json, String]
 
@@ -136,6 +138,18 @@ pub fn RecordingHook::abort_when(Self, String, String) -> Unit
 pub fn RecordingHook::defer_when(Self, String, String) -> Unit
 pub fn RecordingHook::records(Self) -> Array[HookRecord]
 pub impl @port.Hook for RecordingHook
+
+pub(all) struct RecordingLifecycle {
+  id : String
+  log : Array[String]
+  mut seen_model : Bool
+  mut seen_ui : Bool
+}
+pub fn RecordingLifecycle::RecordingLifecycle(id~ : String, log~ : Array[String]) -> Self
+pub fn RecordingLifecycle::on_compose(Self, @port.CompositionView) -> Unit raise @error.CompositionError
+pub async fn RecordingLifecycle::on_shutdown(Self) -> Unit
+pub async fn RecordingLifecycle::on_start(Self) -> Unit
+pub impl @port.Lifecycle for RecordingLifecycle
 
 pub(all) struct RecordingObserver {
   mut events : Array[@types.TurnEvent]
@@ -284,6 +298,8 @@ pub using @port {type AutocompleteSource}
 
 pub using @kernel {type CallId}
 
+pub using @port {type Capability}
+
 pub using @types {type ChatOptions}
 
 pub using @port {type CommandDef}
@@ -308,7 +324,11 @@ pub using @kernel {type CompletionPayload}
 
 pub using @error {type CompositionError}
 
+pub using @port {type CompositionView}
+
 pub using @kernel {type Content}
+
+pub using @types {type EventScope}
 
 pub using @kernel {type ExecutionPolicy}
 

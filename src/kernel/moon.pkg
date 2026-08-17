@@ -3,3 +3,7 @@ import {
   "moonbitlang/core/strconv",
   "moonbitlang/core/string",
 }
+
+options(
+  "proof-enabled": true,
+)

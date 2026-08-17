@@ -60,10 +60,11 @@ fn build_catalog_from_defs(
 
 ///|
 /// Build a `ToolCatalogSnapshot` from the agent's aggregated tool providers.
-/// All tools are pinned to `Parallel` execution policy (matching the legacy
-/// `@async.all`-every-batch behaviour). Owner is derived from the ToolDef's
-/// own `owner` field if it is non-placeholder, else from provenance, else
-/// `legacy_provider`.
+/// Each tool's declared `policy` is honored as-is (M1-T06: declarations
+/// select behavior through stable composition contracts); providers that do
+/// not care declare `Parallel`, the legacy `@async.all`-every-batch default.
+/// Owner is derived from the ToolDef's own `owner` field if it is
+/// non-placeholder, else from provenance, else `legacy_provider`.
 fn build_agent_catalog(
   providers : Array[&@port.ToolProvider],
 ) -> @kernel_exec.ToolCatalogSnapshot raise @error.CompositionError {
@@ -86,7 +87,7 @@ fn build_agent_catalog(
           description=tool.description,
           input_schema=tool.input_schema,
           owner~,
-          policy=@kernel.Parallel,
+          policy=tool.policy,
           provenance=tool.provenance,
         ),
       )
@@ -128,10 +129,11 @@ impl @puppetry.EventSubscriber for AgentEventSubscriber with fn provenance(
 ///|
 fn AgentEventSubscriber::emit(
   self : AgentEventSubscriber,
+  scope : @types.EventScope?,
   event : @types.TurnEvent,
 ) -> Unit {
   for observer in self.observers {
-    observer.on_event(agent_snapshot_turn_event(event))
+    observer.on_event_at(scope, agent_snapshot_turn_event(event))
   }
 }
 
@@ -141,6 +143,13 @@ impl @puppetry.EventSubscriber for AgentEventSubscriber with fn on_event(
   envelope : @puppetry.EventEnvelope,
 ) -> Unit raise @puppetry.SubscriberError {
   let event = envelope.event()
+  // Envelope-projected events always carry the envelope's run identity as
+  // their attribution scope.
+  let scope : @types.EventScope = {
+    session_id: envelope.session_id(),
+    run_id: envelope.run_id(),
+    turn_id: envelope.turn_id(),
+  }
   match event {
     @kernel_exec.RunStarted(..) => self.pending_calls.clear()
     @kernel_exec.ModelStepCompleted(completion~, ..) => {
@@ -151,13 +160,16 @@ impl @puppetry.EventSubscriber for AgentEventSubscriber with fn on_event(
         reasoning=payload.reasoning,
         finish_reason=payload.finish_reason,
       )
-      self.emit(@types.ModelResponseReceived(message~, usage=completion.usage))
+      self.emit(
+        Some(scope),
+        @types.ModelResponseReceived(message~, usage=completion.usage),
+      )
     }
     @kernel_exec.ToolBatchStarted(calls~, ..) =>
       for call in calls {
         let snapshot = agent_snapshot_tool_call(call)
         self.pending_calls[snapshot.call_id.to_string()] = snapshot
-        self.emit(@types.ToolCallPending(snapshot))
+        self.emit(Some(scope), @types.ToolCallPending(snapshot))
       }
     @kernel_exec.ToolCompleted(call_id~, outcome~) => {
       let key = call_id.to_string()
@@ -171,7 +183,7 @@ impl @puppetry.EventSubscriber for AgentEventSubscriber with fn on_event(
           )
       }
       self.pending_calls.remove(key)
-      self.emit(@types.TurnEvent::tool_call_result(call, outcome))
+      self.emit(Some(scope), @types.TurnEvent::tool_call_result(call, outcome))
     }
     _ => ()
   }
@@ -225,7 +237,9 @@ fn create_agent_stream_callback(
     }
     let event : @types.TurnEvent = @types.StreamChunkReceived(chunk~)
     for observer in observers {
-      observer.on_event(event)
+      // Scope is None: stream chunks are model-stream projections, not
+      // committed run events, so they carry no run identity.
+      observer.on_event_at(None, event)
     }
   }
   Some(cb)
@@ -279,11 +293,47 @@ fn AgentRuntime::refresh_catalog_if_changed(self : AgentRuntime) -> Unit {
 }
 
 ///|
+/// Per-turn identity minted by the Agent before `TurnStarted` is projected,
+/// so every turn event — including the first — carries attribution scope.
+/// The same identity drives the Puppet prompt request.
+priv struct TurnIdentity {
+  seq : Int
+  run_id : @kernel.RunId
+  turn_id : @kernel.TurnId
+  session_id : @kernel.SessionId
+}
+
+///|
+/// Allocate the next unique run/turn identity. The counter is Agent-owned
+/// and monotonic, so two calls on the same Agent never share run/turn ids
+/// while still using the same Puppet and journal.
+fn AgentRuntime::mint_turn_identity(
+  self : AgentRuntime,
+  session_id : String,
+) -> TurnIdentity {
+  let seq = self.next_run_seq
+  self.next_run_seq = seq + 1
+  {
+    seq,
+    run_id: @kernel.RunId::unchecked("agent_run_\{seq}"),
+    turn_id: @kernel.TurnId::unchecked("agent_turn_\{seq}"),
+    session_id: @kernel.SessionId::unchecked(session_id),
+  }
+}
+
+///|
+/// The attribution scope projected onto this turn's observer events.
+fn TurnIdentity::scope(self : TurnIdentity) -> @types.EventScope {
+  { session_id: self.session_id, run_id: self.run_id, turn_id: self.turn_id }
+}
+
+///|
 /// Drive one full turn through the Puppet. Steps:
 /// 0. refresh the catalog when a CatalogSource's revision changed
 /// 1. load session
 /// 2. snapshot session.messages (deep copy) + append input
-/// 3. allocate unique run/turn identities and capture a per-prompt RunPolicy
+/// 3. (identity minted by the caller, before TurnStarted — see
+///    `AgentRuntime::mint_turn_identity`)
 /// 4. drive the Agent-owned long-lived Puppet
 /// 5. translate non-Accepted PromptResult → AgentError
 /// 6. materialize and save the canonical terminal transcript (write-all)
@@ -292,6 +342,7 @@ async fn AgentRuntime::run_turn_via_puppet(
   self : AgentRuntime,
   input : @kernel.Message,
   session_id : String,
+  identity : TurnIdentity,
 ) -> @types.TurnResult raise @error.AgentError {
   // Step 0: catalog refresh at the prompt boundary. No run is active yet,
   // so a swap cannot disturb an in-flight run; a failed rebuild keeps the
@@ -319,14 +370,9 @@ async fn AgentRuntime::run_turn_via_puppet(
   messages.push(agent_snapshot_message(input))
   let current_metadata = agent_snapshot_metadata(session.metadata)
 
-  // Step 3: per-prompt identity and policy. The counter is Agent-owned and
-  // monotonic, so two calls on the same Agent never share run/turn ids while
-  // still using the same Puppet and journal.
-  let seq = self.next_run_seq
-  self.next_run_seq = seq + 1
-  let run_id = @kernel.RunId::unchecked("agent_run_\{seq}")
-  let turn_id = @kernel.TurnId::unchecked("agent_turn_\{seq}")
-  let session_id_kernel = @kernel.SessionId::unchecked(session_id)
+  // Step 3: per-prompt policy on the caller-minted identity. The counter is
+  // Agent-owned and monotonic, so two calls on the same Agent never share
+  // run/turn ids while still using the same Puppet and journal.
   let budget : @kernel_exec.Budget = {
     max_model_steps: None,
     max_tool_rounds: self.config.max_tool_rounds,
@@ -341,11 +387,11 @@ async fn AgentRuntime::run_turn_via_puppet(
     compact_threshold: 0.9,
   }
   let request : @puppetry.PromptRequest = {
-    run_id,
-    turn_id,
-    session_id: session_id_kernel,
+    run_id: identity.run_id,
+    turn_id: identity.turn_id,
+    session_id: identity.session_id,
     initial_messages: messages,
-    operation_id: "agent_run_turn_\{seq}",
+    operation_id: "agent_run_turn_\{identity.seq}",
     policy,
   }
 
@@ -426,7 +472,10 @@ async fn AgentRuntime::run_turn_via_puppet(
         messages_after=forked_messages.length(),
       )
       for observer in self.observers {
-        observer.on_event(agent_snapshot_turn_event(redirect))
+        observer.on_event_at(
+          Some(identity.scope()),
+          agent_snapshot_turn_event(redirect),
+        )
       }
       let result : @types.TurnResult = {
         message: input,
@@ -476,7 +525,10 @@ async fn AgentRuntime::run_turn_via_puppet(
                 messages_after=compacted_messages.length(),
               )
               for observer in self.observers {
-                observer.on_event(agent_snapshot_turn_event(redirect))
+                observer.on_event_at(
+                  Some(identity.scope()),
+                  agent_snapshot_turn_event(redirect),
+                )
               }
               let result : @types.TurnResult = {
                 message: input,

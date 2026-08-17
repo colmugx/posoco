@@ -1611,3 +1611,25 @@ async test "hook_turn_error_fires_on_before_tool_abort" {
     .any(fn(s) { s is ModelCompleted(_) })
   assert_true(saw_model_completed)
 }
+
+///|
+test "catalog: declared execution policy survives composition" {
+  let exclusive_def : @kernel.ToolDef = {
+    ..tk_tool_def("mutating_tool", "mutates files"),
+    policy: @kernel.Exclusive,
+    provenance: Some("policy_wbtest"),
+  }
+  let parallel_def : @kernel.ToolDef = {
+    ..tk_tool_def("reading_tool", "reads files"),
+    provenance: Some("policy_wbtest"),
+  }
+  let provider = RecordingToolProvider(
+    [exclusive_def, parallel_def],
+    Map::from_array([]),
+  )
+  let catalog = build_agent_catalog([provider])
+  let defs = catalog.definitions()
+  inspect(defs.length(), content="2")
+  debug_inspect(defs[0].policy, content="Exclusive")
+  debug_inspect(defs[1].policy, content="Parallel")
+}

@@ -1,0 +1,99 @@
+///|
+/// Proof-side predicates for the budget contracts.
+///
+/// These encode the exclusive-limit semantics of `BudgetConsumed::exceeded`
+/// (run_context.mbt) as pure logic: limit N allows N full units and only a
+/// consumed count strictly greater than N exceeds; the token dimension never
+/// conflates unverified usage (`UnknownUsage`) with a measured overage
+/// (`Exceeded`). Integers are modeled as mathematical integers.
+
+///|
+/// Exclusive-limit spec for a counted dimension: exceeded iff a limit exists
+/// and consumption is strictly past it. `None` = unbounded, never exceeded.
+predicate check_ok(consumed : Int, max_opt : Option[Int]) {
+  match max_opt {
+    Some(max) => consumed > max
+    None => false
+  }
+}
+
+///|
+/// No counted dimension (model steps, tool rounds, tool calls) is over its
+/// exclusive limit.
+predicate counts_within(c : BudgetConsumed, limit : Budget) {
+  !check_ok(c.model_steps, limit.max_model_steps) &&
+  !check_ok(c.tool_rounds, limit.max_tool_rounds) &&
+  !check_ok(c.tool_calls, limit.max_tool_calls)
+}
+
+///|
+/// Token dimension with a limit but unverified usage: the state must be
+/// `UnknownUsage(TotalTokens)`, never `Exceeded` (unverified usage is never
+/// reported as 0 and never conflated with a measured overage).
+predicate token_unknown(c : BudgetConsumed, limit : Budget) {
+  match limit.max_total_tokens {
+    Some(_) => !c.any_usage_verified
+    None => false
+  }
+}
+
+///|
+/// Token dimension with a limit and verified usage: exceeded iff the
+/// observed reading reached the limit (`>=` keeps observation semantics,
+/// unlike the exclusive declaration counters).
+predicate token_exceeded(c : BudgetConsumed, limit : Budget) {
+  match limit.max_total_tokens {
+    Some(max) => c.any_usage_verified && c.observed_total_tokens >= max
+    None => false
+  }
+}
+
+///|
+/// Token dimension within budget: unbounded, or verified and strictly below
+/// the limit (an unverified reading with a limit is `UnknownUsage`, not
+/// within budget).
+predicate token_within(c : BudgetConsumed, limit : Budget) {
+  match limit.max_total_tokens {
+    Some(max) => c.any_usage_verified && c.observed_total_tokens < max
+    None => true
+  }
+}
+
+///|
+/// Full spec of `BudgetConsumed::exceeded`: the result names the FIRST
+/// dimension over its exclusive limit in declaration order (ModelSteps,
+/// ToolRounds, ToolCalls, TotalTokens); `UnknownUsage` only ever names
+/// TotalTokens; `WithinBudget` iff no counted dimension exceeds and the
+/// token dimension is unbounded or verified-and-below.
+predicate exceeded_post(
+  c : BudgetConsumed,
+  limit : Budget,
+  result : BudgetState,
+) {
+  match result {
+    Exceeded(ModelSteps) => check_ok(c.model_steps, limit.max_model_steps)
+    Exceeded(ToolRounds) =>
+      !check_ok(c.model_steps, limit.max_model_steps) &&
+      check_ok(c.tool_rounds, limit.max_tool_rounds)
+    Exceeded(ToolCalls) =>
+      !check_ok(c.model_steps, limit.max_model_steps) &&
+      !check_ok(c.tool_rounds, limit.max_tool_rounds) &&
+      check_ok(c.tool_calls, limit.max_tool_calls)
+    Exceeded(TotalTokens) => counts_within(c, limit) && token_exceeded(c, limit)
+    UnknownUsage(TotalTokens) =>
+      counts_within(c, limit) && token_unknown(c, limit)
+    UnknownUsage(_) => false
+    WithinBudget => counts_within(c, limit) && token_within(c, limit)
+  }
+}
+
+///|
+/// Spec of `BudgetConsumed::zero`: every consumed counter starts at 0 and no
+/// model step has reported verified token usage yet.
+predicate zero_post(z : BudgetConsumed) {
+  z.model_steps == 0 &&
+  z.tool_rounds == 0 &&
+  z.tool_calls == 0 &&
+  z.observed_total_tokens == 0 &&
+  !z.any_usage_verified
+}

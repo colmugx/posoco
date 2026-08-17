@@ -47,6 +47,19 @@ pub fn Session::with_parent_thread_id(
 }
 
 ///|
+/// Attribution identity of one emitted `TurnEvent` / `HookStage`: which
+/// session and run the event belongs to. Projected from the committed event
+/// envelope at the Agent boundary — never reconstructed by scanning a
+/// transcript. Scope answers "which run does this belong to"; it does not
+/// carry effect identity (`ToolCall.call_id` already correlates tool
+/// events).
+pub(all) struct EventScope {
+  session_id : @kernel.SessionId
+  run_id : @kernel.RunId
+  turn_id : @kernel.TurnId
+} derive(Eq, Debug)
+
+///|
 /// Turn lifecycle events observed via `Observer::on_event`. R3 M3.7: payload
 /// types are now canonical kernel types (`ToolCall`, `ToolOutcome`,
 /// `Message`, `Usage`). `is_error` on `ToolCallResult` is preserved for
