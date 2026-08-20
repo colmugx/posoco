@@ -20,6 +20,7 @@ pub(all) suberror ContributionError {
   Internal(contributor_id~ : String, detail~ : String)
   Inconsistent(contributor_id~ : String, detail~ : String)
 }
+pub fn ContributionError::to_string(Self) -> String
 pub impl Show for ContributionError
 
 pub(all) suberror PuppetError {
@@ -48,12 +49,14 @@ pub(all) suberror PuppetError {
   ReducerInvariantViolation(category~ : @kernel_exec.InvariantCategory)
   HookRejected(reason~ : String)
 }
+pub fn PuppetError::to_string(Self) -> String
 pub impl Show for PuppetError
 
 pub(all) suberror SubscriberError {
   Internal(subscriber_id~ : String, detail~ : String)
   ContractViolation(subscriber_id~ : String, detail~ : String)
 }
+pub fn SubscriberError::to_string(Self) -> String
 pub impl Show for SubscriberError
 
 // Types and methods
@@ -103,6 +106,29 @@ pub struct ControlMailbox {
   max_depth : Int
 }
 pub fn ControlMailbox::ControlMailbox() -> Self
+pub fn ControlMailbox::abort_requested(Self) -> Bool
+pub fn ControlMailbox::active_run_id(Self) -> @kernel.RunId?
+pub fn ControlMailbox::active_turn_id(Self) -> @kernel.TurnId?
+pub fn ControlMailbox::bind_run(Self, @kernel.RunId, @kernel.TurnId) -> Unit
+pub fn ControlMailbox::clear_run(Self) -> Unit
+pub fn ControlMailbox::compact_depth(Self) -> Int
+pub fn ControlMailbox::consume_one_compact(Self) -> CompactCommand?
+pub fn ControlMailbox::consume_one_follow_up(Self) -> FollowUpCommand?
+pub fn ControlMailbox::consume_one_fork(Self) -> ForkCommand?
+pub fn ControlMailbox::consume_steers(Self) -> Array[SteerCommand]
+pub fn ControlMailbox::enqueue_abort(Self, AbortCommand) -> EnqueueResult
+pub fn ControlMailbox::enqueue_compact(Self, CompactCommand) -> EnqueueResult
+pub fn ControlMailbox::enqueue_follow_up(Self, FollowUpCommand) -> EnqueueResult
+pub fn ControlMailbox::enqueue_fork(Self, ForkCommand) -> EnqueueResult
+pub fn ControlMailbox::enqueue_resume(Self, ResumeCommand) -> EnqueueResult
+pub fn ControlMailbox::enqueue_steer(Self, SteerCommand) -> EnqueueResult
+pub fn ControlMailbox::follow_up_depth(Self) -> Int
+pub fn ControlMailbox::fork_depth(Self) -> Int
+pub fn ControlMailbox::quiescent_status(Self) -> QuiescentStatus
+pub fn ControlMailbox::set_quiescent(Self, QuiescentStatus) -> Unit
+pub fn ControlMailbox::steer_depth(Self) -> Int
+pub fn ControlMailbox::take_resume(Self, String) -> ResumeCommand?
+pub async fn ControlMailbox::wait_idle(Self) -> QuiescentStatus
 pub impl Mailbox for ControlMailbox
 
 pub(all) enum EnqueueResult {
@@ -195,10 +221,14 @@ pub struct InMemoryJournal {
   mut append_count : Int
 }
 pub fn InMemoryJournal::InMemoryJournal() -> Self
+pub fn InMemoryJournal::append(Self, Array[JournalEntry]) -> Int raise PuppetError
 pub fn InMemoryJournal::append_count(Self) -> Int
 pub fn InMemoryJournal::append_impl(Self, Array[JournalEntry]) -> Int raise PuppetError
+pub fn InMemoryJournal::entries_for_run(Self, @kernel.RunId) -> Array[JournalEntry]
 pub fn InMemoryJournal::entries_for_run_impl(Self, @kernel.RunId) -> Array[JournalEntry]
+pub fn InMemoryJournal::entries_for_savepoint(Self, @kernel.RunId, String) -> Array[JournalEntry]
 pub fn InMemoryJournal::entries_for_savepoint_impl(Self, @kernel.RunId, String) -> Array[JournalEntry]
+pub fn InMemoryJournal::revision(Self) -> Int
 pub fn InMemoryJournal::revision_impl(Self) -> Int
 pub impl RunJournal for InMemoryJournal
 
@@ -251,6 +281,7 @@ pub(all) struct NoopContributor {
   id : String
 }
 pub fn NoopContributor::NoopContributor() -> Self
+pub fn NoopContributor::contribute(Self, PreCommitContext) -> JournalContribution raise ContributionError
 pub fn NoopContributor::with_id(String) -> Self
 pub impl JournalContributor for NoopContributor
 
@@ -266,6 +297,7 @@ pub(all) enum OperationClass {
   InFlight
   Structural
 } derive(Eq, @debug.Debug)
+pub fn OperationClass::to_string(Self) -> String
 pub impl Show for OperationClass
 
 pub(all) struct OperationLease {
@@ -337,6 +369,7 @@ pub(all) enum PromptResult {
   ForkCompleted(run_id~ : @kernel.RunId, turn_id~ : @kernel.TurnId, parent_session_id~ : String, new_session_id~ : String, forked_messages~ : Array[@kernel.Message])
   CompactCompleted(run_id~ : @kernel.RunId, turn_id~ : @kernel.TurnId, mode~ : @kernel.CompactMode, trigger~ : @kernel.CompactTrigger, new_session_id~ : String?, compacted_messages~ : Array[@kernel.Message])
 }
+pub fn PromptResult::to_string(Self) -> String
 pub impl Show for PromptResult
 
 pub struct Puppet {
@@ -381,6 +414,7 @@ pub(all) enum PuppetPhase {
 } derive(Eq, @debug.Debug)
 pub fn PuppetPhase::is_accepting(Self) -> Bool
 pub fn PuppetPhase::is_quiescent(Self) -> Bool
+pub fn PuppetPhase::to_string(Self) -> String
 pub impl Show for PuppetPhase
 
 pub(all) enum QueuePolicy {
@@ -395,6 +429,7 @@ pub(all) enum QuiescentStatus {
   Terminal(outcome~ : @kernel_exec.RunOutcome)
   Shutdown
 } derive(Eq, @debug.Debug)
+pub fn QuiescentStatus::to_string(Self) -> String
 pub impl Show for QuiescentStatus
 
 pub(all) struct ResumeCommand {
@@ -421,6 +456,7 @@ pub(all) enum SavepointFailureCause {
   ValidationFailed(detail~ : String)
   BarrierFailed(detail~ : String)
 } derive(Eq, @debug.Debug)
+pub fn SavepointFailureCause::to_string(Self) -> String
 pub impl Show for SavepointFailureCause
 
 pub(all) enum SavepointKind {
@@ -430,6 +466,7 @@ pub(all) enum SavepointKind {
   RunSuspended
   RunTerminal
 } derive(Eq, @debug.Debug)
+pub fn SavepointKind::to_string(Self) -> String
 pub impl Show for SavepointKind
 
 pub(all) struct SteerCommand {
@@ -475,6 +512,7 @@ pub fn TurnSnapshot::run_id(Self) -> @kernel.RunId
 pub fn TurnSnapshot::session_id(Self) -> @kernel.SessionId
 pub fn TurnSnapshot::subscriber_provenance(Self) -> Array[String]
 pub fn TurnSnapshot::to_redacted_string(Self) -> String
+pub fn TurnSnapshot::to_string(Self) -> String
 pub fn TurnSnapshot::tool_definitions(Self) -> Array[@kernel.ToolDef]
 pub fn TurnSnapshot::turn_id(Self) -> @kernel.TurnId
 pub impl Show for TurnSnapshot

@@ -26,4 +26,5 @@ import {
   "colmugx/posoco/internal/puppetry",
   "moonbitlang/async",
   "moonbitlang/async/aqueue",
+  "moonbitlang/core/quickcheck" @qc,
 } for "wbtest"

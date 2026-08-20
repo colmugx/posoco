@@ -91,6 +91,7 @@ pub(all) enum ExecutionPolicy {
   Parallel
   Exclusive
 } derive(Eq, @debug.Debug)
+pub fn ExecutionPolicy::to_string(Self) -> String
 pub impl Show for ExecutionPolicy
 
 pub(all) enum FinishReason {
@@ -133,6 +134,7 @@ pub(all) enum NotExecutedReason {
   UnknownTool
   SchemaMismatch(json_path~ : String, expected~ : String, actual~ : String)
 } derive(Eq, @debug.Debug)
+pub fn NotExecutedReason::to_string(Self) -> String
 pub impl Show for NotExecutedReason
 
 pub(all) struct OwnerId {

@@ -56,12 +56,14 @@ pub(all) suberror RuntimeError {
   Transport(String)
   ToolAlreadyRegistered(String)
 } derive(@debug.Debug)
+pub fn RuntimeError::to_string(Self) -> String
 pub impl Show for RuntimeError
 
 pub(all) suberror SessionError {
   Load(String)
   Save(String)
 } derive(@debug.Debug)
+pub fn SessionError::to_string(Self) -> String
 pub impl Show for SessionError
 
 pub(all) suberror UiError {

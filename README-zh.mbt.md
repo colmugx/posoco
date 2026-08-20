@@ -70,6 +70,7 @@ pub impl @posoco.Extension for ReadTools with fn manifest(self) -> @posoco.Exten
     commands: [],
     ui: [],
     prompt_contributors: [],
+    requires: [],
   }
 }
 
@@ -99,7 +100,7 @@ let agent = @posoco.Agent(
     read_ext,    // 上面构造的 ReadTools 扩展，贡献 ToolProvider
   ],
   config={
-    max_tool_rounds: 10,
+    max_tool_rounds: Some(10),
     temperature: None,
     max_output_tokens: None,
     model_context_window: None,
@@ -112,8 +113,8 @@ let input : @posoco.Message = @posoco.UserMessage(content=[
 let result = agent.run_turn(input, "session_1")
 ```
 
-`AgentConfig` 有四个字段：`max_tool_rounds`、`temperature`、
-`max_output_tokens`、`model_context_window`。`run_turn(message, session_id)`
+`AgentConfig` 有四个字段：`max_tool_rounds`（`Int?`，`None` 为无界、是推荐默认；
+`Some(n)` 放行 n 个完整工具轮）、`temperature`、`max_output_tokens`、`model_context_window`。`run_turn(message, session_id)`
 是 async 方法，会 raise `AgentError`。组合是 fail-fast 的，raise
 `CompositionError`：
 

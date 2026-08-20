@@ -69,6 +69,7 @@ pub(all) enum BudgetDimension {
   ToolCalls
   TotalTokens
 } derive(Eq, @debug.Debug)
+pub fn BudgetDimension::to_string(Self) -> String
 pub impl Show for BudgetDimension
 
 pub(all) struct BudgetExhaustedPayload {
@@ -82,6 +83,7 @@ pub enum BudgetState {
   Exceeded(BudgetDimension)
   UnknownUsage(BudgetDimension)
 } derive(Eq, @debug.Debug)
+pub fn BudgetState::to_string(Self) -> String
 pub impl Show for BudgetState
 
 pub(all) struct CallModelPayload {
@@ -116,6 +118,7 @@ pub(all) enum Effect {
 } derive(Eq, @debug.Debug)
 pub fn Effect::effect_id(Self) -> @kernel.EffectId
 pub fn Effect::model_step_id(Self) -> ModelStepId?
+pub fn Effect::to_string(Self) -> String
 pub impl Show for Effect
 
 pub(all) struct EventSequence {
@@ -148,6 +151,7 @@ pub(all) struct ExecutionWave {
   policies : Array[@kernel.ExecutionPolicy]
 } derive(Eq, @debug.Debug)
 pub fn ExecutionWave::calls(Self) -> Array[@kernel.ToolCall]
+pub fn ExecutionWave::to_string(Self) -> String
 pub impl Show for ExecutionWave
 
 pub(all) enum FailureReason {
@@ -159,6 +163,7 @@ pub(all) enum FailureReason {
   BudgetExhausted(dimension~ : BudgetDimension)
   DeadlineReached
 } derive(Eq, @debug.Debug)
+pub fn FailureReason::to_string(Self) -> String
 pub impl Show for FailureReason
 
 pub(all) enum InvariantCategory {
@@ -171,6 +176,7 @@ pub(all) enum InvariantCategory {
   IllegalInputForPhase(input_kind~ : String, phase~ : String)
   PostTerminal(input_kind~ : String)
 } derive(Eq, @debug.Debug)
+pub fn InvariantCategory::to_string(Self) -> String
 pub impl Show for InvariantCategory
 
 pub(all) enum KernelEvent {
@@ -190,6 +196,7 @@ pub(all) enum KernelEvent {
   RunCancelled(reason~ : @kernel.CancelReason)
 } derive(Eq, @debug.Debug)
 pub fn KernelEvent::is_terminal(Self) -> Bool
+pub fn KernelEvent::to_string(Self) -> String
 pub impl Show for KernelEvent
 
 pub(all) struct ModelCompletedPayload {
@@ -211,6 +218,7 @@ pub(all) struct ModelStepId {
 pub fn ModelStepId::first() -> Self
 pub fn ModelStepId::next(Self) -> Self
 pub fn ModelStepId::to_int(Self) -> Int
+pub fn ModelStepId::to_string(Self) -> String
 pub impl Show for ModelStepId
 
 pub(all) enum Phase {
@@ -221,6 +229,7 @@ pub(all) enum Phase {
   Suspended
   Terminal
 } derive(Eq, @debug.Debug)
+pub fn Phase::to_string(Self) -> String
 pub impl Show for Phase
 
 pub(all) struct ReduceOutput {
@@ -265,6 +274,7 @@ pub(all) enum RunOutcome {
   Failed(reason~ : FailureReason)
   Cancelled(reason~ : @kernel.CancelReason)
 } derive(Eq, @debug.Debug)
+pub fn RunOutcome::to_string(Self) -> String
 pub impl Show for RunOutcome
 
 pub struct RunState {
@@ -296,6 +306,7 @@ pub fn RunState::phase(Self) -> Phase
 pub fn RunState::run_id(Self) -> @kernel.RunId
 pub fn RunState::session_id(Self) -> @kernel.SessionId
 pub fn RunState::suspension_requirement(Self) -> SuspensionRequirement?
+pub fn RunState::to_string(Self) -> String
 pub fn RunState::transcript(Self) -> @kernel.Transcript
 pub fn RunState::transition(Self, phase~ : Phase, transcript~ : @kernel.Transcript, pending_effects~ : Array[Effect], next_event_sequence~ : EventSequence, next_effect_id~ : @kernel.EffectId, current_model_step_id~ : ModelStepId, catalog_version~ : @kernel.CatalogVersion?, budget_consumed~ : BudgetConsumed, outcome~ : RunOutcome?, suspension_requirement~ : SuspensionRequirement?) -> Self raise KernelError
 pub impl Show for RunState

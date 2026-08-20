@@ -488,13 +488,14 @@ async fn AgentRuntime::shutdown(self : AgentRuntime) -> Unit {
 }
 
 ///|
-fn agent_error_category(error : @error.AgentError) -> String {
+fn agent_error_category(error : Error) -> String {
   match error {
-    Model(_) => "AgentError::Model"
-    Session(_) => "AgentError::Session"
-    Runtime(_) => "AgentError::Runtime"
-    ToolLoopExceeded(..) => "AgentError::ToolLoopExceeded"
-    HookAborted(_) => "AgentError::HookAborted"
+    @error.AgentError::Model(_) => "AgentError::Model"
+    @error.AgentError::Session(_) => "AgentError::Session"
+    @error.AgentError::Runtime(_) => "AgentError::Runtime"
+    @error.AgentError::ToolLoopExceeded(..) => "AgentError::ToolLoopExceeded"
+    @error.AgentError::HookAborted(_) => "AgentError::HookAborted"
+    _ => "Unclassified"
   }
 }
 
@@ -641,6 +642,7 @@ async fn AgentRuntime::run_turn(
 ///|
 /// Run exactly one turn: delegate to Puppet; emit start/end events for
 /// observers.
+#warnings("-fragile_catch_all")
 async fn AgentRuntime::run_single_turn(
   self : AgentRuntime,
   input : @kernel.Message,

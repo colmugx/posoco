@@ -134,6 +134,7 @@ pub(all) enum UiBody {
   Progress(Double)
   Markdown(String)
 } derive(@debug.Debug)
+pub fn UiBody::to_string(Self) -> String
 pub impl Show for UiBody
 
 pub(all) struct UiDescriptor {
@@ -179,6 +180,7 @@ pub(all) enum UiSlot {
   Notice
   Widget
 } derive(Eq, @debug.Debug)
+pub fn UiSlot::to_string(Self) -> String
 pub impl Show for UiSlot
 
 // Type aliases

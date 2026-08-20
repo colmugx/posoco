@@ -73,6 +73,7 @@ pub impl @posoco.Extension for ReadTools with fn manifest(self) -> @posoco.Exten
     commands: [],
     ui: [],
     prompt_contributors: [],
+    requires: [],
   }
 }
 
@@ -104,7 +105,7 @@ let agent = @posoco.Agent(
     read_ext,    // the ReadTools extension built above, contributing ToolProvider
   ],
   config={
-    max_tool_rounds: 10,
+    max_tool_rounds: Some(10),
     temperature: None,
     max_output_tokens: None,
     model_context_window: None,
@@ -117,8 +118,9 @@ let input : @posoco.Message = @posoco.UserMessage(content=[
 let result = agent.run_turn(input, "session_1")
 ```
 
-`AgentConfig` has four fields: `max_tool_rounds`, `temperature`,
-`max_output_tokens`, `model_context_window`. `run_turn(message, session_id)`
+`AgentConfig` has four fields: `max_tool_rounds` (`Int?` — `None` is
+unbounded and the recommended default; `Some(n)` allows n full tool rounds),
+`temperature`, `max_output_tokens`, `model_context_window`. `run_turn(message, session_id)`
 is async and raises `AgentError`. Composition is fail-fast and raises
 `CompositionError`:
 
