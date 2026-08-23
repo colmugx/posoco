@@ -16,6 +16,7 @@ fn metadata_config() -> AgentConfig {
     temperature: None,
     max_output_tokens: None,
     model_context_window: None,
+    compact_threshold: None,
   }
 }
 
@@ -106,11 +107,12 @@ async test "t05_save_failure_returns_session_error_no_turn_completed" {
 }
 
 // ---------------------------------------------------------------------------
-// Regression 3: a failed turn must not mutate the loaded session by alias.
+// Regression 3: a failed turn persists its progress, without mutating the
+// loaded session by alias.
 // ---------------------------------------------------------------------------
 
 ///|
-async test "t05_failed_turn_does_not_mutate_loaded_session_messages" {
+async test "t05_failed_turn_persists_progress_without_aliasing" {
   let model = ScriptedModel([Fail(@error.ModelError::Transport("network down"))])
   let store = RecordingSessionStore()
   let original_messages = [tk_user_msg("already persisted")]
@@ -136,8 +138,11 @@ async test "t05_failed_turn_does_not_mutate_loaded_session_messages" {
   assert_true(original_messages[0] == tk_user_msg("already persisted"))
   try {
     let persisted = store.load("stable")
-    assert_eq(persisted.messages.length(), 1)
+    // The failed turn's user input must survive: the next turn rebuilds its
+    // context from this store, so losing it makes the model forget the query.
+    assert_eq(persisted.messages.length(), 2)
     assert_true(persisted.messages[0] == tk_user_msg("already persisted"))
+    assert_true(persisted.messages[1] == tk_user_msg("must not leak"))
   } catch {
     _ => fail("seeded session should remain loadable")
   }

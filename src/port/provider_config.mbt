@@ -5,19 +5,27 @@
 pub(all) struct ProviderConfig {
   /// Accepted reasoning_effort values. Empty = not supported.
   reasoning_effort_values : Array[String]
+  /// Provider-reported context capacity of the active model, in tokens.
+  /// `None` = unknown; auto-compact stays disabled rather than guessing.
+  context_window : Int?
+  /// Provider-reported fraction of the context window at which auto-compact
+  /// fires, in (0, 1]. `None` = the host/default threshold applies.
+  compact_threshold : Double?
 } derive(Eq, Debug)
 
 ///|
 pub fn ProviderConfig::ProviderConfig(
   reasoning_effort_values~ : Array[String],
+  context_window? : Int? = None,
+  compact_threshold? : Double? = None,
 ) -> ProviderConfig {
-  { reasoning_effort_values, }
+  { reasoning_effort_values, context_window, compact_threshold }
 }
 
 ///|
-/// Empty config: no reasoning_effort values accepted.
+/// Empty config: no reasoning_effort values accepted, no window reported.
 pub fn ProviderConfig::empty() -> ProviderConfig {
-  { reasoning_effort_values: [] }
+  { reasoning_effort_values: [], context_window: None, compact_threshold: None }
 }
 
 ///|

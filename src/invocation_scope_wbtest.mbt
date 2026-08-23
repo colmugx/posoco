@@ -81,6 +81,8 @@ fn scope_test_tool_call_with_usage(total : Int) -> @kernel.ModelCallResult {
       input_tokens: Some(total),
       output_tokens: Some(0),
       total_tokens: Some(total),
+      cached_input_tokens: None,
+      uncached_input_tokens: None,
     }),
   )
   { completion, processed_messages: [] }

@@ -127,12 +127,14 @@ pub(all) enum ModelFailure {
   Runtime(reason~ : String)
   Parse(reason~ : String)
   HostRejected(reason~ : String)
+  RateLimited(reason~ : String, reset_at_ms~ : Int64?, provider_code~ : String?)
 } derive(Eq, @debug.Debug)
 pub impl Show for ModelFailure
 
 pub(all) enum NotExecutedReason {
   UnknownTool
   SchemaMismatch(json_path~ : String, expected~ : String, actual~ : String)
+  RejectedByHook(reason~ : String)
 } derive(Eq, @debug.Debug)
 pub fn NotExecutedReason::to_string(Self) -> String
 pub impl Show for NotExecutedReason
@@ -229,6 +231,8 @@ pub(all) struct Usage {
   input_tokens : Int?
   output_tokens : Int?
   total_tokens : Int?
+  cached_input_tokens : Int?
+  uncached_input_tokens : Int?
 } derive(Eq, @debug.Debug)
 pub impl Show for Usage
 

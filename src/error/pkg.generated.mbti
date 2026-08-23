@@ -47,6 +47,7 @@ pub(all) suberror ModelError {
   RequestBuild(String)
   Transport(String)
   ResponseParse(String)
+  RateLimited(RateLimitInfo)
 } derive(@debug.Debug)
 pub impl Show for ModelError
 
@@ -75,6 +76,12 @@ pub(all) suberror UiError {
 pub impl Show for UiError
 
 // Types and methods
+pub(all) struct RateLimitInfo {
+  status : Int
+  message : String
+  reset_at_ms : Int64?
+  provider_code : String?
+} derive(Eq, @debug.Debug)
 
 // Type aliases
 

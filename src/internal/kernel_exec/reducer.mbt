@@ -599,6 +599,7 @@ fn reduce_model_failed(
     @kernel.Runtime(reason~) => ModelRuntime(detail=reason)
     @kernel.Parse(reason~) => ModelParseFailure(detail=reason)
     @kernel.HostRejected(reason~) => FailureReason::HostRejected(detail=reason)
+    @kernel.RateLimited(reason~, ..) => ModelQuotaExhausted(detail=reason)
   }
   reduce_terminal_fail(state, reason)
 }
@@ -762,6 +763,7 @@ fn reduce_tool_failed(
         @kernel.Parse(reason~) => ("Parse", reason)
         @kernel.RequestBuild(reason~) => ("RequestBuild", reason)
         @kernel.HostRejected(reason~) => ("HostRejected", reason)
+        @kernel.RateLimited(reason~, ..) => ("RateLimited", reason)
       }
     None => ("Unknown", "no runtime detail supplied")
   }
@@ -1090,7 +1092,10 @@ fn reduce_transcript_rewrite(
     next_effect_id=state.next_effect_id(),
     current_model_step_id=state.current_model_step_id(),
     catalog_version=None,
-    budget_consumed=state.budget_consumed(),
+    // The rewrite changed the transcript the last usage reading described:
+    // occupancy is unknown until the next reliable observation. Cumulative
+    // counters stay — the run-wide token budget is unaffected by compaction.
+    budget_consumed={ ..state.budget_consumed(), last_context_tokens: None },
     outcome=state.outcome(),
     suspension_requirement=state.suspension_requirement(),
   )
@@ -1161,15 +1166,35 @@ fn bump_model_step(
         observed_total_tokens: consumed.observed_total_tokens + added,
         any_usage_verified: consumed.any_usage_verified ||
         u.total_tokens is Some(_),
+        last_context_tokens: usage_context_occupancy(u),
       }
     }
     None =>
+      // A step without usage leaves the context size unknown: the transcript
+      // has grown since the last reliable reading, so the stale one must go.
       {
         model_steps,
         tool_rounds: consumed.tool_rounds,
         tool_calls: consumed.tool_calls,
         observed_total_tokens: consumed.observed_total_tokens,
         any_usage_verified: consumed.any_usage_verified,
+        last_context_tokens: None,
+      }
+  }
+}
+
+///|
+/// Context occupancy of one call from its usage: `total_tokens` when
+/// reported, else `input_tokens + output_tokens` when both are. Partial
+/// readings (only one of input/output) are not a reliable size — stay
+/// unknown rather than guessing low.
+fn usage_context_occupancy(u : @kernel.Usage) -> Int? {
+  match u.total_tokens {
+    Some(total) => Some(total)
+    None =>
+      match (u.input_tokens, u.output_tokens) {
+        (Some(input), Some(output)) => Some(input + output)
+        _ => None
       }
   }
 }
@@ -1189,6 +1214,7 @@ fn bump_tool_batch(
     tool_calls: consumed.tool_calls + executable_calls,
     observed_total_tokens: consumed.observed_total_tokens,
     any_usage_verified: consumed.any_usage_verified,
+    last_context_tokens: consumed.last_context_tokens,
   }
 }
 

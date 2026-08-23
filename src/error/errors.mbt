@@ -1,8 +1,53 @@
 ///|
+/// Structured quota/rate-limit verdict returned by a provider (the HTTP 429
+/// family). Raised as `ModelError::RateLimited` instead of `Transport` so
+/// hosts can schedule recovery from typed data instead of parsing strings.
+///
+/// `reset_at_ms` is the Unix epoch in milliseconds at which the provider
+/// stated the quota window frees; `None` means no explicit reset time was
+/// stated, so waiting is not schedulable and the caller should treat the
+/// verdict as terminal for this turn. `provider_code` is the provider's own
+/// machine code for the verdict when available (for example z.ai `"1308"`,
+/// OpenAI `"usage_limit_reached"`). `message` is a bounded excerpt of the
+/// provider message, safe to display.
+pub(all) struct RateLimitInfo {
+  status : Int
+  message : String
+  reset_at_ms : Int64?
+  provider_code : String?
+} derive(Eq, Debug)
+
+///|
+fn bounded_rate_limit_message(message : String) -> String {
+  let chars : Array[Char] = []
+  let mut truncated = false
+  for char in message {
+    if chars.length() >= 120 {
+      truncated = true
+      break
+    }
+    match char {
+      '\n' | '\r' => chars.push(' ')
+      other => chars.push(other)
+    }
+  }
+  let label = String::from_array(chars)
+  if truncated {
+    label + "…"
+  } else {
+    label
+  }
+}
+
+///|
 pub(all) suberror ModelError {
   RequestBuild(String)
   Transport(String)
   ResponseParse(String)
+  /// The provider answered with a quota/rate-limit verdict instead of
+  /// serving the request. Distinct from `Transport` throttles so a host can
+  /// decide between waiting for `reset_at_ms` and failing fast.
+  RateLimited(RateLimitInfo)
 } derive(Debug)
 
 ///|
@@ -11,6 +56,17 @@ pub impl Show for ModelError with fn to_string(self) -> String {
     RequestBuild(msg) => "ModelError::RequestBuild(\{msg})"
     Transport(msg) => "ModelError::Transport(\{msg})"
     ResponseParse(msg) => "ModelError::ResponseParse(\{msg})"
+    RateLimited(info) => {
+      let code_label = match info.provider_code {
+        Some(code) => code
+        None => "none"
+      }
+      let reset_label = match info.reset_at_ms {
+        Some(at) => "\{at}"
+        None => "none"
+      }
+      "ModelError::RateLimited(status=\{info.status}, code=\{code_label}, reset_at_ms=\{reset_label}, message=\{bounded_rate_limit_message(info.message)})"
+    }
   }
 }
 

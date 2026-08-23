@@ -10,6 +10,10 @@ pub(all) struct AgentConfig {
   temperature : Double?
   max_output_tokens : Int?
   model_context_window : Int?
+  /// Host override for the auto-compact trigger point as a fraction of the
+  /// context window, in (0, 1]. `None` defers to the active modelport's
+  /// reported `compact_threshold`, falling back to the core default (0.88).
+  compact_threshold : Double?
 }
 
 ///|
@@ -213,6 +217,10 @@ fn build_tool_routing(
 /// Private mutable implementation owned by the Agent facade.
 priv struct AgentRuntime {
   puppet : @puppetry.Puppet
+  /// The aggregated ModelPort, queried per turn for the active model's
+  /// self-reported context window / compact threshold. Reference equality
+  /// with the port the Puppet executes through — no second composition path.
+  model : &@port.ModelPort
   observers : Array[&@port.Observer]
   sessions : Array[&@port.SessionStore]
   lifecycle : Array[&@port.Lifecycle]
@@ -276,6 +284,14 @@ fn AgentRuntime::compose(
       raise @error.CompositionError::ManifestSchemaError(
         manifest_id="agent.config",
         detail="model_context_window must be positive",
+      )
+    _ => ()
+  }
+  match config.compact_threshold {
+    Some(value) if value <= 0.0 || value > 1.0 =>
+      raise @error.CompositionError::ManifestSchemaError(
+        manifest_id="agent.config",
+        detail="compact_threshold must be in (0, 1]",
       )
     _ => ()
   }
@@ -395,6 +411,7 @@ fn AgentRuntime::compose(
   }
   let runtime : AgentRuntime = {
     puppet: @puppetry.Puppet(puppet_config),
+    model: agg.model,
     observers: agg.observers,
     sessions: agg.sessions,
     lifecycle: agg.lifecycle.map(fn(entry) { entry.port }),

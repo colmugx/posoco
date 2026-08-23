@@ -238,6 +238,8 @@ fn fixture_tool_calls_with_usage(
       input_tokens: Some(total),
       output_tokens: Some(0),
       total_tokens: Some(total),
+      cached_input_tokens: None,
+      uncached_input_tokens: None,
     }),
   )
 }

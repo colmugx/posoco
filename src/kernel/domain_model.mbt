@@ -13,6 +13,17 @@ pub(all) struct Usage {
   input_tokens : Int?
   output_tokens : Int?
   total_tokens : Int?
+  /// Cached (reused) portion of the input prompt when the provider reports
+  /// it — OpenAI `prompt_tokens_details.cached_tokens`, DeepSeek
+  /// `prompt_cache_hit_tokens`, Moonshot `cached_tokens`. `input_tokens`
+  /// stays the provider-reported prompt total; the cache hit rate is
+  /// `cached_input_tokens / input_tokens`.
+  cached_input_tokens : Int?
+  /// The uncached (miss) portion of the input prompt when the provider
+  /// reports it natively — DeepSeek `prompt_cache_miss_tokens`. Providers
+  /// that report hit and miss as a pair spare consumers the subtraction
+  /// (`uncached = input - cached`); this field is never synthesized.
+  uncached_input_tokens : Int?
 } derive(Eq, Debug)
 
 ///|
@@ -23,7 +34,7 @@ pub impl Show for Usage with fn to_string(self : Usage) -> String {
       None => "?"
     }
   }
-  "Usage(in=\{fmt(self.input_tokens)}, out=\{fmt(self.output_tokens)}, total=\{fmt(self.total_tokens)})"
+  "Usage(in=\{fmt(self.input_tokens)}, out=\{fmt(self.output_tokens)}, total=\{fmt(self.total_tokens)}, cached=\{fmt(self.cached_input_tokens)}, uncached=\{fmt(self.uncached_input_tokens)})"
 }
 
 ///|
@@ -110,6 +121,13 @@ pub(all) enum ModelFailure {
   /// distinct from provider failures so callers can preserve the rejection's
   /// typed meaning instead of string-matching a model error.
   HostRejected(reason~ : String)
+  /// The provider answered with a quota/rate-limit verdict (HTTP 429 family)
+  /// instead of serving the request. `reset_at_ms` is the provider-stated
+  /// Unix epoch (milliseconds) when the quota window frees; `None` means the
+  /// provider stated no reset time. Kept as primitive fields (not the error
+  /// package's `RateLimitInfo`) because the kernel sits below the error
+  /// package in the dependency order.
+  RateLimited(reason~ : String, reset_at_ms~ : Int64?, provider_code~ : String?)
 } derive(Eq, Debug)
 
 ///|
@@ -122,6 +140,8 @@ pub impl Show for ModelFailure with fn to_string(self : ModelFailure) -> String 
     Parse(reason~) => "ModelFailure::Parse(\{safe_model_label(reason)})"
     HostRejected(reason~) =>
       "ModelFailure::HostRejected(\{safe_model_label(reason)})"
+    RateLimited(reason~, ..) =>
+      "ModelFailure::RateLimited(\{safe_model_label(reason)})"
   }
 }
 

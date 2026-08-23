@@ -186,12 +186,16 @@ pub impl Show for FinishReason with fn to_string(self : FinishReason) -> String 
 ///   validation against the tool's input schema. The diagnostic carries a safe
 ///   JSON path and type expectation; it never includes the raw argument
 ///   payload.
+/// - `RejectedByHook`: a `Hook::before_tool` returned `Reject`; the call
+///   was never dispatched and `reason` is the hook's steering text fed
+///   back to the model.
 ///
 /// Malformed-argument cases never reach this variant — they are
 /// `ModelParseFailure` at the reducer boundary (ADR §2.4).
 pub(all) enum NotExecutedReason {
   UnknownTool
   SchemaMismatch(json_path~ : String, expected~ : String, actual~ : String)
+  RejectedByHook(reason~ : String)
 } derive(Eq, Debug)
 
 ///|
@@ -200,6 +204,7 @@ pub impl Show for NotExecutedReason with fn to_string(self : NotExecutedReason) 
     UnknownTool => "UnknownTool"
     SchemaMismatch(json_path~, expected~, actual~) =>
       "SchemaMismatch(path=\{json_path}, expected=\{expected}, actual=\{actual})"
+    RejectedByHook(reason~) => "RejectedByHook(\{reason})"
   }
 }
 
@@ -207,17 +212,21 @@ pub impl Show for NotExecutedReason with fn to_string(self : NotExecutedReason) 
 /// Outcome of a single tool invocation (ADR §2.4, §2.11).
 ///
 /// Variants:
-/// - `Success`: tool ran and returned structured data. `structured` is the
-///   model-facing JSON payload; `content` is the human-readable mirror used by
-///   the transcript.
+/// - `Success`: tool ran and returned structured data. `content` is the
+///   plain-text result sent to the model by the built-in adapters and used
+///   for transcripts. `structured` is an optional machine-readable payload
+///   preserved in the kernel transcript, `TurnEvent::ToolCallResult`, and
+///   session snapshots for observers/UIs; the built-in adapters do not send
+///   it to the model. Structured objects follow a reserved `summary : String`
+///   field convention for one-line UI summaries.
 /// - `ToolReportedError`: tool ran and reported a business-level failure. The
 ///   Run continues; the failure is fed back to the model as a normal tool
 ///   message.
 /// - `RuntimeFailure`: tool did not run to completion — adapter raised a
 ///   `RuntimeError`. Still non-terminal for the Run.
-/// - `NotExecuted`: model requested a tool that was not executed (unknown name
-///   or parseable-but-schema-invalid args). The original call id is preserved
-///   so the model can correlate the feedback.
+/// - `NotExecuted`: model requested a tool that was not executed (unknown name,
+///   parseable-but-schema-invalid args, or a `before_tool` hook rejection). The
+///   original call id is preserved so the model can correlate the feedback.
 ///
 /// There is deliberately no boolean `is_error` field here. The variant tag IS
 /// the error status.

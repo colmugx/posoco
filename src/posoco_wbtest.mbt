@@ -99,14 +99,28 @@ impl @port.Observer for MockObserver with fn on_event(self, event) {
 }
 
 ///|
-struct AbortHook {}
+struct PolicyRejectHook {}
 
 ///|
-impl @port.Hook for AbortHook with fn before_tool(
+impl @port.Hook for PolicyRejectHook with fn before_tool(
   _self,
   _call : @kernel.ToolCall,
 ) -> @port.ToolHookDecision {
   Reject(reason="blocked by policy")
+}
+
+///|
+/// ConsentToolHook — a permission policy after the user allowed the call.
+struct ConsentToolHook {
+  scope : String
+}
+
+///|
+impl @port.Hook for ConsentToolHook with fn before_tool(
+  self,
+  call : @kernel.ToolCall,
+) -> @port.ToolHookDecision {
+  ApproveAfterConsent(call~, consent_scope=self.scope)
 }
 
 ///|
@@ -126,6 +140,7 @@ fn make_config() -> AgentConfig {
     temperature: None,
     max_output_tokens: None,
     model_context_window: None,
+    compact_threshold: None,
   }
 }
 
@@ -318,13 +333,13 @@ async test "model_error_aborts_turn" {
 }
 
 ///|
-async test "hook_aborts_before_tool" {
+async test "hook_reject_skips_tool_and_feeds_back" {
   let tc = make_tool_call("call_1", "bash")
   let model = MockModelPort::{
-    responses: [tool_response([tc]), stop_response("should not reach")],
+    responses: [tool_response([tc]), stop_response("adjusted")],
     index: 0,
   }
-  let tools = MockToolProvider::{
+  let tools = RecordingExecProvider::{
     tools: [
       @kernel.ToolDef(
         name=@kernel.ToolName::unchecked("bash"),
@@ -338,27 +353,168 @@ async test "hook_aborts_before_tool" {
     results: Map::from_array([
       ("bash", Ok(@kernel.Success(content="ok", structured=None))),
     ]),
+    executed: [],
   }
   let store = MockSessionStore::{ store: Map::from_array([]) }
   let observer = MockObserver::{ events: [] }
   let config = make_config()
-  let abort_hook = AbortHook::{  }
+  let reject_hook = PolicyRejectHook::{  }
 
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", tools=[tools], hooks=[abort_hook], sessions=[store], observers=[
+      tk_ext(id="io", tools=[tools], hooks=[reject_hook], sessions=[store], observers=[
         observer,
       ]),
     ],
     config~,
   )
-  match
-    (Ok(agent.run_turn(user_msg("danger"), "session_1")) catch { e => Err(e) }) {
-    Err(@error.AgentError::HookAborted(msg)) =>
-      assert_true(msg.contains("blocked by policy"))
-    _ => fail("expected HookAborted error")
+  let result = agent.run_turn(user_msg("danger"), "session_1")
+  // The rejected call never reached the executor...
+  assert_eq(tools.executed.length(), 0)
+  // ...and came back as a NotExecuted result instead of killing the turn.
+  assert_eq(result.tool_results.length(), 1)
+  guard result.tool_results[0]
+    is @kernel.NotExecuted(reason=@kernel.RejectedByHook(reason~), ..) else {
+    fail("expected NotExecuted(RejectedByHook) for the rejected call")
   }
+  assert_true(reason.contains("blocked by policy"))
+}
+
+///|
+/// GateByNameHook — rejects blocked tool names, approves everything else.
+struct GateByNameHook {
+  blocked : Array[String]
+}
+
+///|
+impl @port.Hook for GateByNameHook with fn before_tool(
+  self,
+  call : @kernel.ToolCall,
+) -> @port.ToolHookDecision {
+  let name = call.name.to_string()
+  if self.blocked.contains(name) {
+    Reject(reason="plan mode: tool '\{name}' is disabled while planning")
+  } else {
+    Approve(call~)
+  }
+}
+
+///|
+async test "hook_reject_steers_model_to_allowed_tool" {
+  let bash_call = make_tool_call("call_1", "bash")
+  let read_call = make_tool_call("call_2", "read")
+  let model = MockModelPort::{
+    responses: [
+      tool_response([bash_call]),
+      tool_response([read_call]),
+      stop_response("done"),
+    ],
+    index: 0,
+  }
+  let tools = RecordingExecProvider::{
+    tools: [tk_tool_def("bash", "shell"), tk_tool_def("read", "read files")],
+    results: Map::from_array([
+      ("read", Ok(@kernel.Success(content="file contents", structured=None))),
+    ]),
+    executed: [],
+  }
+  let store = MockSessionStore::{ store: Map::from_array([]) }
+  let observer = MockObserver::{ events: [] }
+
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(
+        id="io",
+        tools=[tools],
+        hooks=[GateByNameHook::{ blocked: ["bash"] }],
+        sessions=[store],
+        observers=[observer],
+      ),
+    ],
+    config=make_config(),
+  )
+  let result = agent.run_turn(user_msg("investigate"), "session_1")
+  assert_eq(tools.executed, ["read"])
+  assert_eq(result.tool_results.length(), 2)
+  assert_true(
+    result.tool_results[0]
+    is @kernel.NotExecuted(reason=@kernel.RejectedByHook(..), ..),
+  )
+  assert_true(result.tool_results[1] is @kernel.Success(..))
+}
+
+///|
+/// Lattice: user consent (ApproveAfterConsent) outranks another gate's
+/// Reject regardless of registration order — a gate must not veto a
+/// decision the user already made. This is the plan-mode × permission
+/// composition: the user allows `bash` at the permission ask, the plan gate
+/// still says no, the call runs anyway.
+async fn run_bash_with_hooks(
+  hooks : Array[&@port.Hook],
+) -> (RecordingExecProvider, TurnResult) {
+  let tc = make_tool_call("call_1", "bash")
+  let model = MockModelPort::{
+    responses: [tool_response([tc]), stop_response("done")],
+    index: 0,
+  }
+  let tools = RecordingExecProvider::{
+    tools: [tk_tool_def("bash", "shell")],
+    results: Map::from_array([
+      ("bash", Ok(@kernel.Success(content="ran", structured=None))),
+    ]),
+    executed: [],
+  }
+  let store = MockSessionStore::{ store: Map::from_array([]) }
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", tools=[tools], hooks~, sessions=[store], observers=[]),
+    ],
+    config=make_config(),
+  )
+  let result = agent.run_turn(user_msg("investigate"), "session_1")
+  (tools, result)
+}
+
+///|
+async test "hook_consent_overrides_gate_reject_in_registration_order" {
+  // Permission before gate (cetas order).
+  let (tools, result) = run_bash_with_hooks([
+    ConsentToolHook::{ scope: "bash:ego-browser" },
+    GateByNameHook::{ blocked: ["bash"] },
+  ])
+  assert_eq(tools.executed, ["bash"])
+  assert_eq(result.tool_results.length(), 1)
+  assert_true(result.tool_results[0] is @kernel.Success(..))
+}
+
+///|
+async test "hook_consent_overrides_gate_reject_in_reverse_order" {
+  // Gate before permission: Reject must not short-circuit the consent.
+  let (tools, result) = run_bash_with_hooks([
+    GateByNameHook::{ blocked: ["bash"] },
+    ConsentToolHook::{ scope: "bash:ego-browser" },
+  ])
+  assert_eq(tools.executed, ["bash"])
+  assert_true(result.tool_results[0] is @kernel.Success(..))
+}
+
+///|
+async test "hook_multiple_rejects_merge_reasons" {
+  // No consent anywhere: every gate's reason reaches the model, joined.
+  let (tools, result) = run_bash_with_hooks([
+    GateByNameHook::{ blocked: ["bash"] },
+    PolicyRejectHook::{  },
+  ])
+  assert_eq(tools.executed.length(), 0)
+  guard result.tool_results[0]
+    is @kernel.NotExecuted(reason=@kernel.RejectedByHook(reason~), ..) else {
+    fail("expected NotExecuted(RejectedByHook)")
+  }
+  assert_true(reason.contains("plan mode"))
+  assert_true(reason.contains("blocked by policy"))
 }
 
 ///|
@@ -609,6 +765,7 @@ async test "tool_loop_exceeded" {
     temperature: None,
     max_output_tokens: None,
     model_context_window: None,
+    compact_threshold: None,
   }
 
   let agent = Agent(
@@ -659,6 +816,7 @@ async test "unbounded_tool_rounds_complete_long_turn" {
       temperature: None,
       max_output_tokens: None,
       model_context_window: None,
+      compact_threshold: None,
     },
   )
   // Any raise (ToolLoopExceeded or otherwise) fails the test with the error.
@@ -704,6 +862,7 @@ async test "bounded_tool_rounds_allows_exactly_n_rounds" {
       temperature: None,
       max_output_tokens: None,
       model_context_window: None,
+      compact_threshold: None,
     },
   )
   match
@@ -1245,7 +1404,13 @@ async test "streaming_events_emitted_during_chat" {
   let chunks : Array[@types.StreamChunk] = [
     @types.TextDelta(token="Hello"),
     @types.TextDelta(token=" world"),
-    @types.Usage(input_tokens=10, output_tokens=5, total_tokens=15),
+    @types.Usage(
+      input_tokens=10,
+      output_tokens=5,
+      total_tokens=15,
+      cached_input_tokens=None,
+      uncached_input_tokens=None,
+    ),
     @types.Finish(reason="stop"),
   ]
   let final_response = stop_response("Hello world")
@@ -1297,7 +1462,15 @@ async test "stream_accumulator_assembles_completion" {
       arguments_delta=Some(":\"ls\"}"),
     ),
   )
-  acc.push(@types.Usage(input_tokens=10, output_tokens=20, total_tokens=30))
+  acc.push(
+    @types.Usage(
+      input_tokens=10,
+      output_tokens=20,
+      total_tokens=30,
+      cached_input_tokens=None,
+      uncached_input_tokens=None,
+    ),
+  )
   acc.push(@types.Finish(reason="tool_calls"))
 
   let resp = acc.to_completion()
@@ -1584,9 +1757,10 @@ async test "hook_turn_error_fires_on_before_tool_abort" {
   }
   let store = MockSessionStore::{ store: Map::from_array([]) }
   let observer = MockObserver::{ events: [] }
-  // AbortHook aborts on BeforeTool; LogHook records post-stage events.
+  // RaisingToolHook aborts the run from BeforeTool (raise, not Reject);
+  // LogHook records post-stage events.
   let log_hook = LogHook::{ seen: [] }
-  let abort_hook = AbortHook::{  }
+  let abort_hook = RaisingToolHook::{  }
   let config = make_config()
 
   let agent = Agent(

@@ -64,6 +64,10 @@ pub(all) enum FailureReason {
   ModelParseFailure(detail~ : String)
   ModelTransport(detail~ : String)
   ModelRuntime(detail~ : String)
+  /// The provider returned a quota/rate-limit verdict (HTTP 429 family).
+  /// Distinct from `ModelTransport` so product code can distinguish "wait
+  /// for the stated reset time and retry" from a generic transport failure.
+  ModelQuotaExhausted(detail~ : String)
   /// A host-side policy or control gate rejected a model effect. This is not
   /// a provider error and must remain distinguishable at the product boundary.
   HostRejected(detail~ : String)
@@ -79,6 +83,8 @@ pub impl Show for FailureReason with fn to_string(self : FailureReason) -> Strin
       "ModelParseFailure(\{safe_kernel_label(detail)})"
     ModelTransport(detail~) => "ModelTransport(\{safe_kernel_label(detail)})"
     ModelRuntime(detail~) => "ModelRuntime(\{safe_kernel_label(detail)})"
+    ModelQuotaExhausted(detail~) =>
+      "ModelQuotaExhausted(\{safe_kernel_label(detail)})"
     HostRejected(detail~) => "HostRejected(\{safe_kernel_label(detail)})"
     InvariantViolation(category~) =>
       "InvariantViolation(\{category.to_string()})"

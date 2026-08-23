@@ -379,12 +379,28 @@ async fn AgentRuntime::run_turn_via_puppet(
     max_tool_calls: None,
     max_total_tokens: None,
   }
+  // Live capability read: the modelport self-reports the active model's
+  // context window / compact threshold (the router forwards the active
+  // slot's values). Precedence is defined exactly once — host config >
+  // provider report > core default (0.88) — and is read per turn so `/model`
+  // switches take effect on the next turn without recomposing the Agent.
+  let live = self.model.provider_config()
   let policy : @puppetry.RunPolicy = {
     model_id: "agent",
     call_options: self.config.to_chat_options_to_json(),
     budget,
-    context_window: self.config.model_context_window,
-    compact_threshold: 0.9,
+    context_window: match self.config.model_context_window {
+      Some(window) => Some(window)
+      None => live.context_window
+    },
+    compact_threshold: match self.config.compact_threshold {
+      Some(threshold) => threshold
+      None =>
+        match live.compact_threshold {
+          Some(threshold) => threshold
+          None => 0.88
+        }
+    },
   }
   let request : @puppetry.PromptRequest = {
     run_id: identity.run_id,
@@ -403,6 +419,15 @@ async fn AgentRuntime::run_turn_via_puppet(
           "puppet prompt: " + safe_error_label(e.to_string()),
         ),
       )
+  }
+
+  // A best-effort auto-compact that fired but failed (e.g. the modelport
+  // does not implement compact) already let the turn continue; surface the
+  // skip to observers here as a secondary failure.
+  match self.puppet.take_last_auto_compact_failure() {
+    Some(reason) =>
+      emit_secondary_failure(self.observers, "auto_compact", reason)
+    None => ()
   }
 
   // Step 5: handle non-Accepted prompt results.
@@ -568,16 +593,17 @@ async fn AgentRuntime::run_turn_via_puppet(
         }
       }
     }
-    @puppetry.Accepted(..) =>
+    @puppetry.Accepted(..) => {
       // Check terminal outcome for model failures.
-      match self.puppet.last_terminal_outcome() {
+      let failure : @error.AgentError? = match
+        self.puppet.last_terminal_outcome() {
         Some(@kernel_exec.Failed(reason=@kernel_exec.ModelTransport(detail~))) =>
-          raise @error.AgentError::Model("model transport: " + detail)
+          Some(@error.AgentError::Model("model transport: " + detail))
         Some(
           @kernel_exec.Failed(reason=@kernel_exec.ModelParseFailure(detail~))
-        ) => raise @error.AgentError::Model("model parse failure: " + detail)
+        ) => Some(@error.AgentError::Model("model parse failure: " + detail))
         Some(@kernel_exec.Failed(reason=@kernel_exec.ModelRuntime(detail~))) =>
-          raise @error.AgentError::Model("model runtime failure: " + detail)
+          Some(@error.AgentError::Model("model runtime failure: " + detail))
         Some(
           @kernel_exec.Failed(
             reason=@kernel_exec.BudgetExhausted(
@@ -590,27 +616,52 @@ async fn AgentRuntime::run_turn_via_puppet(
           // the ToolRounds dimension (other budget dims are None here).
           match self.config.max_tool_rounds {
             Some(limit) =>
-              raise @error.AgentError::ToolLoopExceeded(
-                consumed=limit + 1,
-                limit~,
+              Some(
+                @error.AgentError::ToolLoopExceeded(consumed=limit + 1, limit~),
               )
             None =>
-              raise @error.AgentError::Runtime(
-                @error.RuntimeError::InvocationFailed(
-                  "tool-round budget exhausted without a configured limit",
+              Some(
+                @error.AgentError::Runtime(
+                  @error.RuntimeError::InvocationFailed(
+                    "tool-round budget exhausted without a configured limit",
+                  ),
                 ),
               )
           }
         Some(@kernel_exec.Failed(reason=@kernel_exec.BudgetExhausted(..))) =>
-          raise @error.AgentError::Runtime(
-            @error.RuntimeError::InvocationFailed("budget exhausted"),
+          Some(
+            @error.AgentError::Runtime(
+              @error.RuntimeError::InvocationFailed("budget exhausted"),
+            ),
           )
         Some(@kernel_exec.Failed(..)) =>
-          raise @error.AgentError::Runtime(
-            @error.RuntimeError::InvocationFailed("run failed"),
+          Some(
+            @error.AgentError::Runtime(
+              @error.RuntimeError::InvocationFailed("run failed"),
+            ),
           )
-        _ => ()
+        _ => None
       }
+      match failure {
+        Some(err) => {
+          // A failed turn still owns its transcript: the user input and any
+          // completed progress must reach the session store, or the next turn
+          // reloads pre-turn state and the model loses the context of what it
+          // was doing — and what the user asked.
+          match self.puppet.last_completed_transcript() {
+            Some(t) =>
+              self.save_turn_transcript(session_id, t, current_metadata) catch {
+                // The turn's own failure is the primary signal; a secondary
+                // save failure must not mask it.
+                _ => ()
+              }
+            None => ()
+          }
+          raise err
+        }
+        None => ()
+      }
+    }
     @puppetry.LeaseBusy(..) =>
       raise @error.AgentError::Runtime(
         @error.RuntimeError::InvocationFailed("puppet lease busy"),
@@ -642,16 +693,7 @@ async fn AgentRuntime::run_turn_via_puppet(
   }
 
   // Save session (write-all, with carried metadata).
-  let saved_messages = agent_snapshot_messages(transcript_msgs)
-  for store in self.sessions {
-    store.save(
-      session_id,
-      agent_snapshot_session(saved_messages, current_metadata),
-    ) catch {
-      error =>
-        raise contextualize_session_error(error, session_id, "final_save")
-    }
-  }
+  self.save_turn_transcript(session_id, final_transcript, current_metadata)
 
   // Step 7: build TurnResult.
   let result : @types.TurnResult = {
@@ -660,4 +702,23 @@ async fn AgentRuntime::run_turn_via_puppet(
     final_session_id: session_id,
   }
   result
+}
+
+///|
+/// Persist a terminal transcript to every session store (write-all, with
+/// carried metadata). Shared by the completed and failed turn paths — a
+/// failed turn's progress is exactly the context the next turn needs.
+async fn AgentRuntime::save_turn_transcript(
+  self : AgentRuntime,
+  session_id : String,
+  transcript : @kernel.Transcript,
+  metadata : Map[String, Json],
+) -> Unit raise @error.AgentError {
+  let saved_messages = agent_snapshot_messages(transcript.messages_snapshot())
+  for store in self.sessions {
+    store.save(session_id, agent_snapshot_session(saved_messages, metadata)) catch {
+      error =>
+        raise contextualize_session_error(error, session_id, "final_save")
+    }
+  }
 }

@@ -18,7 +18,13 @@ pub(all) enum StreamChunk {
     name~ : String?,
     arguments_delta~ : String?
   )
-  Usage(input_tokens~ : Int, output_tokens~ : Int, total_tokens~ : Int)
+  Usage(
+    input_tokens~ : Int,
+    output_tokens~ : Int,
+    total_tokens~ : Int,
+    cached_input_tokens~ : Int?,
+    uncached_input_tokens~ : Int?
+  )
   Finish(reason~ : String)
 } derive(Eq, Debug)
 
@@ -56,6 +62,8 @@ pub(all) struct StreamAccumulator {
   tool_calls : Array[ToolCallBuilder]
   mut finish_reason : String
   mut usage_input : Int?
+  mut usage_cached : Int?
+  mut usage_uncached : Int?
   mut usage_output : Int?
   mut usage_total : Int?
 } derive(Debug)
@@ -68,6 +76,8 @@ pub fn StreamAccumulator::StreamAccumulator() -> StreamAccumulator {
     tool_calls: [],
     finish_reason: "stop",
     usage_input: None,
+    usage_cached: None,
+    usage_uncached: None,
     usage_output: None,
     usage_total: None,
   }
@@ -99,8 +109,16 @@ pub fn StreamAccumulator::push(
         None => ()
       }
     }
-    Usage(input_tokens~, output_tokens~, total_tokens~) => {
+    Usage(
+      input_tokens~,
+      output_tokens~,
+      total_tokens~,
+      cached_input_tokens~,
+      uncached_input_tokens~
+    ) => {
       self.usage_input = Some(input_tokens)
+      self.usage_cached = cached_input_tokens
+      self.usage_uncached = uncached_input_tokens
       self.usage_output = Some(output_tokens)
       self.usage_total = Some(total_tokens)
     }
@@ -168,6 +186,8 @@ pub fn StreamAccumulator::to_completion(
         input_tokens: self.usage_input,
         output_tokens: self.usage_output,
         total_tokens: self.usage_total,
+        cached_input_tokens: self.usage_cached,
+        uncached_input_tokens: self.usage_uncached,
       })
     None => None
   }

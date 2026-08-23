@@ -64,6 +64,7 @@ pub(all) struct AgentConfig {
   temperature : Double?
   max_output_tokens : Int?
   model_context_window : Int?
+  compact_threshold : Double?
 }
 
 pub(all) struct CompositeToolProvider {
@@ -375,6 +376,8 @@ pub using @port {type ParamType}
 
 pub using @port {type ProviderConfig}
 
+pub using @error {type RateLimitInfo}
+
 pub using @kernel {type Reasoning}
 
 pub using @kernel {type RunId}
@@ -406,6 +409,8 @@ pub using @kernel {type ToolOutcome}
 pub using @kernel {type Transcript}
 
 pub using @types {type TurnEvent}
+
+pub using @kernel {type TurnId}
 
 pub using @types {type TurnResult}
 

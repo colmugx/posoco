@@ -221,6 +221,7 @@ test "BudgetConsumed: WithinBudget when no limit exceeded" {
     tool_calls: 20,
     observed_total_tokens: 0,
     any_usage_verified: false,
+    last_context_tokens: None,
   }
   let budget = Budget::default_run()
   let state = consumed.exceeded(budget)
@@ -240,6 +241,7 @@ test "BudgetConsumed: exclusive limit semantics for tool_rounds" {
     tool_calls: 0,
     observed_total_tokens: 0,
     any_usage_verified: false,
+    last_context_tokens: None,
   }
   // Limit N allows N full rounds: 32 == 32 is within budget.
   match at_limit.exceeded(budget) {
@@ -252,6 +254,7 @@ test "BudgetConsumed: exclusive limit semantics for tool_rounds" {
     tool_calls: 0,
     observed_total_tokens: 0,
     any_usage_verified: false,
+    last_context_tokens: None,
   }
   match past_limit.exceeded(budget) {
     Exceeded(ToolRounds) => ()
@@ -267,6 +270,7 @@ test "BudgetConsumed: UnknownUsage for tokens when no usage verified" {
     tool_calls: 0,
     observed_total_tokens: 0,
     any_usage_verified: false,
+    last_context_tokens: None,
   }
   let budget = Budget::bounded(
     max_model_steps=100,

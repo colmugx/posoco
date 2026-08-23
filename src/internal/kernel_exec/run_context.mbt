@@ -156,6 +156,13 @@ pub(all) struct BudgetConsumed {
   observed_total_tokens : Int
   /// Whether any model step reported verified token usage.
   any_usage_verified : Bool
+  /// Context occupancy reported by the LATEST model step: its `total_tokens`,
+  /// or `input_tokens + output_tokens` when both are reported. `None` when
+  /// no computable reading exists yet or the transcript was just rewritten.
+  /// Run-wide `max_total_tokens` keeps using the cumulative total above;
+  /// auto-compact compares only this latest occupancy against the window, so
+  /// several large-but-far-from-full calls cannot sum into a false trigger.
+  last_context_tokens : Int?
 } derive(Eq, Debug)
 
 ///|
@@ -169,6 +176,7 @@ pub fn BudgetConsumed::zero() -> BudgetConsumed where {
     tool_calls: 0,
     observed_total_tokens: 0,
     any_usage_verified: false,
+    last_context_tokens: None,
   }
 }
 

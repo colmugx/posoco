@@ -63,6 +63,7 @@ pub using @port {
 pub using @error {
   type AgentError,
   type ModelError,
+  type RateLimitInfo,
   type RuntimeError,
   type SessionError,
   type CompositionError,
@@ -103,4 +104,5 @@ pub using @kernel {
   type InvocationScope,
   type SessionId,
   type RunId,
+  type TurnId,
 }

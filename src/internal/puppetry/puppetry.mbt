@@ -41,11 +41,9 @@ pub(all) struct PuppetConfig {
   /// Optional live chunk sink. `None` is the default product path and tells
   /// the HostRuntime to avoid chunk JSON conversion altogether.
   stream_chunks : @kernel_exec.HostChunkCallback?
-  /// Pipeline interception hooks, in registration order. The pump calls
-  /// `Hook::before_model` before the reducer declares a CallModel effect
-  /// (first abort wins; chained rewrite), `Hook::before_tool` before each
-  /// tool execution (first non-Approve decision wins), and
-  /// `Hook::on_post_event` after each effect commits (read-only).
+  /// Pipeline interception hooks, in registration order. `before_tool`
+  /// decisions merge per `ToolHookDecision`'s contract (consent beats
+  /// Reject; Reject feeds back to the model as `NotExecuted`).
   hooks : Array[&Hook]
   /// Livelock backstop only: max pump iterations before the pump declares
   /// PumpLoopExceeded. `None` disables the backstop. The kernel budget is
@@ -104,6 +102,13 @@ pub struct Puppet {
   /// Last terminal outcome captured by the Puppet. `None` means no run has
   /// completed or the current run is suspended.
   mut last_outcome : RunOutcome?
+  /// Run that already consumed its single auto-compact attempt (fired
+  /// regardless of outcome, so a failed compact cannot become a retry loop).
+  mut auto_compact_fired_run : RunId?
+  /// Why the current/last run's auto-compact attempt was skipped, if it was.
+  /// Drained by the Agent facade after each prompt and surfaced to observers
+  /// as a secondary failure; the Puppet itself owns no observer channel.
+  mut last_auto_compact_failure : String?
 }
 
 ///|
@@ -114,7 +119,18 @@ pub fn Puppet::Puppet(config : PuppetConfig) -> Puppet {
     mailbox: config.mailbox,
     last_completed_transcript: None,
     last_outcome: None,
+    auto_compact_fired_run: None,
+    last_auto_compact_failure: None,
   }
+}
+
+///|
+/// Drain the recorded auto-compact skip reason, if any. Resets the slot so
+/// the next run starts clean.
+pub fn Puppet::take_last_auto_compact_failure(self : Puppet) -> String? {
+  let value = self.last_auto_compact_failure
+  self.last_auto_compact_failure = None
+  value
 }
 
 ///|
@@ -813,12 +829,10 @@ async fn Puppet::drive_run(
         }
         for wave_index, wave in waves {
           // Run pre-tool hooks on each ExecuteTool effect in the wave.
-          // Hooks can rewrite the call (chained — each hook sees the previous
-          // hook's output), defer it (suspend), or reject (abort). The
-          // rewritten call replaces the payload passed to the executor so the
-          // host sees the hook-modified name/arguments. call_id is preserved
-          // so reducer correlation stays intact.
+          // Every hook is evaluated (no short-circuit on Reject); the
+          // merge contract lives on ToolHookDecision in port/hook.mbt.
           let rewritten_wave : Array[Effect] = []
+          let hook_rejected_inputs : Array[RunInput] = []
           for effect in wave {
             match effect {
               @kernel_exec.ExecuteTool(effect_id~, payload~) => {
@@ -827,8 +841,9 @@ async fn Puppet::drive_run(
                   name: payload.tool_name,
                   arguments: payload.arguments,
                 }
-                let mut aborted = false
                 let mut deferred_reason : String? = None
+                let mut consent : String? = None
+                let reject_reasons : Array[String] = []
                 for hook in self.config.hooks {
                   let decision = hook.before_tool(current_call) catch {
                     err => {
@@ -852,31 +867,57 @@ async fn Puppet::drive_run(
                       current_call = call
                       continue
                     }
+                    ApproveAfterConsent(call~, consent_scope~) => {
+                      current_call = call
+                      if consent is None {
+                        consent = Some(consent_scope)
+                      }
+                      continue
+                    }
+                    // Terminal until M5: stop polling further hooks.
                     Defer(reason~) => {
                       deferred_reason = Some(reason)
-                      aborted = true
                       break
                     }
-                    Reject(reason~) =>
-                      return self.reject_run(
-                        error=HookRejected(reason="pre_tool_hook: " + reason),
-                      )
+                    // Keep polling: a later hook's consent outranks this.
+                    Reject(reason~) => {
+                      reject_reasons.push(reason)
+                      continue
+                    }
                   }
                 }
-                if aborted {
-                  match deferred_reason {
-                    // Frozen wording: extensions (e.g. posoco-ext-permission)
-                    // document this exact terminal-reject behavior; M5 will
-                    // replace it with real suspension.
-                    Some(reason) =>
-                      return self.reject_run(
-                        error=HookRejected(
-                          reason="pre_tool_hook defer not yet supported: " +
-                            reason,
+                match deferred_reason {
+                  // Frozen wording: extensions (e.g. posoco-ext-permission)
+                  // document this exact terminal-reject behavior; M5 will
+                  // replace it with real suspension.
+                  Some(reason) =>
+                    return self.reject_run(
+                      error=HookRejected(
+                        reason="pre_tool_hook defer not yet supported: " +
+                          reason,
+                      ),
+                    )
+                  None => ()
+                }
+                if consent is None && !reject_reasons.is_empty() {
+                  // Resolve the pending effect without dispatching, so the
+                  // journal stays causal and the model sees the joined
+                  // reasons on the next model step.
+                  hook_rejected_inputs.push(
+                    @kernel_exec.RunInput::ToolCompleted(payload=@kernel_exec.ToolCompletedPayload::{
+                      effect_id,
+                      call_id: payload.call_id,
+                      tool_name: payload.tool_name,
+                      arguments: payload.arguments,
+                      outcome: @kernel.NotExecuted(
+                        reason=@kernel.RejectedByHook(
+                          reason=reject_reasons.join("; "),
                         ),
-                      )
-                    None => ()
-                  }
+                        original_call_id=payload.call_id,
+                      ),
+                    }),
+                  )
+                  continue
                 }
                 // Reconstruct the effect with the rewritten name/arguments.
                 // call_id, owner, model_step_id, catalog_version are preserved.
@@ -906,6 +947,11 @@ async fn Puppet::drive_run(
           let inputs = match executed {
             Err(error) => return self.reject_run(error~)
             Ok(value) => value
+          }
+          // Reducer orders tool results by source call order; fold order
+          // is irrelevant.
+          for input in hook_rejected_inputs {
+            inputs.push(input)
           }
           for input in inputs {
             let folded : Result[FoldOutcome, PuppetError] = Ok(
@@ -1176,11 +1222,18 @@ async fn Puppet::handle_compact(
 
 ///|
 /// Check whether auto-compact should fire on this iteration. Returns
-/// `Some(CompactCommand{trigger=Auto})` when `observed_total_tokens >=
-/// context_window * compact_threshold`. Returns `None` when:
+/// `Some(CompactCommand{trigger=Auto})` when the LATEST verified context
+/// occupancy crossed `context_window * compact_threshold`. Returns `None`
+/// when:
 /// - `context_window` is `None` (auto-compact disabled), OR
-/// - `any_usage_verified` is false (no model step reported usage yet), OR
-/// - usage is below the threshold.
+/// - occupancy is unknown (no computable usage reading yet, or the
+///   transcript was just rewritten by a compact), OR
+/// - occupancy is below the threshold, OR
+/// - this run already spent its single auto-compact attempt.
+///
+/// Occupancy is the latest call's own usage, NOT the run-wide cumulative
+/// total: several large-but-far-from-full calls must not sum into a false
+/// trigger, and `max_total_tokens` keeps policing the cumulative account.
 ///
 /// The command_id is deterministic per (run_id, model_step_id) so two
 /// checks in the same step cannot enqueue duplicates.
@@ -1196,17 +1249,22 @@ fn Puppet::check_auto_compact(
   if context_window <= 0 {
     return None
   }
-  let consumed = state.budget_consumed()
-  // Without a verified usage observation we cannot honestly claim the
-  // threshold has been crossed. The reducer explicitly tracks this.
-  if !consumed.any_usage_verified {
+  // Single-shot latch per run: fired once, success or failure. A compact
+  // that cannot shrink the transcript below the limit must not loop.
+  if self.auto_compact_fired_run is Some(run) && run == state.run_id() {
     return None
+  }
+  // Without a verified occupancy reading we cannot honestly claim the
+  // threshold has been crossed. The reducer maintains this account.
+  let occupancy = match state.budget_consumed().last_context_tokens {
+    Some(n) => n
+    None => return None
   }
   // threshold * 100 rounded — compact_threshold is validated at capture.
   let threshold_units = (snap.compact_threshold() * 100.0).to_int()
   // total_units = context_window * threshold; floor at 0.
   let limit = context_window * threshold_units / 100
-  if consumed.observed_total_tokens >= limit {
+  if occupancy >= limit {
     let cid = "auto_" +
       state.run_id().to_string() +
       "_" +
@@ -1282,6 +1340,9 @@ async fn Puppet::fold_effect_input(
   let state_after_auto_compact = if output.next_state().phase() == ReadyForModel {
     match self.check_auto_compact(output.next_state(), snap) {
       Some(compact_cmd) => {
+        // The attempt spends the run's single auto-compact slot whether it
+        // succeeds or fails — set the latch before executing.
+        self.auto_compact_fired_run = Some(run_id)
         let compact_outcome = self.handle_compact(
           output.next_state(),
           compact_cmd,
@@ -1299,8 +1360,18 @@ async fn Puppet::fold_effect_input(
             }
             new_state
           }
-          CompactFlow::Failed(error) =>
-            return FoldOutcome::Return(self.reject_run(error~))
+          CompactFlow::Failed(error) => {
+            // Auto-trigger compaction is best-effort: a modelport that does
+            // not implement compact (or a transport hiccup during the
+            // summarize call) must not kill the turn. Record the skip for
+            // the facade to surface as a secondary failure and continue on
+            // the un-compacted transcript. Manual `/compact` failures take
+            // the loud path in the pump, not here.
+            if self.last_auto_compact_failure is None {
+              self.last_auto_compact_failure = Some(error.to_string())
+            }
+            output.next_state()
+          }
         }
       }
       None => output.next_state()

@@ -26,16 +26,31 @@ pub impl Show for HookAbort with fn to_string(self : HookAbort) -> String {
 
 ///|
 /// The hook's decision for a pending tool call.
+///
+/// Chain semantics: every registered hook is evaluated (no
+/// short-circuit). Precedence: a raise aborts the run; `Defer`
+/// terminal-rejects until M5; `ApproveAfterConsent` beats `Reject`;
+/// `Reject` skips the call and feeds the joined reasons back to the model
+/// as a `NotExecuted(RejectedByHook)` tool result; otherwise the call
+/// executes with the chained rewrite.
 pub(all) enum ToolHookDecision {
   /// Execute the tool, possibly with a rewritten call.
   Approve(call~ : @kernel.ToolCall)
+  /// Execute because the user explicitly consented (permission approval
+  /// or remembered session approval). Behaves like `Approve` but beats
+  /// any `Reject` in the chain; only raising outranks it.
+  /// `consent_scope` names what the user agreed to (e.g. `bash:ls`).
+  ApproveAfterConsent(call~ : @kernel.ToolCall, consent_scope~ : String)
   /// Request suspension: keep the call pending so the host can resolve it
   /// later. **Current runtime semantics: treated as a terminal reject** —
   /// the run aborts with `HookRejected("pre_tool_hook defer not yet
   /// supported: …")`. True suspend/resume is M5 work; do not rely on
   /// `Defer` for suspension today.
   Defer(reason~ : String)
-  /// Stop the run — the tool must not execute.
+  /// Skip this call: resolved as `NotExecuted(RejectedByHook)` whose
+  /// `reason` is fed back to the model; the run continues on the next
+  /// model step. Raising stays terminal; another hook's
+  /// `ApproveAfterConsent` overrides this.
   Reject(reason~ : String)
 } derive(Debug)
 
@@ -43,6 +58,8 @@ pub(all) enum ToolHookDecision {
 pub impl Show for ToolHookDecision with fn to_string(self : ToolHookDecision) -> String {
   match self {
     Approve(call~) => "Approve(\{call.call_id.to_string()})"
+    ApproveAfterConsent(call~, consent_scope~) =>
+      "ApproveAfterConsent(\{call.call_id.to_string()}, scope=\{consent_scope})"
     Defer(reason~) => "Defer(\{reason})"
     Reject(reason~) => "Reject(\{reason})"
   }
@@ -83,8 +100,9 @@ pub impl Show for HookStage with fn to_string(self : HookStage) -> String {
 /// - `before_model`: invoked before the model is called. Can rewrite
 ///   messages or raise `HookAbort`. Multiple hooks form a chained rewrite
 ///   pipeline — each hook sees the previous hook's output.
-/// - `before_tool`: invoked before every tool execution. Approve (with
-///   optional rewrite), Defer, or Reject. First non-Approve decision wins.
+/// - `before_tool`: invoked before every tool execution. Every hook is
+///   evaluated; merge precedence on `ToolHookDecision` (consent beats
+///   Reject; Defer still aborts the run until M5).
 /// - `on_post_event`: invoked after every effect completes. Read-only and
 ///   non-raising — all registered hooks run in registration order; a
 ///   handler cannot fail in a typed way, and a contract violation aborts

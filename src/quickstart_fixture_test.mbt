@@ -97,6 +97,7 @@ async test "quickstart_fixture_uses_current_public_api" {
       temperature: None,
       max_output_tokens: None,
       model_context_window: None,
+      compact_threshold: None,
     },
   )
   let input : @kernel.Message = @kernel.UserMessage(content=[

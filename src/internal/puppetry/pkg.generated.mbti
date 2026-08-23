@@ -378,6 +378,8 @@ pub struct Puppet {
   mailbox : &Mailbox
   mut last_completed_transcript : @kernel.Transcript?
   mut last_outcome : @kernel_exec.RunOutcome?
+  mut auto_compact_fired_run : @kernel.RunId?
+  mut last_auto_compact_failure : String?
 }
 pub fn Puppet::Puppet(PuppetConfig) -> Self
 pub fn Puppet::is_quiescent(Self) -> Bool
@@ -388,6 +390,7 @@ pub fn Puppet::phase(Self) -> PuppetPhase
 pub async fn Puppet::prompt(Self, PromptRequest) -> PromptResult raise PuppetError
 pub fn Puppet::replace_catalog(Self, @kernel_exec.ToolCatalogSnapshot) -> Bool
 pub fn Puppet::shutdown(Self) -> Unit raise PuppetError
+pub fn Puppet::take_last_auto_compact_failure(Self) -> String?
 pub async fn Puppet::wait_idle(Self) -> QuiescentStatus
 
 pub(all) struct PuppetConfig {

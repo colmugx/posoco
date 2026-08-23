@@ -114,14 +114,17 @@ pub(all) enum ParamType {
 
 pub(all) struct ProviderConfig {
   reasoning_effort_values : Array[String]
+  context_window : Int?
+  compact_threshold : Double?
 } derive(Eq, @debug.Debug)
-pub fn ProviderConfig::ProviderConfig(reasoning_effort_values~ : Array[String]) -> Self
+pub fn ProviderConfig::ProviderConfig(reasoning_effort_values~ : Array[String], context_window? : Int?, compact_threshold? : Double?) -> Self
 pub fn ProviderConfig::accepts_reasoning_effort(Self, String) -> Bool
 pub fn ProviderConfig::empty() -> Self
 pub impl Show for ProviderConfig
 
 pub(all) enum ToolHookDecision {
   Approve(call~ : @kernel.ToolCall)
+  ApproveAfterConsent(call~ : @kernel.ToolCall, consent_scope~ : String)
   Defer(reason~ : String)
   Reject(reason~ : String)
 } derive(@debug.Debug)

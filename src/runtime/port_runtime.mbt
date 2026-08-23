@@ -15,6 +15,12 @@ fn model_error_to_failure(error : @error.ModelError) -> @kernel.ModelFailure {
     @error.RequestBuild(reason) => @kernel.RequestBuild(reason~)
     @error.Transport(reason) => @kernel.Transport(reason~)
     @error.ResponseParse(reason) => @kernel.Parse(reason~)
+    @error.RateLimited(info) =>
+      @kernel.RateLimited(
+        reason="HTTP \{info.status}: \{info.message}",
+        reset_at_ms=info.reset_at_ms,
+        provider_code=info.provider_code,
+      )
   }
 }
 

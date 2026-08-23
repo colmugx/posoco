@@ -59,6 +59,7 @@ pub(all) struct BudgetConsumed {
   tool_calls : Int
   observed_total_tokens : Int
   any_usage_verified : Bool
+  last_context_tokens : Int?
 } derive(Eq, @debug.Debug)
 pub fn BudgetConsumed::exceeded(Self, Budget) -> BudgetState
 pub fn BudgetConsumed::zero() -> Self
@@ -158,6 +159,7 @@ pub(all) enum FailureReason {
   ModelParseFailure(detail~ : String)
   ModelTransport(detail~ : String)
   ModelRuntime(detail~ : String)
+  ModelQuotaExhausted(detail~ : String)
   HostRejected(detail~ : String)
   InvariantViolation(category~ : InvariantCategory)
   BudgetExhausted(dimension~ : BudgetDimension)
