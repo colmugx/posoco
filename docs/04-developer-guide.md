@@ -1,327 +1,268 @@
-# 04 — Developer Guide
+# 04 — 开发指南
 
-posoco 开发者的完整参考：Agent 构建、运行模式、错误处理、会话管理和内置组件。
+上一章讲了"怎么实现一个端口"，这一章讲"怎么把它们组合成一个像样的产品"：
+组装 Agent、配置、跑多轮对话、处理错误、管理会话与压缩、优雅关闭。
 
-> 本文档假设你已阅读 [01-quickstart.md](01-quickstart.md) 和 [02-architecture.md](02-architecture.md)。
+## 1. 组装 Agent
 
----
-
-## 构建 Agent
-
-### Agent::new — 数组式组合
-
-`Agent::new` 接受每个端口的**数组**，内部自动完成组合（路由、链式、扇出）。开发者不再需要手动创建 `CompositeToolProvider` 或 `HookChain`。
+`Agent(exts~, config~)` 是唯一的组合入口。每个扩展通过 manifest 声明自己提供的
+端口；**扩展数组的顺序决定 hook 和 observer 的注册顺序**（也就是执行顺序）：
 
 ```moonbit
-pub fn Agent::new(
-  model_port : &ModelPort,             // LLM 模型适配器（单个）
-  tools~ : Array[&ToolProvider],        // 工具提供者（按工具名路由）
-  hooks~ : Array[&PipelineHook],        // 流程拦截（按序链式调用）
-  memory~ : Array[&MemoryPort],         // 长期记忆（扇出）
-  compressors~ : Array[&Compressor],    // 上下文压缩（first-wins）
-  observers~ : Array[&Observer],        // 事件观察（扇出）
-  sessions~ : Array[&SessionStore],     // 会话存储（write-all / read-first）
-  lifecycle~ : &Lifecycle?,             // 生命周期管理（可选）
-  config~ : AgentConfig,                // 配置
-) -> Agent
+fn build_agent(
+  model : &@posoco.Extension,
+  tools : &@posoco.Extension,
+  store : &@posoco.Extension,
+  observer : &@posoco.Extension,
+  hook : &@posoco.Extension,
+) -> @posoco.Agent raise @posoco.CompositionError {
+  @posoco.Agent(
+    exts=[model, tools, store, observer, hook],
+    config={
+      max_tool_rounds: Some(10),
+      temperature: Some(0.2),
+      max_output_tokens: Some(4096),
+      model_context_window: Some(128000),
+    },
+  )
+}
 ```
 
-**组合策略：**
+规则：
 
-| 参数 | 策略 | 说明 |
-|------|------|------|
-| `tools` | 按名路由 | 同名工具 last-wins，`tool_collisions()` 报告碰撞 |
-| `hooks` | 链式 | 按序调用，遇 Err 短路。0→None, 1→直接用, >1→内部 HookChain |
-| `observers` | 扇出 | 每个 observer 收到所有事件 |
-| `compressors` | first-wins | 按序尝试，第一个返回非 None 的生效 |
-| `sessions` | write-all / read-first | 保存写所有，加载读第一个 |
-| `memory` | 扇出 | 暂未在 run_turn 中使用 |
+- 恰好一个扩展提供 `ModelPort`，至少一个提供 `SessionStore`；
+- 工具、observer、hook 等全部可选，没有也能构造；
+- 工具重名、命令重名、manifest 畸形，都在构造阶段以 `CompositionError` 失败。
+  不会产生"半成品"Agent，也没有"后声明覆盖前声明"的工具路由。
 
-### AgentConfig 字段
+### 配置字段
 
 ```moonbit
 pub(all) struct AgentConfig {
-  max_tool_rounds : Int       // 工具循环最大轮数，默认建议 5-10
-  temperature : Double?       // 模型温度，None 使用模型默认
-  max_output_tokens : Int?    // 最大输出 token 数
-  tool_choice : ToolChoice?   // 工具选择策略
-  thinking : Bool?            // 是否启用思维链
-  model_context_window : Int? // 上下文窗口大小，Compressor 会用到
+  max_tool_rounds : Int?
+  temperature : Double?
+  max_output_tokens : Int?
+  model_context_window : Int?
 }
 ```
 
-### 典型构建
+- `max_tool_rounds`：一轮对话最多允许几波工具调用。`None` = 不设上限（推荐默认，
+  让对话自然结束）；`Some(0)` = 禁止工具；`Some(n)` = 第 n+1 波整体拒绝。
+- `temperature`、`max_output_tokens`：所有模型通用的配置。`None` 交给 provider
+  默认值。
+- `model_context_window`：模型上下文窗口大小。Agent 据此判断何时该自动压缩；
+  压缩的具体策略由 `ModelPort::compact` 决定（见第 6 节）。
 
-**最小 Agent：**
+各家 provider 特有的参数（reasoning effort、tool choice 等）留在对应模型扩展
+自己的配置里，不要扩张 `AgentConfig`。
 
-```moonbit
-let agent = @posoco.Agent::new(
-  model_port,
-  tools=[my_tools],
-  hooks=[],
-  memory=[],
-  compressors=[@posoco.NoopCompressor::{}],
-  observers=[my_observer],
-  sessions=[my_session_store],
-  lifecycle=None,
-  config={ max_tool_rounds: 5, temperature: None, max_output_tokens: None,
-    tool_choice: None, thinking: None, model_context_window: None },
-)
-```
+## 2. 运行一轮对话
 
-**完整 Agent（多工具 + 多 Hook + 多存储）：**
+输入是 `Message` 枚举，不是带 `role` 字段的 record：
 
 ```moonbit
-let agent = @posoco.Agent::new(
-  openai_model,
-  tools=[shell_tools, mcp_bridge],              // 多个 ToolProvider
-  hooks=[audit_hook, approval_hook],             // 链式 Hook
-  memory=[vector_store],                         // 记忆
-  compressors=[SlidingWindowCompressor::{ max_messages: 20 }],
-  observers=[console_observer, metrics_observer],// 多个 observer 扇出
-  sessions=[sqlite_store, backup_store],         // write-all / read-first
-  lifecycle=Some(managed_resources),
-  config={ max_tool_rounds: 10, temperature: Some(0.7),
-    max_output_tokens: Some(4096), tool_choice: None,
-    thinking: None, model_context_window: Some(128000) },
-)
+fn user_message(text : String) -> @posoco.Message {
+  @posoco.Message::UserMessage(content=[
+    @posoco.Content::Text(text),
+  ])
+}
 
-// 检查工具名碰撞
-let warnings = agent.tool_collisions()
-for w in warnings {
-  println("⚠️ " + w)
+async fn run_once(agent : @posoco.Agent) -> @posoco.TurnResult raise @posoco.AgentError {
+  agent.run_turn(user_message("What is 2 + 2?"), "session-1")
 }
 ```
 
----
-
-## 运行模式
-
-### 单轮对话
+`run_turn` 是 async（MoonBit 没有 `await` 关键字，直接调用即可，但调用方也应是
+async）。反复使用相同 `session_id` 会加载之前保存的记录，继续同一段对话：
 
 ```moonbit
-let msg : @posoco.Message = {
-  role: User, content: [Text("What is 2+2?")],
-  tool_calls: [], tool_call_id: None, name: None,
+async fn run_conversation(agent : @posoco.Agent)
+  -> Unit raise @posoco.AgentError {
+  let first = agent.run_turn(user_message("Hello"), "user-123")
+  let second = agent.run_turn(
+    user_message("What did I just say?"),
+    first.final_session_id,
+  )
+  match second.message {
+    @posoco.Message::AssistantMessage(content~, ..) =>
+      println("assistant blocks: \{content.length()}")
+    _ => abort("expected AssistantMessage")
+  }
 }
-let result = try? agent.run_turn(msg, "session-1")
-match result {
-  Ok(r) => println(r.message.content)  // "2+2 equals 4"
-  Err(e) => println("Error: " + e.to_string())
-}
 ```
 
-### 多轮对话
+注意第二次调用用的 `session_id` 来自第一次的返回值 `final_session_id`——如果
+中间发生了会话重定向（比如压缩开了新线程），继续对话必须用这个字段，不要自己
+从 metadata 或 observer 事件里猜。
 
-用同一个 `session_id` 反复调用 `run_turn`。SessionStore 自动管理历史消息。
+想把错误保存成值而不是抛出，在 async 上下文中用 `catch`：
 
 ```moonbit
-let session_id = "user-123"
-
-// 第 1 轮
-let r1 = try? agent.run_turn(user_msg("Hello"), session_id)
-
-// 第 2 轮 — Agent 自动加载之前的对话历史
-let r2 = try? agent.run_turn(user_msg("What did I just say?"), session_id)
+let outcome : Result[@posoco.TurnResult, @posoco.AgentError] =
+  Ok(agent.run_turn(user_message("hello"), "session-1")) catch {
+    error => Err(error)
+  }
 ```
 
-### 并行工具执行
+## 3. 工具波次
 
-当 LLM 返回多个 `tool_calls` 时，Agent 通过 `@async.all` 并行执行。**无需开发者干预**——这是 `run_turn` 的内置行为。
+模型回复里带 `Completion.tool_calls` 时，Agent 按工具名把每个调用送给声明它的
+`ToolProvider`，执行完后把 `ToolOutcome` 转成 `ToolMessage` 继续下一次模型调用。
+**这套循环 Agent 全包了**——扩展绝不要在 `ToolProvider.execute` 里再调 Agent
+或自己实现模型循环。
 
-Agent 内部通过 `ToolRouting` 将每个工具调用路由到正确的 ToolProvider：
+- 同一波次里多个调用可以**并行执行**；`ToolDef.policy` 表达执行策略，但普通
+  扩展只需声明工具，调度交给 Agent。
+- 工具执行失败（包括 provider 抛出的 `RuntimeError`）会变成 `RuntimeFailure`
+  回到模型上下文，由模型决定重试、换工具还是放弃——单次工具失败不会伪造 turn
+  成功，也不会静默丢弃。
 
-```moonbit
-// 假设 LLM 返回 3 个 tool_calls:
-// [bash("ls"), bash("pwd"), search("query")]
-//
-// Agent 内部:
-// bash("ls")   → tool_routing.tool_map["bash"]  → shell_tools.execute(...)
-// bash("pwd")  → tool_routing.tool_map["bash"]  → shell_tools.execute(...)
-// search("query") → tool_routing.tool_map["search"] → mcp_bridge.execute(...)
-//
-// 3 个调用并行执行，全部完成后合并结果
-```
+## 4. Hooks 与 Observers 的接入
 
----
+把 hook 放进 manifest 的 `hooks`，observer 放进 `observers`。规则：
 
-## 错误处理
+- hook 按注册顺序执行；`before_model` 链式改写消息；`before_tool` 首个非
+  `Approve` 的决定胜出；`on_post_event` 在效果完成后只读通知。
+- observer 只收 `TurnEvent`，不改变主数据流。
 
-### 错误层次
+只提供一个端口的扩展，manifest 直接写 `{ ..manifest, observers: [self] }`；
+同时实现多个端口时，在相应字段里登记同一个 `self`。具体实现见
+[03 端口配方](./03-trait-recipes.md) 的第 5、6 节。
 
-```
+## 5. 错误处理
+
+### AgentError 层次
+
+```text
 AgentError
-  ├── Model(String)           ← ModelError 转换
-  ├── Session(SessionError)   ← SessionError 包装
-  ├── Runtime(RuntimeError)   ← RuntimeError 包装
-  ├── ToolLoopExceeded        ← 超过 max_tool_rounds
-  └── HookAborted(String)    ← PipelineHook 主动中止
+  ├── Model(String)
+  ├── Session(SessionError)
+  ├── Runtime(RuntimeError)
+  ├── ToolLoopExceeded(consumed~, limit~)
+  └── HookAborted(String)
 ```
 
-### 调用方错误处理
+模型调用、会话读写、hook 中止、工具轮次超限都会终止当前 turn。已发布
+`TurnStarted` 后，Agent 只发布一次安全的 `TurnFailed`，再把原始 `AgentError`
+抛给调用方——不要在 observer 里"重建"主结果，observer 看到的 `TurnFailed`
+只带错误类别。
 
 ```moonbit
-let result = try? agent.run_turn(msg, session_id)
-match result {
-  Ok(turn_result) => {
-    println("Response: " + turn_result.message.content)
-    println("Session: " + turn_result.final_session_id)
-  }
-  Err(e) => {
-    match e {
-      Model(msg) => println("Model error: " + msg)
-      Session(err) => println("Session error: " + err.to_string())
-      ToolLoopExceeded => println("Too many tool calls!")
-      HookAborted(msg) => println("Hook aborted: " + msg)
-      Runtime(err) => println("Runtime error: " + err.to_string())
+async fn report_turn(agent : @posoco.Agent) -> Unit {
+  let result : Result[@posoco.TurnResult, @posoco.AgentError] =
+    Ok(agent.run_turn(user_message("hello"), "session-1")) catch {
+      error => Err(error)
     }
+  match result {
+    Ok(turn) =>
+      match turn.message {
+        @posoco.Message::AssistantMessage(content~, ..) =>
+          println("received \{content.length()} content blocks")
+        _ => abort("expected AssistantMessage")
+      }
+    Err(@posoco.AgentError::Model(reason)) => println("model: " + reason)
+    Err(@posoco.AgentError::Session(error)) => println("session: " + error.to_string())
+    Err(@posoco.AgentError::Runtime(error)) => println("runtime: " + error.to_string())
+    Err(@posoco.AgentError::ToolLoopExceeded(consumed~, limit~)) =>
+      println("tool rounds exhausted: \{consumed}/\{limit}")
+    Err(@posoco.AgentError::HookAborted(reason)) => println("hook aborted: " + reason)
   }
 }
 ```
 
-### 工具失败韧性
+### 分清业务失败与适配器失败
 
-工具执行失败**不会终止 turn**。失败的工具调用会被转为 `ToolResult(is_error=true)` 并发回 LLM，让 LLM 决定下一步。
+工具侧的状态全部由 `ToolOutcome` 一个类型表达：
 
-### Observer 内错误
+- **模型可见的业务失败** → `Success` / `ToolReportedError`（工具跑了，结果或
+  业务错误回填给模型）；
+- **适配器失败** → raise typed `RuntimeError`，Agent 会转成
+  `ToolOutcome::RuntimeFailure`；
+- **组合/校验没放行** → `NotExecuted`（工具不存在、参数 schema 不匹配），
+  携带原始 call id。
 
-Observer.on_event 是 fire-and-forget。Agent 内部对每个 observer 的调用异常被静默忽略。这是设计决定：Observer 不应影响主流程。
+没有第二套结果结构需要和 `ToolOutcome` 保持同步。
 
----
+### 次要失败
 
-## 会话管理
+记忆检索这类**次要组件**失败时，不该让主 turn 结果陪葬。Agent 会发布一个清洗
+过的 `TurnEvent::Custom`（`source="posoco.core"`、`label="secondary_failure"`），
+不暴露原始 prompt、参数和 provider 载荷；observer 的合同违规仍然保持 loud。
 
-### Session 结构
+## 6. 会话持久化与压缩
+
+`SessionStore` 是对话连续性的来源。查不到的 id 返回：
 
 ```moonbit
-pub(all) struct Session {
-  messages : Array[Message]       // 完整的消息历史
-  metadata : Map[String, Json]    // 元数据（如 parent_session_id）
+{ messages: [], metadata: Map::from_array([]) }
+```
+
+多个 store 时：**load 只读第一个，save 写所有**（write-all / read-first）。
+这不是事务——后面某个 save 失败时，前面的写入不会回滚。需要原子复制就自己实现
+事务型适配器。
+
+`metadata` 对模型适配器是不透明的：**未知 key 必须原样保留**，一轮对话后不能
+丢。压缩产生新线程时，父线程 id 也会记进 metadata（lineage），`TurnResult
+.final_session_id` 会指向新线程：
+
+```moonbit
+async fn follow_redirect(agent : @posoco.Agent, input : @posoco.Message)
+  -> Unit raise @posoco.AgentError {
+  let mut session_id = "session-1"
+  let result = agent.run_turn(input, session_id)
+  session_id = result.final_session_id
+  println("continue with " + session_id)
 }
 ```
 
-### 多 SessionStore
+## 7. 压缩（Compaction）
 
-传入多个 SessionStore 时，Agent 的行为是 **write-all / read-first**：
-
-- **保存**：遍历所有 store，每个都 `save()`
-- **加载**：只从第一个 store `load()`
-
-典型场景：主存储 + 备份存储。
-
-### Session Redirect
-
-当 Compressor 返回 `NewThread` 时，session 可能被重定向。**重要**：始终使用 `TurnResult.final_session_id` 作为下一次调用的 session_id。
+压缩是 `ModelPort` 的能力，不是另一个扩展端口。**Posoco 决定何时压缩**（上下文
+压力自动触发，或宿主手动触发）；**模型扩展决定怎么压缩**：
 
 ```moonbit
-let mut current_session = "session-1"
-let r1 = try? agent.run_turn(msg1, current_session)
-match r1 {
-  Ok(result) => current_session = result.final_session_id  // 可能已重定向
-  Err(_) => ()
-}
-let r2 = try? agent.run_turn(msg2, current_session)
-```
-
----
-
-## 内置组件参考
-
-### NoopCompressor
-
-永远返回 `None`（不压缩）。适用场景：不需要上下文管理的简单 Agent、测试。
-
-### NoopHook
-
-`on_stage()` 直接返回 `Ok(stage)`（透传）。适用场景：测试。
-
-### HookChain
-
-按序调用每个 hook，遇到 Err 短路返回。**内部组件**——Agent 在 `hooks` 数组 >1 时自动创建，开发者无需手动使用。
-
-### CompositeToolProvider
-
-合并多个 ToolProvider 的工具列表。**内部组件**——Agent 通过 `ToolRouting` 自行处理，开发者无需手动使用。
-
-### ToolRegistry
-
-动态运行时注册工具，同时存储定义和执行器。实现 `ToolProvider`，可直接传给 `Agent::new(tools=[...])`。
-
-```moonbit
-let registry = @posoco.ToolRegistry::new()
-registry.register(tool_def, fn(call) { /* execute */ })
-
-// 可以直接传给 Agent
-let agent = @posoco.Agent::new(
-  model,
-  tools=[registry],
-  // ...
-)
-```
-
-### NoopMemoryPort / NoopLifecycle
-
-全部操作 raise error / 空操作。**推荐**：直接传空数组 `memory=[]` 或 `lifecycle=None`。
-
----
-
-## 生命周期管理
-
-```moonbit
-// 程序退出时调用
-agent.shutdown()
-```
-
-`shutdown` 调用 `Lifecycle.on_shutdown()`，内部异常被静默捕获。对于持有外部连接的组件（如 MCP 客户端），应实现 Lifecycle。
-
----
-
-## 常见模式
-
-### 模式 1: 多工具提供者
-
-多个 ToolProvider 直接放入数组，Agent 内部按工具名路由。
-
-```moonbit
-let agent = @posoco.Agent::new(
-  model,
-  tools=[shell_tools, mcp_bridge, custom_tools],
-  // ... 工具名碰撞: tool_collisions() 报告
-)
-```
-
-### 模式 2: 多 Hook 链式调用
-
-按序放入数组，第一个 hook 先执行。
-
-```moonbit
-let agent = @posoco.Agent::new(
-  model,
-  tools=[...],
-  hooks=[audit_hook, approval_hook, rewrite_hook],
-  // approval_hook 返回 Deferred 时，rewrite_hook 不执行（短路）
-)
-```
-
-### 模式 3: 保守配置 vs 激进配置
-
-```moonbit
-// 保守：低温度，限制工具轮数
-let conservative = {
-  max_tool_rounds: 3, temperature: Some(0.1),
-  max_output_tokens: Some(1024), tool_choice: None,
-  thinking: None, model_context_window: Some(4096),
-}
-
-// 激进：高温度，允许更多探索
-let aggressive = {
-  max_tool_rounds: 15, temperature: Some(0.9),
-  max_output_tokens: Some(8192), tool_choice: Some(Auto),
-  thinking: Some(true), model_context_window: Some(128000),
+async fn compact_model(
+  model : &@posoco.ModelPort,
+  scope : @posoco.InvocationScope,
+  messages : Array[@posoco.Message],
+) -> @posoco.CompactResult raise @posoco.ModelError {
+  model.compact(
+    scope,
+    messages,
+    { temperature: None, max_output_tokens: None },
+    @posoco.CompactTrigger::Manual,
+  )
 }
 ```
 
-## 下一步
+`CompactResult.mode` 是三种之一：
 
-- [03-trait-recipes.md](03-trait-recipes.md) — 每个 trait 的详细实现配方
-- [05-streaming-guide.md](05-streaming-guide.md) — 流式响应实现
+- `Replace`：原地替换当前会话的消息体；
+- `Append`：把压缩结果追加到当前会话；
+- `NewThread`：开一条新会话线程（记录父线程 lineage），`final_session_id`
+  随之重定向，原会话保留。
+
+不支持压缩的 provider 就 raise；**不要返回未压缩的 transcript 却声称压缩成功**。
+
+## 8. 关闭 Agent
+
+宿主结束前调用 `shutdown`。每个注册的 `Lifecycle` 会收到 `on_shutdown`；
+**清理失败是刻意保持 loud 的**——不要把它转成"成功"：
+
+```moonbit
+async fn close_agent(agent : @posoco.Agent) -> Unit {
+  agent.shutdown()
+}
+```
+
+如果清理失败后要重试，lifecycle 实现应尽量让进度可观察、操作幂等。
+
+## 9. 发布前检查清单
+
+- 只实现业务需要的那几个公开端口，不碰内部执行细节。
+- `extension_id` 稳定，manifest 里每个贡献恰好登记一次。
+- 工具定义使用合法的 JSON Schema（object/boolean），`provenance` 稳定。
+- 工具业务失败返回 `ToolReportedError`；基础设施失败保持 typed。
+- session store 对未知 id 返回空 session，且保留 metadata。
+- hook 不静默吞错误；observer 保持只读。
+- 通过一个组合好的 `Agent` 做集成测试，而不是伸手够内部实现。
