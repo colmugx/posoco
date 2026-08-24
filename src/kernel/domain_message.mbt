@@ -33,7 +33,7 @@ pub(all) struct CallId {
 /// Construct a `CallId`. Empty strings are rejected — an empty id would make
 /// correlation ambiguous. The Kernel invariant treats a missing/empty call id
 /// in a streamed completion as `ModelParseFailure`, not as a usable call.
-pub fn CallId::new(value : String) -> Result[CallId, String] {
+pub fn CallId::checked(value : String) -> Result[CallId, String] {
   if value == "" {
     Err("CallId must be non-empty")
   } else {
@@ -43,7 +43,7 @@ pub fn CallId::new(value : String) -> Result[CallId, String] {
 
 ///|
 /// Internal constructor used by Kernel tests and by callers that have already
-/// validated the string. Production callers should prefer `CallId::new` and
+/// validated the string. Production callers should prefer `CallId::checked` and
 /// handle the typed rejection.
 pub fn CallId::unchecked(value : String) -> CallId {
   CallId::{ value, }
@@ -63,7 +63,7 @@ pub(all) struct ToolName {
 } derive(Eq, Hash, Debug)
 
 ///|
-pub fn ToolName::new(value : String) -> Result[ToolName, String] {
+pub fn ToolName::checked(value : String) -> Result[ToolName, String] {
   if value == "" {
     Err("ToolName must be non-empty")
   } else {

@@ -10,7 +10,7 @@ priv struct RuntimeHostShim {
 }
 
 ///|
-fn RuntimeHostShim::new(inner : &@runtime.Runtime) -> RuntimeHostShim {
+fn RuntimeHostShim::RuntimeHostShim(inner : &@runtime.Runtime) -> RuntimeHostShim {
   { inner, }
 }
 

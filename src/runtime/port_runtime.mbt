@@ -98,7 +98,7 @@ pub struct PortRuntime {
 }
 
 ///|
-pub fn PortRuntime::new(
+pub fn PortRuntime::PortRuntime(
   model~ : &@port.ModelPort,
   tools~ : Map[String, &@port.ToolProvider],
 ) -> PortRuntime {

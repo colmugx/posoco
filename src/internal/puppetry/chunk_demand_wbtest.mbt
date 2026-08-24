@@ -9,7 +9,7 @@ struct ChunkDemandHost {
 }
 
 ///|
-fn ChunkDemandHost::new() -> ChunkDemandHost {
+fn ChunkDemandHost::ChunkDemandHost() -> ChunkDemandHost {
   { saw_no_sink: false, delivered_chunks: 0 }
 }
 
@@ -99,7 +99,7 @@ fn chunk_demand_config(
 
 ///|
 async test "puppet/chunks_are_not_requested_without_a_consumer" {
-  let host = ChunkDemandHost::new()
+  let host = ChunkDemandHost()
   let journal = InMemoryJournal()
   let puppet = Puppet(
     chunk_demand_config(host, fixture_empty_catalog(), journal, None),
@@ -116,7 +116,7 @@ async test "puppet/chunks_are_delivered_when_consumer_is_set" {
   let on_chunk : HostChunkCallback = fn(chunk : Json) {
     trace.push(chunk.stringify())
   }
-  let host = ChunkDemandHost::new()
+  let host = ChunkDemandHost()
   let journal = InMemoryJournal()
   let puppet = Puppet(
     chunk_demand_config(host, fixture_empty_catalog(), journal, Some(on_chunk)),

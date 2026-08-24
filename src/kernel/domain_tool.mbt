@@ -41,7 +41,7 @@ pub(all) struct OwnerId {
 } derive(Eq, Hash, Debug)
 
 ///|
-pub fn OwnerId::new(value : String) -> Result[OwnerId, String] {
+pub fn OwnerId::checked(value : String) -> Result[OwnerId, String] {
   if value == "" {
     Err("OwnerId must be non-empty")
   } else {

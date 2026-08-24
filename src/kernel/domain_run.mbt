@@ -17,7 +17,7 @@ pub(all) struct RunId {
 } derive(Eq, Hash, Debug)
 
 ///|
-pub fn RunId::new(value : String) -> Result[RunId, String] {
+pub fn RunId::checked(value : String) -> Result[RunId, String] {
   if value == "" {
     Err("RunId must be non-empty")
   } else {
@@ -49,7 +49,7 @@ pub(all) struct TurnId {
 } derive(Eq, Hash, Debug)
 
 ///|
-pub fn TurnId::new(value : String) -> Result[TurnId, String] {
+pub fn TurnId::checked(value : String) -> Result[TurnId, String] {
   if value == "" {
     Err("TurnId must be non-empty")
   } else {
@@ -81,7 +81,7 @@ pub(all) struct SessionId {
 } derive(Eq, Hash, Debug)
 
 ///|
-pub fn SessionId::new(value : String) -> Result[SessionId, String] {
+pub fn SessionId::checked(value : String) -> Result[SessionId, String] {
   if value == "" {
     Err("SessionId must be non-empty")
   } else {

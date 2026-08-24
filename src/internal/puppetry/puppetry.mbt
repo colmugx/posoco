@@ -419,7 +419,7 @@ async fn Puppet::drive_run(
   // Build the execution context from the host runtime + catalog snapshot.
   // Puppetry forwards canonical values without product-specific conversion.
   // The Run identity is carried so CallModel effects can be scoped.
-  let exec_ctx = ExecutionContext::new(
+  let exec_ctx = ExecutionContext(
     self.config.host,
     catalog=self.config.catalog,
     run_id~,

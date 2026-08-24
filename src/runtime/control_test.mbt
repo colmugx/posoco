@@ -10,7 +10,7 @@ fn bound_control() -> @runtime.RuntimeControl {
     @kernel.RunId::unchecked("run_1"),
     @kernel.TurnId::unchecked("turn_1"),
   )
-  @runtime.RuntimeControl::new(mailbox as &@puppetry.Mailbox)
+  @runtime.RuntimeControl(mailbox as &@puppetry.Mailbox)
 }
 
 ///|
@@ -21,7 +21,7 @@ fn text_message(text : String) -> @kernel.Message {
 ///|
 test "runtime control/follow_up and abort require an active run" {
   let mailbox = @puppetry.ControlMailbox::ControlMailbox()
-  let control = @runtime.RuntimeControl::new(mailbox as &@puppetry.Mailbox)
+  let control = @runtime.RuntimeControl(mailbox as &@puppetry.Mailbox)
   assert_true(control.active_run_id() is None)
   assert_true(control.active_turn_id() is None)
   assert_true(

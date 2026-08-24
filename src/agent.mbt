@@ -365,11 +365,11 @@ fn AgentRuntime::compose(
   let host : &@kernel_exec.HostRuntime = match host_override {
     Some(h) => h
     None => {
-      let port_runtime = @runtime.PortRuntime::new(
+      let port_runtime = @runtime.PortRuntime(
         model=agg.model,
         tools=tool_routing.tool_map.copy(),
       )
-      RuntimeHostShim::new(port_runtime as &@runtime.Runtime)
+      RuntimeHostShim(port_runtime as &@runtime.Runtime)
       as &@kernel_exec.HostRuntime
     }
   }
@@ -422,7 +422,7 @@ fn AgentRuntime::compose(
     lifecycle: agg.lifecycle.map(fn(entry) { entry.port }),
     commands: agg.commands,
     builtin_command_port,
-    control: @runtime.RuntimeControl::new(mailbox_ref),
+    control: @runtime.RuntimeControl(mailbox_ref),
     config,
     catalog_source,
     last_catalog_revision: initial_catalog_revision,
@@ -480,7 +480,7 @@ pub fn Agent::with_runtime(
     agg,
     config,
     ui_projection,
-    Some(RuntimeHostShim::new(runtime) as &@kernel_exec.HostRuntime),
+    Some(RuntimeHostShim(runtime) as &@kernel_exec.HostRuntime),
     catalog_source,
   )
 }

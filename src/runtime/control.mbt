@@ -52,7 +52,7 @@ pub struct RuntimeControl {
 /// Construct the control handle over the Agent's shared mailbox. Framework
 /// entry point — hosts obtain the handle from `Agent::control()`, they do
 /// not construct it.
-pub fn RuntimeControl::new(mailbox : &@puppetry.Mailbox) -> RuntimeControl {
+pub fn RuntimeControl::RuntimeControl(mailbox : &@puppetry.Mailbox) -> RuntimeControl {
   {
     mailbox,
     follow_ups: @aqueue.Queue::Queue(kind=Unbounded),

@@ -56,7 +56,7 @@ fn try_transition(
 
 ///|
 test "CallId: rejects empty string" {
-  let result = @kernel.CallId::new("")
+  let result = @kernel.CallId::checked("")
   match result {
     Err(msg) => assert_true(msg.contains("non-empty"))
     Ok(_) => fail("CallId(\"\") should reject")
@@ -65,16 +65,16 @@ test "CallId: rejects empty string" {
 
 ///|
 test "CallId: accepts non-empty string" {
-  let result = @kernel.CallId::new("call_1")
+  let result = @kernel.CallId::checked("call_1")
   match result {
     Ok(id) => assert_eq(id.to_string(), "call_1")
-    Err(_) => fail("CallId::new should accept non-empty")
+    Err(_) => fail("CallId::checked should accept non-empty")
   }
 }
 
 ///|
 test "ToolName: rejects empty string" {
-  let result = @kernel.ToolName::new("")
+  let result = @kernel.ToolName::checked("")
   match result {
     Err(_) => ()
     Ok(_) => fail("ToolName(\"\") should reject")
@@ -83,7 +83,7 @@ test "ToolName: rejects empty string" {
 
 ///|
 test "RunId: rejects empty string" {
-  let result = RunId::new("")
+  let result = RunId::checked("")
   match result {
     Err(_) => ()
     Ok(_) => fail("RunId(\"\") should reject")
@@ -92,7 +92,7 @@ test "RunId: rejects empty string" {
 
 ///|
 test "OwnerId: rejects empty string" {
-  let result = @kernel.OwnerId::new("")
+  let result = @kernel.OwnerId::checked("")
   match result {
     Err(_) => ()
     Ok(_) => fail("OwnerId(\"\") should reject")

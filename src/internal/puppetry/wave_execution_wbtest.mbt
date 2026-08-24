@@ -17,7 +17,7 @@ struct WaveFixtureHost {
 }
 
 ///|
-fn WaveFixtureHost::new(
+fn WaveFixtureHost::WaveFixtureHost(
   model_results : Array[Result[@kernel.Completion, ModelFailure]],
 ) -> WaveFixtureHost {
   {
@@ -150,7 +150,7 @@ fn wave_catalog() -> ToolCatalogSnapshot raise CatalogCompositionError {
 
 ///|
 async test "puppet/parallel_wave_wallclock_near_longest_tool" {
-  let host = WaveFixtureHost::new([
+  let host = WaveFixtureHost([
     Ok(
       fixture_tool_calls([
         fixture_call("parallel_one", "p1"),

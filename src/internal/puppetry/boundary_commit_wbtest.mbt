@@ -12,7 +12,7 @@ struct BoundaryProbeHost {
 }
 
 ///|
-fn BoundaryProbeHost::new(
+fn BoundaryProbeHost::BoundaryProbeHost(
   journal : InMemoryJournal,
   model_results : Array[Result[@kernel.Completion, ModelFailure]],
 ) -> BoundaryProbeHost {
@@ -94,7 +94,7 @@ pub impl @kernel_exec.HostRuntime for BoundaryProbeHost with fn compact(
 ///|
 async test "puppet/boundary_commits_intent_before_each_model_effect" {
   let journal = InMemoryJournal()
-  let host = BoundaryProbeHost::new(journal, [
+  let host = BoundaryProbeHost(journal, [
     Ok(fixture_tool_calls([fixture_call("echo", "tool_1")])),
     Ok(fixture_stop("done")),
   ])
@@ -155,7 +155,7 @@ struct CompactReplaceHost {
 }
 
 ///|
-fn CompactReplaceHost::new(
+fn CompactReplaceHost::CompactReplaceHost(
   model_results : Array[Result[@kernel.Completion, ModelFailure]],
 ) -> CompactReplaceHost {
   {
@@ -247,7 +247,7 @@ fn fixture_tool_calls_with_usage(
 ///|
 async test "puppet/boundary_journals_auto_compact_replace_rewrite" {
   let journal = InMemoryJournal()
-  let host = CompactReplaceHost::new([
+  let host = CompactReplaceHost([
     Ok(fixture_tool_calls_with_usage([fixture_call("echo", "tool_1")], 95)),
     Ok(fixture_stop("done")),
   ])

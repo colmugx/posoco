@@ -32,7 +32,7 @@ pub(all) struct ModelId {
 } derive(Eq, Hash, Debug)
 
 ///|
-pub fn ModelId::new(value : String) -> Result[ModelId, String] {
+pub fn ModelId::checked(value : String) -> Result[ModelId, String] {
   if value == "" {
     Err("ModelId must be non-empty")
   } else {
@@ -75,7 +75,7 @@ priv struct ExecutionContext {
 }
 
 ///|
-fn ExecutionContext::new(
+fn ExecutionContext::ExecutionContext(
   host : &@kernel_exec.HostRuntime,
   catalog~ : @kernel_exec.ToolCatalogSnapshot,
   run_id~ : RunId,

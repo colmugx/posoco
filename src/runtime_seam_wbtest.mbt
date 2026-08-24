@@ -23,7 +23,7 @@ priv struct FakeRuntime {
 }
 
 ///|
-fn FakeRuntime::new(inner : @runtime.PortRuntime) -> FakeRuntime {
+fn FakeRuntime::FakeRuntime(inner : @runtime.PortRuntime) -> FakeRuntime {
   {
     inner,
     seen_contexts: [],
@@ -128,11 +128,11 @@ fn build_fake_runtime_agent(
       ("echo", ScriptedToolOutcome::OutcomeOk(tk_ok_result("echoed"))),
     ]),
   )
-  let port_runtime = @runtime.PortRuntime::new(
+  let port_runtime = @runtime.PortRuntime(
     model~,
     tools=Map::from_array([("echo", tools as &@port.ToolProvider)]),
   )
-  let fake = FakeRuntime::new(port_runtime)
+  let fake = FakeRuntime(port_runtime)
   fake.abort_on_tool = abort_on_tool
   let agent = Agent::with_runtime(
     exts=[
@@ -206,11 +206,11 @@ async test "runtime seam/follow-up during turn drives a subsequent turn" {
       ("echo", ScriptedToolOutcome::OutcomeOk(tk_ok_result("echoed"))),
     ]),
   )
-  let port_runtime = @runtime.PortRuntime::new(
+  let port_runtime = @runtime.PortRuntime(
     model~,
     tools=Map::from_array([("echo", tools as &@port.ToolProvider)]),
   )
-  let fake = FakeRuntime::new(port_runtime)
+  let fake = FakeRuntime(port_runtime)
   fake.follow_up_on_tool = true
   let store = RecordingSessionStore()
   let observer = RecordingObserver()
@@ -291,7 +291,7 @@ priv struct FakeCatalogSource {
 }
 
 ///|
-fn FakeCatalogSource::new(defs : Array[@kernel.ToolDef]) -> FakeCatalogSource {
+fn FakeCatalogSource::FakeCatalogSource(defs : Array[@kernel.ToolDef]) -> FakeCatalogSource {
   { revision: 1, defs }
 }
 
@@ -321,12 +321,12 @@ async test "runtime seam/catalog refresh applies at the next prompt boundary" {
     Respond(tk_stop_response("turn one")),
     Respond(tk_stop_response("turn two")),
   ])
-  let source = FakeCatalogSource::new([echo_def])
-  let port_runtime = @runtime.PortRuntime::new(
+  let source = FakeCatalogSource([echo_def])
+  let port_runtime = @runtime.PortRuntime(
     model~,
     tools=Map::from_array([]),
   )
-  let fake = FakeRuntime::new(port_runtime)
+  let fake = FakeRuntime(port_runtime)
   let agent = Agent::with_runtime(
     exts=[
       tk_ext(id="model", model=Some(model), sessions=[RecordingSessionStore()]),
@@ -360,12 +360,12 @@ async test "runtime seam/catalog change mid-run does not disturb the active run"
       ("echo", ScriptedToolOutcome::OutcomeOk(tk_ok_result("echoed"))),
     ]),
   )
-  let source = FakeCatalogSource::new([echo_def])
-  let port_runtime = @runtime.PortRuntime::new(
+  let source = FakeCatalogSource([echo_def])
+  let port_runtime = @runtime.PortRuntime(
     model~,
     tools=Map::from_array([("echo", tools as &@port.ToolProvider)]),
   )
-  let fake = FakeRuntime::new(port_runtime)
+  let fake = FakeRuntime(port_runtime)
   // The host's tool set changes while the run is executing a tool.
   fake.on_first_execute = Some(fn() {
     source.defs = [echo_def, web_def]
@@ -400,13 +400,13 @@ async test "runtime seam/invalid catalog rebuild keeps the previous snapshot" {
     Respond(tk_stop_response("two")),
     Respond(tk_stop_response("three")),
   ])
-  let source = FakeCatalogSource::new([echo_def])
+  let source = FakeCatalogSource([echo_def])
   let observer = RecordingObserver()
-  let port_runtime = @runtime.PortRuntime::new(
+  let port_runtime = @runtime.PortRuntime(
     model~,
     tools=Map::from_array([]),
   )
-  let fake = FakeRuntime::new(port_runtime)
+  let fake = FakeRuntime(port_runtime)
   let agent = Agent::with_runtime(
     exts=[
       tk_ext(

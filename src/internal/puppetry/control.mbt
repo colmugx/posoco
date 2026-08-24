@@ -31,7 +31,7 @@ pub(all) struct CommandId {
 } derive(Eq, Hash, Debug)
 
 ///|
-pub fn CommandId::new(value : String) -> Result[CommandId, String] {
+pub fn CommandId::checked(value : String) -> Result[CommandId, String] {
   if value == "" {
     Err("CommandId must be non-empty")
   } else {
