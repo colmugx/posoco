@@ -291,7 +291,9 @@ priv struct FakeCatalogSource {
 }
 
 ///|
-fn FakeCatalogSource::FakeCatalogSource(defs : Array[@kernel.ToolDef]) -> FakeCatalogSource {
+fn FakeCatalogSource::FakeCatalogSource(
+  defs : Array[@kernel.ToolDef],
+) -> FakeCatalogSource {
   { revision: 1, defs }
 }
 
@@ -322,10 +324,7 @@ async test "runtime seam/catalog refresh applies at the next prompt boundary" {
     Respond(tk_stop_response("turn two")),
   ])
   let source = FakeCatalogSource([echo_def])
-  let port_runtime = @runtime.PortRuntime(
-    model~,
-    tools=Map::from_array([]),
-  )
+  let port_runtime = @runtime.PortRuntime(model~, tools=Map::from_array([]))
   let fake = FakeRuntime(port_runtime)
   let agent = Agent::with_runtime(
     exts=[
@@ -402,10 +401,7 @@ async test "runtime seam/invalid catalog rebuild keeps the previous snapshot" {
   ])
   let source = FakeCatalogSource([echo_def])
   let observer = RecordingObserver()
-  let port_runtime = @runtime.PortRuntime(
-    model~,
-    tools=Map::from_array([]),
-  )
+  let port_runtime = @runtime.PortRuntime(model~, tools=Map::from_array([]))
   let fake = FakeRuntime(port_runtime)
   let agent = Agent::with_runtime(
     exts=[

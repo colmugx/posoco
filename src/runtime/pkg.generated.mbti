@@ -32,17 +32,17 @@ pub impl Show for EnqueueOutcome
 pub struct PortRuntime {
   // private fields
 }
-pub fn PortRuntime::new(model~ : &@port.ModelPort, tools~ : Map[String, &@port.ToolProvider]) -> Self
+pub fn PortRuntime::PortRuntime(model~ : &@port.ModelPort, tools~ : Map[String, &@port.ToolProvider]) -> Self
 pub impl Runtime for PortRuntime
 
 pub struct RuntimeControl {
   // private fields
 }
+pub fn RuntimeControl::RuntimeControl(&@puppetry.Mailbox) -> Self
 pub fn RuntimeControl::abort_active(Self, String?) -> EnqueueOutcome
 pub fn RuntimeControl::active_run_id(Self) -> @kernel.RunId?
 pub fn RuntimeControl::active_turn_id(Self) -> @kernel.TurnId?
 pub fn RuntimeControl::enqueue_follow_up(Self, @kernel.Message) -> EnqueueOutcome
-pub fn RuntimeControl::new(&@puppetry.Mailbox) -> Self
 pub fn RuntimeControl::pending_follow_ups(Self) -> Int
 pub fn RuntimeControl::take_follow_up(Self) -> @kernel.Message?
 

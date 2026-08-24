@@ -72,7 +72,7 @@ pub fn AbortCommand::target_run_id(Self) -> @kernel.RunId
 pub(all) struct CommandId {
   value : String
 } derive(Eq, Hash, @debug.Debug)
-pub fn CommandId::new(String) -> Result[Self, String]
+pub fn CommandId::checked(String) -> Result[Self, String]
 pub fn CommandId::to_string(Self) -> String
 pub fn CommandId::unchecked(String) -> Self
 pub impl Show for CommandId
@@ -273,7 +273,7 @@ pub impl Show for JournalEntryIdentity
 pub(all) struct ModelId {
   value : String
 } derive(Eq, Hash, @debug.Debug)
-pub fn ModelId::new(String) -> Result[Self, String]
+pub fn ModelId::checked(String) -> Result[Self, String]
 pub fn ModelId::to_string(Self) -> String
 pub fn ModelId::unchecked(String) -> Self
 

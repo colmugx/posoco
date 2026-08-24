@@ -13,7 +13,7 @@ import {
 pub(all) struct CallId {
   value : String
 } derive(Eq, Hash, @debug.Debug)
-pub fn CallId::new(String) -> Result[Self, String]
+pub fn CallId::checked(String) -> Result[Self, String]
 pub fn CallId::to_string(Self) -> String
 pub fn CallId::unchecked(String) -> Self
 
@@ -142,7 +142,7 @@ pub impl Show for NotExecutedReason
 pub(all) struct OwnerId {
   value : String
 } derive(Eq, Hash, @debug.Debug)
-pub fn OwnerId::new(String) -> Result[Self, String]
+pub fn OwnerId::checked(String) -> Result[Self, String]
 pub fn OwnerId::to_string(Self) -> String
 pub fn OwnerId::unchecked(String) -> Self
 
@@ -155,7 +155,7 @@ pub impl Show for Reasoning
 pub(all) struct RunId {
   value : String
 } derive(Eq, Hash, @debug.Debug)
-pub fn RunId::new(String) -> Result[Self, String]
+pub fn RunId::checked(String) -> Result[Self, String]
 pub fn RunId::to_string(Self) -> String
 pub fn RunId::unchecked(String) -> Self
 pub impl Show for RunId
@@ -170,7 +170,7 @@ pub impl Show for SchemaDiagnostic
 pub(all) struct SessionId {
   value : String
 } derive(Eq, Hash, @debug.Debug)
-pub fn SessionId::new(String) -> Result[Self, String]
+pub fn SessionId::checked(String) -> Result[Self, String]
 pub fn SessionId::to_string(Self) -> String
 pub fn SessionId::unchecked(String) -> Self
 
@@ -195,7 +195,7 @@ pub impl Show for ToolDef
 pub(all) struct ToolName {
   value : String
 } derive(Eq, Hash, @debug.Debug)
-pub fn ToolName::new(String) -> Result[Self, String]
+pub fn ToolName::checked(String) -> Result[Self, String]
 pub fn ToolName::to_string(Self) -> String
 pub fn ToolName::unchecked(String) -> Self
 
@@ -222,7 +222,7 @@ pub fn Transcript::messages_snapshot(Self) -> Array[Message]
 pub(all) struct TurnId {
   value : String
 } derive(Eq, Hash, @debug.Debug)
-pub fn TurnId::new(String) -> Result[Self, String]
+pub fn TurnId::checked(String) -> Result[Self, String]
 pub fn TurnId::to_string(Self) -> String
 pub fn TurnId::unchecked(String) -> Self
 pub impl Show for TurnId
