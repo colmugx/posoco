@@ -23,7 +23,7 @@ priv struct AggregatedPorts {
   tools : Array[&@port.ToolProvider]
   sessions : Array[&@port.SessionStore]
   observers : Array[&@port.Observer]
-  hooks : Array[&@port.Hook]
+  hooks : Array[&@port.PipelineHook]
   memory : Array[&@port.MemoryPort]
   lifecycle : Array[LifecycleEntry]
   commands : Array[&@port.CommandPort]
@@ -49,7 +49,7 @@ fn aggregate_extensions(
   let tool_manifests : Map[String, Array[String]] = Map::from_array([])
   let sessions : Array[&@port.SessionStore] = []
   let observers : Array[&@port.Observer] = []
-  let hooks : Array[&@port.Hook] = []
+  let hooks : Array[&@port.PipelineHook] = []
   let memory : Array[&@port.MemoryPort] = []
   let lifecycle : Array[LifecycleEntry] = []
   let commands : Array[&@port.CommandPort] = []

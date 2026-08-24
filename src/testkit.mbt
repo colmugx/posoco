@@ -859,7 +859,7 @@ pub(all) struct HookRecord {
 }
 
 ///|
-/// Multi-hook fake that implements `Hook` at all three interception points.
+/// Multi-hook fake that implements `PipelineHook` at all three interception points.
 /// By default it is a pass-through (returns messages unchanged, approves
 /// tool calls). Records every call.
 pub(all) struct RecordingHook {
@@ -901,7 +901,7 @@ pub fn RecordingHook::records(self : RecordingHook) -> Array[HookRecord] {
 }
 
 ///|
-pub impl @port.Hook for RecordingHook with fn before_model(
+pub impl @port.PipelineHook for RecordingHook with fn before_model(
   self,
   messages : Array[@kernel.Message],
 ) -> Array[@kernel.Message] raise @port.HookAbort {
@@ -920,10 +920,10 @@ pub impl @port.Hook for RecordingHook with fn before_model(
 }
 
 ///|
-pub impl @port.Hook for RecordingHook with fn before_tool(
+pub impl @port.PipelineHook for RecordingHook with fn before_tool(
   self,
   call : @kernel.ToolCall,
-) -> @port.ToolHookDecision {
+) -> @port.ToolDecision {
   let label = "before_tool"
   let dbg = call.call_id.to_string()
   for trigger in self.abort_on.keys() {
@@ -945,7 +945,7 @@ pub impl @port.Hook for RecordingHook with fn before_tool(
 }
 
 ///|
-pub impl @port.Hook for RecordingHook with fn on_post_event(
+pub impl @port.PipelineHook for RecordingHook with fn on_post_event(
   self,
   _stage : @port.HookStage,
 ) -> Unit {
@@ -1206,7 +1206,7 @@ pub fn tk_ext(
   tools? : Array[&@port.ToolProvider] = [],
   sessions? : Array[&@port.SessionStore] = [],
   observers? : Array[&@port.Observer] = [],
-  hooks? : Array[&@port.Hook] = [],
+  hooks? : Array[&@port.PipelineHook] = [],
   memory? : Array[&@port.MemoryPort] = [],
   lifecycle? : Array[&@port.Lifecycle] = [],
   commands? : Array[&@port.CommandPort] = [],

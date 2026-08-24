@@ -147,6 +147,10 @@ moon fmt
 moon info
 ```
 
+## 为什么叫 Posoco？
+
+"Posoco" 取自 **persocom**。来自 CLAMP 漫画《人形电脑天使心》（Chobits）里的人形电脑（persocom）。因为 Posoco 项目是从 Elyra 的架构指导思想里拆出来的 agent runtime，所以取谐音 Posoco。
+
 ## License
 
 Apache-2.0。

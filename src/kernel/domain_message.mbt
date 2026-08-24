@@ -186,7 +186,7 @@ pub impl Show for FinishReason with fn to_string(self : FinishReason) -> String 
 ///   validation against the tool's input schema. The diagnostic carries a safe
 ///   JSON path and type expectation; it never includes the raw argument
 ///   payload.
-/// - `RejectedByHook`: a `Hook::before_tool` returned `Reject`; the call
+/// - `RejectedByHook`: a `PipelineHook::before_tool` returned `Reject`; the call
 ///   was never dispatched and `reason` is the hook's steering text fed
 ///   back to the model.
 ///

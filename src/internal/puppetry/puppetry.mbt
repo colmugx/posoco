@@ -42,9 +42,9 @@ pub(all) struct PuppetConfig {
   /// the HostRuntime to avoid chunk JSON conversion altogether.
   stream_chunks : @kernel_exec.HostChunkCallback?
   /// Pipeline interception hooks, in registration order. `before_tool`
-  /// decisions merge per `ToolHookDecision`'s contract (consent beats
+  /// decisions merge per `ToolDecision`'s contract (consent beats
   /// Reject; Reject feeds back to the model as `NotExecuted`).
-  hooks : Array[&Hook]
+  hooks : Array[&PipelineHook]
   /// Livelock backstop only: max pump iterations before the pump declares
   /// PumpLoopExceeded. `None` disables the backstop. The kernel budget is
   /// the sole semantic limit; when a budget is configured this is derived
@@ -830,7 +830,7 @@ async fn Puppet::drive_run(
         for wave_index, wave in waves {
           // Run pre-tool hooks on each ExecuteTool effect in the wave.
           // Every hook is evaluated (no short-circuit on Reject); the
-          // merge contract lives on ToolHookDecision in port/hook.mbt.
+          // merge contract lives on ToolDecision in port/hook.mbt.
           let rewritten_wave : Array[Effect] = []
           let hook_rejected_inputs : Array[RunInput] = []
           for effect in wave {
@@ -1904,7 +1904,7 @@ pub async fn Puppet::wait_idle(self : Puppet) -> QuiescentStatus {
 
 ///|
 /// Fire every registered hook's `on_post_event_at` for a completed effect.
-/// The `Hook::on_post_event_at` contract is non-raising: handlers cannot fail
+/// The `PipelineHook::on_post_event_at` contract is non-raising: handlers cannot fail
 /// in a typed way, and a contract violation aborts loudly (aborts are not
 /// catchable). Components with fallible internal work must catch it
 /// themselves and surface it as a `secondary_failure` observer event —
@@ -1912,11 +1912,13 @@ pub async fn Puppet::wait_idle(self : Puppet) -> QuiescentStatus {
 /// the attribution scope is always delivered as `Some`.
 
 ///|
-fn Puppet::fire_post_event_hooks(
+/// Async because `on_post_event_at` is an async slot; the noraise slot
+/// contract keeps this helper non-failing.
+async fn Puppet::fire_post_event_hooks(
   self : Puppet,
   input : RunInput,
   scope : @types.EventScope,
-) -> Unit {
+) -> Unit noraise {
   // Fast path: skip stage translation entirely when no hook could care
   // about post-effect events.
   if self.config.hooks.is_empty() {

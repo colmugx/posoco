@@ -1,6 +1,6 @@
 ///|
 /// Contract pins for `EventScope` projection (P1): the core dispatches ONLY
-/// the scoped variants (`Observer::on_event_at`, `Hook::on_post_event_at`),
+/// the scoped variants (`Observer::on_event_at`, `PipelineHook::on_post_event_at`),
 /// and every run-bound event carries the identity minted for its turn.
 /// Out-of-run diagnostics (stream chunks, secondary failures) may carry
 /// `None`.
@@ -35,13 +35,13 @@ pub impl @port.Observer for ScopedObserver with fn on_event_at(
 }
 
 ///|
-/// Hook double recording (tag, scope) for every scoped post-event dispatch.
+/// PipelineHook double recording (tag, scope) for every scoped post-event dispatch.
 struct ScopedHook {
   stages : Array[(String, @types.EventScope?)]
 }
 
 ///|
-pub impl @port.Hook for ScopedHook with fn on_post_event_at(
+pub impl @port.PipelineHook for ScopedHook with fn on_post_event_at(
   self,
   scope,
   stage : @port.HookStage,

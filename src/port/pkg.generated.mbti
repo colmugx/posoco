@@ -87,7 +87,7 @@ pub(all) struct ExtensionManifest {
   tools : Array[&ToolProvider]
   sessions : Array[&SessionStore]
   observers : Array[&Observer]
-  hooks : Array[&Hook]
+  hooks : Array[&PipelineHook]
   memory : Array[&MemoryPort]
   lifecycle : Array[&Lifecycle]
   commands : Array[&CommandPort]
@@ -122,13 +122,13 @@ pub fn ProviderConfig::accepts_reasoning_effort(Self, String) -> Bool
 pub fn ProviderConfig::empty() -> Self
 pub impl Show for ProviderConfig
 
-pub(all) enum ToolHookDecision {
+pub(all) enum ToolDecision {
   Approve(call~ : @kernel.ToolCall)
   ApproveAfterConsent(call~ : @kernel.ToolCall, consent_scope~ : String)
   Defer(reason~ : String)
   Reject(reason~ : String)
 } derive(@debug.Debug)
-pub impl Show for ToolHookDecision
+pub impl Show for ToolDecision
 
 pub(all) enum UiBody {
   Text(String)
@@ -199,13 +199,6 @@ pub(open) trait Extension {
   fn manifest(Self) -> ExtensionManifest
 }
 
-pub(open) trait Hook {
-  fn before_model(Self, Array[@kernel.Message]) -> Array[@kernel.Message] raise HookAbort = _
-  async fn before_tool(Self, @kernel.ToolCall) -> ToolHookDecision = _
-  fn on_post_event(Self, HookStage) -> Unit = _
-  fn on_post_event_at(Self, @types.EventScope?, HookStage) -> Unit = _
-}
-
 pub(open) trait Lifecycle {
   fn on_compose(Self, CompositionView) -> Unit raise @error.CompositionError = _
   async fn on_start(Self) -> Unit = _
@@ -213,9 +206,9 @@ pub(open) trait Lifecycle {
 }
 
 pub(open) trait MemoryPort {
-  fn store(Self, @types.MemoryEntry) -> String raise @error.MemoryError
-  fn search(Self, @types.MemoryQuery) -> Array[@types.MemoryEntry] raise @error.MemoryError
-  fn delete(Self, String) -> Unit raise @error.MemoryError
+  async fn store(Self, @types.MemoryEntry) -> String raise @error.MemoryError
+  async fn search(Self, @types.MemoryQuery) -> Array[@types.MemoryEntry] raise @error.MemoryError
+  async fn delete(Self, String) -> Unit raise @error.MemoryError
 }
 
 pub(open) trait ModelPort {
@@ -227,6 +220,15 @@ pub(open) trait ModelPort {
 pub(open) trait Observer {
   fn on_event(Self, @types.TurnEvent) -> Unit = _
   fn on_event_at(Self, @types.EventScope?, @types.TurnEvent) -> Unit = _
+}
+
+pub(open) trait PipelineHook {
+  async fn before_model(Self, Array[@kernel.Message]) -> Array[@kernel.Message] raise HookAbort = _
+  async fn before_tool(Self, @kernel.ToolCall) -> ToolDecision = _
+  async fn on_post_event(Self, HookStage) -> Unit noraise = _
+  async fn on_post_event_at(Self, @types.EventScope?, HookStage) -> Unit noraise = _
+  async fn on_turn_begin(Self) -> Unit = _
+  async fn on_turn_end(Self) -> Unit = _
 }
 
 pub(open) trait SessionStore {

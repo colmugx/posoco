@@ -102,10 +102,10 @@ impl @port.Observer for MockObserver with fn on_event(self, event) {
 struct PolicyRejectHook {}
 
 ///|
-impl @port.Hook for PolicyRejectHook with fn before_tool(
+impl @port.PipelineHook for PolicyRejectHook with fn before_tool(
   _self,
   _call : @kernel.ToolCall,
-) -> @port.ToolHookDecision {
+) -> @port.ToolDecision {
   Reject(reason="blocked by policy")
 }
 
@@ -116,10 +116,10 @@ struct ConsentToolHook {
 }
 
 ///|
-impl @port.Hook for ConsentToolHook with fn before_tool(
+impl @port.PipelineHook for ConsentToolHook with fn before_tool(
   self,
   call : @kernel.ToolCall,
-) -> @port.ToolHookDecision {
+) -> @port.ToolDecision {
   ApproveAfterConsent(call~, consent_scope=self.scope)
 }
 
@@ -129,7 +129,10 @@ struct LogHook {
 }
 
 ///|
-impl @port.Hook for LogHook with fn on_post_event(self, stage : @port.HookStage) -> Unit {
+impl @port.PipelineHook for LogHook with fn on_post_event(
+  self,
+  stage : @port.HookStage,
+) -> Unit {
   self.seen.push(stage)
 }
 
@@ -388,10 +391,10 @@ struct GateByNameHook {
 }
 
 ///|
-impl @port.Hook for GateByNameHook with fn before_tool(
+impl @port.PipelineHook for GateByNameHook with fn before_tool(
   self,
   call : @kernel.ToolCall,
-) -> @port.ToolHookDecision {
+) -> @port.ToolDecision {
   let name = call.name.to_string()
   if self.blocked.contains(name) {
     Reject(reason="plan mode: tool '\{name}' is disabled while planning")
@@ -452,7 +455,7 @@ async test "hook_reject_steers_model_to_allowed_tool" {
 /// composition: the user allows `bash` at the permission ask, the plan gate
 /// still says no, the call runs anyway.
 async fn run_bash_with_hooks(
-  hooks : Array[&@port.Hook],
+  hooks : Array[&@port.PipelineHook],
 ) -> (RecordingExecProvider, TurnResult) {
   let tc = make_tool_call("call_1", "bash")
   let model = MockModelPort::{
@@ -557,10 +560,10 @@ struct GateHook {
 }
 
 ///|
-impl @port.Hook for GateHook with fn before_tool(
+impl @port.PipelineHook for GateHook with fn before_tool(
   self : GateHook,
   call : @kernel.ToolCall,
-) -> @port.ToolHookDecision {
+) -> @port.ToolDecision {
   self.entered.put(1)
   ignore(self.release.get())
   Approve(call~)
@@ -628,14 +631,14 @@ suberror ApprovalPromptFailed {
 ///|
 /// RaisingToolHook — an async `before_tool` that fails instead of deciding
 /// (e.g. the approval UI errored). The pump converts the raise into a
-/// terminal HookRejected, surfaced to the caller as AgentError::HookAborted.
+/// terminal HookRejected, surfaced to the caller as AgentError::PipelineAborted.
 struct RaisingToolHook {}
 
 ///|
-impl @port.Hook for RaisingToolHook with fn before_tool(
+impl @port.PipelineHook for RaisingToolHook with fn before_tool(
   _self : RaisingToolHook,
   _call : @kernel.ToolCall,
-) -> @port.ToolHookDecision {
+) -> @port.ToolDecision {
   raise ApprovalPromptFailed::ApprovalPromptFailed
 }
 
@@ -673,9 +676,9 @@ async test "hook_before_tool_raise_aborts_run" {
   )
   match
     (Ok(agent.run_turn(user_msg("danger"), "session_1")) catch { e => Err(e) }) {
-    Err(@error.AgentError::HookAborted(msg)) =>
+    Err(@error.AgentError::PipelineAborted(msg)) =>
       assert_true(msg.contains("pre_tool_hook raised"))
-    _ => fail("expected HookAborted from raising before_tool")
+    _ => fail("expected PipelineAborted from raising before_tool")
   }
 }
 
@@ -978,7 +981,7 @@ async test "session_persistence" {
 struct RewriteModelHook {}
 
 ///|
-impl @port.Hook for RewriteModelHook with fn before_model(
+impl @port.PipelineHook for RewriteModelHook with fn before_model(
   _self,
   messages : Array[@kernel.Message],
 ) -> Array[@kernel.Message] raise @port.HookAbort {
@@ -1028,10 +1031,10 @@ async test "hook_rewrites_before_model_messages" {
 struct DeferToolHook {}
 
 ///|
-impl @port.Hook for DeferToolHook with fn before_tool(
+impl @port.PipelineHook for DeferToolHook with fn before_tool(
   _self,
   call : @kernel.ToolCall,
-) -> @port.ToolHookDecision {
+) -> @port.ToolDecision {
   if call.name.to_string() == "restricted" {
     Defer(reason="needs admin approval")
   } else {
@@ -1044,7 +1047,7 @@ impl @port.Hook for DeferToolHook with fn before_tool(
 async test "hook_deferred_skips_execution" {
   // Defer is not yet supported in the Puppet path — the pump returns
   // HookRejected when a PreToolHook returns Defer. This test verifies that
-  // the rejection surfaces as AgentError::HookAborted.
+  // the rejection surfaces as AgentError::PipelineAborted.
   let tc = make_tool_call("call_1", "restricted")
   let model = MockModelPort::{
     responses: [tool_response([tc]), stop_response("approved")],
@@ -1082,9 +1085,9 @@ async test "hook_deferred_skips_execution" {
     e => Err(e)
   }
   match result {
-    Err(@error.AgentError::HookAborted(msg)) =>
+    Err(@error.AgentError::PipelineAborted(msg)) =>
       assert_true(msg.contains("defer not yet supported"))
-    _ => fail("expected HookAborted for unsupported Defer decision")
+    _ => fail("expected PipelineAborted for unsupported Defer decision")
   }
 }
 
@@ -1094,15 +1097,15 @@ async test "hook_deferred_skips_execution" {
 struct ApproveAllToolHook {}
 
 ///|
-impl @port.Hook for ApproveAllToolHook with fn before_tool(
+impl @port.PipelineHook for ApproveAllToolHook with fn before_tool(
   _self,
   call : @kernel.ToolCall,
-) -> @port.ToolHookDecision {
+) -> @port.ToolDecision {
   Approve(call~)
 }
 
 ///|
-/// Test: Hook default methods pass through — a hook that overrides only
+/// Test: PipelineHook default methods pass through — a hook that overrides only
 /// `before_tool` inherits the default `before_model` (identity) and
 /// `on_post_event` (noop), so the user message reaches the transcript
 /// unchanged and the turn completes normally.
@@ -1159,7 +1162,7 @@ async test "hook_default_methods_pass_through" {
 }
 
 ///|
-/// Test: one Hook implementor receives every interception point through a
+/// Test: one PipelineHook implementor receives every interception point through a
 /// single trait impl — before_model, before_tool and on_post_event all land
 /// on the same RecordingHook instance in one turn.
 async test "hook_single_impl_receives_all_points" {
@@ -1737,7 +1740,7 @@ async test "hook_turn_error_fires_on_model_error" {
 }
 
 ///|
-/// Finally semantics: when BeforeTool aborts (raise HookAborted), the
+/// Finally semantics: when BeforeTool aborts (raise PipelineAborted), the
 /// TurnError hook still fires before the error propagates.
 async test "hook_turn_error_fires_on_before_tool_abort" {
   let tc = make_tool_call("call_1", "bash")

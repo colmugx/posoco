@@ -26,7 +26,7 @@ pub fn tk_config() -> AgentConfig
 
 pub fn tk_error_result(String) -> @kernel.ToolOutcome
 
-pub fn tk_ext(id~ : String, model? : &@port.ModelPort?, tools? : Array[&@port.ToolProvider], sessions? : Array[&@port.SessionStore], observers? : Array[&@port.Observer], hooks? : Array[&@port.Hook], memory? : Array[&@port.MemoryPort], lifecycle? : Array[&@port.Lifecycle], commands? : Array[&@port.CommandPort], ui? : Array[&@port.UiPort], prompt_contributors? : Array[&@port.SystemPromptContributor], requires? : Array[@port.Capability]) -> ManifestOnly
+pub fn tk_ext(id~ : String, model? : &@port.ModelPort?, tools? : Array[&@port.ToolProvider], sessions? : Array[&@port.SessionStore], observers? : Array[&@port.Observer], hooks? : Array[&@port.PipelineHook], memory? : Array[&@port.MemoryPort], lifecycle? : Array[&@port.Lifecycle], commands? : Array[&@port.CommandPort], ui? : Array[&@port.UiPort], prompt_contributors? : Array[&@port.SystemPromptContributor], requires? : Array[@port.Capability]) -> ManifestOnly
 
 pub fn tk_ok_result(String) -> @kernel.ToolOutcome
 
@@ -101,8 +101,8 @@ pub(all) struct MemoryRetrievalHook {
   on_failure : (String) -> Unit
 }
 pub fn MemoryRetrievalHook::MemoryRetrievalHook(memories~ : Array[&@port.MemoryPort], top_k? : Int, on_failure? : (String) -> Unit) -> Self
-pub fn MemoryRetrievalHook::before_model(Self, Array[@kernel.Message]) -> Array[@kernel.Message] raise @port.HookAbort
-pub impl @port.Hook for MemoryRetrievalHook
+pub async fn MemoryRetrievalHook::before_model(Self, Array[@kernel.Message]) -> Array[@kernel.Message] raise @port.HookAbort
+pub impl @port.PipelineHook for MemoryRetrievalHook
 
 pub(all) struct NoopCommandPort {
 }
@@ -139,11 +139,11 @@ pub(all) struct RecordingHook {
 }
 pub fn RecordingHook::RecordingHook() -> Self
 pub fn RecordingHook::abort_when(Self, String, String) -> Unit
-pub fn RecordingHook::before_model(Self, Array[@kernel.Message]) -> Array[@kernel.Message] raise @port.HookAbort
-pub async fn RecordingHook::before_tool(Self, @kernel.ToolCall) -> @port.ToolHookDecision
+pub async fn RecordingHook::before_model(Self, Array[@kernel.Message]) -> Array[@kernel.Message] raise @port.HookAbort
+pub async fn RecordingHook::before_tool(Self, @kernel.ToolCall) -> @port.ToolDecision
 pub fn RecordingHook::defer_when(Self, String, String) -> Unit
 pub fn RecordingHook::records(Self) -> Array[HookRecord]
-pub impl @port.Hook for RecordingHook
+pub impl @port.PipelineHook for RecordingHook
 
 pub(all) struct RecordingLifecycle {
   id : String
@@ -262,8 +262,8 @@ pub(all) struct SystemPromptHook {
 }
 pub fn SystemPromptHook::SystemPromptHook(base_prompt~ : String, contributors~ : Array[SystemPromptSection]) -> Self
 pub fn SystemPromptHook::assemble(Self) -> String
-pub fn SystemPromptHook::before_model(Self, Array[@kernel.Message]) -> Array[@kernel.Message] raise @port.HookAbort
-pub impl @port.Hook for SystemPromptHook
+pub async fn SystemPromptHook::before_model(Self, Array[@kernel.Message]) -> Array[@kernel.Message] raise @port.HookAbort
+pub impl @port.PipelineHook for SystemPromptHook
 
 pub(all) struct SystemPromptSection {
   id : String
@@ -298,8 +298,8 @@ pub(all) struct UiRenderHook {
   ui : &@port.UiPort
 }
 pub fn UiRenderHook::UiRenderHook(ui~ : &@port.UiPort) -> Self
-pub fn UiRenderHook::on_post_event(Self, @port.HookStage) -> Unit
-pub impl @port.Hook for UiRenderHook
+pub async fn UiRenderHook::on_post_event(Self, @port.HookStage) -> Unit noraise
+pub impl @port.PipelineHook for UiRenderHook
 
 // Type aliases
 pub using @error {type AgentError}
@@ -398,9 +398,9 @@ pub using @types {type StreamMode}
 
 pub using @kernel {type ToolCall}
 
-pub using @kernel {type ToolDef}
+pub using @port {type ToolDecision}
 
-pub using @port {type ToolHookDecision}
+pub using @kernel {type ToolDef}
 
 pub using @kernel {type ToolName}
 
@@ -436,8 +436,6 @@ pub using @port {trait CommandPort}
 
 pub using @port {trait Extension}
 
-pub using @port {trait Hook}
-
 pub using @port {trait Lifecycle}
 
 pub using @port {trait MemoryPort}
@@ -445,6 +443,8 @@ pub using @port {trait MemoryPort}
 pub using @port {trait ModelPort}
 
 pub using @port {trait Observer}
+
+pub using @port {trait PipelineHook}
 
 pub using @port {trait SessionStore}
 

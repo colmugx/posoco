@@ -433,7 +433,7 @@ async fn AgentRuntime::run_turn_via_puppet(
   // Step 5: handle non-Accepted prompt results.
   match prompt_result {
     @puppetry.Rejected(error=@puppetry.HookRejected(reason~)) =>
-      raise @error.AgentError::HookAborted(reason)
+      raise @error.AgentError::PipelineAborted(reason)
     @puppetry.Rejected(error=@puppetry.PumpLoopExceeded(..)) =>
       // With a correctly sized backstop (2 * rounds + 1) the kernel budget
       // always fires first; reaching this branch means a livelock or an

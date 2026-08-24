@@ -7,7 +7,7 @@
 struct FailingLifecycle {}
 
 ///|
-pub impl @port.Lifecycle for FailingLifecycle with fn on_shutdown(_self) -> Unit {
+pub impl @posoco.Lifecycle for FailingLifecycle with fn on_shutdown(_self) -> Unit {
   abort("shutdown cleanup failed")
 }
 

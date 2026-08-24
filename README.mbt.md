@@ -148,11 +148,15 @@ status live in [`posoco-101/OUTLINE.md`](./posoco-101/OUTLINE.md):
 ## Development & validation
 
 ```bash
-moon check --target native --output-json
-moon test  --target native --output-json
+moon check --output-json
+moon test --output-json
 moon fmt
 moon info
 ```
+
+## Why "Posoco"?
+
+"Posoco" comes from **persocom** — the humanoid computers in CLAMP's manga *Chobits*. Since Posoco is the agent runtime split out of Elyra's architectural philosophy, it takes the homophone Posoco.
 
 ## License
 

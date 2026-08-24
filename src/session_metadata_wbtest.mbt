@@ -401,7 +401,7 @@ pub impl @port.SessionStore for BoundaryMutatingStore with fn save(
 struct BoundaryMutatingHook {}
 
 ///|
-pub impl @port.Hook for BoundaryMutatingHook with fn before_model(
+pub impl @port.PipelineHook for BoundaryMutatingHook with fn before_model(
   _self,
   messages : Array[@kernel.Message],
 ) -> Array[@kernel.Message] raise @port.HookAbort {
@@ -409,10 +409,10 @@ pub impl @port.Hook for BoundaryMutatingHook with fn before_model(
 }
 
 ///|
-pub impl @port.Hook for BoundaryMutatingHook with fn before_tool(
+pub impl @port.PipelineHook for BoundaryMutatingHook with fn before_tool(
   _self,
   call : @kernel.ToolCall,
-) -> @port.ToolHookDecision {
+) -> @port.ToolDecision {
   Approve(call~)
 }
 

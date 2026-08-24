@@ -13,7 +13,7 @@ pub(all) suberror AgentError {
   Session(SessionError)
   Runtime(RuntimeError)
   ToolLoopExceeded(consumed~ : Int, limit~ : Int)
-  HookAborted(String)
+  PipelineAborted(String)
 } derive(@debug.Debug)
 pub impl Show for AgentError
 

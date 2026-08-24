@@ -10,10 +10,10 @@
 ///   here.
 ///
 /// The channel is read-only — never blocks or mutates. For interception or
-/// abortion, implement `Hook::before_model` / `Hook::before_tool` (they
-/// carry block capability via `HookAbort` / `ToolHookDecision`); for
-/// real-time per-effect telemetry implement `Hook::on_post_event` — the
-/// former effect-level observer channel was folded into `Hook` (D5/BR-7).
+/// abortion, implement `PipelineHook::before_model` / `PipelineHook::before_tool` (they
+/// carry block capability via `HookAbort` / `ToolDecision`); for
+/// real-time per-effect telemetry implement `PipelineHook::on_post_event` — the
+/// former effect-level observer channel was folded into `PipelineHook` (D5/BR-7).
 pub(open) trait Observer {
   /// Session-level turn events. Default no-op: an extension that does not
   /// care about session-level events inherits this default.

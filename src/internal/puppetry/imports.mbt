@@ -43,7 +43,7 @@ using @kernel_exec {
 
 ///|
 using @port {
-  trait Hook,
+  trait PipelineHook,
   type HookAbort,
   type HookStage,
   trait SessionStore,

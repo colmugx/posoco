@@ -82,7 +82,7 @@ pub impl @port.MemoryPort for FailingMemoryPort with fn delete(
 ///|
 /// Running before_model twice does NOT accumulate SystemMessages.
 /// The hook replaces the head SystemMessage in place.
-test "m38_sysprompt/idempotent_across_rounds" {
+async test "m38_sysprompt/idempotent_across_rounds" {
   let hook = SystemPromptHook::SystemPromptHook(base_prompt="BASE", contributors=[])
   // Round 1: empty transcript → prepends SystemMessage.
   let after1 = hook.before_model([])
@@ -96,7 +96,7 @@ test "m38_sysprompt/idempotent_across_rounds" {
 /// When the transcript already has a SystemMessage (e.g. the caller
 /// seeded one), the hook replaces its content rather than prepending a
 /// second one.
-test "m38_sysprompt/replaces_existing_system_message" {
+async test "m38_sysprompt/replaces_existing_system_message" {
   let hook = SystemPromptHook::SystemPromptHook(base_prompt="NEW", contributors=[])
   let seed : @kernel.Message = @kernel.SystemMessage(content=[
     @kernel.Text("OLD"),
@@ -119,7 +119,7 @@ test "m38_sysprompt/replaces_existing_system_message" {
 
 ///|
 /// Contributors are concatenated after the base in registration order.
-test "m38_sysprompt/assembles_base_plus_contributors" {
+async test "m38_sysprompt/assembles_base_plus_contributors" {
   let c1 : &@port.SystemPromptContributor = FixedPromptContributor::{
     text: "SECTION_A",
   }
@@ -149,7 +149,7 @@ test "m38_sysprompt/assembles_base_plus_contributors" {
 /// When memory returns entries, the hook injects a memory SystemMessage
 /// carrying the `[MEMORY]` marker. The message lands after the system
 /// prompt (head).
-test "m38_memory/injects_entries_after_system_prompt" {
+async test "m38_memory/injects_entries_after_system_prompt" {
   let entry : @types.MemoryEntry = {
     id: "m1",
     content: "prefer tabs over spaces",
@@ -184,7 +184,7 @@ test "m38_memory/injects_entries_after_system_prompt" {
 ///|
 /// Running the hook twice replaces the prior memory message in place
 /// (idempotent — no accumulation).
-test "m38_memory/idempotent_replaces_prior_memory_message" {
+async test "m38_memory/idempotent_replaces_prior_memory_message" {
   let entry : @types.MemoryEntry = {
     id: "m1",
     content: "fact one",
@@ -208,7 +208,7 @@ test "m38_memory/idempotent_replaces_prior_memory_message" {
 ///|
 /// Memory search failure is swallowed — the turn is not aborted and
 /// messages pass through unchanged.
-test "m38_memory/swallows_search_failure" {
+async test "m38_memory/swallows_search_failure" {
   let mem : &@port.MemoryPort = FailingMemoryPort::{ _dummy: () }
   let hook = MemoryRetrievalHook::MemoryRetrievalHook(memories=[mem])
   let user : @kernel.Message = @kernel.UserMessage(content=[
@@ -223,7 +223,7 @@ test "m38_memory/swallows_search_failure" {
 /// ModelCompleted stage emits NO render intent: it is an intermediate state
 /// in every tool→model round-trip; a persistent "model responded" Status
 /// intent misleads the host UI into showing a stalled final state mid-turn.
-test "m38_ui/model_completed_renders_nothing" {
+async test "m38_ui/model_completed_renders_nothing" {
   let ui = RecordingUiPort::new_unsupported()
   let hook = UiRenderHook::UiRenderHook(ui=ui as &@port.UiPort)
   let completion : @kernel.Completion = @kernel.Completion::Completion(
@@ -240,7 +240,7 @@ test "m38_ui/model_completed_renders_nothing" {
 
 ///|
 /// ToolCompleted stage renders a Notice slot intent.
-test "m38_ui/tool_completed_renders_notice" {
+async test "m38_ui/tool_completed_renders_notice" {
   let ui = RecordingUiPort::new_unsupported()
   let hook = UiRenderHook::UiRenderHook(ui=ui as &@port.UiPort)
   let call : @kernel.ToolCall = {
@@ -265,7 +265,7 @@ test "m38_ui/tool_completed_renders_notice" {
 ///|
 /// `on_failure` is invoked with a sanitized reason when memory search
 /// fails; messages still pass through unchanged.
-test "m38_memory/search_failure_invokes_on_failure" {
+async test "m38_memory/search_failure_invokes_on_failure" {
   let seen : Array[String] = []
   let mem : &@port.MemoryPort = FailingMemoryPort::{ _dummy: () }
   let hook = MemoryRetrievalHook::MemoryRetrievalHook(memories=[mem], on_failure=fn(
@@ -332,7 +332,7 @@ async test "m38_memory/failing_search_emits_secondary_failure_event" {
 struct SameLengthAgentHook {}
 
 ///|
-pub impl @port.Hook for SameLengthAgentHook with fn before_model(
+pub impl @port.PipelineHook for SameLengthAgentHook with fn before_model(
   _self,
   _messages : Array[@kernel.Message],
 ) -> Array[@kernel.Message] raise @port.HookAbort {

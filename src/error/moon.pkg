@@ -3,7 +3,6 @@ import {
   "colmugx/posoco",
   "colmugx/posoco/error",
   "colmugx/posoco/types",
-  "colmugx/posoco/port",
   "colmugx/posoco/kernel",
 } for "test"
 

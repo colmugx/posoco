@@ -1,6 +1,6 @@
 name = "colmugx/posoco"
 
-version = "0.10.3"
+version = "0.11.0"
 
 import {
   "moonbitlang/async@0.21.0",
@@ -17,5 +17,3 @@ keywords = [ "llm", "agent", "framework", "ports-and-adapters", "ai-runtime" ]
 description = "LLM Agent framework with hexagonal (ports-and-adapters) architecture. Defines 9 traits + Agent loop. Depends on moonbitlang/async."
 
 source = "src"
-
-preferred_target = "native"

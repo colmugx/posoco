@@ -1,18 +1,18 @@
 ///|
-/// Hook.on_post_event real-time channel whitebox tests (BR-6/BR-7: the
+/// PipelineHook.on_post_event real-time channel whitebox tests (BR-6/BR-7: the
 /// former `Observer::on_kernel_event` effect-level channel was folded into
-/// `Hook::on_post_event`).
+/// `PipelineHook::on_post_event`).
 ///
 /// Verifies the pump fires each hook's `on_post_event(HookStage)`
 /// immediately after every effect commits, in real time (not batched at
 /// turn end like the session-level `Observer::on_event` channel).
 
 // ──────────────────────────────────────────────────────────────────────────
-// Test fixture: a Hook that only overrides on_post_event.
+// Test fixture: a PipelineHook that only overrides on_post_event.
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-/// Hook that records every HookStage delivered to `on_post_event`. Does NOT
+/// PipelineHook that records every HookStage delivered to `on_post_event`. Does NOT
 /// override `before_model` / `before_tool` — the trait's default
 /// implementations (pass-through / Approve) must be inherited cleanly, so
 /// the turn proceeds exactly as if no hook were registered at those points.
@@ -21,7 +21,7 @@ struct EffectRecorder {
 }
 
 ///|
-pub impl @port.Hook for EffectRecorder with fn on_post_event(
+pub impl @port.PipelineHook for EffectRecorder with fn on_post_event(
   self : EffectRecorder,
   stage : @port.HookStage,
 ) -> Unit {
@@ -40,7 +40,7 @@ async test "hook_post_event/model_only_turn_fires_model_completed" {
   let host = FixtureHost([Ok(fixture_stop("hi"))], Map::from_array([]))
   let journal = InMemoryJournal()
   let recorder = EffectRecorder::{ stages: [] }
-  let recorder_ref : &@port.Hook = recorder as &@port.Hook
+  let recorder_ref : &@port.PipelineHook = recorder as &@port.PipelineHook
   // Build a minimal config with the recorder as the sole hook.
   let mailbox_instance = ControlMailbox()
   let mailbox : &Mailbox = mailbox_instance as &Mailbox
@@ -86,7 +86,7 @@ async test "hook_post_event/tool_turn_fires_model_then_tool" {
   )
   let journal = InMemoryJournal()
   let recorder = EffectRecorder::{ stages: [] }
-  let recorder_ref : &@port.Hook = recorder as &@port.Hook
+  let recorder_ref : &@port.PipelineHook = recorder as &@port.PipelineHook
   let mailbox_instance = ControlMailbox()
   let mailbox : &Mailbox = mailbox_instance as &Mailbox
   let host_ref : &@kernel_exec.HostRuntime = host as &@kernel_exec.HostRuntime

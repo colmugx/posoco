@@ -21,7 +21,7 @@
 ///   reverse registration order; cleanup failure propagates (loud).
 ///
 /// All methods have defaults: an extension overrides only the phases it
-/// cares about, and adding a phase is non-breaking (same pattern as `Hook`).
+/// cares about, and adding a phase is non-breaking (same pattern as `PipelineHook`).
 pub(open) trait Lifecycle {
   fn on_compose(Self, ctx : CompositionView) -> Unit raise @error.CompositionError = _
   async fn on_start(Self) -> Unit = _

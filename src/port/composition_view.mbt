@@ -8,7 +8,7 @@
 /// Curation discipline: the view only ever carries capabilities whose use
 /// cannot bypass governance. `model` calls still carry `InvocationScope`
 /// attribution; `ui` has no governance surface. The view NEVER exposes tool
-/// invocation (would bypass `Hook::before_tool`), session stores (state
+/// invocation (would bypass `PipelineHook::before_tool`), session stores (state
 /// ownership), or observer-event emission (core-owned). Fields are private
 /// with getters so new capabilities can be added without breaking
 /// extensions that destructure or construct views in tests.

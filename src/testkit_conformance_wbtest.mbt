@@ -530,7 +530,7 @@ async test "tk_observer_event_accessor_is_deep_snapshot" {
 // ---------------------------------------------------------------------------
 
 ///|
-test "tk_hook_records_stage_and_configured_abort" {
+async test "tk_hook_records_stage_and_configured_abort" {
   let hook = RecordingHook()
   hook.abort_when("before_model", "policy rejected model call")
   let result : Result[Array[@kernel.Message], String] = try
@@ -565,8 +565,7 @@ async test "tk_hook_records_stage_and_configured_deferral" {
   }
   let result = hook.before_tool(call)
   match result {
-    @port.ToolHookDecision::Defer(reason~) =>
-      assert_eq(reason, "approval required")
+    @port.ToolDecision::Defer(reason~) => assert_eq(reason, "approval required")
     _ => fail("configured hook deferral should return Defer")
   }
   let records = hook.records()
@@ -580,7 +579,7 @@ async test "tk_hook_records_stage_and_configured_deferral" {
 }
 
 ///|
-test "tk_hook_records_pass_through_outcome" {
+async test "tk_hook_records_pass_through_outcome" {
   let hook = RecordingHook()
   let msgs = [
     @kernel.Message::UserMessage(content=[@kernel.Content::Text("hello")]),
@@ -597,7 +596,7 @@ test "tk_hook_records_pass_through_outcome" {
 }
 
 ///|
-test "tk_hook_record_accessor_is_deep_snapshot" {
+async test "tk_hook_record_accessor_is_deep_snapshot" {
   let hook = RecordingHook()
   let msg = @kernel.Message::UserMessage(content=[
     @kernel.Content::Text("original"),

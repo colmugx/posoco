@@ -249,7 +249,7 @@ async test "t07_load_error_emits_one_safe_turnfailed" {
 ///|
 async test "t07_afterturn_hook_failure_is_observable_but_nonfatal" {
   // In the Puppet path, PostEventHook is non-failable (returns Unit without
-  // raise). Hook abort scenarios are now handled through PreModelHook.
+  // raise). PipelineHook abort scenarios are now handled through PreModelHook.
   // This test verifies that a PreModelHook abort still emits exactly one
   // terminal event (TurnFailed).
   let model = @posoco.ScriptedModel([
@@ -272,7 +272,7 @@ async test "t07_afterturn_hook_failure_is_observable_but_nonfatal" {
     e => Err(e)
   }
   match result {
-    Err(@error.AgentError::HookAborted(_)) => ()
+    Err(@error.AgentError::PipelineAborted(_)) => ()
     _ =>
       fail(
         "expected hook abort (non-fatal PostEventHook modeled via PreModelHook)",
@@ -286,8 +286,8 @@ async test "t07_afterturn_hook_failure_is_observable_but_nonfatal" {
 async test "t07_error_hook_failure_preserves_primary_and_is_observable" {
   // Puppet path: PreModelHook can abort before the model is called. When the
   // model would have failed but the hook aborts first, the primary error is
-  // the HookAborted (not the model error). This test verifies the abort is
-  // observable as HookAborted.
+  // the PipelineAborted (not the model error). This test verifies the abort is
+  // observable as PipelineAborted.
   let model = @posoco.ScriptedModel([
     @posoco.Fail(@error.ModelError::Transport("primary network failure")),
   ])
@@ -306,8 +306,8 @@ async test "t07_error_hook_failure_preserves_primary_and_is_observable" {
     e => Err(e)
   }
   match result {
-    Err(@error.AgentError::HookAborted(_)) => ()
-    _ => fail("expected HookAborted (PreModelHook fires before model call)")
+    Err(@error.AgentError::PipelineAborted(_)) => ()
+    _ => fail("expected PipelineAborted (PreModelHook fires before model call)")
   }
   let events = obs.events()
   assert_eq(count_terminal_events(events), 1)
@@ -333,8 +333,8 @@ async test "t07_turnerror_hook_failure_preserves_primary_and_is_observable" {
     e => Err(e)
   }
   match result {
-    Err(@error.AgentError::HookAborted(_)) => ()
-    _ => fail("expected HookAborted")
+    Err(@error.AgentError::PipelineAborted(_)) => ()
+    _ => fail("expected PipelineAborted")
   }
   let events = obs.events()
   assert_eq(count_terminal_events(events), 1)
@@ -344,7 +344,7 @@ async test "t07_turnerror_hook_failure_preserves_primary_and_is_observable" {
 async test "t07_aftertool_hook_failure_is_observable_but_nonfatal" {
   // Puppet path: tool execution is followed by PreModelHook in the next
   // pump iteration. A pre_model_hook abort before the second model call
-  // surfaces as HookAborted.
+  // surfaces as PipelineAborted.
   let model = @posoco.ScriptedModel([
     @posoco.Respond(
       @posoco.tk_tool_call_response("probe", "tc_secondary", Json::null()),
@@ -381,8 +381,8 @@ async test "t07_aftertool_hook_failure_is_observable_but_nonfatal" {
     e => Err(e)
   }
   match result {
-    Err(@error.AgentError::HookAborted(_)) => ()
-    _ => fail("expected HookAborted")
+    Err(@error.AgentError::PipelineAborted(_)) => ()
+    _ => fail("expected PipelineAborted")
   }
   let events = obs.events()
   assert_eq(count_terminal_events(events), 1)
@@ -408,7 +408,7 @@ async test "t07_beforemodel_abort_emits_exactly_one_turnfailed" {
     e => Err(e)
   }
   match result {
-    Err(@error.AgentError::HookAborted(_)) => ()
+    Err(@error.AgentError::PipelineAborted(_)) => ()
     _ => fail("expected BeforeModel hook abort")
   }
   let events = obs.events()
@@ -416,7 +416,7 @@ async test "t07_beforemodel_abort_emits_exactly_one_turnfailed" {
   for event in events {
     match event {
       TurnFailed(reason) => {
-        assert_true(reason.contains("AgentError::HookAborted"))
+        assert_true(reason.contains("AgentError::PipelineAborted"))
         assert_true(!reason.contains("private prompt"))
       }
       _ => ()
@@ -445,7 +445,7 @@ async test "t07_premodel_abort_emits_turnstarted_and_one_terminal_event" {
     e => Err(e)
   }
   match result {
-    Err(@error.AgentError::HookAborted(_)) => ()
+    Err(@error.AgentError::PipelineAborted(_)) => ()
     _ => fail("expected PreModelHook abort")
   }
   let events = obs.events()

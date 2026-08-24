@@ -7,7 +7,7 @@
 /// Extension authors may register their own hook implementations instead of
 /// or alongside these.
 
-// SystemPromptHook — Hook impl that assembles + injects the prompt
+// SystemPromptHook — PipelineHook impl that assembles + injects the prompt
 
 ///|
 /// Combines a fixed base prompt with contributor sections and prepends the
@@ -57,7 +57,7 @@ pub fn SystemPromptHook::assemble(self : SystemPromptHook) -> String {
 /// Idempotent injection: replaces the existing SystemMessage at index 0
 /// (structural detection, not text-marker based) so repeated hook runs
 /// do not accumulate.
-pub impl @port.Hook for SystemPromptHook with fn before_model(
+pub impl @port.PipelineHook for SystemPromptHook with fn before_model(
   self : SystemPromptHook,
   messages : Array[@kernel.Message],
 ) -> Array[@kernel.Message] raise @port.HookAbort {
@@ -89,7 +89,7 @@ pub impl @port.Hook for SystemPromptHook with fn before_model(
 // MemoryRetrievalHook
 
 ///|
-/// MemoryRetrievalHook: Hook (before_model) that retrieves durable memory
+/// MemoryRetrievalHook: PipelineHook (before_model) that retrieves durable memory
 /// and injects as a SystemMessage (after the system-prompt). Best-effort,
 /// non-fatal — a search failure never aborts the turn; messages pass
 /// through unchanged and the failure is reported through `on_failure`
@@ -190,10 +190,13 @@ fn MemoryRetrievalHook::extract_query(
 ///|
 /// Search every MemoryPort and merge results. Failures are reported via
 /// `on_failure` and swallowed — the turn continues without memory context.
-fn MemoryRetrievalHook::search_all(
+/// `noraise`: every `MemoryPort::search` raise is caught locally, so the
+/// async slot it feeds (`before_model`, typed `raise HookAbort`) never
+/// widens.
+async fn MemoryRetrievalHook::search_all(
   self : MemoryRetrievalHook,
   query : String,
-) -> Array[@types.MemoryEntry] {
+) -> Array[@types.MemoryEntry] noraise {
   let out : Array[@types.MemoryEntry] = []
   for mem in self.memories {
     let q : @types.MemoryQuery = {
@@ -267,7 +270,7 @@ fn MemoryRetrievalHook::inject(
 }
 
 ///|
-pub impl @port.Hook for MemoryRetrievalHook with fn before_model(
+pub impl @port.PipelineHook for MemoryRetrievalHook with fn before_model(
   self : MemoryRetrievalHook,
   messages : Array[@kernel.Message],
 ) -> Array[@kernel.Message] raise @port.HookAbort {
@@ -286,8 +289,8 @@ pub impl @port.Hook for MemoryRetrievalHook with fn before_model(
 // UiRenderHook
 
 ///|
-/// UiRenderHook: Hook (on_post_event) that projects events into UI render
-/// intents. Non-raising by contract (both `Hook::on_post_event` and
+/// UiRenderHook: PipelineHook (on_post_event) that projects events into UI render
+/// intents. Non-raising by contract (both `PipelineHook::on_post_event` and
 /// `UiPort::render` are non-raising), so there is nothing to propagate.
 pub(all) struct UiRenderHook {
   ui : &@port.UiPort
@@ -335,7 +338,7 @@ fn UiRenderHook::render_failure(
 }
 
 ///|
-pub impl @port.Hook for UiRenderHook with fn on_post_event(
+pub impl @port.PipelineHook for UiRenderHook with fn on_post_event(
   self : UiRenderHook,
   stage : @port.HookStage,
 ) -> Unit {

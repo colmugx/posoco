@@ -222,6 +222,10 @@ priv struct AgentRuntime {
   /// with the port the Puppet executes through — no second composition path.
   model : &@port.ModelPort
   observers : Array[&@port.Observer]
+  /// The composed hook chain in interception order — the same array the
+  /// Puppet executes — retained for Agent-level dispatch points that fire
+  /// outside the pump (`PipelineHook::on_turn_end`).
+  hooks : Array[&@port.PipelineHook]
   sessions : Array[&@port.SessionStore]
   lifecycle : Array[&@port.Lifecycle]
   commands : Array[&@port.CommandPort]
@@ -315,7 +319,7 @@ fn AgentRuntime::compose(
   // projection first, memory retrieval second, extension-registered hooks
   // next, UI rendering last (opt-in, so extensions see events before the
   // renderer).
-  let composed_hooks : Array[&@port.Hook] = []
+  let composed_hooks : Array[&@port.PipelineHook] = []
   // 1. System prompt projection (if any contributors are configured).
   if !agg.prompt_contributors.is_empty() {
     let sections : Array[SystemPromptSection] = []
@@ -329,7 +333,7 @@ fn AgentRuntime::compose(
       base_prompt="", // base comes from a contributor if desired
       contributors=sections,
     )
-    composed_hooks.push(sys_hook as &@port.Hook)
+    composed_hooks.push(sys_hook as &@port.PipelineHook)
   }
 
   if !agg.memory.is_empty() {
@@ -340,7 +344,7 @@ fn AgentRuntime::compose(
         emit_secondary_failure(observers, "memory_retrieval", reason)
       },
     )
-    composed_hooks.push(mem_hook as &@port.Hook)
+    composed_hooks.push(mem_hook as &@port.PipelineHook)
   }
 
   for h in agg.hooks {
@@ -351,7 +355,7 @@ fn AgentRuntime::compose(
   // only when the host asks for it via `ui_projection=true`.
   if ui_projection {
     let ui_hook = UiRenderHook::UiRenderHook(ui=agg.ui)
-    composed_hooks.push(ui_hook as &@port.Hook)
+    composed_hooks.push(ui_hook as &@port.PipelineHook)
   }
 
   let mailbox = @puppetry.ControlMailbox::ControlMailbox()
@@ -413,6 +417,7 @@ fn AgentRuntime::compose(
     puppet: @puppetry.Puppet(puppet_config),
     model: agg.model,
     observers: agg.observers,
+    hooks: composed_hooks,
     sessions: agg.sessions,
     lifecycle: agg.lifecycle.map(fn(entry) { entry.port }),
     commands: agg.commands,
@@ -439,7 +444,7 @@ fn AgentRuntime::compose(
 /// `ui_projection` (default `false`, BR-5): when `true`, Posoco's built-in
 /// render policy (`UiRenderHook` over the aggregated `UiPort`) is appended
 /// to the hook chain. Hosts with their own UI policy leave it off and
-/// register their own `Hook` instead.
+/// register their own `PipelineHook` instead.
 pub fn Agent::Agent(
   exts~ : Array[&@port.Extension],
   config~ : AgentConfig,
@@ -511,7 +516,7 @@ fn agent_error_category(error : Error) -> String {
     @error.AgentError::Session(_) => "AgentError::Session"
     @error.AgentError::Runtime(_) => "AgentError::Runtime"
     @error.AgentError::ToolLoopExceeded(..) => "AgentError::ToolLoopExceeded"
-    @error.AgentError::HookAborted(_) => "AgentError::HookAborted"
+    @error.AgentError::PipelineAborted(_) => "AgentError::PipelineAborted"
     _ => "Unclassified"
   }
 }
@@ -583,6 +588,57 @@ fn AgentRuntime::emit_turn_event(
 ) -> Unit {
   for observer in self.observers {
     observer.on_event_at(scope, agent_snapshot_turn_event(event))
+  }
+}
+
+///|
+/// Dispatch `PipelineHook::on_turn_begin` in registration order, after the
+/// `TurnStarted` observer projection and before the pump's first
+/// `before_model`. Symmetric with `dispatch_on_turn_end`: pre-turn failures
+/// (the shutdown guard, a lifecycle `on_start` raise) dispatch nothing — the
+/// turn never began. A raise is a secondary failure: observers get a
+/// `secondary_failure` event, the turn still proceeds, and later hooks still
+/// run. A cancellation error is not a defect and is not reported.
+async fn AgentRuntime::dispatch_on_turn_begin(
+  self : AgentRuntime,
+) -> Unit noraise {
+  for hook in self.hooks {
+    hook.on_turn_begin() catch {
+      error =>
+        if !@async.is_cancellation_error(error) {
+          emit_secondary_failure(
+            self.observers,
+            "on_turn_begin",
+            error.to_string(),
+          )
+        }
+    }
+  }
+}
+
+///|
+/// Dispatch `PipelineHook::on_turn_end` in registration order, after the terminal
+/// observer projection and just before `run_single_turn` returns. Dispatched
+/// on both the completed and the failed path. The terminal outcome is not a
+/// payload — hooks read it from the Observer channel (`TurnCompleted` /
+/// `TurnFailed`), which fires first. A raise
+/// is a secondary failure: observers get a `secondary_failure` event, the
+/// turn's primary outcome is never replaced, and later hooks still run. A
+/// cancellation error is not a defect and is not reported.
+async fn AgentRuntime::dispatch_on_turn_end(
+  self : AgentRuntime,
+) -> Unit noraise {
+  for hook in self.hooks {
+    hook.on_turn_end() catch {
+      error =>
+        if !@async.is_cancellation_error(error) {
+          emit_secondary_failure(
+            self.observers,
+            "on_turn_end",
+            error.to_string(),
+          )
+        }
+    }
   }
 }
 
@@ -687,16 +743,22 @@ async fn AgentRuntime::run_single_turn(
   // scope; the same identity drives the Puppet request below.
   let identity = self.mint_turn_identity(session_id)
   self.emit_turn_event(Some(identity.scope()), TurnStarted)
+  // Turn-begin hooks fire after the TurnStarted projection and before the
+  // pump's first before_model. Pre-turn failures above dispatch nothing —
+  // symmetric with on_turn_end's terminal-position semantics.
+  self.dispatch_on_turn_begin()
 
   let result = self.run_turn_via_puppet(input, session_id, identity) catch {
     primary => {
       let safe_reason = "turn failed: " + agent_error_category(primary)
       self.emit_turn_event(Some(identity.scope()), TurnFailed(safe_reason))
+      self.dispatch_on_turn_end()
       raise primary
     }
   }
 
   self.emit_turn_event(Some(identity.scope()), TurnCompleted)
+  self.dispatch_on_turn_end()
   result
 }
 
