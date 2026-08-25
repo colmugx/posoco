@@ -1134,6 +1134,7 @@ pub fn tk_config() -> AgentConfig {
     max_output_tokens: None,
     model_context_window: None,
     compact_threshold: None,
+    context_namespace: None,
   }
 }
 

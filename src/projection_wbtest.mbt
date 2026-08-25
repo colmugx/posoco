@@ -147,8 +147,8 @@ async test "m38_sysprompt/assembles_base_plus_contributors" {
 
 ///|
 /// When memory returns entries, the hook injects a memory SystemMessage
-/// carrying the `[MEMORY]` marker. The message lands after the system
-/// prompt (head).
+/// carrying the context-envelope opening `<posoco-context type="memory">`.
+/// The message lands after the system prompt (head).
 async test "m38_memory/injects_entries_after_system_prompt" {
   let entry : @types.MemoryEntry = {
     id: "m1",
@@ -172,7 +172,9 @@ async test "m38_memory/injects_entries_after_system_prompt" {
     SystemMessage(content~) =>
       match content {
         [Text(s), ..] => {
-          assert_true(s.has_prefix("[MEMORY]"))
+          assert_true(
+            s.has_prefix("<posoco-context type=\"memory\" trust=\"false\">"),
+          )
           assert_true(s.contains("prefer tabs over spaces"))
         }
         _ => fail("expected Text in memory message")

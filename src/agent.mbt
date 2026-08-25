@@ -14,6 +14,10 @@ pub(all) struct AgentConfig {
   /// context window, in (0, 1]. `None` defers to the active modelport's
   /// reported `compact_threshold`, falling back to the core default (0.88).
   compact_threshold : Double?
+  /// Host namespace for core-rendered context envelopes (currently the
+  /// memory-injection message). `None` uses the core default `"posoco"`,
+  /// rendering `<posoco-context ...>` elements.
+  context_namespace : String?
 }
 
 ///|
@@ -340,6 +344,10 @@ fn AgentRuntime::compose(
     let observers = agg.observers
     let mem_hook = MemoryRetrievalHook::MemoryRetrievalHook(
       memories=agg.memory,
+      namespace=match config.context_namespace {
+        Some(ns) => ns
+        None => "posoco"
+      },
       on_failure=fn(reason) {
         emit_secondary_failure(observers, "memory_retrieval", reason)
       },

@@ -90,13 +90,19 @@ pub impl @port.PipelineHook for SystemPromptHook with fn before_model(
 
 ///|
 /// MemoryRetrievalHook: PipelineHook (before_model) that retrieves durable memory
-/// and injects as a SystemMessage (after the system-prompt). Best-effort,
+/// and injects as a SystemMessage (after the system-prompt). Recalled entries
+/// render through `render_context` as one `<{namespace}-context
+/// type="memory" trust="false">` envelope. Best-effort,
 /// non-fatal — a search failure never aborts the turn; messages pass
 /// through unchanged and the failure is reported through `on_failure`
 /// (Agent wires this to the `Custom(source="posoco.core",
 /// label="secondary_failure")` observer event).
 pub(all) struct MemoryRetrievalHook {
   memories : Array[&@port.MemoryPort]
+  /// Host namespace for the rendered envelope element name
+  /// (`{namespace}-context`); the Agent facade resolves it from
+  /// `AgentConfig::context_namespace`.
+  namespace : String
   /// Max entries per search. Low default keeps context short.
   top_k : Int
   /// Invoked with a sanitized reason when a `MemoryPort::search` fails.
@@ -108,6 +114,7 @@ pub(all) struct MemoryRetrievalHook {
 ///|
 pub fn MemoryRetrievalHook::MemoryRetrievalHook(
   memories~ : Array[&@port.MemoryPort],
+  namespace? : String = "posoco",
   top_k? : Int = 5,
   on_failure? : (String) -> Unit,
 ) -> MemoryRetrievalHook {
@@ -115,7 +122,7 @@ pub fn MemoryRetrievalHook::MemoryRetrievalHook(
     Some(f) => f
     None => fn(_reason) { () }
   }
-  { memories, top_k, on_failure: handler }
+  { memories, namespace, top_k, on_failure: handler }
 }
 
 ///|
@@ -143,23 +150,28 @@ fn memory_safe_label(value : String) -> String {
 }
 
 ///|
-/// Marker prefix for idempotent detection of existing memory messages.
-let memory_marker : String = "[MEMORY]"
-
-///|
 /// Build a SystemMessage from retrieved entries. Returns `None` if empty.
+/// Entries render as `- {content}` lines inside one context envelope
+/// (`<{namespace}-context type="memory" trust="false">`). trust=false:
+/// recalled memory may be stale and must not override live instructions.
 fn MemoryRetrievalHook::build_memory_message(
-  _self : MemoryRetrievalHook,
+  self : MemoryRetrievalHook,
   entries : Array[@types.MemoryEntry],
 ) -> @kernel.Message? {
   if entries.is_empty() {
     return None
   }
-  let lines : Array[String] = [memory_marker]
+  let lines : Array[String] = []
   for entry in entries {
     lines.push("- " + entry.content)
   }
-  Some(@kernel.SystemMessage(content=[@kernel.Text(lines.join("\n"))]))
+  let rendered = render_context(
+    ns=self.namespace,
+    kind="memory",
+    trust=false,
+    content=lines.join("\n"),
+  )
+  Some(@kernel.SystemMessage(content=[@kernel.Text(rendered)]))
 }
 
 ///|
@@ -220,19 +232,22 @@ async fn MemoryRetrievalHook::search_all(
 
 ///|
 /// Idempotent injection: replace existing memory SystemMessage or insert
-/// after the system-prompt message.
+/// after the system-prompt message. Detection matches the envelope opening
+/// `<{namespace}-context type="memory"` on the first Text of a SystemMessage
+/// — the namespace is known to the hook, so detection stays deterministic.
 fn MemoryRetrievalHook::inject(
-  _self : MemoryRetrievalHook,
+  self : MemoryRetrievalHook,
   messages : Array[@kernel.Message],
   memory_msg : @kernel.Message,
 ) -> Array[@kernel.Message] {
+  let marker = "<\{self.namespace}-context type=\"memory\""
   let out : Array[@kernel.Message] = []
   let mut injected = false
   for m in messages {
     let is_memory_msg = match m {
       @kernel.SystemMessage(content~) =>
         match content {
-          [@kernel.Text(s), ..] => s.has_prefix(memory_marker)
+          [@kernel.Text(s), ..] => s.has_prefix(marker)
           _ => false
         }
       _ => false
