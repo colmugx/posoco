@@ -16,7 +16,7 @@ struct PolicyModel {
 impl @port.ModelPort for PolicyModel with fn chat(
   self,
   scope : @kernel.InvocationScope,
-  messages : Array[@kernel.Message],
+  messages : ArrayView[@kernel.Message],
   tools : Array[@kernel.ToolDef],
   options : @types.ChatOptions,
   stream : @types.StreamMode,
@@ -28,7 +28,7 @@ impl @port.ModelPort for PolicyModel with fn chat(
 impl @port.ModelPort for PolicyModel with fn compact(
   self,
   scope : @kernel.InvocationScope,
-  messages : Array[@kernel.Message],
+  messages : ArrayView[@kernel.Message],
   options : @types.ChatOptions,
   trigger : @kernel.CompactTrigger,
 ) -> @kernel.CompactResult raise @error.ModelError {

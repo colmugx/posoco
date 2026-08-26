@@ -84,6 +84,11 @@ pub(all) enum TurnEvent {
   TurnFailed(String)
   ToolCallDeferred(call~ : @kernel.ToolCall, reason~ : String)
   StreamChunkReceived(chunk~ : StreamChunk)
+  /// Emitted when the buffered chunk queue overflowed and oldest chunks were
+  /// dropped. `count` is the number of dropped `StreamChunkReceived` events.
+  /// This event is synthesized by the chunk dispatcher and inserted before
+  /// the next delivered chunk or terminal event so observers can detect loss.
+  StreamChunksDropped(count~ : Int)
   /// Configuration warning emitted by an extension or product configuration
   /// flow when a requested setting cannot be applied. This event lets
   /// subscribers surface the warning without coupling to the configuration
@@ -116,6 +121,7 @@ pub impl Show for TurnEvent with fn to_string(self : TurnEvent) -> String {
     ToolCallDeferred(call~, reason~) =>
       "ToolCallDeferred(\{call.call_id.to_string()}, \{reason})"
     StreamChunkReceived(..) => "StreamChunkReceived"
+    StreamChunksDropped(count~) => "StreamChunksDropped(count=\{count})"
     ConfigWarning(field~, value~, reason~) =>
       "ConfigWarning(field=\{field}, value=\{value}, reason=\{reason})"
     ConfigChanged(field~, old_value~, new_value~) =>

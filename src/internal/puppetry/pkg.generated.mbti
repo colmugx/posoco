@@ -5,6 +5,7 @@ import {
   "colmugx/posoco/internal/kernel_exec",
   "colmugx/posoco/kernel",
   "colmugx/posoco/port",
+  "colmugx/posoco/types",
   "moonbitlang/async/aqueue",
   "moonbitlang/async/cond_var",
   "moonbitlang/core/debug",
@@ -399,7 +400,7 @@ pub(all) struct PuppetConfig {
   journal : &RunJournal
   contributors : Array[&JournalContributor]
   subscribers : Array[&EventSubscriber]
-  stream_chunks : ((Json) -> Unit)?
+  stream_chunks : ((@types.StreamChunk) -> Unit)?
   hooks : Array[&@port.PipelineHook]
   max_iterations : Int?
   commands : Array[&@port.CommandPort]

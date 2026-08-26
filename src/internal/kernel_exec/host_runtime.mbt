@@ -4,9 +4,10 @@
 /// This trait is async (hosts use async I/O); the Kernel reducer never calls it.
 
 ///|
-/// Streaming chunk callback. The host delivers raw provider chunks to the
-/// observer/telemetry surface without interpretation (ADR §2.11).
-pub type HostChunkCallback = (Json) -> Unit
+/// Streaming chunk callback. The host delivers canonical `StreamChunk` values
+/// to the observer/telemetry surface; interpretation is still a host/telemetry
+/// concern (ADR §2.11), but the contract is the typed `StreamChunk` shape.
+pub type HostChunkCallback = (@types.StreamChunk) -> Unit
 
 ///|
 /// Host runtime contract. Implementations live outside the Kernel package.
@@ -19,11 +20,13 @@ pub(open) trait HostRuntime {
   /// pump starts a new thread using `processed_messages` as the new body.
   /// `scope` carries the run/session identity; `scope.effect_id` is always
   /// `Some` here and hosts that propagate cancellation key in-flight model
-  /// calls by it, mirroring the tool side's `effect_id`.
+  /// calls by it, mirroring the tool side's `effect_id`. `messages` is an
+  /// `ArrayView` borrow valid only for the duration of the call; hosts must
+  /// not retain it.
   async fn call_model(
     Self,
     scope : @kernel.InvocationScope,
-    messages : Array[@kernel.Message],
+    messages : ArrayView[@kernel.Message],
     tool_definitions : Array[@kernel.ToolDef],
     call_options : Json,
     on_chunk : HostChunkCallback?,
@@ -56,11 +59,12 @@ pub(open) trait HostRuntime {
   /// the compacted message body plus a `CompactMode`. `trigger` lets the
   /// modelport pick a strategy (Auto = cheap elision, Manual = thorough).
   /// `scope.effect_id` is always `None` here: compact is host-driven, not a
-  /// reducer-allocated effect.
+  /// reducer-allocated effect. `messages` is an `ArrayView` borrow valid only
+  /// for the duration of the call; hosts must not retain it.
   async fn compact(
     Self,
     scope : @kernel.InvocationScope,
-    messages : Array[@kernel.Message],
+    messages : ArrayView[@kernel.Message],
     call_options : Json,
     trigger : @kernel.CompactTrigger,
   ) -> Result[@kernel.CompactResult, @kernel.ModelFailure]

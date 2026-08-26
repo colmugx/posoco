@@ -91,18 +91,16 @@ pub impl @port.PipelineHook for SystemPromptHook with fn before_model(
 ///|
 /// MemoryRetrievalHook: PipelineHook (before_model) that retrieves durable memory
 /// and injects as a SystemMessage (after the system-prompt). Recalled entries
-/// render through `render_context` as one `<{namespace}-context
-/// type="memory" trust="false">` envelope. Best-effort,
+/// render as a plain system-prompt-style section — a header, a provenance
+/// line naming the contributing ports (`from {source}. For Your
+/// Information.` — recalled memory may be stale and must not override live
+/// instructions), then one `- {content}` line per entry. Best-effort,
 /// non-fatal — a search failure never aborts the turn; messages pass
 /// through unchanged and the failure is reported through `on_failure`
 /// (Agent wires this to the `Custom(source="posoco.core",
 /// label="secondary_failure")` observer event).
 pub(all) struct MemoryRetrievalHook {
   memories : Array[&@port.MemoryPort]
-  /// Host namespace for the rendered envelope element name
-  /// (`{namespace}-context`); the Agent facade resolves it from
-  /// `AgentConfig::context_namespace`.
-  namespace : String
   /// Max entries per search. Low default keeps context short.
   top_k : Int
   /// Invoked with a sanitized reason when a `MemoryPort::search` fails.
@@ -114,7 +112,6 @@ pub(all) struct MemoryRetrievalHook {
 ///|
 pub fn MemoryRetrievalHook::MemoryRetrievalHook(
   memories~ : Array[&@port.MemoryPort],
-  namespace? : String = "posoco",
   top_k? : Int = 5,
   on_failure? : (String) -> Unit,
 ) -> MemoryRetrievalHook {
@@ -122,8 +119,13 @@ pub fn MemoryRetrievalHook::MemoryRetrievalHook(
     Some(f) => f
     None => fn(_reason) { () }
   }
-  { memories, namespace, top_k, on_failure: handler }
+  { memories, top_k, on_failure: handler }
 }
+
+///|
+/// Section header opening every injected memory message; also the
+/// idempotent-detection marker for `inject`.
+let memory_section_header : String = "## Any Memory About This Work"
 
 ///|
 /// Truncate and flatten an adapter-controlled error string before it can
@@ -151,9 +153,10 @@ fn memory_safe_label(value : String) -> String {
 
 ///|
 /// Build a SystemMessage from retrieved entries. Returns `None` if empty.
-/// Entries render as `- {content}` lines inside one context envelope
-/// (`<{namespace}-context type="memory" trust="false">`). trust=false:
-/// recalled memory may be stale and must not override live instructions.
+/// Layout: section header, provenance line naming every contributing port
+/// (`from X, Y. For Your Information.` — recalled memory may be stale and
+/// must not override live instructions), then one `- {content}` line per
+/// entry.
 fn MemoryRetrievalHook::build_memory_message(
   self : MemoryRetrievalHook,
   entries : Array[@types.MemoryEntry],
@@ -161,17 +164,18 @@ fn MemoryRetrievalHook::build_memory_message(
   if entries.is_empty() {
     return None
   }
-  let lines : Array[String] = []
+  let sources : Array[String] = []
+  for mem in self.memories {
+    sources.push(mem.source_name())
+  }
+  let lines : Array[String] = [
+    memory_section_header,
+    "from \{sources.join(", ")}. For Your Information.",
+  ]
   for entry in entries {
     lines.push("- " + entry.content)
   }
-  let rendered = render_context(
-    ns=self.namespace,
-    kind="memory",
-    trust=false,
-    content=lines.join("\n"),
-  )
-  Some(@kernel.SystemMessage(content=[@kernel.Text(rendered)]))
+  Some(@kernel.SystemMessage(content=[@kernel.Text(lines.join("\n"))]))
 }
 
 ///|
@@ -200,32 +204,51 @@ fn MemoryRetrievalHook::extract_query(
 }
 
 ///|
-/// Search every MemoryPort and merge results. Failures are reported via
-/// `on_failure` and swallowed — the turn continues without memory context.
-/// `noraise`: every `MemoryPort::search` raise is caught locally, so the
-/// async slot it feeds (`before_model`, typed `raise HookAbort`) never
-/// widens.
+/// Search every MemoryPort concurrently and merge results. Failures are
+/// reported via `on_failure` and swallowed — the turn continues without
+/// memory context. `noraise`: every `MemoryPort::search` raise is caught
+/// locally, so the async slot it feeds (`before_model`, typed `raise
+/// HookAbort`) never widens. Results stay in port-registration order
+/// because `@async.all` returns values in submission order.
 async fn MemoryRetrievalHook::search_all(
   self : MemoryRetrievalHook,
   query : String,
 ) -> Array[@types.MemoryEntry] noraise {
+  let attempted : Result[
+    Array[Result[Array[@types.MemoryEntry], @error.MemoryError]],
+    Error,
+  ] = Ok(
+    @async.all(
+      self.memories.map(fn(mem) {
+        () => {
+          let q : @types.MemoryQuery = {
+            query,
+            top_k: self.top_k,
+            threshold: None,
+            filter: Map::from_array([]),
+          }
+          Ok(mem.search(q)) catch {
+            err => Err(err)
+          }
+        }
+      }),
+    ),
+  ) catch {
+    error => Err(error)
+  }
   let out : Array[@types.MemoryEntry] = []
-  for mem in self.memories {
-    let q : @types.MemoryQuery = {
-      query,
-      top_k: self.top_k,
-      threshold: None,
-      filter: Map::from_array([]),
-    }
-    let entries : Array[@types.MemoryEntry] = mem.search(q) catch {
-      err => {
-        (self.on_failure)(memory_safe_label(err.to_string()))
-        []
+  match attempted {
+    Ok(results) =>
+      for result in results {
+        match result {
+          Ok(entries) =>
+            for e in entries {
+              out.push(e)
+            }
+          Err(err) => (self.on_failure)(memory_safe_label(err.to_string()))
+        }
       }
-    }
-    for e in entries {
-      out.push(e)
-    }
+    Err(_) => () // cancellation: turn is aborting, return no memory context
   }
   out
 }
@@ -233,14 +256,14 @@ async fn MemoryRetrievalHook::search_all(
 ///|
 /// Idempotent injection: replace existing memory SystemMessage or insert
 /// after the system-prompt message. Detection matches the envelope opening
-/// `<{namespace}-context type="memory"` on the first Text of a SystemMessage
-/// — the namespace is known to the hook, so detection stays deterministic.
+/// Idempotent injection: replace the existing memory SystemMessage (detected
+/// by the section header prefix) or insert after the system-prompt message.
 fn MemoryRetrievalHook::inject(
-  self : MemoryRetrievalHook,
+  _self : MemoryRetrievalHook,
   messages : Array[@kernel.Message],
   memory_msg : @kernel.Message,
 ) -> Array[@kernel.Message] {
-  let marker = "<\{self.namespace}-context type=\"memory\""
+  let marker = memory_section_header
   let out : Array[@kernel.Message] = []
   let mut injected = false
   for m in messages {

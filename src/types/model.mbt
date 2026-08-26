@@ -1,14 +1,10 @@
 ///|
-/// Streaming chunk shape emitted by modelports inside the `Stream(cb)`
-/// callback of `ModelPort::chat`. This is the modelport's own representation
-/// of provider chunks; posoco does NOT define a canonical chunk type (ADR
-/// §2.11 — streaming is host/telemetry concern, not transcript fact).
+/// Canonical streaming chunk shape emitted by modelports through the
+/// `Stream(cb)` callback of `ModelPort::chat`. `HostChunkCallback` receives
+/// this type directly; there is no separate JSON wire contract.
 ///
-/// `StreamChunk` exists as a public type because it is useful for modelports
-/// that want a shared wire vocabulary (ext-llm and ext-deepseek both emit
-/// these). Modelports that prefer their own chunk type are free to use it;
-/// the only contract is "what you pass to the `Stream(cb)` callback, the
-/// `HostChunkCallback` consumer must be able to decode".
+/// Streaming remains a host/telemetry concern, not a transcript fact
+/// (ADR §2.11).
 pub(all) enum StreamChunk {
   TextDelta(token~ : String)
   ReasoningDelta(token~ : String)
@@ -31,17 +27,22 @@ pub(all) enum StreamChunk {
 ///|
 /// Mutable per-index accumulator used by `StreamAccumulator` while assembling
 /// streamed tool calls. Each streamed `ToolCallDelta` targets an `index`;
-/// the builder records the first non-empty `id` / `name` / `arguments_json`
+/// the builder records the first non-empty `id` / `name` / `arguments_json()`
 /// it sees for that index.
 pub(all) struct ToolCallBuilder {
   mut id : String
   mut name : String
-  mut arguments_json : String
+  mut arguments_buf : StringBuilder
 } derive(Debug)
 
 ///|
 pub fn ToolCallBuilder::ToolCallBuilder() -> ToolCallBuilder {
-  { id: "", name: "", arguments_json: "" }
+  { id: "", name: "", arguments_buf: StringBuilder::new() }
+}
+
+///|
+pub fn ToolCallBuilder::arguments_json(self : ToolCallBuilder) -> String {
+  self.arguments_buf.to_string()
 }
 
 ///|
@@ -57,8 +58,8 @@ pub fn ToolCallBuilder::ToolCallBuilder() -> ToolCallBuilder {
 /// is deleted — `chat` now returns `ModelCallResult` whose `completion`
 /// field is the canonical `Completion`.
 pub(all) struct StreamAccumulator {
-  mut text : String
-  mut reasoning : String
+  mut text_buf : StringBuilder
+  mut reasoning_buf : StringBuilder
   tool_calls : Array[ToolCallBuilder]
   mut finish_reason : String
   mut usage_input : Int?
@@ -71,8 +72,8 @@ pub(all) struct StreamAccumulator {
 ///|
 pub fn StreamAccumulator::StreamAccumulator() -> StreamAccumulator {
   {
-    text: "",
-    reasoning: "",
+    text_buf: StringBuilder::new(),
+    reasoning_buf: StringBuilder::new(),
     tool_calls: [],
     finish_reason: "stop",
     usage_input: None,
@@ -84,13 +85,23 @@ pub fn StreamAccumulator::StreamAccumulator() -> StreamAccumulator {
 }
 
 ///|
+pub fn StreamAccumulator::text(self : StreamAccumulator) -> String {
+  self.text_buf.to_string()
+}
+
+///|
+pub fn StreamAccumulator::reasoning(self : StreamAccumulator) -> String {
+  self.reasoning_buf.to_string()
+}
+
+///|
 pub fn StreamAccumulator::push(
   self : StreamAccumulator,
   chunk : StreamChunk,
 ) -> Unit {
   match chunk {
-    TextDelta(token~) => self.text = self.text + token
-    ReasoningDelta(token~) => self.reasoning = self.reasoning + token
+    TextDelta(token~) => self.text_buf.write_string(token)
+    ReasoningDelta(token~) => self.reasoning_buf.write_string(token)
     ToolCallDelta(index~, id~, name~, arguments_delta~) => {
       while self.tool_calls.length() <= index {
         self.tool_calls.push(ToolCallBuilder())
@@ -105,7 +116,7 @@ pub fn StreamAccumulator::push(
         None => ()
       }
       match arguments_delta {
-        Some(delta) => builder.arguments_json = builder.arguments_json + delta
+        Some(delta) => builder.arguments_buf.write_string(delta)
         None => ()
       }
     }
@@ -147,12 +158,13 @@ pub fn StreamAccumulator::to_completion(
         "incomplete streamed tool call at index \{index}: missing name",
       )
     }
-    if tc.arguments_json == "" {
+    let tc_args = tc.arguments_json()
+    if tc_args == "" {
       raise ResponseParse(
         "incomplete streamed tool call at index \{index}: missing arguments JSON",
       )
     }
-    let args : Json = @json.parse(tc.arguments_json) catch {
+    let args : Json = @json.parse(tc_args) catch {
       _ =>
         raise ResponseParse(
           "malformed tool-call arguments JSON at index \{index}; raw identifiers and payload omitted",
@@ -164,15 +176,17 @@ pub fn StreamAccumulator::to_completion(
       arguments: args,
     })
   }
-  let reasoning_opt : @kernel.Reasoning? = if self.reasoning == "" {
+  let reasoning_text = self.reasoning()
+  let reasoning_opt : @kernel.Reasoning? = if reasoning_text == "" {
     None
   } else {
-    Some(@kernel.Reasoning::{ content: self.reasoning, raw: None })
+    Some(@kernel.Reasoning::{ content: reasoning_text, raw: None })
   }
-  let content : Array[@kernel.Content] = if self.text == "" {
+  let text = self.text()
+  let content : Array[@kernel.Content] = if text == "" {
     []
   } else {
-    [@kernel.Text(self.text)]
+    [@kernel.Text(text)]
   }
   let finish : @kernel.FinishReason = match self.finish_reason {
     "stop" => @kernel.Stop

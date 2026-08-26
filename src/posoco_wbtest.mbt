@@ -10,7 +10,7 @@ struct MockModelPort {
 impl @port.ModelPort for MockModelPort with fn chat(
   self,
   _scope : @kernel.InvocationScope,
-  _messages : Array[@kernel.Message],
+  _messages : ArrayView[@kernel.Message],
   _tools : Array[@kernel.ToolDef],
   _options : @types.ChatOptions,
   _stream : @types.StreamMode,
@@ -28,7 +28,7 @@ impl @port.ModelPort for MockModelPort with fn chat(
 impl @port.ModelPort for MockModelPort with fn compact(
   _self,
   _scope : @kernel.InvocationScope,
-  _messages : Array[@kernel.Message],
+  _messages : ArrayView[@kernel.Message],
   _options : @types.ChatOptions,
   _trigger : @kernel.CompactTrigger,
 ) -> @kernel.CompactResult raise @error.ModelError {
@@ -144,7 +144,6 @@ fn make_config() -> AgentConfig {
     max_output_tokens: None,
     model_context_window: None,
     compact_threshold: None,
-    context_namespace: Some("posoco"),
   }
 }
 
@@ -770,7 +769,6 @@ async test "tool_loop_exceeded" {
     max_output_tokens: None,
     model_context_window: None,
     compact_threshold: None,
-    context_namespace: None,
   }
 
   let agent = Agent(
@@ -822,7 +820,6 @@ async test "unbounded_tool_rounds_complete_long_turn" {
       max_output_tokens: None,
       model_context_window: None,
       compact_threshold: None,
-      context_namespace: None,
     },
   )
   // Any raise (ToolLoopExceeded or otherwise) fails the test with the error.
@@ -869,7 +866,6 @@ async test "bounded_tool_rounds_allows_exactly_n_rounds" {
       max_output_tokens: None,
       model_context_window: None,
       compact_threshold: None,
-      context_namespace: None,
     },
   )
   match
@@ -1335,7 +1331,7 @@ async test "agent_tool_collision_detection" {
 ///|
 /// Mock ModelPort that emits StreamChunks then returns a final completion.
 /// R3 M3.7: chat now takes StreamMode; when stream is Stream(cb), the mock
-/// replays its chunks via cb (encoded as JSON via wbtest_stream_chunk_to_json).
+/// replays its chunks via cb as canonical StreamChunk values.
 struct MockStreamingModelPort {
   chunks : Array[@types.StreamChunk]
   final_response : @kernel.ModelCallResult
@@ -1345,7 +1341,7 @@ struct MockStreamingModelPort {
 impl @port.ModelPort for MockStreamingModelPort with fn chat(
   self,
   _scope : @kernel.InvocationScope,
-  _messages : Array[@kernel.Message],
+  _messages : ArrayView[@kernel.Message],
   _tools : Array[@kernel.ToolDef],
   _options : @types.ChatOptions,
   stream : @types.StreamMode,
@@ -1353,7 +1349,7 @@ impl @port.ModelPort for MockStreamingModelPort with fn chat(
   match stream {
     @types.Stream(cb) =>
       for chunk in self.chunks {
-        cb(wbtest_stream_chunk_to_json(chunk))
+        cb(chunk)
       }
     @types.NoStream => ()
   }
@@ -1364,7 +1360,7 @@ impl @port.ModelPort for MockStreamingModelPort with fn chat(
 impl @port.ModelPort for MockStreamingModelPort with fn compact(
   _self,
   _scope : @kernel.InvocationScope,
-  _messages : Array[@kernel.Message],
+  _messages : ArrayView[@kernel.Message],
   _options : @types.ChatOptions,
   _trigger : @kernel.CompactTrigger,
 ) -> @kernel.CompactResult raise @error.ModelError {
@@ -1376,34 +1372,6 @@ impl @port.ModelPort for MockStreamingModelPort with fn compact(
 ///|
 impl @port.ModelPort for MockStreamingModelPort with fn provider_config(_self) -> @port.ProviderConfig {
   @port.ProviderConfig::empty()
-}
-
-///|
-/// Encode a StreamChunk as the same JSON shape observers expect. Local copy
-/// of the helper in testkit.mbt (kept private to this wbtest file).
-fn wbtest_stream_chunk_to_json(chunk : @types.StreamChunk) -> Json {
-  match chunk {
-    @types.TextDelta(token~) =>
-      Json::object(
-        Map::from_array([
-          ("kind", Json::string("text")),
-          ("token", Json::string(token)),
-        ]),
-      )
-    @types.ReasoningDelta(token~) =>
-      Json::object(
-        Map::from_array([
-          ("kind", Json::string("reasoning")),
-          ("token", Json::string(token)),
-        ]),
-      )
-    @types.ToolCallDelta(..) =>
-      Json::object(Map::from_array([("kind", Json::string("tool_call_delta"))]))
-    @types.Usage(..) =>
-      Json::object(Map::from_array([("kind", Json::string("usage"))]))
-    @types.Finish(_) =>
-      Json::object(Map::from_array([("kind", Json::string("finish"))]))
-  }
 }
 
 ///|
@@ -1437,14 +1405,31 @@ async test "streaming_events_emitted_during_chat" {
   )
   let _ = agent.run_turn(user_msg("stream test"), "session_s1")
 
-  let mut stream_count = 0
-  for e in observer.events {
+  let observed_chunks : Array[@types.StreamChunk] = []
+  let mut model_response_index = -1
+  let mut turn_completed_index = -1
+  for i, e in observer.events {
     match e {
-      StreamChunkReceived(_) => stream_count = stream_count + 1
+      StreamChunkReceived(chunk~) => {
+        observed_chunks.push(chunk)
+        assert_true(
+          model_response_index < 0,
+          msg="chunk observed after ModelResponseReceived",
+        )
+        assert_true(
+          turn_completed_index < 0,
+          msg="chunk observed after TurnCompleted",
+        )
+      }
+      ModelResponseReceived(_) => model_response_index = i
+      TurnCompleted => turn_completed_index = i
       _ => ()
     }
   }
-  assert_eq(stream_count, 4)
+  assert_eq(observed_chunks, chunks)
+  assert_true(model_response_index >= 0)
+  assert_true(turn_completed_index >= 0)
+  assert_true(model_response_index < turn_completed_index)
 }
 
 ///|
@@ -1514,6 +1499,7 @@ async test "multiple_observers_fan_out" {
   assert_true(obs1.events.length() >= 2)
   assert_true(obs2.events.length() >= 2)
   assert_eq(obs1.events.length(), obs2.events.length())
+  assert_eq(obs1.events, obs2.events)
 }
 
 ///|

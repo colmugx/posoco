@@ -7,6 +7,7 @@ import {
   "colmugx/posoco/error",
   "colmugx/posoco/internal/puppetry",
   "moonbitlang/async",
+  "moonbitlang/async/aqueue",
   "moonbitlang/core/json",
   "moonbitlang/core/strconv",
   "moonbitlang/core/string",
@@ -15,6 +16,7 @@ import {
 import {
   "colmugx/posoco/port",
   "colmugx/posoco/types",
+  "colmugx/posoco/kernel",
   "colmugx/posoco/error",
   "moonbitlang/async",
 } for "test"

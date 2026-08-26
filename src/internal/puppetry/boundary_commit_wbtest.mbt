@@ -35,7 +35,7 @@ fn BoundaryProbeHost::append_counts_at_model_call(
 pub impl @kernel_exec.HostRuntime for BoundaryProbeHost with fn call_model(
   self,
   _scope : InvocationScope,
-  messages : Array[Message],
+  messages : ArrayView[Message],
   _tool_definitions : Array[ToolDef],
   _call_options : Json,
   _on_chunk : HostChunkCallback?,
@@ -48,7 +48,10 @@ pub impl @kernel_exec.HostRuntime for BoundaryProbeHost with fn call_model(
   } else {
     match self.model_results[index] {
       Ok(completion) =>
-        Ok(ModelCallResult::{ completion, processed_messages: messages })
+        Ok(ModelCallResult::{
+          completion,
+          processed_messages: messages.to_owned(),
+        })
       Err(failure) => Err(failure)
     }
   }
@@ -81,7 +84,7 @@ pub impl @kernel_exec.HostRuntime for BoundaryProbeHost with fn cancel_effects(
 pub impl @kernel_exec.HostRuntime for BoundaryProbeHost with fn compact(
   self : BoundaryProbeHost,
   _scope : InvocationScope,
-  _messages : Array[Message],
+  _messages : ArrayView[Message],
   _call_options : Json,
   _trigger : @kernel.CompactTrigger,
 ) -> Result[CompactResult, ModelFailure] {
@@ -169,12 +172,12 @@ fn CompactReplaceHost::CompactReplaceHost(
 pub impl @kernel_exec.HostRuntime for CompactReplaceHost with fn call_model(
   self,
   _scope : InvocationScope,
-  messages : Array[Message],
+  messages : ArrayView[Message],
   _tool_definitions : Array[ToolDef],
   _call_options : Json,
   _on_chunk : HostChunkCallback?,
 ) -> Result[ModelCallResult, ModelFailure] {
-  self.messages_at_model_call.push(messages)
+  self.messages_at_model_call.push(messages.to_owned())
   let index = self.model_index
   self.model_index = index + 1
   if index >= self.model_results.length() {
@@ -182,7 +185,10 @@ pub impl @kernel_exec.HostRuntime for CompactReplaceHost with fn call_model(
   } else {
     match self.model_results[index] {
       Ok(completion) =>
-        Ok(ModelCallResult::{ completion, processed_messages: messages })
+        Ok(ModelCallResult::{
+          completion,
+          processed_messages: messages.to_owned(),
+        })
       Err(failure) => Err(failure)
     }
   }
@@ -214,7 +220,7 @@ pub impl @kernel_exec.HostRuntime for CompactReplaceHost with fn cancel_effects(
 pub impl @kernel_exec.HostRuntime for CompactReplaceHost with fn compact(
   _self,
   _scope : InvocationScope,
-  _messages : Array[Message],
+  _messages : ArrayView[Message],
   _call_options : Json,
   _trigger : @kernel.CompactTrigger,
 ) -> Result[CompactResult, ModelFailure] {

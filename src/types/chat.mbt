@@ -14,13 +14,12 @@ pub(all) struct ChatOptions {
 ///
 /// `NoStream` lets the modelport skip chunk wire-format work entirely (no SSE
 /// parsing, no callback construction). `Stream(cb)` asks it to emit each chunk
-/// to `cb` as raw JSON — posoco does NOT define a canonical chunk type
-/// (ADR §2.11: streaming is host/telemetry concern, not transcript fact), so
-/// the JSON shape is a private contract between the modelport and the
-/// `HostChunkCallback` consumer.
+/// to `cb` as a `StreamChunk`. The ADR §2.11 rationale still holds — streaming
+/// is a host/telemetry concern, not a transcript fact — but the chunk contract
+/// is now the canonical `StreamChunk` type, not a private JSON shape.
 pub(all) enum StreamMode {
   NoStream
-  Stream((Json) -> Unit)
+  Stream((StreamChunk) -> Unit)
 } derive(Debug)
 
 ///|

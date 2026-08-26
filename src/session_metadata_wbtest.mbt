@@ -17,7 +17,6 @@ fn metadata_config() -> AgentConfig {
     max_output_tokens: None,
     model_context_window: None,
     compact_threshold: None,
-    context_namespace: None,
   }
 }
 
@@ -44,25 +43,15 @@ async test "t05_metadata_roundtrip_preserves_unknown_keys" {
     config=metadata_config(),
   )
   let _ = agent.run_turn(tk_user_msg("hello"), "s1")
-  // Inspect the final save snapshot for "s1".
-  let snaps = store.save_snapshots()
-  // Find the last save to "s1".
-  let mut found : Map[String, Json]? = None
-  for pair in snaps {
-    let (id, meta) = pair
-    if id == "s1" {
-      found = Some(meta)
-    }
+  // The pure-append path calls append_messages; verify the persisted session
+  // still carries the seeded metadata by loading it back.
+  let persisted = store.load("s1") catch {
+    e => fail("expected persisted s1 to load: \{e}")
   }
-  match found {
-    Some(meta) => {
-      assert_true(meta.contains("user_role"))
-      assert_true(meta["user_role"] == Json::string("admin"))
-      assert_true(meta.contains("turn_count"))
-      assert_true(meta["turn_count"] == Json::number(5.0))
-    }
-    None => fail("expected a save to s1, but none was recorded")
-  }
+  assert_true(persisted.metadata.contains("user_role"))
+  assert_true(persisted.metadata["user_role"] == Json::string("admin"))
+  assert_true(persisted.metadata.contains("turn_count"))
+  assert_true(persisted.metadata["turn_count"] == Json::number(5.0))
 }
 
 // ---------------------------------------------------------------------------
@@ -90,7 +79,7 @@ async test "t05_save_failure_returns_session_error_no_turn_completed" {
     Err(@error.AgentError::Session(error)) => {
       let message = error.to_string()
       assert_true(message.contains("doomed"))
-      assert_true(message.contains("final_save"))
+      assert_true(message.contains("final_append"))
       assert_true(message.contains("SessionError::Save"))
       assert_true(!message.contains("hello"))
     }
@@ -234,7 +223,7 @@ async test "t05_session_save_cause_cannot_reexpand_raw_id" {
   match result {
     Err(@error.AgentError::Session(error)) => {
       let message = error.to_string()
-      assert_true(message.contains("final_save"))
+      assert_true(message.contains("final_append"))
       assert_true(message.contains("SessionError::Save"))
       assert_true(message.contains("configured save failure"))
       assert_true(!message.contains("\n"))

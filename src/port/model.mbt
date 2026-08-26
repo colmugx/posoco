@@ -9,10 +9,12 @@
 /// `scope`; scope-agnostic adapters ignore it. Treat it as read-only.
 pub(open) trait ModelPort {
   /// One chat call. `Stream(cb)` emits chunks; `NoStream` skips chunk work.
+  /// `messages` is an `ArrayView` borrow valid only for the duration of the
+  /// call; adapters must not retain it.
   async fn chat(
     Self,
     scope : @kernel.InvocationScope,
-    messages : Array[@kernel.Message],
+    messages : ArrayView[@kernel.Message],
     tools : Array[@kernel.ToolDef],
     options : @types.ChatOptions,
     stream : @types.StreamMode,
@@ -22,11 +24,12 @@ pub(open) trait ModelPort {
   /// modelport MAY use a cheaper strategy for Auto. Modelports that do not
   /// support compact should raise `ModelError::ResponseParse`.
   /// `scope.effect_id` is always `None` here: compact is host-driven, not a
-  /// reducer-allocated effect.
+  /// reducer-allocated effect. `messages` is an `ArrayView` borrow valid only
+  /// for the duration of the call; adapters must not retain it.
   async fn compact(
     Self,
     scope : @kernel.InvocationScope,
-    messages : Array[@kernel.Message],
+    messages : ArrayView[@kernel.Message],
     options : @types.ChatOptions,
     trigger : @kernel.CompactTrigger,
   ) -> @kernel.CompactResult raise @error.ModelError

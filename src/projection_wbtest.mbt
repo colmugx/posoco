@@ -147,8 +147,8 @@ async test "m38_sysprompt/assembles_base_plus_contributors" {
 
 ///|
 /// When memory returns entries, the hook injects a memory SystemMessage
-/// carrying the context-envelope opening `<posoco-context type="memory">`.
-/// The message lands after the system prompt (head).
+/// opening with the memory section header and the provenance line. The
+/// message lands after the system prompt (head).
 async test "m38_memory/injects_entries_after_system_prompt" {
   let entry : @types.MemoryEntry = {
     id: "m1",
@@ -172,9 +172,8 @@ async test "m38_memory/injects_entries_after_system_prompt" {
     SystemMessage(content~) =>
       match content {
         [Text(s), ..] => {
-          assert_true(
-            s.has_prefix("<posoco-context type=\"memory\" trust=\"false\">"),
-          )
+          assert_true(s.has_prefix("## Any Memory About This Work\n"))
+          assert_true(s.contains("from memory. For Your Information."))
           assert_true(s.contains("prefer tabs over spaces"))
         }
         _ => fail("expected Text in memory message")
@@ -321,6 +320,67 @@ async test "m38_memory/failing_search_emits_secondary_failure_event" {
   assert_eq(secondary, 1)
   assert_eq(completed, 1)
   assert_eq(failed, 0)
+}
+
+///|
+/// Results from multiple MemoryPorts are merged in port-registration order.
+async test "m38_memory/merges_multiple_ports_in_order" {
+  let entry1 : @types.MemoryEntry = {
+    id: "m1",
+    content: "first",
+    metadata: Map::from_array([]),
+    score: None,
+  }
+  let entry2 : @types.MemoryEntry = {
+    id: "m2",
+    content: "second",
+    metadata: Map::from_array([]),
+    score: None,
+  }
+  let mem1 : &@port.MemoryPort = FixedMemoryPort::{ entries: [entry1] }
+  let mem2 : &@port.MemoryPort = FixedMemoryPort::{ entries: [entry2] }
+  let hook = MemoryRetrievalHook::MemoryRetrievalHook(memories=[mem1, mem2])
+  let user : @kernel.Message = @kernel.UserMessage(content=[
+    @kernel.Text("query"),
+  ])
+  let out = hook.before_model([user])
+  // Memory message injected at the head when there is no system prompt.
+  assert_true(out.length() == 2)
+  match out[0] {
+    SystemMessage(content~) =>
+      match content {
+        [Text(s), ..] => assert_true(s.contains("- first\n- second"))
+        _ => fail("expected Text in memory message")
+      }
+    _ => fail("expected SystemMessage at index 0")
+  }
+}
+
+///|
+/// A failing MemoryPort does not cancel or mask results from sibling ports.
+async test "m38_memory/failing_port_does_not_mask_successful_port" {
+  let entry : @types.MemoryEntry = {
+    id: "m2",
+    content: "recovered",
+    metadata: Map::from_array([]),
+    score: None,
+  }
+  let mem1 : &@port.MemoryPort = FailingMemoryPort::{ _dummy: () }
+  let mem2 : &@port.MemoryPort = FixedMemoryPort::{ entries: [entry] }
+  let hook = MemoryRetrievalHook::MemoryRetrievalHook(memories=[mem1, mem2])
+  let user : @kernel.Message = @kernel.UserMessage(content=[
+    @kernel.Text("query"),
+  ])
+  let out = hook.before_model([user])
+  assert_true(out.length() == 2)
+  match out[0] {
+    SystemMessage(content~) =>
+      match content {
+        [Text(s), ..] => assert_true(s.contains("recovered"))
+        _ => fail("expected Text in memory message")
+      }
+    _ => fail("expected SystemMessage at index 0")
+  }
 }
 
 // ──────────────────────────────────────────────────────────────────────────

@@ -186,6 +186,7 @@ fn testkit_snapshot_event(event : @types.TurnEvent) -> @types.TurnEvent {
     @types.ToolCallDeferred(call~, reason~) =>
       @types.ToolCallDeferred(call=testkit_snapshot_tool_call(call), reason~)
     @types.StreamChunkReceived(chunk~) => @types.StreamChunkReceived(chunk~)
+    @types.StreamChunksDropped(count~) => @types.StreamChunksDropped(count~)
     @types.ConfigWarning(field~, value~, reason~) =>
       @types.ConfigWarning(field~, value~, reason~)
     @types.ConfigChanged(field~, old_value~, new_value~) =>
@@ -288,7 +289,7 @@ pub async fn ScriptedModel::chat_direct(
 ) -> @kernel.ModelCallResult raise @error.ModelError {
   (self as &@port.ModelPort).chat(
     tk_scope(),
-    messages,
+    messages[:],
     tools,
     options,
     @types.NoStream,
@@ -306,12 +307,12 @@ pub fn ScriptedModel::options_received(
 ///|
 fn ScriptedModel::take_step(
   self : ScriptedModel,
-  messages : Array[@kernel.Message],
+  messages : ArrayView[@kernel.Message],
   tools : Array[@kernel.ToolDef],
   options : @types.ChatOptions,
 ) -> ScriptedModelStep raise @error.ModelError {
   self.calls = self.calls + 1
-  self.received_messages.push(testkit_snapshot_messages(messages))
+  self.received_messages.push(testkit_snapshot_messages(messages.to_owned()))
   self.received_tools.push(tools.map(testkit_snapshot_tool_def))
   self.received_options.push(options)
   if self.index < self.steps.length() {
@@ -329,7 +330,7 @@ fn ScriptedModel::take_step(
 pub impl @port.ModelPort for ScriptedModel with fn chat(
   self,
   _scope : @kernel.InvocationScope,
-  messages : Array[@kernel.Message],
+  messages : ArrayView[@kernel.Message],
   tools : Array[@kernel.ToolDef],
   options : @types.ChatOptions,
   stream : @types.StreamMode,
@@ -341,11 +342,7 @@ pub impl @port.ModelPort for ScriptedModel with fn chat(
         @types.Stream(cb) =>
           for chunk in chunks {
             self.received_chunks.push(chunk)
-            // Decode the chunk to a JSON telemetry payload. The HostChunkCallback
-            // consumes raw JSON; we synthesise the same shape
-            // PortHostAdapter used to produce so observers that decode JSON
-            // chunks continue to work.
-            cb(stream_chunk_to_json(chunk))
+            cb(chunk)
           }
         @types.NoStream => ()
       }
@@ -359,7 +356,7 @@ pub impl @port.ModelPort for ScriptedModel with fn chat(
 pub impl @port.ModelPort for ScriptedModel with fn compact(
   _self,
   _scope : @kernel.InvocationScope,
-  _messages : Array[@kernel.Message],
+  _messages : ArrayView[@kernel.Message],
   _options : @types.ChatOptions,
   _trigger : @kernel.CompactTrigger,
 ) -> @kernel.CompactResult raise @error.ModelError {
@@ -426,7 +423,7 @@ pub fn ScopeRecordingModel::compact_scopes(
 pub impl @port.ModelPort for ScopeRecordingModel with fn chat(
   self,
   scope : @kernel.InvocationScope,
-  messages : Array[@kernel.Message],
+  messages : ArrayView[@kernel.Message],
   tools : Array[@kernel.ToolDef],
   options : @types.ChatOptions,
   stream : @types.StreamMode,
@@ -441,7 +438,7 @@ pub impl @port.ModelPort for ScopeRecordingModel with fn chat(
 pub impl @port.ModelPort for ScopeRecordingModel with fn compact(
   self,
   scope : @kernel.InvocationScope,
-  _messages : Array[@kernel.Message],
+  _messages : ArrayView[@kernel.Message],
   _options : @types.ChatOptions,
   _trigger : @kernel.CompactTrigger,
 ) -> @kernel.CompactResult raise @error.ModelError {
@@ -458,49 +455,6 @@ pub impl @port.ModelPort for ScopeRecordingModel with fn compact(
 ///|
 pub impl @port.ModelPort for ScopeRecordingModel with fn provider_config(_self) -> @port.ProviderConfig {
   @port.ProviderConfig::empty()
-}
-
-///|
-/// Encode a StreamChunk as the same JSON shape PortHostAdapter used to emit.
-/// Used by ScriptedModel when the caller passes StreamMode::Stream.
-fn stream_chunk_to_json(chunk : @types.StreamChunk) -> Json {
-  match chunk {
-    @types.TextDelta(token~) =>
-      Json::object(
-        Map::from_array([
-          ("kind", Json::string("text")),
-          ("token", Json::string(token)),
-        ]),
-      )
-    @types.ReasoningDelta(token~) =>
-      Json::object(
-        Map::from_array([
-          ("kind", Json::string("reasoning")),
-          ("token", Json::string(token)),
-        ]),
-      )
-    @types.ToolCallDelta(index~, id~, name~, arguments_delta~) => {
-      let _ = index
-      let _ = id
-      let _ = name
-      let args = match arguments_delta {
-        Some(s) => s
-        None => ""
-      }
-      Json::object(
-        Map::from_array([
-          ("kind", Json::string("tool_call_delta")),
-          ("args", Json::string(args)),
-        ]),
-      )
-    }
-    @types.Usage(..) =>
-      Json::object(Map::from_array([("kind", Json::string("usage"))]))
-    @types.Finish(reason~) => {
-      let _ = reason
-      Json::object(Map::from_array([("kind", Json::string("finish"))]))
-    }
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -674,6 +628,12 @@ pub(all) enum SessionOp {
     metadata~ : Map[String, Json],
     result~ : Result[Unit, @error.SessionError]
   )
+  OpAppend(
+    id~ : String,
+    from_index~ : Int,
+    messages~ : Array[@kernel.Message],
+    result~ : Result[Unit, @error.SessionError]
+  )
 }
 
 ///|
@@ -743,6 +703,13 @@ pub fn RecordingSessionStore::ops(
         )
       OpSave(id~, metadata~, result~) =>
         OpSave(id~, metadata=testkit_snapshot_metadata(metadata), result~)
+      OpAppend(id~, from_index~, messages~, result~) =>
+        OpAppend(
+          id~,
+          from_index~,
+          messages=testkit_snapshot_messages(messages),
+          result~,
+        )
     }
   })
 }
@@ -804,6 +771,37 @@ pub impl @port.SessionStore for RecordingSessionStore with fn save(
     Ok(())
   }
   self.ops.push(OpSave(id~, metadata=meta_copy, result~))
+  match result {
+    Ok(_) => ()
+    Err(e) => raise e
+  }
+}
+
+///|
+pub impl @port.SessionStore for RecordingSessionStore with fn append_messages(
+  self,
+  id : String,
+  from_index : Int,
+  messages : ArrayView[@kernel.Message],
+) -> Unit raise @error.SessionError {
+  let msg_copy = testkit_snapshot_messages(messages.to_owned())
+  let result : Result[Unit, @error.SessionError] = if self.save_failures.contains(
+      id,
+    ) {
+    Err(@error.SessionError::Save("configured save failure for '\{id}'"))
+  } else {
+    let session = match self.store.get(id) {
+      Some(s) => testkit_snapshot_session(s)
+      None => { messages: [], metadata: Map::from_array([]) }
+    }
+    let merged = session.messages.copy()
+    for msg in msg_copy {
+      merged.push(msg)
+    }
+    self.store[id] = { messages: merged, metadata: session.metadata }
+    Ok(())
+  }
+  self.ops.push(OpAppend(id~, from_index~, messages=msg_copy, result~))
   match result {
     Ok(_) => ()
     Err(e) => raise e
@@ -1134,7 +1132,6 @@ pub fn tk_config() -> AgentConfig {
     max_output_tokens: None,
     model_context_window: None,
     compact_threshold: None,
-    context_namespace: None,
   }
 }
 

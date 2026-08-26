@@ -19,6 +19,24 @@ fn normalize_tool_schema(schema : Json) -> Json {
 }
 
 ///|
+/// True when `left` and `right` share the same first `len` messages.
+fn messages_prefix_equal(
+  left : Array[@kernel.Message],
+  right : Array[@kernel.Message],
+  len : Int,
+) -> Bool {
+  if left.length() < len || right.length() < len {
+    return false
+  }
+  for i in 0..<len {
+    if left[i] != right[i] {
+      return false
+    }
+  }
+  true
+}
+
+///|
 /// Build a `ToolCatalogSnapshot` from canonical definitions. Used both for
 /// the port-derived catalog (at composition) and for `CatalogSource`
 /// refreshes (at prompt boundaries, with a bumped version). The schema is
@@ -103,13 +121,15 @@ fn build_agent_catalog(
 priv struct AgentEventSubscriber {
   observers : Array[&@port.Observer]
   pending_calls : Map[String, @kernel.ToolCall]
+  chunk_dispatcher : Ref[ChunkDispatcher?]
 }
 
 ///|
 fn AgentEventSubscriber::AgentEventSubscriber(
   observers : Array[&@port.Observer],
+  chunk_dispatcher : Ref[ChunkDispatcher?],
 ) -> AgentEventSubscriber {
-  { observers, pending_calls: Map::from_array([]) }
+  { observers, pending_calls: Map::from_array([]), chunk_dispatcher }
 }
 
 ///|
@@ -132,6 +152,13 @@ fn AgentEventSubscriber::emit(
   scope : @types.EventScope?,
   event : @types.TurnEvent,
 ) -> Unit {
+  // Piggyback flush: catch up buffered chunk telemetry before every committed
+  // event so observers see chunks before ModelResponseReceived, ToolCallPending,
+  // etc., and so they catch up at boundaries during an unbroken SSE burst.
+  match self.chunk_dispatcher.val {
+    Some(dispatcher) => dispatcher.flush()
+    None => ()
+  }
   for observer in self.observers {
     observer.on_event_at(scope, agent_snapshot_turn_event(event))
   }
@@ -190,56 +217,22 @@ impl @puppetry.EventSubscriber for AgentEventSubscriber with fn on_event(
 }
 
 ///|
-/// Wrap the puppet's `HostChunkCallback` so each JSON chunk is decoded back
-/// to a `@types.StreamChunk` and re-emitted to observers as
-/// `StreamChunkReceived`. The JSON shape is a private contract between the
-/// modelport and this wrapper; we recognise the same `{kind, token}` layout
-/// `PortRuntime` and ScriptedModel emit.
+/// Wrap the puppet's `HostChunkCallback` so each `StreamChunk` is re-emitted
+/// to observers as `StreamChunkReceived`. The chunk is already the canonical
+/// typed shape; no JSON decoding is needed here.
 fn create_agent_stream_callback(
   observers : Array[&@port.Observer],
+  dispatcher_ref : Ref[ChunkDispatcher?],
 ) -> @kernel_exec.HostChunkCallback? {
   if observers.is_empty() {
     return None
   }
-  let cb = fn(json_chunk : Json) {
-    let chunk : @types.StreamChunk = match json_chunk {
-      Json::Object(map) =>
-        if map.contains("kind") {
-          let kind = map["kind"]
-          match kind {
-            Json::String(v) if v == "text" =>
-              if map.contains("token") {
-                match map["token"] {
-                  Json::String(t) => @types.TextDelta(token=t)
-                  _ => @types.TextDelta(token="")
-                }
-              } else {
-                @types.TextDelta(token="")
-              }
-            Json::String(v) if v == "reasoning" =>
-              if map.contains("token") {
-                match map["token"] {
-                  Json::String(t) => @types.ReasoningDelta(token=t)
-                  _ => @types.ReasoningDelta(token="")
-                }
-              } else {
-                @types.ReasoningDelta(token="")
-              }
-            _ =>
-              // ToolCallDelta, Usage, Finish — lossy serialization;
-              // emit as generic TextDelta for observer event count.
-              @types.TextDelta(token="")
-          }
-        } else {
-          @types.TextDelta(token="")
-        }
-      _ => @types.TextDelta(token="")
-    }
-    let event : @types.TurnEvent = @types.StreamChunkReceived(chunk~)
-    for observer in observers {
-      // Scope is None: stream chunks are model-stream projections, not
-      // committed run events, so they carry no run identity.
-      observer.on_event_at(None, event)
+  let cb = fn(chunk : @types.StreamChunk) {
+    // Route to the active turn's dispatcher. If no turn is active (should not
+    // happen for chunks produced by the Puppet), drop silently.
+    match dispatcher_ref.val {
+      Some(dispatcher) => dispatcher.enqueue(chunk)
+      None => ()
     }
   }
   Some(cb)
@@ -362,6 +355,8 @@ async fn AgentRuntime::run_turn_via_puppet(
         "load",
       )
   }
+  // The loaded session is the authoritative persisted prefix for this turn.
+  self.session_cursors[session_id] = session.messages.length()
 
   // Step 2: snapshot + append input. Deep-copy so callers cannot mutate
   // recorded state via the recorded arrays.
@@ -411,6 +406,79 @@ async fn AgentRuntime::run_turn_via_puppet(
     policy,
   }
 
+  // Step 4: drive the already-started, Agent-owned Puppet. The chunk
+  // dispatcher is per-turn: its drain task runs for the duration of the turn
+  // and is reaped by `with_task_group` when the turn body returns or raises.
+  // The queue MUST be closed inside the group closure: `with_task_group`
+  // returns only after every child task (the drain loop included) has
+  // terminated, and the drain loop terminates only when the queue closes —
+  // closing after the group returns would deadlock.
+  let dispatcher = ChunkDispatcher::new(self.observers)
+  self.chunk_dispatcher.val = Some(dispatcher)
+  // The typed error is captured inside the group closure and re-raised
+  // after the boundary: `with_task_group`'s closure signature carries the
+  // wide `Error` (no error type parameter), so capturing the typed value is
+  // the only way the original `AgentError` variant — and its contextualized
+  // messages — survives the crossing.
+  let turn_error : Ref[@error.AgentError?] = Ref::Ref(None)
+  let result = @async.with_task_group(async fn(group) {
+    group.spawn_bg(async fn() { dispatcher.drain_loop() })
+    errdefer {
+      dispatcher.flush()
+      dispatcher.close()
+    }
+    // The Ok/Err wrapper lets the typed AgentError escape the group closure
+    // as data: catch + re-raise is fragile_catch_all and try? is deprecated.
+    let turn_result = match
+      (Ok(
+        self.run_puppet_turn_body(
+          request, identity, session_id, input, current_turn_start, current_metadata,
+        ),
+      ) catch {
+        e => Err(e)
+      }) {
+      Ok(r) => r
+      Err(e) => {
+        turn_error.val = Some(e)
+        raise e
+      }
+    }
+    dispatcher.flush()
+    dispatcher.close()
+    turn_result
+  }) catch {
+    _ => {
+      self.chunk_dispatcher.val = None
+      let original : @error.AgentError = match turn_error.val {
+        Some(ae) => ae
+        None =>
+          @error.AgentError::Runtime(
+            @error.RuntimeError::InvocationFailed(
+              "turn body: unclassified error",
+            ),
+          )
+      }
+      raise original
+    }
+  }
+  self.chunk_dispatcher.val = None
+  result
+}
+
+///|
+/// Body of one Puppet turn: drive the Puppet, translate the result, and
+/// materialize the `TurnResult`. Extracted from `run_turn_via_puppet` so the
+/// dispatcher lifecycle (create / spawn drain / flush / close) can wrap it
+/// uniformly on both the success and failure paths.
+async fn AgentRuntime::run_puppet_turn_body(
+  self : AgentRuntime,
+  request : @puppetry.PromptRequest,
+  identity : TurnIdentity,
+  session_id : String,
+  input : @kernel.Message,
+  current_turn_start : Int,
+  current_metadata : Map[String, Json],
+) -> @types.TurnResult raise @error.AgentError {
   // Step 4: drive the already-started, Agent-owned Puppet.
   let prompt_result = self.puppet.prompt(request) catch {
     e =>
@@ -480,14 +548,31 @@ async fn AgentRuntime::run_turn_via_puppet(
         metadata: Map::from_array([]),
       }
       let with_lineage = forked_session.with_parent_thread_id(parent_session_id)
-      for store in self.sessions {
-        store.save(new_session_id, with_lineage) catch {
-          error =>
+      let fork_save_results : Array[Result[Unit, @error.SessionError]] = @async.all(
+        self.sessions.map(fn(store) {
+          () => {
+            let session = agent_snapshot_session(
+              with_lineage.messages,
+              with_lineage.metadata,
+            )
+            Ok(store.save(new_session_id, session)) catch {
+              error => Err(error)
+            }
+          }
+        }),
+      ) catch {
+        error => raise save_error_context(error, new_session_id, "fork_save")
+      }
+      for result in fork_save_results {
+        match result {
+          Err(error) =>
             raise contextualize_session_error(
               error, new_session_id, "fork_save",
             )
+          Ok(_) => ()
         }
       }
+      self.session_cursors[new_session_id] = with_lineage.messages.length()
       // Emit a SessionRedirect so observers know a sibling thread was
       // created and can switch the UI.
       let redirect : @types.TurnEvent = SessionRedirect(
@@ -535,14 +620,36 @@ async fn AgentRuntime::run_turn_via_puppet(
                 metadata: Map::from_array([]),
               }
               let with_lineage = new_session.with_parent_thread_id(session_id)
-              for store in self.sessions {
-                store.save(new_sid, with_lineage) catch {
-                  error =>
+              let compact_save_results : Array[
+                Result[Unit, @error.SessionError],
+              ] = @async.all(
+                self.sessions.map(fn(store) {
+                  () => {
+                    let session = agent_snapshot_session(
+                      with_lineage.messages,
+                      with_lineage.metadata,
+                    )
+                    Ok(store.save(new_sid, session)) catch {
+                      error => Err(error)
+                    }
+                  }
+                }),
+              ) catch {
+                error =>
+                  raise save_error_context(
+                    error, new_sid, "compact_newthread_save",
+                  )
+              }
+              for result in compact_save_results {
+                match result {
+                  Err(error) =>
                     raise contextualize_session_error(
                       error, new_sid, "compact_newthread_save",
                     )
+                  Ok(_) => ()
                 }
               }
+              self.session_cursors[new_sid] = with_lineage.messages.length()
               let redirect : @types.TurnEvent = SessionRedirect(
                 from=session_id,
                 to=new_sid,
@@ -576,14 +683,34 @@ async fn AgentRuntime::run_turn_via_puppet(
             messages: agent_snapshot_messages(compacted_messages),
             metadata: agent_snapshot_metadata(current_metadata),
           }
-          for store in self.sessions {
-            store.save(session_id, updated_session) catch {
-              error =>
+          let compact_save_results : Array[Result[Unit, @error.SessionError]] = @async.all(
+            self.sessions.map(fn(store) {
+              () => {
+                let session = agent_snapshot_session(
+                  updated_session.messages,
+                  updated_session.metadata,
+                )
+                Ok(store.save(session_id, session)) catch {
+                  error => Err(error)
+                }
+              }
+            }),
+          ) catch {
+            error =>
+              raise save_error_context(
+                error, session_id, "compact_replace_save",
+              )
+          }
+          for result in compact_save_results {
+            match result {
+              Err(error) =>
                 raise contextualize_session_error(
                   error, session_id, "compact_replace_save",
                 )
+              Ok(_) => ()
             }
           }
+          self.session_cursors[session_id] = updated_session.messages.length()
           let result : @types.TurnResult = {
             message: input,
             tool_results: [],
@@ -650,7 +777,13 @@ async fn AgentRuntime::run_turn_via_puppet(
           // was doing — and what the user asked.
           match self.puppet.last_completed_transcript() {
             Some(t) =>
-              self.save_turn_transcript(session_id, t, current_metadata) catch {
+              self.save_turn_transcript(
+                session_id,
+                t,
+                current_metadata,
+                request.initial_messages,
+                current_turn_start,
+              ) catch {
                 // The turn's own failure is the primary signal; a secondary
                 // save failure must not mask it.
                 _ => ()
@@ -693,7 +826,13 @@ async fn AgentRuntime::run_turn_via_puppet(
   }
 
   // Save session (write-all, with carried metadata).
-  self.save_turn_transcript(session_id, final_transcript, current_metadata)
+  self.save_turn_transcript(
+    session_id,
+    final_transcript,
+    current_metadata,
+    request.initial_messages,
+    current_turn_start,
+  )
 
   // Step 7: build TurnResult.
   let result : @types.TurnResult = {
@@ -708,17 +847,72 @@ async fn AgentRuntime::run_turn_via_puppet(
 /// Persist a terminal transcript to every session store (write-all, with
 /// carried metadata). Shared by the completed and failed turn paths — a
 /// failed turn's progress is exactly the context the next turn needs.
+///
+/// Uses `append_messages` when the turn was a pure append (final transcript
+/// starts with the same prefix that was loaded plus the new input); otherwise
+/// falls back to a full save and resets the per-session cursor. The cursor is
+/// always advanced to the final transcript length on success.
 async fn AgentRuntime::save_turn_transcript(
   self : AgentRuntime,
   session_id : String,
   transcript : @kernel.Transcript,
   metadata : Map[String, Json],
+  initial_messages : Array[@kernel.Message],
+  current_turn_start : Int,
 ) -> Unit raise @error.AgentError {
-  let saved_messages = agent_snapshot_messages(transcript.messages_snapshot())
-  for store in self.sessions {
-    store.save(session_id, agent_snapshot_session(saved_messages, metadata)) catch {
-      error =>
-        raise contextualize_session_error(error, session_id, "final_save")
+  let final_messages = agent_snapshot_messages(transcript.messages_snapshot())
+  let cursor = match self.session_cursors.get(session_id) {
+    Some(n) => n
+    None => 0
+  }
+  let initial_len = current_turn_start + 1
+  let is_pure_append = final_messages.length() >= initial_len &&
+    messages_prefix_equal(final_messages, initial_messages, initial_len)
+  if is_pure_append {
+    // Append tail from cursor. Each store receives its own deep snapshot of
+    // the tail so a misbehaving store cannot mutate another store's payload.
+    let save_results : Array[Result[Unit, @error.SessionError]] = @async.all(
+      self.sessions.map(fn(store) {
+        () => {
+          let tail = agent_snapshot_messages(final_messages[cursor:].to_owned())
+          Ok(store.append_messages(session_id, cursor, tail[:])) catch {
+            error => Err(error)
+          }
+        }
+      }),
+    ) catch {
+      error => raise save_error_context(error, session_id, "final_append")
+    }
+    for result in save_results {
+      match result {
+        Err(error) =>
+          raise contextualize_session_error(error, session_id, "final_append")
+        Ok(_) => ()
+      }
+    }
+  } else {
+    // Rewrite, fork, or compact: rewrite the whole persisted session.
+    let save_results : Array[Result[Unit, @error.SessionError]] = @async.all(
+      self.sessions.map(fn(store) {
+        () => {
+          // Each store receives its own deep snapshot so a misbehaving store
+          // cannot mutate another store's persisted state.
+          let session = agent_snapshot_session(final_messages, metadata)
+          Ok(store.save(session_id, session)) catch {
+            error => Err(error)
+          }
+        }
+      }),
+    ) catch {
+      error => raise save_error_context(error, session_id, "final_save")
+    }
+    for result in save_results {
+      match result {
+        Err(error) =>
+          raise contextualize_session_error(error, session_id, "final_save")
+        Ok(_) => ()
+      }
     }
   }
+  self.session_cursors[session_id] = final_messages.length()
 }

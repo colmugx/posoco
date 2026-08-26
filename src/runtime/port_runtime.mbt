@@ -109,10 +109,10 @@ pub fn PortRuntime::PortRuntime(
 pub impl Runtime for PortRuntime with fn call_model(
   self,
   scope : @kernel.InvocationScope,
-  messages : Array[@kernel.Message],
+  messages : ArrayView[@kernel.Message],
   tool_definitions : Array[@kernel.ToolDef],
   call_options : Json,
-  on_chunk : ((Json) -> Unit)?,
+  on_chunk : ((@types.StreamChunk) -> Unit)?,
 ) -> Result[@kernel.ModelCallResult, @kernel.ModelFailure] {
   let options = match decode_chat_options(call_options) {
     Ok(options) => options
@@ -130,11 +130,12 @@ pub impl Runtime for PortRuntime with fn call_model(
   // When the modelport returns no preprocessing (empty processed_messages),
   // substitute the input messages so the reducer's transcript-replace step
   // is a no-op. Real modelports that actually preprocess return their
-  // processed tree here and we honour it.
+  // processed tree here and we honour it. The view must be copied before being
+  // stored/returned — this is the single retained O(N) copy per call.
   let final_result : @kernel.ModelCallResult = if result.processed_messages.is_empty() {
     @kernel.ModelCallResult::{
       completion: result.completion,
-      processed_messages: messages,
+      processed_messages: messages.to_owned(),
     }
   } else {
     result
@@ -185,7 +186,7 @@ pub impl Runtime for PortRuntime with fn cancel_effects(
 pub impl Runtime for PortRuntime with fn compact(
   self,
   scope : @kernel.InvocationScope,
-  messages : Array[@kernel.Message],
+  messages : ArrayView[@kernel.Message],
   call_options : Json,
   trigger : @kernel.CompactTrigger,
 ) -> Result[@kernel.CompactResult, @kernel.ModelFailure] {

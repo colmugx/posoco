@@ -1,5 +1,6 @@
 import {
   "colmugx/posoco/kernel",
+  "colmugx/posoco/types",
   "moonbitlang/core/json",
   "moonbitlang/core/strconv",
   "moonbitlang/core/string",

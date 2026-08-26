@@ -78,6 +78,17 @@ pub struct RunState {
   /// Tool outcomes kept separately from transcript.
   /// `FixedArray` for the same proof-contract reason as `pending_effects`.
   tool_results : FixedArray[(@kernel.CallId, @kernel.ToolOutcome)]
+  /// Staging buffer for tool outcomes that have completed within the current
+  /// wave but are not yet committed to the transcript. Cleared at every wave
+  /// boundary and phase change that leaves `AwaitingTools`.
+  completed_tool_results : Map[
+    String,
+    (@kernel.ToolName, @kernel.ToolOutcome, Int),
+  ]
+  /// Incremental ledger mapping call id to its stable source position among
+  /// all assistant messages in the transcript. Built when a tool batch is
+  /// declared and rebuilt if a rewrite happens while awaiting tools.
+  tool_call_positions : Map[String, Int]
   /// Suspension requirement. `None` outside `Suspended`.
   suspension_requirement : SuspensionRequirement?
 } derive(Eq, Debug)
@@ -133,6 +144,8 @@ fn RunState::initial_core(
     BudgetConsumed::zero(),
     None,
     [],
+    Map::from_array([]),
+    Map::from_array([]),
     None,
   )
 }
@@ -161,6 +174,11 @@ fn RunState::mk_core(
   budget_consumed : BudgetConsumed,
   outcome : RunOutcome?,
   tool_results : FixedArray[(@kernel.CallId, @kernel.ToolOutcome)],
+  completed_tool_results : Map[
+    String,
+    (@kernel.ToolName, @kernel.ToolOutcome, Int),
+  ],
+  tool_call_positions : Map[String, Int],
   suspension_requirement : SuspensionRequirement?,
 ) -> RunState where {
   proof_require: phase_fields_ok(
@@ -184,6 +202,8 @@ fn RunState::mk_core(
     budget_consumed,
     outcome,
     tool_results,
+    completed_tool_results,
+    tool_call_positions,
     suspension_requirement,
   }
 }
@@ -488,6 +508,11 @@ pub fn RunState::transition(
   catalog_version~ : CatalogVersion?,
   budget_consumed~ : BudgetConsumed,
   outcome~ : RunOutcome?,
+  completed_tool_results? : Map[
+    String,
+    (@kernel.ToolName, @kernel.ToolOutcome, Int),
+  ] = self.completed_tool_results.copy(),
+  tool_call_positions? : Map[String, Int] = self.tool_call_positions.copy(),
   suspension_requirement~ : SuspensionRequirement?,
 ) -> RunState raise KernelError {
   RunState::transition_core(
@@ -501,6 +526,8 @@ pub fn RunState::transition(
     catalog_version~,
     budget_consumed~,
     outcome~,
+    completed_tool_results~,
+    tool_call_positions~,
     suspension_requirement~,
   ).validate()
 }
@@ -526,6 +553,11 @@ fn RunState::transition_core(
   catalog_version~ : CatalogVersion?,
   budget_consumed~ : BudgetConsumed,
   outcome~ : RunOutcome?,
+  completed_tool_results~ : Map[
+    String,
+    (@kernel.ToolName, @kernel.ToolOutcome, Int),
+  ],
+  tool_call_positions~ : Map[String, Int],
   suspension_requirement~ : SuspensionRequirement?,
 ) -> RunState where {
   proof_require: phase_inv(self) &&
@@ -551,6 +583,8 @@ fn RunState::transition_core(
     budget_consumed,
     outcome,
     self.tool_results,
+    completed_tool_results,
+    tool_call_positions,
     suspension_requirement,
   )
 }
@@ -563,8 +597,18 @@ fn RunState::transition_core(
 fn RunState::with_tool_results(
   self : RunState,
   tool_results : Array[(@kernel.CallId, @kernel.ToolOutcome)],
+  completed_tool_results? : Map[
+    String,
+    (@kernel.ToolName, @kernel.ToolOutcome, Int),
+  ] = self.completed_tool_results.copy(),
+  tool_call_positions? : Map[String, Int] = self.tool_call_positions.copy(),
 ) -> RunState raise KernelError {
-  RunState::with_tool_results_core(self, FixedArray::from_array(tool_results)).validate()
+  RunState::with_tool_results_core(
+    self,
+    FixedArray::from_array(tool_results),
+    completed_tool_results~,
+    tool_call_positions~,
+  ).validate()
 }
 
 ///|
@@ -574,6 +618,11 @@ fn RunState::with_tool_results(
 fn RunState::with_tool_results_core(
   self : RunState,
   tool_results : FixedArray[(@kernel.CallId, @kernel.ToolOutcome)],
+  completed_tool_results~ : Map[
+    String,
+    (@kernel.ToolName, @kernel.ToolOutcome, Int),
+  ],
+  tool_call_positions~ : Map[String, Int],
 ) -> RunState where {
   proof_require: phase_inv(self),
   proof_ensure: result => phase_inv(result),
@@ -592,6 +641,8 @@ fn RunState::with_tool_results_core(
     self.budget_consumed,
     self.outcome,
     tool_results,
+    completed_tool_results,
+    tool_call_positions,
     self.suspension_requirement,
   )
 }

@@ -20,7 +20,7 @@ fn RuntimeHostShim::RuntimeHostShim(
 impl @kernel_exec.HostRuntime for RuntimeHostShim with fn call_model(
   self,
   scope : @kernel.InvocationScope,
-  messages : Array[@kernel.Message],
+  messages : ArrayView[@kernel.Message],
   tool_definitions : Array[@kernel.ToolDef],
   call_options : Json,
   on_chunk : @kernel_exec.HostChunkCallback?,
@@ -61,7 +61,7 @@ impl @kernel_exec.HostRuntime for RuntimeHostShim with fn cancel_effects(
 impl @kernel_exec.HostRuntime for RuntimeHostShim with fn compact(
   self,
   scope : @kernel.InvocationScope,
-  messages : Array[@kernel.Message],
+  messages : ArrayView[@kernel.Message],
   call_options : Json,
   trigger : @kernel.CompactTrigger,
 ) -> Result[@kernel.CompactResult, @kernel.ModelFailure] {

@@ -670,17 +670,23 @@ async fn Puppet::drive_run(
         // previous hook's output (chained rewrite). The rewritten messages
         // replace the reducer state's transcript so the next CallModel
         // effect uses them.
-        let mut current_messages = state.transcript().messages_snapshot()
+        let initial_messages = state.transcript().messages_snapshot()
+        let mut current_messages = initial_messages
         let mut hook_aborted = false
         let mut abort_reason = ""
+        let mut hook_changed = false
         for hook in self.config.hooks {
-          current_messages = hook.before_model(current_messages) catch {
+          let new_messages = hook.before_model(current_messages) catch {
             HookAbort::Aborted(reason~) => {
               hook_aborted = true
               abort_reason = reason
               []
             }
           }
+          if !physical_equal(new_messages, current_messages) {
+            hook_changed = true
+          }
+          current_messages = new_messages
           if hook_aborted {
             break
           }
@@ -695,9 +701,11 @@ async fn Puppet::drive_run(
         // TranscriptRewritten event in the same boundary as the next model
         // intent. Comparison is by content, not length: a same-length
         // rewrite (e.g. system-prompt replacement) is a real rewrite and
-        // must not be silently dropped.
+        // must not be silently dropped. A cheap physical-equality check
+        // first skips the O(N) content comparison when no hook allocated a
+        // new array.
         let rewrite_events : Array[KernelEvent] = []
-        if current_messages != state.transcript().messages_snapshot() {
+        if hook_changed && current_messages != initial_messages {
           let rewrite_input : RunInput = TranscriptRewrite(payload={
             rewritten_messages: current_messages,
             reason: "pre_model_hook",
@@ -1097,7 +1105,7 @@ async fn Puppet::handle_compact(
   let attempted : Result[Result[CompactResult, @kernel.ModelFailure], Error] = Ok(
     self.config.host.compact(
       scope,
-      messages,
+      messages[:],
       snap.call_options(),
       compact_cmd.trigger(),
     ),

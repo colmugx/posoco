@@ -82,43 +82,12 @@ async test "tk_model_stream_replays_exact_chunks_in_order" {
   // chat_streaming_direct drives chat with NoStream (M3.7) — to actually
   // observe chunks, drive chat with StreamMode::Stream directly.
   let observed : Array[StreamChunk] = []
-  let host_chunks : Array[Json] = []
   let _ = (model as &@port.ModelPort).chat(
     tk_scope(),
     [],
     [],
     tk_opts(),
-    @types.Stream(fn(json) {
-      host_chunks.push(json)
-      // Decode the JSON chunk back to a StreamChunk for assertion comparison.
-      let decoded : StreamChunk = match json {
-        Json::Object(map) =>
-          if map.contains("kind") {
-            match map["kind"] {
-              Json::String(v) if v == "text" => {
-                let t = map["token"]
-                match t {
-                  Json::String(s) => TextDelta(token=s)
-                  _ => TextDelta(token="")
-                }
-              }
-              Json::String(v) if v == "reasoning" => {
-                let t = map["token"]
-                match t {
-                  Json::String(s) => ReasoningDelta(token=s)
-                  _ => ReasoningDelta(token="")
-                }
-              }
-              Json::String(v) if v == "finish" => Finish(reason="stop")
-              _ => TextDelta(token="")
-            }
-          } else {
-            TextDelta(token="")
-          }
-        _ => TextDelta(token="")
-      }
-      observed.push(decoded)
-    }),
+    @types.Stream(fn(chunk) { observed.push(chunk) }),
   )
   assert_eq(model.call_count(), 1)
   assert_eq(observed.length(), chunks.length())
@@ -136,7 +105,7 @@ async test "tk_model_stream_does_not_synthesize_chunks_for_response_step" {
     [],
     [],
     tk_opts(),
-    @types.Stream(fn(_json) { () }),
+    @types.Stream(fn(_chunk) { () }),
   )
   assert_true(model.received_chunks.is_empty())
 }

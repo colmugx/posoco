@@ -8,7 +8,7 @@ struct QuickstartFixedModel {}
 pub impl @port.ModelPort for QuickstartFixedModel with fn chat(
   _self,
   _scope : @kernel.InvocationScope,
-  _messages : Array[@kernel.Message],
+  _messages : ArrayView[@kernel.Message],
   _tools : Array[@kernel.ToolDef],
   _options : @types.ChatOptions,
   _stream : @types.StreamMode,
@@ -27,7 +27,7 @@ pub impl @port.ModelPort for QuickstartFixedModel with fn chat(
 pub impl @port.ModelPort for QuickstartFixedModel with fn compact(
   _self,
   _scope : @kernel.InvocationScope,
-  _messages : Array[@kernel.Message],
+  _messages : ArrayView[@kernel.Message],
   _options : @types.ChatOptions,
   _trigger : @kernel.CompactTrigger,
 ) -> @kernel.CompactResult raise @error.ModelError {
@@ -98,7 +98,6 @@ async test "quickstart_fixture_uses_current_public_api" {
       max_output_tokens: None,
       model_context_window: None,
       compact_threshold: None,
-      context_namespace: None,
     },
   )
   let input : @kernel.Message = @kernel.UserMessage(content=[

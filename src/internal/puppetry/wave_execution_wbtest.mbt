@@ -49,7 +49,7 @@ fn WaveFixtureHost::finished(self : WaveFixtureHost) -> Array[String] {
 pub impl @kernel_exec.HostRuntime for WaveFixtureHost with fn call_model(
   self,
   _scope : InvocationScope,
-  messages : Array[Message],
+  messages : ArrayView[Message],
   _tool_definitions : Array[ToolDef],
   _call_options : Json,
   _on_chunk : HostChunkCallback?,
@@ -61,7 +61,10 @@ pub impl @kernel_exec.HostRuntime for WaveFixtureHost with fn call_model(
   } else {
     match self.model_results[index] {
       Ok(completion) =>
-        Ok(ModelCallResult::{ completion, processed_messages: messages })
+        Ok(ModelCallResult::{
+          completion,
+          processed_messages: messages.to_owned(),
+        })
       Err(failure) => Err(failure)
     }
   }
@@ -109,7 +112,7 @@ pub impl @kernel_exec.HostRuntime for WaveFixtureHost with fn cancel_effects(
 pub impl @kernel_exec.HostRuntime for WaveFixtureHost with fn compact(
   self : WaveFixtureHost,
   _scope : InvocationScope,
-  _messages : Array[Message],
+  _messages : ArrayView[Message],
   _call_options : Json,
   _trigger : @kernel.CompactTrigger,
 ) -> Result[CompactResult, ModelFailure] {

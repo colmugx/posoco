@@ -36,14 +36,16 @@ pub(open) trait Runtime {
   /// `None` means the product did not enable streaming. `scope` carries the
   /// run/session identity; `scope.effect_id` is always `Some` here and hosts
   /// that propagate cancellation MUST key in-flight model calls by it,
-  /// mirroring `EffectContext.effect_id` on the tool side.
+  /// mirroring `EffectContext.effect_id` on the tool side. `messages` is an
+  /// `ArrayView` borrow valid only for the duration of the call; hosts must
+  /// not retain it.
   async fn call_model(
     Self,
     scope : @kernel.InvocationScope,
-    messages : Array[@kernel.Message],
+    messages : ArrayView[@kernel.Message],
     tool_definitions : Array[@kernel.ToolDef],
     call_options : Json,
-    on_chunk : ((Json) -> Unit)?,
+    on_chunk : ((@types.StreamChunk) -> Unit)?,
   ) -> Result[@kernel.ModelCallResult, @kernel.ModelFailure]
 
   /// Execute a single tool call described by `ctx`. Business errors map to
@@ -65,11 +67,12 @@ pub(open) trait Runtime {
   /// Compact the conversation. Forwarded to the model side; `trigger` lets
   /// the implementation pick a strategy (Auto = cheap elision, Manual =
   /// thorough). `scope.effect_id` is always `None` here: compact is
-  /// host-driven, not a reducer-allocated effect.
+  /// host-driven, not a reducer-allocated effect. `messages` is an `ArrayView`
+  /// borrow valid only for the duration of the call; hosts must not retain it.
   async fn compact(
     Self,
     scope : @kernel.InvocationScope,
-    messages : Array[@kernel.Message],
+    messages : ArrayView[@kernel.Message],
     call_options : Json,
     trigger : @kernel.CompactTrigger,
   ) -> Result[@kernel.CompactResult, @kernel.ModelFailure]

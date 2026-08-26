@@ -101,6 +101,8 @@ fn reduce_post_terminal(
     catalog_version=None,
     budget_consumed=state.budget_consumed(),
     outcome=state.outcome(),
+    completed_tool_results=Map::from_array([]),
+    tool_call_positions=Map::from_array([]),
     suspension_requirement=None,
   )
   reduce_output(next_state, [], [event])
@@ -356,6 +358,8 @@ fn reduce_model_completed(
           tool_results=tool_outcomes(state.tool_results),
         ),
       ),
+      completed_tool_results=Map::from_array([]),
+      tool_call_positions=Map::from_array([]),
       suspension_requirement=None,
     )
     let terminal_event : KernelEvent = RunCompleted(
@@ -390,6 +394,9 @@ fn reduce_model_completed_with_tools(
   let effects : Array[Effect] = []
   let mut transcript = initial_transcript
   let mut tool_results = state.tool_results_snapshot()
+  // Source-position ledger for the current wave: built once here, used for
+  // all tool completions in this wave instead of rescanning per result.
+  let tool_call_positions = build_tool_call_ledger(transcript)
   let calls = completion.tool_calls()
   // Pre-pass: split into NotExecuted outcomes (written to transcript) and
   // validated calls (become ExecuteTool effects). Duplicate call_id is an
@@ -509,6 +516,8 @@ fn reduce_model_completed_with_tools(
       catalog_version=None,
       budget_consumed=next_consumed,
       outcome=None,
+      completed_tool_results=Map::from_array([]),
+      tool_call_positions=Map::from_array([]),
       suspension_requirement=None,
     )
     let next_state = next_state.with_tool_results(tool_results)
@@ -533,6 +542,8 @@ fn reduce_model_completed_with_tools(
         next_tool_consumed,
         BudgetExhausted(dimension=dim),
         events,
+        completed_tool_results=Map::from_array([]),
+        tool_call_positions=Map::from_array([]),
       )
     }
     UnknownUsage(_) | WithinBudget => ()
@@ -563,6 +574,8 @@ fn reduce_model_completed_with_tools(
     catalog_version=None,
     budget_consumed=next_tool_consumed,
     outcome=None,
+    completed_tool_results=Map::from_array([]),
+    tool_call_positions~,
     suspension_requirement=None,
   )
   let next_state = next_state.with_tool_results(tool_results)
@@ -667,31 +680,33 @@ fn reduce_tool_completed(
         ),
       )
   }
-  let new_transcript = insert_tool_message_in_source_order(
-    state.transcript(),
-    payload.call_id,
-    tool_name,
-    payload.outcome,
-  )
-  let new_tool_results = insert_tool_result_in_source_order(
-    new_transcript,
-    state.tool_results_snapshot(),
-    payload.call_id,
-    payload.outcome,
-  )
   let new_pending = remove_execute_tool_effect(pending, payload.effect_id)
+  let position = match
+    state.tool_call_positions.get(payload.call_id.to_string()) {
+    Some(p) => p
+    None => missing_tool_position
+  }
+  let staged = state.completed_tool_results.copy()
+  staged[payload.call_id.to_string()] = (tool_name, payload.outcome, position)
   let event : KernelEvent = ToolCompleted(
     call_id=payload.call_id,
     outcome=payload.outcome,
   )
   let events = [event]
   if new_pending.is_empty() {
-    // Batch complete: back to ReadyForModel so the host can issue the next
-    // model step. Tool consumption was already recorded atomically when the
-    // reducer declared this batch's ExecuteTool effects.
+    // Wave boundary: commit all staged outcomes to the transcript and
+    // tool-result ledger in one source-ordered rebuild, then return to
+    // ReadyForModel. Tool consumption was already recorded atomically when
+    // the reducer declared this batch's ExecuteTool effects.
+    let (committed_transcript, committed_tool_results) = commit_tool_wave(
+      state.transcript(),
+      state.tool_call_positions,
+      staged,
+      state.tool_results_snapshot(),
+    )
     let next_state = state.transition(
       phase=ReadyForModel,
-      transcript=new_transcript,
+      transcript=committed_transcript,
       pending_effects=[],
       next_event_sequence=advance_seq_by(state, events.length()),
       next_effect_id=state.next_effect_id(),
@@ -699,14 +714,16 @@ fn reduce_tool_completed(
       catalog_version=None,
       budget_consumed=state.budget_consumed(),
       outcome=None,
+      completed_tool_results=Map::from_array([]),
+      tool_call_positions=Map::from_array([]),
       suspension_requirement=None,
     )
-    let next_state = next_state.with_tool_results(new_tool_results)
+    let next_state = next_state.with_tool_results(committed_tool_results)
     return reduce_output(next_state, [], events)
   }
   let next_state = state.transition(
     phase=AwaitingTools,
-    transcript=new_transcript,
+    transcript=state.transcript(),
     pending_effects=new_pending,
     next_event_sequence=advance_seq_by(state, events.length()),
     next_effect_id=state.next_effect_id(),
@@ -714,9 +731,10 @@ fn reduce_tool_completed(
     catalog_version=None,
     budget_consumed=state.budget_consumed(),
     outcome=None,
+    completed_tool_results=staged,
+    tool_call_positions=state.tool_call_positions.copy(),
     suspension_requirement=None,
   )
-  let next_state = next_state.with_tool_results(new_tool_results)
   reduce_output(next_state, [], events)
 }
 
@@ -782,25 +800,26 @@ fn reduce_tool_failed(
         ),
       )
   }
-  let new_transcript = insert_tool_message_in_source_order(
-    state.transcript(),
-    payload.call_id,
-    tool_name,
-    outcome,
-  )
-  let new_tool_results = insert_tool_result_in_source_order(
-    new_transcript,
-    state.tool_results_snapshot(),
-    payload.call_id,
-    outcome,
-  )
   let new_pending = remove_execute_tool_effect(pending, payload.effect_id)
+  let position = match
+    state.tool_call_positions.get(payload.call_id.to_string()) {
+    Some(p) => p
+    None => missing_tool_position
+  }
+  let staged = state.completed_tool_results.copy()
+  staged[payload.call_id.to_string()] = (tool_name, outcome, position)
   let event : KernelEvent = ToolCompleted(call_id=payload.call_id, outcome~)
   let events = [event]
   if new_pending.is_empty() {
+    let (committed_transcript, committed_tool_results) = commit_tool_wave(
+      state.transcript(),
+      state.tool_call_positions,
+      staged,
+      state.tool_results_snapshot(),
+    )
     let next_state = state.transition(
       phase=ReadyForModel,
-      transcript=new_transcript,
+      transcript=committed_transcript,
       pending_effects=[],
       next_event_sequence=advance_seq_by(state, events.length()),
       next_effect_id=state.next_effect_id(),
@@ -808,14 +827,16 @@ fn reduce_tool_failed(
       catalog_version=None,
       budget_consumed=state.budget_consumed(),
       outcome=None,
+      completed_tool_results=Map::from_array([]),
+      tool_call_positions=Map::from_array([]),
       suspension_requirement=None,
     )
-    let next_state = next_state.with_tool_results(new_tool_results)
+    let next_state = next_state.with_tool_results(committed_tool_results)
     return reduce_output(next_state, [], events)
   }
   let next_state = state.transition(
     phase=AwaitingTools,
-    transcript=new_transcript,
+    transcript=state.transcript(),
     pending_effects=new_pending,
     next_event_sequence=advance_seq_by(state, events.length()),
     next_effect_id=state.next_effect_id(),
@@ -823,9 +844,10 @@ fn reduce_tool_failed(
     catalog_version=None,
     budget_consumed=state.budget_consumed(),
     outcome=None,
+    completed_tool_results=staged,
+    tool_call_positions=state.tool_call_positions.copy(),
     suspension_requirement=None,
   )
-  let next_state = next_state.with_tool_results(new_tool_results)
   reduce_output(next_state, [], events)
 }
 
@@ -912,6 +934,8 @@ fn reduce_suspend(
     catalog_version=None,
     budget_consumed=state.budget_consumed(),
     outcome=None,
+    completed_tool_results=Map::from_array([]),
+    tool_call_positions=Map::from_array([]),
     suspension_requirement=Some(requirement),
   )
   reduce_output(next_state, effects.copy(), events)
@@ -964,6 +988,8 @@ fn reduce_cancel_with_pending(
     catalog_version=None,
     budget_consumed=state.budget_consumed(),
     outcome=Some(Cancelled(reason~)),
+    completed_tool_results=Map::from_array([]),
+    tool_call_positions=Map::from_array([]),
     suspension_requirement=None,
   )
   events.push(RunCancelled(reason~))
@@ -994,6 +1020,11 @@ fn reduce_terminal_fail_with(
   budget_consumed : BudgetConsumed,
   reason : FailureReason,
   pre_events : Array[KernelEvent],
+  completed_tool_results? : Map[
+    String,
+    (@kernel.ToolName, @kernel.ToolOutcome, Int),
+  ] = Map::from_array([]),
+  tool_call_positions? : Map[String, Int] = Map::from_array([]),
 ) -> ReduceOutput raise KernelError {
   let events : Array[KernelEvent] = []
   for e in pre_events {
@@ -1009,6 +1040,8 @@ fn reduce_terminal_fail_with(
     catalog_version=None,
     budget_consumed~,
     outcome=Some(Failed(reason~)),
+    completed_tool_results~,
+    tool_call_positions~,
     suspension_requirement=None,
   )
   events.push(RunFailed(reason~))
@@ -1031,6 +1064,8 @@ fn reduce_terminal_cancel(
     catalog_version=None,
     budget_consumed=state.budget_consumed(),
     outcome=Some(Cancelled(reason~)),
+    completed_tool_results=Map::from_array([]),
+    tool_call_positions=Map::from_array([]),
     suspension_requirement=None,
   )
   reduce_output(terminal_state, [], [RunCancelled(reason~)])
@@ -1084,6 +1119,14 @@ fn reduce_transcript_rewrite(
     messages_after=transcript.length(),
     reason=payload.reason,
   )
+  // A rewrite while tools are in flight may have moved or removed the
+  // assistant message that owns the pending calls. Rebuild the source-position
+  // ledger from the new transcript so the wave commit can still order results
+  // by source position.
+  let new_positions = match state.phase() {
+    AwaitingTools => build_tool_call_ledger(transcript)
+    _ => Map::from_array([])
+  }
   let next_state = state.transition(
     phase=state.phase(),
     transcript~,
@@ -1097,6 +1140,7 @@ fn reduce_transcript_rewrite(
     // counters stay — the run-wide token budget is unaffected by compaction.
     budget_consumed={ ..state.budget_consumed(), last_context_tokens: None },
     outcome=state.outcome(),
+    tool_call_positions=new_positions,
     suspension_requirement=state.suspension_requirement(),
   )
   reduce_output(next_state, [], [event])
@@ -1393,6 +1437,196 @@ fn insert_tool_result_in_source_order(
     out.push((call_id, outcome))
   }
   out
+}
+
+///|
+/// Fallback source position for call ids no longer present in the transcript
+/// (e.g. after a rewrite that removed the owning assistant message). Sorts
+/// to the end, matching the previous append-at-end behavior.
+let missing_tool_position : Int = 2147483647
+
+///|
+/// Insertion-sort an array of staged tool records by source position. Used
+/// instead of `Array::sort` because the tuple contains `CallId`, which does
+/// not implement `Compare`.
+fn sort_tool_records_by_position(
+  records : Array[(@kernel.CallId, @kernel.ToolName, @kernel.ToolOutcome, Int)],
+) -> Unit {
+  for i = 1; i < records.length(); i = i + 1 {
+    let key = records[i]
+    let mut j = i - 1
+    while j >= 0 && records[j].3 > key.3 {
+      records[j + 1] = records[j]
+      j = j - 1
+    }
+    records[j + 1] = key
+  }
+}
+
+///|
+/// Insertion-sort an array of tool-result records by source position.
+fn sort_result_records_by_position(
+  records : Array[(@kernel.CallId, @kernel.ToolOutcome, Int)],
+) -> Unit {
+  for i = 1; i < records.length(); i = i + 1 {
+    let key = records[i]
+    let mut j = i - 1
+    while j >= 0 && records[j].2 > key.2 {
+      records[j + 1] = records[j]
+      j = j - 1
+    }
+    records[j + 1] = key
+  }
+}
+
+///|
+/// Build an incremental ledger mapping each call id in the transcript to its
+/// stable source position among all assistant messages. Scans the transcript
+/// once per wave declaration / rewrite, not once per result.
+fn build_tool_call_ledger(transcript : @kernel.Transcript) -> Map[String, Int] {
+  let ledger = Map::from_array([])
+  let mut position = 0
+  for message in transcript.messages_snapshot() {
+    match message {
+      @kernel.AssistantMessage(tool_calls~, ..) =>
+        for call in tool_calls {
+          ledger[call.call_id.to_string()] = position
+          position = position + 1
+        }
+      _ => ()
+    }
+  }
+  ledger
+}
+
+///|
+/// Find the index of the assistant message that owns any of the staged call
+/// ids. All staged results in one wave belong to the same assistant message.
+fn find_owning_assistant_index(
+  messages : Array[@kernel.Message],
+  staged : Map[String, (@kernel.ToolName, @kernel.ToolOutcome, Int)],
+) -> Int? {
+  for i, message in messages {
+    match message {
+      @kernel.AssistantMessage(tool_calls~, ..) => {
+        let mut matched = false
+        for call in tool_calls {
+          if staged.contains(call.call_id.to_string()) {
+            matched = true
+            break
+          }
+        }
+        if matched {
+          return Some(i)
+        }
+      }
+      _ => ()
+    }
+  }
+  None
+}
+
+///|
+/// Commit all staged tool outcomes to the transcript and tool-result ledger
+/// in a single wave-boundary rebuild. Returns the new transcript and the new
+/// tool-result array. This is O(N) once per wave instead of O(K·N) per result.
+fn commit_tool_wave(
+  transcript : @kernel.Transcript,
+  ledger : Map[String, Int],
+  staged : Map[String, (@kernel.ToolName, @kernel.ToolOutcome, Int)],
+  existing_tool_results : Array[(@kernel.CallId, @kernel.ToolOutcome)],
+) -> (@kernel.Transcript, Array[(@kernel.CallId, @kernel.ToolOutcome)]) {
+  // Sort staged results by source position; missing positions sort to the end.
+  let staged_records : Array[
+    (@kernel.CallId, @kernel.ToolName, @kernel.ToolOutcome, Int),
+  ] = []
+  for id_str, entry in staged {
+    let (tool_name, outcome, position) = entry
+    staged_records.push(
+      (@kernel.CallId::unchecked(id_str), tool_name, outcome, position),
+    )
+  }
+  sort_tool_records_by_position(staged_records)
+
+  // Build new transcript.
+  let messages = transcript.messages_snapshot()
+  let new_messages : Array[@kernel.Message] = []
+  match find_owning_assistant_index(messages, staged) {
+    Some(idx) => {
+      // Messages up to and including the owning assistant.
+      for i in 0..<=idx {
+        new_messages.push(messages[i])
+      }
+      // Collect existing ToolMessages immediately after the assistant.
+      let existing_tool_records : Array[
+        (@kernel.CallId, @kernel.ToolName, @kernel.ToolOutcome, Int),
+      ] = []
+      let mut remaining_start = idx + 1
+      for i in (idx + 1)..<messages.length() {
+        match messages[i] {
+          @kernel.ToolMessage(call_id~, tool_name~, outcome~) => {
+            let pos = match ledger.get(call_id.to_string()) {
+              Some(p) => p
+              None => missing_tool_position
+            }
+            existing_tool_records.push((call_id, tool_name, outcome, pos))
+          }
+          _ => {
+            remaining_start = i
+            break
+          }
+        }
+      }
+      // Combine and sort all tool records for this wave by source position.
+      let combined = existing_tool_records.copy()
+      for record in staged_records {
+        combined.push(record)
+      }
+      sort_tool_records_by_position(combined)
+      for record in combined {
+        let (call_id, tool_name, outcome, _) = record
+        new_messages.push(@kernel.ToolMessage(call_id~, tool_name~, outcome~))
+      }
+      // Append remaining messages (e.g. rewrites after the assistant).
+      for i in remaining_start..<messages.length() {
+        new_messages.push(messages[i])
+      }
+    }
+    None => {
+      // Owning assistant not found: append staged results at the end.
+      for msg in messages {
+        new_messages.push(msg)
+      }
+      for record in staged_records {
+        let (call_id, tool_name, outcome, _) = record
+        new_messages.push(@kernel.ToolMessage(call_id~, tool_name~, outcome~))
+      }
+    }
+  }
+
+  // Build new tool-result ledger by merging existing results with staged ones
+  // in global source order.
+  let combined_results : Array[(@kernel.CallId, @kernel.ToolOutcome, Int)] = []
+  for record in existing_tool_results {
+    let (call_id, outcome) = record
+    let pos = match ledger.get(call_id.to_string()) {
+      Some(p) => p
+      None => missing_tool_position
+    }
+    combined_results.push((call_id, outcome, pos))
+  }
+  for record in staged_records {
+    let (call_id, tool_name, outcome, pos) = record
+    ignore(tool_name)
+    combined_results.push((call_id, outcome, pos))
+  }
+  sort_result_records_by_position(combined_results)
+  let new_tool_results : Array[(@kernel.CallId, @kernel.ToolOutcome)] = []
+  for record in combined_results {
+    let (call_id, outcome, _) = record
+    new_tool_results.push((call_id, outcome))
+  }
+  (@kernel.Transcript::from_array(new_messages), new_tool_results)
 }
 
 ///|

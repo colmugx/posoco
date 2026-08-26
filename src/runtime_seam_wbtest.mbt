@@ -42,10 +42,10 @@ fn FakeRuntime::FakeRuntime(inner : @runtime.PortRuntime) -> FakeRuntime {
 impl @runtime.Runtime for FakeRuntime with fn call_model(
   self,
   scope : @kernel.InvocationScope,
-  messages : Array[@kernel.Message],
+  messages : ArrayView[@kernel.Message],
   tool_definitions : Array[@kernel.ToolDef],
   call_options : Json,
-  on_chunk : ((Json) -> Unit)?,
+  on_chunk : ((@types.StreamChunk) -> Unit)?,
 ) -> Result[@kernel.ModelCallResult, @kernel.ModelFailure] {
   self.seen_scopes.push(scope)
   return self.inner.call_model(
@@ -104,7 +104,7 @@ impl @runtime.Runtime for FakeRuntime with fn cancel_effects(
 impl @runtime.Runtime for FakeRuntime with fn compact(
   self,
   scope : @kernel.InvocationScope,
-  messages : Array[@kernel.Message],
+  messages : ArrayView[@kernel.Message],
   call_options : Json,
   trigger : @kernel.CompactTrigger,
 ) -> Result[@kernel.CompactResult, @kernel.ModelFailure] {

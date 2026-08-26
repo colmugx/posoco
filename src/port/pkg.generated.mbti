@@ -209,11 +209,12 @@ pub(open) trait MemoryPort {
   async fn store(Self, @types.MemoryEntry) -> String raise @error.MemoryError
   async fn search(Self, @types.MemoryQuery) -> Array[@types.MemoryEntry] raise @error.MemoryError
   async fn delete(Self, String) -> Unit raise @error.MemoryError
+  fn source_name(Self) -> String = _
 }
 
 pub(open) trait ModelPort {
-  async fn chat(Self, @kernel.InvocationScope, Array[@kernel.Message], Array[@kernel.ToolDef], @types.ChatOptions, @types.StreamMode) -> @kernel.ModelCallResult raise @error.ModelError
-  async fn compact(Self, @kernel.InvocationScope, Array[@kernel.Message], @types.ChatOptions, @kernel.CompactTrigger) -> @kernel.CompactResult raise @error.ModelError
+  async fn chat(Self, @kernel.InvocationScope, ArrayView[@kernel.Message], Array[@kernel.ToolDef], @types.ChatOptions, @types.StreamMode) -> @kernel.ModelCallResult raise @error.ModelError
+  async fn compact(Self, @kernel.InvocationScope, ArrayView[@kernel.Message], @types.ChatOptions, @kernel.CompactTrigger) -> @kernel.CompactResult raise @error.ModelError
   fn provider_config(Self) -> ProviderConfig
 }
 
@@ -234,6 +235,7 @@ pub(open) trait PipelineHook {
 pub(open) trait SessionStore {
   async fn load(Self, String) -> @types.Session raise @error.SessionError
   async fn save(Self, String, @types.Session) -> Unit raise @error.SessionError
+  async fn append_messages(Self, String, Int, ArrayView[@kernel.Message]) -> Unit raise @error.SessionError = _
 }
 
 pub(open) trait SystemPromptContributor {

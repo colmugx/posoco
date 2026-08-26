@@ -66,7 +66,7 @@ pub fn FixtureHost::executed_effect_ids(self : FixtureHost) -> Array[EffectId] {
 pub impl @kernel_exec.HostRuntime for FixtureHost with fn call_model(
   self,
   _scope : InvocationScope,
-  messages : Array[Message],
+  messages : ArrayView[Message],
   tool_definitions : Array[ToolDef],
   call_options : Json,
   _on_chunk : HostChunkCallback?,
@@ -81,7 +81,10 @@ pub impl @kernel_exec.HostRuntime for FixtureHost with fn call_model(
   } else {
     match self.model_results[index] {
       Ok(completion) =>
-        Ok(ModelCallResult::{ completion, processed_messages: messages })
+        Ok(ModelCallResult::{
+          completion,
+          processed_messages: messages.to_owned(),
+        })
       Err(failure) => Err(failure)
     }
   }
@@ -123,7 +126,7 @@ pub impl @kernel_exec.HostRuntime for FixtureHost with fn cancel_effects(
 pub impl @kernel_exec.HostRuntime for FixtureHost with fn compact(
   self : FixtureHost,
   _scope : InvocationScope,
-  _messages : Array[Message],
+  _messages : ArrayView[Message],
   _call_options : Json,
   _trigger : @kernel.CompactTrigger,
 ) -> Result[CompactResult, ModelFailure] {

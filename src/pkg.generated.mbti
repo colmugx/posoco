@@ -22,8 +22,6 @@ pub fn event_trace_mismatch(Array[@types.TurnEvent], Array[@types.TurnEvent]) ->
 
 pub fn parse_slash_args(String, Array[@port.CommandParam]) -> Result[Json, String]
 
-pub fn render_context(ns? : String, kind~ : String, trust~ : Bool, source? : String, content~ : String) -> String
-
 pub fn tk_config() -> AgentConfig
 
 pub fn tk_error_result(String) -> @kernel.ToolOutcome
@@ -67,7 +65,6 @@ pub(all) struct AgentConfig {
   max_output_tokens : Int?
   model_context_window : Int?
   compact_threshold : Double?
-  context_namespace : String?
 }
 
 pub(all) struct CompositeToolProvider {
@@ -100,11 +97,10 @@ pub impl @port.Extension for ManifestOnly
 
 pub(all) struct MemoryRetrievalHook {
   memories : Array[&@port.MemoryPort]
-  namespace : String
   top_k : Int
   on_failure : (String) -> Unit
 }
-pub fn MemoryRetrievalHook::MemoryRetrievalHook(memories~ : Array[&@port.MemoryPort], namespace? : String, top_k? : Int, on_failure? : (String) -> Unit) -> Self
+pub fn MemoryRetrievalHook::MemoryRetrievalHook(memories~ : Array[&@port.MemoryPort], top_k? : Int, on_failure? : (String) -> Unit) -> Self
 pub async fn MemoryRetrievalHook::before_model(Self, Array[@kernel.Message]) -> Array[@kernel.Message] raise @port.HookAbort
 pub impl @port.PipelineHook for MemoryRetrievalHook
 
@@ -258,6 +254,7 @@ pub(all) enum ScriptedToolOutcome {
 pub(all) enum SessionOp {
   OpLoad(id~ : String, result~ : Result[@types.Session, @error.SessionError])
   OpSave(id~ : String, metadata~ : Map[String, Json], result~ : Result[Unit, @error.SessionError])
+  OpAppend(id~ : String, from_index~ : Int, messages~ : Array[@kernel.Message], result~ : Result[Unit, @error.SessionError])
 }
 
 pub(all) struct SystemPromptHook {

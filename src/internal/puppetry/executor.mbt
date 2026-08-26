@@ -147,7 +147,7 @@ async fn execute_call_model(
   let attempted : Result[Result[ModelCallResult, @kernel.ModelFailure], Error] = Ok(
     ctx.host.call_model(
       scope,
-      Array::from_iter(payload.messages.iter()),
+      payload.messages[:],
       tool_definitions,
       payload.call_options,
       on_chunk,

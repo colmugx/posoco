@@ -3,6 +3,7 @@ package "colmugx/posoco/internal/kernel_exec"
 
 import {
   "colmugx/posoco/kernel",
+  "colmugx/posoco/types",
   "moonbitlang/core/debug",
 }
 
@@ -293,6 +294,8 @@ pub struct RunState {
   budget_consumed : BudgetConsumed
   outcome : RunOutcome?
   tool_results : FixedArray[(@kernel.CallId, @kernel.ToolOutcome)]
+  completed_tool_results : Map[String, (@kernel.ToolName, @kernel.ToolOutcome, Int)]
+  tool_call_positions : Map[String, Int]
   suspension_requirement : SuspensionRequirement?
 } derive(Eq, @debug.Debug)
 pub fn RunState::budget(Self) -> Budget
@@ -310,7 +313,7 @@ pub fn RunState::session_id(Self) -> @kernel.SessionId
 pub fn RunState::suspension_requirement(Self) -> SuspensionRequirement?
 pub fn RunState::to_string(Self) -> String
 pub fn RunState::transcript(Self) -> @kernel.Transcript
-pub fn RunState::transition(Self, phase~ : Phase, transcript~ : @kernel.Transcript, pending_effects~ : Array[Effect], next_event_sequence~ : EventSequence, next_effect_id~ : @kernel.EffectId, current_model_step_id~ : ModelStepId, catalog_version~ : @kernel.CatalogVersion?, budget_consumed~ : BudgetConsumed, outcome~ : RunOutcome?, suspension_requirement~ : SuspensionRequirement?) -> Self raise KernelError
+pub fn RunState::transition(Self, phase~ : Phase, transcript~ : @kernel.Transcript, pending_effects~ : Array[Effect], next_event_sequence~ : EventSequence, next_effect_id~ : @kernel.EffectId, current_model_step_id~ : ModelStepId, catalog_version~ : @kernel.CatalogVersion?, budget_consumed~ : BudgetConsumed, outcome~ : RunOutcome?, completed_tool_results? : Map[String, (@kernel.ToolName, @kernel.ToolOutcome, Int)], tool_call_positions? : Map[String, Int], suspension_requirement~ : SuspensionRequirement?) -> Self raise KernelError
 pub impl Show for RunState
 
 pub(all) struct StartPayload {
@@ -386,7 +389,7 @@ pub using @kernel {type CatalogVersion}
 
 pub using @kernel {type EffectId}
 
-pub type HostChunkCallback = (Json) -> Unit
+pub type HostChunkCallback = (@types.StreamChunk) -> Unit
 
 pub using @kernel {type RunId}
 
@@ -394,8 +397,8 @@ pub using @kernel {type SessionId}
 
 // Traits
 pub(open) trait HostRuntime {
-  async fn call_model(Self, @kernel.InvocationScope, Array[@kernel.Message], Array[@kernel.ToolDef], Json, ((Json) -> Unit)?) -> Result[@kernel.ModelCallResult, @kernel.ModelFailure]
+  async fn call_model(Self, @kernel.InvocationScope, ArrayView[@kernel.Message], Array[@kernel.ToolDef], Json, ((@types.StreamChunk) -> Unit)?) -> Result[@kernel.ModelCallResult, @kernel.ModelFailure]
   async fn execute_tool(Self, @kernel.EffectId, @kernel.OwnerId, @kernel.CallId, @kernel.ToolName, Json) -> @kernel.ToolOutcome
   async fn cancel_effects(Self, Array[@kernel.EffectId], @kernel.CancelReason) -> Array[(@kernel.EffectId, @kernel.CancelDisposition)]
-  async fn compact(Self, @kernel.InvocationScope, Array[@kernel.Message], Json, @kernel.CompactTrigger) -> Result[@kernel.CompactResult, @kernel.ModelFailure]
+  async fn compact(Self, @kernel.InvocationScope, ArrayView[@kernel.Message], Json, @kernel.CompactTrigger) -> Result[@kernel.CompactResult, @kernel.ModelFailure]
 }

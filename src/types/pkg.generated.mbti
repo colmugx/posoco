@@ -46,8 +46,8 @@ pub fn Session::parent_thread_id(Self) -> String?
 pub fn Session::with_parent_thread_id(Self, String) -> Self
 
 pub(all) struct StreamAccumulator {
-  mut text : String
-  mut reasoning : String
+  mut text_buf : StringBuilder
+  mut reasoning_buf : StringBuilder
   tool_calls : Array[ToolCallBuilder]
   mut finish_reason : String
   mut usage_input : Int?
@@ -58,6 +58,8 @@ pub(all) struct StreamAccumulator {
 } derive(@debug.Debug)
 pub fn StreamAccumulator::StreamAccumulator() -> Self
 pub fn StreamAccumulator::push(Self, StreamChunk) -> Unit
+pub fn StreamAccumulator::reasoning(Self) -> String
+pub fn StreamAccumulator::text(Self) -> String
 pub fn StreamAccumulator::to_completion(Self) -> @kernel.Completion raise @error.ModelError
 
 pub(all) enum StreamChunk {
@@ -70,16 +72,17 @@ pub(all) enum StreamChunk {
 
 pub(all) enum StreamMode {
   NoStream
-  Stream((Json) -> Unit)
+  Stream((StreamChunk) -> Unit)
 } derive(@debug.Debug)
 pub impl Show for StreamMode
 
 pub(all) struct ToolCallBuilder {
   mut id : String
   mut name : String
-  mut arguments_json : String
+  mut arguments_buf : StringBuilder
 } derive(@debug.Debug)
 pub fn ToolCallBuilder::ToolCallBuilder() -> Self
+pub fn ToolCallBuilder::arguments_json(Self) -> String
 
 pub(all) enum TurnEvent {
   TurnStarted
@@ -91,6 +94,7 @@ pub(all) enum TurnEvent {
   TurnFailed(String)
   ToolCallDeferred(call~ : @kernel.ToolCall, reason~ : String)
   StreamChunkReceived(chunk~ : StreamChunk)
+  StreamChunksDropped(count~ : Int)
   ConfigWarning(field~ : String, value~ : String, reason~ : String)
   ConfigChanged(field~ : String, old_value~ : String, new_value~ : String)
   Custom(source~ : String, label~ : String, data~ : Json)

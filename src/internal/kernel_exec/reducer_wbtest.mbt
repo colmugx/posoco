@@ -879,3 +879,115 @@ test "C-TRANSCRIPT-REWRITE-INITIALIZING-REJECTED: nothing to rewrite before Star
     _ => fail("expected InputRejected")
   }
 }
+
+// ──────────────────────────────────────────────────────────────────────────
+// C-TOOL-WAVE-OUT-OF-ORDER: completions arriving in reverse order still
+// produce tool messages in source (call) order. Regression guard for the
+// wave-commit staging path.
+// ──────────────────────────────────────────────────────────────────────────
+
+///|
+test "C-TOOL-WAVE-OUT-OF-ORDER: reverse completions preserve source order" {
+  let (st_awaiting, eff_id, step_id) = run_until_awaiting_model()
+  let catalog = make_catalog_v1()
+  // Assistant requests four tools in source order: alpha, beta, gamma, delta.
+  let completion = @kernel.Completion(
+    content=[@kernel.Text("calling")],
+    tool_calls=[
+      {
+        call_id: @kernel.CallId::unchecked("alpha"),
+        name: @kernel.ToolName::unchecked("read"),
+        arguments: Json::object(Map::from_array([("path", Json::string("/a"))])),
+      },
+      {
+        call_id: @kernel.CallId::unchecked("beta"),
+        name: @kernel.ToolName::unchecked("read"),
+        arguments: Json::object(Map::from_array([("path", Json::string("/b"))])),
+      },
+      {
+        call_id: @kernel.CallId::unchecked("gamma"),
+        name: @kernel.ToolName::unchecked("read"),
+        arguments: Json::object(Map::from_array([("path", Json::string("/c"))])),
+      },
+      {
+        call_id: @kernel.CallId::unchecked("delta"),
+        name: @kernel.ToolName::unchecked("read"),
+        arguments: Json::object(Map::from_array([("path", Json::string("/d"))])),
+      },
+    ],
+    reasoning=None,
+    finish_reason=@kernel.ToolCalls,
+    usage=None,
+  )
+  let out1 = reduce(
+    st_awaiting,
+    catalog,
+    ModelCompleted(payload=ModelCompletedPayload::{
+      effect_id: eff_id,
+      model_step_id: step_id,
+      completion,
+      processed_messages: st_awaiting.transcript().messages_snapshot(),
+    }),
+  )
+  let st_tools = out1.next_state()
+  assert_eq(st_tools.phase(), AwaitingTools)
+  let effects = out1.effects()
+  assert_eq(effects.length(), 4)
+  // Complete the tools in reverse source order.
+  let mut state = st_tools
+  for i in [3, 2, 1, 0] { // delta, gamma, beta, alpha
+    let exec_id = match effects[i] {
+      ExecuteTool(effect_id~, payload=ep) => {
+        assert_eq(ep.tool_name, @kernel.ToolName::unchecked("read"))
+        effect_id
+      }
+      _ => fail("expected ExecuteTool")
+    }
+    let call_id = match effects[i] {
+      ExecuteTool(payload=ep, ..) => ep.call_id
+      _ => fail("expected ExecuteTool")
+    }
+    let out = reduce(
+      state,
+      catalog,
+      ToolCompleted(payload=ToolCompletedPayload::{
+        effect_id: exec_id,
+        call_id,
+        tool_name: @kernel.ToolName::unchecked("read"),
+        arguments: Json::null(),
+        outcome: @kernel.Success(content=call_id.to_string(), structured=None),
+      }),
+    )
+    state = out.next_state()
+  }
+  // Final state is back to ReadyForModel.
+  assert_eq(state.phase(), ReadyForModel)
+  // Transcript contains tool messages in source order: alpha, beta, gamma, delta.
+  let msgs = state.transcript().messages_snapshot()
+  assert_eq(msgs.length(), 6) // User + Assistant + 4 ToolMessage
+  let expected_call_ids = ["alpha", "beta", "gamma", "delta"]
+  for i, expected in expected_call_ids {
+    match msgs[i + 2] {
+      @kernel.ToolMessage(call_id~, ..) =>
+        assert_eq(call_id.to_string(), expected)
+      _ => fail("expected ToolMessage at index \{i + 2}")
+    }
+  }
+  // Tool-result ledger is also in source order.
+  let tool_result_ids = state
+    .transcript()
+    .messages_snapshot()
+    .filter(fn(msg) {
+      match msg {
+        @kernel.ToolMessage(..) => true
+        _ => false
+      }
+    })
+    .map(fn(msg) {
+      match msg {
+        @kernel.ToolMessage(call_id~, ..) => call_id.to_string()
+        _ => ""
+      }
+    })
+  assert_eq(tool_result_ids, expected_call_ids)
+}

@@ -10,7 +10,7 @@ struct MockModelPort {
 impl @port.ModelPort for MockModelPort with fn chat(
   self,
   _scope : @kernel.InvocationScope,
-  _messages : Array[@kernel.Message],
+  _messages : ArrayView[@kernel.Message],
   _tools : Array[@kernel.ToolDef],
   _options : @types.ChatOptions,
   _stream : @types.StreamMode,
@@ -28,7 +28,7 @@ impl @port.ModelPort for MockModelPort with fn chat(
 impl @port.ModelPort for MockModelPort with fn compact(
   _self,
   _scope : @kernel.InvocationScope,
-  _messages : Array[@kernel.Message],
+  _messages : ArrayView[@kernel.Message],
   _options : @types.ChatOptions,
   _trigger : @kernel.CompactTrigger,
 ) -> @kernel.CompactResult raise @error.ModelError {
@@ -105,7 +105,6 @@ fn make_config() -> @posoco.AgentConfig {
     max_output_tokens: None,
     model_context_window: None,
     compact_threshold: None,
-    context_namespace: None,
   }
 }
 

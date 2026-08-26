@@ -14,10 +14,6 @@ pub(all) struct AgentConfig {
   /// context window, in (0, 1]. `None` defers to the active modelport's
   /// reported `compact_threshold`, falling back to the core default (0.88).
   compact_threshold : Double?
-  /// Host namespace for core-rendered context envelopes (currently the
-  /// memory-injection message). `None` uses the core default `"posoco"`,
-  /// rendering `<posoco-context ...>` elements.
-  context_namespace : String?
 }
 
 ///|
@@ -252,6 +248,15 @@ priv struct AgentRuntime {
   /// `on_start` notification. Fired inside the first `run_single_turn`,
   /// after the shutdown guard and before the first `TurnStarted`.
   mut start_notified : Bool
+  /// Per-turn chunk dispatcher handle. The callback installed in the Puppet
+  /// reads this reference to route `StreamChunk` events to the active turn's
+  /// buffered queue; `run_turn_via_puppet` creates and swaps the dispatcher
+  /// for each turn.
+  chunk_dispatcher : Ref[ChunkDispatcher?]
+  /// Per-session cursor tracking how many leading messages are already
+  /// persisted. Reset to the loaded session length on load and advanced to
+  /// the final transcript length on every successful save.
+  session_cursors : Map[String, Int]
 }
 
 ///|
@@ -344,10 +349,6 @@ fn AgentRuntime::compose(
     let observers = agg.observers
     let mem_hook = MemoryRetrievalHook::MemoryRetrievalHook(
       memories=agg.memory,
-      namespace=match config.context_namespace {
-        Some(ns) => ns
-        None => "posoco"
-      },
       on_failure=fn(reason) {
         emit_secondary_failure(observers, "memory_retrieval", reason)
       },
@@ -382,7 +383,11 @@ fn AgentRuntime::compose(
     }
   }
   let journal = @puppetry.InMemoryJournal::InMemoryJournal()
-  let event_subscriber = AgentEventSubscriber(agg.observers)
+  let chunk_dispatcher_ref : Ref[ChunkDispatcher?] = Ref::Ref(None)
+  let event_subscriber = AgentEventSubscriber(
+    agg.observers,
+    chunk_dispatcher_ref,
+  )
   let session_store : &@port.SessionStore? = match agg.sessions {
     [first, ..] => Some(first)
     [] => None
@@ -393,7 +398,10 @@ fn AgentRuntime::compose(
     journal: journal as &@puppetry.RunJournal,
     contributors: [],
     subscribers: [event_subscriber as &@puppetry.EventSubscriber],
-    stream_chunks: create_agent_stream_callback(agg.observers),
+    stream_chunks: create_agent_stream_callback(
+      agg.observers,
+      chunk_dispatcher_ref,
+    ),
     hooks: composed_hooks,
     max_iterations: match config.max_tool_rounds {
       // The pump burns 2 iterations per tool round (AwaitingModel +
@@ -440,6 +448,8 @@ fn AgentRuntime::compose(
     shutdown_complete: false,
     next_lifecycle_shutdown: agg.lifecycle.length() - 1,
     start_notified: false,
+    chunk_dispatcher: chunk_dispatcher_ref,
+    session_cursors: Map::from_array([]),
   }
   { runtime, }
 }
@@ -553,6 +563,20 @@ fn contextualize_session_error(
 }
 
 ///|
+/// Contextualize a generic `Error` raised by a parallel session-save wave as a
+/// `SessionError::Save`. The thunks themselves return `Result[Unit,
+/// SessionError]`, so this path only handles async-runtime/cancellation errors
+/// that escape `@async.all` itself.
+fn save_error_context(
+  error : Error,
+  session_id : String,
+  operation : String,
+) -> @error.AgentError {
+  let context = "session_id='\{safe_error_label(session_id)}', operation='\{operation}', category='SessionError::Save', cause='\{safe_error_label(error.to_string())}'"
+  @error.AgentError::Session(@error.SessionError::Save(context))
+}
+
+///|
 fn @types.TurnEvent::tool_call_result(
   call : @kernel.ToolCall,
   result : @kernel.ToolOutcome,
@@ -579,6 +603,7 @@ fn agent_snapshot_turn_event(event : @types.TurnEvent) -> @types.TurnEvent {
     ToolCallDeferred(call~, reason~) =>
       ToolCallDeferred(call=agent_snapshot_tool_call(call), reason~)
     StreamChunkReceived(chunk~) => StreamChunkReceived(chunk~)
+    StreamChunksDropped(count~) => StreamChunksDropped(count~)
     ConfigWarning(field~, value~, reason~) =>
       ConfigWarning(field~, value~, reason~)
     ConfigChanged(field~, old_value~, new_value~) =>

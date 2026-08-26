@@ -12,7 +12,6 @@ fn err_config() -> @posoco.AgentConfig {
     max_output_tokens: None,
     model_context_window: None,
     compact_threshold: None,
-    context_namespace: None,
   }
 }
 
@@ -480,7 +479,6 @@ async test "t07_tool_loop_emits_exactly_one_turnfailed" {
     max_output_tokens: None,
     model_context_window: None,
     compact_threshold: None,
-    context_namespace: None,
   }
   let agent = @posoco.Agent(
     exts=[

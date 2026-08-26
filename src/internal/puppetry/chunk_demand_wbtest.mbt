@@ -27,7 +27,7 @@ fn ChunkDemandHost::delivered_chunks(self : ChunkDemandHost) -> Int {
 pub impl @kernel_exec.HostRuntime for ChunkDemandHost with fn call_model(
   self,
   _scope : InvocationScope,
-  messages : Array[Message],
+  messages : ArrayView[Message],
   _tool_definitions : Array[ToolDef],
   _call_options : Json,
   on_chunk : HostChunkCallback?,
@@ -35,13 +35,13 @@ pub impl @kernel_exec.HostRuntime for ChunkDemandHost with fn call_model(
   match on_chunk {
     None => self.saw_no_sink = true
     Some(callback) => {
-      callback(Json::string("delta"))
+      callback(@types.TextDelta(token="delta"))
       self.delivered_chunks = self.delivered_chunks + 1
     }
   }
   Ok(ModelCallResult::{
     completion: fixture_stop("done"),
-    processed_messages: messages,
+    processed_messages: messages.to_owned(),
   })
 }
 
@@ -72,7 +72,7 @@ pub impl @kernel_exec.HostRuntime for ChunkDemandHost with fn cancel_effects(
 pub impl @kernel_exec.HostRuntime for ChunkDemandHost with fn compact(
   self : ChunkDemandHost,
   _scope : InvocationScope,
-  _messages : Array[Message],
+  _messages : ArrayView[Message],
   _call_options : Json,
   _trigger : @kernel.CompactTrigger,
 ) -> Result[CompactResult, ModelFailure] {
@@ -112,9 +112,9 @@ async test "puppet/chunks_are_not_requested_without_a_consumer" {
 
 ///|
 async test "puppet/chunks_are_delivered_when_consumer_is_set" {
-  let trace : Array[String] = []
-  let on_chunk : HostChunkCallback = fn(chunk : Json) {
-    trace.push(chunk.stringify())
+  let trace : Array[@types.StreamChunk] = []
+  let on_chunk : HostChunkCallback = fn(chunk : @types.StreamChunk) {
+    trace.push(chunk)
   }
   let host = ChunkDemandHost()
   let journal = InMemoryJournal()
@@ -125,6 +125,6 @@ async test "puppet/chunks_are_delivered_when_consumer_is_set" {
   assert_true(fixture_prompt(puppet, "chunk_some") is Accepted(_))
   assert_false(host.saw_no_sink())
   assert_eq(host.delivered_chunks(), 1)
-  assert_true(trace.length() > 0)
-  assert_eq(trace[0], "\"delta\"")
+  assert_eq(trace.length(), 1)
+  assert_eq(trace[0], @types.TextDelta(token="delta"))
 }
