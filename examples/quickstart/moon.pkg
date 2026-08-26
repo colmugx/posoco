@@ -3,4 +3,8 @@ import {
   "moonbitlang/async",
 }
 
+import {
+  "colmugx/posoco/port",
+} for "wbtest"
+
 pkgtype(kind: "executable")

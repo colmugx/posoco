@@ -6,7 +6,7 @@ struct QuickstartModel {}
 pub impl @posoco.ModelPort for QuickstartModel with fn chat(
   _self,
   _scope : @posoco.InvocationScope,
-  messages : Array[@posoco.Message],
+  messages : ArrayView[@posoco.Message],
   _tools : Array[@posoco.ToolDef],
   _options : @posoco.ChatOptions,
   _stream : @posoco.StreamMode,
@@ -20,14 +20,14 @@ pub impl @posoco.ModelPort for QuickstartModel with fn chat(
   )
   // No preprocessing occurs in this fixed model. Return a fresh snapshot so
   // Posoco can persist the complete user+assistant transcript safely.
-  { completion, processed_messages: messages.copy() }
+  { completion, processed_messages: messages.to_owned() }
 }
 
 ///|
 pub impl @posoco.ModelPort for QuickstartModel with fn compact(
   _self,
   _scope : @posoco.InvocationScope,
-  _messages : Array[@posoco.Message],
+  _messages : ArrayView[@posoco.Message],
   _options : @posoco.ChatOptions,
   _trigger : @posoco.CompactTrigger,
 ) -> @posoco.CompactResult raise @posoco.ModelError {
@@ -52,7 +52,7 @@ struct QuickstartSessionStore {
 }
 
 ///|
-fn QuickstartSessionStore::new() -> QuickstartSessionStore {
+fn QuickstartSessionStore::QuickstartSessionStore() -> QuickstartSessionStore {
   { sessions: Map::from_array([]) }
 }
 
@@ -93,8 +93,8 @@ struct QuickstartExtension {
 }
 
 ///|
-fn QuickstartExtension::new() -> QuickstartExtension {
-  { model: QuickstartModel::{  }, sessions: QuickstartSessionStore::new() }
+fn QuickstartExtension::QuickstartExtension() -> QuickstartExtension {
+  { model: QuickstartModel::{  }, sessions: QuickstartSessionStore() }
 }
 
 ///|
@@ -110,12 +110,13 @@ pub impl @posoco.Extension for QuickstartExtension with fn manifest(self) -> @po
 
 ///|
 async fn main {
-  let extension = QuickstartExtension::new()
+  let extension = QuickstartExtension()
   let agent = @posoco.Agent(exts=[extension], config={
     max_tool_rounds: Some(0),
     temperature: None,
     max_output_tokens: None,
     model_context_window: None,
+    compact_threshold: None,
   })
   let input : @posoco.Message = @posoco.Message::UserMessage(content=[
     @posoco.Content::Text("Say hello"),
