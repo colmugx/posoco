@@ -127,6 +127,10 @@ let result = agent.run_turn(input, "session_1")
 已发布 `TurnStarted` 的 turn 恰好发布一个 terminal event：成功为
 `TurnCompleted`，任何主路径失败为 `TurnFailed`。
 
+## 扩展库
+
+[`colmugx/posoco-extension`](https://github.com/colmugx/posoco-extension) 维护了一套开箱即用的扩展，可直接接入 `Agent(exts~, config~)`。
+
 ## 延伸阅读 — Posoco 101
 
 [`posoco-101/`](./posoco-101/) 是按章节递进的课程，从"什么是 agent loop"

@@ -134,6 +134,10 @@ is async and raises `AgentError`. Composition is fail-fast and raises
 A turn that has emitted `TurnStarted` emits exactly one terminal event:
 `TurnCompleted` on success, or `TurnFailed` on any primary failure.
 
+## Extension library
+
+[`colmugx/posoco-extension`](https://github.com/colmugx/posoco-extension) maintains a curated set of ready-to-use extensions, and other port implementations you can drop straight into `Agent(exts~, config~)`.
+
 ## Learn more — Posoco 101
 
 [`posoco-101/`](./posoco-101/) is a chapter-by-chapter course that builds from
