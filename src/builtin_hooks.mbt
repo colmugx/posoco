@@ -43,14 +43,15 @@ pub fn SystemPromptHook::SystemPromptHook(
 ///|
 /// Assemble base + non-empty contributor sections with `id:` headers.
 pub fn SystemPromptHook::assemble(self : SystemPromptHook) -> String {
-  let sections : Array[String] = [self.base_prompt]
+  let buf = StringBuilder::new()
+  buf.write_string(self.base_prompt)
   for s in self.contributors {
     let text = s.contributor.system_prompt()
     if text != "" {
-      sections.push(s.id + ":\n" + text)
+      buf <+ "\n\{s.id}:\n\{text}"
     }
   }
-  sections.join("\n\n")
+  buf.to_string()
 }
 
 ///|
@@ -164,18 +165,14 @@ fn MemoryRetrievalHook::build_memory_message(
   if entries.is_empty() {
     return None
   }
-  let sources : Array[String] = []
-  for mem in self.memories {
-    sources.push(mem.source_name())
-  }
-  let lines : Array[String] = [
-    memory_section_header,
-    "from \{sources.join(", ")}. For Your Information.",
-  ]
+  let sources = self.memories.map(fn(mem) { mem.source_name() })
+  let buf = StringBuilder::new()
+  buf.write_string(memory_section_header)
+  buf <+ "\nfrom \{sources.join(", ")}. For Your Information."
   for entry in entries {
-    lines.push("- " + entry.content)
+    buf <+ "\n- \{entry.content}"
   }
-  Some(@kernel.SystemMessage(content=[@kernel.Text(lines.join("\n"))]))
+  Some(@kernel.SystemMessage(content=[@kernel.Text(buf.to_string())]))
 }
 
 ///|
@@ -350,7 +347,7 @@ fn UiRenderHook::render_tool_completed(
   let outcome_tag = outcome.to_string()
   let intent : @port.UiRender = {
     slot: UiSlot::Notice,
-    key: "tool_" + call.call_id.to_string(),
+    key: "tool_\{call.call_id.to_string()}",
     title: Some(label),
     body: UiBody::Text(outcome_tag),
     ttl_ms: None,
@@ -392,11 +389,11 @@ pub impl @port.PipelineHook for UiRenderHook with fn on_post_event(
       self.render_tool_completed(call, outcome)
     @port.ToolFailed(call~, reason~) =>
       self.render_failure(
-        "tool_fail_" + call.call_id.to_string(),
-        "tool " + call.name.to_string() + " failed: " + reason,
+        "tool_fail_\{call.call_id.to_string()}",
+        "tool \{call.name.to_string()} failed: \{reason}",
       )
     @port.ModelFailed(failure~) =>
-      self.render_failure("model_fail", "model failed: " + failure.to_string())
+      self.render_failure("model_fail", "model failed: \{failure.to_string()}")
   }
 }
 
@@ -490,8 +487,7 @@ pub impl @port.UiPort for CompositeUiPort with fn request(self, req) -> @port.Ui
     }
   }
   raise @error.UiError::Unsupported(
-    detail="no contributor supported the request; last detail=" +
-      last_unsupported_detail,
+    detail="no contributor supported the request; last detail=\{last_unsupported_detail}",
   )
 }
 

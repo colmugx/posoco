@@ -250,42 +250,23 @@ fn check_budget(budget : Budget) -> Result[Unit, PuppetError] {
 /// Map iteration order does NOT contribute (we use only the catalog version
 /// + sorted definition names).
 fn compute_fingerprint(input : TurnSnapshotInput, policy : RunPolicy) -> String {
-  let parts : Array[String] = []
-  parts.push("v1")
-  parts.push("run=" + input.run_id.to_string())
-  parts.push("turn=" + input.turn_id.to_string())
-  parts.push("session=" + input.session_id.to_string())
-  parts.push("catalog=" + input.catalog.version().to_int().to_string())
   // Tool names sorted alphabetically.
   let names : Array[String] = []
   for entry in input.catalog.entries() {
     names.push(entry.definition.name.to_string())
   }
   names.sort_by(compare_strings)
-  parts.push("tools=[" + names.join(",") + "]")
-  parts.push("model=" + policy.model_id)
-  // Fingerprint requires deterministic string form; `Json::stringify`
-  // gives canonical JSON (no Debug-style formatting).
-  parts.push("options=" + policy.call_options.stringify())
-  // Budget dimensions in canonical order.
-  parts.push("budget_steps=" + opt_to_str(policy.budget.max_model_steps))
-  parts.push("budget_rounds=" + opt_to_str(policy.budget.max_tool_rounds))
-  parts.push("budget_calls=" + opt_to_str(policy.budget.max_tool_calls))
-  parts.push("budget_tokens=" + opt_to_str(policy.budget.max_total_tokens))
-  parts.push("context_window=" + opt_to_str(policy.context_window))
-  parts.push("compact_threshold=" + policy.compact_threshold.to_string())
-  parts.push("deadline=" + opt_to_str(input.deadline))
   // Provenance lists sorted for determinism.
   let hp = input.hook_provenance.copy()
   hp.sort_by(compare_strings)
-  parts.push("hooks=[" + hp.join(",") + "]")
   let lp = input.lifecycle_provenance.copy()
   lp.sort_by(compare_strings)
-  parts.push("lifecycle=[" + lp.join(",") + "]")
   let sp = input.subscriber_provenance.copy()
   sp.sort_by(compare_strings)
-  parts.push("subscribers=[" + sp.join(",") + "]")
-  parts.join("|")
+  // Fingerprint requires deterministic string form; `Json::stringify`
+  // gives canonical JSON (no Debug-style formatting).
+
+  "v1|run=\{input.run_id.to_string()}|turn=\{input.turn_id.to_string()}|session=\{input.session_id.to_string()}|catalog=\{input.catalog.version().to_int().to_string()}|tools=[\{names.join(",")}]|model=\{policy.model_id}|options=\{policy.call_options.stringify()}|budget_steps=\{opt_to_str(policy.budget.max_model_steps)}|budget_rounds=\{opt_to_str(policy.budget.max_tool_rounds)}|budget_calls=\{opt_to_str(policy.budget.max_tool_calls)}|budget_tokens=\{opt_to_str(policy.budget.max_total_tokens)}|context_window=\{opt_to_str(policy.context_window)}|compact_threshold=\{policy.compact_threshold.to_string()}|deadline=\{opt_to_str(input.deadline)}|hooks=[\{hp.join(",")}]|lifecycle=[\{lp.join(",")}]|subscribers=[\{sp.join(",")}]"
 }
 
 ///|

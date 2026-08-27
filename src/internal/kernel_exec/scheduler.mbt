@@ -44,8 +44,7 @@ pub(all) struct ExecutionWave {
 
 ///|
 pub impl Show for ExecutionWave with fn to_string(self : ExecutionWave) -> String {
-  let ids = self.calls.map(fn(c) { c.call_id.to_string() }).join(", ")
-  "Wave([\{ids}])"
+  "Wave([\{self.calls.map(fn(c) { c.call_id.to_string() }).join(", ")}])"
 }
 
 ///|
@@ -82,8 +81,7 @@ pub fn ExecutionPlan::total_calls(self : ExecutionPlan) -> Int {
 
 ///|
 pub impl Show for ExecutionPlan with fn to_string(self : ExecutionPlan) -> String {
-  let parts = self.waves.map(fn(w) { w.to_string() })
-  "ExecutionPlan(" + parts.join(", ") + ")"
+  "ExecutionPlan(\{self.waves.map(fn(w) { w.to_string() }).join(", ")})"
 }
 
 ///|
@@ -160,17 +158,12 @@ pub fn schedule(
 /// Single-line plan trace for logs. Includes call ids, names and policies;
 /// NEVER includes arguments or schema payloads (ADR §2.7).
 pub fn ExecutionPlan::trace(self : ExecutionPlan) -> String {
-  let parts : Array[String] = []
-  for wave_index, wave in self.waves {
-    let call_parts : Array[String] = []
-    for i = 0; i < wave.calls.length(); i = i + 1 {
-      let c = wave.calls[i]
-      let p = wave.policies[i]
-      call_parts.push(
-        "\{c.call_id.to_string()}:\{c.name.to_string()}:\{p.to_string()}",
-      )
-    }
-    parts.push("wave\{wave_index}={" + call_parts.join(", ") + "}")
-  }
-  parts.join(" ")
+  self.waves
+  .mapi(fn(wave_index, wave) {
+    let details = wave.calls.mapi(fn(i, c) {
+      "\{c.call_id.to_string()}:\{c.name.to_string()}:\{wave.policies[i].to_string()}"
+    })
+    "wave\{wave_index}={\{details.join(", ")}}"
+  })
+  .join(" ")
 }

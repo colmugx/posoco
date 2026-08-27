@@ -39,9 +39,5 @@ pub fn ProviderConfig::accepts_reasoning_effort(
 
 ///|
 pub impl Show for ProviderConfig with fn to_string(self : ProviderConfig) -> String {
-  let values = self.reasoning_effort_values
-    .copy()
-    .map(fn(s) { "'" + s + "'" })
-    .join(", ")
-  "ProviderConfig(reasoning_effort=[\{values}])"
+  "ProviderConfig(reasoning_effort=[\{self.reasoning_effort_values.map(fn(s) { "'\{s}'" }).join(", ")}])"
 }

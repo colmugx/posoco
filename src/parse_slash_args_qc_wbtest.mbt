@@ -86,7 +86,7 @@ fn qc_render_case(seeds : Array[(Int, Int, Int)]) -> String {
     let (kind, val, flag) = seed
     let slot = qc_slot(i, kind, val, flag)
     if slot.included {
-      tokens.push(slot.name + "=" + slot.raw)
+      tokens.push("\{slot.name}=\{slot.raw}")
     }
   }
   "input: '\{tokens.join(" ")}'"
@@ -106,7 +106,7 @@ test "qc parse_slash_args round trip and default fill" {
       for slot in slots {
         if slot.included {
           params.push(make_param(slot.name, ptype=slot.ptype, required=true))
-          tokens.push(slot.name + "=" + slot.raw)
+          tokens.push("\{slot.name}=\{slot.raw}")
         } else {
           params.push(
             make_param(

@@ -8,10 +8,9 @@ pub(open) trait MemoryPort {
   async fn store(Self, entry : @types.MemoryEntry) -> String raise @error.MemoryError
   async fn search(Self, query : @types.MemoryQuery) -> Array[@types.MemoryEntry] raise @error.MemoryError
   async fn delete(Self, id : String) -> Unit raise @error.MemoryError
-  /// Human-readable name of the memory source this port fronts (e.g.
-  /// "Nowledge Mem"), used when core tells the model where recalled memory
-  /// came from. Protocol-level self-description — no branding lives in
-  /// core.
+  /// Human-readable name of the memory source this port fronts, used when
+  /// core tells the model where recalled memory came from.
+  /// Protocol-level self-description — no branding lives in core.
   fn source_name(Self) -> String = _
 }
 
