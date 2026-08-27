@@ -19,6 +19,49 @@ pub impl @port.SystemPromptContributor for FixedPromptContributor with fn system
 }
 
 ///|
+/// Mutable contributor used to prove the SystemPromptHook caches the assembled
+/// text on first use. The shared `Ref[String]` lets later mutations reach the
+/// underlying value even when the contributor is copied into multiple contexts.
+struct MutablePromptContributor {
+  text : Ref[String]
+}
+
+///|
+pub impl @port.SystemPromptContributor for MutablePromptContributor with fn system_prompt(
+  self : MutablePromptContributor,
+) -> String {
+  self.text.val
+}
+
+///|
+/// Lifecycle fake that mutates a contributor from its on_start callback.
+struct StartSettingLifecycle {
+  target : Ref[String]
+}
+
+///|
+pub impl @port.Lifecycle for StartSettingLifecycle with fn on_start(
+  self : StartSettingLifecycle,
+) -> Unit {
+  self.target.val = "after_start"
+}
+
+///|
+pub impl @port.Lifecycle for StartSettingLifecycle with fn on_compose(
+  _self : StartSettingLifecycle,
+  _ctx : @port.CompositionView,
+) -> Unit {
+  ()
+}
+
+///|
+pub impl @port.Lifecycle for StartSettingLifecycle with fn on_shutdown(
+  _self : StartSettingLifecycle,
+) -> Unit {
+  ()
+}
+
+///|
 /// Minimal MemoryPort fake whose `search` returns a fixed entry list.
 /// Ignores store/delete (we only test the read path here).
 struct FixedMemoryPort {
@@ -81,15 +124,24 @@ pub impl @port.MemoryPort for FailingMemoryPort with fn delete(
 
 ///|
 /// Running before_model twice does NOT accumulate SystemMessages.
-/// The hook replaces the head SystemMessage in place.
+/// The hook owns index 0 and keeps the assembled text stable.
 async test "m38_sysprompt/idempotent_across_rounds" {
   let hook = SystemPromptHook::SystemPromptHook(base_prompt="BASE", contributors=[])
   // Round 1: empty transcript → prepends SystemMessage.
   let after1 = hook.before_model([])
   assert_true(after1.length() == 1)
-  // Round 2: one SystemMessage present → replaces, does not append.
+  match after1[0] {
+    SystemMessage(content~) =>
+      match content {
+        [Text(s), ..] => assert_eq(s, "BASE")
+        _ => fail("expected Text content")
+      }
+    _ => fail("expected SystemMessage")
+  }
+  // Round 2: identical SystemMessage at head → returns the same array.
   let after2 = hook.before_model(after1)
   assert_true(after2.length() == 1)
+  assert_true(physical_equal(after2, after1))
 }
 
 ///|
@@ -118,7 +170,8 @@ async test "m38_sysprompt/replaces_existing_system_message" {
 }
 
 ///|
-/// Contributors are concatenated after the base in registration order.
+/// Contributors are concatenated after the base in registration order,
+/// with blank lines between sections.
 async test "m38_sysprompt/assembles_base_plus_contributors" {
   let c1 : &@port.SystemPromptContributor = FixedPromptContributor::{
     text: "SECTION_A",
@@ -134,14 +187,156 @@ async test "m38_sysprompt/assembles_base_plus_contributors" {
   match out[0] {
     SystemMessage(content~) =>
       match content {
-        [Text(s), ..] => {
-          assert_true(s.contains("BASE"))
-          assert_true(s.contains("SECTION_A"))
-          assert_true(s.contains("SECTION_B"))
-        }
+        [Text(s), ..] => assert_eq(s, "BASE\n\na:\nSECTION_A\n\nb:\nSECTION_B")
         _ => fail("expected Text content")
       }
     _ => fail("expected SystemMessage")
+  }
+}
+
+///|
+/// When the assembled prompt is empty, the hook returns messages unchanged
+/// and does not inject a blank SystemMessage or evict an existing head.
+async test "m38_sysprompt/empty_prompt_short_circuits" {
+  let empty : &@port.SystemPromptContributor = FixedPromptContributor::{
+    text: "",
+  }
+  let hook = SystemPromptHook::SystemPromptHook(base_prompt="", contributors=[
+    SystemPromptSection::SystemPromptSection(id="empty", contributor=empty),
+  ])
+  let user : @kernel.Message = @kernel.UserMessage(content=[
+    @kernel.Text("hello"),
+  ])
+  let input = [user]
+  let out = hook.before_model(input)
+  assert_true(out.length() == 1)
+  assert_true(physical_equal(out, input))
+}
+
+///|
+/// When there is no SystemMessage at index 0, the hook prepends one.
+async test "m38_sysprompt/prepends_when_no_system_message" {
+  let hook = SystemPromptHook::SystemPromptHook(base_prompt="BASE", contributors=[])
+  let user : @kernel.Message = @kernel.UserMessage(content=[
+    @kernel.Text("hello"),
+  ])
+  let out = hook.before_model([user])
+  assert_true(out.length() == 2)
+  match out[0] {
+    SystemMessage(content~) =>
+      match content {
+        [Text(s), ..] => assert_eq(s, "BASE")
+        _ => fail("expected Text content")
+      }
+    _ => fail("expected SystemMessage at index 0")
+  }
+  match out[1] {
+    UserMessage(_) => ()
+    _ => fail("expected original UserMessage to shift to index 1")
+  }
+}
+
+///|
+/// The assembled text is cached on first use: a later mutation of the
+/// contributor is ignored.
+async test "m38_sysprompt/caches_assembled_text" {
+  let text_ref = Ref::Ref("first")
+  let contributor = MutablePromptContributor::{ text: text_ref }
+  let hook = SystemPromptHook::SystemPromptHook(base_prompt="", contributors=[
+    SystemPromptSection::SystemPromptSection(
+      id="mut",
+      contributor=contributor as &@port.SystemPromptContributor,
+    ),
+  ])
+  let out1 = hook.before_model([])
+  match out1[0] {
+    SystemMessage(content~) =>
+      match content {
+        [Text(s), ..] => assert_eq(s, "mut:\nfirst")
+        _ => fail("expected Text content")
+      }
+    _ => fail("expected SystemMessage")
+  }
+  contributor.text.val = "second"
+  let out2 = hook.before_model([])
+  match out2[0] {
+    SystemMessage(content~) =>
+      match content {
+        [Text(s), ..] => assert_eq(s, "mut:\nfirst")
+        _ => fail("expected Text content")
+      }
+    _ => fail("expected SystemMessage")
+  }
+}
+
+///|
+/// End-to-end: AgentConfig.system_prompt is the first section, contributor
+/// sections follow in registration order, separated by blank lines, and the
+/// result is a single SystemMessage at index 0.
+async test "m38_sysprompt/config_base_precedes_contributors" {
+  let contributor : &@port.SystemPromptContributor = FixedPromptContributor::{
+    text: "from_ext",
+  }
+  let model = ScriptedModel([Respond(tk_stop_response("ok"))])
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="ext", prompt_contributors=[contributor]),
+      tk_ext(id="io", sessions=[RecordingSessionStore()]),
+    ],
+    config={
+      max_tool_rounds: Some(10),
+      temperature: None,
+      max_output_tokens: None,
+      model_context_window: None,
+      compact_threshold: None,
+      system_prompt: Some("host_base"),
+    },
+  )
+  ignore(agent.run_turn(tk_user_msg("hi"), "session_base"))
+  assert_true(model.received_messages.length() == 1)
+  let prompt = model.received_messages[0]
+  assert_true(prompt.length() >= 1)
+  match prompt[0] {
+    @kernel.SystemMessage(content~) =>
+      match content {
+        [Text(s), ..] => assert_eq(s, "host_base\n\next:\nfrom_ext")
+        _ => fail("expected Text content")
+      }
+    _ => fail("expected SystemMessage at index 0")
+  }
+}
+
+///|
+/// Lifecycle::on_start runs before the first before_model, so a contributor
+/// whose value is set in on_start is read with the post-start value.
+async test "m38_sysprompt/lazy_assembly_reads_post_on_start" {
+  let text_ref = Ref::Ref("before_start")
+  let contributor = MutablePromptContributor::{ text: text_ref }
+  let starter : &@port.Lifecycle = StartSettingLifecycle::{ target: text_ref }
+  let model = ScriptedModel([Respond(tk_stop_response("ok"))])
+  let store = RecordingSessionStore()
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="lifecycle", lifecycle=[starter]),
+      tk_ext(id="ext", prompt_contributors=[
+        contributor as &@port.SystemPromptContributor,
+      ]),
+      tk_ext(id="io", sessions=[store]),
+    ],
+    config=tk_config(),
+  )
+  ignore(agent.run_turn(tk_user_msg("hi"), "session_lazy"))
+  assert_true(model.received_messages.length() == 1)
+  let prompt = model.received_messages[0]
+  match prompt[0] {
+    @kernel.SystemMessage(content~) =>
+      match content {
+        [Text(s), ..] => assert_eq(s, "ext:\nafter_start")
+        _ => fail("expected Text content")
+      }
+    _ => fail("expected SystemMessage at index 0")
   }
 }
 

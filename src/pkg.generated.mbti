@@ -65,6 +65,7 @@ pub(all) struct AgentConfig {
   max_output_tokens : Int?
   model_context_window : Int?
   compact_threshold : Double?
+  system_prompt : String?
 }
 
 pub(all) struct CompositeToolProvider {
@@ -260,6 +261,7 @@ pub(all) enum SessionOp {
 pub(all) struct SystemPromptHook {
   base_prompt : String
   contributors : Array[SystemPromptSection]
+  mut assembled : String?
 }
 pub fn SystemPromptHook::SystemPromptHook(base_prompt~ : String, contributors~ : Array[SystemPromptSection]) -> Self
 pub fn SystemPromptHook::assemble(Self) -> String

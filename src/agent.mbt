@@ -14,6 +14,10 @@ pub(all) struct AgentConfig {
   /// context window, in (0, 1]. `None` defers to the active modelport's
   /// reported `compact_threshold`, falling back to the core default (0.88).
   compact_threshold : Double?
+  /// Optional base system prompt. When non-empty, or when any extension
+  /// registers `SystemPromptContributor`s, Posoco prepends one stable
+  /// SystemMessage assembled from this base plus contributor sections.
+  system_prompt : String?
 }
 
 ///|
@@ -329,8 +333,14 @@ fn AgentRuntime::compose(
   // next, UI rendering last (opt-in, so extensions see events before the
   // renderer).
   let composed_hooks : Array[&@port.PipelineHook] = []
-  // 1. System prompt projection (if any contributors are configured).
-  if !agg.prompt_contributors.is_empty() {
+  // 1. System prompt projection (if a base prompt is configured or any
+  // contributors are registered). The base prompt lives in AgentConfig so
+  // the host can seed a stable system message without inventing a contributor.
+  let base_prompt = match config.system_prompt {
+    Some(p) => p
+    None => ""
+  }
+  if base_prompt != "" || !agg.prompt_contributors.is_empty() {
     let sections : Array[SystemPromptSection] = []
     for pair in agg.prompt_contributors {
       let (mid, contributor) = pair
@@ -339,7 +349,7 @@ fn AgentRuntime::compose(
       )
     }
     let sys_hook = SystemPromptHook::SystemPromptHook(
-      base_prompt="", // base comes from a contributor if desired
+      base_prompt~,
       contributors=sections,
     )
     composed_hooks.push(sys_hook as &@port.PipelineHook)

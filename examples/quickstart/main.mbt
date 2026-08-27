@@ -117,6 +117,7 @@ async fn main {
     max_output_tokens: None,
     model_context_window: None,
     compact_threshold: None,
+    system_prompt: None,
   })
   let input : @posoco.Message = @posoco.Message::UserMessage(content=[
     @posoco.Content::Text("Say hello"),

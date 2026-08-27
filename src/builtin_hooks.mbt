@@ -11,10 +11,17 @@
 
 ///|
 /// Combines a fixed base prompt with contributor sections and prepends the
-/// result as a System message. Empty sections are skipped.
+/// result as a single System message at index 0. Empty sections are skipped.
+///
+/// The assembled prompt is cached lazily on the first call to `before_model`.
+/// Laziness matters because extension `Lifecycle::on_start` callbacks run
+/// inside the first `run_single_turn` but before the first `before_model`, so
+/// contributors whose state is initialized in `on_start` must be read after
+/// that point. After caching, the text is frozen for the lifetime of the hook.
 pub(all) struct SystemPromptHook {
   base_prompt : String
   contributors : Array[SystemPromptSection]
+  mut assembled : String?
 }
 
 ///|
@@ -37,32 +44,59 @@ pub fn SystemPromptHook::SystemPromptHook(
   base_prompt~ : String,
   contributors~ : Array[SystemPromptSection],
 ) -> SystemPromptHook {
-  { base_prompt, contributors }
+  { base_prompt, contributors, assembled: None }
 }
 
 ///|
 /// Assemble base + non-empty contributor sections with `id:` headers.
+/// Sections are separated by a blank line (`\n\n`). The result is empty when
+/// the base prompt and every contributor return empty strings.
 pub fn SystemPromptHook::assemble(self : SystemPromptHook) -> String {
-  let buf = StringBuilder::new()
-  buf.write_string(self.base_prompt)
+  let sections : Array[String] = []
+  if self.base_prompt != "" {
+    sections.push(self.base_prompt)
+  }
   for s in self.contributors {
     let text = s.contributor.system_prompt()
     if text != "" {
-      buf <+ "\n\{s.id}:\n\{text}"
+      sections.push("\{s.id}:\n\{text}")
     }
+  }
+  let buf = StringBuilder::new()
+  for i, section in sections {
+    if i > 0 {
+      buf.write_string("\n\n")
+    }
+    buf.write_string(section)
   }
   buf.to_string()
 }
 
 ///|
-/// Idempotent injection: replaces the existing SystemMessage at index 0
-/// (structural detection, not text-marker based) so repeated hook runs
-/// do not accumulate.
+/// Inject one stable SystemMessage at index 0.
+///
+/// Semantics:
+/// 1. If the assembled prompt is empty, return `messages` unchanged.
+/// 2. If `messages` is empty, return `[SystemMessage(assembled)]`.
+/// 3. If `messages[0]` is a SystemMessage with the exact same text, return
+///    the same array instance (no rewrite, no journal noise).
+/// 4. If `messages[0]` is a SystemMessage with different text, replace it.
+/// 5. Otherwise prepend the new SystemMessage.
 pub impl @port.PipelineHook for SystemPromptHook with fn before_model(
   self : SystemPromptHook,
   messages : Array[@kernel.Message],
 ) -> Array[@kernel.Message] raise @port.HookAbort {
-  let assembled = self.assemble()
+  let assembled = match self.assembled {
+    Some(text) => text
+    None => {
+      let text = self.assemble()
+      self.assembled = Some(text)
+      text
+    }
+  }
+  if assembled == "" {
+    return messages
+  }
   let sys_msg : @kernel.Message = @kernel.SystemMessage(content=[
     @kernel.Text(assembled),
   ])
@@ -70,7 +104,14 @@ pub impl @port.PipelineHook for SystemPromptHook with fn before_model(
     return [sys_msg]
   }
   match messages[0] {
-    @kernel.SystemMessage(..) => {
+    @kernel.SystemMessage(content~) => {
+      match content {
+        [@kernel.Text(existing), ..] =>
+          if existing == assembled {
+            return messages
+          }
+        _ => ()
+      }
       let new_messages : Array[@kernel.Message] = [sys_msg]
       for i in 1..<messages.length() {
         new_messages.push(messages[i])
