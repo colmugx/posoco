@@ -399,9 +399,12 @@ fn reduce_model_completed_with_tools(
   let tool_call_positions = build_tool_call_ledger(transcript)
   let calls = completion.tool_calls()
   // Pre-pass: split into NotExecuted outcomes (written to transcript) and
-  // validated calls (become ExecuteTool effects). Duplicate call_id is an
-  // invariant failure.
+  // validated calls (become ExecuteTool effects). Rejected (call, outcome)
+  // pairs are collected in source order; their events are emitted together
+  // after the loop. Duplicate call_id is an invariant failure.
   let seen : Map[String, Unit] = Map::from_array([])
+  let rejected_calls : Array[@kernel.ToolCall] = []
+  let rejected_outcomes : Array[@kernel.ToolOutcome] = []
   for call in calls {
     let id_str = call.call_id.to_string()
     if seen.contains(id_str) {
@@ -429,7 +432,8 @@ fn reduce_model_completed_with_tools(
         call.call_id,
         outcome,
       )
-      events.push(ToolCompleted(call_id=call.call_id, outcome~))
+      rejected_calls.push(call)
+      rejected_outcomes.push(outcome)
     } else {
       // Schema validation against the catalog.
       match catalog.validate_arguments(call.name, call.arguments) {
@@ -452,7 +456,8 @@ fn reduce_model_completed_with_tools(
               call.call_id,
               outcome,
             )
-            events.push(ToolCompleted(call_id=call.call_id, outcome~))
+            rejected_calls.push(call)
+            rejected_outcomes.push(outcome)
           } else {
             let outcome : @kernel.ToolOutcome = @kernel.NotExecuted(
               reason=@kernel.SchemaMismatch(
@@ -474,7 +479,8 @@ fn reduce_model_completed_with_tools(
               call.call_id,
               outcome,
             )
-            events.push(ToolCompleted(call_id=call.call_id, outcome~))
+            rejected_calls.push(call)
+            rejected_outcomes.push(outcome)
           }
         Ok(_) =>
           // Valid call → ExecuteTool effect.
@@ -500,6 +506,28 @@ fn reduce_model_completed_with_tools(
               )
           }
       }
+    }
+  }
+  // Pre-pass-rejected calls are "submitted → resolved NotExecuted": their
+  // batch-start MUST precede the completions because the event subscriber
+  // registers pending calls on ToolBatchStarted and consumes them on
+  // ToolCompleted. A mixed wave therefore gets two batch-starts for this
+  // step (rejected calls here, effect calls below); the subscriber
+  // registers and drains each batch independently.
+  if !rejected_calls.is_empty() {
+    events.push(
+      ToolBatchStarted(
+        model_step_id=payload.model_step_id,
+        calls=rejected_calls,
+      ),
+    )
+    for i in 0..<rejected_calls.length() {
+      events.push(
+        ToolCompleted(
+          call_id=rejected_calls[i].call_id,
+          outcome=rejected_outcomes[i],
+        ),
+      )
     }
   }
   // All calls were NotExecuted? Then no ExecuteTool was declared. Continue
@@ -548,7 +576,9 @@ fn reduce_model_completed_with_tools(
     }
     UnknownUsage(_) | WithinBudget => ()
   }
-  // Emit ToolBatchStarted covering only the calls that became effects.
+  // Emit ToolBatchStarted covering only the calls that became effects. The
+  // pre-pass-rejected calls (if any) already got their own batch-start +
+  // completions above.
   let batch_calls : Array[@kernel.ToolCall] = []
   for e in effects {
     match e {
@@ -1570,6 +1600,9 @@ fn commit_tool_wave(
               None => missing_tool_position
             }
             existing_tool_records.push((call_id, tool_name, outcome, pos))
+            // Collected messages are re-emitted via `combined` below; the
+            // remaining-append loop must not re-append them.
+            remaining_start = i + 1
           }
           _ => {
             remaining_start = i

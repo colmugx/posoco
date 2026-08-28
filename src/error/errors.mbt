@@ -1,7 +1,9 @@
 ///|
-/// Structured quota/rate-limit verdict returned by a provider (the HTTP 429
-/// family). Raised as `ModelError::RateLimited` instead of `Transport` so
-/// hosts can schedule recovery from typed data instead of parsing strings.
+/// Structured quota/rate-limit verdict returned by a provider. Raised as
+/// `ModelError::RateLimited` instead of `Transport` so hosts can schedule
+/// recovery from typed data instead of parsing strings. Providers disagree on
+/// the carrier (HTTP 429, Kimi's 403, gateway JSON fields, free text), so the
+/// verdict deliberately carries no status code — only scheduling semantics.
 ///
 /// `reset_at_ms` is the Unix epoch in milliseconds at which the provider
 /// stated the quota window frees; `None` means no explicit reset time was
@@ -11,7 +13,6 @@
 /// OpenAI `"usage_limit_reached"`). `message` is a bounded excerpt of the
 /// provider message, safe to display.
 pub(all) struct RateLimitInfo {
-  status : Int
   message : String
   reset_at_ms : Int64?
   provider_code : String?
@@ -65,7 +66,7 @@ pub impl Show for ModelError with fn to_string(self) -> String {
         Some(at) => "\{at}"
         None => "none"
       }
-      "ModelError::RateLimited(status=\{info.status}, code=\{code_label}, reset_at_ms=\{reset_label}, message=\{bounded_rate_limit_message(info.message)})"
+      "ModelError::RateLimited(code=\{code_label}, reset_at_ms=\{reset_label}, message=\{bounded_rate_limit_message(info.message)})"
     }
   }
 }

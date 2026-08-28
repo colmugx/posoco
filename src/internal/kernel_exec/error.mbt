@@ -64,9 +64,9 @@ pub(all) enum FailureReason {
   ModelParseFailure(detail~ : String)
   ModelTransport(detail~ : String)
   ModelRuntime(detail~ : String)
-  /// The provider returned a quota/rate-limit verdict (HTTP 429 family).
-  /// Distinct from `ModelTransport` so product code can distinguish "wait
-  /// for the stated reset time and retry" from a generic transport failure.
+  /// The provider returned a quota/rate-limit verdict. Distinct from
+  /// `ModelTransport` so product code can distinguish "wait for the stated
+  /// reset time and retry" from a generic transport failure.
   ModelQuotaExhausted(detail~ : String)
   /// A host-side policy or control gate rejected a model effect. This is not
   /// a provider error and must remain distinguishable at the product boundary.

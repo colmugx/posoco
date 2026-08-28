@@ -991,3 +991,109 @@ test "C-TOOL-WAVE-OUT-OF-ORDER: reverse completions preserve source order" {
     })
   assert_eq(tool_result_ids, expected_call_ids)
 }
+
+///|
+/// Mixed wave: one valid call + one pre-pass-rejected call. The reducer must
+/// pair the rejected call (ToolBatchStarted → ToolCompleted) BEFORE the
+/// effect-only batch-start, and the wave commit must not duplicate the
+/// already-committed rejected tool message.
+test "C-MODEL-MIXED-WAVE: rejected pair precedes effect batch, no duplicate tool message" {
+  let (st_awaiting, eff_id, step_id) = run_until_awaiting_model()
+  let catalog = make_catalog_v1()
+  let completion = @kernel.Completion(
+    content=[@kernel.Text("mixed")],
+    tool_calls=[
+      {
+        call_id: @kernel.CallId::unchecked("c_read"),
+        name: @kernel.ToolName::unchecked("read"),
+        arguments: Json::object(Map::from_array([("path", Json::string("/a"))])),
+      },
+      {
+        call_id: @kernel.CallId::unchecked("c_ghost"),
+        name: @kernel.ToolName::unchecked("ghost"),
+        arguments: Json::null(),
+      },
+    ],
+    reasoning=None,
+    finish_reason=@kernel.ToolCalls,
+    usage=None,
+  )
+  let input : RunInput = ModelCompleted(payload=ModelCompletedPayload::{
+    effect_id: eff_id,
+    model_step_id: step_id,
+    completion,
+    processed_messages: st_awaiting.transcript().messages_snapshot(),
+  })
+  let out = reduce(st_awaiting, catalog, input)
+  let st_tools = out.next_state()
+  // Transcript already carries the rejected call's result next to the owner.
+  let kinds = StringBuilder()
+  for m in st_tools.transcript().messages_snapshot() {
+    match m {
+      @kernel.UserMessage(..) => kinds <+ "[U]"
+      @kernel.AssistantMessage(tool_calls~, ..) =>
+        kinds <+ "[A(\{tool_calls.length()})]"
+      @kernel.ToolMessage(call_id~, ..) =>
+        kinds <+ "[T(\{call_id.to_string()})]"
+      _ => kinds <+ "[?]"
+    }
+  }
+  inspect(kinds.to_string(), content="[U][A(2)][T(c_ghost)]")
+  // Event order: step, batch(rejected), completed(rejected), batch(effects).
+  assert_eq(out.events().length(), 4)
+  match out.events()[1] {
+    ToolBatchStarted(model_step_id~, calls~) => {
+      assert_eq(model_step_id, step_id)
+      assert_eq(calls.length(), 1)
+      assert_eq(calls[0].call_id.to_string(), "c_ghost")
+    }
+    _ => fail("expected ToolBatchStarted for the rejected call")
+  }
+  match out.events()[2] {
+    ToolCompleted(call_id~, outcome~) => {
+      assert_eq(call_id.to_string(), "c_ghost")
+      match outcome {
+        @kernel.NotExecuted(reason=@kernel.UnknownTool, ..) => ()
+        _ => fail("expected NotExecuted(UnknownTool) for c_ghost")
+      }
+    }
+    _ => fail("expected ToolCompleted for the rejected call")
+  }
+  match out.events()[3] {
+    ToolBatchStarted(calls~) => {
+      assert_eq(calls.length(), 1)
+      assert_eq(calls[0].call_id.to_string(), "c_read")
+    }
+    _ => fail("expected effect-only ToolBatchStarted last")
+  }
+  // Exactly one ExecuteTool effect (the valid call).
+  assert_eq(out.effects().length(), 1)
+  let exec_id = match out.effects()[0] {
+    ExecuteTool(effect_id~, ..) => effect_id
+    _ => fail("expected ExecuteTool effect")
+  }
+  let tool_input : RunInput = ToolCompleted(payload=ToolCompletedPayload::{
+    effect_id: exec_id,
+    call_id: @kernel.CallId::unchecked("c_read"),
+    tool_name: @kernel.ToolName::unchecked("read"),
+    arguments: Json::null(),
+    outcome: @kernel.Success(content="data", structured=None),
+  })
+  let out2 = reduce(st_tools, catalog, tool_input)
+  let st_ready = out2.next_state()
+  // Wave commit preserves source order WITHOUT duplicating c_ghost.
+  let kinds2 = StringBuilder()
+  for m in st_ready.transcript().messages_snapshot() {
+    match m {
+      @kernel.UserMessage(..) => kinds2 <+ "[U]"
+      @kernel.AssistantMessage(tool_calls~, ..) =>
+        kinds2 <+ "[A(\{tool_calls.length()})]"
+      @kernel.ToolMessage(call_id~, ..) =>
+        kinds2 <+ "[T(\{call_id.to_string()})]"
+      _ => kinds2 <+ "[?]"
+    }
+  }
+  inspect(kinds2.to_string(), content="[U][A(2)][T(c_read)][T(c_ghost)]")
+  // The tool-result ledger has exactly one entry per call.
+  assert_eq(st_ready.tool_results_snapshot().length(), 2)
+}

@@ -121,8 +121,8 @@ pub(all) enum ModelFailure {
   /// distinct from provider failures so callers can preserve the rejection's
   /// typed meaning instead of string-matching a model error.
   HostRejected(reason~ : String)
-  /// The provider answered with a quota/rate-limit verdict (HTTP 429 family)
-  /// instead of serving the request. `reset_at_ms` is the provider-stated
+  /// The provider answered with a quota/rate-limit verdict instead of serving
+  /// the request (HTTP 429, Kimi's 403, or an equivalent carrier). `reset_at_ms` is the provider-stated
   /// Unix epoch (milliseconds) when the quota window frees; `None` means the
   /// provider stated no reset time. Kept as primitive fields (not the error
   /// package's `RateLimitInfo`) because the kernel sits below the error

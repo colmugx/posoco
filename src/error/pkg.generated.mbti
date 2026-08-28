@@ -77,7 +77,6 @@ pub impl Show for UiError
 
 // Types and methods
 pub(all) struct RateLimitInfo {
-  status : Int
   message : String
   reset_at_ms : Int64?
   provider_code : String?

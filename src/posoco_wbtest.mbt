@@ -1804,3 +1804,156 @@ test "catalog: declared execution policy survives composition" {
   debug_inspect(defs[0].policy, content="Exclusive")
   debug_inspect(defs[1].policy, content="Parallel")
 }
+
+///|
+/// Tool-event trace from a recorded observer: "pending:<id>" / "result:<id>"
+/// entries in arrival order, used to assert the pending→result pairing
+/// contract for a call.
+fn tool_event_trace(events : Array[@types.TurnEvent]) -> Array[String] {
+  let trace : Array[String] = []
+  for event in events {
+    match event {
+      @types.TurnEvent::ToolCallPending(call) =>
+        trace.push("pending:\{call.call_id.to_string()}")
+      @types.TurnEvent::ToolCallResult(call~, ..) =>
+        trace.push("result:\{call.call_id.to_string()}")
+      _ => ()
+    }
+  }
+  trace
+}
+
+///|
+/// The call must see ToolCallPending strictly before its ToolCallResult, and
+/// both must be present.
+fn assert_pending_before_result(
+  trace : Array[String],
+  call_id : String,
+) -> Unit raise {
+  let mut seen_pending = false
+  for entry in trace {
+    if entry == "pending:\{call_id}" {
+      seen_pending = true
+    } else if entry == "result:\{call_id}" {
+      if !seen_pending {
+        fail("ToolCallResult before ToolCallPending for \{call_id}")
+      }
+      return
+    }
+  }
+  fail("missing pending/result pair for \{call_id}")
+}
+
+///|
+/// Regression: a wave whose ONLY call is rejected pre-execution (unknown
+/// tool name) must complete the turn. The reducer used to emit
+/// ToolCompleted without a preceding ToolBatchStarted, which tripped the
+/// subscriber's ContractViolation and killed the turn. Now the rejected
+/// call is "submitted → resolved NotExecuted": observers see
+/// ToolCallPending then ToolCallResult(NotExecuted).
+async test "all_rejected_wave_unknown_tool_completes_with_paired_events" {
+  let model = ScriptedModel([
+    Respond(tk_tool_call_response("ghost_tool", "c_rej", Json::null())),
+    Respond(tk_stop_response("recovered")),
+  ])
+  let tools = RecordingToolProvider([], Map::from_array([]))
+  let store = RecordingSessionStore()
+  let observer = RecordingObserver()
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", tools=[tools], sessions=[store], observers=[observer]),
+    ],
+    config=tk_config(),
+  )
+  let turn = agent.run_turn(tk_user_msg("typo tool"), "session_reject")
+  // The model's rejected call is in the transcript as a NotExecuted result.
+  assert_eq(turn.tool_results.length(), 1)
+  match turn.tool_results[0] {
+    @kernel.NotExecuted(reason=@kernel.UnknownTool, ..) => ()
+    _ => fail("expected NotExecuted(UnknownTool) in turn tool_results")
+  }
+  assert_eq(tools.exec_records().length(), 0)
+  assert_pending_before_result(tool_event_trace(observer.events()), "c_rej")
+}
+
+///|
+/// Regression: same pairing contract for the schema-mismatch rejection path.
+async test "all_rejected_wave_schema_mismatch_completes_with_paired_events" {
+  let strict_def : @kernel.ToolDef = {
+    ..tk_tool_def("strict", "requires an object"),
+    input_schema: Json::object(
+      Map::from_array([("type", Json::string("object"))]),
+    ),
+  }
+  let model = ScriptedModel([
+    Respond(tk_tool_call_response("strict", "c_schema", Json::string("nope"))),
+    Respond(tk_stop_response("recovered")),
+  ])
+  let tools = RecordingToolProvider([strict_def], Map::from_array([]))
+  let store = RecordingSessionStore()
+  let observer = RecordingObserver()
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", tools=[tools], sessions=[store], observers=[observer]),
+    ],
+    config=tk_config(),
+  )
+  let turn = agent.run_turn(tk_user_msg("bad args"), "session_schema")
+  assert_eq(turn.tool_results.length(), 1)
+  match turn.tool_results[0] {
+    @kernel.NotExecuted(reason=@kernel.SchemaMismatch(..), ..) => ()
+    _ => fail("expected NotExecuted(SchemaMismatch) in turn tool_results")
+  }
+  assert_eq(tools.exec_records().length(), 0)
+  assert_pending_before_result(tool_event_trace(observer.events()), "c_schema")
+}
+
+///|
+/// Regression: a MIXED wave (one valid call + one unknown-name call) must
+/// complete, and the observer must see a paired pending/result for BOTH the
+/// executed and the rejected call.
+async test "mixed_wave_executes_and_rejects_with_paired_events" {
+  let probe_call = make_tool_call("c_probe", "probe")
+  let ghost_call = make_tool_call("c_ghost", "ghost_tool")
+  let model = ScriptedModel([
+    Respond(tool_response([probe_call, ghost_call])),
+    Respond(tk_stop_response("done")),
+  ])
+  let tools = RecordingToolProvider(
+    [tk_tool_def("probe", "")],
+    Map::from_array([
+      ("probe", ScriptedToolOutcome::OutcomeOk(tk_ok_result("ok"))),
+    ]),
+  )
+  let store = RecordingSessionStore()
+  let observer = RecordingObserver()
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", tools=[tools], sessions=[store], observers=[observer]),
+    ],
+    config=tk_config(),
+  )
+  let turn = agent.run_turn(tk_user_msg("mixed"), "session_mixed")
+  // The valid call executed once; the rejected call never reached a provider.
+  assert_eq(tools.exec_records().length(), 1)
+  // Exactly one tool result per call (no duplicated transcript entries).
+  assert_eq(turn.tool_results.length(), 2)
+  let mut saw_success = false
+  let mut saw_not_executed = false
+  for outcome in turn.tool_results {
+    match outcome {
+      @kernel.Success(..) => saw_success = true
+      @kernel.NotExecuted(reason=@kernel.UnknownTool, ..) =>
+        saw_not_executed = true
+      _ => ()
+    }
+  }
+  assert_true(saw_success)
+  assert_true(saw_not_executed)
+  let trace = tool_event_trace(observer.events())
+  assert_pending_before_result(trace, "c_probe")
+  assert_pending_before_result(trace, "c_ghost")
+}
