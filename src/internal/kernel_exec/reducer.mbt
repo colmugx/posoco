@@ -30,7 +30,7 @@ fn reduce_output(
   effects : Array[Effect],
   events : Array[KernelEvent],
 ) -> ReduceOutput {
-  { next_state, effects, events }
+  { next_state, effects, events, }
 }
 
 ///|
@@ -1168,7 +1168,7 @@ fn reduce_transcript_rewrite(
     // The rewrite changed the transcript the last usage reading described:
     // occupancy is unknown until the next reliable observation. Cumulative
     // counters stay — the run-wide token budget is unaffected by compaction.
-    budget_consumed={ ..state.budget_consumed(), last_context_tokens: None },
+    budget_consumed={ ..state.budget_consumed(), last_context_tokens: None, },
     outcome=state.outcome(),
     tool_call_positions=new_positions,
     suspension_requirement=state.suspension_requirement(),

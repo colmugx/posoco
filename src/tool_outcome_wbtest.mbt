@@ -295,8 +295,8 @@ async test "t06b_collision_fails_composition" {
 
 ///|
 async test "t06b_missing_collision_provenance_is_actionable" {
-  let p1 = SingleToolProvider::{ tool: tk_tool_def("shared", "first") }
-  let p2 = SingleToolProvider::{ tool: tk_tool_def("shared", "second") }
+  let p1 = SingleToolProvider::{ tool: tk_tool_def("shared", "first"), }
+  let p2 = SingleToolProvider::{ tool: tk_tool_def("shared", "second"), }
   let model = ScriptedModel([])
   let store = RecordingSessionStore()
   let composition_result = Ok(

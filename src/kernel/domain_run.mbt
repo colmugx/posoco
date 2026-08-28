@@ -112,7 +112,7 @@ pub(all) struct EffectId {
 pub fn EffectId::first() -> EffectId where {
   proof_ensure: result => effect_id_first_ok(result),
 } {
-  { value: 1 }
+  { value: 1, }
 }
 
 ///|
@@ -123,7 +123,7 @@ pub fn EffectId::next(
 ) -> EffectId where {
   proof_ensure: result => effect_id_next_ok(self, result),
 } {
-  { value: self.value + 1 }
+  { value: self.value + 1, }
 }
 
 ///|

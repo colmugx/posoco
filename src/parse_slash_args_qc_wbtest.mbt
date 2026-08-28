@@ -29,7 +29,7 @@ fn qc_slot(idx : Int, kind : Int, val : Int, flag : Int) -> QcSlot {
   match kind % 4 {
     0 => {
       let s = qc_letters(val)
-      { name, ptype: Str, raw: s, expected: Json::string(s), included }
+      { name, ptype: Str, raw: s, expected: Json::string(s), included, }
     }
     1 => {
       let n = val % 10000

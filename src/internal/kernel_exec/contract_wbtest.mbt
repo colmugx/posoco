@@ -148,7 +148,7 @@ test "RunState: ReadyForModel rejects any pending effect" {
 ///|
 test "RunState: Suspended legal with zero pending + Some requirement" {
   let st = make_initial_state()
-  let req : SuspensionRequirement = { kind: "approval", payload: Json::null() }
+  let req : SuspensionRequirement = { kind: "approval", payload: Json::null(), }
   let result = try_transition(st, Suspended, [], None, Some(req))
   match result {
     Ok(ok) => assert_eq(ok.phase(), Suspended)
@@ -159,7 +159,7 @@ test "RunState: Suspended legal with zero pending + Some requirement" {
 ///|
 test "RunState: Suspended rejects Some outcome" {
   let st = make_initial_state()
-  let req : SuspensionRequirement = { kind: "approval", payload: Json::null() }
+  let req : SuspensionRequirement = { kind: "approval", payload: Json::null(), }
   let result = try_transition(
     st,
     Suspended,

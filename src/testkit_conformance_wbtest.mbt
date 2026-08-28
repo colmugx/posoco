@@ -1,6 +1,6 @@
 ///|
 fn tk_opts() -> ChatOptions {
-  { temperature: None, max_output_tokens: None }
+  { temperature: None, max_output_tokens: None, }
 }
 
 ///|
@@ -269,7 +269,7 @@ async test "tk_store_records_save_metadata_snapshot" {
     ("user_role", Json::string("admin")),
     ("turn_count", Json::number(3.0)),
   ])
-  let session : Session = { messages: [], metadata: meta }
+  let session : Session = { messages: [], metadata: meta, }
   let _ = store.save("s1", session)
   let snaps = store.save_snapshots()
   assert_eq(snaps.length(), 1)
@@ -414,7 +414,7 @@ async test "tk_store_fail_save_returns_typed_error" {
   let store = RecordingSessionStore()
   store.fail_save("broken")
   let result = Ok(
-    store.save("broken", { messages: [], metadata: Map::from_array([]) }),
+    store.save("broken", { messages: [], metadata: Map::from_array([]), }),
   ) catch {
     e => Err(e)
   }
@@ -578,7 +578,7 @@ async test "tk_hook_record_accessor_is_deep_snapshot" {
     _ => fail("expected PassedThrough outcome")
   }
   // Mutate the returned array to prove snapshot isolation
-  first[0] = HookRecord::{ label: "tampered", outcome: PassedThrough }
+  first[0] = HookRecord::{ label: "tampered", outcome: PassedThrough, }
   let second = hook.records()
   assert_eq(second.length(), 1)
   assert_eq(second[0].label, "before_model")

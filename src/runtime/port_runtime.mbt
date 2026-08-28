@@ -34,7 +34,7 @@ fn decode_chat_options(
   call_options : Json,
 ) -> Result[@types.ChatOptions, @kernel.ModelFailure] {
   let fields = match call_options {
-    Json::Null => return Ok({ temperature: None, max_output_tokens: None })
+    Json::Null => return Ok({ temperature: None, max_output_tokens: None, })
     Json::Object(fields) => fields
     _ =>
       return Err(
@@ -87,7 +87,7 @@ fn decode_chat_options(
         ),
       )
   }
-  Ok({ temperature, max_output_tokens })
+  Ok({ temperature, max_output_tokens, })
 }
 
 ///|
@@ -102,7 +102,7 @@ pub fn PortRuntime::PortRuntime(
   model~ : &@port.ModelPort,
   tools~ : Map[String, &@port.ToolProvider],
 ) -> PortRuntime {
-  { model, tools }
+  { model, tools, }
 }
 
 ///|

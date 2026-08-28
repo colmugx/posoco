@@ -64,7 +64,7 @@ fn policy_tools() -> RecordingToolProvider {
 
 ///|
 fn policy_replace_result() -> @kernel.CompactResult {
-  { compacted_messages: [tk_user_msg("summary")], mode: @kernel.Replace }
+  { compacted_messages: [tk_user_msg("summary")], mode: @kernel.Replace, }
 }
 
 ///|
@@ -115,7 +115,7 @@ async test "policy/host window overrides the provider report" {
       tk_ext(id="tools", tools=[policy_tools()]),
       tk_ext(id="io", sessions=[RecordingSessionStore()]),
     ],
-    config={ ..tk_config(), model_context_window: Some(1000) },
+    config={ ..tk_config(), model_context_window: Some(1000), },
   )
   ignore(agent.run_turn(tk_user_msg("hi"), "session_host_override"))
   // 95 is far under 90% of the host's 1000-token override: no compact.

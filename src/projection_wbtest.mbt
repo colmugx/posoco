@@ -241,7 +241,7 @@ async test "m38_sysprompt/prepends_when_no_system_message" {
 /// contributor is ignored.
 async test "m38_sysprompt/caches_assembled_text" {
   let text_ref = Ref::Ref("first")
-  let contributor = MutablePromptContributor::{ text: text_ref }
+  let contributor = MutablePromptContributor::{ text: text_ref, }
   let hook = SystemPromptHook::SystemPromptHook(base_prompt="", contributors=[
     SystemPromptSection::SystemPromptSection(
       id="mut",
@@ -312,8 +312,8 @@ async test "m38_sysprompt/config_base_precedes_contributors" {
 /// whose value is set in on_start is read with the post-start value.
 async test "m38_sysprompt/lazy_assembly_reads_post_on_start" {
   let text_ref = Ref::Ref("before_start")
-  let contributor = MutablePromptContributor::{ text: text_ref }
-  let starter : &@port.Lifecycle = StartSettingLifecycle::{ target: text_ref }
+  let contributor = MutablePromptContributor::{ text: text_ref, }
+  let starter : &@port.Lifecycle = StartSettingLifecycle::{ target: text_ref, }
   let model = ScriptedModel([Respond(tk_stop_response("ok"))])
   let store = RecordingSessionStore()
   let agent = Agent(
@@ -351,7 +351,7 @@ async test "m38_memory/injects_entries_after_system_prompt" {
     metadata: Map::from_array([]),
     score: None,
   }
-  let mem : &@port.MemoryPort = FixedMemoryPort::{ entries: [entry] }
+  let mem : &@port.MemoryPort = FixedMemoryPort::{ entries: [entry], }
   let hook = MemoryRetrievalHook::MemoryRetrievalHook(memories=[mem])
   let sys : @kernel.Message = @kernel.SystemMessage(content=[
     @kernel.Text("SYS"),
@@ -387,7 +387,7 @@ async test "m38_memory/idempotent_replaces_prior_memory_message" {
     metadata: Map::from_array([]),
     score: None,
   }
-  let mem : &@port.MemoryPort = FixedMemoryPort::{ entries: [entry] }
+  let mem : &@port.MemoryPort = FixedMemoryPort::{ entries: [entry], }
   let hook = MemoryRetrievalHook::MemoryRetrievalHook(memories=[mem])
   let sys : @kernel.Message = @kernel.SystemMessage(content=[
     @kernel.Text("SYS"),
@@ -405,7 +405,7 @@ async test "m38_memory/idempotent_replaces_prior_memory_message" {
 /// Memory search failure is swallowed — the turn is not aborted and
 /// messages pass through unchanged.
 async test "m38_memory/swallows_search_failure" {
-  let mem : &@port.MemoryPort = FailingMemoryPort::{ _dummy: () }
+  let mem : &@port.MemoryPort = FailingMemoryPort::{ _dummy: (), }
   let hook = MemoryRetrievalHook::MemoryRetrievalHook(memories=[mem])
   let user : @kernel.Message = @kernel.UserMessage(content=[
     @kernel.Text("query"),
@@ -463,7 +463,7 @@ async test "m38_ui/tool_completed_renders_notice" {
 /// fails; messages still pass through unchanged.
 async test "m38_memory/search_failure_invokes_on_failure" {
   let seen : Array[String] = []
-  let mem : &@port.MemoryPort = FailingMemoryPort::{ _dummy: () }
+  let mem : &@port.MemoryPort = FailingMemoryPort::{ _dummy: (), }
   let hook = MemoryRetrievalHook::MemoryRetrievalHook(memories=[mem], on_failure=fn(
     reason,
   ) {
@@ -485,7 +485,7 @@ async test "m38_memory/search_failure_invokes_on_failure" {
 /// event; the turn still completes (primary outcome untouched).
 async test "m38_memory/failing_search_emits_secondary_failure_event" {
   let model = ScriptedModel([Respond(tk_stop_response("hi"))])
-  let mem : &@port.MemoryPort = FailingMemoryPort::{ _dummy: () }
+  let mem : &@port.MemoryPort = FailingMemoryPort::{ _dummy: (), }
   let store = RecordingSessionStore()
   let observer = RecordingObserver()
   let agent = Agent(
@@ -532,8 +532,8 @@ async test "m38_memory/merges_multiple_ports_in_order" {
     metadata: Map::from_array([]),
     score: None,
   }
-  let mem1 : &@port.MemoryPort = FixedMemoryPort::{ entries: [entry1] }
-  let mem2 : &@port.MemoryPort = FixedMemoryPort::{ entries: [entry2] }
+  let mem1 : &@port.MemoryPort = FixedMemoryPort::{ entries: [entry1], }
+  let mem2 : &@port.MemoryPort = FixedMemoryPort::{ entries: [entry2], }
   let hook = MemoryRetrievalHook::MemoryRetrievalHook(memories=[mem1, mem2])
   let user : @kernel.Message = @kernel.UserMessage(content=[
     @kernel.Text("query"),
@@ -560,8 +560,8 @@ async test "m38_memory/failing_port_does_not_mask_successful_port" {
     metadata: Map::from_array([]),
     score: None,
   }
-  let mem1 : &@port.MemoryPort = FailingMemoryPort::{ _dummy: () }
-  let mem2 : &@port.MemoryPort = FixedMemoryPort::{ entries: [entry] }
+  let mem1 : &@port.MemoryPort = FailingMemoryPort::{ _dummy: (), }
+  let mem2 : &@port.MemoryPort = FixedMemoryPort::{ entries: [entry], }
   let hook = MemoryRetrievalHook::MemoryRetrievalHook(memories=[mem1, mem2])
   let user : @kernel.Message = @kernel.UserMessage(content=[
     @kernel.Text("query"),
@@ -607,7 +607,7 @@ async test "m38_hooks/same_length_rewrite_reaches_model" {
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
-      tk_ext(id="hook", hooks=[SameLengthAgentHook::{  }]),
+      tk_ext(id="hook", hooks=[SameLengthAgentHook::{ }]),
       tk_ext(id="io", sessions=[store], observers=[observer]),
     ],
     config=tk_config(),

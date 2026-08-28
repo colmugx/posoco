@@ -35,7 +35,7 @@ async test "t05_metadata_roundtrip_preserves_unknown_keys" {
     ("user_role", Json::string("admin")),
     ("turn_count", Json::number(5.0)),
   ])
-  store.seed("s1", { messages: [], metadata: initial_meta })
+  store.seed("s1", { messages: [], metadata: initial_meta, })
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
@@ -446,7 +446,7 @@ pub impl @port.Observer for BoundaryMutatingObserver with fn on_event(
 
 ///|
 async test "t05_each_final_save_store_gets_independent_deep_snapshot" {
-  let mutating_store = BoundaryMutatingStore::{  }
+  let mutating_store = BoundaryMutatingStore::{ }
   let recording_store = RecordingSessionStore()
   let model = ScriptedModel([Respond(tk_stop_response("done"))])
   let agent = Agent(
@@ -522,8 +522,8 @@ async test "t05_tool_ports_hooks_and_observers_get_json_snapshots" {
     result: provider_result,
     calls: [],
   }
-  let hook = BoundaryMutatingHook::{  }
-  let mutating_observer = BoundaryMutatingObserver::{  }
+  let hook = BoundaryMutatingHook::{ }
+  let mutating_observer = BoundaryMutatingObserver::{ }
   let recording_observer = RecordingObserver()
   let store = RecordingSessionStore()
   let agent = Agent(

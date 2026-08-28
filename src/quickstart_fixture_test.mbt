@@ -20,7 +20,7 @@ pub impl @port.ModelPort for QuickstartFixedModel with fn chat(
     finish_reason=@kernel.Stop,
     usage=None,
   )
-  { completion, processed_messages: [] }
+  { completion, processed_messages: [], }
 }
 
 ///|
@@ -70,7 +70,7 @@ pub impl @port.SessionStore for QuickstartMemoryStore with fn load(
 ) -> @types.Session {
   match self.sessions.get(id) {
     Some(session) => copy_quickstart_session(session)
-    None => { messages: [], metadata: Map::from_array([]) }
+    None => { messages: [], metadata: Map::from_array([]), }
   }
 }
 
@@ -85,8 +85,8 @@ pub impl @port.SessionStore for QuickstartMemoryStore with fn save(
 
 ///|
 async test "quickstart_fixture_uses_current_public_api" {
-  let model = QuickstartFixedModel::{  }
-  let store = QuickstartMemoryStore::{ sessions: Map::from_array([]) }
+  let model = QuickstartFixedModel::{ }
+  let store = QuickstartMemoryStore::{ sessions: Map::from_array([]), }
   let agent = @posoco.Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),

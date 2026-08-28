@@ -134,7 +134,7 @@ pub fn JournalContribution::empty(
   contributor_id : String,
   provenance : String,
 ) -> JournalContribution {
-  { contributor_id, provenance, proposed_entries: [] }
+  { contributor_id, provenance, proposed_entries: [], }
 }
 
 ///|
@@ -146,7 +146,7 @@ pub fn JournalContribution::with_entries(
   provenance : String,
   entries : Array[JournalEntry],
 ) -> JournalContribution {
-  { contributor_id, provenance, proposed_entries: entries.copy() }
+  { contributor_id, provenance, proposed_entries: entries.copy(), }
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -215,7 +215,7 @@ pub(all) struct NoopContributor {
 
 ///|
 pub fn NoopContributor::NoopContributor() -> NoopContributor {
-  { id: "noop" }
+  { id: "noop", }
 }
 
 ///|

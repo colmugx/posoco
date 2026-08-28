@@ -294,7 +294,7 @@ priv struct FakeCatalogSource {
 fn FakeCatalogSource::FakeCatalogSource(
   defs : Array[@kernel.ToolDef],
 ) -> FakeCatalogSource {
-  { revision: 1, defs }
+  { revision: 1, defs, }
 }
 
 ///|

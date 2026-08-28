@@ -305,14 +305,14 @@ pub(all) struct Transcript {
 
 ///|
 pub fn Transcript::empty() -> Transcript {
-  { messages: [] }
+  { messages: [], }
 }
 
 ///|
 pub fn Transcript::from_array(messages : Array[Message]) -> Transcript {
   // Defensive copy: the transcript must be reducer-owned. Callers that pass
   // an array they continue to mutate will not affect this transcript.
-  { messages: messages.copy() }
+  { messages: messages.copy(), }
 }
 
 ///|
@@ -321,7 +321,7 @@ pub fn Transcript::from_array(messages : Array[Message]) -> Transcript {
 pub fn Transcript::append(self : Transcript, message : Message) -> Transcript {
   let next = self.messages.copy()
   next.push(message)
-  { messages: next }
+  { messages: next, }
 }
 
 ///|
@@ -334,7 +334,7 @@ pub fn Transcript::append_all(
   for m in messages {
     next.push(m)
   }
-  { messages: next }
+  { messages: next, }
 }
 
 ///|

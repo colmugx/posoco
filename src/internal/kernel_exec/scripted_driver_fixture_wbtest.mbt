@@ -29,7 +29,7 @@ pub struct ScriptedExecutor {
 
 ///|
 pub fn ScriptedExecutor::ScriptedExecutor() -> ScriptedExecutor {
-  { outcomes: Map::from_array([]) }
+  { outcomes: Map::from_array([]), }
 }
 
 ///|
@@ -143,7 +143,7 @@ pub fn scripted_driver_run(
       break
     }
   }
-  { steps, events, final_state: state }
+  { steps, events, final_state: state, }
 }
 
 ///|
@@ -260,6 +260,6 @@ fn input_for_effect(
         "ToolFailed(mismatch)",
       )
   }
-  steps.push({ effect_id: eff.effect_id(), effect_kind, input_kind })
+  steps.push({ effect_id: eff.effect_id(), effect_kind, input_kind, })
   input
 }

@@ -214,7 +214,7 @@ fn build_tool_routing(
       owner_source[name] = provenance
     }
   }
-  { tool_map, providers: tools }
+  { tool_map, providers: tools, }
 }
 
 ///|

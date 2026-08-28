@@ -15,7 +15,7 @@ pub impl @posoco.Lifecycle for FailingLifecycle with fn on_shutdown(_self) -> Un
 async test "panic t07_shutdown_failure_is_not_swallowed" {
   let model = @posoco.ScriptedModel([])
   let store = @posoco.RecordingSessionStore()
-  let lifecycle = FailingLifecycle::{  }
+  let lifecycle = FailingLifecycle::{ }
   let agent = @posoco.Agent(
     exts=[
       @posoco.tk_ext(id="model", model=Some(model)),

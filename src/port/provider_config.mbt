@@ -19,13 +19,17 @@ pub fn ProviderConfig::ProviderConfig(
   context_window? : Int? = None,
   compact_threshold? : Double? = None,
 ) -> ProviderConfig {
-  { reasoning_effort_values, context_window, compact_threshold }
+  { reasoning_effort_values, context_window, compact_threshold, }
 }
 
 ///|
 /// Empty config: no reasoning_effort values accepted, no window reported.
 pub fn ProviderConfig::empty() -> ProviderConfig {
-  { reasoning_effort_values: [], context_window: None, compact_threshold: None }
+  {
+    reasoning_effort_values: [],
+    context_window: None,
+    compact_threshold: None,
+  }
 }
 
 ///|

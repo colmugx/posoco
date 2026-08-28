@@ -26,7 +26,7 @@ priv struct BuiltinCommandPort {
 fn BuiltinCommandPort::BuiltinCommandPort(
   mailbox : &@puppetry.Mailbox,
 ) -> BuiltinCommandPort {
-  { mailbox, seq: 0, compact_enabled: true, fork_enabled: true }
+  { mailbox, seq: 0, compact_enabled: true, fork_enabled: true, }
 }
 
 ///|

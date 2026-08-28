@@ -3,7 +3,7 @@
 
 ///|
 test "Session::parent_thread_id: fresh session has no parent" {
-  let s : Session = { messages: [], metadata: Map::from_array([]) }
+  let s : Session = { messages: [], metadata: Map::from_array([]), }
   assert_true(s.parent_thread_id() is None)
 }
 

@@ -73,7 +73,7 @@ fn compact_trigger_response(total_tokens : Int) -> @kernel.ModelCallResult {
       uncached_input_tokens: None,
     }),
   )
-  { completion, processed_messages: [] }
+  { completion, processed_messages: [], }
 }
 
 ///|

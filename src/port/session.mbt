@@ -34,5 +34,5 @@ impl SessionStore with fn append_messages(
   for msg in messages {
     merged.push(msg)
   }
-  self.save(id, { messages: merged, metadata: session.metadata })
+  self.save(id, { messages: merged, metadata: session.metadata, })
 }

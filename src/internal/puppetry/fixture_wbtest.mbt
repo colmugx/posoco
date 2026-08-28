@@ -528,7 +528,7 @@ test "puppet/C-SUSPEND-RESUME-IN-PROCESS" {
     waiting.next_state(),
     catalog,
     SuspendRequested(payload={
-      requirement: { kind: "approval", payload: Json::null() },
+      requirement: { kind: "approval", payload: Json::null(), },
     }),
   )
   assert_true(suspended.next_state().phase() == Suspended)
@@ -536,7 +536,7 @@ test "puppet/C-SUSPEND-RESUME-IN-PROCESS" {
   let resumed = reduce(
     suspended.next_state(),
     catalog,
-    Resume(payload={ payload: Json::null() }),
+    Resume(payload={ payload: Json::null(), }),
   )
   assert_true(resumed.next_state().phase() == ReadyForModel)
   assert_true(resumed.next_state().run_id() == RunId::unchecked("run_suspend"))
@@ -706,20 +706,20 @@ test "puppet/C-SEQ-MONOTONIC-ACROSS-SUSPEND" {
   let started = reduce(
     state,
     catalog,
-    Start(payload={ initial_messages: [], catalog_version: catalog.version() }),
+    Start(payload={ initial_messages: [], catalog_version: catalog.version(), }),
   )
   let waiting = run_model_step(started.next_state(), catalog, Json::null())
   let suspended = reduce(
     waiting.next_state(),
     catalog,
     SuspendRequested(payload={
-      requirement: { kind: "approval", payload: Json::null() },
+      requirement: { kind: "approval", payload: Json::null(), },
     }),
   )
   let resumed = reduce(
     suspended.next_state(),
     catalog,
-    Resume(payload={ payload: Json::null() }),
+    Resume(payload={ payload: Json::null(), }),
   )
   assert_true(
     started.next_state().next_event_sequence().to_int() <

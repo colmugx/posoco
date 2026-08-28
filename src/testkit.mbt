@@ -741,7 +741,7 @@ pub impl @port.SessionStore for RecordingSessionStore with fn load(
     None =>
       match self.store.get(id) {
         Some(s) => Ok(testkit_snapshot_session(s))
-        None => Ok({ messages: [], metadata: Map::from_array([]) })
+        None => Ok({ messages: [], metadata: Map::from_array([]), })
       }
   }
   let recorded_result = match result {
@@ -792,13 +792,13 @@ pub impl @port.SessionStore for RecordingSessionStore with fn append_messages(
   } else {
     let session = match self.store.get(id) {
       Some(s) => testkit_snapshot_session(s)
-      None => { messages: [], metadata: Map::from_array([]) }
+      None => { messages: [], metadata: Map::from_array([]), }
     }
     let merged = session.messages.copy()
     for msg in msg_copy {
       merged.push(msg)
     }
-    self.store[id] = { messages: merged, metadata: session.metadata }
+    self.store[id] = { messages: merged, metadata: session.metadata, }
     Ok(())
   }
   self.ops.push(OpAppend(id~, from_index~, messages=msg_copy, result~))
@@ -821,7 +821,7 @@ pub(all) struct RecordingObserver {
 
 ///|
 pub fn RecordingObserver::RecordingObserver() -> RecordingObserver {
-  { events: [] }
+  { events: [], }
 }
 
 ///|
@@ -868,7 +868,7 @@ pub(all) struct RecordingHook {
 
 ///|
 pub fn RecordingHook::RecordingHook() -> RecordingHook {
-  { records: [], abort_on: Map::from_array([]), defer_on: Map::from_array([]) }
+  { records: [], abort_on: Map::from_array([]), defer_on: Map::from_array([]), }
 }
 
 ///|
@@ -894,7 +894,7 @@ pub fn RecordingHook::defer_when(
 ///|
 pub fn RecordingHook::records(self : RecordingHook) -> Array[HookRecord] {
   self.records.map(fn(record) {
-    { label: record.label, outcome: record.outcome }
+    { label: record.label, outcome: record.outcome, }
   })
 }
 
@@ -909,11 +909,11 @@ pub impl @port.PipelineHook for RecordingHook with fn before_model(
       trigger.contains("BeforeModel") ||
       trigger.contains("BeforeTurn") {
       let message = self.abort_on[trigger]
-      self.records.push({ label, outcome: AbortedWith(message) })
+      self.records.push({ label, outcome: AbortedWith(message), })
       raise @port.HookAbort::Aborted(reason=message)
     }
   }
-  self.records.push({ label, outcome: PassedThrough })
+  self.records.push({ label, outcome: PassedThrough, })
   messages
 }
 
@@ -927,18 +927,18 @@ pub impl @port.PipelineHook for RecordingHook with fn before_tool(
   for trigger in self.abort_on.keys() {
     if dbg.contains(trigger) {
       let message = self.abort_on[trigger]
-      self.records.push({ label, outcome: AbortedWith(message) })
+      self.records.push({ label, outcome: AbortedWith(message), })
       return Reject(reason=message)
     }
   }
   for trigger in self.defer_on.keys() {
     if dbg.contains(trigger) {
       let reason = self.defer_on[trigger]
-      self.records.push({ label, outcome: DeferredWith(reason) })
+      self.records.push({ label, outcome: DeferredWith(reason), })
       return Defer(reason~)
     }
   }
-  self.records.push({ label, outcome: PassedThrough })
+  self.records.push({ label, outcome: PassedThrough, })
   Approve(call~)
 }
 
@@ -948,7 +948,7 @@ pub impl @port.PipelineHook for RecordingHook with fn on_post_event(
   _stage : @port.HookStage,
 ) -> Unit {
   let label = "on_post_event"
-  self.records.push({ label, outcome: PassedThrough })
+  self.records.push({ label, outcome: PassedThrough, })
 }
 
 // ---------------------------------------------------------------------------
@@ -1057,7 +1057,7 @@ pub fn tk_stop_response(text : String) -> @kernel.ModelCallResult {
     finish_reason=@kernel.Stop,
     usage=None,
   )
-  { completion, processed_messages: [] }
+  { completion, processed_messages: [], }
 }
 
 ///|
@@ -1079,7 +1079,7 @@ pub fn tk_tool_call_response(
     finish_reason=@kernel.ToolCalls,
     usage=None,
   )
-  { completion, processed_messages: [] }
+  { completion, processed_messages: [], }
 }
 
 ///|
@@ -1158,7 +1158,7 @@ pub(all) struct ManifestOnly {
 pub fn ManifestOnly::ManifestOnly(
   manifest : @port.ExtensionManifest,
 ) -> ManifestOnly {
-  { cached: manifest }
+  { cached: manifest, }
 }
 
 ///|
@@ -1264,7 +1264,7 @@ pub fn RecordingLifecycle::RecordingLifecycle(
   id~ : String,
   log~ : Array[String],
 ) -> RecordingLifecycle {
-  { id, log, seen_model: false, seen_ui: false }
+  { id, log, seen_model: false, seen_ui: false, }
 }
 
 ///|

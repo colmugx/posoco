@@ -101,7 +101,7 @@ pub(all) struct UiDescriptor {
 ///|
 /// Empty descriptor used by UIs that contribute no autocomplete sources.
 pub fn UiDescriptor::empty() -> UiDescriptor {
-  { autocomplete_sources: [] }
+  { autocomplete_sources: [], }
 }
 
 // Interactive request / response

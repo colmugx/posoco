@@ -36,7 +36,7 @@ pub fn SystemPromptSection::SystemPromptSection(
   id~ : String,
   contributor~ : &@port.SystemPromptContributor,
 ) -> SystemPromptSection {
-  { id, contributor }
+  { id, contributor, }
 }
 
 ///|
@@ -44,7 +44,7 @@ pub fn SystemPromptHook::SystemPromptHook(
   base_prompt~ : String,
   contributors~ : Array[SystemPromptSection],
 ) -> SystemPromptHook {
-  { base_prompt, contributors, assembled: None }
+  { base_prompt, contributors, assembled: None, }
 }
 
 ///|
@@ -161,7 +161,7 @@ pub fn MemoryRetrievalHook::MemoryRetrievalHook(
     Some(f) => f
     None => fn(_reason) { () }
   }
-  { memories, top_k, on_failure: handler }
+  { memories, top_k, on_failure: handler, }
 }
 
 ///|
@@ -446,7 +446,7 @@ pub(all) struct NoopUiPort {}
 
 ///|
 pub fn NoopUiPort::NoopUiPort() -> NoopUiPort {
-  NoopUiPort::{  }
+  NoopUiPort::{ }
 }
 
 ///|
@@ -500,7 +500,7 @@ pub impl @port.UiPort for CompositeUiPort with fn ui_descriptor(self) -> @port.U
       sources.push(s)
     }
   }
-  { autocomplete_sources: sources }
+  { autocomplete_sources: sources, }
 }
 
 ///|

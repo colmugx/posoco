@@ -131,7 +131,7 @@ fn aggregate_extensions(
       memory.push(m)
     }
     for l in manifest.lifecycle {
-      lifecycle.push({ requires: manifest.requires.copy(), port: l })
+      lifecycle.push({ requires: manifest.requires.copy(), port: l, })
     }
     for u in manifest.ui {
       ui.push(u)

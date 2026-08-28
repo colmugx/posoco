@@ -30,7 +30,7 @@ pub fn ProposingContributor::ProposingContributor(
   id : String,
   extra : JournalEntry,
 ) -> ProposingContributor {
-  { id, extra_entry: extra }
+  { id, extra_entry: extra, }
 }
 
 ///|
@@ -117,7 +117,7 @@ fn make_c_entry(
     kind,
     entry_seq,
   }
-  { identity, revision: 0, summary: "c entry", payload: Json::null() }
+  { identity, revision: 0, summary: "c entry", payload: Json::null(), }
 }
 
 ///|

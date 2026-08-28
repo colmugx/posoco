@@ -258,7 +258,7 @@ async test "puppet/boundary_journals_auto_compact_replace_rewrite" {
     Ok(fixture_stop("done")),
   ])
   let catalog = fixture_tool_catalog("echo")
-  let subscriber = RewriteProbeSubscriber::{ events: [] }
+  let subscriber = RewriteProbeSubscriber::{ events: [], }
   let mailbox_instance = ControlMailbox()
   let config : PuppetConfig = {
     host: host as &@kernel_exec.HostRuntime,

@@ -60,7 +60,7 @@ pub impl @port.PipelineHook for ScopedHook with fn on_post_event_at(
 /// TurnCompleted, all carrying the SAME Some(scope), and the scope names the
 /// session the product passed to `run_turn`.
 async test "scope_projection/turn_events_carry_one_run_identity" {
-  let observer = ScopedObserver::{ records: [] }
+  let observer = ScopedObserver::{ records: [], }
   let agent = Agent(
     exts=[
       tk_ext(
@@ -90,7 +90,7 @@ async test "scope_projection/turn_events_carry_one_run_identity" {
 /// Two turns on one agent/session are two runs: distinct run_id and turn_id,
 /// same session_id.
 async test "scope_projection/two_turns_distinct_runs_same_session" {
-  let observer = ScopedObserver::{ records: [] }
+  let observer = ScopedObserver::{ records: [], }
   let model = ScriptedModel([
     Respond(tk_stop_response("a")),
     Respond(tk_stop_response("b")),
@@ -121,8 +121,8 @@ async test "scope_projection/two_turns_distinct_runs_same_session" {
 /// responses) under the same run identity as the turn lifecycle, and
 /// post-event hook stages observe that same identity.
 async test "scope_projection/tool_loop_events_and_hook_stages_share_run" {
-  let observer = ScopedObserver::{ records: [] }
-  let hook = ScopedHook::{ stages: [] }
+  let observer = ScopedObserver::{ records: [], }
+  let hook = ScopedHook::{ stages: [], }
   let model = ScriptedModel([
     Respond(tk_tool_call_response("echo", "call_1", Json::null())),
     Respond(tk_stop_response("done")),

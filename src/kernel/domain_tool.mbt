@@ -86,7 +86,7 @@ pub fn ToolDef::ToolDef(
   policy~ : ExecutionPolicy,
   provenance~ : String?,
 ) -> ToolDef {
-  { name, description, input_schema, owner, policy, provenance }
+  { name, description, input_schema, owner, policy, provenance, }
 }
 
 ///|

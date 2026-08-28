@@ -87,7 +87,7 @@ pub struct ToolCatalogBuilder {
 
 ///|
 pub fn ToolCatalogBuilder::ToolCatalogBuilder() -> ToolCatalogBuilder {
-  { entries: [], by_name: Map::from_array([]), finished: false }
+  { entries: [], by_name: Map::from_array([]), finished: false, }
 }
 
 ///|
@@ -157,7 +157,7 @@ pub fn ToolCatalogBuilder::finish(
     raise InvalidToolName(detail="builder already finished")
   }
   self.finished = true
-  { version, entries: self.entries.copy(), by_name: self.by_name.copy() }
+  { version, entries: self.entries.copy(), by_name: self.by_name.copy(), }
 }
 
 ///|

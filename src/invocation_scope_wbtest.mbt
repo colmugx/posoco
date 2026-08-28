@@ -85,7 +85,7 @@ fn scope_test_tool_call_with_usage(total : Int) -> @kernel.ModelCallResult {
       uncached_input_tokens: None,
     }),
   )
-  { completion, processed_messages: [] }
+  { completion, processed_messages: [], }
 }
 
 ///|
@@ -115,7 +115,7 @@ async test "scope/compact_scoped_to_run_without_effect_id" {
       tk_ext(id="model", model=Some(model)),
       tk_ext(id="tools", tools=[tools], sessions=[RecordingSessionStore()]),
     ],
-    config={ ..tk_config(), model_context_window: Some(100) },
+    config={ ..tk_config(), model_context_window: Some(100), },
   )
   ignore(agent.run_turn(tk_user_msg("hi"), "session_compact"))
   let chat_scopes = model.chat_scopes()

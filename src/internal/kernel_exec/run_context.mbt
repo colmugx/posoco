@@ -31,7 +31,7 @@ pub(all) struct ModelStepId {
 pub fn ModelStepId::first() -> ModelStepId where {
   proof_ensure: result => result.value == 1 && result.value >= 0,
 } {
-  { value: 1 }
+  { value: 1, }
 }
 
 ///|
@@ -41,7 +41,7 @@ pub fn ModelStepId::next(
 ) -> ModelStepId where {
   proof_ensure: result => result.value == self.value + 1,
 } {
-  { value: self.value + 1 }
+  { value: self.value + 1, }
 }
 
 ///|
@@ -74,7 +74,7 @@ pub(all) struct EventSequence {
 pub fn EventSequence::initial() -> EventSequence where {
   proof_ensure: result => result.value == 0 && result.value >= 0,
 } {
-  { value: 0 }
+  { value: 0, }
 }
 
 ///|
@@ -85,7 +85,7 @@ pub fn EventSequence::next(
 ) -> EventSequence where {
   proof_ensure: result => result.value == self.value + 1,
 } {
-  { value: self.value + 1 }
+  { value: self.value + 1, }
 }
 
 ///|
@@ -274,5 +274,5 @@ pub fn RunContext::RunContext(
   session_id~ : SessionId,
   budget~ : Budget,
 ) -> RunContext {
-  { run_id, session_id, budget }
+  { run_id, session_id, budget, }
 }

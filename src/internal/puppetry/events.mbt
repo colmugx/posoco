@@ -84,7 +84,7 @@ pub fn EventEnvelope::EventEnvelope(
   committed_revision~ : Int,
   event~ : KernelEvent,
 ) -> EventEnvelope {
-  { run_id, turn_id, session_id, seq, committed_revision, event }
+  { run_id, turn_id, session_id, seq, committed_revision, event, }
 }
 
 ///|
@@ -152,7 +152,7 @@ pub(all) struct NoopSubscriber {
 
 ///|
 pub fn NoopSubscriber::NoopSubscriber() -> NoopSubscriber {
-  { id: "noop_subscriber" }
+  { id: "noop_subscriber", }
 }
 
 ///|

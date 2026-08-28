@@ -101,7 +101,7 @@ test "compose/extension_compose_failure_is_loud" {
         scripted_model_ext([Respond(tk_stop_response("ok"))]),
         io_ext(),
         tk_ext(id="bad_ext", lifecycle=[
-          FailCompose::{ id: "bad_ext" } as &@port.Lifecycle,
+          FailCompose::{ id: "bad_ext", } as &@port.Lifecycle,
         ]),
       ],
       config=tk_config(),

@@ -43,7 +43,7 @@ pub fn Session::with_parent_thread_id(
 ) -> Session {
   let new_metadata : Map[String, Json] = self.metadata.copy()
   new_metadata[PARENT_THREAD_ID_KEY] = Json::string(parent_thread_id)
-  { messages: self.messages, metadata: new_metadata }
+  { messages: self.messages, metadata: new_metadata, }
 }
 
 ///|

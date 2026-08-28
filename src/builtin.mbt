@@ -68,7 +68,7 @@ pub(all) struct ToolRegistry {
 
 ///|
 pub fn ToolRegistry::ToolRegistry() -> ToolRegistry {
-  { tools: Map::from_array([]), executors: Map::from_array([]) }
+  { tools: Map::from_array([]), executors: Map::from_array([]), }
 }
 
 ///|

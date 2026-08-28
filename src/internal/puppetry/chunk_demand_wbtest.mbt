@@ -10,7 +10,7 @@ struct ChunkDemandHost {
 
 ///|
 fn ChunkDemandHost::ChunkDemandHost() -> ChunkDemandHost {
-  { saw_no_sink: false, delivered_chunks: 0 }
+  { saw_no_sink: false, delivered_chunks: 0, }
 }
 
 ///|

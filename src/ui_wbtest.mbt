@@ -100,13 +100,21 @@ test "composite_ui_port_descriptor_concatenates_sources" {
   let with_one_source_a = RecordingUiPort()
   with_one_source_a.set_descriptor({
     autocomplete_sources: [
-      AutocompleteSource::{ trigger: "/", kind: "command", fetch: fn(_) { [] } },
+      AutocompleteSource::{
+        trigger: "/",
+        kind: "command",
+        fetch: fn(_) { [] },
+      },
     ],
   })
   let with_one_source_b = RecordingUiPort()
   with_one_source_b.set_descriptor({
     autocomplete_sources: [
-      AutocompleteSource::{ trigger: "@", kind: "mention", fetch: fn(_) { [] } },
+      AutocompleteSource::{
+        trigger: "@",
+        kind: "mention",
+        fetch: fn(_) { [] },
+      },
     ],
   })
   let composite = CompositeUiPort([with_one_source_a, with_one_source_b])

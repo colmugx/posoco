@@ -79,7 +79,7 @@ impl @port.SessionStore for MockSessionStore with fn load(self, id) -> @types.Se
   if self.store.contains(id) {
     self.store[id]
   } else {
-    { messages: [], metadata: Map::from_array([]) }
+    { messages: [], metadata: Map::from_array([]), }
   }
 }
 
@@ -188,7 +188,7 @@ fn tool_response(
     finish_reason=@kernel.ToolCalls,
     usage=None,
   )
-  { completion, processed_messages: [] }
+  { completion, processed_messages: [], }
 }
 
 ///|
@@ -203,7 +203,7 @@ fn make_tool_call(id : String, name : String) -> @kernel.ToolCall {
 ///|
 /// Helper: empty tool provider (no tools, no execution)
 fn empty_tools() -> MockToolProvider {
-  MockToolProvider::{ tools: [], results: Map::from_array([]) }
+  MockToolProvider::{ tools: [], results: Map::from_array([]), }
 }
 
 ///|
@@ -212,8 +212,8 @@ async test "simple_turn_no_tools" {
     responses: [stop_response("hi there")],
     index: 0,
   }
-  let store = MockSessionStore::{ store: Map::from_array([]) }
-  let observer = MockObserver::{ events: [] }
+  let store = MockSessionStore::{ store: Map::from_array([]), }
+  let observer = MockObserver::{ events: [], }
   let config = make_config()
 
   let agent = Agent(
@@ -252,8 +252,8 @@ async test "turn_with_single_tool" {
       ("bash", Ok(@kernel.Success(content="ok", structured=None))),
     ]),
   }
-  let store = MockSessionStore::{ store: Map::from_array([]) }
-  let observer = MockObserver::{ events: [] }
+  let store = MockSessionStore::{ store: Map::from_array([]), }
+  let observer = MockObserver::{ events: [], }
   let config = make_config()
 
   let agent = Agent(
@@ -297,8 +297,8 @@ async test "tool_failure_non_fatal" {
       ("bash", Err(@error.RuntimeError::InvocationFailed("boom"))),
     ]),
   }
-  let store = MockSessionStore::{ store: Map::from_array([]) }
-  let observer = MockObserver::{ events: [] }
+  let store = MockSessionStore::{ store: Map::from_array([]), }
+  let observer = MockObserver::{ events: [], }
   let config = make_config()
 
   let agent = Agent(
@@ -315,9 +315,9 @@ async test "tool_failure_non_fatal" {
 
 ///|
 async test "model_error_aborts_turn" {
-  let model = MockModelPort::{ responses: [], index: 0 }
-  let store = MockSessionStore::{ store: Map::from_array([]) }
-  let observer = MockObserver::{ events: [] }
+  let model = MockModelPort::{ responses: [], index: 0, }
+  let store = MockSessionStore::{ store: Map::from_array([]), }
+  let observer = MockObserver::{ events: [], }
   let config = make_config()
 
   let agent = Agent(
@@ -359,10 +359,10 @@ async test "hook_reject_skips_tool_and_feeds_back" {
     ]),
     executed: [],
   }
-  let store = MockSessionStore::{ store: Map::from_array([]) }
-  let observer = MockObserver::{ events: [] }
+  let store = MockSessionStore::{ store: Map::from_array([]), }
+  let observer = MockObserver::{ events: [], }
   let config = make_config()
-  let reject_hook = PolicyRejectHook::{  }
+  let reject_hook = PolicyRejectHook::{ }
 
   let agent = Agent(
     exts=[
@@ -423,8 +423,8 @@ async test "hook_reject_steers_model_to_allowed_tool" {
     ]),
     executed: [],
   }
-  let store = MockSessionStore::{ store: Map::from_array([]) }
-  let observer = MockObserver::{ events: [] }
+  let store = MockSessionStore::{ store: Map::from_array([]), }
+  let observer = MockObserver::{ events: [], }
 
   let agent = Agent(
     exts=[
@@ -432,7 +432,7 @@ async test "hook_reject_steers_model_to_allowed_tool" {
       tk_ext(
         id="io",
         tools=[tools],
-        hooks=[GateByNameHook::{ blocked: ["bash"] }],
+        hooks=[GateByNameHook::{ blocked: ["bash"], }],
         sessions=[store],
         observers=[observer],
       ),
@@ -470,7 +470,7 @@ async fn run_bash_with_hooks(
     ]),
     executed: [],
   }
-  let store = MockSessionStore::{ store: Map::from_array([]) }
+  let store = MockSessionStore::{ store: Map::from_array([]), }
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
@@ -486,8 +486,8 @@ async fn run_bash_with_hooks(
 async test "hook_consent_overrides_gate_reject_in_registration_order" {
   // Permission before gate (cetas order).
   let (tools, result) = run_bash_with_hooks([
-    ConsentToolHook::{ scope: "bash:ego-browser" },
-    GateByNameHook::{ blocked: ["bash"] },
+    ConsentToolHook::{ scope: "bash:ego-browser", },
+    GateByNameHook::{ blocked: ["bash"], },
   ])
   assert_eq(tools.executed, ["bash"])
   assert_eq(result.tool_results.length(), 1)
@@ -498,8 +498,8 @@ async test "hook_consent_overrides_gate_reject_in_registration_order" {
 async test "hook_consent_overrides_gate_reject_in_reverse_order" {
   // Gate before permission: Reject must not short-circuit the consent.
   let (tools, result) = run_bash_with_hooks([
-    GateByNameHook::{ blocked: ["bash"] },
-    ConsentToolHook::{ scope: "bash:ego-browser" },
+    GateByNameHook::{ blocked: ["bash"], },
+    ConsentToolHook::{ scope: "bash:ego-browser", },
   ])
   assert_eq(tools.executed, ["bash"])
   assert_true(result.tool_results[0] is @kernel.Success(..))
@@ -509,8 +509,8 @@ async test "hook_consent_overrides_gate_reject_in_reverse_order" {
 async test "hook_multiple_rejects_merge_reasons" {
   // No consent anywhere: every gate's reason reaches the model, joined.
   let (tools, result) = run_bash_with_hooks([
-    GateByNameHook::{ blocked: ["bash"] },
-    PolicyRejectHook::{  },
+    GateByNameHook::{ blocked: ["bash"], },
+    PolicyRejectHook::{ },
   ])
   assert_eq(tools.executed.length(), 0)
   guard result.tool_results[0]
@@ -593,14 +593,14 @@ async test "async_before_tool_gates_tool_wave" {
     ]),
     executed: [],
   }
-  let store = MockSessionStore::{ store: Map::from_array([]) }
+  let store = MockSessionStore::{ store: Map::from_array([]), }
   let entered : @aqueue.Queue[Int] = @aqueue.Queue::Queue(
     kind=@aqueue.Unbounded,
   )
   let release : @aqueue.Queue[Int] = @aqueue.Queue::Queue(
     kind=@aqueue.Unbounded,
   )
-  let gate_hook = GateHook::{ entered, release }
+  let gate_hook = GateHook::{ entered, release, }
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
@@ -665,11 +665,11 @@ async test "hook_before_tool_raise_aborts_run" {
       ("bash", Ok(@kernel.Success(content="ok", structured=None))),
     ]),
   }
-  let store = MockSessionStore::{ store: Map::from_array([]) }
+  let store = MockSessionStore::{ store: Map::from_array([]), }
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", tools=[tools], hooks=[RaisingToolHook::{  }], sessions=[
+      tk_ext(id="io", tools=[tools], hooks=[RaisingToolHook::{ }], sessions=[
         store,
       ]),
     ],
@@ -715,7 +715,7 @@ async test "reasoning_raw_replayed_verbatim_into_saved_session" {
     ],
     index: 0,
   }
-  let store = MockSessionStore::{ store: Map::from_array([]) }
+  let store = MockSessionStore::{ store: Map::from_array([]), }
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
@@ -762,8 +762,8 @@ async test "tool_loop_exceeded" {
       ("bash", Ok(@kernel.Success(content="ok", structured=None))),
     ]),
   }
-  let store = MockSessionStore::{ store: Map::from_array([]) }
-  let observer = MockObserver::{ events: [] }
+  let store = MockSessionStore::{ store: Map::from_array([]), }
+  let observer = MockObserver::{ events: [], }
   let config = {
     max_tool_rounds: Some(2),
     temperature: None,
@@ -909,8 +909,8 @@ async test "observer_event_sequence" {
       ("bash", Ok(@kernel.Success(content="seq", structured=None))),
     ]),
   }
-  let store = MockSessionStore::{ store: Map::from_array([]) }
-  let observer = MockObserver::{ events: [] }
+  let store = MockSessionStore::{ store: Map::from_array([]), }
+  let observer = MockObserver::{ events: [], }
   let config = make_config()
 
   let agent = Agent(
@@ -951,9 +951,9 @@ async test "observer_event_sequence" {
 
 ///|
 async test "session_persistence" {
-  let model = MockModelPort::{ responses: [stop_response("saved")], index: 0 }
-  let store = MockSessionStore::{ store: Map::from_array([]) }
-  let observer = MockObserver::{ events: [] }
+  let model = MockModelPort::{ responses: [stop_response("saved")], index: 0, }
+  let store = MockSessionStore::{ store: Map::from_array([]), }
+  let observer = MockObserver::{ events: [], }
   let config = make_config()
 
   let agent = Agent(
@@ -1006,9 +1006,9 @@ async test "hook_rewrites_before_model_messages" {
     responses: [stop_response("response after rewrite")],
     index: 0,
   }
-  let store = MockSessionStore::{ store: Map::from_array([]) }
-  let observer = MockObserver::{ events: [] }
-  let rewriter = RewriteModelHook::{  }
+  let store = MockSessionStore::{ store: Map::from_array([]), }
+  let observer = MockObserver::{ events: [], }
+  let rewriter = RewriteModelHook::{ }
   let config = make_config()
   let agent = Agent(
     exts=[
@@ -1072,9 +1072,9 @@ async test "hook_deferred_skips_execution" {
       ("restricted", Ok(@kernel.Success(content="executed", structured=None))),
     ]),
   }
-  let store = MockSessionStore::{ store: Map::from_array([]) }
-  let observer = MockObserver::{ events: [] }
-  let hook = DeferToolHook::{  }
+  let store = MockSessionStore::{ store: Map::from_array([]), }
+  let observer = MockObserver::{ events: [], }
+  let hook = DeferToolHook::{ }
   let config = make_config()
   let agent = Agent(
     exts=[
@@ -1134,11 +1134,11 @@ async test "hook_default_methods_pass_through" {
       ("echo", Ok(@kernel.Success(content="echoed", structured=None))),
     ]),
   }
-  let store = MockSessionStore::{ store: Map::from_array([]) }
+  let store = MockSessionStore::{ store: Map::from_array([]), }
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", tools=[tools], hooks=[ApproveAllToolHook::{  }], sessions=[
+      tk_ext(id="io", tools=[tools], hooks=[ApproveAllToolHook::{ }], sessions=[
         store,
       ]),
     ],
@@ -1195,7 +1195,7 @@ async test "hook_single_impl_receives_all_points" {
     exts=[
       tk_ext(id="model", model=Some(model)),
       tk_ext(id="io", tools=[tools], hooks=[hook], sessions=[
-        MockSessionStore::{ store: Map::from_array([]) },
+        MockSessionStore::{ store: Map::from_array([]), },
       ]),
     ],
     config=make_config(),
@@ -1248,8 +1248,8 @@ async test "agent_routes_tools_to_correct_provider" {
       ("mcp__read", Ok(@kernel.Success(content="mcp ok", structured=None))),
     ]),
   }
-  let store = MockSessionStore::{ store: Map::from_array([]) }
-  let observer = MockObserver::{ events: [] }
+  let store = MockSessionStore::{ store: Map::from_array([]), }
+  let observer = MockObserver::{ events: [], }
   let config = make_config()
 
   let agent = Agent(
@@ -1306,9 +1306,9 @@ async test "agent_tool_collision_detection" {
       ("bash", Ok(@kernel.Success(content="v2 wins", structured=None))),
     ]),
   }
-  let model = MockModelPort::{ responses: [stop_response("ok")], index: 0 }
-  let store = MockSessionStore::{ store: Map::from_array([]) }
-  let observer = MockObserver::{ events: [] }
+  let model = MockModelPort::{ responses: [stop_response("ok")], index: 0, }
+  let store = MockSessionStore::{ store: Map::from_array([]), }
+  let observer = MockObserver::{ events: [], }
   let config = make_config()
 
   // T06-B: collision now fails composition (raise) rather than last-wins.
@@ -1393,9 +1393,9 @@ async test "streaming_events_emitted_during_chat" {
     @types.Finish(reason="stop"),
   ]
   let final_response = stop_response("Hello world")
-  let model = MockStreamingModelPort::{ chunks, final_response }
-  let store = MockSessionStore::{ store: Map::from_array([]) }
-  let observer = MockObserver::{ events: [] }
+  let model = MockStreamingModelPort::{ chunks, final_response, }
+  let store = MockSessionStore::{ store: Map::from_array([]), }
+  let observer = MockObserver::{ events: [], }
   let config = make_config()
 
   let agent = Agent(
@@ -1483,10 +1483,13 @@ async test "stream_accumulator_assembles_completion" {
 ///|
 /// Test: Multiple observers all receive events (fan-out)
 async test "multiple_observers_fan_out" {
-  let model = MockModelPort::{ responses: [stop_response("fan-out")], index: 0 }
-  let store = MockSessionStore::{ store: Map::from_array([]) }
-  let obs1 = MockObserver::{ events: [] }
-  let obs2 = MockObserver::{ events: [] }
+  let model = MockModelPort::{
+    responses: [stop_response("fan-out")],
+    index: 0,
+  }
+  let store = MockSessionStore::{ store: Map::from_array([]), }
+  let obs1 = MockObserver::{ events: [], }
+  let obs2 = MockObserver::{ events: [], }
   let config = make_config()
 
   let agent = Agent(
@@ -1509,11 +1512,14 @@ async test "multiple_observers_fan_out" {
 ///|
 /// Test: Multiple hooks are chained in order
 async test "multiple_hooks_chained_in_order" {
-  let hook1 = LogHook::{ seen: [] }
-  let hook2 = LogHook::{ seen: [] }
-  let model = MockModelPort::{ responses: [stop_response("chained")], index: 0 }
-  let store = MockSessionStore::{ store: Map::from_array([]) }
-  let observer = MockObserver::{ events: [] }
+  let hook1 = LogHook::{ seen: [], }
+  let hook2 = LogHook::{ seen: [], }
+  let model = MockModelPort::{
+    responses: [stop_response("chained")],
+    index: 0,
+  }
+  let store = MockSessionStore::{ store: Map::from_array([]), }
+  let observer = MockObserver::{ events: [], }
   let config = make_config()
 
   let agent = Agent(
@@ -1543,9 +1549,9 @@ async test "multiple_session_stores_write_all" {
     responses: [stop_response("multi-store")],
     index: 0,
   }
-  let store1 = MockSessionStore::{ store: Map::from_array([]) }
-  let store2 = MockSessionStore::{ store: Map::from_array([]) }
-  let observer = MockObserver::{ events: [] }
+  let store1 = MockSessionStore::{ store: Map::from_array([]), }
+  let store2 = MockSessionStore::{ store: Map::from_array([]), }
+  let observer = MockObserver::{ events: [], }
   let config = make_config()
 
   let agent = Agent(
@@ -1692,7 +1698,7 @@ test "validate_args_applies_default" {
 
 ///|
 async test "noop_command_port_returns_empty_and_raises_notfound" {
-  let port = NoopCommandPort::{  }
+  let port = NoopCommandPort::{ }
   assert_eq(port.commands().length(), 0)
   match
     (Ok(port.invoke("anything", Json::empty_object())) catch { e => Err(e) }) {
@@ -1705,10 +1711,10 @@ async test "noop_command_port_returns_empty_and_raises_notfound" {
 ///|
 /// After stages run hooks in reverse order: hooks[1] runs before hooks[0].
 async test "hook_turn_error_fires_on_model_error" {
-  let model = MockModelPort::{ responses: [], index: 0 }
-  let store = MockSessionStore::{ store: Map::from_array([]) }
-  let observer = MockObserver::{ events: [] }
-  let log_hook = LogHook::{ seen: [] }
+  let model = MockModelPort::{ responses: [], index: 0, }
+  let store = MockSessionStore::{ store: Map::from_array([]), }
+  let observer = MockObserver::{ events: [], }
+  let log_hook = LogHook::{ seen: [], }
   let config = make_config()
 
   let agent = Agent(
@@ -1738,7 +1744,7 @@ async test "hook_turn_error_fires_on_model_error" {
 /// TurnError hook still fires before the error propagates.
 async test "hook_turn_error_fires_on_before_tool_abort" {
   let tc = make_tool_call("call_1", "bash")
-  let model = MockModelPort::{ responses: [tool_response([tc])], index: 0 }
+  let model = MockModelPort::{ responses: [tool_response([tc])], index: 0, }
   let tools = MockToolProvider::{
     tools: [
       @kernel.ToolDef(
@@ -1752,12 +1758,12 @@ async test "hook_turn_error_fires_on_before_tool_abort" {
     ],
     results: Map::from_array([]),
   }
-  let store = MockSessionStore::{ store: Map::from_array([]) }
-  let observer = MockObserver::{ events: [] }
+  let store = MockSessionStore::{ store: Map::from_array([]), }
+  let observer = MockObserver::{ events: [], }
   // RaisingToolHook aborts the run from BeforeTool (raise, not Reject);
   // LogHook records post-stage events.
-  let log_hook = LogHook::{ seen: [] }
-  let abort_hook = RaisingToolHook::{  }
+  let log_hook = LogHook::{ seen: [], }
+  let abort_hook = RaisingToolHook::{ }
   let config = make_config()
 
   let agent = Agent(

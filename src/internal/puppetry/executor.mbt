@@ -81,7 +81,7 @@ fn ExecutionContext::ExecutionContext(
   run_id~ : RunId,
   session_id~ : SessionId,
 ) -> ExecutionContext {
-  { host, catalog, run_id, session_id }
+  { host, catalog, run_id, session_id, }
 }
 
 ///|

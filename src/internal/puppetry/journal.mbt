@@ -380,7 +380,7 @@ pub fn FailOnNthJournal::FailOnNthJournal(
   inner : InMemoryJournal,
   fail_on : Int,
 ) -> FailOnNthJournal {
-  { inner, fail_on, call_count: 0 }
+  { inner, fail_on, call_count: 0, }
 }
 
 ///|

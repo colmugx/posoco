@@ -39,7 +39,7 @@ pub impl @port.PipelineHook for EffectRecorder with fn on_post_event(
 async test "hook_post_event/model_only_turn_fires_model_completed" {
   let host = FixtureHost([Ok(fixture_stop("hi"))], Map::from_array([]))
   let journal = InMemoryJournal()
-  let recorder = EffectRecorder::{ stages: [] }
+  let recorder = EffectRecorder::{ stages: [], }
   let recorder_ref : &@port.PipelineHook = recorder as &@port.PipelineHook
   // Build a minimal config with the recorder as the sole hook.
   let mailbox_instance = ControlMailbox()
@@ -85,7 +85,7 @@ async test "hook_post_event/tool_turn_fires_model_then_tool" {
     Map::from_array([("one", Success(content="ok", structured=None))]),
   )
   let journal = InMemoryJournal()
-  let recorder = EffectRecorder::{ stages: [] }
+  let recorder = EffectRecorder::{ stages: [], }
   let recorder_ref : &@port.PipelineHook = recorder as &@port.PipelineHook
   let mailbox_instance = ControlMailbox()
   let mailbox : &Mailbox = mailbox_instance as &Mailbox

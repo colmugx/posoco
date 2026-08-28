@@ -136,7 +136,7 @@ pub fn schedule(
     match policy {
       @kernel.Exclusive => {
         flush(waves, current_calls, current_policies)
-        waves.push({ calls: [c], policies: [policy] })
+        waves.push({ calls: [c], policies: [policy], })
       }
       @kernel.Sequential => {
         flush(waves, current_calls, current_policies)

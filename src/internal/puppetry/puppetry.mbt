@@ -432,7 +432,7 @@ async fn Puppet::drive_run(
   }
   // Attribution scope for post-event hook dispatch: inside a run the
   // identity is always known, so hooks always see `Some`.
-  let hook_scope : @types.EventScope = { session_id, run_id, turn_id }
+  let hook_scope : @types.EventScope = { session_id, run_id, turn_id, }
   // Seed the reducer with Start.
   // Run before_model hooks on the initial messages — they can modify or abort.
   let mut seeded_messages = initial_messages.copy()
@@ -510,7 +510,7 @@ async fn Puppet::drive_run(
     }
     // Check abort.
     if self.mailbox.abort_requested() {
-      let cancel_input : RunInput = CancelRequested(payload={ detail: None })
+      let cancel_input : RunInput = CancelRequested(payload={ detail: None, })
       let r : Result[ReduceOutput, KernelError] = Ok(
         reduce(state, self.config.catalog, cancel_input),
       ) catch {
@@ -1101,7 +1101,7 @@ async fn Puppet::handle_compact(
   let messages = state.transcript().messages_snapshot()
   // Compact is host-driven (a mailbox command), not a reducer-allocated
   // effect — hence `effect_id: None`. Run/session identity still applies.
-  let scope : InvocationScope = { session_id, run_id, effect_id: None }
+  let scope : InvocationScope = { session_id, run_id, effect_id: None, }
   let attempted : Result[Result[CompactResult, @kernel.ModelFailure], Error] = Ok(
     self.config.host.compact(
       scope,
@@ -1730,7 +1730,7 @@ fn boundary_entry(
     (primary.to_string(), kernel_event_payload(primary))
   }
   {
-    identity: { run_id, turn_id, session_id, savepoint_id, kind, entry_seq: 0 },
+    identity: { run_id, turn_id, session_id, savepoint_id, kind, entry_seq: 0, },
     revision: 0,
     summary,
     payload,

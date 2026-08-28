@@ -151,7 +151,7 @@ impl @port.Observer for TurnEndLogObserver with fn on_event(
 ///|
 async test "turn_end/completed_dispatched_once_after_turn_completed" {
   let log : Array[String] = []
-  let hook = TurnEndLogHook::{ id: "only", log }
+  let hook = TurnEndLogHook::{ id: "only", log, }
   let obs = TurnEndLogObserver::{ log, }
   let agent = Agent(
     exts=[
@@ -176,7 +176,7 @@ async test "turn_end/completed_dispatched_once_after_turn_completed" {
 ///|
 async test "turn_end/failed_path_also_dispatches_after_turn_failed" {
   let log : Array[String] = []
-  let hook = TurnEndLogHook::{ id: "only", log }
+  let hook = TurnEndLogHook::{ id: "only", log, }
   let obs = TurnEndLogObserver::{ log, }
   let agent = Agent(
     exts=[
@@ -208,8 +208,8 @@ async test "turn_end/failed_path_also_dispatches_after_turn_failed" {
 ///|
 async test "turn_end/hooks_dispatched_in_registration_order" {
   let log : Array[String] = []
-  let first = TurnEndLogHook::{ id: "first", log }
-  let second = TurnEndLogHook::{ id: "second", log }
+  let first = TurnEndLogHook::{ id: "first", log, }
+  let second = TurnEndLogHook::{ id: "second", log, }
   let agent = Agent(
     exts=[
       tk_ext(
@@ -233,7 +233,7 @@ async test "turn_end/hooks_dispatched_in_registration_order" {
 async test "turn_end/raised_hook_is_secondary_failure_not_turn_failure" {
   let log : Array[String] = []
   let bad = RaisingTurnEndHook::{ log, }
-  let good = TurnEndLogHook::{ id: "good", log }
+  let good = TurnEndLogHook::{ id: "good", log, }
   let obs = TurnEndLogObserver::{ log, }
   let agent = Agent(
     exts=[

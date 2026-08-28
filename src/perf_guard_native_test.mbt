@@ -47,7 +47,7 @@ async test "perf guard: multi-wave tool commit is linear in transcript" {
       finish_reason=@kernel.ToolCalls,
       usage=None,
     )
-    steps.push(@posoco.Respond({ completion, processed_messages: [] }))
+    steps.push(@posoco.Respond({ completion, processed_messages: [], }))
   }
   steps.push(@posoco.Respond(@posoco.tk_stop_response("done")))
 

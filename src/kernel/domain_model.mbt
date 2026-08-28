@@ -83,7 +83,7 @@ pub fn Completion::Completion(
     reasoning,
     finish_reason,
   }
-  { message, usage }
+  { message, usage, }
 }
 
 ///|

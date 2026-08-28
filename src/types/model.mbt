@@ -37,7 +37,7 @@ pub(all) struct ToolCallBuilder {
 
 ///|
 pub fn ToolCallBuilder::ToolCallBuilder() -> ToolCallBuilder {
-  { id: "", name: "", arguments_buf: StringBuilder::new() }
+  { id: "", name: "", arguments_buf: StringBuilder::new(), }
 }
 
 ///|
@@ -180,7 +180,7 @@ pub fn StreamAccumulator::to_completion(
   let reasoning_opt : @kernel.Reasoning? = if reasoning_text == "" {
     None
   } else {
-    Some(@kernel.Reasoning::{ content: reasoning_text, raw: None })
+    Some(@kernel.Reasoning::{ content: reasoning_text, raw: None, })
   }
   let text = self.text()
   let content : Array[@kernel.Content] = if text == "" {

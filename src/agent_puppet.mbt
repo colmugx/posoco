@@ -129,7 +129,7 @@ fn AgentEventSubscriber::AgentEventSubscriber(
   observers : Array[&@port.Observer],
   chunk_dispatcher : Ref[ChunkDispatcher?],
 ) -> AgentEventSubscriber {
-  { observers, pending_calls: Map::from_array([]), chunk_dispatcher }
+  { observers, pending_calls: Map::from_array([]), chunk_dispatcher, }
 }
 
 ///|
@@ -317,7 +317,7 @@ fn AgentRuntime::mint_turn_identity(
 ///|
 /// The attribution scope projected onto this turn's observer events.
 fn TurnIdentity::scope(self : TurnIdentity) -> @types.EventScope {
-  { session_id: self.session_id, run_id: self.run_id, turn_id: self.turn_id }
+  { session_id: self.session_id, run_id: self.run_id, turn_id: self.turn_id, }
 }
 
 ///|

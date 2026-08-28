@@ -64,7 +64,11 @@ fn make_resume(cmd_id : String, run : RunId, susp_id : String) -> ResumeCommand 
 
 ///|
 fn make_abort(cmd_id : String, run : RunId) -> AbortCommand {
-  { command_id: CommandId::unchecked(cmd_id), target_run_id: run, detail: None }
+  {
+    command_id: CommandId::unchecked(cmd_id),
+    target_run_id: run,
+    detail: None,
+  }
 }
 
 ///|

@@ -25,7 +25,7 @@ pub(all) struct RecordingSubscriber {
 pub fn RecordingSubscriber::RecordingSubscriber(
   id : String,
 ) -> RecordingSubscriber {
-  { id_value: id, received: [] }
+  { id_value: id, received: [], }
 }
 
 ///|
@@ -61,7 +61,7 @@ pub(all) struct FailingSubscriber {
 
 ///|
 pub fn FailingSubscriber::FailingSubscriber(id : String) -> FailingSubscriber {
-  { id_value: id }
+  { id_value: id, }
 }
 
 ///|
@@ -111,7 +111,7 @@ fn ev_dispatcher() -> EventDispatcher {
 
 ///|
 fn started_event() -> KernelEvent {
-  RunStarted(details={ run_id: ev_run_id(), session_id: ev_session_id() })
+  RunStarted(details={ run_id: ev_run_id(), session_id: ev_session_id(), })
 }
 
 ///|
