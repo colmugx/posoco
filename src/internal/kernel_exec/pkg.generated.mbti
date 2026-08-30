@@ -160,7 +160,7 @@ pub(all) enum FailureReason {
   ModelParseFailure(detail~ : String)
   ModelTransport(detail~ : String)
   ModelRuntime(detail~ : String)
-  ModelQuotaExhausted(detail~ : String)
+  ModelQuotaExhausted(detail~ : String, reset_at_ms~ : Int64?, provider_code~ : String?)
   HostRejected(detail~ : String)
   InvariantViolation(category~ : InvariantCategory)
   BudgetExhausted(dimension~ : BudgetDimension)

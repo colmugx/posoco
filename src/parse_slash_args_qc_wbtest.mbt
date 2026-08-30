@@ -1,7 +1,7 @@
 ///|
 fn qc_letters(seed : Int) -> String {
   let n = seed % 8 + 1
-  let buf = StringBuilder::new()
+  let buf = StringBuilder()
   for i in 0..<n {
     buf.write_char((seed / (i + 3) % 26 + 'a'.to_int()).to_char().unwrap())
   }

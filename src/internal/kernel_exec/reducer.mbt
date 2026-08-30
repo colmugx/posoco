@@ -642,7 +642,8 @@ fn reduce_model_failed(
     @kernel.Runtime(reason~) => ModelRuntime(detail=reason)
     @kernel.Parse(reason~) => ModelParseFailure(detail=reason)
     @kernel.HostRejected(reason~) => FailureReason::HostRejected(detail=reason)
-    @kernel.RateLimited(reason~, ..) => ModelQuotaExhausted(detail=reason)
+    @kernel.RateLimited(reason~, reset_at_ms~, provider_code~) =>
+      ModelQuotaExhausted(detail=reason, reset_at_ms~, provider_code~)
   }
   reduce_terminal_fail(state, reason)
 }

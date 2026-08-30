@@ -188,7 +188,7 @@ pub impl @port.CommandPort for NoopCommandPort with fn invoke(
 /// Tokenize a slash argument string, honoring double-quoted spans.
 fn tokenize_args(text : String) -> Array[String] {
   let tokens : Array[String] = []
-  let mut current = StringBuilder::new()
+  let mut current = StringBuilder()
   let mut in_quote = false
   for ch in text {
     if ch == '"' {
@@ -196,7 +196,7 @@ fn tokenize_args(text : String) -> Array[String] {
     } else if ch == ' ' && !in_quote {
       if current.to_string() != "" {
         tokens.push(current.to_string())
-        current = StringBuilder::new()
+        current = StringBuilder()
       }
     } else {
       current.write_char(ch)

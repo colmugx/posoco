@@ -19,6 +19,26 @@ fn normalize_tool_schema(schema : Json) -> Json {
 }
 
 ///|
+/// Format a quota verdict's scheduling data (`ModelFailure::RateLimited`
+/// shape) in the `ModelError::RateLimited` label style, so the AgentError
+/// message carries the provider code and reset time verbatim.
+fn quota_error_detail(
+  message : String,
+  reset_at_ms : Int64?,
+  provider_code : String?,
+) -> String {
+  let code_label = match provider_code {
+    Some(code) => code
+    None => "none"
+  }
+  let reset_label = match reset_at_ms {
+    Some(at) => "\{at}"
+    None => "none"
+  }
+  "code=\{code_label}, reset_at_ms=\{reset_label}, message=\{message}"
+}
+
+///|
 /// True when `left` and `right` share the same first `len` messages.
 fn messages_prefix_equal(
   left : Array[@kernel.Message],
@@ -733,6 +753,46 @@ async fn AgentRuntime::run_puppet_turn_body(
           Some(@error.AgentError::Model("model runtime failure: " + detail))
         Some(
           @kernel_exec.Failed(
+            reason=@kernel_exec.ModelQuotaExhausted(
+              detail~,
+              reset_at_ms~,
+              provider_code~
+            )
+          )
+        ) =>
+          // Provider quota/rate-limit verdict. The message keeps the provider
+          // code and reset time so hosts can schedule a retry instead of
+          // parsing the provider excerpt for scheduling data.
+          Some(
+            @error.AgentError::Model(
+              "model quota exhausted: " +
+              quota_error_detail(detail, reset_at_ms, provider_code),
+            ),
+          )
+        Some(@kernel_exec.Failed(reason=@kernel_exec.HostRejected(detail~))) =>
+          Some(
+            @error.AgentError::Runtime(
+              @error.RuntimeError::InvocationFailed("host rejected: " + detail),
+            ),
+          )
+        Some(
+          @kernel_exec.Failed(reason=@kernel_exec.InvariantViolation(category~))
+        ) =>
+          Some(
+            @error.AgentError::Runtime(
+              @error.RuntimeError::InvocationFailed(
+                "kernel invariant violation: " + category.to_string(),
+              ),
+            ),
+          )
+        Some(@kernel_exec.Failed(reason=@kernel_exec.DeadlineReached)) =>
+          Some(
+            @error.AgentError::Runtime(
+              @error.RuntimeError::InvocationFailed("deadline reached"),
+            ),
+          )
+        Some(
+          @kernel_exec.Failed(
             reason=@kernel_exec.BudgetExhausted(
               dimension=@kernel_exec.BudgetDimension::ToolRounds
             )
@@ -759,12 +819,6 @@ async fn AgentRuntime::run_puppet_turn_body(
           Some(
             @error.AgentError::Runtime(
               @error.RuntimeError::InvocationFailed("budget exhausted"),
-            ),
-          )
-        Some(@kernel_exec.Failed(..)) =>
-          Some(
-            @error.AgentError::Runtime(
-              @error.RuntimeError::InvocationFailed("run failed"),
             ),
           )
         _ => None

@@ -253,3 +253,202 @@ async test "policy/auto-compact failure skips observably and the turn survives" 
   }
   assert_true(seen_secondary)
 }
+
+// ---------------------------------------------------------------------------
+// End-to-end: the Replace rewrite must actually reach the next model call.
+// The policy tests above pin WHEN auto-compact fires; these pin that the
+// compacted transcript IS what the model sees afterwards — inside the same
+// run and on the next turn of the same session.
+// ---------------------------------------------------------------------------
+
+///|
+/// PolicyModel variant that also records every `chat` message array, so the
+/// post-compact projection can be asserted exactly.
+struct AutoCompactE2EModel {
+  scripted : ScriptedModel
+  compact_result : @kernel.CompactResult
+  reported : @port.ProviderConfig
+  seen : Array[Array[@kernel.Message]]
+  compact_calls : Ref[Int]
+}
+
+///|
+fn auto_compact_e2e_model(
+  steps : Array[ScriptedModelStep],
+  compacted_messages : Array[@kernel.Message],
+) -> AutoCompactE2EModel {
+  AutoCompactE2EModel::{
+    scripted: ScriptedModel(steps),
+    compact_result: { compacted_messages, mode: @kernel.Replace, },
+    reported: policy_reported(
+      context_window=Some(100),
+      compact_threshold=Some(0.9),
+    ),
+    seen: [],
+    compact_calls: Ref::{ val: 0, },
+  }
+}
+
+///|
+fn AutoCompactE2EModel::seen_chats(
+  self : AutoCompactE2EModel,
+) -> Array[Array[@kernel.Message]] {
+  self.seen.copy()
+}
+
+///|
+impl @port.ModelPort for AutoCompactE2EModel with fn chat(
+  self,
+  scope : @kernel.InvocationScope,
+  messages : ArrayView[@kernel.Message],
+  tools : Array[@kernel.ToolDef],
+  options : @types.ChatOptions,
+  stream : @types.StreamMode,
+) -> @kernel.ModelCallResult raise @error.ModelError {
+  self.seen.push(messages.to_owned())
+  (self.scripted as &@port.ModelPort).chat(
+    scope, messages, tools, options, stream,
+  )
+}
+
+///|
+impl @port.ModelPort for AutoCompactE2EModel with fn compact(
+  self,
+  scope : @kernel.InvocationScope,
+  messages : ArrayView[@kernel.Message],
+  options : @types.ChatOptions,
+  trigger : @kernel.CompactTrigger,
+) -> @kernel.CompactResult raise @error.ModelError {
+  self.compact_calls.val += 1
+  ignore(scope)
+  ignore(messages)
+  ignore(options)
+  ignore(trigger)
+  self.compact_result
+}
+
+///|
+impl @port.ModelPort for AutoCompactE2EModel with fn provider_config(self) -> @port.ProviderConfig {
+  self.reported
+}
+
+///|
+/// The kit-shaped Replace result: one summary user message followed by the
+/// verbatim tail, exactly what `build_replace_result` produces.
+fn auto_compact_kit_shaped_compacted() -> Array[@kernel.Message] {
+  [
+    tk_user_msg("summary of the earlier conversation"),
+    tk_user_msg("recent question"),
+    tk_assistant_msg_e2e("recent answer"),
+  ]
+}
+
+///|
+fn tk_assistant_msg_e2e(text : String) -> @kernel.Message {
+  @kernel.Message::AssistantMessage(
+    content=[@kernel.Content::Text(text)],
+    tool_calls=[],
+    reasoning=None,
+    finish_reason=@kernel.Stop,
+  )
+}
+
+///|
+async test "policy/e2e compacted transcript is what the next model call sees" {
+  // usage 95/100 crosses 0.9 after the tool-call step; the follow-up stop
+  // step must observe the compacted transcript, not the original one.
+  let compacted = auto_compact_kit_shaped_compacted()
+  let model = auto_compact_e2e_model(
+    [
+      Respond(scope_test_tool_call_with_usage(95)),
+      Respond(tk_stop_response("done")),
+    ],
+    compacted,
+  )
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="tools", tools=[policy_tools()]),
+      tk_ext(id="io", sessions=[RecordingSessionStore()]),
+    ],
+    config=tk_config(),
+  )
+  ignore(agent.run_turn(tk_user_msg("hi"), "session_e2e_projection"))
+  assert_eq(model.compact_calls.val, 1)
+  // Two chats: the tool-call step (pre-compact) and the stop step
+  // (post-compact). The second must see exactly the compacted transcript.
+  let seen = model.seen_chats()
+  assert_eq(seen.length(), 2)
+  let second = seen[1]
+  assert_eq(second.length(), compacted.length())
+  for i in 0..<compacted.length() {
+    assert_true(second[i] == compacted[i])
+  }
+  // And it must NOT contain the original opening user message.
+  for message in second {
+    match message {
+      @kernel.Message::UserMessage(content~) =>
+        for block in content {
+          match block {
+            @kernel.Content::Text(text) => assert_true(text != "hi")
+            _ => ()
+          }
+        }
+      _ => ()
+    }
+  }
+}
+
+///|
+async test "policy/e2e compacted transcript persists into the next turn" {
+  let compacted = auto_compact_kit_shaped_compacted()
+  let model = auto_compact_e2e_model(
+    [
+      // Turn 1: cross the threshold, fire auto-compact, finish.
+      Respond(scope_test_tool_call_with_usage(95)),
+      Respond(tk_stop_response("turn1 done")),
+      // Turn 2: a plain exchange on the same session.
+      Respond(tk_stop_response("turn2 done")),
+    ],
+    compacted,
+  )
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="tools", tools=[policy_tools()]),
+      tk_ext(id="io", sessions=[RecordingSessionStore()]),
+    ],
+    config=tk_config(),
+  )
+  ignore(agent.run_turn(tk_user_msg("hi"), "session_e2e_persist"))
+  ignore(agent.run_turn(tk_user_msg("second turn"), "session_e2e_persist"))
+  assert_eq(model.compact_calls.val, 1)
+  let seen = model.seen_chats()
+  // Turn 1: two chats; turn 2: one chat.
+  assert_eq(seen.length(), 3)
+  // The compact fired mid-turn-1, so turn 1's closing stop response appended
+  // normally AFTER the compacted transcript. The next turn's request must be:
+  // compacted transcript, then turn 1's assistant close, then the new user
+  // message.
+  let next_turn = seen[2]
+  assert_eq(next_turn.length(), compacted.length() + 2)
+  for i in 0..<compacted.length() {
+    assert_true(next_turn[i] == compacted[i])
+  }
+  guard next_turn[compacted.length()]
+    is @kernel.Message::AssistantMessage(content=close_content, ..) else {
+    fail("expected turn 1's assistant close after the compacted transcript")
+  }
+  guard close_content[0] is @kernel.Content::Text(close_text) else {
+    fail("expected text content")
+  }
+  assert_eq(close_text, "turn1 done")
+  guard next_turn[next_turn.length() - 1]
+    is @kernel.Message::UserMessage(content~) else {
+    fail("expected the new user message at the end")
+  }
+  guard content[0] is @kernel.Content::Text(text) else {
+    fail("expected text content")
+  }
+  assert_eq(text, "second turn")
+}

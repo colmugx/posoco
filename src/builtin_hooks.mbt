@@ -62,7 +62,7 @@ pub fn SystemPromptHook::assemble(self : SystemPromptHook) -> String {
       sections.push("\{s.id}:\n\{text}")
     }
   }
-  let buf = StringBuilder::new()
+  let buf = StringBuilder()
   for i, section in sections {
     if i > 0 {
       buf.write_string("\n\n")
@@ -207,7 +207,7 @@ fn MemoryRetrievalHook::build_memory_message(
     return None
   }
   let sources = self.memories.map(fn(mem) { mem.source_name() })
-  let buf = StringBuilder::new()
+  let buf = StringBuilder()
   buf.write_string(memory_section_header)
   buf <+ "\nfrom \{sources.join(", ")}. For Your Information."
   for entry in entries {

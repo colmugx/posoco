@@ -66,8 +66,15 @@ pub(all) enum FailureReason {
   ModelRuntime(detail~ : String)
   /// The provider returned a quota/rate-limit verdict. Distinct from
   /// `ModelTransport` so product code can distinguish "wait for the stated
-  /// reset time and retry" from a generic transport failure.
-  ModelQuotaExhausted(detail~ : String)
+  /// reset time and retry" from a generic transport failure. `reset_at_ms`
+  /// and `provider_code` mirror the kernel's `ModelFailure::RateLimited` so
+  /// the scheduling data survives to the product boundary instead of being
+  /// dropped in favor of the message excerpt alone.
+  ModelQuotaExhausted(
+    detail~ : String,
+    reset_at_ms~ : Int64?,
+    provider_code~ : String?
+  )
   /// A host-side policy or control gate rejected a model effect. This is not
   /// a provider error and must remain distinguishable at the product boundary.
   HostRejected(detail~ : String)
@@ -83,8 +90,17 @@ pub impl Show for FailureReason with fn to_string(self : FailureReason) -> Strin
       "ModelParseFailure(\{safe_kernel_label(detail)})"
     ModelTransport(detail~) => "ModelTransport(\{safe_kernel_label(detail)})"
     ModelRuntime(detail~) => "ModelRuntime(\{safe_kernel_label(detail)})"
-    ModelQuotaExhausted(detail~) =>
-      "ModelQuotaExhausted(\{safe_kernel_label(detail)})"
+    ModelQuotaExhausted(detail~, reset_at_ms~, provider_code~) => {
+      let code_label = match provider_code {
+        Some(code) => code
+        None => "none"
+      }
+      let reset_label = match reset_at_ms {
+        Some(at) => "\{at}"
+        None => "none"
+      }
+      "ModelQuotaExhausted(code=\{code_label}, reset_at_ms=\{reset_label}, message=\{safe_kernel_label(detail)})"
+    }
     HostRejected(detail~) => "HostRejected(\{safe_kernel_label(detail)})"
     InvariantViolation(category~) =>
       "InvariantViolation(\{category.to_string()})"

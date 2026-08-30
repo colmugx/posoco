@@ -37,7 +37,7 @@ pub(all) struct ToolCallBuilder {
 
 ///|
 pub fn ToolCallBuilder::ToolCallBuilder() -> ToolCallBuilder {
-  { id: "", name: "", arguments_buf: StringBuilder::new(), }
+  { id: "", name: "", arguments_buf: StringBuilder(), }
 }
 
 ///|
@@ -72,8 +72,8 @@ pub(all) struct StreamAccumulator {
 ///|
 pub fn StreamAccumulator::StreamAccumulator() -> StreamAccumulator {
   {
-    text_buf: StringBuilder::new(),
-    reasoning_buf: StringBuilder::new(),
+    text_buf: StringBuilder(),
+    reasoning_buf: StringBuilder(),
     tool_calls: [],
     finish_reason: "stop",
     usage_input: None,

@@ -172,6 +172,51 @@ async test "t07_model_error_emits_turnfailed_not_turncompleted" {
 }
 
 ///|
+async test "t07_rate_limited_model_surfaces_quota_scheduling_data" {
+  // A provider quota verdict must reach the caller with its provider code,
+  // reset time, and message intact — never collapsed to a generic failure.
+  let model = @posoco.ScriptedModel([
+    @posoco.Fail(
+      @error.ModelError::RateLimited({
+        message: "free quota exceeded",
+        reset_at_ms: Some(1756400000000L),
+        provider_code: Some("1308"),
+      }),
+    ),
+  ])
+  let store = @posoco.RecordingSessionStore()
+  let obs = @posoco.RecordingObserver()
+  let agent = @posoco.Agent(
+    exts=[
+      @posoco.tk_ext(id="model", model=Some(model)),
+      @posoco.tk_ext(id="io", sessions=[store], observers=[obs]),
+    ],
+    config=err_config(),
+  )
+  let result = Ok(agent.run_turn(@posoco.tk_user_msg("hello"), "s1")) catch {
+    e => Err(e)
+  }
+  match result {
+    Err(@error.AgentError::Model(msg)) => {
+      assert_true(msg.contains("model quota exhausted"))
+      assert_true(msg.contains("code=1308"))
+      assert_true(msg.contains("reset_at_ms=1756400000000"))
+      assert_true(msg.contains("message=free quota exceeded"))
+    }
+    _ => fail("expected AgentError::Model with quota scheduling data")
+  }
+  let events = obs.events()
+  let mut saw_failed = false
+  for e in events {
+    match e {
+      TurnEvent::TurnFailed(_) => saw_failed = true
+      _ => ()
+    }
+  }
+  assert_true(saw_failed)
+}
+
+///|
 fn count_terminal_events(events : Array[TurnEvent]) -> Int {
   let mut count = 0
   for event in events {
