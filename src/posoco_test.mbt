@@ -106,6 +106,7 @@ fn make_config() -> @posoco.AgentConfig {
     model_context_window: None,
     compact_threshold: None,
     system_prompt: None,
+    memory_inbound_timeout_ms: None,
   }
 }
 

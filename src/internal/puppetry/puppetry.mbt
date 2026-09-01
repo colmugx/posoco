@@ -1101,7 +1101,20 @@ async fn Puppet::handle_compact(
   let messages = state.transcript().messages_snapshot()
   // Compact is host-driven (a mailbox command), not a reducer-allocated
   // effect — hence `effect_id: None`. Run/session identity still applies.
-  let scope : InvocationScope = { session_id, run_id, effect_id: None, }
+  // The resolved window/threshold and the latest verified occupancy ride
+  // along so modelports size their compact strategy from real numbers
+  // instead of re-estimating from characters.
+  let pressure : @kernel.ContextPressure = {
+    window_tokens: snap.context_window(),
+    occupancy_tokens: state.budget_consumed().last_context_tokens,
+    compact_threshold: snap.compact_threshold(),
+  }
+  let scope : InvocationScope = {
+    session_id,
+    run_id,
+    effect_id: None,
+    pressure: Some(pressure),
+  }
   let attempted : Result[Result[CompactResult, @kernel.ModelFailure], Error] = Ok(
     self.config.host.compact(
       scope,
@@ -1916,7 +1929,8 @@ pub async fn Puppet::wait_idle(self : Puppet) -> QuiescentStatus {
 /// in a typed way, and a contract violation aborts loudly (aborts are not
 /// catchable). Components with fallible internal work must catch it
 /// themselves and surface it as a `secondary_failure` observer event —
-/// see `MemoryRetrievalHook`. Post-event stages only exist inside a run, so
+/// see the Agent's `emit_secondary_failure` wiring. Post-event stages only
+/// exist inside a run, so
 /// the attribution scope is always delivered as `Some`.
 
 ///|

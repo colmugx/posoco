@@ -65,6 +65,7 @@ async test "perf guard: multi-wave tool commit is linear in transcript" {
     model_context_window: None,
     compact_threshold: None,
     system_prompt: None,
+    memory_inbound_timeout_ms: None,
   }
   let agent = @posoco.Agent(
     exts=[

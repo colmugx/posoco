@@ -241,8 +241,11 @@ pub impl Show for CancelDisposition with fn to_string(self : CancelDisposition) 
 ///   `CallModel` effect; it is `None` for `compact`, which is not an effect.
 ///   Hosts that propagate cancellation key in-flight model calls by this id,
 ///   mirroring the tool side's `EffectContext.effect_id`.
+/// - `pressure` is `Some` only where posoco has a reading worth sharing
+///   (the compact path); ports treat it as advisory read-only input.
 pub(all) struct InvocationScope {
   session_id : SessionId
   run_id : RunId
   effect_id : EffectId?
+  pressure : ContextPressure?
 } derive(Eq, Debug)

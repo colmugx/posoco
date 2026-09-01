@@ -14,6 +14,7 @@ fn append_config() -> AgentConfig {
     model_context_window: None,
     compact_threshold: None,
     system_prompt: None,
+    memory_inbound_timeout_ms: None,
   }
 }
 

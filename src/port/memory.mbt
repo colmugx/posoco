@@ -1,22 +1,32 @@
 ///|
-/// MemoryPort: durable cross-session memory store/search/delete. Distinct
-/// from SessionStore (conversation history) — memory holds durable
-/// decisions/knowledge (e.g. brain.md integration). All slots are `async`
-/// so adapter IO propagates through async; synchronous implementations
-/// write plain `fn` bodies (a sync body satisfies an `async` slot).
+/// MemoryPort: session memory — the port a memory system plugs into
+/// (nowledge-mem today, OpenViking and any other scheme tomorrow). Four
+/// slots: `inbound` for session-opening recall, `store`/`search`/`delete`
+/// for the durable record. Core never labels or re-renders provider output —
+/// providers own their text format (community convention e.g. devkit
+/// envelopes); core owns only timing, placement, and stability.
 pub(open) trait MemoryPort {
-  async fn store(Self, entry : @types.MemoryEntry) -> String raise @error.MemoryError
-  async fn search(Self, query : @types.MemoryQuery) -> Array[@types.MemoryEntry] raise @error.MemoryError
-  async fn delete(Self, id : String) -> Unit raise @error.MemoryError
-  /// Human-readable name of the memory source this port fronts, used when
-  /// core tells the model where recalled memory came from.
-  /// Protocol-level self-description — no branding lives in core.
-  fn source_name(Self) -> String = _
-}
+  /// Session-opening memory context tailored to the user's first request.
+  /// Core calls it at most once per session lifetime per process, ONLY when
+  /// the loaded session transcript is empty (the session's first turn).
+  /// `None` or an empty body contributes nothing; a non-empty result
+  /// freezes into the transcript as ONE user message placed before the real
+  /// first user input — never rewritten, never re-read. The slot is `async`
+  /// so adapter IO propagates through async; synchronous implementations
+  /// write plain `fn` bodies.
+  async fn inbound(Self, session_id~ : String, request~ : String) -> String? raise @error.MemoryError
 
-///|
-/// Default `source_name`: generic provenance for ports that do not
-/// self-describe.
-impl MemoryPort with fn source_name(_self) -> String {
-  "memory"
+  /// Persist one entry with provider-convention metadata; returns the
+  /// provider's id or a pending ticket for it. Whether the write is durable
+  /// on return is the provider's business.
+  async fn store(Self, content~ : String, metadata~ : Map[String, Json]) -> String raise @error.MemoryError
+
+  /// Query the store; returns provider-rendered text (`None` = no hits).
+  /// Omitting `top_k` leaves the hit count to the provider.
+  async fn search(Self, query~ : String, top_k? : Int) -> String? raise @error.MemoryError
+
+  /// Remove the memory stored under `id` — a passive interface for
+  /// product-side logic (e.g. an observer detecting stale memory). Whether
+  /// an unknown id raises is the provider's call.
+  async fn delete(Self, id : String) -> Unit raise @error.MemoryError
 }

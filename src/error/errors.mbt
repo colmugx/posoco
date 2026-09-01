@@ -129,6 +129,7 @@ pub impl Show for AgentError with fn to_string(self) -> String {
 
 ///|
 pub(all) suberror MemoryError {
+  Inbound(String)
   Store(String)
   Search(String)
   Delete(String)
@@ -137,6 +138,7 @@ pub(all) suberror MemoryError {
 ///|
 pub impl Show for MemoryError with fn to_string(self) -> String {
   match self {
+    Inbound(msg) => "MemoryError::Inbound(\{msg})"
     Store(msg) => "MemoryError::Store(\{msg})"
     Search(msg) => "MemoryError::Search(\{msg})"
     Delete(msg) => "MemoryError::Delete(\{msg})"

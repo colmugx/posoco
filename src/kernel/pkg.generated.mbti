@@ -78,6 +78,12 @@ pub(all) enum Content {
 } derive(Eq, @debug.Debug)
 pub impl Show for Content
 
+pub(all) struct ContextPressure {
+  window_tokens : Int?
+  occupancy_tokens : Int?
+  compact_threshold : Double
+} derive(Eq, @debug.Debug)
+
 pub(all) struct EffectId {
   value : Int
 } derive(Eq, Hash, @debug.Debug)
@@ -106,6 +112,7 @@ pub(all) struct InvocationScope {
   session_id : SessionId
   run_id : RunId
   effect_id : EffectId?
+  pressure : ContextPressure?
 } derive(Eq, @debug.Debug)
 
 pub(all) enum Message {

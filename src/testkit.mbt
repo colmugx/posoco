@@ -269,11 +269,13 @@ pub fn ScriptedModel::call_count(self : ScriptedModel) -> Int {
 pub fn tk_scope(
   session_id? : String = "tk_session",
   run_id? : String = "tk_run",
+  pressure? : @kernel.ContextPressure? = None,
 ) -> @kernel.InvocationScope {
   {
     session_id: @kernel.SessionId::unchecked(session_id),
     run_id: @kernel.RunId::unchecked(run_id),
     effect_id: None,
+    pressure,
   }
 }
 
@@ -634,6 +636,11 @@ pub(all) enum SessionOp {
     messages~ : Array[@kernel.Message],
     result~ : Result[Unit, @error.SessionError]
   )
+  OpTruncate(
+    id~ : String,
+    from_index~ : Int,
+    result~ : Result[Unit, @error.SessionError]
+  )
 }
 
 ///|
@@ -710,6 +717,8 @@ pub fn RecordingSessionStore::ops(
           messages=testkit_snapshot_messages(messages),
           result~,
         )
+      OpTruncate(id~, from_index~, result~) =>
+        OpTruncate(id~, from_index~, result~)
     }
   })
 }
@@ -802,6 +811,43 @@ pub impl @port.SessionStore for RecordingSessionStore with fn append_messages(
     Ok(())
   }
   self.ops.push(OpAppend(id~, from_index~, messages=msg_copy, result~))
+  match result {
+    Ok(_) => ()
+    Err(e) => raise e
+  }
+}
+
+///|
+pub impl @port.SessionStore for RecordingSessionStore with fn truncate(
+  self,
+  id : String,
+  from_index : Int,
+) -> Unit raise @error.SessionError {
+  let result : Result[Unit, @error.SessionError] = if self.save_failures.contains(
+      id,
+    ) {
+    Err(@error.SessionError::Save("configured save failure for '\{id}'"))
+  } else {
+    let session = match self.store.get(id) {
+      Some(s) => testkit_snapshot_session(s)
+      None => { messages: [], metadata: Map::from_array([]), }
+    }
+    let len = session.messages.length()
+    let keep = if from_index < 0 {
+      0
+    } else if from_index > len {
+      len
+    } else {
+      from_index
+    }
+    let kept : Array[@kernel.Message] = []
+    for i in 0..<keep {
+      kept.push(session.messages[i])
+    }
+    self.store[id] = { messages: kept, metadata: session.metadata, }
+    Ok(())
+  }
+  self.ops.push(OpTruncate(id~, from_index~, result~))
   match result {
     Ok(_) => ()
     Err(e) => raise e
@@ -1133,6 +1179,7 @@ pub fn tk_config() -> AgentConfig {
     model_context_window: None,
     compact_threshold: None,
     system_prompt: None,
+    memory_inbound_timeout_ms: None,
   }
 }
 
@@ -1175,6 +1222,156 @@ pub impl @port.Extension for ManifestOnly with fn manifest(self) -> @port.Extens
 /// Expose Extension methods on ManifestOnly for dot-syntax callers and so
 /// `&ManifestOnly` can be coerced to `&Extension`.
 pub extend ManifestOnly with @port.Extension::{extension_id, manifest}
+
+///|
+/// Scripted `MemoryPort` for agent-level tests of the port contract.
+/// Inbound side: `inbounds` entries are returned in call order as the full
+/// inbound body (a `None` entry plays an empty read); once the script is
+/// exhausted every later call returns `None`. Core calls `inbound` at most
+/// once per session lifetime per process and ONLY on the session's first
+/// turn, so one entry per session is the natural scripting granularity —
+/// `call_count`, `received_sessions`, and `received_requests` are the
+/// assertion surface for the once-per-session, first-turn-only, and
+/// request-text guarantees.
+/// Storage side: `store` records `(content, metadata)` and hands back
+/// synthetic tickets (`scripted-0`, `scripted-1`, ...); `delete` records
+/// the id; `search_script` entries are returned in call order (a `None`
+/// entry plays a no-hit search; exhausted -> `None`) and every call records
+/// its `(query, top_k)` — `received_stores`, `received_deletes`, and
+/// `received_searches` are the write/read assertion surfaces.
+pub(all) struct ScriptedMemoryPort {
+  inbounds : Array[String?]
+  mut index : Int
+  mut calls : Int
+  mut sessions : Array[String]
+  mut requests : Array[String]
+  mut stored : Array[(String, Map[String, Json])]
+  mut deleted : Array[String]
+  search_script : Array[String?]
+  mut search_index : Int
+  mut searches : Array[(String, Int?)]
+  mut next_ticket : Int
+}
+
+///|
+pub fn ScriptedMemoryPort::ScriptedMemoryPort(
+  inbounds~ : Array[String?],
+  search_script? : Array[String?] = [],
+) -> ScriptedMemoryPort {
+  {
+    inbounds,
+    index: 0,
+    calls: 0,
+    sessions: [],
+    requests: [],
+    stored: [],
+    deleted: [],
+    search_script,
+    search_index: 0,
+    searches: [],
+    next_ticket: 0,
+  }
+}
+
+///|
+/// Number of `inbound` calls observed so far.
+pub fn ScriptedMemoryPort::call_count(self : ScriptedMemoryPort) -> Int {
+  self.calls
+}
+
+///|
+/// Session ids `inbound` was called with, in call order.
+pub fn ScriptedMemoryPort::received_sessions(
+  self : ScriptedMemoryPort,
+) -> Array[String] {
+  self.sessions.copy()
+}
+
+///|
+/// Request texts `inbound` was called with, in call order.
+pub fn ScriptedMemoryPort::received_requests(
+  self : ScriptedMemoryPort,
+) -> Array[String] {
+  self.requests.copy()
+}
+
+///|
+/// (content, metadata) pairs `store` was called with, in call order.
+pub fn ScriptedMemoryPort::received_stores(
+  self : ScriptedMemoryPort,
+) -> Array[(String, Map[String, Json])] {
+  self.stored.copy()
+}
+
+///|
+/// Ids `delete` was called with, in call order.
+pub fn ScriptedMemoryPort::received_deletes(
+  self : ScriptedMemoryPort,
+) -> Array[String] {
+  self.deleted.copy()
+}
+
+///|
+/// (query, top_k) pairs `search` was called with, in call order.
+pub fn ScriptedMemoryPort::received_searches(
+  self : ScriptedMemoryPort,
+) -> Array[(String, Int?)] {
+  self.searches.copy()
+}
+
+///|
+pub impl @port.MemoryPort for ScriptedMemoryPort with fn inbound(
+  self : ScriptedMemoryPort,
+  session_id~ : String,
+  request~ : String,
+) -> String? raise @error.MemoryError {
+  self.calls = self.calls + 1
+  self.sessions.push(session_id)
+  self.requests.push(request)
+  if self.index < self.inbounds.length() {
+    let value = self.inbounds[self.index]
+    self.index = self.index + 1
+    value
+  } else {
+    None
+  }
+}
+
+///|
+pub impl @port.MemoryPort for ScriptedMemoryPort with fn store(
+  self : ScriptedMemoryPort,
+  content~ : String,
+  metadata~ : Map[String, Json],
+) -> String raise @error.MemoryError {
+  let ticket = "scripted-\{self.next_ticket}"
+  self.next_ticket = self.next_ticket + 1
+  self.stored.push((content, metadata))
+  ticket
+}
+
+///|
+pub impl @port.MemoryPort for ScriptedMemoryPort with fn search(
+  self : ScriptedMemoryPort,
+  query~ : String,
+  top_k? : Int,
+) -> String? raise @error.MemoryError {
+  self.searches.push((query, top_k))
+  if self.search_index < self.search_script.length() {
+    let value = self.search_script[self.search_index]
+    self.search_index = self.search_index + 1
+    value
+  } else {
+    None
+  }
+}
+
+///|
+pub impl @port.MemoryPort for ScriptedMemoryPort with fn delete(
+  self : ScriptedMemoryPort,
+  id : String,
+) -> Unit raise @error.MemoryError {
+  self.deleted.push(id)
+}
 
 ///|
 /// Build a `ManifestOnly` extension from labeled optional arguments.

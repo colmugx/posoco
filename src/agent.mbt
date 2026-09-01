@@ -18,6 +18,9 @@ pub(all) struct AgentConfig {
   /// registers `SystemPromptContributor`s, Posoco prepends one stable
   /// SystemMessage assembled from this base plus contributor sections.
   system_prompt : String?
+  /// Optional per-provider cap for the session-opening `MemoryPort::inbound`
+  /// read, in milliseconds. `None` means no timeout.
+  memory_inbound_timeout_ms : Int?
 }
 
 ///|
@@ -230,6 +233,12 @@ priv struct AgentRuntime {
   /// Puppet executes — retained for Agent-level dispatch points that fire
   /// outside the pump (`PipelineHook::on_turn_end`).
   hooks : Array[&@port.PipelineHook]
+  /// The aggregated memory sources paired with their manifest ids; drives
+  /// the session-opening inbound injection and the built-in memory tools.
+  memory : Array[(String, &@port.MemoryPort)]
+  /// Sessions whose inbound read already ran (freeze-even-if-empty: an
+  /// empty or failed read never retries within this process).
+  memory_inbound_attempted : Map[String, Bool]
   sessions : Array[&@port.SessionStore]
   lifecycle : Array[&@port.Lifecycle]
   commands : Array[&@port.CommandPort]
@@ -312,10 +321,32 @@ fn AgentRuntime::compose(
       )
     _ => ()
   }
+  match config.memory_inbound_timeout_ms {
+    Some(value) if value <= 0 =>
+      raise @error.CompositionError::ManifestSchemaError(
+        manifest_id="agent.config",
+        detail="memory_inbound_timeout_ms must be positive",
+      )
+    _ => ()
+  }
   if agg.sessions.is_empty() {
     raise @error.CompositionError::EmptyPort("SessionStore")
   }
-  let tool_routing = build_tool_routing(agg.tools)
+  // Built-in memory tools route through the same ToolCollision fail-fast as
+  // extension tools: an extension also declaring "memory_search" collides
+  // here at compose instead of shadowing or being shadowed.
+  let providers = agg.tools.copy()
+  if !agg.memory.is_empty() {
+    let observers = agg.observers
+    let mem_provider : &@port.ToolProvider = MemoryToolProvider::MemoryToolProvider(
+      sources=agg.memory,
+      on_failure=fn(reason) {
+        emit_secondary_failure(observers, "memory_search", reason)
+      },
+    )
+    providers.push(mem_provider)
+  }
+  let tool_routing = build_tool_routing(providers)
   // A wired CatalogSource owns the catalog from the start: the initial
   // snapshot comes from its definitions (version 1), and the composition
   // fails fast if those definitions are invalid. Otherwise the catalog is
@@ -329,9 +360,11 @@ fn AgentRuntime::compose(
     None => (build_agent_catalog(tool_routing.providers), 0)
   }
   // One composed hook chain, in interception order: system-prompt
-  // projection first, memory retrieval second, extension-registered hooks
-  // next, UI rendering last (opt-in, so extensions see events before the
-  // renderer).
+  // projection first, extension-registered hooks next, UI rendering last
+  // (opt-in, so extensions see events before the renderer). Memory has no
+  // hook: inbound context is injected at the turn boundary (see
+  // `run_turn_via_puppet`) and reads/writes go through the built-in
+  // MemoryToolProvider.
   let composed_hooks : Array[&@port.PipelineHook] = []
   // 1. System prompt projection (if a base prompt is configured or any
   // contributors are registered). The base prompt lives in AgentConfig so
@@ -353,17 +386,6 @@ fn AgentRuntime::compose(
       contributors=sections,
     )
     composed_hooks.push(sys_hook as &@port.PipelineHook)
-  }
-
-  if !agg.memory.is_empty() {
-    let observers = agg.observers
-    let mem_hook = MemoryRetrievalHook::MemoryRetrievalHook(
-      memories=agg.memory,
-      on_failure=fn(reason) {
-        emit_secondary_failure(observers, "memory_retrieval", reason)
-      },
-    )
-    composed_hooks.push(mem_hook as &@port.PipelineHook)
   }
 
   for h in agg.hooks {
@@ -444,6 +466,8 @@ fn AgentRuntime::compose(
     model: agg.model,
     observers: agg.observers,
     hooks: composed_hooks,
+    memory: agg.memory,
+    memory_inbound_attempted: Map::from_array([]),
     sessions: agg.sessions,
     lifecycle: agg.lifecycle.map(fn(entry) { entry.port }),
     commands: agg.commands,

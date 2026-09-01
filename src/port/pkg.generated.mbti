@@ -206,10 +206,10 @@ pub(open) trait Lifecycle {
 }
 
 pub(open) trait MemoryPort {
-  async fn store(Self, @types.MemoryEntry) -> String raise @error.MemoryError
-  async fn search(Self, @types.MemoryQuery) -> Array[@types.MemoryEntry] raise @error.MemoryError
+  async fn inbound(Self, session_id~ : String, request~ : String) -> String? raise @error.MemoryError
+  async fn store(Self, content~ : String, metadata~ : Map[String, Json]) -> String raise @error.MemoryError
+  async fn search(Self, query~ : String, top_k? : Int) -> String? raise @error.MemoryError
   async fn delete(Self, String) -> Unit raise @error.MemoryError
-  fn source_name(Self) -> String = _
 }
 
 pub(open) trait ModelPort {
@@ -236,6 +236,7 @@ pub(open) trait SessionStore {
   async fn load(Self, String) -> @types.Session raise @error.SessionError
   async fn save(Self, String, @types.Session) -> Unit raise @error.SessionError
   async fn append_messages(Self, String, Int, ArrayView[@kernel.Message]) -> Unit raise @error.SessionError = _
+  async fn truncate(Self, String, Int) -> Unit raise @error.SessionError = _
 }
 
 pub(open) trait SystemPromptContributor {

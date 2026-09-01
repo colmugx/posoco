@@ -136,26 +136,6 @@ pub impl @port.ToolProvider for ToolRegistry with fn execute(
 }
 
 ///|
-pub(all) struct NoopMemoryPort {}
-
-///|
-pub impl @port.MemoryPort for NoopMemoryPort with fn store(_self, _entry) -> String raise @error.MemoryError {
-  raise @error.MemoryError::Store("not implemented")
-}
-
-///|
-pub impl @port.MemoryPort for NoopMemoryPort with fn search(_self, _query) -> Array[
-  @types.MemoryEntry,
-] raise @error.MemoryError {
-  raise @error.MemoryError::Search("not implemented")
-}
-
-///|
-pub impl @port.MemoryPort for NoopMemoryPort with fn delete(_self, _id) -> Unit raise @error.MemoryError {
-  raise @error.MemoryError::Delete("not implemented")
-}
-
-///|
 pub(all) struct NoopLifecycle {}
 
 ///|

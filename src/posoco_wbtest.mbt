@@ -145,6 +145,7 @@ fn make_config() -> AgentConfig {
     model_context_window: None,
     compact_threshold: None,
     system_prompt: None,
+    memory_inbound_timeout_ms: None,
   }
 }
 
@@ -771,6 +772,7 @@ async test "tool_loop_exceeded" {
     model_context_window: None,
     compact_threshold: None,
     system_prompt: None,
+    memory_inbound_timeout_ms: None,
   }
 
   let agent = Agent(
@@ -823,6 +825,7 @@ async test "unbounded_tool_rounds_complete_long_turn" {
       model_context_window: None,
       compact_threshold: None,
       system_prompt: None,
+      memory_inbound_timeout_ms: None,
     },
   )
   // Any raise (ToolLoopExceeded or otherwise) fails the test with the error.
@@ -870,6 +873,7 @@ async test "bounded_tool_rounds_allows_exactly_n_rounds" {
       model_context_window: None,
       compact_threshold: None,
       system_prompt: None,
+      memory_inbound_timeout_ms: None,
     },
   )
   match

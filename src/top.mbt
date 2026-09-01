@@ -13,8 +13,6 @@ pub using @types {
   type TurnEvent,
   type TurnResult,
   type EventScope,
-  type MemoryEntry,
-  type MemoryQuery,
 }
 
 ///|
@@ -94,6 +92,7 @@ pub using @kernel {
   type CompactMode,
   type CompactResult,
   type CompactTrigger,
+  type ContextPressure,
   // Identity newtypes.
   type CallId,
   type ToolName,

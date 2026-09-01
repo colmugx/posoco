@@ -380,7 +380,44 @@ async fn AgentRuntime::run_turn_via_puppet(
 
   // Step 2: snapshot + append input. Deep-copy so callers cannot mutate
   // recorded state via the recorded arrays.
+  //
+  // Memory inbound injection: on a session's first turn (empty loaded
+  // transcript) every memory source gets exactly one `inbound` read; the
+  // attempt is spent even when nothing comes back (freeze-even-if-empty),
+  // and any bodies freeze as ONE user message placed before the input — so
+  // the input stays at index `current_turn_start`, keeping the pure-append
+  // save math and fork/compact slicing intact.
   let messages = agent_snapshot_messages(session.messages)
+  if session.messages.length() == 0 &&
+    !self.memory.is_empty() &&
+    !self.memory_inbound_attempted.contains(session_id) {
+    self.memory_inbound_attempted[session_id] = true
+    let request = match input {
+      @kernel.UserMessage(content~) => {
+        let parts : Array[String] = []
+        for item in content {
+          match item {
+            @kernel.Text(t) => parts.push(t)
+            _ => ()
+          }
+        }
+        parts.join("")
+      }
+      _ => ""
+    }
+    let bodies = collect_memory_inbound(
+      self.memory,
+      session_id,
+      request,
+      self.config.memory_inbound_timeout_ms,
+      fn(reason) {
+        emit_secondary_failure(self.observers, "memory_inbound", reason)
+      },
+    )
+    if !bodies.is_empty() {
+      messages.push(memory_inbound_message(bodies))
+    }
+  }
   let current_turn_start = messages.length()
   messages.push(agent_snapshot_message(input))
   let current_metadata = agent_snapshot_metadata(session.metadata)

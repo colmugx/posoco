@@ -24,20 +24,6 @@ pub(all) struct EventScope {
   turn_id : @kernel.TurnId
 } derive(Eq, @debug.Debug)
 
-pub(all) struct MemoryEntry {
-  id : String
-  content : String
-  metadata : Map[String, Json]
-  score : Double?
-} derive(Eq, @debug.Debug)
-
-pub(all) struct MemoryQuery {
-  query : String
-  top_k : Int
-  threshold : Double?
-  filter : Map[String, Json]
-} derive(Eq, @debug.Debug)
-
 pub(all) struct Session {
   messages : Array[@kernel.Message]
   metadata : Map[String, Json]

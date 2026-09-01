@@ -95,6 +95,40 @@ async test "policy/provider-reported window enables auto-compact without host co
 }
 
 ///|
+async test "policy/compact scope carries the resolved pressure reading" {
+  let model = PolicyModel::{
+    inner: ScopeRecordingModel(
+      [
+        Respond(scope_test_tool_call_with_usage(95)),
+        Respond(tk_stop_response("done")),
+      ],
+      compact_result=policy_replace_result(),
+    ),
+    reported: policy_reported(
+      context_window=Some(100),
+      compact_threshold=Some(0.9),
+    ),
+  }
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="tools", tools=[policy_tools()]),
+      tk_ext(id="io", sessions=[RecordingSessionStore()]),
+    ],
+    config=tk_config(),
+  )
+  ignore(agent.run_turn(tk_user_msg("hi"), "session_pressure_scope"))
+  let scopes = model.inner.compact_scopes()
+  assert_eq(scopes.length(), 1)
+  guard scopes[0].pressure is Some(pressure) else {
+    fail("expected the compact scope to carry pressure")
+  }
+  assert_eq(pressure.window_tokens, Some(100))
+  assert_eq(pressure.occupancy_tokens, Some(95))
+  assert_eq(pressure.compact_threshold, 0.9)
+}
+
+///|
 async test "policy/host window overrides the provider report" {
   let model = PolicyModel::{
     inner: ScopeRecordingModel(

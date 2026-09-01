@@ -24,7 +24,9 @@ priv struct AggregatedPorts {
   sessions : Array[&@port.SessionStore]
   observers : Array[&@port.Observer]
   hooks : Array[&@port.PipelineHook]
-  memory : Array[&@port.MemoryPort]
+  /// Memory sources paired with their manifest id — the id routes
+  /// `memory_add`'s optional `source` argument.
+  memory : Array[(String, &@port.MemoryPort)]
   lifecycle : Array[LifecycleEntry]
   commands : Array[&@port.CommandPort]
   ui : &@port.UiPort
@@ -50,7 +52,7 @@ fn aggregate_extensions(
   let sessions : Array[&@port.SessionStore] = []
   let observers : Array[&@port.Observer] = []
   let hooks : Array[&@port.PipelineHook] = []
-  let memory : Array[&@port.MemoryPort] = []
+  let memory : Array[(String, &@port.MemoryPort)] = []
   let lifecycle : Array[LifecycleEntry] = []
   let commands : Array[&@port.CommandPort] = []
   let command_manifests : Map[String, Array[String]] = Map::from_array([])
@@ -128,7 +130,7 @@ fn aggregate_extensions(
       hooks.push(h)
     }
     for m in manifest.memory {
-      memory.push(m)
+      memory.push((mid, m))
     }
     for l in manifest.lifecycle {
       lifecycle.push({ requires: manifest.requires.copy(), port: l, })

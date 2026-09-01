@@ -37,6 +37,7 @@ pub(all) suberror CompositionError {
 pub impl Show for CompositionError
 
 pub(all) suberror MemoryError {
+  Inbound(String)
   Store(String)
   Search(String)
   Delete(String)

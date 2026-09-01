@@ -5,9 +5,6 @@
 // methods that are actually dot-called within this module.
 
 ///|
-pub extend MemoryRetrievalHook with @port.PipelineHook::{before_model}
-
-///|
 pub extend NoopCommandPort with @port.CommandPort::{commands, invoke}
 
 ///|
@@ -18,6 +15,9 @@ pub extend RecordingObserver with @port.Observer::{on_event}
 
 ///|
 pub extend RecordingSessionStore with @port.SessionStore::{load, save}
+
+///|
+pub extend ScriptedMemoryPort with @port.MemoryPort::{inbound}
 
 ///|
 pub extend RecordingToolProvider with @port.ToolProvider::{list_tools}

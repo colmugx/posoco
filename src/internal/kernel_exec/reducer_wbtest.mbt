@@ -1060,7 +1060,7 @@ test "C-MODEL-MIXED-WAVE: rejected pair precedes effect batch, no duplicate tool
     _ => fail("expected ToolCompleted for the rejected call")
   }
   match out.events()[3] {
-    ToolBatchStarted(calls~) => {
+    ToolBatchStarted(calls~, ..) => {
       assert_eq(calls.length(), 1)
       assert_eq(calls[0].call_id.to_string(), "c_read")
     }

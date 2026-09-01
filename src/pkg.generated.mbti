@@ -10,6 +10,8 @@ import {
 }
 
 // Values
+pub const MEMORY_INBOUND_LEAD : String = "## Memory\n\nThe following is memory recalled for this session, for your information. It may be stale or incomplete — verify against the current conversation before relying on it."
+
 pub fn assert_events_contain(Array[@types.TurnEvent], Array[@types.TurnEvent]) -> Unit
 
 pub fn assert_events_eq(Array[@types.TurnEvent], Array[@types.TurnEvent]) -> Unit
@@ -30,7 +32,7 @@ pub fn tk_ext(id~ : String, model? : &@port.ModelPort?, tools? : Array[&@port.To
 
 pub fn tk_ok_result(String) -> @kernel.ToolOutcome
 
-pub fn tk_scope(session_id? : String, run_id? : String) -> @kernel.InvocationScope
+pub fn tk_scope(session_id? : String, run_id? : String, pressure? : @kernel.ContextPressure?) -> @kernel.InvocationScope
 
 pub fn tk_stop_response(String) -> @kernel.ModelCallResult
 
@@ -66,6 +68,7 @@ pub(all) struct AgentConfig {
   model_context_window : Int?
   compact_threshold : Double?
   system_prompt : String?
+  memory_inbound_timeout_ms : Int?
 }
 
 pub(all) struct CompositeToolProvider {
@@ -96,15 +99,6 @@ pub fn ManifestOnly::extension_id(Self) -> String
 pub fn ManifestOnly::manifest(Self) -> @port.ExtensionManifest
 pub impl @port.Extension for ManifestOnly
 
-pub(all) struct MemoryRetrievalHook {
-  memories : Array[&@port.MemoryPort]
-  top_k : Int
-  on_failure : (String) -> Unit
-}
-pub fn MemoryRetrievalHook::MemoryRetrievalHook(memories~ : Array[&@port.MemoryPort], top_k? : Int, on_failure? : (String) -> Unit) -> Self
-pub async fn MemoryRetrievalHook::before_model(Self, Array[@kernel.Message]) -> Array[@kernel.Message] raise @port.HookAbort
-pub impl @port.PipelineHook for MemoryRetrievalHook
-
 pub(all) struct NoopCommandPort {
 }
 pub fn NoopCommandPort::commands(Self) -> Array[@port.CommandDef]
@@ -114,10 +108,6 @@ pub impl @port.CommandPort for NoopCommandPort
 pub(all) struct NoopLifecycle {
 }
 pub impl @port.Lifecycle for NoopLifecycle
-
-pub(all) struct NoopMemoryPort {
-}
-pub impl @port.MemoryPort for NoopMemoryPort
 
 pub(all) struct NoopUiPort {
 }
@@ -226,6 +216,29 @@ pub fn ScopeRecordingModel::chat_scopes(Self) -> Array[@kernel.InvocationScope]
 pub fn ScopeRecordingModel::compact_scopes(Self) -> Array[@kernel.InvocationScope]
 pub impl @port.ModelPort for ScopeRecordingModel
 
+pub(all) struct ScriptedMemoryPort {
+  inbounds : Array[String?]
+  mut index : Int
+  mut calls : Int
+  mut sessions : Array[String]
+  mut requests : Array[String]
+  mut stored : Array[(String, Map[String, Json])]
+  mut deleted : Array[String]
+  search_script : Array[String?]
+  mut search_index : Int
+  mut searches : Array[(String, Int?)]
+  mut next_ticket : Int
+}
+pub fn ScriptedMemoryPort::ScriptedMemoryPort(inbounds~ : Array[String?], search_script? : Array[String?]) -> Self
+pub fn ScriptedMemoryPort::call_count(Self) -> Int
+pub async fn ScriptedMemoryPort::inbound(Self, session_id~ : String, request~ : String) -> String? raise @error.MemoryError
+pub fn ScriptedMemoryPort::received_deletes(Self) -> Array[String]
+pub fn ScriptedMemoryPort::received_requests(Self) -> Array[String]
+pub fn ScriptedMemoryPort::received_searches(Self) -> Array[(String, Int?)]
+pub fn ScriptedMemoryPort::received_sessions(Self) -> Array[String]
+pub fn ScriptedMemoryPort::received_stores(Self) -> Array[(String, Map[String, Json])]
+pub impl @port.MemoryPort for ScriptedMemoryPort
+
 pub(all) struct ScriptedModel {
   steps : Array[ScriptedModelStep]
   mut index : Int
@@ -256,6 +269,7 @@ pub(all) enum SessionOp {
   OpLoad(id~ : String, result~ : Result[@types.Session, @error.SessionError])
   OpSave(id~ : String, metadata~ : Map[String, Json], result~ : Result[Unit, @error.SessionError])
   OpAppend(id~ : String, from_index~ : Int, messages~ : Array[@kernel.Message], result~ : Result[Unit, @error.SessionError])
+  OpTruncate(id~ : String, from_index~ : Int, result~ : Result[Unit, @error.SessionError])
 }
 
 pub(all) struct SystemPromptHook {
@@ -343,6 +357,8 @@ pub using @port {type CompositionView}
 
 pub using @kernel {type Content}
 
+pub using @kernel {type ContextPressure}
+
 pub using @types {type EventScope}
 
 pub using @kernel {type ExecutionPolicy}
@@ -357,11 +373,7 @@ pub using @port {type HookStage}
 
 pub using @kernel {type InvocationScope}
 
-pub using @types {type MemoryEntry}
-
 pub using @error {type MemoryError}
-
-pub using @types {type MemoryQuery}
 
 pub using @kernel {type Message}
 

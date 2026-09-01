@@ -138,11 +138,13 @@ async fn execute_call_model(
   let tool_definitions : Array[@kernel.ToolDef] = ctx.catalog.definitions()
   // Fold the Run identity (carried by the context) and this effect's id into
   // the invocation scope handed to the host — the canonical answer to
-  // "which session/run is this model call serving".
+  // "which session/run is this model call serving". Chat carries no
+  // pressure advisory; only the compact path attaches one.
   let scope : InvocationScope = {
     session_id: ctx.session_id,
     run_id: ctx.run_id,
     effect_id: Some(effect_id),
+    pressure: None,
   }
   let attempted : Result[Result[ModelCallResult, @kernel.ModelFailure], Error] = Ok(
     ctx.host.call_model(
