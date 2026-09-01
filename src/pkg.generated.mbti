@@ -10,7 +10,7 @@ import {
 }
 
 // Values
-pub const MEMORY_INBOUND_LEAD : String = "## Memory\n\nThe following is memory recalled for this session, for your information. It may be stale or incomplete — verify against the current conversation before relying on it."
+pub const MEMORY_INBOUND_LEAD : String = " ## Memory\n\n The following is memory recalled for this session, for your information. It may be stale or incomplete — verify against the current conversation before relying on it."
 
 pub fn assert_events_contain(Array[@types.TurnEvent], Array[@types.TurnEvent]) -> Unit
 
