@@ -138,15 +138,7 @@ impl @port.PipelineHook for LogHook with fn on_post_event(
 
 ///|
 fn make_config() -> AgentConfig {
-  {
-    max_tool_rounds: Some(10),
-    temperature: None,
-    max_output_tokens: None,
-    model_context_window: None,
-    compact_threshold: None,
-    system_prompt: None,
-    memory_inbound_timeout_ms: None,
-  }
+  agent_config(max_tool_rounds=Some(10))
 }
 
 ///|
@@ -595,12 +587,8 @@ async test "async_before_tool_gates_tool_wave" {
     executed: [],
   }
   let store = MockSessionStore::{ store: Map::from_array([]), }
-  let entered : @aqueue.Queue[Int] = @aqueue.Queue::Queue(
-    kind=@aqueue.Unbounded,
-  )
-  let release : @aqueue.Queue[Int] = @aqueue.Queue::Queue(
-    kind=@aqueue.Unbounded,
-  )
+  let entered : @aqueue.Queue[Int] = @aqueue.Queue(kind=@aqueue.Unbounded)
+  let release : @aqueue.Queue[Int] = @aqueue.Queue(kind=@aqueue.Unbounded)
   let gate_hook = GateHook::{ entered, release, }
   let agent = Agent(
     exts=[
@@ -765,15 +753,7 @@ async test "tool_loop_exceeded" {
   }
   let store = MockSessionStore::{ store: Map::from_array([]), }
   let observer = MockObserver::{ events: [], }
-  let config = {
-    max_tool_rounds: Some(2),
-    temperature: None,
-    max_output_tokens: None,
-    model_context_window: None,
-    compact_threshold: None,
-    system_prompt: None,
-    memory_inbound_timeout_ms: None,
-  }
+  let config = agent_config(max_tool_rounds=Some(2))
 
   let agent = Agent(
     exts=[
@@ -818,15 +798,7 @@ async test "unbounded_tool_rounds_complete_long_turn" {
       tk_ext(id="model", model=Some(model)),
       tk_ext(id="io", tools=[tools], sessions=[store], observers=[observer]),
     ],
-    config={
-      max_tool_rounds: None,
-      temperature: None,
-      max_output_tokens: None,
-      model_context_window: None,
-      compact_threshold: None,
-      system_prompt: None,
-      memory_inbound_timeout_ms: None,
-    },
+    config=agent_config(max_tool_rounds=None),
   )
   // Any raise (ToolLoopExceeded or otherwise) fails the test with the error.
   let _ = agent.run_turn(tk_user_msg("long loop"), "session_unbounded")
@@ -866,15 +838,7 @@ async test "bounded_tool_rounds_allows_exactly_n_rounds" {
       tk_ext(id="model", model=Some(model)),
       tk_ext(id="io", tools=[tools], sessions=[store], observers=[observer]),
     ],
-    config={
-      max_tool_rounds: Some(2),
-      temperature: None,
-      max_output_tokens: None,
-      model_context_window: None,
-      compact_threshold: None,
-      system_prompt: None,
-      memory_inbound_timeout_ms: None,
-    },
+    config=agent_config(max_tool_rounds=Some(2)),
   )
   match
     (Ok(agent.run_turn(tk_user_msg("loop"), "session_bounded")) catch {
@@ -1194,7 +1158,7 @@ async test "hook_single_impl_receives_all_points" {
       ("echo", Ok(@kernel.Success(content="echoed", structured=None))),
     ]),
   }
-  let hook = RecordingHook::RecordingHook()
+  let hook = RecordingHook()
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),

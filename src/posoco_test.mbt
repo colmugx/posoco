@@ -99,15 +99,7 @@ impl @port.Observer for MockObserver with fn on_event(self, event) {
 
 ///|
 fn make_config() -> @posoco.AgentConfig {
-  {
-    max_tool_rounds: Some(10),
-    temperature: None,
-    max_output_tokens: None,
-    model_context_window: None,
-    compact_threshold: None,
-    system_prompt: None,
-    memory_inbound_timeout_ms: None,
-  }
+  @posoco.agent_config(max_tool_rounds=Some(10))
 }
 
 ///|
@@ -321,7 +313,7 @@ fn registry_test_executor(_call : @kernel.ToolCall) -> @kernel.ToolOutcome {
 
 ///|
 test "tool_registry/register_overwrites_deliberately_strict_fails_fast" {
-  let registry = @posoco.ToolRegistry::ToolRegistry()
+  let registry = @posoco.ToolRegistry()
   let tool = registry_test_tool("dup")
   registry.register(tool, registry_test_executor)
   // Lenient register is deliberate hot-replacement: same name overwrites.

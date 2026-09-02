@@ -6,15 +6,7 @@
 /// T07-2: terminal failure publishes exactly one terminal event
 ///        (TurnFailed OR TurnCompleted, never both).
 fn err_config() -> @posoco.AgentConfig {
-  {
-    max_tool_rounds: Some(10),
-    temperature: None,
-    max_output_tokens: None,
-    model_context_window: None,
-    compact_threshold: None,
-    system_prompt: None,
-    memory_inbound_timeout_ms: None,
-  }
+  @posoco.agent_config(max_tool_rounds=Some(10))
 }
 
 // ---------------------------------------------------------------------------
@@ -520,15 +512,7 @@ async test "t07_tool_loop_emits_exactly_one_turnfailed" {
   )
   let store = @posoco.RecordingSessionStore()
   let obs = @posoco.RecordingObserver()
-  let config : AgentConfig = {
-    max_tool_rounds: Some(0),
-    temperature: None,
-    max_output_tokens: None,
-    model_context_window: None,
-    compact_threshold: None,
-    system_prompt: None,
-    memory_inbound_timeout_ms: None,
-  }
+  let config : AgentConfig = @posoco.agent_config(max_tool_rounds=Some(0))
   let agent = @posoco.Agent(
     exts=[
       @posoco.tk_ext(id="model", model=Some(model)),

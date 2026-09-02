@@ -45,52 +45,6 @@ pub(all) struct PreCommitContext {
   catalog_version : CatalogVersion
 } derive(Eq, Debug)
 
-///|
-pub fn PreCommitContext::run_id(self : PreCommitContext) -> RunId {
-  self.run_id
-}
-
-///|
-pub fn PreCommitContext::turn_id(self : PreCommitContext) -> TurnId {
-  self.turn_id
-}
-
-///|
-pub fn PreCommitContext::session_id(self : PreCommitContext) -> SessionId {
-  self.session_id
-}
-
-///|
-pub fn PreCommitContext::savepoint_id(self : PreCommitContext) -> String {
-  self.savepoint_id
-}
-
-///|
-pub fn PreCommitContext::savepoint_kind(
-  self : PreCommitContext,
-) -> SavepointKind {
-  self.savepoint_kind
-}
-
-///|
-pub fn PreCommitContext::base_entries(
-  self : PreCommitContext,
-) -> Array[JournalEntry] {
-  self.base_entries.copy()
-}
-
-///|
-pub fn PreCommitContext::current_revision(self : PreCommitContext) -> Int {
-  self.current_revision
-}
-
-///|
-pub fn PreCommitContext::catalog_version(
-  self : PreCommitContext,
-) -> CatalogVersion {
-  self.catalog_version
-}
-
 // ──────────────────────────────────────────────────────────────────────────
 // JournalContribution — what a contributor proposes
 // ──────────────────────────────────────────────────────────────────────────
@@ -108,25 +62,6 @@ pub(all) struct JournalContribution {
   provenance : String
   proposed_entries : Array[JournalEntry]
 } derive(Eq, Debug)
-
-///|
-pub fn JournalContribution::contributor_id(
-  self : JournalContribution,
-) -> String {
-  self.contributor_id
-}
-
-///|
-pub fn JournalContribution::provenance(self : JournalContribution) -> String {
-  self.provenance
-}
-
-///|
-pub fn JournalContribution::proposed_entries(
-  self : JournalContribution,
-) -> Array[JournalEntry] {
-  self.proposed_entries.copy()
-}
 
 ///|
 /// Construct an empty contribution (contributor chooses to add nothing).
@@ -263,31 +198,6 @@ pub(all) struct FrozenBatch {
   frozen_entry_keys : Array[String]
 } derive(Eq, Debug)
 
-///|
-pub fn FrozenBatch::savepoint_id(self : FrozenBatch) -> String {
-  self.savepoint_id
-}
-
-///|
-pub fn FrozenBatch::savepoint_kind(self : FrozenBatch) -> SavepointKind {
-  self.savepoint_kind
-}
-
-///|
-pub fn FrozenBatch::expected_revision(self : FrozenBatch) -> Int {
-  self.expected_revision
-}
-
-///|
-pub fn FrozenBatch::entries(self : FrozenBatch) -> Array[JournalEntry] {
-  self.entries.copy()
-}
-
-///|
-pub fn FrozenBatch::length(self : FrozenBatch) -> Int {
-  self.entries.length()
-}
-
 // ──────────────────────────────────────────────────────────────────────────
 // Prepare + validate + freeze
 // ──────────────────────────────────────────────────────────────────────────
@@ -304,7 +214,7 @@ pub fn FrozenBatch::length(self : FrozenBatch) -> Int {
 ///   contributor raises/returns Err.
 /// - `PuppetError::SavepointFailed(_, ValidationFailed(_))` if any entry
 ///   fails validation.
-pub fn prepare_batch(
+fn prepare_batch(
   ctx : PreCommitContext,
   contributors : Array[&JournalContributor],
 ) -> FrozenBatch raise PuppetError {
@@ -450,7 +360,7 @@ fn validate_entry(
 /// Raises:
 /// - `SavepointFailed(_, BarrierFailed(_))` if post-freeze mutation
 ///   detected or the journal append fails.
-pub fn commit_batch(
+fn commit_batch(
   journal : &RunJournal,
   batch : FrozenBatch,
 ) -> Int raise PuppetError {

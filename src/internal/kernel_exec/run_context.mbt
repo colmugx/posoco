@@ -1,5 +1,5 @@
 ///|
-/// RunContext, Budget, Deadline and Cancel contracts for the M1 functional
+/// Budget, Deadline and Cancel contracts for the M1 functional
 /// Kernel (ADR §2.5, §2.6, §2.9).
 ///
 /// Key invariants:
@@ -257,22 +257,4 @@ pub impl Show for BudgetDimension with fn to_string(self : BudgetDimension) -> S
     ToolCalls => "max_tool_calls"
     TotalTokens => "max_total_tokens"
   }
-}
-
-///|
-/// Immutable runtime context for a single Run (ADR §2.9). Carried by RunState but never mutated.
-/// The reducer reads from this for budget/limit checks; it does NOT read a clock.
-pub(all) struct RunContext {
-  run_id : RunId
-  session_id : SessionId
-  budget : Budget
-} derive(Eq, Debug)
-
-///|
-pub fn RunContext::RunContext(
-  run_id~ : RunId,
-  session_id~ : SessionId,
-  budget~ : Budget,
-) -> RunContext {
-  { run_id, session_id, budget, }
 }

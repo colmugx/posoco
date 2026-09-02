@@ -12,9 +12,6 @@ import {
 }
 
 // Values
-pub fn commit_batch(&RunJournal, FrozenBatch) -> Int raise PuppetError
-
-pub fn prepare_batch(PreCommitContext, Array[&JournalContributor]) -> FrozenBatch raise PuppetError
 
 // Errors
 pub(all) suberror ContributionError {
@@ -66,9 +63,6 @@ pub(all) struct AbortCommand {
   target_run_id : @kernel.RunId
   detail : String?
 } derive(Eq, @debug.Debug)
-pub fn AbortCommand::command_id(Self) -> CommandId
-pub fn AbortCommand::detail(Self) -> String?
-pub fn AbortCommand::target_run_id(Self) -> @kernel.RunId
 
 pub(all) struct CommandId {
   value : String
@@ -85,8 +79,6 @@ pub(all) struct CompactCommand {
   trigger : @kernel.CompactTrigger
 } derive(Eq, @debug.Debug)
 pub fn CompactCommand::command_id(Self) -> CommandId
-pub fn CompactCommand::target_run_id(Self) -> @kernel.RunId
-pub fn CompactCommand::target_turn_id(Self) -> @kernel.TurnId
 pub fn CompactCommand::trigger(Self) -> @kernel.CompactTrigger
 
 pub struct ControlMailbox {
@@ -163,11 +155,9 @@ pub(all) struct EventEnvelope {
   event : @kernel_exec.KernelEvent
 } derive(Eq, @debug.Debug)
 pub fn EventEnvelope::EventEnvelope(run_id~ : @kernel.RunId, turn_id~ : @kernel.TurnId, session_id~ : @kernel.SessionId, seq~ : Int, committed_revision~ : Int, event~ : @kernel_exec.KernelEvent) -> Self
-pub fn EventEnvelope::committed_revision(Self) -> Int
 pub fn EventEnvelope::event(Self) -> @kernel_exec.KernelEvent
 pub fn EventEnvelope::is_terminal(Self) -> Bool
 pub fn EventEnvelope::run_id(Self) -> @kernel.RunId
-pub fn EventEnvelope::seq(Self) -> Int
 pub fn EventEnvelope::session_id(Self) -> @kernel.SessionId
 pub fn EventEnvelope::turn_id(Self) -> @kernel.TurnId
 pub impl Show for EventEnvelope
@@ -186,10 +176,6 @@ pub(all) struct FollowUpCommand {
   source_turn_id : @kernel.TurnId
   payload : Json
 } derive(Eq, @debug.Debug)
-pub fn FollowUpCommand::command_id(Self) -> CommandId
-pub fn FollowUpCommand::payload(Self) -> Json
-pub fn FollowUpCommand::source_turn_id(Self) -> @kernel.TurnId
-pub fn FollowUpCommand::target_run_id(Self) -> @kernel.RunId
 
 pub(all) struct ForkCommand {
   command_id : CommandId
@@ -199,8 +185,6 @@ pub(all) struct ForkCommand {
 } derive(Eq, @debug.Debug)
 pub fn ForkCommand::command_id(Self) -> CommandId
 pub fn ForkCommand::fork_index(Self) -> Int
-pub fn ForkCommand::target_run_id(Self) -> @kernel.RunId
-pub fn ForkCommand::target_turn_id(Self) -> @kernel.TurnId
 
 pub(all) struct FrozenBatch {
   savepoint_id : String
@@ -209,11 +193,6 @@ pub(all) struct FrozenBatch {
   entries : Array[JournalEntry]
   frozen_entry_keys : Array[String]
 } derive(Eq, @debug.Debug)
-pub fn FrozenBatch::entries(Self) -> Array[JournalEntry]
-pub fn FrozenBatch::expected_revision(Self) -> Int
-pub fn FrozenBatch::length(Self) -> Int
-pub fn FrozenBatch::savepoint_id(Self) -> String
-pub fn FrozenBatch::savepoint_kind(Self) -> SavepointKind
 
 pub struct InMemoryJournal {
   entries : Array[JournalEntry]
@@ -224,13 +203,9 @@ pub struct InMemoryJournal {
 pub fn InMemoryJournal::InMemoryJournal() -> Self
 pub fn InMemoryJournal::append(Self, Array[JournalEntry]) -> Int raise PuppetError
 pub fn InMemoryJournal::append_count(Self) -> Int
-pub fn InMemoryJournal::append_impl(Self, Array[JournalEntry]) -> Int raise PuppetError
 pub fn InMemoryJournal::entries_for_run(Self, @kernel.RunId) -> Array[JournalEntry]
-pub fn InMemoryJournal::entries_for_run_impl(Self, @kernel.RunId) -> Array[JournalEntry]
 pub fn InMemoryJournal::entries_for_savepoint(Self, @kernel.RunId, String) -> Array[JournalEntry]
-pub fn InMemoryJournal::entries_for_savepoint_impl(Self, @kernel.RunId, String) -> Array[JournalEntry]
 pub fn InMemoryJournal::revision(Self) -> Int
-pub fn InMemoryJournal::revision_impl(Self) -> Int
 pub impl RunJournal for InMemoryJournal
 
 pub(all) struct JournalContribution {
@@ -238,10 +213,7 @@ pub(all) struct JournalContribution {
   provenance : String
   proposed_entries : Array[JournalEntry]
 } derive(Eq, @debug.Debug)
-pub fn JournalContribution::contributor_id(Self) -> String
 pub fn JournalContribution::empty(String, String) -> Self
-pub fn JournalContribution::proposed_entries(Self) -> Array[JournalEntry]
-pub fn JournalContribution::provenance(Self) -> String
 pub fn JournalContribution::with_entries(String, String, Array[JournalEntry]) -> Self
 
 pub(all) struct JournalEntry {
@@ -250,10 +222,6 @@ pub(all) struct JournalEntry {
   summary : String
   payload : Json
 } derive(Eq, @debug.Debug)
-pub fn JournalEntry::identity(Self) -> JournalEntryIdentity
-pub fn JournalEntry::payload(Self) -> Json
-pub fn JournalEntry::revision(Self) -> Int
-pub fn JournalEntry::summary(Self) -> String
 
 pub(all) struct JournalEntryIdentity {
   run_id : @kernel.RunId
@@ -263,12 +231,6 @@ pub(all) struct JournalEntryIdentity {
   entry_seq : Int
   kind : SavepointKind
 } derive(Eq, @debug.Debug)
-pub fn JournalEntryIdentity::entry_seq(Self) -> Int
-pub fn JournalEntryIdentity::kind(Self) -> SavepointKind
-pub fn JournalEntryIdentity::run_id(Self) -> @kernel.RunId
-pub fn JournalEntryIdentity::savepoint_id(Self) -> String
-pub fn JournalEntryIdentity::session_id(Self) -> @kernel.SessionId
-pub fn JournalEntryIdentity::turn_id(Self) -> @kernel.TurnId
 pub impl Show for JournalEntryIdentity
 
 pub(all) struct ModelId {
@@ -345,14 +307,6 @@ pub(all) struct PreCommitContext {
   current_revision : Int
   catalog_version : @kernel.CatalogVersion
 } derive(Eq, @debug.Debug)
-pub fn PreCommitContext::base_entries(Self) -> Array[JournalEntry]
-pub fn PreCommitContext::catalog_version(Self) -> @kernel.CatalogVersion
-pub fn PreCommitContext::current_revision(Self) -> Int
-pub fn PreCommitContext::run_id(Self) -> @kernel.RunId
-pub fn PreCommitContext::savepoint_id(Self) -> String
-pub fn PreCommitContext::savepoint_kind(Self) -> SavepointKind
-pub fn PreCommitContext::session_id(Self) -> @kernel.SessionId
-pub fn PreCommitContext::turn_id(Self) -> @kernel.TurnId
 
 pub(all) struct PromptRequest {
   run_id : @kernel.RunId
@@ -442,10 +396,6 @@ pub(all) struct ResumeCommand {
   suspension_id : String
   payload : Json
 } derive(Eq, @debug.Debug)
-pub fn ResumeCommand::command_id(Self) -> CommandId
-pub fn ResumeCommand::payload(Self) -> Json
-pub fn ResumeCommand::suspension_id(Self) -> String
-pub fn ResumeCommand::target_run_id(Self) -> @kernel.RunId
 
 pub(all) struct RunPolicy {
   model_id : String
@@ -481,12 +431,6 @@ pub(all) struct SteerCommand {
   observed_model_step_id : @kernel_exec.ModelStepId
   payload : Json
 } derive(Eq, @debug.Debug)
-pub fn SteerCommand::command_id(Self) -> CommandId
-pub fn SteerCommand::observed_model_step_id(Self) -> @kernel_exec.ModelStepId
-pub fn SteerCommand::observed_tool_batch_id(Self) -> String
-pub fn SteerCommand::payload(Self) -> Json
-pub fn SteerCommand::target_run_id(Self) -> @kernel.RunId
-pub fn SteerCommand::target_turn_id(Self) -> @kernel.TurnId
 
 pub struct TurnSnapshot {
   run_id : @kernel.RunId

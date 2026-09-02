@@ -73,40 +73,6 @@ pub impl Show for JournalEntryIdentity with fn to_string(
   "EntryId(run=\{self.run_id.to_string()}, sp=\{self.savepoint_id}, seq=\{self.entry_seq}, kind=\{self.kind.to_string()})"
 }
 
-///|
-pub fn JournalEntryIdentity::run_id(self : JournalEntryIdentity) -> RunId {
-  self.run_id
-}
-
-///|
-pub fn JournalEntryIdentity::turn_id(self : JournalEntryIdentity) -> TurnId {
-  self.turn_id
-}
-
-///|
-pub fn JournalEntryIdentity::session_id(
-  self : JournalEntryIdentity,
-) -> SessionId {
-  self.session_id
-}
-
-///|
-pub fn JournalEntryIdentity::savepoint_id(
-  self : JournalEntryIdentity,
-) -> String {
-  self.savepoint_id
-}
-
-///|
-pub fn JournalEntryIdentity::entry_seq(self : JournalEntryIdentity) -> Int {
-  self.entry_seq
-}
-
-///|
-pub fn JournalEntryIdentity::kind(self : JournalEntryIdentity) -> SavepointKind {
-  self.kind
-}
-
 // ──────────────────────────────────────────────────────────────────────────
 // JournalEntry — the stored record
 // ──────────────────────────────────────────────────────────────────────────
@@ -128,26 +94,6 @@ pub(all) struct JournalEntry {
   /// Opaque canonical payload. The journal does not interpret this.
   payload : Json
 } derive(Eq, Debug)
-
-///|
-pub fn JournalEntry::identity(self : JournalEntry) -> JournalEntryIdentity {
-  self.identity
-}
-
-///|
-pub fn JournalEntry::revision(self : JournalEntry) -> Int {
-  self.revision
-}
-
-///|
-pub fn JournalEntry::summary(self : JournalEntry) -> String {
-  self.summary
-}
-
-///|
-pub fn JournalEntry::payload(self : JournalEntry) -> Json {
-  self.payload
-}
 
 // ──────────────────────────────────────────────────────────────────────────
 // RunJournal trait (port — Q7.2 recommendation: pub(open) trait)
@@ -276,7 +222,7 @@ pub impl RunJournal for InMemoryJournal with fn entries_for_savepoint(
 /// Internal: append implementation. Split from the trait method so other
 /// in-file helpers (e.g. FailOnNthJournal) can call it directly without
 /// going through trait dispatch.
-pub fn InMemoryJournal::append_impl(
+fn InMemoryJournal::append_impl(
   self : InMemoryJournal,
   batch : Array[JournalEntry],
 ) -> Int raise PuppetError {
@@ -325,12 +271,12 @@ pub fn InMemoryJournal::append_impl(
 }
 
 ///|
-pub fn InMemoryJournal::revision_impl(self : InMemoryJournal) -> Int {
+fn InMemoryJournal::revision_impl(self : InMemoryJournal) -> Int {
   self.entries.length()
 }
 
 ///|
-pub fn InMemoryJournal::entries_for_run_impl(
+fn InMemoryJournal::entries_for_run_impl(
   self : InMemoryJournal,
   run_id : RunId,
 ) -> Array[JournalEntry] {
@@ -344,7 +290,7 @@ pub fn InMemoryJournal::entries_for_run_impl(
 }
 
 ///|
-pub fn InMemoryJournal::entries_for_savepoint_impl(
+fn InMemoryJournal::entries_for_savepoint_impl(
   self : InMemoryJournal,
   run_id : RunId,
   savepoint_id : String,

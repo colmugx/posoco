@@ -8,15 +8,11 @@ import {
 }
 
 // Values
-pub fn check_schema_supported(Json) -> Result[Unit, String]
-
 pub fn reduce(RunState, ToolCatalogSnapshot, RunInput) -> ReduceOutput raise KernelError
 
 pub fn run_model_step(RunState, ToolCatalogSnapshot, Json) -> ReduceOutput raise KernelError
 
 pub fn schedule(ToolCatalogSnapshot, @kernel.CatalogVersion, Array[@kernel.ToolCall]) -> ExecutionPlan raise SchedulingError
-
-pub fn validate_arguments(Json, Json) -> Result[Unit, @kernel.SchemaDiagnostic]
 
 // Errors
 pub(all) suberror CatalogCompositionError {
@@ -249,13 +245,6 @@ pub(all) struct ResumePayload {
   payload : Json
 } derive(Eq, @debug.Debug)
 
-pub(all) struct RunContext {
-  run_id : @kernel.RunId
-  session_id : @kernel.SessionId
-  budget : Budget
-} derive(Eq, @debug.Debug)
-pub fn RunContext::RunContext(run_id~ : @kernel.RunId, session_id~ : @kernel.SessionId, budget~ : Budget) -> Self
-
 pub(all) enum RunInput {
   Start(payload~ : StartPayload)
   ModelCompleted(payload~ : ModelCompletedPayload)
@@ -269,7 +258,6 @@ pub(all) enum RunInput {
   Resume(payload~ : ResumePayload)
   TranscriptRewrite(payload~ : TranscriptRewritePayload)
 } derive(Eq, @debug.Debug)
-pub fn RunInput::kind(Self) -> String
 pub impl Show for RunInput
 
 pub(all) enum RunOutcome {

@@ -62,14 +62,7 @@ pub fn SystemPromptHook::assemble(self : SystemPromptHook) -> String {
       sections.push("\{s.id}:\n\{text}")
     }
   }
-  let buf = StringBuilder()
-  for i, section in sections {
-    if i > 0 {
-      buf.write_string("\n\n")
-    }
-    buf.write_string(section)
-  }
-  buf.to_string()
+  sections.join("\n\n")
 }
 
 ///|
@@ -106,23 +99,16 @@ pub impl @port.PipelineHook for SystemPromptHook with fn before_model(
   match messages[0] {
     @kernel.SystemMessage(content~) => {
       match content {
-        [@kernel.Text(existing), ..] =>
-          if existing == assembled {
-            return messages
-          }
+        [@kernel.Text(existing), ..] if existing == assembled => return messages
         _ => ()
       }
       let new_messages : Array[@kernel.Message] = [sys_msg]
-      for i in 1..<messages.length() {
-        new_messages.push(messages[i])
-      }
+      new_messages.append(messages[1:])
       new_messages
     }
     _ => {
       let new_messages : Array[@kernel.Message] = [sys_msg]
-      for m in messages {
-        new_messages.push(m)
-      }
+      new_messages.append(messages)
       new_messages
     }
   }

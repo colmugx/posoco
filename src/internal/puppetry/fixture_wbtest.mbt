@@ -284,8 +284,8 @@ fn first_revision_matching(
   kind : SavepointKind,
 ) -> Int {
   for entry in entries {
-    if entry.identity().kind() == kind {
-      return entry.revision()
+    if entry.identity.kind == kind {
+      return entry.revision
     }
   }
   0
@@ -310,14 +310,14 @@ async test "puppet/C-HAPPY-NO-TOOLS" {
     first_revision_matching(entries, InputAccepted) <
     first_revision_matching(entries, RunTerminal),
   )
-  match entries[0].payload() {
+  match entries[0].payload {
     Object(fields) => assert_eq(fields["kind"], Json::string("InputAccepted"))
     _ => fail("InputAccepted journal payload must be structured JSON")
   }
   let mut has_terminal_payload = false
   for entry in entries {
-    if entry.identity().kind() == RunTerminal {
-      match entry.payload() {
+    if entry.identity.kind == RunTerminal {
+      match entry.payload {
         Object(fields) => {
           assert_eq(fields["kind"], Json::string("RunCompleted"))
           has_terminal_payload = true
@@ -381,7 +381,7 @@ async test "puppet/C-PARALLEL-TOOLS" {
   let entries = journal.entries_for_run(RunId::unchecked("run_batch"))
   let mut committed = 0
   for entry in entries {
-    if entry.identity().kind() == ToolCommitted {
+    if entry.identity.kind == ToolCommitted {
       committed = committed + 1
     }
   }
@@ -793,7 +793,7 @@ test "puppet/C-FOLLOW-UP-SAME-RUN" {
   })
   assert_true(queued is Accepted(_))
   match mailbox.consume_one_follow_up() {
-    Some(command) => assert_eq(command.target_run_id(), run)
+    Some(command) => assert_eq(command.target_run_id, run)
     None => fail("accepted follow-up must be consumable")
   }
 }

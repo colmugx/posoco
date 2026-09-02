@@ -242,15 +242,11 @@ fn build_memory_agent(
   system_prompt : String?,
   timeout_ms : Int?,
 ) -> Agent raise @error.CompositionError {
-  let config : AgentConfig = {
-    max_tool_rounds: Some(10),
-    temperature: None,
-    max_output_tokens: None,
-    model_context_window: None,
-    compact_threshold: None,
-    system_prompt,
-    memory_inbound_timeout_ms: timeout_ms,
-  }
+  let config : AgentConfig = agent_config(
+    max_tool_rounds=Some(10),
+    system_prompt~,
+    memory_inbound_timeout_ms=timeout_ms,
+  )
   Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
@@ -265,7 +261,7 @@ fn build_memory_agent(
 /// Running before_model twice does NOT accumulate SystemMessages.
 /// The hook owns index 0 and keeps the assembled text stable.
 async test "m38_sysprompt/idempotent_across_rounds" {
-  let hook = SystemPromptHook::SystemPromptHook(base_prompt="BASE", contributors=[])
+  let hook = SystemPromptHook(base_prompt="BASE", contributors=[])
   // Round 1: empty transcript → prepends SystemMessage.
   let after1 = hook.before_model([])
   assert_true(after1.length() == 1)
@@ -288,7 +284,7 @@ async test "m38_sysprompt/idempotent_across_rounds" {
 /// seeded one), the hook replaces its content rather than prepending a
 /// second one.
 async test "m38_sysprompt/replaces_existing_system_message" {
-  let hook = SystemPromptHook::SystemPromptHook(base_prompt="NEW", contributors=[])
+  let hook = SystemPromptHook(base_prompt="NEW", contributors=[])
   let seed : @kernel.Message = @kernel.SystemMessage(content=[
     @kernel.Text("OLD"),
   ])
@@ -318,9 +314,9 @@ async test "m38_sysprompt/assembles_base_plus_contributors" {
   let c2 : &@port.SystemPromptContributor = FixedPromptContributor::{
     text: "SECTION_B",
   }
-  let hook = SystemPromptHook::SystemPromptHook(base_prompt="BASE", contributors=[
-    SystemPromptSection::SystemPromptSection(id="a", contributor=c1),
-    SystemPromptSection::SystemPromptSection(id="b", contributor=c2),
+  let hook = SystemPromptHook(base_prompt="BASE", contributors=[
+    SystemPromptSection(id="a", contributor=c1),
+    SystemPromptSection(id="b", contributor=c2),
   ])
   let out = hook.before_model([])
   match out[0] {
@@ -340,8 +336,8 @@ async test "m38_sysprompt/empty_prompt_short_circuits" {
   let empty : &@port.SystemPromptContributor = FixedPromptContributor::{
     text: "",
   }
-  let hook = SystemPromptHook::SystemPromptHook(base_prompt="", contributors=[
-    SystemPromptSection::SystemPromptSection(id="empty", contributor=empty),
+  let hook = SystemPromptHook(base_prompt="", contributors=[
+    SystemPromptSection(id="empty", contributor=empty),
   ])
   let user : @kernel.Message = @kernel.UserMessage(content=[
     @kernel.Text("hello"),
@@ -355,7 +351,7 @@ async test "m38_sysprompt/empty_prompt_short_circuits" {
 ///|
 /// When there is no SystemMessage at index 0, the hook prepends one.
 async test "m38_sysprompt/prepends_when_no_system_message" {
-  let hook = SystemPromptHook::SystemPromptHook(base_prompt="BASE", contributors=[])
+  let hook = SystemPromptHook(base_prompt="BASE", contributors=[])
   let user : @kernel.Message = @kernel.UserMessage(content=[
     @kernel.Text("hello"),
   ])
@@ -379,10 +375,10 @@ async test "m38_sysprompt/prepends_when_no_system_message" {
 /// The assembled text is cached on first use: a later mutation of the
 /// contributor is ignored.
 async test "m38_sysprompt/caches_assembled_text" {
-  let text_ref = Ref::Ref("first")
+  let text_ref = Ref("first")
   let contributor = MutablePromptContributor::{ text: text_ref, }
-  let hook = SystemPromptHook::SystemPromptHook(base_prompt="", contributors=[
-    SystemPromptSection::SystemPromptSection(
+  let hook = SystemPromptHook(base_prompt="", contributors=[
+    SystemPromptSection(
       id="mut",
       contributor=contributor as &@port.SystemPromptContributor,
     ),
@@ -423,15 +419,10 @@ async test "m38_sysprompt/config_base_precedes_contributors" {
       tk_ext(id="ext", prompt_contributors=[contributor]),
       tk_ext(id="io", sessions=[RecordingSessionStore()]),
     ],
-    config={
-      max_tool_rounds: Some(10),
-      temperature: None,
-      max_output_tokens: None,
-      model_context_window: None,
-      compact_threshold: None,
-      system_prompt: Some("host_base"),
-      memory_inbound_timeout_ms: None,
-    },
+    config=agent_config(
+      max_tool_rounds=Some(10),
+      system_prompt=Some("host_base"),
+    ),
   )
   ignore(agent.run_turn(tk_user_msg("hi"), "session_base"))
   assert_true(model.received_messages.length() == 1)
@@ -451,7 +442,7 @@ async test "m38_sysprompt/config_base_precedes_contributors" {
 /// Lifecycle::on_start runs before the first before_model, so a contributor
 /// whose value is set in on_start is read with the post-start value.
 async test "m38_sysprompt/lazy_assembly_reads_post_on_start" {
-  let text_ref = Ref::Ref("before_start")
+  let text_ref = Ref("before_start")
   let contributor = MutablePromptContributor::{ text: text_ref, }
   let starter : &@port.Lifecycle = StartSettingLifecycle::{ target: text_ref, }
   let model = ScriptedModel([Respond(tk_stop_response("ok"))])
@@ -801,7 +792,7 @@ async test "m38_memory/search_merges_sources_in_order" {
   let a = ScriptedMemoryPort(inbounds=[], search_script=[Some("hit-a")])
   let b = ScriptedMemoryPort(inbounds=[], search_script=[Some("hit-b")])
   let empty = ScriptedMemoryPort(inbounds=[])
-  let provider = MemoryToolProvider::MemoryToolProvider(
+  let provider = MemoryToolProvider(
     sources=[
       ("a", a as &@port.MemoryPort),
       ("b", b as &@port.MemoryPort),
@@ -827,7 +818,7 @@ async test "m38_memory/search_merges_sources_in_order" {
 async test "m38_memory/search_all_empty_reports_no_match" {
   let a = ScriptedMemoryPort(inbounds=[])
   let b = ScriptedMemoryPort(inbounds=[])
-  let provider = MemoryToolProvider::MemoryToolProvider(
+  let provider = MemoryToolProvider(
     sources=[("a", a as &@port.MemoryPort), ("b", b as &@port.MemoryPort)],
     on_failure=fn(_reason) { () },
   )
@@ -848,7 +839,7 @@ async test "m38_memory/search_failure_skips_source_and_names_it" {
   let bad : &@port.MemoryPort = FailingInboundPort::{ _dummy: (), }
   let good = ScriptedMemoryPort(inbounds=[], search_script=[Some("hit-b")])
   let reasons : Array[String] = []
-  let provider = MemoryToolProvider::MemoryToolProvider(
+  let provider = MemoryToolProvider(
     sources=[("bad", bad), ("good", good as &@port.MemoryPort)],
     on_failure=fn(reason) { reasons.push(reason) },
   )
@@ -871,7 +862,7 @@ async test "m38_memory/search_failure_skips_source_and_names_it" {
 async test "m38_memory/add_writes_all_sources_with_receipts" {
   let a = ScriptedMemoryPort(inbounds=[])
   let b = ScriptedMemoryPort(inbounds=[])
-  let provider = MemoryToolProvider::MemoryToolProvider(
+  let provider = MemoryToolProvider(
     sources=[("a", a as &@port.MemoryPort), ("b", b as &@port.MemoryPort)],
     on_failure=fn(_reason) { () },
   )
@@ -899,7 +890,7 @@ async test "m38_memory/add_writes_all_sources_with_receipts" {
 async test "m38_memory/add_targeted_source_routes_to_one" {
   let a = ScriptedMemoryPort(inbounds=[])
   let b = ScriptedMemoryPort(inbounds=[])
-  let provider = MemoryToolProvider::MemoryToolProvider(
+  let provider = MemoryToolProvider(
     sources=[("a", a as &@port.MemoryPort), ("b", b as &@port.MemoryPort)],
     on_failure=fn(_reason) { () },
   )
@@ -922,10 +913,11 @@ async test "m38_memory/add_targeted_source_routes_to_one" {
 /// name raises RuntimeError::UnknownTool.
 async test "m38_memory/add_rejects_unknown_source_and_empty_content" {
   let a = ScriptedMemoryPort(inbounds=[])
-  let provider = MemoryToolProvider::MemoryToolProvider(
-    sources=[("a", a as &@port.MemoryPort)],
-    on_failure=fn(_reason) { () },
-  )
+  let provider = MemoryToolProvider(sources=[("a", a as &@port.MemoryPort)], on_failure=fn(
+    _reason,
+  ) {
+    ()
+  })
   let unknown = exec_memory_tool(provider, "memory_add", [
     ("content", Json::string("x")),
     ("source", Json::string("zz")),

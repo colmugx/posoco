@@ -27,9 +27,11 @@ priv struct ChunkDispatcher {
 }
 
 ///|
-fn ChunkDispatcher::new(observers : Array[&@port.Observer]) -> ChunkDispatcher {
+fn ChunkDispatcher::ChunkDispatcher(
+  observers : Array[&@port.Observer],
+) -> ChunkDispatcher {
   {
-    queue: @aqueue.Queue::Queue(kind=@aqueue.Blocking(chunk_queue_capacity)),
+    queue: @aqueue.Queue(kind=@aqueue.Blocking(chunk_queue_capacity)),
     depth: 0,
     dropped: 0,
     observers,
@@ -76,7 +78,7 @@ fn ChunkDispatcher::emit(
   event : @types.TurnEvent,
 ) -> Unit {
   for observer in self.observers {
-    observer.on_event_at(None, agent_snapshot_turn_event(event))
+    observer.on_event_at(None, snapshot_turn_event(event))
   }
 }
 

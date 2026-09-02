@@ -58,15 +58,9 @@ async test "perf guard: multi-wave tool commit is linear in transcript" {
     outcomes,
   )
   let store = @posoco.RecordingSessionStore()
-  let config : @posoco.AgentConfig = {
-    max_tool_rounds: Some(waves + 2),
-    temperature: None,
-    max_output_tokens: None,
-    model_context_window: None,
-    compact_threshold: None,
-    system_prompt: None,
-    memory_inbound_timeout_ms: None,
-  }
+  let config : @posoco.AgentConfig = @posoco.agent_config(
+    max_tool_rounds=Some(waves + 2),
+  )
   let agent = @posoco.Agent(
     exts=[
       @posoco.tk_ext(id="model", model=Some(@posoco.ScriptedModel(steps))),

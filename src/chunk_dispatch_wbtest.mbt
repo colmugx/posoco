@@ -58,7 +58,7 @@ async test "chunk dispatch: streaming turn delivers chunks in order before TurnC
 /// not wait for observers. This white-box test exercises the queue directly.
 test "chunk dispatch: enqueue does not call observer synchronously" {
   let observer = RecordingObserver()
-  let dispatcher = ChunkDispatcher::new([observer])
+  let dispatcher = ChunkDispatcher([observer])
   dispatcher.enqueue(@types.TextDelta(token="x"))
   assert_eq(observer.events().length(), 0)
 }
@@ -186,7 +186,7 @@ async test "chunk dispatch: flush drains chunks before TurnFailed" {
 /// FIFO order and terminates when the queue is closed.
 async test "chunk dispatch: drain_loop delivers queued events in order" {
   let observer = RecordingObserver()
-  let dispatcher = ChunkDispatcher::new([observer])
+  let dispatcher = ChunkDispatcher([observer])
   for i in 0..<5 {
     dispatcher.enqueue(@types.TextDelta(token="d\{i}"))
   }

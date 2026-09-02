@@ -92,15 +92,7 @@ async test "quickstart_fixture_uses_current_public_api" {
       tk_ext(id="model", model=Some(model)),
       tk_ext(id="io", sessions=[store]),
     ],
-    config={
-      max_tool_rounds: Some(10),
-      temperature: None,
-      max_output_tokens: None,
-      model_context_window: None,
-      compact_threshold: None,
-      system_prompt: None,
-      memory_inbound_timeout_ms: None,
-    },
+    config=@posoco.agent_config(max_tool_rounds=Some(10)),
   )
   let input : @kernel.Message = @kernel.UserMessage(content=[
     @kernel.Text("hello"),

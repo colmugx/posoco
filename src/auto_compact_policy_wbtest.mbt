@@ -45,7 +45,7 @@ fn policy_reported(
   context_window? : Int? = None,
   compact_threshold? : Double? = None,
 ) -> @port.ProviderConfig {
-  @port.ProviderConfig::ProviderConfig(
+  @port.ProviderConfig(
     reasoning_effort_values=[],
     context_window~,
     compact_threshold~,

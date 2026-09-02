@@ -86,10 +86,9 @@ pub(all) enum FailureReason {
 ///|
 pub impl Show for FailureReason with fn to_string(self : FailureReason) -> String {
   match self {
-    ModelParseFailure(detail~) =>
-      "ModelParseFailure(\{safe_kernel_label(detail)})"
-    ModelTransport(detail~) => "ModelTransport(\{safe_kernel_label(detail)})"
-    ModelRuntime(detail~) => "ModelRuntime(\{safe_kernel_label(detail)})"
+    ModelParseFailure(detail~) => "ModelParseFailure(\{safe_label(detail)})"
+    ModelTransport(detail~) => "ModelTransport(\{safe_label(detail)})"
+    ModelRuntime(detail~) => "ModelRuntime(\{safe_label(detail)})"
     ModelQuotaExhausted(detail~, reset_at_ms~, provider_code~) => {
       let code_label = match provider_code {
         Some(code) => code
@@ -99,9 +98,9 @@ pub impl Show for FailureReason with fn to_string(self : FailureReason) -> Strin
         Some(at) => "\{at}"
         None => "none"
       }
-      "ModelQuotaExhausted(code=\{code_label}, reset_at_ms=\{reset_label}, message=\{safe_kernel_label(detail)})"
+      "ModelQuotaExhausted(code=\{code_label}, reset_at_ms=\{reset_label}, message=\{safe_label(detail)})"
     }
-    HostRejected(detail~) => "HostRejected(\{safe_kernel_label(detail)})"
+    HostRejected(detail~) => "HostRejected(\{safe_label(detail)})"
     InvariantViolation(category~) =>
       "InvariantViolation(\{category.to_string()})"
     BudgetExhausted(dimension~) => "BudgetExhausted(\{dimension.to_string()})"
@@ -148,31 +147,6 @@ pub impl Show for KernelError with fn to_string(self : KernelError) -> String {
     ReducerInvariant(run_id~, phase~, category~) =>
       "KernelError::ReducerInvariant(run=\{run_id.to_string()}, phase=\{phase}, \{category.to_string()})"
     IllegalTransition(run_id~, phase~, input_kind~, detail~) =>
-      "KernelError::IllegalTransition(run=\{run_id.to_string()}, phase=\{phase}, input=\{input_kind}, \{safe_kernel_label(detail)})"
-  }
-}
-
-///|
-/// Internal bounded-label helper, mirrors `safe_error_label` from
-/// `agent.mbt`. Kept local so the Kernel files do not import production
-/// cross-file helpers.
-fn safe_kernel_label(value : String) -> String {
-  let chars : Array[Char] = []
-  let mut truncated = false
-  for char in value {
-    if chars.length() >= 64 {
-      truncated = true
-      break
-    }
-    match char {
-      '\n' | '\r' => chars.push(' ')
-      other => chars.push(other)
-    }
-  }
-  let label = String::from_array(chars)
-  if truncated {
-    label + "...(truncated)"
-  } else {
-    label
+      "KernelError::IllegalTransition(run=\{run_id.to_string()}, phase=\{phase}, input=\{input_kind}, \{safe_label(detail)})"
   }
 }

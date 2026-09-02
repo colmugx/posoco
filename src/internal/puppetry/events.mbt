@@ -52,16 +52,6 @@ pub fn EventEnvelope::session_id(self : EventEnvelope) -> SessionId {
 }
 
 ///|
-pub fn EventEnvelope::seq(self : EventEnvelope) -> Int {
-  self.seq
-}
-
-///|
-pub fn EventEnvelope::committed_revision(self : EventEnvelope) -> Int {
-  self.committed_revision
-}
-
-///|
 pub fn EventEnvelope::event(self : EventEnvelope) -> KernelEvent {
   self.event
 }

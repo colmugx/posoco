@@ -72,11 +72,8 @@ pub fn RecordingUiPort::rendered_in_slot(
 ) -> Array[@port.UiRender] {
   let out : Array[@port.UiRender] = []
   for r in self.rendered {
-    match (r.slot, slot) {
-      (@port.Status, @port.Status)
-      | (@port.Notice, @port.Notice)
-      | (@port.Widget, @port.Widget) => out.push(r)
-      _ => ()
+    if r.slot == slot {
+      out.push(r)
     }
   }
   out

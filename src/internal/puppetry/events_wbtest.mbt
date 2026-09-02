@@ -149,11 +149,11 @@ async test "puppet_events/dispatcher_assigns_monotonic_seq" {
   assert_true(d.next_seq() == 3)
   let received = rec.received()
   assert_true(received.length() == 2)
-  assert_true(received[0].seq() == 1)
-  assert_true(received[1].seq() == 2)
+  assert_true(received[0].seq == 1)
+  assert_true(received[1].seq == 2)
   // Envelopes carry the committed revision passed at dispatch time.
-  assert_true(received[0].committed_revision() == 1)
-  assert_true(received[1].committed_revision() == 2)
+  assert_true(received[0].committed_revision == 1)
+  assert_true(received[1].committed_revision == 2)
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -175,8 +175,8 @@ async test "puppet_events/subscribers_invoked_in_registration_order" {
   assert_true(rec_a.received().length() == 1)
   assert_true(rec_b.received().length() == 1)
   // Both got the same seq.
-  assert_true(rec_a.received()[0].seq() == 1)
-  assert_true(rec_b.received()[0].seq() == 1)
+  assert_true(rec_a.received()[0].seq == 1)
+  assert_true(rec_b.received()[0].seq == 1)
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -235,8 +235,8 @@ async test "puppet_events/envelope_carries_identity" {
   assert_true(env.run_id() == ev_run_id())
   assert_true(env.turn_id() == ev_turn_id())
   assert_true(env.session_id() == ev_session_id())
-  assert_true(env.seq() == 1)
-  assert_true(env.committed_revision() == 1)
+  assert_true(env.seq == 1)
+  assert_true(env.committed_revision == 1)
 }
 
 ///|

@@ -57,7 +57,7 @@ pub fn RuntimeControl::RuntimeControl(
 ) -> RuntimeControl {
   {
     mailbox,
-    follow_ups: @aqueue.Queue::Queue(kind=Unbounded),
+    follow_ups: @aqueue.Queue(kind=Unbounded),
     follow_up_depth: 0,
     seq: 0,
     max_depth: default_max_follow_up_depth,

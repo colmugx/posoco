@@ -5,7 +5,7 @@
 ///|
 /// A control handle whose mailbox is bound to an active run/turn.
 fn bound_control() -> @runtime.RuntimeControl {
-  let mailbox = @puppetry.ControlMailbox::ControlMailbox()
+  let mailbox = @puppetry.ControlMailbox()
   mailbox.bind_run(
     @kernel.RunId::unchecked("run_1"),
     @kernel.TurnId::unchecked("turn_1"),
@@ -20,7 +20,7 @@ fn text_message(text : String) -> @kernel.Message {
 
 ///|
 test "runtime control/follow_up and abort require an active run" {
-  let mailbox = @puppetry.ControlMailbox::ControlMailbox()
+  let mailbox = @puppetry.ControlMailbox()
   let control = @runtime.RuntimeControl(mailbox as &@puppetry.Mailbox)
   assert_true(control.active_run_id() is None)
   assert_true(control.active_turn_id() is None)

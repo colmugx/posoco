@@ -117,11 +117,11 @@ pub impl Show for KernelEvent with fn to_string(self : KernelEvent) -> String {
     BudgetExhausted(dimension~, consumed~, limit~) =>
       "BudgetExhausted(\{dimension.to_string()}, \{consumed}/\{limit})"
     InputRejected(input_kind~, reason~) =>
-      "InputRejected(input=\{input_kind}, \{safe_event_label(reason)})"
+      "InputRejected(input=\{input_kind}, \{safe_label(reason)})"
     TranscriptRewritten(messages_before~, messages_after~, reason~) =>
-      "TranscriptRewritten(\{messages_before}->\{messages_after} messages, \{safe_event_label(reason)})"
+      "TranscriptRewritten(\{messages_before}->\{messages_after} messages, \{safe_label(reason)})"
     RunCompleted(final_message_summary~, model_steps~, tool_calls~) =>
-      "RunCompleted(steps=\{model_steps}, tool_calls=\{tool_calls}, \{safe_event_label(final_message_summary)})"
+      "RunCompleted(steps=\{model_steps}, tool_calls=\{tool_calls}, \{safe_label(final_message_summary)})"
     RunFailed(reason~) => "RunFailed(\{reason.to_string()})"
     RunCancelled(reason~) => "RunCancelled(\{reason.to_string()})"
   }
@@ -152,9 +152,10 @@ pub fn KernelEvent::is_terminal(
 }
 
 ///|
-/// Internal bounded single-line label helper. Local copy mirrors
-/// `safe_error_label` so this file has no production cross-file dependency.
-fn safe_event_label(value : String) -> String {
+/// Package-wide bounded single-line label helper for event, error and
+/// reducer summaries. Mirrors root `safe_error_label`; kept package-local
+/// so kernel files carry no production cross-package dependency.
+fn safe_label(value : String) -> String {
   let chars : Array[Char] = []
   let mut truncated = false
   for char in value {

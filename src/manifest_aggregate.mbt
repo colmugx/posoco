@@ -36,6 +36,56 @@ priv struct AggregatedPorts {
 }
 
 ///|
+/// Shared tool-name collision scan for the two composition passes that walk
+/// provider tool lists (`aggregate_extensions` and `build_tool_routing`).
+/// Each pass labels a ToolDef with its own source wording but delegates
+/// duplicate detection and the message skeleton here.
+priv struct ToolNameIndex {
+  /// Tool name → source labels in declaration order; `labels[0]` is the
+  /// first declaration.
+  labels : Map[String, Array[String]]
+}
+
+///|
+fn ToolNameIndex::new() -> ToolNameIndex {
+  { labels: Map::from_array([]), }
+}
+
+///|
+/// Record one declared tool. Returns None for a new name; on the first
+/// duplicate returns the labels recorded so far, untouched — callers raise
+/// from this arm, so no further bookkeeping happens.
+fn ToolNameIndex::record(
+  self : ToolNameIndex,
+  name : String,
+  source_label : String,
+) -> Array[String]? {
+  if self.labels.contains(name) {
+    Some(self.labels[name])
+  } else {
+    self.labels[name] = [source_label]
+    None
+  }
+}
+
+///|
+/// The shared collision message skeleton; each pass supplies its own
+/// source labels.
+fn tool_collision_message(first : String, conflicting : String) -> String {
+  "tool collision; first declaration: \{first}; conflicting declaration: \{conflicting}"
+}
+
+///|
+/// A ToolDef's provenance when present and non-empty; None marks an
+/// unlabeled definition and each pass words its own actionable fallback.
+fn nonempty_provenance(tool : @kernel.ToolDef) -> String? {
+  match tool.provenance {
+    Some(s) if s != "" => Some(s)
+    _ => None
+  }
+}
+
+///|
 /// Aggregate every extension's manifest into one port bundle.
 /// Order follows extension array order; collisions fail fast.
 fn aggregate_extensions(
@@ -48,7 +98,7 @@ fn aggregate_extensions(
   let models : Array[&@port.ModelPort] = []
   let model_manifests : Array[String] = []
   let tools : Array[&@port.ToolProvider] = []
-  let tool_manifests : Map[String, Array[String]] = Map::from_array([])
+  let tool_index = ToolNameIndex::new()
   let sessions : Array[&@port.SessionStore] = []
   let observers : Array[&@port.Observer] = []
   let hooks : Array[&@port.PipelineHook] = []
@@ -76,28 +126,26 @@ fn aggregate_extensions(
     for provider in manifest.tools {
       for tool_def in provider.list_tools() {
         let name = tool_def.name.to_string()
-        let source_label = match tool_def.provenance {
-          Some(s) if s != "" => s
-          _ =>
+        let source_label = match nonempty_provenance(tool_def) {
+          Some(s) => s
+          None =>
             "ToolDef.provenance is empty for tool '" +
             name +
             "' in manifest '" +
             mid +
             "' (set ToolDef.provenance to a stable provider id to disambiguate)"
         }
-        if tool_manifests.contains(name) {
-          let existing = tool_manifests[name]
-          existing.push(mid)
-          raise @error.CompositionError::ToolCollision(
-            name,
-            "tool collision; first declaration: " +
-            existing[0] +
-            "; conflicting declaration: " +
-            source_label,
-            manifests=existing,
-          )
-        } else {
-          tool_manifests[name] = [source_label]
+        match tool_index.record(name, source_label) {
+          Some(labels) => {
+            let manifests = labels.copy()
+            manifests.push(mid)
+            raise @error.CompositionError::ToolCollision(
+              name,
+              tool_collision_message(labels[0], source_label),
+              manifests~,
+            )
+          }
+          None => ()
         }
       }
       tools.push(provider)
@@ -151,18 +199,9 @@ fn aggregate_extensions(
   }
   // UI cardinality: 0 → NoopUiPort, 1 → passthrough, 2+ → CompositeUiPort.
   let ui_ref : &@port.UiPort = match ui.length() {
-    0 => {
-      let n : &@port.UiPort = NoopUiPort()
-      n
-    }
-    1 => {
-      let u : &@port.UiPort = ui[0]
-      u
-    }
-    _ => {
-      let c : &@port.UiPort = CompositeUiPort(ui.copy())
-      c
-    }
+    0 => (NoopUiPort() : &@port.UiPort)
+    1 => ui[0]
+    _ => (CompositeUiPort(ui.copy()) : &@port.UiPort)
   }
   {
     model: models[0],

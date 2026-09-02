@@ -90,6 +90,52 @@ impl @port.CommandPort for BuiltinCommandPort with fn commands(
 }
 
 ///|
+/// Normalized command ids for `invoke`, so the enable guard is written once
+/// per builtin and the enqueue skeleton below stays id-agnostic.
+priv enum BuiltinCommandKind {
+  Compact
+  ForkHere
+}
+
+///|
+fn BuiltinCommandPort::resolve_command(
+  self : BuiltinCommandPort,
+  id : String,
+) -> BuiltinCommandKind raise @error.CommandError {
+  match id {
+    "compact" if self.compact_enabled => Compact
+    "compact" => raise @error.CommandError::NotFound(id)
+    "fork-here" if self.fork_enabled => ForkHere
+    "fork-here" => raise @error.CommandError::NotFound(id)
+    other => raise @error.CommandError::NotFound(other)
+  }
+}
+
+///|
+/// Shared enqueue → CommandOutcome skeleton for `/compact` and `/fork-here`.
+fn enqueue_outcome(
+  name : String,
+  accepted_feedback : String,
+  result : @puppetry.EnqueueResult,
+) -> @port.CommandOutcome {
+  match result {
+    Accepted(_) =>
+      @port.CommandOutcome::Success(
+        feedback=accepted_feedback,
+        structured=None,
+        ui_hint=Some(@port.UiHint::Toast),
+      )
+    RejectedStale(reason~, ..) =>
+      @port.CommandOutcome::Failure(reason=name + " rejected: " + reason)
+    RejectedQueueFull(depth~, ..) =>
+      @port.CommandOutcome::Failure(
+        reason="\{name} queue full (depth=\{depth})",
+      )
+    _ => @port.CommandOutcome::Failure(reason="\{name} already requested")
+  }
+}
+
+///|
 impl @port.CommandPort for BuiltinCommandPort with fn invoke(
   self : BuiltinCommandPort,
   id : String,
@@ -97,10 +143,8 @@ impl @port.CommandPort for BuiltinCommandPort with fn invoke(
 ) -> @port.CommandOutcome raise @error.CommandError {
   match (self.mailbox.active_run_id(), self.mailbox.active_turn_id()) {
     (Some(run_id), Some(turn_id)) =>
-      match id {
-        "compact" if !self.compact_enabled =>
-          raise @error.CommandError::NotFound(id)
-        "compact" => {
+      match self.resolve_command(id) {
+        Compact => {
           // Manual compact: trigger=Manual. The modelport can pick a
           // thorough strategy (LLM summary, OpenAI compat compact endpoint).
           let command_id = self.next_command_id("compact")
@@ -110,28 +154,13 @@ impl @port.CommandPort for BuiltinCommandPort with fn invoke(
             target_turn_id: turn_id,
             trigger: @kernel.Manual,
           }
-          match self.mailbox.enqueue_compact(cmd) {
-            Accepted(_) =>
-              @port.CommandOutcome::Success(
-                feedback="compact queued, will execute at the next safe point",
-                structured=None,
-                ui_hint=Some(@port.UiHint::Toast),
-              )
-            RejectedStale(reason~, ..) =>
-              @port.CommandOutcome::Failure(
-                reason="compact rejected: " + reason,
-              )
-            RejectedQueueFull(depth~, ..) =>
-              @port.CommandOutcome::Failure(
-                reason="compact queue full (depth=\{depth})",
-              )
-            _ =>
-              @port.CommandOutcome::Failure(reason="compact already requested")
-          }
+          enqueue_outcome(
+            "compact",
+            "compact queued, will execute at the next safe point",
+            self.mailbox.enqueue_compact(cmd),
+          )
         }
-        "fork-here" if !self.fork_enabled =>
-          raise @error.CommandError::NotFound(id)
-        "fork-here" => {
+        ForkHere => {
           // Parse optional `index` from args. Default is the current
           // transcript length (fork at the tail).
           let index = parse_fork_index(args)
@@ -142,23 +171,12 @@ impl @port.CommandPort for BuiltinCommandPort with fn invoke(
             target_turn_id: turn_id,
             fork_index: index,
           }
-          match self.mailbox.enqueue_fork(cmd) {
-            Accepted(_) =>
-              @port.CommandOutcome::Success(
-                feedback="fork queued at index \{index}, will execute at the next safe point",
-                structured=None,
-                ui_hint=Some(@port.UiHint::Toast),
-              )
-            RejectedStale(reason~, ..) =>
-              @port.CommandOutcome::Failure(reason="fork rejected: " + reason)
-            RejectedQueueFull(depth~, ..) =>
-              @port.CommandOutcome::Failure(
-                reason="fork queue full (depth=\{depth})",
-              )
-            _ => @port.CommandOutcome::Failure(reason="fork already requested")
-          }
+          enqueue_outcome(
+            "fork",
+            "fork queued at index \{index}, will execute at the next safe point",
+            self.mailbox.enqueue_fork(cmd),
+          )
         }
-        other => raise @error.CommandError::NotFound(other)
       }
     _ =>
       // No active run: nothing for the pump to consume. Tell the caller

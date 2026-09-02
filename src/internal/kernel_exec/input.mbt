@@ -126,7 +126,7 @@ pub(all) enum RunInput {
 /// Stable string label for the input kind. Used by `InputRejected` events
 /// and by debug/conformance output. The string form is part of the contract
 /// (replay-equal), so it must not drift.
-pub fn RunInput::kind(self : RunInput) -> String {
+fn RunInput::kind(self : RunInput) -> String {
   match self {
     Start(..) => "Start"
     ModelCompleted(..) => "ModelCompleted"

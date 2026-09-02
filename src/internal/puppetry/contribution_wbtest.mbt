@@ -147,8 +147,8 @@ test "puppet_contribution/noop_returns_empty" {
   let ctx = make_c_ctx("sp1", InputAccepted, [])
   let noop = NoopContributor()
   let c = noop.contribute(ctx)
-  assert_true(c.proposed_entries().length() == 0)
-  assert_true(c.contributor_id() == "noop")
+  assert_true(c.proposed_entries.length() == 0)
+  assert_true(c.contributor_id == "noop")
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -160,8 +160,8 @@ test "puppet_contribution/prepare_batch_with_no_contributors" {
   let base = [make_c_entry(InputAccepted, "sp1", 0)]
   let ctx = make_c_ctx("sp1", InputAccepted, base)
   let batch = prepare_batch(ctx, [])
-  assert_true(batch.length() == 1)
-  assert_true(batch.expected_revision() == 0)
+  assert_true(batch.entries.length() == 1)
+  assert_true(batch.expected_revision == 0)
 }
 
 ///|
@@ -173,7 +173,7 @@ test "puppet_contribution/prepare_batch_merges_contributor_entries" {
   let contributor = ProposingContributor("ext_a", extra)
   let contributors : Array[&JournalContributor] = [contributor]
   let batch = prepare_batch(ctx, contributors)
-  assert_true(batch.length() == 2)
+  assert_true(batch.entries.length() == 2)
 }
 
 ///|

@@ -517,7 +517,7 @@ async test "tk_hook_records_stage_and_configured_abort" {
   assert_eq(records.length(), 1)
   assert_eq(records[0].label, "before_model")
   match records[0].outcome {
-    RecordedHookOutcome2::AbortedWith(message) =>
+    RecordedHookOutcome::AbortedWith(message) =>
       assert_eq(message, "policy rejected model call")
     _ => fail("recorded hook outcome should be AbortedWith")
   }
@@ -541,7 +541,7 @@ async test "tk_hook_records_stage_and_configured_deferral" {
   assert_eq(records.length(), 1)
   assert_eq(records[0].label, "before_tool")
   match records[0].outcome {
-    RecordedHookOutcome2::DeferredWith(reason) =>
+    RecordedHookOutcome::DeferredWith(reason) =>
       assert_eq(reason, "approval required")
     _ => fail("recorded hook outcome should be DeferredWith")
   }
@@ -559,7 +559,7 @@ async test "tk_hook_records_pass_through_outcome" {
   assert_eq(records.length(), 1)
   assert_eq(records[0].label, "before_model")
   match records[0].outcome {
-    RecordedHookOutcome2::PassedThrough => ()
+    RecordedHookOutcome::PassedThrough => ()
     _ => fail("recorded hook outcome should be PassedThrough")
   }
 }
@@ -574,7 +574,7 @@ async test "tk_hook_record_accessor_is_deep_snapshot" {
   let first = hook.records()
   assert_eq(first[0].label, "before_model")
   match first[0].outcome {
-    RecordedHookOutcome2::PassedThrough => ()
+    RecordedHookOutcome::PassedThrough => ()
     _ => fail("expected PassedThrough outcome")
   }
   // Mutate the returned array to prove snapshot isolation
@@ -583,7 +583,7 @@ async test "tk_hook_record_accessor_is_deep_snapshot" {
   assert_eq(second.length(), 1)
   assert_eq(second[0].label, "before_model")
   match second[0].outcome {
-    RecordedHookOutcome2::PassedThrough => ()
+    RecordedHookOutcome::PassedThrough => ()
     _ => fail("expected second PassedThrough outcome")
   }
 }

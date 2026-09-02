@@ -214,129 +214,86 @@ fn RunState::validate(self : RunState) -> RunState raise KernelError {
   match self.phase {
     Initializing => {
       if !self.pending_effects.is_empty() {
-        raise ConstructorInvariant(
-          category=IllegalPhase(
-            phase="Initializing",
-            detail="pending effects must be empty",
-          ),
+        raise constructor_illegal_phase(
+          "Initializing", "pending effects must be empty",
         )
       }
       if self.outcome is Some(_) {
-        raise ConstructorInvariant(
-          category=IllegalPhase(
-            phase="Initializing",
-            detail="outcome must be None",
-          ),
-        )
+        raise constructor_illegal_phase("Initializing", "outcome must be None")
       }
     }
     ReadyForModel => {
       if !self.pending_effects.is_empty() {
-        raise ConstructorInvariant(
-          category=IllegalPhase(
-            phase="ReadyForModel",
-            detail="pending effects must be empty",
-          ),
+        raise constructor_illegal_phase(
+          "ReadyForModel", "pending effects must be empty",
         )
       }
       if self.outcome is Some(_) {
-        raise ConstructorInvariant(
-          category=IllegalPhase(
-            phase="ReadyForModel",
-            detail="outcome must be None",
-          ),
-        )
+        raise constructor_illegal_phase("ReadyForModel", "outcome must be None")
       }
     }
     AwaitingModel => {
       let model_count = count_call_model(self.pending_effects)
       if model_count != 1 {
-        raise ConstructorInvariant(
-          category=IllegalPhase(
-            phase="AwaitingModel",
-            detail="expected exactly 1 pending CallModel effect, found \{model_count}",
-          ),
+        raise constructor_illegal_phase(
+          "AwaitingModel",
+          "expected exactly 1 pending CallModel effect, found \{model_count}",
         )
       }
       if self.outcome is Some(_) {
-        raise ConstructorInvariant(
-          category=IllegalPhase(
-            phase="AwaitingModel",
-            detail="outcome must be None",
-          ),
-        )
+        raise constructor_illegal_phase("AwaitingModel", "outcome must be None")
       }
     }
     AwaitingTools => {
       let exec_count = count_execute_tool(self.pending_effects)
       if exec_count == 0 {
-        raise ConstructorInvariant(
-          category=IllegalPhase(
-            phase="AwaitingTools",
-            detail="expected at least 1 pending ExecuteTool effect, found 0",
-          ),
+        raise constructor_illegal_phase(
+          "AwaitingTools", "expected at least 1 pending ExecuteTool effect, found 0",
         )
       }
       if self.outcome is Some(_) {
-        raise ConstructorInvariant(
-          category=IllegalPhase(
-            phase="AwaitingTools",
-            detail="outcome must be None",
-          ),
-        )
+        raise constructor_illegal_phase("AwaitingTools", "outcome must be None")
       }
     }
     Suspended => {
       if !self.pending_effects.is_empty() {
-        raise ConstructorInvariant(
-          category=IllegalPhase(
-            phase="Suspended",
-            detail="pending effects must be empty",
-          ),
+        raise constructor_illegal_phase(
+          "Suspended", "pending effects must be empty",
         )
       }
       if self.outcome is Some(_) {
-        raise ConstructorInvariant(
-          category=IllegalPhase(
-            phase="Suspended",
-            detail="outcome must be None (Suspended is not terminal)",
-          ),
+        raise constructor_illegal_phase(
+          "Suspended", "outcome must be None (Suspended is not terminal)",
         )
       }
       if self.suspension_requirement is None {
-        raise ConstructorInvariant(
-          category=IllegalPhase(
-            phase="Suspended",
-            detail="suspension_requirement must be Some",
-          ),
+        raise constructor_illegal_phase(
+          "Suspended", "suspension_requirement must be Some",
         )
       }
     }
     Terminal => {
       if !self.pending_effects.is_empty() {
-        raise ConstructorInvariant(
-          category=IllegalPhase(
-            phase="Terminal",
-            detail="pending effects must be empty",
-          ),
+        raise constructor_illegal_phase(
+          "Terminal", "pending effects must be empty",
         )
       }
       if self.outcome is None {
-        raise ConstructorInvariant(
-          category=IllegalPhase(phase="Terminal", detail="outcome must be Some"),
-        )
+        raise constructor_illegal_phase("Terminal", "outcome must be Some")
       }
       if self.suspension_requirement is Some(_) {
-        raise ConstructorInvariant(
-          category=IllegalPhase(
-            phase="Terminal",
-            detail="suspension_requirement must be None at Terminal",
-          ),
+        raise constructor_illegal_phase(
+          "Terminal", "suspension_requirement must be None at Terminal",
         )
       }
     }
   }
   self
+}
+
+///|
+fn constructor_illegal_phase(phase : String, detail : String) -> KernelError {
+  ConstructorInvariant(category=IllegalPhase(phase~, detail~))
 }
 
 ///|

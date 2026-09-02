@@ -11,7 +11,7 @@
 ///|
 /// Bind a mailbox to fixed ids and return it.
 fn bind_test_mailbox() -> @puppetry.ControlMailbox {
-  let mb = @puppetry.ControlMailbox::ControlMailbox()
+  let mb = @puppetry.ControlMailbox()
   mb.bind_run(
     @kernel_exec.RunId::unchecked("run_b"),
     @kernel.TurnId::unchecked("turn_b"),
@@ -76,7 +76,7 @@ async test "m35_builtin/fork_here_default_index_zero" {
 ///|
 async test "m35_builtin/invoke_without_active_run_returns_failure" {
   // Unbound mailbox (no active run).
-  let mb = @puppetry.ControlMailbox::ControlMailbox()
+  let mb = @puppetry.ControlMailbox()
   let port = BuiltinCommandPort(mb)
   let outcome = port.invoke("compact", Json::null())
   assert_true(outcome is Failure(_))

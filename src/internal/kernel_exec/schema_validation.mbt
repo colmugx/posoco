@@ -7,7 +7,7 @@
 ///|
 /// Validate `instance` against `schema`. Returns `Ok(())` on success, or
 /// `Err(SchemaDiagnostic)` with a safe JSON path + expected/actual pair.
-pub fn validate_arguments(
+fn validate_arguments(
   schema : Json,
   instance : Json,
 ) -> Result[Unit, @kernel.SchemaDiagnostic] {
@@ -298,7 +298,7 @@ fn find_unsupported_keyword(schema : Json) -> String? {
 ///|
 /// Pre-check a tool's input schema at composition time. Returns Ok(()) if supported,
 /// Err with the first offending keyword otherwise (ADR §2.7).
-pub fn check_schema_supported(schema : Json) -> Result[Unit, String] {
+fn check_schema_supported(schema : Json) -> Result[Unit, String] {
   match find_unsupported_keyword(schema) {
     Some(k) => Err(k)
     None => Ok(())

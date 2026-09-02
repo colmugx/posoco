@@ -233,29 +233,13 @@ async fn MemoryToolProvider::execute_memory_search(
     self.sources.map(fn(pair) {
       let (source, port) = pair
       () => {
-        let text : String? = match top_k {
-          Some(k) =>
-            port.search(query~, top_k=k) catch {
-              err => {
-                if !@async.is_cancellation_error(err) {
-                  (self.on_failure)(
-                    "memory_search \{source}: \{err.to_string()}",
-                  )
-                }
-                None
-              }
+        let text : String? = port.search(query~, top_k?) catch {
+          err => {
+            if !@async.is_cancellation_error(err) {
+              (self.on_failure)("memory_search \{source}: \{err.to_string()}")
             }
-          None =>
-            port.search(query~) catch {
-              err => {
-                if !@async.is_cancellation_error(err) {
-                  (self.on_failure)(
-                    "memory_search \{source}: \{err.to_string()}",
-                  )
-                }
-                None
-              }
-            }
+            None
+          }
         }
         (source, text)
       }

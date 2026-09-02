@@ -5,7 +5,7 @@
 /// tool execution; `None` is unbounded (the recommended product default —
 /// the human abort and compaction govern loop length, matching peer coding
 /// agents).
-pub(all) struct AgentConfig {
+pub struct AgentConfig {
   max_tool_rounds : Int?
   temperature : Double?
   max_output_tokens : Int?
@@ -24,10 +24,34 @@ pub(all) struct AgentConfig {
 }
 
 ///|
+/// Construct an `AgentConfig` naming only the knobs you set; every omitted
+/// knob is `None`. Prefer this over record literals so new optional fields
+/// never break construction sites.
+pub fn agent_config(
+  max_tool_rounds? : Int? = None,
+  temperature? : Double? = None,
+  max_output_tokens? : Int? = None,
+  model_context_window? : Int? = None,
+  compact_threshold? : Double? = None,
+  system_prompt? : String? = None,
+  memory_inbound_timeout_ms? : Int? = None,
+) -> AgentConfig {
+  {
+    max_tool_rounds,
+    temperature,
+    max_output_tokens,
+    model_context_window,
+    compact_threshold,
+    system_prompt,
+    memory_inbound_timeout_ms,
+  }
+}
+
+///|
 /// Encode the provider-agnostic chat options for `RunPolicy.call_options`.
 /// Provider-specific configuration belongs to the ModelPort extension and
 /// never crosses the canonical HostRuntime seam.
-fn AgentConfig::to_chat_options_to_json(self : AgentConfig) -> Json {
+fn AgentConfig::to_call_options_json(self : AgentConfig) -> Json {
   let fields : Map[String, Json] = Map::from_array([])
   match self.temperature {
     Some(t) => fields["temperature"] = Json::number(t)
@@ -70,13 +94,13 @@ fn safe_error_label(value : String) -> String {
 }
 
 ///|
-fn agent_snapshot_json(value : Json) -> Json {
+fn snapshot_json(value : Json) -> Json {
   match value {
-    Json::Array(items) => Json::array(items.map(agent_snapshot_json))
+    Json::Array(items) => Json::array(items.map(snapshot_json))
     Json::Object(fields) => {
       let snapshot : Map[String, Json] = Map::from_array([])
       for key in fields.keys() {
-        snapshot[key] = agent_snapshot_json(fields[key])
+        snapshot[key] = snapshot_json(fields[key])
       }
       Json::object(snapshot)
     }
@@ -85,16 +109,16 @@ fn agent_snapshot_json(value : Json) -> Json {
 }
 
 ///|
-fn agent_snapshot_tool_call(call : @kernel.ToolCall) -> @kernel.ToolCall {
+fn snapshot_tool_call(call : @kernel.ToolCall) -> @kernel.ToolCall {
   {
     call_id: call.call_id,
     name: call.name,
-    arguments: agent_snapshot_json(call.arguments),
+    arguments: snapshot_json(call.arguments),
   }
 }
 
 ///|
-fn agent_snapshot_content(content : @kernel.Content) -> @kernel.Content {
+fn snapshot_content(content : @kernel.Content) -> @kernel.Content {
   match content {
     @kernel.Text(text) => @kernel.Text(text)
     @kernel.Image(media_type~, data~) => @kernel.Image(media_type~, data~)
@@ -102,16 +126,16 @@ fn agent_snapshot_content(content : @kernel.Content) -> @kernel.Content {
 }
 
 ///|
-fn agent_snapshot_message(message : @kernel.Message) -> @kernel.Message {
+fn snapshot_message(message : @kernel.Message) -> @kernel.Message {
   match message {
     @kernel.SystemMessage(content~) =>
-      @kernel.SystemMessage(content=content.map(agent_snapshot_content))
+      @kernel.SystemMessage(content=content.map(snapshot_content))
     @kernel.UserMessage(content~) =>
-      @kernel.UserMessage(content=content.map(agent_snapshot_content))
+      @kernel.UserMessage(content=content.map(snapshot_content))
     @kernel.AssistantMessage(content~, tool_calls~, reasoning~, finish_reason~) =>
       @kernel.AssistantMessage(
-        content=content.map(agent_snapshot_content),
-        tool_calls=tool_calls.map(agent_snapshot_tool_call),
+        content=content.map(snapshot_content),
+        tool_calls=tool_calls.map(snapshot_tool_call),
         reasoning~,
         finish_reason~,
       )
@@ -121,42 +145,40 @@ fn agent_snapshot_message(message : @kernel.Message) -> @kernel.Message {
 }
 
 ///|
-fn agent_snapshot_messages(
+fn snapshot_messages(
   messages : Array[@kernel.Message],
 ) -> Array[@kernel.Message] {
-  messages.map(agent_snapshot_message)
+  messages.map(snapshot_message)
 }
 
 ///|
-fn agent_snapshot_metadata(metadata : Map[String, Json]) -> Map[String, Json] {
+fn snapshot_metadata(metadata : Map[String, Json]) -> Map[String, Json] {
   let snapshot : Map[String, Json] = Map::from_array([])
   for key in metadata.keys() {
-    snapshot[key] = agent_snapshot_json(metadata[key])
+    snapshot[key] = snapshot_json(metadata[key])
   }
   snapshot
 }
 
 ///|
-fn agent_snapshot_session(
+fn snapshot_session(
   messages : Array[@kernel.Message],
   metadata : Map[String, Json],
 ) -> @types.Session {
   {
-    messages: agent_snapshot_messages(messages),
-    metadata: agent_snapshot_metadata(metadata),
+    messages: snapshot_messages(messages),
+    metadata: snapshot_metadata(metadata),
   }
 }
 
 ///|
-fn agent_snapshot_tool_outcome(
-  outcome : @kernel.ToolOutcome,
-) -> @kernel.ToolOutcome {
+fn snapshot_tool_outcome(outcome : @kernel.ToolOutcome) -> @kernel.ToolOutcome {
   match outcome {
     @kernel.Success(content~, structured~) =>
       @kernel.Success(
         content~,
         structured=match structured {
-          Some(j) => Some(agent_snapshot_json(j))
+          Some(j) => Some(snapshot_json(j))
           None => None
         },
       )
@@ -164,7 +186,7 @@ fn agent_snapshot_tool_outcome(
       @kernel.ToolReportedError(
         content~,
         structured=match structured {
-          Some(j) => Some(agent_snapshot_json(j))
+          Some(j) => Some(snapshot_json(j))
           None => None
         },
       )
@@ -177,10 +199,9 @@ fn agent_snapshot_tool_outcome(
 
 ///|
 fn tool_provenance(tool : @kernel.ToolDef) -> String {
-  match tool.provenance {
-    Some(source) if source != "" =>
-      "ToolDef.provenance='\{safe_error_label(source)}'"
-    _ =>
+  match nonempty_provenance(tool) {
+    Some(source) => "ToolDef.provenance='\{safe_error_label(source)}'"
+    None =>
       "unlabeled provider declaring '\{safe_error_label(tool.name.to_string())}' (set ToolDef.provenance to a stable provider id)"
   }
 }
@@ -194,27 +215,24 @@ fn build_tool_routing(
   tools : Array[&@port.ToolProvider],
 ) -> ToolRouting raise @error.CompositionError {
   let tool_map : Map[String, &@port.ToolProvider] = Map::from_array([])
-  let owner_source : Map[String, String] = Map::from_array([])
+  let seen_names = ToolNameIndex::new()
   for provider in tools {
     let tool_defs = provider.list_tools()
     for tool in tool_defs {
       let name = tool.name.to_string()
       let provenance = tool_provenance(tool)
-      if tool_map.contains(name) {
-        // T06-B: fail-fast on collision. The error names the tool and both
-        // sources so the caller can locate the conflict without guessing.
-        let prev_source = match owner_source.get(name) {
-          Some(s) => s
-          None => "(unknown)"
-        }
-        raise @error.CompositionError::ToolCollision(
-          safe_error_label(name),
-          "tool collision; first declaration: \{prev_source}; conflicting declaration: \{provenance}",
-          manifests=[],
-        )
+      match seen_names.record(name, provenance) {
+        Some(labels) =>
+          // T06-B: fail-fast on collision. The error names the tool and both
+          // sources so the caller can locate the conflict without guessing.
+          raise @error.CompositionError::ToolCollision(
+            safe_error_label(name),
+            tool_collision_message(labels[0], provenance),
+            manifests=[],
+          )
+        None => ()
       }
       tool_map[name] = provider
-      owner_source[name] = provenance
     }
   }
   { tool_map, providers: tools, }
@@ -280,23 +298,10 @@ pub struct Agent {
 }
 
 ///|
-/// Shared composition path for both public constructors. `host_override`
-/// is `Some(shimmed runtime)` for `Agent::with_runtime`; `None` builds the
-/// default `PortRuntime` over the aggregated ports and shims it through the
-/// same path — there is exactly one way to assemble an Agent.
-///
-/// `catalog_source` (experimental runtime seam): when `Some`, the tool
-/// catalog is owned by the source — built from its definitions at
-/// composition and rebuilt at prompt boundaries when its revision changes.
-/// When `None`, the catalog is the static snapshot of the aggregated
-/// `ToolProvider` declarations.
-fn AgentRuntime::compose(
-  agg : AggregatedPorts,
+/// Reject out-of-range AgentConfig knobs before any port wiring happens.
+fn validate_agent_config(
   config : AgentConfig,
-  ui_projection : Bool,
-  host_override : &@kernel_exec.HostRuntime?,
-  catalog_source : &@runtime.CatalogSource?,
-) -> Agent raise @error.CompositionError {
+) -> Unit raise @error.CompositionError {
   match config.max_tool_rounds {
     Some(value) if value < 0 =>
       raise @error.CompositionError::ManifestSchemaError(
@@ -329,16 +334,24 @@ fn AgentRuntime::compose(
       )
     _ => ()
   }
-  if agg.sessions.is_empty() {
-    raise @error.CompositionError::EmptyPort("SessionStore")
-  }
-  // Built-in memory tools route through the same ToolCollision fail-fast as
-  // extension tools: an extension also declaring "memory_search" collides
-  // here at compose instead of shadowing or being shadowed.
+}
+
+///|
+/// Build the tool routing table and the initial catalog snapshot. Built-in
+/// memory tools route through the same ToolCollision fail-fast as extension
+/// tools: an extension also declaring "memory_search" collides here at
+/// compose instead of shadowing or being shadowed. A wired CatalogSource owns
+/// the catalog from the start (version 1, built from its definitions, failing
+/// fast when invalid); otherwise the catalog is the static port-derived
+/// snapshot.
+fn compose_tool_catalog(
+  agg : AggregatedPorts,
+  catalog_source : &@runtime.CatalogSource?,
+) -> (ToolRouting, @kernel_exec.ToolCatalogSnapshot, Int) raise @error.CompositionError {
   let providers = agg.tools.copy()
   if !agg.memory.is_empty() {
     let observers = agg.observers
-    let mem_provider : &@port.ToolProvider = MemoryToolProvider::MemoryToolProvider(
+    let mem_provider : &@port.ToolProvider = MemoryToolProvider(
       sources=agg.memory,
       on_failure=fn(reason) {
         emit_secondary_failure(observers, "memory_search", reason)
@@ -347,10 +360,6 @@ fn AgentRuntime::compose(
     providers.push(mem_provider)
   }
   let tool_routing = build_tool_routing(providers)
-  // A wired CatalogSource owns the catalog from the start: the initial
-  // snapshot comes from its definitions (version 1), and the composition
-  // fails fast if those definitions are invalid. Otherwise the catalog is
-  // the static port-derived snapshot.
   let (catalog, initial_catalog_revision) = match catalog_source {
     Some(source) =>
       (
@@ -359,12 +368,20 @@ fn AgentRuntime::compose(
       )
     None => (build_agent_catalog(tool_routing.providers), 0)
   }
-  // One composed hook chain, in interception order: system-prompt
-  // projection first, extension-registered hooks next, UI rendering last
-  // (opt-in, so extensions see events before the renderer). Memory has no
-  // hook: inbound context is injected at the turn boundary (see
-  // `run_turn_via_puppet`) and reads/writes go through the built-in
-  // MemoryToolProvider.
+  (tool_routing, catalog, initial_catalog_revision)
+}
+
+///|
+/// One composed hook chain, in interception order: system-prompt projection
+/// first, extension-registered hooks next, UI rendering last (opt-in, so
+/// extensions see events before the renderer). Memory has no hook: inbound
+/// context is injected at the turn boundary (see `run_turn_via_puppet`) and
+/// reads/writes go through the built-in MemoryToolProvider.
+fn compose_hook_chain(
+  agg : AggregatedPorts,
+  config : AgentConfig,
+  ui_projection : Bool,
+) -> Array[&@port.PipelineHook] {
   let composed_hooks : Array[&@port.PipelineHook] = []
   // 1. System prompt projection (if a base prompt is configured or any
   // contributors are registered). The base prompt lives in AgentConfig so
@@ -377,29 +394,38 @@ fn AgentRuntime::compose(
     let sections : Array[SystemPromptSection] = []
     for pair in agg.prompt_contributors {
       let (mid, contributor) = pair
-      sections.push(
-        SystemPromptSection::SystemPromptSection(id=mid, contributor~),
-      )
+      sections.push(SystemPromptSection(id=mid, contributor~))
     }
-    let sys_hook = SystemPromptHook::SystemPromptHook(
-      base_prompt~,
-      contributors=sections,
-    )
+    let sys_hook = SystemPromptHook(base_prompt~, contributors=sections)
     composed_hooks.push(sys_hook as &@port.PipelineHook)
   }
-
   for h in agg.hooks {
     composed_hooks.push(h)
   }
-
   // UI projection is opt-in (BR-5): the built-in render policy is installed
   // only when the host asks for it via `ui_projection=true`.
   if ui_projection {
-    let ui_hook = UiRenderHook::UiRenderHook(ui=agg.ui)
+    let ui_hook = UiRenderHook(ui=agg.ui)
     composed_hooks.push(ui_hook as &@port.PipelineHook)
   }
+  composed_hooks
+}
 
-  let mailbox = @puppetry.ControlMailbox::ControlMailbox()
+///|
+/// Assemble the control mailbox, the built-in command port front end, the
+/// aggregated command ports, and the effect-execution host (the caller's
+/// override when provided, else a shim over the aggregated ports).
+fn compose_mailbox_and_host(
+  agg : AggregatedPorts,
+  tool_routing : ToolRouting,
+  host_override : &@kernel_exec.HostRuntime?,
+) -> (
+  &@puppetry.Mailbox,
+  BuiltinCommandPort,
+  Array[&@port.CommandPort],
+  &@kernel_exec.HostRuntime,
+) {
+  let mailbox = @puppetry.ControlMailbox()
   let mailbox_ref : &@puppetry.Mailbox = mailbox as &@puppetry.Mailbox
   let builtin_command_port = BuiltinCommandPort(mailbox_ref)
   let command_ports = compose_agent_commands(agg.commands, builtin_command_port)
@@ -414,8 +440,40 @@ fn AgentRuntime::compose(
       as &@kernel_exec.HostRuntime
     }
   }
-  let journal = @puppetry.InMemoryJournal::InMemoryJournal()
-  let chunk_dispatcher_ref : Ref[ChunkDispatcher?] = Ref::Ref(None)
+  (mailbox_ref, builtin_command_port, command_ports, host)
+}
+
+///|
+/// Shared composition path for both public constructors. `host_override`
+/// is `Some(shimmed runtime)` for `Agent::with_runtime`; `None` builds the
+/// default `PortRuntime` over the aggregated ports and shims it through the
+/// same path — there is exactly one way to assemble an Agent.
+///
+/// `catalog_source` (experimental runtime seam): when `Some`, the tool
+/// catalog is owned by the source — built from its definitions at
+/// composition and rebuilt at prompt boundaries when its revision changes.
+/// When `None`, the catalog is the static snapshot of the aggregated
+/// `ToolProvider` declarations.
+fn AgentRuntime::compose(
+  agg : AggregatedPorts,
+  config : AgentConfig,
+  ui_projection : Bool,
+  host_override : &@kernel_exec.HostRuntime?,
+  catalog_source : &@runtime.CatalogSource?,
+) -> Agent raise @error.CompositionError {
+  validate_agent_config(config)
+  if agg.sessions.is_empty() {
+    raise @error.CompositionError::EmptyPort("SessionStore")
+  }
+  let (tool_routing, catalog, initial_catalog_revision) = compose_tool_catalog(
+    agg, catalog_source,
+  )
+  let composed_hooks = compose_hook_chain(agg, config, ui_projection)
+  let (mailbox_ref, builtin_command_port, command_ports, host) = compose_mailbox_and_host(
+    agg, tool_routing, host_override,
+  )
+  let journal = @puppetry.InMemoryJournal()
+  let chunk_dispatcher_ref : Ref[ChunkDispatcher?] = Ref(None)
   let event_subscriber = AgentEventSubscriber(
     agg.observers,
     chunk_dispatcher_ref,
@@ -574,24 +632,22 @@ fn agent_error_category(error : Error) -> String {
 }
 
 ///|
-fn session_error_category(error : @error.SessionError) -> String {
-  match error {
-    Load(_) => "SessionError::Load"
-    Save(_) => "SessionError::Save"
-  }
-}
-
-///|
 fn contextualize_session_error(
   error : @error.SessionError,
   session_id : String,
   operation : String,
 ) -> @error.AgentError {
-  let context = "session_id='\{safe_error_label(session_id)}', operation='\{operation}', category='\{session_error_category(error)}', cause='\{safe_error_label(error.to_string())}'"
+  let cause = safe_error_label(error.to_string())
   @error.AgentError::Session(
     match error {
-      Load(_) => @error.SessionError::Load(context)
-      Save(_) => @error.SessionError::Save(context)
+      Load(_) =>
+        @error.SessionError::Load(
+          "session_id='\{safe_error_label(session_id)}', operation='\{operation}', category='SessionError::Load', cause='\{cause}'",
+        )
+      Save(_) =>
+        @error.SessionError::Save(
+          "session_id='\{safe_error_label(session_id)}', operation='\{operation}', category='SessionError::Save', cause='\{cause}'",
+        )
     },
   )
 }
@@ -619,23 +675,23 @@ fn @types.TurnEvent::tool_call_result(
 }
 
 ///|
-fn agent_snapshot_turn_event(event : @types.TurnEvent) -> @types.TurnEvent {
+fn snapshot_turn_event(event : @types.TurnEvent) -> @types.TurnEvent {
   match event {
     TurnStarted => TurnStarted
-    ToolCallPending(call) => ToolCallPending(agent_snapshot_tool_call(call))
+    ToolCallPending(call) => ToolCallPending(snapshot_tool_call(call))
     ToolCallResult(call~, result~, ..) =>
       @types.TurnEvent::tool_call_result(
-        agent_snapshot_tool_call(call),
-        agent_snapshot_tool_outcome(result),
+        snapshot_tool_call(call),
+        snapshot_tool_outcome(result),
       )
     ModelResponseReceived(message~, usage~) =>
-      ModelResponseReceived(message=agent_snapshot_message(message), usage~)
+      ModelResponseReceived(message=snapshot_message(message), usage~)
     SessionRedirect(from~, to~, messages_before~, messages_after~) =>
       SessionRedirect(from~, to~, messages_before~, messages_after~)
     TurnCompleted => TurnCompleted
     TurnFailed(reason) => TurnFailed(reason)
     ToolCallDeferred(call~, reason~) =>
-      ToolCallDeferred(call=agent_snapshot_tool_call(call), reason~)
+      ToolCallDeferred(call=snapshot_tool_call(call), reason~)
     StreamChunkReceived(chunk~) => StreamChunkReceived(chunk~)
     StreamChunksDropped(count~) => StreamChunksDropped(count~)
     ConfigWarning(field~, value~, reason~) =>
@@ -643,7 +699,7 @@ fn agent_snapshot_turn_event(event : @types.TurnEvent) -> @types.TurnEvent {
     ConfigChanged(field~, old_value~, new_value~) =>
       ConfigChanged(field~, old_value~, new_value~)
     Custom(source~, label~, data~) =>
-      Custom(source~, label~, data=agent_snapshot_json(data))
+      Custom(source~, label~, data=snapshot_json(data))
   }
 }
 
@@ -654,7 +710,7 @@ fn AgentRuntime::emit_turn_event(
   event : @types.TurnEvent,
 ) -> Unit {
   for observer in self.observers {
-    observer.on_event_at(scope, agent_snapshot_turn_event(event))
+    observer.on_event_at(scope, snapshot_turn_event(event))
   }
 }
 
@@ -734,7 +790,7 @@ fn emit_secondary_failure(
   for observer in observers {
     // Secondary failures are emitted from hook closures and refresh paths
     // that hold no run identity — scope is None by design (v1).
-    observer.on_event_at(None, agent_snapshot_turn_event(event))
+    observer.on_event_at(None, snapshot_turn_event(event))
   }
 }
 

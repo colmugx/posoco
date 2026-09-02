@@ -130,8 +130,8 @@ test "puppet_control/steer_consume_drains_queue" {
   let consumed = mb.consume_steers()
   assert_true(consumed.length() == 2)
   // FIFO order.
-  assert_true(consumed[0].command_id().to_string() == "s1")
-  assert_true(consumed[1].command_id().to_string() == "s2")
+  assert_true(consumed[0].command_id.to_string() == "s1")
+  assert_true(consumed[1].command_id.to_string() == "s2")
   // Queue drained.
   assert_true(mb.steer_depth() == 0)
 }
@@ -159,14 +159,14 @@ test "puppet_control/follow_up_consume_one_at_a_time" {
   let first = mb.consume_one_follow_up()
   assert_true(first is Some(_))
   match first {
-    Some(cmd) => assert_true(cmd.command_id().to_string() == "f1")
+    Some(cmd) => assert_true(cmd.command_id.to_string() == "f1")
     None => assert_true(false)
   }
   assert_true(mb.follow_up_depth() == 1)
   // Second consume returns f2.
   let second = mb.consume_one_follow_up()
   match second {
-    Some(cmd) => assert_true(cmd.command_id().to_string() == "f2")
+    Some(cmd) => assert_true(cmd.command_id.to_string() == "f2")
     None => assert_true(false)
   }
   assert_true(mb.follow_up_depth() == 0)
@@ -186,7 +186,7 @@ test "puppet_control/resume_enqueue_and_take" {
   assert_true(result is Accepted(_))
   let taken = mb.take_resume("susp_1")
   match taken {
-    Some(cmd) => assert_true(cmd.command_id().to_string() == "r1")
+    Some(cmd) => assert_true(cmd.command_id.to_string() == "r1")
     None => assert_true(false)
   }
   // Second take returns None (already taken).

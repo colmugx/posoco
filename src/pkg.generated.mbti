@@ -7,10 +7,13 @@ import {
   "colmugx/posoco/port",
   "colmugx/posoco/runtime",
   "colmugx/posoco/types",
+  "moonbitlang/core/debug",
 }
 
 // Values
 pub const MEMORY_INBOUND_LEAD : String = " ## Memory\n\n The following is memory recalled for this session, for your information. It may be stale or incomplete — verify against the current conversation before relying on it."
+
+pub fn agent_config(max_tool_rounds? : Int?, temperature? : Double?, max_output_tokens? : Int?, model_context_window? : Int?, compact_threshold? : Double?, system_prompt? : String?, memory_inbound_timeout_ms? : Int?) -> AgentConfig
 
 pub fn assert_events_contain(Array[@types.TurnEvent], Array[@types.TurnEvent]) -> Unit
 
@@ -61,7 +64,7 @@ pub async fn Agent::run_turn(Self, @kernel.Message, String) -> @types.TurnResult
 pub async fn Agent::shutdown(Self) -> Unit
 pub fn Agent::with_runtime(exts~ : Array[&@port.Extension], config~ : AgentConfig, runtime~ : &@runtime.Runtime, ui_projection? : Bool, catalog_source? : &@runtime.CatalogSource) -> Self raise @error.CompositionError
 
-pub(all) struct AgentConfig {
+pub struct AgentConfig {
   max_tool_rounds : Int?
   temperature : Double?
   max_output_tokens : Int?
@@ -88,8 +91,8 @@ pub impl @port.UiPort for CompositeUiPort
 
 pub(all) struct HookRecord {
   label : String
-  outcome : RecordedHookOutcome2
-}
+  outcome : RecordedHookOutcome
+} derive(@debug.Debug)
 
 pub(all) struct ManifestOnly {
   cached : @port.ExtensionManifest
@@ -117,11 +120,11 @@ pub async fn NoopUiPort::request(Self, @port.UiRequest) -> @port.UiResponse rais
 pub fn NoopUiPort::ui_descriptor(Self) -> @port.UiDescriptor
 pub impl @port.UiPort for NoopUiPort
 
-pub(all) enum RecordedHookOutcome2 {
+pub(all) enum RecordedHookOutcome {
   PassedThrough
   AbortedWith(String)
   DeferredWith(String)
-}
+} derive(@debug.Debug)
 
 pub(all) struct RecordingHook {
   mut records : Array[HookRecord]
@@ -263,14 +266,14 @@ pub(all) enum ScriptedModelStep {
 pub(all) enum ScriptedToolOutcome {
   OutcomeOk(@kernel.ToolOutcome)
   OutcomeErr(@error.RuntimeError)
-}
+} derive(@debug.Debug)
 
 pub(all) enum SessionOp {
   OpLoad(id~ : String, result~ : Result[@types.Session, @error.SessionError])
   OpSave(id~ : String, metadata~ : Map[String, Json], result~ : Result[Unit, @error.SessionError])
   OpAppend(id~ : String, from_index~ : Int, messages~ : Array[@kernel.Message], result~ : Result[Unit, @error.SessionError])
   OpTruncate(id~ : String, from_index~ : Int, result~ : Result[Unit, @error.SessionError])
-}
+} derive(@debug.Debug)
 
 pub(all) struct SystemPromptHook {
   base_prompt : String
@@ -294,12 +297,12 @@ pub(all) struct ToolExecRecord {
   tool_name : String
   arguments : Json
   outcome : ScriptedToolOutcome
-}
+} derive(@debug.Debug)
 
 pub(all) enum ToolProviderOp {
   ListTools
   ExecuteTool(requested_name~ : String, call~ : @kernel.ToolCall)
-}
+} derive(@debug.Debug)
 
 pub(all) struct ToolRegistry {
   mut tools : Map[String, @kernel.ToolDef]
