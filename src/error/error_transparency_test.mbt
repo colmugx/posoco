@@ -21,7 +21,7 @@ async test "t07_malformed_tool_json_raises_response_parse" {
   let acc = @types.StreamAccumulator()
   // Push a tool-call delta with a name but malformed arguments JSON.
   acc.push(
-    @types.StreamChunk::ToolCallDelta(
+    ToolCallDelta(
       index=0,
       id=Some("tc_1"),
       name=Some("broken"),
@@ -34,7 +34,7 @@ async test "t07_malformed_tool_json_raises_response_parse" {
     e => Err(e)
   }
   match result {
-    Err(@error.ModelError::ResponseParse(msg)) => {
+    Err(ResponseParse(msg)) => {
       assert_true(msg.contains("malformed"))
       assert_true(!msg.contains("{not json"))
     }
@@ -49,7 +49,7 @@ async test "t07_malformed_tool_json_raises_response_parse" {
 async test "t07_incomplete_tool_call_is_loud" {
   let acc = @types.StreamAccumulator()
   acc.push(
-    @types.StreamChunk::ToolCallDelta(
+    ToolCallDelta(
       index=0,
       id=Some("tc_incomplete"),
       name=None,
@@ -62,7 +62,7 @@ async test "t07_incomplete_tool_call_is_loud" {
     e => Err(e)
   }
   match result {
-    Err(@error.ModelError::ResponseParse(msg)) => {
+    Err(ResponseParse(msg)) => {
       assert_true(msg.contains("incomplete"))
       assert_true(msg.contains("name"))
     }
@@ -77,7 +77,7 @@ async test "t07_tool_parse_error_omits_untrusted_identifiers_and_payload" {
   let raw_arguments = "{\"api_key\":\"RAW_TOOL_SECRET"
   let acc = @types.StreamAccumulator()
   acc.push(
-    @types.StreamChunk::ToolCallDelta(
+    ToolCallDelta(
       index=0,
       id=Some(raw_id),
       name=Some(raw_name),
@@ -90,7 +90,7 @@ async test "t07_tool_parse_error_omits_untrusted_identifiers_and_payload" {
     error => Err(error)
   }
   match result {
-    Err(@error.ModelError::ResponseParse(message)) => {
+    Err(ResponseParse(message)) => {
       assert_true(message.contains("index 0"))
       assert_true(!message.contains("id-line"))
       assert_true(!message.contains("name-line"))
@@ -110,7 +110,7 @@ async test "t07_tool_parse_error_omits_untrusted_identifiers_and_payload" {
 async test "t07_valid_tool_json_still_parses" {
   let acc = @types.StreamAccumulator()
   acc.push(
-    @types.StreamChunk::ToolCallDelta(
+    ToolCallDelta(
       index=0,
       id=Some("tc_1"),
       name=Some("ok"),
@@ -130,9 +130,7 @@ async test "t07_valid_tool_json_still_parses" {
 async test "t07_model_error_emits_turnfailed_not_turncompleted" {
   // When the model raises, the observer must see TurnFailed (from the model
   // error path) and MUST NOT see TurnCompleted.
-  let model = @posoco.ScriptedModel([
-    @posoco.Fail(@error.ModelError::Transport("network down")),
-  ])
+  let model = @posoco.ScriptedModel([Fail(Transport("network down"))])
   let store = @posoco.RecordingSessionStore()
   let obs = @posoco.RecordingObserver()
   let agent = @posoco.Agent(
@@ -147,7 +145,7 @@ async test "t07_model_error_emits_turnfailed_not_turncompleted" {
   }
   // Must raise.
   match result {
-    Err(@error.AgentError::Model(_)) => ()
+    Err(Model(_)) => ()
     _ => fail("expected AgentError::Model")
   }
   let events = obs.events()
@@ -155,8 +153,8 @@ async test "t07_model_error_emits_turnfailed_not_turncompleted" {
   let mut saw_completed = false
   for e in events {
     match e {
-      TurnEvent::TurnFailed(_) => saw_failed = true
-      TurnEvent::TurnCompleted => saw_completed = true
+      TurnFailed(_) => saw_failed = true
+      TurnCompleted => saw_completed = true
       _ => ()
     }
   }
@@ -169,8 +167,8 @@ async test "t07_rate_limited_model_surfaces_quota_scheduling_data" {
   // A provider quota verdict must reach the caller with its provider code,
   // reset time, and message intact — never collapsed to a generic failure.
   let model = @posoco.ScriptedModel([
-    @posoco.Fail(
-      @error.ModelError::RateLimited({
+    Fail(
+      RateLimited({
         message: "free quota exceeded",
         reset_at_ms: Some(1756400000000L),
         provider_code: Some("1308"),
@@ -190,7 +188,7 @@ async test "t07_rate_limited_model_surfaces_quota_scheduling_data" {
     e => Err(e)
   }
   match result {
-    Err(@error.AgentError::Model(msg)) => {
+    Err(Model(msg)) => {
       assert_true(msg.contains("model quota exhausted"))
       assert_true(msg.contains("code=1308"))
       assert_true(msg.contains("reset_at_ms=1756400000000"))
@@ -202,7 +200,7 @@ async test "t07_rate_limited_model_surfaces_quota_scheduling_data" {
   let mut saw_failed = false
   for e in events {
     match e {
-      TurnEvent::TurnFailed(_) => saw_failed = true
+      TurnFailed(_) => saw_failed = true
       _ => ()
     }
   }
@@ -223,9 +221,7 @@ fn count_terminal_events(events : Array[TurnEvent]) -> Int {
 
 ///|
 async test "t07_save_error_emits_exactly_one_turnfailed" {
-  let model = @posoco.ScriptedModel([
-    @posoco.Respond(@posoco.tk_stop_response("done")),
-  ])
+  let model = @posoco.ScriptedModel([Respond(@posoco.tk_stop_response("done"))])
   let store = @posoco.RecordingSessionStore()
   store.fail_save("save-fail")
   let obs = @posoco.RecordingObserver()
@@ -240,7 +236,7 @@ async test "t07_save_error_emits_exactly_one_turnfailed" {
     e => Err(e)
   }
   match result {
-    Err(@error.AgentError::Session(_)) => ()
+    Err(Session(_)) => ()
     _ => fail("expected session save failure")
   }
   let events = obs.events()
@@ -267,7 +263,7 @@ async test "t07_load_error_emits_one_safe_turnfailed" {
     error => Err(error)
   }
   match result {
-    Err(@error.AgentError::Session(error)) =>
+    Err(Session(error)) =>
       assert_true(error.to_string().contains("backend detail"))
     _ => fail("expected session load failure")
   }
@@ -291,9 +287,7 @@ async test "t07_afterturn_hook_failure_is_observable_but_nonfatal" {
   // raise). PipelineHook abort scenarios are now handled through PreModelHook.
   // This test verifies that a PreModelHook abort still emits exactly one
   // terminal event (TurnFailed).
-  let model = @posoco.ScriptedModel([
-    @posoco.Respond(@posoco.tk_stop_response("done")),
-  ])
+  let model = @posoco.ScriptedModel([Respond(@posoco.tk_stop_response("done"))])
   let store = @posoco.RecordingSessionStore()
   let obs = @posoco.RecordingObserver()
   let hook = @posoco.RecordingHook()
@@ -311,7 +305,7 @@ async test "t07_afterturn_hook_failure_is_observable_but_nonfatal" {
     e => Err(e)
   }
   match result {
-    Err(@error.AgentError::PipelineAborted(_)) => ()
+    Err(PipelineAborted(_)) => ()
     _ =>
       fail(
         "expected hook abort (non-fatal PostEventHook modeled via PreModelHook)",
@@ -327,9 +321,7 @@ async test "t07_error_hook_failure_preserves_primary_and_is_observable" {
   // model would have failed but the hook aborts first, the primary error is
   // the PipelineAborted (not the model error). This test verifies the abort is
   // observable as PipelineAborted.
-  let model = @posoco.ScriptedModel([
-    @posoco.Fail(@error.ModelError::Transport("primary network failure")),
-  ])
+  let model = @posoco.ScriptedModel([Fail(Transport("primary network failure"))])
   let store = @posoco.RecordingSessionStore()
   let obs = @posoco.RecordingObserver()
   let hook = @posoco.RecordingHook()
@@ -345,7 +337,7 @@ async test "t07_error_hook_failure_preserves_primary_and_is_observable" {
     e => Err(e)
   }
   match result {
-    Err(@error.AgentError::PipelineAborted(_)) => ()
+    Err(PipelineAborted(_)) => ()
     _ => fail("expected PipelineAborted (PreModelHook fires before model call)")
   }
   let events = obs.events()
@@ -354,9 +346,7 @@ async test "t07_error_hook_failure_preserves_primary_and_is_observable" {
 
 ///|
 async test "t07_turnerror_hook_failure_preserves_primary_and_is_observable" {
-  let model = @posoco.ScriptedModel([
-    @posoco.Fail(@error.ModelError::Transport("primary network failure")),
-  ])
+  let model = @posoco.ScriptedModel([Fail(Transport("primary network failure"))])
   let store = @posoco.RecordingSessionStore()
   let obs = @posoco.RecordingObserver()
   let hook = @posoco.RecordingHook()
@@ -372,7 +362,7 @@ async test "t07_turnerror_hook_failure_preserves_primary_and_is_observable" {
     e => Err(e)
   }
   match result {
-    Err(@error.AgentError::PipelineAborted(_)) => ()
+    Err(PipelineAborted(_)) => ()
     _ => fail("expected PipelineAborted")
   }
   let events = obs.events()
@@ -385,19 +375,14 @@ async test "t07_aftertool_hook_failure_is_observable_but_nonfatal" {
   // pump iteration. A pre_model_hook abort before the second model call
   // surfaces as PipelineAborted.
   let model = @posoco.ScriptedModel([
-    @posoco.Respond(
+    Respond(
       @posoco.tk_tool_call_response("probe", "tc_secondary", Json::null()),
     ),
-    @posoco.Respond(@posoco.tk_stop_response("done")),
+    Respond(@posoco.tk_stop_response("done")),
   ])
   let provider = @posoco.RecordingToolProvider(
     [@posoco.tk_tool_def("probe", "")],
-    Map::from_array([
-      (
-        "probe",
-        @posoco.ScriptedToolOutcome::OutcomeOk(@posoco.tk_ok_result("ok")),
-      ),
-    ]),
+    Map::from_array([("probe", OutcomeOk(@posoco.tk_ok_result("ok")))]),
   )
   let store = @posoco.RecordingSessionStore()
   let obs = @posoco.RecordingObserver()
@@ -420,7 +405,7 @@ async test "t07_aftertool_hook_failure_is_observable_but_nonfatal" {
     e => Err(e)
   }
   match result {
-    Err(@error.AgentError::PipelineAborted(_)) => ()
+    Err(PipelineAborted(_)) => ()
     _ => fail("expected PipelineAborted")
   }
   let events = obs.events()
@@ -447,7 +432,7 @@ async test "t07_beforemodel_abort_emits_exactly_one_turnfailed" {
     e => Err(e)
   }
   match result {
-    Err(@error.AgentError::PipelineAborted(_)) => ()
+    Err(PipelineAborted(_)) => ()
     _ => fail("expected BeforeModel hook abort")
   }
   let events = obs.events()
@@ -484,7 +469,7 @@ async test "t07_premodel_abort_emits_turnstarted_and_one_terminal_event" {
     e => Err(e)
   }
   match result {
-    Err(@error.AgentError::PipelineAborted(_)) => ()
+    Err(PipelineAborted(_)) => ()
     _ => fail("expected PreModelHook abort")
   }
   let events = obs.events()
@@ -497,18 +482,11 @@ async test "t07_premodel_abort_emits_turnstarted_and_one_terminal_event" {
 ///|
 async test "t07_tool_loop_emits_exactly_one_turnfailed" {
   let model = @posoco.ScriptedModel([
-    @posoco.Respond(
-      @posoco.tk_tool_call_response("probe", "tc_loop", Json::null()),
-    ),
+    Respond(@posoco.tk_tool_call_response("probe", "tc_loop", Json::null())),
   ])
   let provider = @posoco.RecordingToolProvider(
     [@posoco.tk_tool_def("probe", "")],
-    Map::from_array([
-      (
-        "probe",
-        @posoco.ScriptedToolOutcome::OutcomeOk(@posoco.tk_ok_result("ok")),
-      ),
-    ]),
+    Map::from_array([("probe", OutcomeOk(@posoco.tk_ok_result("ok")))]),
   )
   let store = @posoco.RecordingSessionStore()
   let obs = @posoco.RecordingObserver()
@@ -526,7 +504,7 @@ async test "t07_tool_loop_emits_exactly_one_turnfailed" {
     e => Err(e)
   }
   match result {
-    Err(@error.AgentError::ToolLoopExceeded(..)) => ()
+    Err(ToolLoopExceeded(..)) => ()
     _ => fail("expected tool loop failure")
   }
   assert_eq(count_terminal_events(obs.events()), 1)

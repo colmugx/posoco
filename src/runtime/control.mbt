@@ -57,7 +57,7 @@ pub fn RuntimeControl::RuntimeControl(
 ) -> RuntimeControl {
   {
     mailbox,
-    follow_ups: @aqueue.Queue(kind=Unbounded),
+    follow_ups: Queue(kind=Unbounded),
     follow_up_depth: 0,
     seq: 0,
     max_depth: default_max_follow_up_depth,
@@ -156,10 +156,9 @@ pub fn RuntimeControl::abort_active(
     detail,
   }
   match self.mailbox.enqueue_abort(cmd) {
-    @puppetry.Accepted(command_id~) =>
-      Accepted(command_id=command_id.to_string())
-    @puppetry.RejectedStale(reason~, ..) => RejectedStale(reason~)
-    @puppetry.RejectedQueueFull(depth~, ..) => RejectedQueueFull(depth~)
-    @puppetry.AbortAlreadyRequested(..) => AbortAlreadyRequested
+    Accepted(command_id~) => Accepted(command_id=command_id.to_string())
+    RejectedStale(reason~, ..) => RejectedStale(reason~)
+    RejectedQueueFull(depth~, ..) => RejectedQueueFull(depth~)
+    AbortAlreadyRequested(..) => AbortAlreadyRequested
   }
 }

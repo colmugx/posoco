@@ -100,7 +100,7 @@ pub impl @port.PipelineHook for RecordingHook with fn before_model(
       trigger.contains("BeforeTurn") {
       let message = self.abort_on[trigger]
       self.records.push({ label, outcome: AbortedWith(message), })
-      raise @port.HookAbort::Aborted(reason=message)
+      raise Aborted(reason=message)
     }
   }
   self.records.push({ label, outcome: PassedThrough, })

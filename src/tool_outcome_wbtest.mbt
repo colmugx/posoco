@@ -15,10 +15,10 @@ fn outcome_config() -> AgentConfig {
 /// that need to compare error/success message bodies regardless of variant.
 fn outcome_text(outcome : @kernel.ToolOutcome) -> String {
   match outcome {
-    @kernel.Success(content~, ..) => content
-    @kernel.ToolReportedError(content~, ..) => content
-    @kernel.RuntimeFailure(message~, ..) => message
-    @kernel.NotExecuted(reason~, ..) => reason.to_string()
+    Success(content~, ..) => content
+    ToolReportedError(content~, ..) => content
+    RuntimeFailure(message~, ..) => message
+    NotExecuted(reason~, ..) => reason.to_string()
   }
 }
 
@@ -36,7 +36,7 @@ async test "t06a_business_error_event_matches_result" {
   let business_result = tk_error_result("denied")
   let model = ScriptedModel([Respond(first_response), Respond(final_response)])
   let outcomes : Map[String, ScriptedToolOutcome] = Map::from_array([
-    ("probe", ScriptedToolOutcome::OutcomeOk(business_result)),
+    ("probe", OutcomeOk(business_result)),
   ])
   let provider = RecordingToolProvider([tk_tool_def("probe", "")], outcomes)
   let obs = RecordingObserver()
@@ -55,7 +55,7 @@ async test "t06a_business_error_event_matches_result" {
   let mut event_result : @kernel.ToolOutcome? = None
   for e in events {
     match e {
-      @types.TurnEvent::ToolCallResult(call~, result~, is_error~) =>
+      ToolCallResult(call~, result~, is_error~) =>
         if call.call_id.to_string() == "tc_1" {
           assert_true(is_error == result.is_failure())
           event_is_error = Some(is_error)
@@ -80,7 +80,7 @@ async test "t06a_business_error_event_matches_result" {
     let mut saw_matching_tool_message = false
     for message in saved.messages {
       match message {
-        @kernel.ToolMessage(call_id~, outcome~, ..) =>
+        ToolMessage(call_id~, outcome~, ..) =>
           if call_id.to_string() == "tc_1" {
             assert_eq(
               outcome_text(outcome),
@@ -108,7 +108,7 @@ async test "t06a_success_event_is_not_error" {
   let success_result = tk_ok_result("ok")
   let model = ScriptedModel([Respond(first_response), Respond(final_response)])
   let outcomes : Map[String, ScriptedToolOutcome] = Map::from_array([
-    ("safe", ScriptedToolOutcome::OutcomeOk(success_result)),
+    ("safe", OutcomeOk(success_result)),
   ])
   let provider = RecordingToolProvider([tk_tool_def("safe", "")], outcomes)
   let obs = RecordingObserver()
@@ -126,7 +126,7 @@ async test "t06a_success_event_is_not_error" {
   assert_true(turn_result.tool_results[0] == success_result)
   for e in events {
     match e {
-      @types.TurnEvent::ToolCallResult(call~, result~, is_error~) =>
+      ToolCallResult(call~, result~, is_error~) =>
         if call.call_id.to_string() == "tc_2" {
           assert_true(is_error == result.is_failure())
           assert_true(!is_error)
@@ -144,12 +144,10 @@ async test "t06a_success_event_is_not_error" {
 async test "t06a_runtime_error_event_is_error_true" {
   let first_response = tk_tool_call_response("boom", "tc_3", Json::null())
   let final_response = tk_stop_response("after")
-  let raised_error : @error.RuntimeError = @error.RuntimeError::InvocationFailed(
-    "crash",
-  )
+  let raised_error : @error.RuntimeError = InvocationFailed("crash")
   let model = ScriptedModel([Respond(first_response), Respond(final_response)])
   let outcomes : Map[String, ScriptedToolOutcome] = Map::from_array([
-    ("boom", ScriptedToolOutcome::OutcomeErr(raised_error)),
+    ("boom", OutcomeErr(raised_error)),
   ])
   let provider = RecordingToolProvider([tk_tool_def("boom", "")], outcomes)
   let obs = RecordingObserver()
@@ -166,7 +164,7 @@ async test "t06a_runtime_error_event_is_error_true" {
   let mut seen_error_event = false
   for e in events {
     match e {
-      @types.TurnEvent::ToolCallResult(call~, result~, is_error~) =>
+      ToolCallResult(call~, result~, is_error~) =>
         if call.call_id.to_string() == "tc_3" {
           assert_true(is_error)
           assert_true(result.is_failure())
@@ -187,7 +185,7 @@ async test "t06a_runtime_error_event_is_error_true" {
     let mut saw_matching_tool_message = false
     for message in saved.messages {
       match message {
-        @kernel.ToolMessage(call_id~, outcome~, ..) =>
+        ToolMessage(call_id~, outcome~, ..) =>
           if call_id.to_string() == "tc_3" {
             assert_eq(outcome_text(outcome), expected_text)
             saw_matching_tool_message = true
@@ -222,9 +220,7 @@ pub impl @port.ToolProvider for SingleToolProvider with fn execute(
   name : String,
   _call : @kernel.ToolCall,
 ) -> @kernel.ToolOutcome raise @error.RuntimeError {
-  raise @error.RuntimeError::UnknownTool(
-    "SingleToolProvider does not execute '\{name}'",
-  )
+  raise UnknownTool("SingleToolProvider does not execute '\{name}'")
 }
 
 ///|
@@ -233,12 +229,12 @@ async test "t06b_collision_fails_composition" {
   // CompositionError::ToolCollision (fail-fast), not silently pick the last.
   let p1 = RecordingToolProvider(
     [
-      @kernel.ToolDef(
+      ToolDef(
         name=@kernel.ToolName::unchecked("shared"),
         description="from p1",
         input_schema=Json::object(Map::from_array([])),
         owner=@kernel.OwnerId::unchecked("provider-alpha"),
-        policy=@kernel.Parallel,
+        policy=Parallel,
         provenance=Some("provider-alpha"),
       ),
     ],
@@ -246,12 +242,12 @@ async test "t06b_collision_fails_composition" {
   )
   let p2 = RecordingToolProvider(
     [
-      @kernel.ToolDef(
+      ToolDef(
         name=@kernel.ToolName::unchecked("shared"),
         description="from p2",
         input_schema=Json::object(Map::from_array([])),
         owner=@kernel.OwnerId::unchecked("provider-beta"),
-        policy=@kernel.Parallel,
+        policy=Parallel,
         provenance=Some("provider-beta"),
       ),
     ],
@@ -271,7 +267,7 @@ async test "t06b_collision_fails_composition" {
     e => Err(e)
   }
   match composition_result {
-    Err(@error.CompositionError::ToolCollision(name, msg, ..)) => {
+    Err(ToolCollision(name, msg, ..)) => {
       assert_eq(name, "shared")
       assert_true(msg.contains("collision"))
       if !msg.contains("provider-alpha") {
@@ -304,7 +300,7 @@ async test "t06b_missing_collision_provenance_is_actionable" {
     e => Err(e)
   }
   match composition_result {
-    Err(@error.CompositionError::ToolCollision(name, msg, ..)) => {
+    Err(ToolCollision(name, msg, ..)) => {
       assert_eq(name, "shared")
       // tk_tool_def sets provenance=None; the message must point to
       // ToolDef.provenance as the actionable field.

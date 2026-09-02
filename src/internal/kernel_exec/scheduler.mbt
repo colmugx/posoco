@@ -134,24 +134,24 @@ pub fn schedule(
     }
     let policy = entry.definition.policy
     match policy {
-      @kernel.Exclusive => {
+      Exclusive => {
         flush(waves, current_calls, current_policies)
         waves.push({ calls: [c], policies: [policy], })
       }
-      @kernel.Sequential => {
+      Sequential => {
         flush(waves, current_calls, current_policies)
         current_calls.push(c)
         current_policies.push(policy)
         flush(waves, current_calls, current_policies)
       }
-      @kernel.Parallel => {
+      Parallel => {
         current_calls.push(c)
         current_policies.push(policy)
       }
     }
   }
   flush(waves, current_calls, current_policies)
-  ExecutionPlan::{ waves, }
+  { waves, }
 }
 
 ///|

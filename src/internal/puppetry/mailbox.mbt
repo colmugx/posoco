@@ -87,19 +87,19 @@ pub impl Show for QuiescentStatus with fn to_string(self : QuiescentStatus) -> S
 ///|
 pub fn ControlMailbox::ControlMailbox() -> ControlMailbox {
   {
-    steer_queue: @aqueue.Queue(kind=Unbounded),
-    follow_up_queue: @aqueue.Queue(kind=Unbounded),
+    steer_queue: Queue(kind=Unbounded),
+    follow_up_queue: Queue(kind=Unbounded),
     steer_depth: 0,
     follow_up_depth: 0,
-    fork_queue: @aqueue.Queue(kind=Unbounded),
+    fork_queue: Queue(kind=Unbounded),
     fork_depth: 0,
-    compact_queue: @aqueue.Queue(kind=Unbounded),
+    compact_queue: Queue(kind=Unbounded),
     compact_depth: 0,
     resume_pending: Map::from_array([]),
     abort_requested: false,
     active_run_id: None,
     active_turn_id: None,
-    idle_cond: @cond_var.Cond(),
+    idle_cond: Cond(),
     quiescent_status: Idle,
     max_depth: default_max_queue_depth,
   }
@@ -117,13 +117,13 @@ pub impl Mailbox for ControlMailbox with fn bind_run(
   // `@aqueue.Queue` has no `clear()`: rebuild fresh instances. Old queued
   // commands targeting the previous run are dropped (their command_ids
   // were already Accepted; callers correlate via wait_idle).
-  self.steer_queue = @aqueue.Queue(kind=Unbounded)
-  self.follow_up_queue = @aqueue.Queue(kind=Unbounded)
+  self.steer_queue = Queue(kind=Unbounded)
+  self.follow_up_queue = Queue(kind=Unbounded)
   self.steer_depth = 0
   self.follow_up_depth = 0
-  self.fork_queue = @aqueue.Queue(kind=Unbounded)
+  self.fork_queue = Queue(kind=Unbounded)
   self.fork_depth = 0
-  self.compact_queue = @aqueue.Queue(kind=Unbounded)
+  self.compact_queue = Queue(kind=Unbounded)
   self.compact_depth = 0
   self.resume_pending.clear()
 }
@@ -136,13 +136,13 @@ pub impl Mailbox for ControlMailbox with fn clear_run(self : ControlMailbox) -> 
   self.active_run_id = None
   self.active_turn_id = None
   self.abort_requested = false
-  self.steer_queue = @aqueue.Queue(kind=Unbounded)
-  self.follow_up_queue = @aqueue.Queue(kind=Unbounded)
+  self.steer_queue = Queue(kind=Unbounded)
+  self.follow_up_queue = Queue(kind=Unbounded)
   self.steer_depth = 0
   self.follow_up_depth = 0
-  self.fork_queue = @aqueue.Queue(kind=Unbounded)
+  self.fork_queue = Queue(kind=Unbounded)
   self.fork_depth = 0
-  self.compact_queue = @aqueue.Queue(kind=Unbounded)
+  self.compact_queue = Queue(kind=Unbounded)
   self.compact_depth = 0
   self.resume_pending.clear()
 }

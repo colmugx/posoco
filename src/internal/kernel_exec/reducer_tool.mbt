@@ -11,8 +11,7 @@ fn reduce_awaiting_tools(
     ToolFailed(payload~) => reduce_tool_failed(state, payload)
     CancelRequested(payload~) =>
       reduce_cancel_with_pending(state, payload.detail)
-    DeadlineReached(_) =>
-      reduce_terminal_fail(state, FailureReason::DeadlineReached)
+    DeadlineReached(_) => reduce_terminal_fail(state, DeadlineReached)
     BudgetExhausted(payload~) =>
       reduce_terminal_fail(state, BudgetExhausted(dimension=payload.dimension))
     SuspendRequested(_) =>
@@ -159,16 +158,16 @@ fn reduce_tool_failed(
   let (cat, msg) = match payload.runtime {
     Some(f) =>
       match f {
-        @kernel.Transport(reason~) => ("Transport", reason)
-        @kernel.Runtime(reason~) => ("Runtime", reason)
-        @kernel.Parse(reason~) => ("Parse", reason)
-        @kernel.RequestBuild(reason~) => ("RequestBuild", reason)
-        @kernel.HostRejected(reason~) => ("HostRejected", reason)
-        @kernel.RateLimited(reason~, ..) => ("RateLimited", reason)
+        Transport(reason~) => ("Transport", reason)
+        Runtime(reason~) => ("Runtime", reason)
+        Parse(reason~) => ("Parse", reason)
+        RequestBuild(reason~) => ("RequestBuild", reason)
+        HostRejected(reason~) => ("HostRejected", reason)
+        RateLimited(reason~, ..) => ("RateLimited", reason)
       }
     None => ("Unknown", "no runtime detail supplied")
   }
-  let outcome : @kernel.ToolOutcome = @kernel.RuntimeFailure(
+  let outcome : @kernel.ToolOutcome = RuntimeFailure(
     error_category=cat,
     message=msg,
   )
@@ -265,7 +264,7 @@ fn tool_call_position(
   let mut found : Int? = None
   for message in transcript.messages_snapshot() {
     match message {
-      @kernel.AssistantMessage(tool_calls~, ..) =>
+      AssistantMessage(tool_calls~, ..) =>
         for call in tool_calls {
           if call.call_id == call_id {
             found = Some(position)
@@ -292,14 +291,12 @@ fn insert_tool_message_in_source_order(
   let target_position = match tool_call_position(transcript, call_id) {
     Some(position) => position
     None =>
-      return transcript.append(
-        @kernel.ToolMessage(call_id~, tool_name~, outcome~),
-      )
+      return transcript.append(ToolMessage(call_id~, tool_name~, outcome~))
   }
   let mut assistant_index : Int? = None
   for i, message in messages {
     match message {
-      @kernel.AssistantMessage(tool_calls~, ..) =>
+      AssistantMessage(tool_calls~, ..) =>
         for call in tool_calls {
           if call.call_id == call_id {
             assistant_index = Some(i)
@@ -314,7 +311,7 @@ fn insert_tool_message_in_source_order(
       let mut position = index + 1
       for i in (index + 1)..<messages.length() {
         match messages[i] {
-          @kernel.ToolMessage(call_id=existing_call_id, ..) =>
+          ToolMessage(call_id=existing_call_id, ..) =>
             match tool_call_position(transcript, existing_call_id) {
               Some(existing_position) if existing_position < target_position =>
                 position = i + 1
@@ -424,7 +421,7 @@ fn build_tool_call_ledger(transcript : @kernel.Transcript) -> Map[String, Int] {
   let mut position = 0
   for message in transcript.messages_snapshot() {
     match message {
-      @kernel.AssistantMessage(tool_calls~, ..) =>
+      AssistantMessage(tool_calls~, ..) =>
         for call in tool_calls {
           ledger[call.call_id.to_string()] = position
           position = position + 1
@@ -444,7 +441,7 @@ fn find_owning_assistant_index(
 ) -> Int? {
   for i, message in messages {
     match message {
-      @kernel.AssistantMessage(tool_calls~, ..) => {
+      AssistantMessage(tool_calls~, ..) => {
         let mut matched = false
         for call in tool_calls {
           if staged.contains(call.call_id.to_string()) {
@@ -500,7 +497,7 @@ fn commit_tool_wave(
       let mut remaining_start = idx + 1
       for i in (idx + 1)..<messages.length() {
         match messages[i] {
-          @kernel.ToolMessage(call_id~, tool_name~, outcome~) => {
+          ToolMessage(call_id~, tool_name~, outcome~) => {
             let pos = match ledger.get(call_id.to_string()) {
               Some(p) => p
               None => missing_tool_position
@@ -524,7 +521,7 @@ fn commit_tool_wave(
       sort_tool_records_by_position(combined)
       for record in combined {
         let (call_id, tool_name, outcome, _) = record
-        new_messages.push(@kernel.ToolMessage(call_id~, tool_name~, outcome~))
+        new_messages.push(ToolMessage(call_id~, tool_name~, outcome~))
       }
       // Append remaining messages (e.g. rewrites after the assistant).
       for i in remaining_start..<messages.length() {
@@ -538,7 +535,7 @@ fn commit_tool_wave(
       }
       for record in staged_records {
         let (call_id, tool_name, outcome, _) = record
-        new_messages.push(@kernel.ToolMessage(call_id~, tool_name~, outcome~))
+        new_messages.push(ToolMessage(call_id~, tool_name~, outcome~))
       }
     }
   }

@@ -20,7 +20,7 @@ impl @port.ModelPort for MockModelPort with fn chat(
     self.index = self.index + 1
     resp
   } else {
-    raise @error.ModelError::Transport("no more responses")
+    raise Transport("no more responses")
   }
 }
 
@@ -32,9 +32,7 @@ impl @port.ModelPort for MockModelPort with fn compact(
   _options : @types.ChatOptions,
   _trigger : @kernel.CompactTrigger,
 ) -> @kernel.CompactResult raise @error.ModelError {
-  raise @error.ModelError::ResponseParse(
-    "MockModelPort does not implement compact",
-  )
+  raise ResponseParse("MockModelPort does not implement compact")
 }
 
 ///|
@@ -64,8 +62,7 @@ impl @port.ToolProvider for MockToolProvider with fn execute(
   match self.results.get(name) {
     Some(Ok(r)) => r
     Some(Err(e)) => raise e
-    None =>
-      raise @error.RuntimeError::InvocationFailed("tool not found: \{name}")
+    None => raise InvocationFailed("tool not found: \{name}")
   }
 }
 
@@ -143,27 +140,27 @@ fn make_config() -> AgentConfig {
 
 ///|
 fn user_msg(text : String) -> @kernel.Message {
-  @kernel.UserMessage(content=[@kernel.Text(text)])
+  UserMessage(content=[Text(text)])
 }
 
 ///|
 fn _assistant_msg(text : String) -> @kernel.Message {
-  @kernel.AssistantMessage(
-    content=[@kernel.Text(text)],
+  AssistantMessage(
+    content=[Text(text)],
     tool_calls=[],
     reasoning=None,
-    finish_reason=@kernel.Stop,
+    finish_reason=Stop,
   )
 }
 
 ///|
 fn stop_response(text : String) -> @kernel.ModelCallResult {
   {
-    completion: @kernel.Completion(
-      content=[@kernel.Text(text)],
+    completion: Completion(
+      content=[Text(text)],
       tool_calls=[],
       reasoning=None,
-      finish_reason=@kernel.Stop,
+      finish_reason=Stop,
       usage=None,
     ),
     processed_messages: [],
@@ -174,11 +171,11 @@ fn stop_response(text : String) -> @kernel.ModelCallResult {
 fn tool_response(
   tool_calls : Array[@kernel.ToolCall],
 ) -> @kernel.ModelCallResult {
-  let completion : @kernel.Completion = @kernel.Completion(
+  let completion : @kernel.Completion = Completion(
     content=[],
     tool_calls~,
     reasoning=None,
-    finish_reason=@kernel.ToolCalls,
+    finish_reason=ToolCalls,
     usage=None,
   )
   { completion, processed_messages: [], }
@@ -196,7 +193,7 @@ fn make_tool_call(id : String, name : String) -> @kernel.ToolCall {
 ///|
 /// Helper: empty tool provider (no tools, no execution)
 fn empty_tools() -> MockToolProvider {
-  MockToolProvider::{ tools: [], results: Map::from_array([]), }
+  { tools: [], results: Map::from_array([]), }
 }
 
 ///|
@@ -232,17 +229,17 @@ async test "turn_with_single_tool" {
   }
   let tools = MockToolProvider::{
     tools: [
-      @kernel.ToolDef(
+      ToolDef(
         name=@kernel.ToolName::unchecked("bash"),
         description="run a cmd",
         input_schema=Json::null(),
         owner=@kernel.OwnerId::unchecked("legacy_provider"),
-        policy=@kernel.Parallel,
+        policy=Parallel,
         provenance=None,
       ),
     ],
     results: Map::from_array([
-      ("bash", Ok(@kernel.Success(content="ok", structured=None))),
+      ("bash", Ok(Success(content="ok", structured=None))),
     ]),
   }
   let store = MockSessionStore::{ store: Map::from_array([]), }
@@ -260,10 +257,10 @@ async test "turn_with_single_tool" {
   assert_eq(result.tool_results.length(), 1)
   let outcome = result.tool_results[0]
   let content0 = match outcome {
-    @kernel.Success(content~, ..) => content
-    @kernel.ToolReportedError(content~, ..) => content
-    @kernel.RuntimeFailure(message~, ..) => message
-    @kernel.NotExecuted(..) => "<not executed>"
+    Success(content~, ..) => content
+    ToolReportedError(content~, ..) => content
+    RuntimeFailure(message~, ..) => message
+    NotExecuted(..) => "<not executed>"
   }
   assert_eq(content0, "ok")
 }
@@ -277,18 +274,16 @@ async test "tool_failure_non_fatal" {
   }
   let tools = MockToolProvider::{
     tools: [
-      @kernel.ToolDef(
+      ToolDef(
         name=@kernel.ToolName::unchecked("bash"),
         description="",
         input_schema=Json::null(),
         owner=@kernel.OwnerId::unchecked("legacy_provider"),
-        policy=@kernel.Parallel,
+        policy=Parallel,
         provenance=None,
       ),
     ],
-    results: Map::from_array([
-      ("bash", Err(@error.RuntimeError::InvocationFailed("boom"))),
-    ]),
+    results: Map::from_array([("bash", Err(InvocationFailed("boom")))]),
   }
   let store = MockSessionStore::{ store: Map::from_array([]), }
   let observer = MockObserver::{ events: [], }
@@ -324,7 +319,7 @@ async test "model_error_aborts_turn" {
   )
   match
     (Ok(agent.run_turn(user_msg("ping"), "session_1")) catch { e => Err(e) }) {
-    Err(@error.AgentError::Model(_)) => ()
+    Err(Model(_)) => ()
     _ => fail("expected Model error")
   }
 }
@@ -338,17 +333,17 @@ async test "hook_reject_skips_tool_and_feeds_back" {
   }
   let tools = RecordingExecProvider::{
     tools: [
-      @kernel.ToolDef(
+      ToolDef(
         name=@kernel.ToolName::unchecked("bash"),
         description="",
         input_schema=Json::null(),
         owner=@kernel.OwnerId::unchecked("legacy_provider"),
-        policy=@kernel.Parallel,
+        policy=Parallel,
         provenance=None,
       ),
     ],
     results: Map::from_array([
-      ("bash", Ok(@kernel.Success(content="ok", structured=None))),
+      ("bash", Ok(Success(content="ok", structured=None))),
     ]),
     executed: [],
   }
@@ -372,7 +367,7 @@ async test "hook_reject_skips_tool_and_feeds_back" {
   // ...and came back as a NotExecuted result instead of killing the turn.
   assert_eq(result.tool_results.length(), 1)
   guard result.tool_results[0]
-    is @kernel.NotExecuted(reason=@kernel.RejectedByHook(reason~), ..) else {
+    is NotExecuted(reason=RejectedByHook(reason~), ..) else {
     fail("expected NotExecuted(RejectedByHook) for the rejected call")
   }
   assert_true(reason.contains("blocked by policy"))
@@ -412,7 +407,7 @@ async test "hook_reject_steers_model_to_allowed_tool" {
   let tools = RecordingExecProvider::{
     tools: [tk_tool_def("bash", "shell"), tk_tool_def("read", "read files")],
     results: Map::from_array([
-      ("read", Ok(@kernel.Success(content="file contents", structured=None))),
+      ("read", Ok(Success(content="file contents", structured=None))),
     ]),
     executed: [],
   }
@@ -436,10 +431,9 @@ async test "hook_reject_steers_model_to_allowed_tool" {
   assert_eq(tools.executed, ["read"])
   assert_eq(result.tool_results.length(), 2)
   assert_true(
-    result.tool_results[0]
-    is @kernel.NotExecuted(reason=@kernel.RejectedByHook(..), ..),
+    result.tool_results[0] is NotExecuted(reason=RejectedByHook(..), ..),
   )
-  assert_true(result.tool_results[1] is @kernel.Success(..))
+  assert_true(result.tool_results[1] is Success(..))
 }
 
 ///|
@@ -459,7 +453,7 @@ async fn run_bash_with_hooks(
   let tools = RecordingExecProvider::{
     tools: [tk_tool_def("bash", "shell")],
     results: Map::from_array([
-      ("bash", Ok(@kernel.Success(content="ran", structured=None))),
+      ("bash", Ok(Success(content="ran", structured=None))),
     ]),
     executed: [],
   }
@@ -484,7 +478,7 @@ async test "hook_consent_overrides_gate_reject_in_registration_order" {
   ])
   assert_eq(tools.executed, ["bash"])
   assert_eq(result.tool_results.length(), 1)
-  assert_true(result.tool_results[0] is @kernel.Success(..))
+  assert_true(result.tool_results[0] is Success(..))
 }
 
 ///|
@@ -495,7 +489,7 @@ async test "hook_consent_overrides_gate_reject_in_reverse_order" {
     ConsentToolHook::{ scope: "bash:ego-browser", },
   ])
   assert_eq(tools.executed, ["bash"])
-  assert_true(result.tool_results[0] is @kernel.Success(..))
+  assert_true(result.tool_results[0] is Success(..))
 }
 
 ///|
@@ -507,7 +501,7 @@ async test "hook_multiple_rejects_merge_reasons" {
   ])
   assert_eq(tools.executed.length(), 0)
   guard result.tool_results[0]
-    is @kernel.NotExecuted(reason=@kernel.RejectedByHook(reason~), ..) else {
+    is NotExecuted(reason=RejectedByHook(reason~), ..) else {
     fail("expected NotExecuted(RejectedByHook)")
   }
   assert_true(reason.contains("plan mode"))
@@ -538,8 +532,7 @@ impl @port.ToolProvider for RecordingExecProvider with fn execute(
   match self.results.get(name) {
     Some(Ok(r)) => r
     Some(Err(e)) => raise e
-    None =>
-      raise @error.RuntimeError::InvocationFailed("tool not found: \{name}")
+    None => raise InvocationFailed("tool not found: \{name}")
   }
 }
 
@@ -572,23 +565,23 @@ async test "async_before_tool_gates_tool_wave" {
   }
   let tools = RecordingExecProvider::{
     tools: [
-      @kernel.ToolDef(
+      ToolDef(
         name=@kernel.ToolName::unchecked("echo"),
         description="",
         input_schema=Json::null(),
         owner=@kernel.OwnerId::unchecked("legacy_provider"),
-        policy=@kernel.Parallel,
+        policy=Parallel,
         provenance=None,
       ),
     ],
     results: Map::from_array([
-      ("echo", Ok(@kernel.Success(content="echoed", structured=None))),
+      ("echo", Ok(Success(content="echoed", structured=None))),
     ]),
     executed: [],
   }
   let store = MockSessionStore::{ store: Map::from_array([]), }
-  let entered : @aqueue.Queue[Int] = @aqueue.Queue(kind=@aqueue.Unbounded)
-  let release : @aqueue.Queue[Int] = @aqueue.Queue(kind=@aqueue.Unbounded)
+  let entered : @aqueue.Queue[Int] = Queue(kind=Unbounded)
+  let release : @aqueue.Queue[Int] = Queue(kind=Unbounded)
   let gate_hook = GateHook::{ entered, release, }
   let agent = Agent(
     exts=[
@@ -641,17 +634,17 @@ async test "hook_before_tool_raise_aborts_run" {
   }
   let tools = MockToolProvider::{
     tools: [
-      @kernel.ToolDef(
+      ToolDef(
         name=@kernel.ToolName::unchecked("bash"),
         description="",
         input_schema=Json::null(),
         owner=@kernel.OwnerId::unchecked("legacy_provider"),
-        policy=@kernel.Parallel,
+        policy=Parallel,
         provenance=None,
       ),
     ],
     results: Map::from_array([
-      ("bash", Ok(@kernel.Success(content="ok", structured=None))),
+      ("bash", Ok(Success(content="ok", structured=None))),
     ]),
   }
   let store = MockSessionStore::{ store: Map::from_array([]), }
@@ -666,7 +659,7 @@ async test "hook_before_tool_raise_aborts_run" {
   )
   match
     (Ok(agent.run_turn(user_msg("danger"), "session_1")) catch { e => Err(e) }) {
-    Err(@error.AgentError::PipelineAborted(msg)) =>
+    Err(PipelineAborted(msg)) =>
       assert_true(msg.contains("pre_tool_hook raised"))
     _ => fail("expected PipelineAborted from raising before_tool")
   }
@@ -689,14 +682,11 @@ async test "reasoning_raw_replayed_verbatim_into_saved_session" {
   let model = MockModelPort::{
     responses: [
       {
-        completion: @kernel.Completion(
-          content=[@kernel.Text("done")],
+        completion: Completion(
+          content=[Text("done")],
           tool_calls=[],
-          reasoning=Some(@kernel.Reasoning::{
-            content: "thinking",
-            raw: Some(raw_items),
-          }),
-          finish_reason=@kernel.Stop,
+          reasoning=Some({ content: "thinking", raw: Some(raw_items), }),
+          finish_reason=Stop,
           usage=None,
         ),
         processed_messages: [],
@@ -718,7 +708,7 @@ async test "reasoning_raw_replayed_verbatim_into_saved_session" {
   let mut found = false
   for msg in session.messages {
     match msg {
-      @kernel.AssistantMessage(reasoning=Some(r), ..) => {
+      AssistantMessage(reasoning=Some(r), ..) => {
         found = true
         assert_eq(r.raw, Some(raw_items))
       }
@@ -738,17 +728,17 @@ async test "tool_loop_exceeded" {
   }
   let tools = MockToolProvider::{
     tools: [
-      @kernel.ToolDef(
+      ToolDef(
         name=@kernel.ToolName::unchecked("bash"),
         description="",
         input_schema=Json::null(),
         owner=@kernel.OwnerId::unchecked("legacy_provider"),
-        policy=@kernel.Parallel,
+        policy=Parallel,
         provenance=None,
       ),
     ],
     results: Map::from_array([
-      ("bash", Ok(@kernel.Success(content="ok", structured=None))),
+      ("bash", Ok(Success(content="ok", structured=None))),
     ]),
   }
   let store = MockSessionStore::{ store: Map::from_array([]), }
@@ -764,7 +754,7 @@ async test "tool_loop_exceeded" {
   )
   match
     (Ok(agent.run_turn(user_msg("loop"), "session_1")) catch { e => Err(e) }) {
-    Err(@error.AgentError::ToolLoopExceeded(..)) => ()
+    Err(ToolLoopExceeded(..)) => ()
     _ => fail("expected ToolLoopExceeded")
   }
 }
@@ -787,9 +777,7 @@ async test "unbounded_tool_rounds_complete_long_turn" {
   let model = ScriptedModel(steps)
   let tools = RecordingToolProvider(
     [tk_tool_def("probe", "")],
-    Map::from_array([
-      ("probe", ScriptedToolOutcome::OutcomeOk(tk_ok_result("ok"))),
-    ]),
+    Map::from_array([("probe", OutcomeOk(tk_ok_result("ok")))]),
   )
   let store = RecordingSessionStore()
   let observer = RecordingObserver()
@@ -806,7 +794,7 @@ async test "unbounded_tool_rounds_complete_long_turn" {
   assert_eq(tools.exec_records().length(), rounds)
   let mut completions = 0
   for event in observer.events() {
-    if event is @types.TurnEvent::TurnCompleted {
+    if event is TurnCompleted {
       completions = completions + 1
     }
   }
@@ -827,9 +815,7 @@ async test "bounded_tool_rounds_allows_exactly_n_rounds" {
   let model = ScriptedModel(steps)
   let tools = RecordingToolProvider(
     [tk_tool_def("probe", "")],
-    Map::from_array([
-      ("probe", ScriptedToolOutcome::OutcomeOk(tk_ok_result("ok"))),
-    ]),
+    Map::from_array([("probe", OutcomeOk(tk_ok_result("ok")))]),
   )
   let store = RecordingSessionStore()
   let observer = RecordingObserver()
@@ -844,7 +830,7 @@ async test "bounded_tool_rounds_allows_exactly_n_rounds" {
     (Ok(agent.run_turn(tk_user_msg("loop"), "session_bounded")) catch {
       e => Err(e)
     }) {
-    Err(@error.AgentError::ToolLoopExceeded(consumed~, limit~)) => {
+    Err(ToolLoopExceeded(consumed~, limit~)) => {
       assert_eq(consumed, 3)
       assert_eq(limit, 2)
     }
@@ -864,17 +850,17 @@ async test "observer_event_sequence" {
   }
   let tools = MockToolProvider::{
     tools: [
-      @kernel.ToolDef(
+      ToolDef(
         name=@kernel.ToolName::unchecked("bash"),
         description="",
         input_schema=Json::null(),
         owner=@kernel.OwnerId::unchecked("legacy_provider"),
-        policy=@kernel.Parallel,
+        policy=Parallel,
         provenance=None,
       ),
     ],
     results: Map::from_array([
-      ("bash", Ok(@kernel.Success(content="seq", structured=None))),
+      ("bash", Ok(Success(content="seq", structured=None))),
     ]),
   }
   let store = MockSessionStore::{ store: Map::from_array([]), }
@@ -937,10 +923,9 @@ async test "session_persistence" {
   if store.store.contains("session_1") {
     let session = store.store["session_1"]
     assert_true(session.messages.length() >= 2)
-    assert_true(session.messages[0] is @kernel.UserMessage(_))
+    assert_true(session.messages[0] is UserMessage(_))
     assert_true(
-      session.messages[session.messages.length() - 1]
-      is @kernel.AssistantMessage(..),
+      session.messages[session.messages.length() - 1] is AssistantMessage(..),
     )
   } else {
     fail("session not saved in store")
@@ -957,9 +942,7 @@ impl @port.PipelineHook for RewriteModelHook with fn before_model(
   _self,
   messages : Array[@kernel.Message],
 ) -> Array[@kernel.Message] raise @port.HookAbort {
-  let system_msg = @kernel.SystemMessage(content=[
-    @kernel.Text("SYSTEM: rewritten"),
-  ])
+  let system_msg = @kernel.SystemMessage(content=[Text("SYSTEM: rewritten")])
   let new_msgs = [system_msg]
   for m in messages {
     new_msgs.push(m)
@@ -995,7 +978,7 @@ async test "hook_rewrites_before_model_messages" {
   assert_eq(result.final_session_id, "session_1")
   let session = store.store["session_1"]
   assert_true(session.messages.length() >= 2)
-  assert_true(session.messages[0] is @kernel.SystemMessage(_))
+  assert_true(session.messages[0] is SystemMessage(_))
 }
 
 ///|
@@ -1027,17 +1010,17 @@ async test "hook_deferred_skips_execution" {
   }
   let tools = MockToolProvider::{
     tools: [
-      @kernel.ToolDef(
+      ToolDef(
         name=@kernel.ToolName::unchecked("restricted"),
         description="",
         input_schema=Json::null(),
         owner=@kernel.OwnerId::unchecked("legacy_provider"),
-        policy=@kernel.Parallel,
+        policy=Parallel,
         provenance=None,
       ),
     ],
     results: Map::from_array([
-      ("restricted", Ok(@kernel.Success(content="executed", structured=None))),
+      ("restricted", Ok(Success(content="executed", structured=None))),
     ]),
   }
   let store = MockSessionStore::{ store: Map::from_array([]), }
@@ -1057,7 +1040,7 @@ async test "hook_deferred_skips_execution" {
     e => Err(e)
   }
   match result {
-    Err(@error.AgentError::PipelineAborted(msg)) =>
+    Err(PipelineAborted(msg)) =>
       assert_true(msg.contains("defer not yet supported"))
     _ => fail("expected PipelineAborted for unsupported Defer decision")
   }
@@ -1089,17 +1072,17 @@ async test "hook_default_methods_pass_through" {
   }
   let tools = MockToolProvider::{
     tools: [
-      @kernel.ToolDef(
+      ToolDef(
         name=@kernel.ToolName::unchecked("echo"),
         description="",
         input_schema=Json::null(),
         owner=@kernel.OwnerId::unchecked("legacy_provider"),
-        policy=@kernel.Parallel,
+        policy=Parallel,
         provenance=None,
       ),
     ],
     results: Map::from_array([
-      ("echo", Ok(@kernel.Success(content="echoed", structured=None))),
+      ("echo", Ok(Success(content="echoed", structured=None))),
     ]),
   }
   let store = MockSessionStore::{ store: Map::from_array([]), }
@@ -1118,13 +1101,13 @@ async test "hook_default_methods_pass_through" {
   // The default before_model passed the messages through unchanged: the
   // first transcript entry is still the original user message.
   match session.messages[0] {
-    @kernel.UserMessage(content~) =>
+    UserMessage(content~) =>
       assert_true(
         content
         .iter()
         .any(fn(part) {
           match part {
-            @kernel.Text(t) => t == "hello"
+            Text(t) => t == "hello"
             _ => false
           }
         }),
@@ -1145,17 +1128,17 @@ async test "hook_single_impl_receives_all_points" {
   }
   let tools = MockToolProvider::{
     tools: [
-      @kernel.ToolDef(
+      ToolDef(
         name=@kernel.ToolName::unchecked("echo"),
         description="",
         input_schema=Json::null(),
         owner=@kernel.OwnerId::unchecked("legacy_provider"),
-        policy=@kernel.Parallel,
+        policy=Parallel,
         provenance=None,
       ),
     ],
     results: Map::from_array([
-      ("echo", Ok(@kernel.Success(content="echoed", structured=None))),
+      ("echo", Ok(Success(content="echoed", structured=None))),
     ]),
   }
   let hook = RecordingHook()
@@ -1188,32 +1171,32 @@ async test "agent_routes_tools_to_correct_provider" {
   }
   let shell_tools = MockToolProvider::{
     tools: [
-      @kernel.ToolDef(
+      ToolDef(
         name=@kernel.ToolName::unchecked("bash"),
         description="run cmd",
         input_schema=Json::null(),
         owner=@kernel.OwnerId::unchecked("legacy_provider"),
-        policy=@kernel.Parallel,
+        policy=Parallel,
         provenance=Some("host"),
       ),
     ],
     results: Map::from_array([
-      ("bash", Ok(@kernel.Success(content="shell ok", structured=None))),
+      ("bash", Ok(Success(content="shell ok", structured=None))),
     ]),
   }
   let mcp_tools = MockToolProvider::{
     tools: [
-      @kernel.ToolDef(
+      ToolDef(
         name=@kernel.ToolName::unchecked("mcp__read"),
         description="read file",
         input_schema=Json::null(),
         owner=@kernel.OwnerId::unchecked("legacy_provider"),
-        policy=@kernel.Parallel,
+        policy=Parallel,
         provenance=Some("mcp"),
       ),
     ],
     results: Map::from_array([
-      ("mcp__read", Ok(@kernel.Success(content="mcp ok", structured=None))),
+      ("mcp__read", Ok(Success(content="mcp ok", structured=None))),
     ]),
   }
   let store = MockSessionStore::{ store: Map::from_array([]), }
@@ -1232,11 +1215,11 @@ async test "agent_routes_tools_to_correct_provider" {
   let result = agent.run_turn(user_msg("run both"), "session_1")
   assert_eq(result.tool_results.length(), 2)
   let content_first = match result.tool_results[0] {
-    @kernel.Success(content~, ..) => content
+    Success(content~, ..) => content
     _ => "<other>"
   }
   let content_second = match result.tool_results[1] {
-    @kernel.Success(content~, ..) => content
+    Success(content~, ..) => content
     _ => "<other>"
   }
   assert_eq(content_first, "shell ok")
@@ -1248,12 +1231,12 @@ async test "agent_routes_tools_to_correct_provider" {
 async test "agent_tool_collision_detection" {
   let provider1 = MockToolProvider::{
     tools: [
-      @kernel.ToolDef(
+      ToolDef(
         name=@kernel.ToolName::unchecked("bash"),
         description="v1",
         input_schema=Json::null(),
         owner=@kernel.OwnerId::unchecked("legacy_provider"),
-        policy=@kernel.Parallel,
+        policy=Parallel,
         provenance=None,
       ),
     ],
@@ -1261,17 +1244,17 @@ async test "agent_tool_collision_detection" {
   }
   let provider2 = MockToolProvider::{
     tools: [
-      @kernel.ToolDef(
+      ToolDef(
         name=@kernel.ToolName::unchecked("bash"),
         description="v2",
         input_schema=Json::null(),
         owner=@kernel.OwnerId::unchecked("legacy_provider"),
-        policy=@kernel.Parallel,
+        policy=Parallel,
         provenance=None,
       ),
     ],
     results: Map::from_array([
-      ("bash", Ok(@kernel.Success(content="v2 wins", structured=None))),
+      ("bash", Ok(Success(content="v2 wins", structured=None))),
     ]),
   }
   let model = MockModelPort::{ responses: [stop_response("ok")], index: 0, }
@@ -1294,8 +1277,7 @@ async test "agent_tool_collision_detection" {
     e => Err(e)
   }
   match composition_result {
-    Err(@error.CompositionError::ToolCollision(name, _msg, ..)) =>
-      assert_eq(name, "bash")
+    Err(ToolCollision(name, _msg, ..)) => assert_eq(name, "bash")
     _ => fail("expected CompositionError::ToolCollision for duplicate 'bash'")
   }
 }
@@ -1319,11 +1301,11 @@ impl @port.ModelPort for MockStreamingModelPort with fn chat(
   stream : @types.StreamMode,
 ) -> @kernel.ModelCallResult raise @error.ModelError {
   match stream {
-    @types.Stream(cb) =>
+    Stream(cb) =>
       for chunk in self.chunks {
         cb(chunk)
       }
-    @types.NoStream => ()
+    NoStream => ()
   }
   self.final_response
 }
@@ -1336,9 +1318,7 @@ impl @port.ModelPort for MockStreamingModelPort with fn compact(
   _options : @types.ChatOptions,
   _trigger : @kernel.CompactTrigger,
 ) -> @kernel.CompactResult raise @error.ModelError {
-  raise @error.ModelError::ResponseParse(
-    "MockStreamingModelPort does not implement compact",
-  )
+  raise ResponseParse("MockStreamingModelPort does not implement compact")
 }
 
 ///|
@@ -1349,16 +1329,16 @@ impl @port.ModelPort for MockStreamingModelPort with fn provider_config(_self) -
 ///|
 async test "streaming_events_emitted_during_chat" {
   let chunks : Array[@types.StreamChunk] = [
-    @types.TextDelta(token="Hello"),
-    @types.TextDelta(token=" world"),
-    @types.Usage(
+    TextDelta(token="Hello"),
+    TextDelta(token=" world"),
+    Usage(
       input_tokens=10,
       output_tokens=5,
       total_tokens=15,
       cached_input_tokens=None,
       uncached_input_tokens=None,
     ),
-    @types.Finish(reason="stop"),
+    Finish(reason="stop"),
   ]
   let final_response = stop_response("Hello world")
   let model = MockStreamingModelPort::{ chunks, final_response, }
@@ -1407,11 +1387,11 @@ async test "streaming_events_emitted_during_chat" {
 ///|
 async test "stream_accumulator_assembles_completion" {
   let acc = @types.StreamAccumulator()
-  acc.push(@types.TextDelta(token="Hi"))
-  acc.push(@types.TextDelta(token=" there"))
-  acc.push(@types.ReasoningDelta(token="thinking"))
+  acc.push(TextDelta(token="Hi"))
+  acc.push(TextDelta(token=" there"))
+  acc.push(ReasoningDelta(token="thinking"))
   acc.push(
-    @types.ToolCallDelta(
+    ToolCallDelta(
       index=0,
       id=Some("tc1"),
       name=Some("bash"),
@@ -1419,15 +1399,10 @@ async test "stream_accumulator_assembles_completion" {
     ),
   )
   acc.push(
-    @types.ToolCallDelta(
-      index=0,
-      id=None,
-      name=None,
-      arguments_delta=Some(":\"ls\"}"),
-    ),
+    ToolCallDelta(index=0, id=None, name=None, arguments_delta=Some(":\"ls\"}")),
   )
   acc.push(
-    @types.Usage(
+    Usage(
       input_tokens=10,
       output_tokens=20,
       total_tokens=30,
@@ -1435,7 +1410,7 @@ async test "stream_accumulator_assembles_completion" {
       uncached_input_tokens=None,
     ),
   )
-  acc.push(@types.Finish(reason="tool_calls"))
+  acc.push(Finish(reason="tool_calls"))
 
   let resp = acc.to_completion()
   let msg = resp.message
@@ -1443,7 +1418,7 @@ async test "stream_accumulator_assembles_completion" {
   assert_eq(msg.tool_calls.length(), 1)
   assert_eq(msg.tool_calls[0].call_id.to_string(), "tc1")
   assert_eq(msg.tool_calls[0].name.to_string(), "bash")
-  assert_true(msg.finish_reason is @kernel.ToolCalls)
+  assert_true(msg.finish_reason is ToolCalls)
   assert_true(resp.usage is Some(_))
   assert_true(msg.reasoning is Some(_))
 }
@@ -1670,7 +1645,7 @@ async test "noop_command_port_returns_empty_and_raises_notfound" {
   assert_eq(port.commands().length(), 0)
   match
     (Ok(port.invoke("anything", Json::empty_object())) catch { e => Err(e) }) {
-    Err(@error.CommandError::NotFound(id)) => assert_eq(id, "anything")
+    Err(NotFound(id)) => assert_eq(id, "anything")
     Err(_) => fail("expected NotFound")
     Ok(_) => fail("expected raise")
   }
@@ -1715,12 +1690,12 @@ async test "hook_turn_error_fires_on_before_tool_abort" {
   let model = MockModelPort::{ responses: [tool_response([tc])], index: 0, }
   let tools = MockToolProvider::{
     tools: [
-      @kernel.ToolDef(
+      ToolDef(
         name=@kernel.ToolName::unchecked("bash"),
         description="",
         input_schema=Json::null(),
         owner=@kernel.OwnerId::unchecked("legacy_provider"),
-        policy=@kernel.Parallel,
+        policy=Parallel,
         provenance=None,
       ),
     ],
@@ -1761,7 +1736,7 @@ async test "hook_turn_error_fires_on_before_tool_abort" {
 test "catalog: declared execution policy survives composition" {
   let exclusive_def : @kernel.ToolDef = {
     ..tk_tool_def("mutating_tool", "mutates files"),
-    policy: @kernel.Exclusive,
+    policy: Exclusive,
     provenance: Some("policy_wbtest"),
   }
   let parallel_def : @kernel.ToolDef = {
@@ -1787,9 +1762,8 @@ fn tool_event_trace(events : Array[@types.TurnEvent]) -> Array[String] {
   let trace : Array[String] = []
   for event in events {
     match event {
-      @types.TurnEvent::ToolCallPending(call) =>
-        trace.push("pending:\{call.call_id.to_string()}")
-      @types.TurnEvent::ToolCallResult(call~, ..) =>
+      ToolCallPending(call) => trace.push("pending:\{call.call_id.to_string()}")
+      ToolCallResult(call~, ..) =>
         trace.push("result:\{call.call_id.to_string()}")
       _ => ()
     }
@@ -1844,7 +1818,7 @@ async test "all_rejected_wave_unknown_tool_completes_with_paired_events" {
   // The model's rejected call is in the transcript as a NotExecuted result.
   assert_eq(turn.tool_results.length(), 1)
   match turn.tool_results[0] {
-    @kernel.NotExecuted(reason=@kernel.UnknownTool, ..) => ()
+    NotExecuted(reason=UnknownTool, ..) => ()
     _ => fail("expected NotExecuted(UnknownTool) in turn tool_results")
   }
   assert_eq(tools.exec_records().length(), 0)
@@ -1877,7 +1851,7 @@ async test "all_rejected_wave_schema_mismatch_completes_with_paired_events" {
   let turn = agent.run_turn(tk_user_msg("bad args"), "session_schema")
   assert_eq(turn.tool_results.length(), 1)
   match turn.tool_results[0] {
-    @kernel.NotExecuted(reason=@kernel.SchemaMismatch(..), ..) => ()
+    NotExecuted(reason=SchemaMismatch(..), ..) => ()
     _ => fail("expected NotExecuted(SchemaMismatch) in turn tool_results")
   }
   assert_eq(tools.exec_records().length(), 0)
@@ -1897,9 +1871,7 @@ async test "mixed_wave_executes_and_rejects_with_paired_events" {
   ])
   let tools = RecordingToolProvider(
     [tk_tool_def("probe", "")],
-    Map::from_array([
-      ("probe", ScriptedToolOutcome::OutcomeOk(tk_ok_result("ok"))),
-    ]),
+    Map::from_array([("probe", OutcomeOk(tk_ok_result("ok")))]),
   )
   let store = RecordingSessionStore()
   let observer = RecordingObserver()
@@ -1919,9 +1891,8 @@ async test "mixed_wave_executes_and_rejects_with_paired_events" {
   let mut saw_not_executed = false
   for outcome in turn.tool_results {
     match outcome {
-      @kernel.Success(..) => saw_success = true
-      @kernel.NotExecuted(reason=@kernel.UnknownTool, ..) =>
-        saw_not_executed = true
+      Success(..) => saw_success = true
+      NotExecuted(reason=UnknownTool, ..) => saw_not_executed = true
       _ => ()
     }
   }

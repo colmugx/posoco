@@ -202,21 +202,18 @@ pub fn BudgetConsumed::exceeded(
   proof_ensure: result => exceeded_post(self, limit, result),
 } {
   match limit.max_model_steps {
-    Some(max) if self.model_steps > max => Exceeded(BudgetDimension::ModelSteps)
+    Some(max) if self.model_steps > max => Exceeded(ModelSteps)
     _ =>
       match limit.max_tool_rounds {
-        Some(max) if self.tool_rounds > max =>
-          Exceeded(BudgetDimension::ToolRounds)
+        Some(max) if self.tool_rounds > max => Exceeded(ToolRounds)
         _ =>
           match limit.max_tool_calls {
-            Some(max) if self.tool_calls > max =>
-              Exceeded(BudgetDimension::ToolCalls)
+            Some(max) if self.tool_calls > max => Exceeded(ToolCalls)
             _ =>
               match limit.max_total_tokens {
-                Some(_) if !self.any_usage_verified =>
-                  UnknownUsage(BudgetDimension::TotalTokens)
+                Some(_) if !self.any_usage_verified => UnknownUsage(TotalTokens)
                 Some(max) if self.observed_total_tokens >= max =>
-                  Exceeded(BudgetDimension::TotalTokens)
+                  Exceeded(TotalTokens)
                 _ => WithinBudget
               }
           }

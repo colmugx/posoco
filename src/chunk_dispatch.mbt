@@ -31,7 +31,7 @@ fn ChunkDispatcher::ChunkDispatcher(
   observers : Array[&@port.Observer],
 ) -> ChunkDispatcher {
   {
-    queue: @aqueue.Queue(kind=@aqueue.Blocking(chunk_queue_capacity)),
+    queue: Queue(kind=Blocking(chunk_queue_capacity)),
     depth: 0,
     dropped: 0,
     observers,
@@ -45,7 +45,7 @@ fn ChunkDispatcher::enqueue(
   self : ChunkDispatcher,
   chunk : @types.StreamChunk,
 ) -> Unit {
-  let event : @types.TurnEvent = @types.StreamChunkReceived(chunk~)
+  let event : @types.TurnEvent = StreamChunkReceived(chunk~)
   let put_ok : Bool = self.queue.try_put(event) catch {
     _ =>
       // Queue closed (turn already terminal) — drop silently.
@@ -101,7 +101,7 @@ fn ChunkDispatcher::flush(self : ChunkDispatcher) -> Unit {
   if self.dropped > 0 {
     let count = self.dropped
     self.dropped = 0
-    self.emit(@types.StreamChunksDropped(count~))
+    self.emit(StreamChunksDropped(count~))
   }
 }
 
@@ -123,7 +123,7 @@ async fn ChunkDispatcher::drain_loop(self : ChunkDispatcher) -> Unit {
     if self.depth < chunk_queue_capacity && self.dropped > 0 {
       let count = self.dropped
       self.dropped = 0
-      self.emit(@types.StreamChunksDropped(count~))
+      self.emit(StreamChunksDropped(count~))
     }
   }
 }

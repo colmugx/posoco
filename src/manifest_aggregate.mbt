@@ -92,7 +92,7 @@ fn aggregate_extensions(
   exts : Array[&@port.Extension],
 ) -> AggregatedPorts raise @error.CompositionError {
   if exts.length() == 0 {
-    raise @error.CompositionError::EmptyManifests
+    raise EmptyManifests
   }
   // Per-port collectors.
   let models : Array[&@port.ModelPort] = []
@@ -112,7 +112,7 @@ fn aggregate_extensions(
     let manifest = ext.manifest()
     let mid = manifest.id
     if mid == "" {
-      raise @error.CompositionError::ManifestSchemaError(
+      raise ManifestSchemaError(
         manifest_id="",
         detail="extension returned a manifest with empty id",
       )
@@ -139,7 +139,7 @@ fn aggregate_extensions(
           Some(labels) => {
             let manifests = labels.copy()
             manifests.push(mid)
-            raise @error.CompositionError::ToolCollision(
+            raise ToolCollision(
               name,
               tool_collision_message(labels[0], source_label),
               manifests~,
@@ -157,10 +157,7 @@ fn aggregate_extensions(
         if command_manifests.contains(cid) {
           let existing = command_manifests[cid]
           existing.push(mid)
-          raise @error.CompositionError::CommandCollision(
-            cid,
-            manifests=existing,
-          )
+          raise CommandCollision(cid, manifests=existing)
         } else {
           command_manifests[cid] = [mid]
         }
@@ -192,10 +189,9 @@ fn aggregate_extensions(
   }
   // Model cardinality: exactly 1.
   match models.length() {
-    0 => raise @error.CompositionError::MissingModel
+    0 => raise MissingModel
     1 => ()
-    _ =>
-      raise @error.CompositionError::MultipleModels(manifests=model_manifests)
+    _ => raise MultipleModels(manifests=model_manifests)
   }
   // UI cardinality: 0 → NoopUiPort, 1 → passthrough, 2+ → CompositeUiPort.
   let ui_ref : &@port.UiPort = match ui.length() {

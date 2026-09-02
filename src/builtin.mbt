@@ -4,15 +4,15 @@ pub fn build_tool_result_message(
   result : @kernel.ToolOutcome,
 ) -> @kernel.Message {
   let content : String = match result {
-    @kernel.Success(content~, ..) => content
-    @kernel.ToolReportedError(content~, ..) => content
-    @kernel.RuntimeFailure(message~, ..) => message
-    @kernel.NotExecuted(reason~, ..) => reason.to_string()
+    Success(content~, ..) => content
+    ToolReportedError(content~, ..) => content
+    RuntimeFailure(message~, ..) => message
+    NotExecuted(reason~, ..) => reason.to_string()
   }
-  @kernel.ToolMessage(
+  ToolMessage(
     call_id=call.call_id,
     tool_name=call.name,
-    outcome=@kernel.Success(content~, structured=None),
+    outcome=Success(content~, structured=None),
   )
 }
 
@@ -21,10 +21,10 @@ pub fn build_error_message(
   call : @kernel.ToolCall,
   error : @error.RuntimeError,
 ) -> @kernel.Message {
-  @kernel.ToolMessage(
+  ToolMessage(
     call_id=call.call_id,
     tool_name=call.name,
-    outcome=@kernel.RuntimeFailure(
+    outcome=RuntimeFailure(
       error_category="RuntimeError",
       message=error.to_string(),
     ),
@@ -54,7 +54,7 @@ pub impl @port.ToolProvider for CompositeToolProvider with fn execute(
   name : String,
   _call : @kernel.ToolCall,
 ) -> @kernel.ToolOutcome raise @error.RuntimeError {
-  raise @error.RuntimeError::UnknownTool(
+  raise UnknownTool(
     "CompositeToolProvider does not route execute(); Agent uses ToolRouting instead. Tool: '\{name}'",
   )
 }
@@ -97,9 +97,7 @@ pub fn ToolRegistry::register_strict(
 ) -> Unit raise @error.RuntimeError {
   let key = tool.name.to_string()
   if self.tools.contains(key) {
-    raise @error.RuntimeError::ToolAlreadyRegistered(
-      "tool '\{key}' is already registered",
-    )
+    raise ToolAlreadyRegistered("tool '\{key}' is already registered")
   }
   self.tools[key] = tool
   self.executors[key] = executor
@@ -128,10 +126,7 @@ pub impl @port.ToolProvider for ToolRegistry with fn execute(
 ) -> @kernel.ToolOutcome raise @error.RuntimeError {
   match self.executors.get(name) {
     Some(exec) => exec(call)
-    None =>
-      raise @error.RuntimeError::UnknownTool(
-        "No executor registered for tool '\{name}'",
-      )
+    None => raise UnknownTool("No executor registered for tool '\{name}'")
   }
 }
 
@@ -161,7 +156,7 @@ pub impl @port.CommandPort for NoopCommandPort with fn invoke(
   id : String,
   _args : Json,
 ) -> @port.CommandOutcome raise @error.CommandError {
-  raise @error.CommandError::NotFound(id)
+  raise NotFound(id)
 }
 
 ///|

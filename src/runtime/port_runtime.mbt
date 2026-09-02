@@ -12,11 +12,11 @@
 /// `ModelFailure` so it can travel through the reducer as data.
 fn model_error_to_failure(error : @error.ModelError) -> @kernel.ModelFailure {
   match error {
-    @error.RequestBuild(reason) => @kernel.RequestBuild(reason~)
-    @error.Transport(reason) => @kernel.Transport(reason~)
-    @error.ResponseParse(reason) => @kernel.Parse(reason~)
-    @error.RateLimited(info) =>
-      @kernel.RateLimited(
+    RequestBuild(reason) => RequestBuild(reason~)
+    Transport(reason) => Transport(reason~)
+    ResponseParse(reason) => Parse(reason~)
+    RateLimited(info) =>
+      RateLimited(
         reason=info.message,
         reset_at_ms=info.reset_at_ms,
         provider_code=info.provider_code,
@@ -34,28 +34,24 @@ fn decode_chat_options(
   call_options : Json,
 ) -> Result[@types.ChatOptions, @kernel.ModelFailure] {
   let fields = match call_options {
-    Json::Null => return Ok({ temperature: None, max_output_tokens: None, })
-    Json::Object(fields) => fields
+    Null => return Ok({ temperature: None, max_output_tokens: None, })
+    Object(fields) => fields
     _ =>
-      return Err(
-        @kernel.RequestBuild(reason="call_options must be null or an object"),
-      )
+      return Err(RequestBuild(reason="call_options must be null or an object"))
   }
   for key in fields.keys() {
     if key != "temperature" && key != "max_output_tokens" {
       return Err(
-        @kernel.RequestBuild(
-          reason="unsupported call_options field '" + key + "'",
-        ),
+        RequestBuild(reason="unsupported call_options field '" + key + "'"),
       )
     }
   }
   let temperature = match fields.get("temperature") {
     None => None
-    Some(Json::Number(value, ..)) =>
+    Some(Number(value, ..)) =>
       if (value - value).is_nan() {
         return Err(
-          @kernel.RequestBuild(
+          RequestBuild(
             reason="call_options.temperature must be a finite number",
           ),
         )
@@ -64,16 +60,16 @@ fn decode_chat_options(
       }
     Some(_) =>
       return Err(
-        @kernel.RequestBuild(reason="call_options.temperature must be a number"),
+        RequestBuild(reason="call_options.temperature must be a number"),
       )
   }
   let max_output_tokens = match fields.get("max_output_tokens") {
     None => None
-    Some(Json::Number(value, ..)) => {
+    Some(Number(value, ..)) => {
       let converted = value.to_int()
       if converted.to_double() != value {
         return Err(
-          @kernel.RequestBuild(
+          RequestBuild(
             reason="call_options.max_output_tokens must be an integer in Int range",
           ),
         )
@@ -82,9 +78,7 @@ fn decode_chat_options(
     }
     Some(_) =>
       return Err(
-        @kernel.RequestBuild(
-          reason="call_options.max_output_tokens must be a number",
-        ),
+        RequestBuild(reason="call_options.max_output_tokens must be a number"),
       )
   }
   Ok({ temperature, max_output_tokens, })
@@ -119,8 +113,8 @@ pub impl Runtime for PortRuntime with fn call_model(
     Err(failure) => return Err(failure)
   }
   let stream : @types.StreamMode = match on_chunk {
-    Some(cb) => @types.Stream(cb)
-    None => @types.NoStream
+    Some(cb) => Stream(cb)
+    None => NoStream
   }
   let result = self.model.chat(
     scope, messages, tool_definitions, options, stream,
@@ -133,10 +127,7 @@ pub impl Runtime for PortRuntime with fn call_model(
   // processed tree here and we honour it. The view must be copied before being
   // stored/returned — this is the single retained O(N) copy per call.
   let final_result : @kernel.ModelCallResult = if result.processed_messages.is_empty() {
-    @kernel.ModelCallResult::{
-      completion: result.completion,
-      processed_messages: messages.to_owned(),
-    }
+    { completion: result.completion, processed_messages: messages.to_owned(), }
   } else {
     result
   }
@@ -149,7 +140,7 @@ pub impl Runtime for PortRuntime with fn execute_tool(self, ctx : EffectContext)
   let provider = match self.tools.get(name) {
     Some(p) => p
     None =>
-      return @kernel.RuntimeFailure(
+      return RuntimeFailure(
         error_category="MissingOwner",
         message="no tool provider for '" + name + "'",
       )
@@ -161,7 +152,7 @@ pub impl Runtime for PortRuntime with fn execute_tool(self, ctx : EffectContext)
   }
   provider.execute(name, call) catch {
     error =>
-      @kernel.RuntimeFailure(
+      RuntimeFailure(
         error_category="ToolProviderError",
         message=error.to_string(),
       )
@@ -178,7 +169,7 @@ pub impl Runtime for PortRuntime with fn cancel_effects(
   _reason : @kernel.CancelReason,
 ) -> Array[(@kernel.EffectId, @kernel.CancelDisposition)] {
   ignore(self)
-  effect_ids.map(id => (id, @kernel.NotPropagated))
+  effect_ids.map(id => (id, NotPropagated))
 }
 
 ///|

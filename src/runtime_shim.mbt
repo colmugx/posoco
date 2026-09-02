@@ -39,7 +39,7 @@ impl @kernel_exec.HostRuntime for RuntimeHostShim with fn execute_tool(
   tool_name : @kernel.ToolName,
   arguments : Json,
 ) -> @kernel.ToolOutcome {
-  self.inner.execute_tool(@runtime.EffectContext::{
+  self.inner.execute_tool({
     effect_id,
     owner: owner_id,
     call_id,

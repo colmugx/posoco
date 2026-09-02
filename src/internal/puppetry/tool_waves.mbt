@@ -13,7 +13,7 @@ fn scheduled_tool_effect_waves(
   let calls : Array[ToolCall] = []
   for effect in pending {
     match effect {
-      @kernel_exec.ExecuteTool(payload~, ..) =>
+      ExecuteTool(payload~, ..) =>
         calls.push({
           call_id: payload.call_id,
           name: payload.tool_name,
@@ -44,13 +44,13 @@ fn scheduled_tool_effect_waves(
   }
   let plan = match planned {
     Ok(value) => value
-    Err(@kernel_exec.DuplicateCallId(call_id~)) =>
+    Err(DuplicateCallId(call_id~)) =>
       raise ReducerInvariantViolation(category=DuplicateCallId(call_id~))
-    Err(@kernel_exec.StaleSnapshotVersion(expected~, actual~)) =>
+    Err(StaleSnapshotVersion(expected~, actual~)) =>
       raise ReducerInvariantViolation(
         category=StaleSnapshot(expected~, actual~),
       )
-    Err(@kernel_exec.UnknownToolReachedScheduler(..)) =>
+    Err(UnknownToolReachedScheduler(..)) =>
       raise ReducerInvariantViolation(
         category=IllegalPhase(
           phase="ToolScheduler",
@@ -99,7 +99,7 @@ fn find_pending_effect_for_call(
   let mut matched : Effect? = None
   for effect in pending {
     match effect {
-      @kernel_exec.ExecuteTool(payload~, ..) =>
+      ExecuteTool(payload~, ..) =>
         if payload.call_id == call.call_id {
           match matched {
             Some(_) =>

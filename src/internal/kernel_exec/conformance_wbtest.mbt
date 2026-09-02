@@ -11,7 +11,7 @@
 fn golden_catalog() -> ToolCatalogSnapshot raise CatalogCompositionError {
   let builder = ToolCatalogBuilder()
   let _ = builder.add(
-    @kernel.ToolDef(
+    ToolDef(
       name=@kernel.ToolName::unchecked("read"),
       description="read file",
       input_schema=Json::object(
@@ -34,19 +34,19 @@ fn golden_catalog() -> ToolCatalogSnapshot raise CatalogCompositionError {
         ]),
       ),
       owner=@kernel.OwnerId::unchecked("fs"),
-      policy=@kernel.Sequential,
+      policy=Sequential,
       provenance=Some("fs"),
     ),
   )
   let _ = builder.add(
-    @kernel.ToolDef(
+    ToolDef(
       name=@kernel.ToolName::unchecked("write"),
       description="write file",
       input_schema=Json::object(
         Map::from_array([("type", Json::string("object"))]),
       ),
       owner=@kernel.OwnerId::unchecked("fs"),
-      policy=@kernel.Sequential,
+      policy=Sequential,
       provenance=Some("fs"),
     ),
   )
@@ -64,19 +64,19 @@ fn golden_initial_state() -> RunState raise KernelError {
 
 ///|
 fn golden_start() -> StartPayload {
-  StartPayload::{
-    initial_messages: [@kernel.UserMessage(content=[@kernel.Text("hello")])],
+  {
+    initial_messages: [UserMessage(content=[Text("hello")])],
     catalog_version: CatalogVersion(1),
   }
 }
 
 ///|
 fn completion_no_tools(text : String) -> @kernel.Completion {
-  @kernel.Completion(
-    content=[@kernel.Text(text)],
+  Completion(
+    content=[Text(text)],
     tool_calls=[],
     reasoning=None,
-    finish_reason=@kernel.Stop,
+    finish_reason=Stop,
     usage=None,
   )
 }
@@ -87,8 +87,8 @@ fn completion_with_tool_call(
   name : String,
   args : Json,
 ) -> @kernel.Completion {
-  @kernel.Completion(
-    content=[@kernel.Text("calling")],
+  Completion(
+    content=[Text("calling")],
     tool_calls=[
       {
         call_id: @kernel.CallId::unchecked(call_id),
@@ -97,7 +97,7 @@ fn completion_with_tool_call(
       },
     ],
     reasoning=None,
-    finish_reason=@kernel.ToolCalls,
+    finish_reason=ToolCalls,
     usage=None,
   )
 }
@@ -145,7 +145,7 @@ test "GOLDEN C-HAPPY-ONE-TOOL: Model → Tool → Model → Completed" {
     .on(
       // First ExecuteTool.
       EffectId::first().next(),
-      ScriptedToolCompleted(@kernel.Success(content="data", structured=None)),
+      ScriptedToolCompleted(Success(content="data", structured=None)),
     )
     .on(
       // Second model step (effect id 3): no tools.
@@ -160,7 +160,7 @@ test "GOLDEN C-HAPPY-ONE-TOOL: Model → Tool → Model → Completed" {
       ignore(final_message)
       assert_eq(tool_results.length(), 1)
       match tool_results[0] {
-        @kernel.Success(content~, structured=None) => assert_eq(content, "data")
+        Success(content~, structured=None) => assert_eq(content, "data")
         _ => fail("expected one successful tool result")
       }
     }
@@ -198,10 +198,8 @@ test "GOLDEN C-MODEL-UNKNOWN-TOOL: NotExecuted, zero ExecuteTool, then re-prompt
       ignore(final_message)
       assert_eq(tool_results.length(), 1)
       match tool_results[0] {
-        @kernel.NotExecuted(
-          reason=@kernel.UnknownTool,
-          original_call_id=call_id
-        ) => assert_eq(call_id.to_string(), "c1")
+        NotExecuted(reason=UnknownTool, original_call_id=call_id) =>
+          assert_eq(call_id.to_string(), "c1")
         _ => fail("expected NotExecuted(UnknownTool) terminal result")
       }
     }
@@ -218,7 +216,7 @@ test "GOLDEN C-MODEL-TRANSPORT-FAILURE: ModelFailed → Terminal(Failed)" {
   let st0 = golden_initial_state()
   let scripted = ScriptedExecutor().on(
     EffectId::first(),
-    ScriptedModelFailed(@kernel.Transport(reason="HTTP 503")),
+    ScriptedModelFailed(Transport(reason="HTTP 503")),
   )
   let trace = scripted_driver_run(st0, catalog, scripted, golden_start(), 20)
   let final_st = trace.final_state()
@@ -246,7 +244,7 @@ test "GOLDEN C-TOOL-RUNTIME-FAILURE: tool runtime error → Run continues" {
     )
     .on(
       EffectId::first().next(),
-      ScriptedToolRuntime(@kernel.Transport(reason="reset")),
+      ScriptedToolRuntime(Transport(reason="reset")),
     )
     .on(
       EffectId::first().next().next(),
@@ -261,7 +259,7 @@ test "GOLDEN C-TOOL-RUNTIME-FAILURE: tool runtime error → Run continues" {
       ignore(final_message)
       assert_eq(tool_results.length(), 1)
       match tool_results[0] {
-        @kernel.RuntimeFailure(error_category~, message~) => {
+        RuntimeFailure(error_category~, message~) => {
           assert_eq(error_category, "Transport")
           assert_eq(message, "reset")
         }
@@ -327,8 +325,8 @@ test "GOLDEN C-HAPPY-MULTI-TOOL: two parallel tools in one batch" {
     .on(
       EffectId::first(),
       ScriptedModelCompleted(
-        @kernel.Completion(
-          content=[@kernel.Text("calling both")],
+        Completion(
+          content=[Text("calling both")],
           tool_calls=[
             {
               call_id: @kernel.CallId::unchecked("c1"),
@@ -344,18 +342,18 @@ test "GOLDEN C-HAPPY-MULTI-TOOL: two parallel tools in one batch" {
             },
           ],
           reasoning=None,
-          finish_reason=@kernel.ToolCalls,
+          finish_reason=ToolCalls,
           usage=None,
         ),
       ),
     )
     .on(
       EffectId::first().next(),
-      ScriptedToolCompleted(@kernel.Success(content="r1", structured=None)),
+      ScriptedToolCompleted(Success(content="r1", structured=None)),
     )
     .on(
       EffectId::first().next().next(),
-      ScriptedToolCompleted(@kernel.Success(content="r2", structured=None)),
+      ScriptedToolCompleted(Success(content="r2", structured=None)),
     )
     .on(
       EffectId::first().next().next().next(),
@@ -370,8 +368,8 @@ test "GOLDEN C-HAPPY-MULTI-TOOL: two parallel tools in one batch" {
       assert_eq(tool_results.length(), 2)
       match (tool_results[0], tool_results[1]) {
         (
-          @kernel.Success(content=content0, structured=None),
-          @kernel.Success(content=content1, structured=None),
+          Success(content=content0, structured=None),
+          Success(content=content1, structured=None),
         ) => {
           assert_eq(content0, "r1")
           assert_eq(content1, "r2")
@@ -400,7 +398,7 @@ test "GOLDEN C-HAPPY-REVERSE-TOOL-COMPLETION: terminal results preserve call ord
     _ => fail("expected initial CallModel effect")
   }
   let completion = @kernel.Completion(
-    content=[@kernel.Text("calling")],
+    content=[Text("calling")],
     tool_calls=[
       {
         call_id: @kernel.CallId::unchecked("read_call"),
@@ -414,7 +412,7 @@ test "GOLDEN C-HAPPY-REVERSE-TOOL-COMPLETION: terminal results preserve call ord
       },
     ],
     reasoning=None,
-    finish_reason=@kernel.ToolCalls,
+    finish_reason=ToolCalls,
     usage=None,
   )
   let tools_out = reduce(
@@ -448,7 +446,7 @@ test "GOLDEN C-HAPPY-REVERSE-TOOL-COMPLETION: terminal results preserve call ord
       call_id: second_call_id,
       tool_name: @kernel.ToolName::unchecked("read"),
       arguments: Json::null(),
-      outcome: @kernel.Success(content="second", structured=None),
+      outcome: Success(content="second", structured=None),
     }),
   )
   let after_first = reduce(
@@ -459,7 +457,7 @@ test "GOLDEN C-HAPPY-REVERSE-TOOL-COMPLETION: terminal results preserve call ord
       call_id: first_call_id,
       tool_name: @kernel.ToolName::unchecked("read"),
       arguments: Json::null(),
-      outcome: @kernel.Success(content="first", structured=None),
+      outcome: Success(content="first", structured=None),
     }),
   )
   let final_waiting = run_model_step(
@@ -491,8 +489,8 @@ test "GOLDEN C-HAPPY-REVERSE-TOOL-COMPLETION: terminal results preserve call ord
       assert_eq(tool_results.length(), 2)
       match (tool_results[0], tool_results[1]) {
         (
-          @kernel.Success(content=first_content, structured=None),
-          @kernel.Success(content=second_content, structured=None),
+          Success(content=first_content, structured=None),
+          Success(content=second_content, structured=None),
         ) => {
           assert_eq(first_content, "first")
           assert_eq(second_content, "second")

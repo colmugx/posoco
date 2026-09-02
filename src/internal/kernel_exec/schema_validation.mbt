@@ -21,9 +21,9 @@ fn validate_at(
   path : String,
 ) -> Result[Unit, @kernel.SchemaDiagnostic] {
   match schema {
-    Json::Object(_) => validate_object_schema(schema, instance, path)
-    Json::True => Ok(())
-    Json::False =>
+    Object(_) => validate_object_schema(schema, instance, path)
+    True => Ok(())
+    False =>
       Err({
         json_path: path,
         expected: "schema=false rejects everything",
@@ -67,7 +67,7 @@ fn validate_object_schema(
     None => ()
   }
   match schema.get("enum") {
-    Some(Json::Array(allowed)) =>
+    Some(Array(allowed)) =>
       if !array_contains_json(allowed, instance) {
         return Err({
           json_path: path,
@@ -95,7 +95,7 @@ fn validate_object_schema(
     None => ()
   }
   match instance {
-    Json::Object(_) =>
+    Object(_) =>
       match validate_object_props(schema, instance, path) {
         Err(d) => return Err(d)
         Ok(_) => ()
@@ -103,7 +103,7 @@ fn validate_object_schema(
     _ => ()
   }
   match (instance, schema.get("items")) {
-    (Json::Array(items), Some(items_schema)) =>
+    (Array(items), Some(items_schema)) =>
       for i = 0; i < items.length(); i = i + 1 {
         match validate_at(items_schema, items[i], "\{path}[\{i}]") {
           Err(d) => return Err(d)
@@ -122,24 +122,24 @@ fn validate_object_props(
   path : String,
 ) -> Result[Unit, @kernel.SchemaDiagnostic] {
   let obj = match instance {
-    Json::Object(m) => m
+    Object(m) => m
     _ => return Ok(())
   }
   let properties = match schema.get("properties") {
-    Some(Json::Object(p)) => p
+    Some(Object(p)) => p
     _ => Map::from_array([])
   }
   let additional_properties_blocked = match schema.get("additionalProperties") {
-    Some(Json::False) => true
+    Some(False) => true
     _ => false
   }
   let required = match schema.get("required") {
-    Some(Json::Array(arr)) => arr
+    Some(Array(arr)) => arr
     _ => []
   }
   for r in required {
     match r {
-      Json::String(name) =>
+      String(name) =>
         if !obj.contains(name) {
           return Err({
             json_path: "\{path}.\{name}",
@@ -178,7 +178,7 @@ fn validate_object_props(
 ///|
 fn check_type(type_spec : Json, instance : Json) -> Result[Unit, String] {
   let type_str = match type_spec {
-    Json::String(s) => s
+    String(s) => s
     _ => return Err("type spec must be a string")
   }
   let actual = json_type_name(instance)
@@ -203,7 +203,7 @@ fn check_type(type_spec : Json, instance : Json) -> Result[Unit, String] {
 /// Get a key from a Json object.
 fn Json::get(self : Json, key : String) -> Json? {
   match self {
-    Json::Object(m) => m.get(key)
+    Object(m) => m.get(key)
     _ => None
   }
 }
@@ -216,20 +216,20 @@ fn schema_kind(value : Json) -> String {
 ///|
 fn json_type_name(value : Json) -> String {
   match value {
-    Json::Null => "null"
-    Json::True => "boolean"
-    Json::False => "boolean"
-    Json::Number(n, ..) => if n == n.floor() { "integer" } else { "number" }
-    Json::String(_) => "string"
-    Json::Array(_) => "array"
-    Json::Object(_) => "object"
+    Null => "null"
+    True => "boolean"
+    False => "boolean"
+    Number(n, ..) => if n == n.floor() { "integer" } else { "number" }
+    String(_) => "string"
+    Array(_) => "array"
+    Object(_) => "object"
   }
 }
 
 ///|
 fn type_label(type_spec : Json) -> String {
   match type_spec {
-    Json::String(s) => s
+    String(s) => s
     _ => "(non-string type)"
   }
 }
@@ -263,7 +263,7 @@ let unsupported_keywords : Array[String] = [
 /// Walk the schema looking for an unsupported keyword. Returns the first found, or None.
 fn find_unsupported_keyword(schema : Json) -> String? {
   match schema {
-    Json::Object(m) => {
+    Object(m) => {
       for k in m.keys() {
         for bad in unsupported_keywords {
           if k == bad {
@@ -272,7 +272,7 @@ fn find_unsupported_keyword(schema : Json) -> String? {
         }
       }
       match m.get("properties") {
-        Some(Json::Object(props)) =>
+        Some(Object(props)) =>
           for key in props.keys() {
             match find_unsupported_keyword(props[key]) {
               Some(b) => return Some(b)

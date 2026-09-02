@@ -96,7 +96,7 @@ pub async fn ScriptedModel::chat_direct(
     messages[:],
     tools,
     options,
-    @types.NoStream,
+    NoStream,
   )
 }
 
@@ -124,7 +124,7 @@ fn ScriptedModel::take_step(
     self.index = self.index + 1
     step
   } else {
-    raise @error.ModelError::Transport(
+    raise Transport(
       "scripted_model_exhausted at call \{self.calls} (script had \{self.steps.length()} steps)",
     )
   }
@@ -143,12 +143,12 @@ pub impl @port.ModelPort for ScriptedModel with fn chat(
     Respond(result) => testkit_snapshot_model_call_result(result)
     Stream(chunks~, response~) => {
       match stream {
-        @types.Stream(cb) =>
+        Stream(cb) =>
           for chunk in chunks {
             self.received_chunks.push(chunk)
             cb(chunk)
           }
-        @types.NoStream => ()
+        NoStream => ()
       }
       testkit_snapshot_model_call_result(response)
     }
@@ -164,9 +164,7 @@ pub impl @port.ModelPort for ScriptedModel with fn compact(
   _options : @types.ChatOptions,
   _trigger : @kernel.CompactTrigger,
 ) -> @kernel.CompactResult raise @error.ModelError {
-  raise @error.ModelError::ResponseParse(
-    "ScriptedModel does not implement compact",
-  )
+  raise ResponseParse("ScriptedModel does not implement compact")
 }
 
 ///|
@@ -249,10 +247,7 @@ pub impl @port.ModelPort for ScopeRecordingModel with fn compact(
   self.compact_scopes.push(scope)
   match self.compact_result {
     Some(result) => result
-    None =>
-      raise @error.ModelError::ResponseParse(
-        "ScopeRecordingModel has no compact_result",
-      )
+    None => raise ResponseParse("ScopeRecordingModel has no compact_result")
   }
 }
 

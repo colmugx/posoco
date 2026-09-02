@@ -129,7 +129,7 @@ fn RecordingSessionStore::guard_save(
   id : String,
 ) -> @error.SessionError? {
   if self.save_failures.contains(id) {
-    Some(@error.SessionError::Save("configured save failure for '\{id}'"))
+    Some(Save("configured save failure for '\{id}'"))
   } else {
     None
   }

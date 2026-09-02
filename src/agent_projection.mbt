@@ -66,10 +66,10 @@ impl @puppetry.EventSubscriber for AgentEventSubscriber with fn on_event(
     turn_id: envelope.turn_id(),
   }
   match event {
-    @kernel_exec.RunStarted(..) => self.pending_calls.clear()
-    @kernel_exec.ModelStepCompleted(completion~, ..) => {
+    RunStarted(..) => self.pending_calls.clear()
+    ModelStepCompleted(completion~, ..) => {
       let payload = completion.message
-      let message : @kernel.Message = @kernel.AssistantMessage(
+      let message : @kernel.Message = AssistantMessage(
         content=payload.content,
         tool_calls=payload.tool_calls,
         reasoning=payload.reasoning,
@@ -77,21 +77,21 @@ impl @puppetry.EventSubscriber for AgentEventSubscriber with fn on_event(
       )
       self.emit(
         Some(scope),
-        @types.ModelResponseReceived(message~, usage=completion.usage),
+        ModelResponseReceived(message~, usage=completion.usage),
       )
     }
-    @kernel_exec.ToolBatchStarted(calls~, ..) =>
+    ToolBatchStarted(calls~, ..) =>
       for call in calls {
         let snapshot = snapshot_tool_call(call)
         self.pending_calls[snapshot.call_id.to_string()] = snapshot
-        self.emit(Some(scope), @types.ToolCallPending(snapshot))
+        self.emit(Some(scope), ToolCallPending(snapshot))
       }
-    @kernel_exec.ToolCompleted(call_id~, outcome~) => {
+    ToolCompleted(call_id~, outcome~) => {
       let key = call_id.to_string()
       let call = match self.pending_calls.get(key) {
         Some(call) => call
         None =>
-          raise @puppetry.SubscriberError::ContractViolation(
+          raise ContractViolation(
             subscriber_id="agent_committed_event_projection",
             detail="ToolCompleted without committed ToolBatchStarted for call " +
               key,

@@ -45,7 +45,7 @@ fn policy_reported(
   context_window? : Int? = None,
   compact_threshold? : Double? = None,
 ) -> @port.ProviderConfig {
-  @port.ProviderConfig(
+  ProviderConfig(
     reasoning_effort_values=[],
     context_window~,
     compact_threshold~,
@@ -56,15 +56,13 @@ fn policy_reported(
 fn policy_tools() -> RecordingToolProvider {
   RecordingToolProvider(
     [tk_tool_def("echo", "echo tool")],
-    Map::from_array([
-      ("echo", ScriptedToolOutcome::OutcomeOk(tk_ok_result("echoed"))),
-    ]),
+    Map::from_array([("echo", OutcomeOk(tk_ok_result("echoed")))]),
   )
 }
 
 ///|
 fn policy_replace_result() -> @kernel.CompactResult {
-  { compacted_messages: [tk_user_msg("summary")], mode: @kernel.Replace, }
+  { compacted_messages: [tk_user_msg("summary")], mode: Replace, }
 }
 
 ///|
@@ -273,9 +271,9 @@ async test "policy/auto-compact failure skips observably and the turn survives" 
       Custom(source~, label~, data~) =>
         if source == "posoco.core" && label == "secondary_failure" {
           match data {
-            Json::Object(fields) =>
+            Object(fields) =>
               match fields.get("hook_point") {
-                Some(Json::String(point)) if point == "auto_compact" =>
+                Some(String(point)) if point == "auto_compact" =>
                   seen_secondary = true
                 _ => ()
               }
@@ -311,15 +309,15 @@ fn auto_compact_e2e_model(
   steps : Array[ScriptedModelStep],
   compacted_messages : Array[@kernel.Message],
 ) -> AutoCompactE2EModel {
-  AutoCompactE2EModel::{
+  {
     scripted: ScriptedModel(steps),
-    compact_result: { compacted_messages, mode: @kernel.Replace, },
+    compact_result: { compacted_messages, mode: Replace, },
     reported: policy_reported(
       context_window=Some(100),
       compact_threshold=Some(0.9),
     ),
     seen: [],
-    compact_calls: Ref::{ val: 0, },
+    compact_calls: { val: 0, },
   }
 }
 
@@ -379,11 +377,11 @@ fn auto_compact_kit_shaped_compacted() -> Array[@kernel.Message] {
 
 ///|
 fn tk_assistant_msg_e2e(text : String) -> @kernel.Message {
-  @kernel.Message::AssistantMessage(
-    content=[@kernel.Content::Text(text)],
+  AssistantMessage(
+    content=[Text(text)],
     tool_calls=[],
     reasoning=None,
-    finish_reason=@kernel.Stop,
+    finish_reason=Stop,
   )
 }
 
@@ -421,10 +419,10 @@ async test "policy/e2e compacted transcript is what the next model call sees" {
   // And it must NOT contain the original opening user message.
   for message in second {
     match message {
-      @kernel.Message::UserMessage(content~) =>
+      UserMessage(content~) =>
         for block in content {
           match block {
-            @kernel.Content::Text(text) => assert_true(text != "hi")
+            Text(text) => assert_true(text != "hi")
             _ => ()
           }
         }
@@ -470,19 +468,16 @@ async test "policy/e2e compacted transcript persists into the next turn" {
     assert_true(next_turn[i] == compacted[i])
   }
   guard next_turn[compacted.length()]
-    is @kernel.Message::AssistantMessage(content=close_content, ..) else {
+    is AssistantMessage(content=close_content, ..) else {
     fail("expected turn 1's assistant close after the compacted transcript")
   }
-  guard close_content[0] is @kernel.Content::Text(close_text) else {
+  guard close_content[0] is Text(close_text) else {
     fail("expected text content")
   }
   assert_eq(close_text, "turn1 done")
-  guard next_turn[next_turn.length() - 1]
-    is @kernel.Message::UserMessage(content~) else {
+  guard next_turn[next_turn.length() - 1] is UserMessage(content~) else {
     fail("expected the new user message at the end")
   }
-  guard content[0] is @kernel.Content::Text(text) else {
-    fail("expected text content")
-  }
+  guard content[0] is Text(text) else { fail("expected text content") }
   assert_eq(text, "second turn")
 }

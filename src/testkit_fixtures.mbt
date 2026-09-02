@@ -16,11 +16,11 @@
 /// messages when `processed_messages` is empty. See
 /// `PortRuntime::call_model` for the substitution logic.
 pub fn tk_stop_response(text : String) -> @kernel.ModelCallResult {
-  let completion : @kernel.Completion = @kernel.Completion(
-    content=[@kernel.Text(text)],
+  let completion : @kernel.Completion = Completion(
+    content=[Text(text)],
     tool_calls=[],
     reasoning=None,
-    finish_reason=@kernel.Stop,
+    finish_reason=Stop,
     usage=None,
   )
   { completion, processed_messages: [], }
@@ -38,11 +38,11 @@ pub fn tk_tool_call_response(
     name: @kernel.ToolName::unchecked(tool_name),
     arguments: args,
   }
-  let completion : @kernel.Completion = @kernel.Completion(
+  let completion : @kernel.Completion = Completion(
     content=[],
     tool_calls=[call],
     reasoning=None,
-    finish_reason=@kernel.ToolCalls,
+    finish_reason=ToolCalls,
     usage=None,
   )
   { completion, processed_messages: [], }
@@ -51,13 +51,13 @@ pub fn tk_tool_call_response(
 ///|
 /// Build a user message.
 pub fn tk_user_msg(text : String) -> @kernel.Message {
-  @kernel.UserMessage(content=[@kernel.Text(text)])
+  UserMessage(content=[Text(text)])
 }
 
 ///|
 /// Build a system message.
 pub fn tk_system_msg(text : String) -> @kernel.Message {
-  @kernel.SystemMessage(content=[@kernel.Text(text)])
+  SystemMessage(content=[Text(text)])
 }
 
 ///|
@@ -66,12 +66,12 @@ pub fn tk_system_msg(text : String) -> @kernel.Message {
 /// Policy is `Parallel` (the declared default; composition honors it
 /// as-is). Provenance is `None`.
 pub fn tk_tool_def(name : String, description : String) -> @kernel.ToolDef {
-  @kernel.ToolDef(
+  ToolDef(
     name=@kernel.ToolName::unchecked(name),
     description~,
     input_schema=Json::object(Map::from_array([])),
     owner=@kernel.OwnerId::unchecked("placeholder"),
-    policy=@kernel.Parallel,
+    policy=Parallel,
     provenance=None,
   )
 }
@@ -79,14 +79,14 @@ pub fn tk_tool_def(name : String, description : String) -> @kernel.ToolDef {
 ///|
 /// Build a successful ToolOutcome.
 pub fn tk_ok_result(content : String) -> @kernel.ToolOutcome {
-  @kernel.Success(content~, structured=None)
+  Success(content~, structured=None)
 }
 
 ///|
 /// Build a business-error ToolOutcome (provider reports a tool-level failure
 /// the model should see, but the run continues).
 pub fn tk_error_result(content : String) -> @kernel.ToolOutcome {
-  @kernel.ToolReportedError(content~, structured=None)
+  ToolReportedError(content~, structured=None)
 }
 
 ///|

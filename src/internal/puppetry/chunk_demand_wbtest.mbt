@@ -35,11 +35,11 @@ pub impl @kernel_exec.HostRuntime for ChunkDemandHost with fn call_model(
   match on_chunk {
     None => self.saw_no_sink = true
     Some(callback) => {
-      callback(@types.TextDelta(token="delta"))
+      callback(TextDelta(token="delta"))
       self.delivered_chunks = self.delivered_chunks + 1
     }
   }
-  Ok(ModelCallResult::{
+  Ok({
     completion: fixture_stop("done"),
     processed_messages: messages.to_owned(),
   })
@@ -77,7 +77,7 @@ pub impl @kernel_exec.HostRuntime for ChunkDemandHost with fn compact(
   _trigger : @kernel.CompactTrigger,
 ) -> Result[CompactResult, ModelFailure] {
   ignore(self)
-  Err(ModelFailure::Parse(reason="ChunkDemandHost does not implement compact"))
+  Err(Parse(reason="ChunkDemandHost does not implement compact"))
 }
 
 ///|
@@ -126,5 +126,5 @@ async test "puppet/chunks_are_delivered_when_consumer_is_set" {
   assert_false(host.saw_no_sink())
   assert_eq(host.delivered_chunks(), 1)
   assert_eq(trace.length(), 1)
-  assert_eq(trace[0], @types.TextDelta(token="delta"))
+  assert_eq(trace[0], TextDelta(token="delta"))
 }

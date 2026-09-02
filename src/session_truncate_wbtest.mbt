@@ -19,6 +19,9 @@ struct TruncateFallbackStore {
 }
 
 ///|
+extend TruncateFallbackStore with @port.SessionStore::{truncate}
+
+///|
 fn TruncateFallbackStore::make(
   session : @types.Session,
 ) -> TruncateFallbackStore {
@@ -31,7 +34,7 @@ pub impl @port.SessionStore for TruncateFallbackStore with fn load(
   _id : String,
 ) -> @types.Session raise @error.SessionError {
   if self.fail_load {
-    raise @error.SessionError::Load("backend unavailable")
+    raise Load("backend unavailable")
   }
   self.session
 }
@@ -43,7 +46,7 @@ pub impl @port.SessionStore for TruncateFallbackStore with fn save(
   session : @types.Session,
 ) -> Unit raise @error.SessionError {
   if self.fail_save {
-    raise @error.SessionError::Save("backend unavailable")
+    raise Save("backend unavailable")
   }
   self.saved.push({
     messages: session.messages.copy(),
@@ -58,11 +61,11 @@ fn truncate_test_session() -> @types.Session {
       tk_user_msg("hello"),
       truncate_first_assistant(),
       tk_user_msg("world"),
-      @kernel.AssistantMessage(
-        content=[@kernel.Text("second")],
+      AssistantMessage(
+        content=[Text("second")],
         tool_calls=[],
         reasoning=None,
-        finish_reason=@kernel.Stop,
+        finish_reason=Stop,
       ),
     ],
     metadata: Map::from_array([("lineage", Json::string("kept"))]),
@@ -72,11 +75,11 @@ fn truncate_test_session() -> @types.Session {
 ///|
 /// The assistant reply persisted by turn 1 in the scripted two-turn history.
 fn truncate_first_assistant() -> @kernel.Message {
-  @kernel.AssistantMessage(
-    content=[@kernel.Text("first")],
+  AssistantMessage(
+    content=[Text("first")],
     tool_calls=[],
     reasoning=None,
-    finish_reason=@kernel.Stop,
+    finish_reason=Stop,
   )
 }
 
@@ -115,16 +118,14 @@ async test "rewind_truncate_default_impl_labels_load_and_save_failures" {
   store.fail_load = true
   let load_result = Ok(store.truncate("s1", 1)) catch { e => Err(e) }
   match load_result {
-    Err(@error.SessionError::Load(msg)) =>
-      assert_true(msg.contains("operation='truncate'"))
+    Err(Load(msg)) => assert_true(msg.contains("operation='truncate'"))
     _ => fail("expected SessionError::Load from truncate")
   }
   store.fail_load = false
   store.fail_save = true
   let save_result = Ok(store.truncate("s1", 1)) catch { e => Err(e) }
   match save_result {
-    Err(@error.SessionError::Save(msg)) =>
-      assert_true(msg.contains("operation='truncate'"))
+    Err(Save(msg)) => assert_true(msg.contains("operation='truncate'"))
     _ => fail("expected SessionError::Save from truncate")
   }
 }
@@ -132,6 +133,9 @@ async test "rewind_truncate_default_impl_labels_load_and_save_failures" {
 // ---------------------------------------------------------------------------
 // RecordingSessionStore: in-memory slice + OpTruncate recording.
 // ---------------------------------------------------------------------------
+
+///|
+extend RecordingSessionStore with @port.SessionStore::{truncate}
 
 ///|
 async test "rewind_recording_store_truncate_slices_and_records_op" {

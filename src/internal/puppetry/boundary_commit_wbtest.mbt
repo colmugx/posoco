@@ -48,10 +48,7 @@ pub impl @kernel_exec.HostRuntime for BoundaryProbeHost with fn call_model(
   } else {
     match self.model_results[index] {
       Ok(completion) =>
-        Ok(ModelCallResult::{
-          completion,
-          processed_messages: messages.to_owned(),
-        })
+        Ok({ completion, processed_messages: messages.to_owned(), })
       Err(failure) => Err(failure)
     }
   }
@@ -89,9 +86,7 @@ pub impl @kernel_exec.HostRuntime for BoundaryProbeHost with fn compact(
   _trigger : @kernel.CompactTrigger,
 ) -> Result[CompactResult, ModelFailure] {
   ignore(self)
-  Err(
-    ModelFailure::Parse(reason="BoundaryProbeHost does not implement compact"),
-  )
+  Err(Parse(reason="BoundaryProbeHost does not implement compact"))
 }
 
 ///|
@@ -185,10 +180,7 @@ pub impl @kernel_exec.HostRuntime for CompactReplaceHost with fn call_model(
   } else {
     match self.model_results[index] {
       Ok(completion) =>
-        Ok(ModelCallResult::{
-          completion,
-          processed_messages: messages.to_owned(),
-        })
+        Ok({ completion, processed_messages: messages.to_owned(), })
       Err(failure) => Err(failure)
     }
   }
@@ -224,9 +216,9 @@ pub impl @kernel_exec.HostRuntime for CompactReplaceHost with fn compact(
   _call_options : Json,
   _trigger : @kernel.CompactTrigger,
 ) -> Result[CompactResult, ModelFailure] {
-  Ok(CompactResult::{
+  Ok({
     compacted_messages: [UserMessage(content=[Text("compacted summary")])],
-    mode: @kernel.Replace,
+    mode: Replace,
   })
 }
 
@@ -240,7 +232,7 @@ fn fixture_tool_calls_with_usage(
     tool_calls=calls,
     reasoning=None,
     finish_reason=ToolCalls,
-    usage=Some(@kernel.Usage::{
+    usage=Some({
       input_tokens: Some(total),
       output_tokens: Some(0),
       total_tokens: Some(total),

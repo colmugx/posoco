@@ -15,12 +15,12 @@ struct ScopedObserver {
 /// Tag just the variants these tests drive; everything else is "other".
 fn scope_projection_event_tag(event : @types.TurnEvent) -> String {
   match event {
-    @types.TurnStarted => "turn_started"
-    @types.ModelResponseReceived(..) => "model_response"
-    @types.ToolCallPending(_) => "tool_pending"
-    @types.ToolCallResult(..) => "tool_result"
-    @types.TurnCompleted => "turn_completed"
-    @types.TurnFailed(_) => "turn_failed"
+    TurnStarted => "turn_started"
+    ModelResponseReceived(..) => "model_response"
+    ToolCallPending(_) => "tool_pending"
+    ToolCallResult(..) => "tool_result"
+    TurnCompleted => "turn_completed"
+    TurnFailed(_) => "turn_failed"
     _ => "other"
   }
 }
@@ -47,10 +47,10 @@ pub impl @port.PipelineHook for ScopedHook with fn on_post_event_at(
   stage : @port.HookStage,
 ) -> Unit {
   let tag = match stage {
-    @port.HookStage::ModelCompleted(..) => "model_completed"
-    @port.HookStage::ModelFailed(..) => "model_failed"
-    @port.HookStage::ToolCompleted(..) => "tool_completed"
-    @port.HookStage::ToolFailed(..) => "tool_failed"
+    ModelCompleted(..) => "model_completed"
+    ModelFailed(..) => "model_failed"
+    ToolCompleted(..) => "tool_completed"
+    ToolFailed(..) => "tool_failed"
   }
   self.stages.push((tag, scope))
 }
@@ -129,9 +129,7 @@ async test "scope_projection/tool_loop_events_and_hook_stages_share_run" {
   ])
   let tools = RecordingToolProvider(
     [tk_tool_def("echo", "echo tool")],
-    Map::from_array([
-      ("echo", ScriptedToolOutcome::OutcomeOk(tk_ok_result("echoed"))),
-    ]),
+    Map::from_array([("echo", OutcomeOk(tk_ok_result("echoed")))]),
   )
   let agent = Agent(
     exts=[
@@ -198,10 +196,10 @@ async test "scope_projection/legacy_observer_and_hook_unchanged" {
   ignore(agent.run_turn(tk_user_msg("hello"), "s_legacy"))
   let events = observer.events()
   assert_eq(events.length(), 3)
-  guard events[0] is @types.TurnStarted else {
+  guard events[0] is TurnStarted else {
     fail("first event must be TurnStarted")
   }
-  guard events[2] is @types.TurnCompleted else {
+  guard events[2] is TurnCompleted else {
     fail("last event must be TurnCompleted")
   }
   let labels = hook.records().map(fn(r) { r.label })

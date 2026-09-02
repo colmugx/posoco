@@ -241,9 +241,9 @@ pub fn ToolCatalogSnapshot::validate_arguments(
 ///|
 fn check_schema_top_level(schema : Json) -> Result[Unit, String] {
   match schema {
-    Json::Object(_) => Ok(())
-    Json::True => Ok(())
-    Json::False => Ok(())
+    Object(_) => Ok(())
+    True => Ok(())
+    False => Ok(())
     _ => Err("schema must be JSON object or boolean at top level")
   }
 }

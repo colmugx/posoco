@@ -20,7 +20,7 @@ impl @port.ModelPort for MockModelPort with fn chat(
     self.index = self.index + 1
     resp
   } else {
-    raise @error.ModelError::Transport("no more responses")
+    raise Transport("no more responses")
   }
 }
 
@@ -32,9 +32,7 @@ impl @port.ModelPort for MockModelPort with fn compact(
   _options : @types.ChatOptions,
   _trigger : @kernel.CompactTrigger,
 ) -> @kernel.CompactResult raise @error.ModelError {
-  raise @error.ModelError::ResponseParse(
-    "MockModelPort does not implement compact",
-  )
+  raise ResponseParse("MockModelPort does not implement compact")
 }
 
 ///|
@@ -63,8 +61,7 @@ impl @port.ToolProvider for MockToolProvider with fn execute(
   match self.results.get(name) {
     Some(Ok(r)) => r
     Some(Err(e)) => raise e
-    None =>
-      raise @error.RuntimeError::InvocationFailed("tool not found: \{name}")
+    None => raise InvocationFailed("tool not found: \{name}")
   }
 }
 
@@ -104,17 +101,17 @@ fn make_config() -> @posoco.AgentConfig {
 
 ///|
 fn user_msg(text : String) -> @kernel.Message {
-  @kernel.UserMessage(content=[@kernel.Text(text)])
+  UserMessage(content=[Text(text)])
 }
 
 ///|
 fn stop_response(text : String) -> @kernel.ModelCallResult {
   {
-    completion: @kernel.Completion(
-      content=[@kernel.Text(text)],
+    completion: Completion(
+      content=[Text(text)],
       tool_calls=[],
       reasoning=None,
-      finish_reason=@kernel.Stop,
+      finish_reason=Stop,
       usage=None,
     ),
     processed_messages: [],
@@ -124,7 +121,7 @@ fn stop_response(text : String) -> @kernel.ModelCallResult {
 ///|
 /// Helper: empty tool provider
 fn empty_tools() -> MockToolProvider {
-  MockToolProvider::{ tools: [], results: Map::from_array([]), }
+  { tools: [], results: Map::from_array([]), }
 }
 
 ///|
@@ -157,9 +154,9 @@ async test "b5_build_tool_result_message" {
   }
   let outcome = @kernel.Success(content="done", structured=None)
   let msg = @posoco.build_tool_result_message(call, outcome)
-  assert_true(msg is @kernel.ToolMessage(..))
+  assert_true(msg is ToolMessage(..))
   match msg {
-    @kernel.ToolMessage(call_id~, ..) => assert_eq(call_id.to_string(), "ct_1")
+    ToolMessage(call_id~, ..) => assert_eq(call_id.to_string(), "ct_1")
     _ => fail("expected ToolMessage")
   }
 }
@@ -174,9 +171,9 @@ async test "b6_build_error_message" {
   let err = @error.RuntimeError::InvocationFailed("fail")
   let msg = @posoco.build_error_message(call, err)
   match msg {
-    @kernel.ToolMessage(call_id~, outcome~, ..) => {
+    ToolMessage(call_id~, outcome~, ..) => {
       assert_eq(call_id.to_string(), "ct_2")
-      assert_true(outcome is @kernel.RuntimeFailure(..))
+      assert_true(outcome is RuntimeFailure(..))
     }
     _ => fail("expected ToolMessage")
   }
@@ -211,11 +208,11 @@ async test "b8_turn_event_lifecycle" {
   let events = observer.events
   assert_true(events.length() >= 2)
   match events[0] {
-    @types.TurnEvent::TurnStarted => ()
+    TurnStarted => ()
     _ => fail("first event should be TurnStarted")
   }
   match events[events.length() - 1] {
-    @types.TurnEvent::TurnCompleted => ()
+    TurnCompleted => ()
     _ => fail("last event should be TurnCompleted")
   }
 }
@@ -238,7 +235,7 @@ async test "b9_model_error_aborts" {
   )
   match
     (Ok(agent.run_turn(user_msg("boom"), "session_b9")) catch { e => Err(e) }) {
-    Err(@error.AgentError::Model(_)) => ()
+    Err(Model(_)) => ()
     _ => fail("expected Model error")
   }
 }
@@ -285,7 +282,7 @@ test "b11_agent_requires_session_store_at_composition" {
     error => Err(error)
   }
   match result {
-    Err(@error.CompositionError::EmptyPort("SessionStore")) => ()
+    Err(EmptyPort("SessionStore")) => ()
     _ => fail("expected missing SessionStore to fail composition")
   }
 }
@@ -296,19 +293,19 @@ test "b11_agent_requires_session_store_at_composition" {
 
 ///|
 fn registry_test_tool(name : String) -> @kernel.ToolDef {
-  @kernel.ToolDef(
+  ToolDef(
     name=@kernel.ToolName::unchecked(name),
     description="registry test tool",
     input_schema=Json::null(),
     owner=@kernel.OwnerId::unchecked("test"),
-    policy=@kernel.Parallel,
+    policy=Parallel,
     provenance=None,
   )
 }
 
 ///|
 fn registry_test_executor(_call : @kernel.ToolCall) -> @kernel.ToolOutcome {
-  @kernel.Success(content="ok", structured=None)
+  Success(content="ok", structured=None)
 }
 
 ///|
@@ -325,7 +322,7 @@ test "tool_registry/register_overwrites_deliberately_strict_fails_fast" {
     e => Err(e)
   }
   match rejected {
-    Err(@error.RuntimeError::ToolAlreadyRegistered(_)) => ()
+    Err(ToolAlreadyRegistered(_)) => ()
     _ => fail("expected RuntimeError::ToolAlreadyRegistered")
   }
   // Strict registration of a fresh name succeeds.

@@ -134,9 +134,7 @@ pub impl @port.ToolProvider for RecordingToolProvider with fn execute(
     Some(o) => o
     None =>
       OutcomeErr(
-        @error.RuntimeError::UnknownTool(
-          "recording_tool: no outcome configured for '\{key}'",
-        ),
+        UnknownTool("recording_tool: no outcome configured for '\{key}'"),
       )
   }
   self.ops.push(ExecuteTool(requested_name=name, call=snapshot_tool_call(call)))

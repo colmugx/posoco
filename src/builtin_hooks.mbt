@@ -90,16 +90,14 @@ pub impl @port.PipelineHook for SystemPromptHook with fn before_model(
   if assembled == "" {
     return messages
   }
-  let sys_msg : @kernel.Message = @kernel.SystemMessage(content=[
-    @kernel.Text(assembled),
-  ])
+  let sys_msg : @kernel.Message = SystemMessage(content=[Text(assembled)])
   if messages.length() == 0 {
     return [sys_msg]
   }
   match messages[0] {
-    @kernel.SystemMessage(content~) => {
+    SystemMessage(content~) => {
       match content {
-        [@kernel.Text(existing), ..] if existing == assembled => return messages
+        [Text(existing), ..] if existing == assembled => return messages
         _ => ()
       }
       let new_messages : Array[@kernel.Message] = [sys_msg]
@@ -139,10 +137,10 @@ fn UiRenderHook::render_tool_completed(
   let label = call.name.to_string()
   let outcome_tag = outcome.to_string()
   let intent : @port.UiRender = {
-    slot: UiSlot::Notice,
+    slot: Notice,
     key: "tool_\{call.call_id.to_string()}",
     title: Some(label),
-    body: UiBody::Text(outcome_tag),
+    body: Text(outcome_tag),
     ttl_ms: None,
   }
   self.ui.render(intent)
@@ -156,10 +154,10 @@ fn UiRenderHook::render_failure(
   reason : String,
 ) -> Unit {
   let intent : @port.UiRender = {
-    slot: UiSlot::Status,
+    slot: Status,
     key,
     title: None,
-    body: UiBody::Text(reason),
+    body: Text(reason),
     ttl_ms: None,
   }
   self.ui.render(intent)
@@ -177,15 +175,14 @@ pub impl @port.PipelineHook for UiRenderHook with fn on_post_event(
     // (QA issue: status shows model response while tools feed back to the
     // LLM). Hosts own progress/status; this hook surfaces tool outcomes and
     // typed failures only.
-    @port.ModelCompleted(..) => ()
-    @port.ToolCompleted(call~, outcome~) =>
-      self.render_tool_completed(call, outcome)
-    @port.ToolFailed(call~, reason~) =>
+    ModelCompleted(..) => ()
+    ToolCompleted(call~, outcome~) => self.render_tool_completed(call, outcome)
+    ToolFailed(call~, reason~) =>
       self.render_failure(
         "tool_fail_\{call.call_id.to_string()}",
         "tool \{call.name.to_string()} failed: \{reason}",
       )
-    @port.ModelFailed(failure~) =>
+    ModelFailed(failure~) =>
       self.render_failure("model_fail", "model failed: \{failure.to_string()}")
   }
 }
@@ -213,7 +210,7 @@ pub impl @port.UiPort for NoopUiPort with fn render(_self, _intent) -> Unit {
 
 ///|
 pub impl @port.UiPort for NoopUiPort with fn request(_self, _req) -> @port.UiResponse {
-  raise @error.UiError::Unsupported(detail="NoopUiPort has no UI backend")
+  raise Unsupported(detail="NoopUiPort has no UI backend")
 }
 
 ///|
@@ -274,12 +271,11 @@ pub impl @port.UiPort for CompositeUiPort with fn request(self, req) -> @port.Ui
     }
     match result {
       Ok(resp) => return resp
-      Err(@error.UiError::Unsupported(detail~)) =>
-        last_unsupported_detail = detail
+      Err(Unsupported(detail~)) => last_unsupported_detail = detail
       Err(other) => raise other
     }
   }
-  raise @error.UiError::Unsupported(
+  raise Unsupported(
     detail="no contributor supported the request; last detail=\{last_unsupported_detail}",
   )
 }

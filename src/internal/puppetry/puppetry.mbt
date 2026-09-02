@@ -225,12 +225,11 @@ async fn Puppet::fire_post_event_hooks(
     return
   }
   let stage : HookStage = match input {
-    ModelCompleted(payload~) =>
-      HookStage::ModelCompleted(completion=payload.completion)
-    ModelFailed(payload~) => HookStage::ModelFailed(failure=payload.failure)
+    ModelCompleted(payload~) => ModelCompleted(completion=payload.completion)
+    ModelFailed(payload~) => ModelFailed(failure=payload.failure)
     ToolCompleted(payload~) =>
-      HookStage::ToolCompleted(
-        call=ToolCall::{
+      ToolCompleted(
+        call={
           call_id: payload.call_id,
           name: payload.tool_name,
           arguments: payload.arguments,
@@ -238,8 +237,8 @@ async fn Puppet::fire_post_event_hooks(
         outcome=payload.outcome,
       )
     ToolFailed(payload~) =>
-      HookStage::ToolFailed(
-        call=ToolCall::{
+      ToolFailed(
+        call={
           call_id: payload.call_id,
           name: payload.tool_name,
           arguments: payload.arguments,

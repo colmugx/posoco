@@ -13,11 +13,11 @@ pub impl @port.ModelPort for QuickstartFixedModel with fn chat(
   _options : @types.ChatOptions,
   _stream : @types.StreamMode,
 ) -> @kernel.ModelCallResult raise @error.ModelError {
-  let completion : @kernel.Completion = @kernel.Completion(
-    content=[@kernel.Text("Hello from Posoco")],
+  let completion : @kernel.Completion = Completion(
+    content=[Text("Hello from Posoco")],
     tool_calls=[],
     reasoning=None,
-    finish_reason=@kernel.Stop,
+    finish_reason=Stop,
     usage=None,
   )
   { completion, processed_messages: [], }
@@ -31,9 +31,7 @@ pub impl @port.ModelPort for QuickstartFixedModel with fn compact(
   _options : @types.ChatOptions,
   _trigger : @kernel.CompactTrigger,
 ) -> @kernel.CompactResult raise @error.ModelError {
-  raise @error.ModelError::ResponseParse(
-    "QuickstartFixedModel does not implement compact",
-  )
+  raise ResponseParse("QuickstartFixedModel does not implement compact")
 }
 
 ///|
@@ -94,14 +92,12 @@ async test "quickstart_fixture_uses_current_public_api" {
     ],
     config=@posoco.agent_config(max_tool_rounds=Some(10)),
   )
-  let input : @kernel.Message = @kernel.UserMessage(content=[
-    @kernel.Text("hello"),
-  ])
+  let input : @kernel.Message = UserMessage(content=[Text("hello")])
   let result = agent.run_turn(input, "quickstart-session")
   assert_eq(result.final_session_id, "quickstart-session")
   match result.message {
-    @kernel.AssistantMessage(content~, ..) =>
-      assert_eq(content, [@kernel.Text("Hello from Posoco")])
+    AssistantMessage(content~, ..) =>
+      assert_eq(content, [Text("Hello from Posoco")])
     _ => fail("expected AssistantMessage")
   }
 }

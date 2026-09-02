@@ -37,7 +37,7 @@ pub fn CallId::checked(value : String) -> Result[CallId, String] {
   if value == "" {
     Err("CallId must be non-empty")
   } else {
-    Ok(CallId::{ value, })
+    Ok({ value, })
   }
 }
 
@@ -46,7 +46,7 @@ pub fn CallId::checked(value : String) -> Result[CallId, String] {
 /// validated the string. Production callers should prefer `CallId::checked` and
 /// handle the typed rejection.
 pub fn CallId::unchecked(value : String) -> CallId {
-  CallId::{ value, }
+  { value, }
 }
 
 ///|
@@ -67,13 +67,13 @@ pub fn ToolName::checked(value : String) -> Result[ToolName, String] {
   if value == "" {
     Err("ToolName must be non-empty")
   } else {
-    Ok(ToolName::{ value, })
+    Ok({ value, })
   }
 }
 
 ///|
 pub fn ToolName::unchecked(value : String) -> ToolName {
-  ToolName::{ value, }
+  { value, }
 }
 
 ///|

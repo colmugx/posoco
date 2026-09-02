@@ -116,16 +116,14 @@ pub impl @port.UiPort for RecordingUiPort with fn request(
   _req : @port.UiRequest,
 ) -> @port.UiResponse {
   if self.unsupported_mode {
-    raise @error.UiError::Unsupported(
-      detail="RecordingUiPort is in unsupported_mode",
-    )
+    raise Unsupported(detail="RecordingUiPort is in unsupported_mode")
   }
   // FIFO: drain from the front. Array::remove panics on out-of-bounds, so we
   // guard with an explicit length check and raise Unsupported (not a panic)
   // when the script is empty — that way CompositeUiPort can fall through and
   // tests see a typed error instead of a runtime crash.
   if self.scripted_responses.length() == 0 {
-    raise @error.UiError::Unsupported(
+    raise Unsupported(
       detail="RecordingUiPort script exhausted; no response for request",
     )
   }

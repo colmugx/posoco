@@ -33,7 +33,7 @@ pub(open) trait SessionStore {
 impl SessionStore with fn truncate(self, id : String, from_index : Int) -> Unit raise @error.SessionError {
   let session = self.load(id) catch {
     error =>
-      raise @error.SessionError::Load(
+      raise Load(
         "session_id='\{id}', operation='truncate', category='SessionError::Load', cause='\{error.to_string()}'",
       )
   }
@@ -51,7 +51,7 @@ impl SessionStore with fn truncate(self, id : String, from_index : Int) -> Unit 
   }
   self.save(id, { messages: kept, metadata: session.metadata, }) catch {
     error =>
-      raise @error.SessionError::Save(
+      raise Save(
         "session_id='\{id}', operation='truncate', category='SessionError::Save', cause='\{error.to_string()}'",
       )
   }

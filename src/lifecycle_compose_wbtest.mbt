@@ -12,7 +12,7 @@ priv struct FailCompose {
 
 ///|
 impl @port.Lifecycle for FailCompose with fn on_compose(self, _ctx) -> Unit raise @error.CompositionError {
-  raise @error.CompositionError::ExtensionComposeFailed(
+  raise ExtensionComposeFailed(
     manifest_id=self.id,
     detail="declared nothing but needs the composed capability",
   )
@@ -70,12 +70,12 @@ test "compose/view_gated_by_declared_requires" {
         scripted_model_ext([Respond(tk_stop_response("ok"))]),
         io_ext(),
         tk_ext(id="both", lifecycle=[both as &@port.Lifecycle], requires=[
-          @port.Capability::Model,
-          @port.Capability::Ui,
+          Model,
+          Ui,
         ]),
         tk_ext(id="none", lifecycle=[none as &@port.Lifecycle]),
         tk_ext(id="model_only", lifecycle=[model_only as &@port.Lifecycle], requires=[
-          @port.Capability::Model,
+          Model,
         ]),
       ],
       config=tk_config(),
@@ -107,7 +107,7 @@ test "compose/extension_compose_failure_is_loud" {
       config=tk_config(),
     )
   catch {
-    @error.CompositionError::ExtensionComposeFailed(manifest_id~, ..) =>
+    ExtensionComposeFailed(manifest_id~, ..) =>
       assert_eq(manifest_id, "bad_ext")
     e => fail("expected ExtensionComposeFailed, got \{e}")
   } noraise {
@@ -160,7 +160,7 @@ async test "compose/start_once_before_first_turn_started" {
 test "compose/tk_view_gates_like_composition" {
   let model : &@port.ModelPort = ScriptedModel([])
   let ui : &@port.UiPort = RecordingUiPort::new_unsupported()
-  let v = tk_view(requires=[@port.Capability::Model], model~, ui~)
+  let v = tk_view(requires=[Model], model~, ui~)
   assert_true(v.model() is Some(_))
   assert_true(v.ui() is None)
   let v2 = tk_view(requires=[], model~, ui~)

@@ -81,10 +81,7 @@ pub impl @kernel_exec.HostRuntime for FixtureHost with fn call_model(
   } else {
     match self.model_results[index] {
       Ok(completion) =>
-        Ok(ModelCallResult::{
-          completion,
-          processed_messages: messages.to_owned(),
-        })
+        Ok({ completion, processed_messages: messages.to_owned(), })
       Err(failure) => Err(failure)
     }
   }
@@ -131,7 +128,7 @@ pub impl @kernel_exec.HostRuntime for FixtureHost with fn compact(
   _trigger : @kernel.CompactTrigger,
 ) -> Result[CompactResult, ModelFailure] {
   ignore(self)
-  Err(ModelFailure::Parse(reason="FixtureHost does not implement compact"))
+  Err(Parse(reason="FixtureHost does not implement compact"))
 }
 
 ///|

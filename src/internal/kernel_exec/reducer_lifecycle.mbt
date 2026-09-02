@@ -46,7 +46,7 @@ fn reduce_start(
   payload : StartPayload,
 ) -> ReduceOutput raise KernelError {
   let transcript = @kernel.Transcript::from_array(payload.initial_messages)
-  let run_started : KernelEvent = RunStarted(details=StartedDetails::{
+  let run_started : KernelEvent = RunStarted(details={
     run_id: state.run_id(),
     session_id: state.session_id(),
   })
@@ -81,8 +81,7 @@ fn reduce_ready_for_model(
 ) -> ReduceOutput raise KernelError {
   match input {
     CancelRequested(payload~) => reduce_cancel_ready(state, payload.detail)
-    DeadlineReached(_) =>
-      reduce_terminal_fail(state, FailureReason::DeadlineReached)
+    DeadlineReached(_) => reduce_terminal_fail(state, DeadlineReached)
     BudgetExhausted(payload~) =>
       reduce_terminal_fail(state, BudgetExhausted(dimension=payload.dimension))
     SuspendRequested(_) =>
@@ -122,8 +121,7 @@ fn reduce_suspended(
       reduce_output(next_state, [], [resumed])
     }
     CancelRequested(payload~) => reduce_cancel_ready(state, payload.detail)
-    DeadlineReached(_) =>
-      reduce_terminal_fail(state, FailureReason::DeadlineReached)
+    DeadlineReached(_) => reduce_terminal_fail(state, DeadlineReached)
     BudgetExhausted(payload~) =>
       reduce_terminal_fail(state, BudgetExhausted(dimension=payload.dimension))
     Start(_)

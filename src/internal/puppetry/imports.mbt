@@ -44,7 +44,6 @@ using @kernel_exec {
 ///|
 using @port {
   trait PipelineHook,
-  type HookAbort,
   type HookStage,
   trait SessionStore,
   trait CommandPort,

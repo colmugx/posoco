@@ -70,7 +70,7 @@ async test "t05_save_failure_returns_session_error_no_turn_completed" {
     e => Err(e)
   }
   match result {
-    Err(@error.AgentError::Session(error)) => {
+    Err(Session(error)) => {
       let message = error.to_string()
       assert_true(message.contains("doomed"))
       assert_true(message.contains("final_append"))
@@ -83,8 +83,7 @@ async test "t05_save_failure_returns_session_error_no_turn_completed" {
   let events = obs.events()
   for e in events {
     match e {
-      @types.TurnEvent::TurnCompleted =>
-        fail("TurnCompleted must not fire on save failure")
+      TurnCompleted => fail("TurnCompleted must not fire on save failure")
       _ => ()
     }
   }
@@ -97,7 +96,7 @@ async test "t05_save_failure_returns_session_error_no_turn_completed" {
 
 ///|
 async test "t05_failed_turn_persists_progress_without_aliasing" {
-  let model = ScriptedModel([Fail(@error.ModelError::Transport("network down"))])
+  let model = ScriptedModel([Fail(Transport("network down"))])
   let store = RecordingSessionStore()
   let original_messages = [tk_user_msg("already persisted")]
   store.seed("stable", {
@@ -115,7 +114,7 @@ async test "t05_failed_turn_persists_progress_without_aliasing" {
     e => Err(e)
   }
   match result {
-    Err(@error.AgentError::Model(_)) => ()
+    Err(Model(_)) => ()
     _ => fail("expected model failure")
   }
   assert_eq(original_messages.length(), 1)
@@ -140,10 +139,7 @@ async test "t05_failed_turn_persists_progress_without_aliasing" {
 async test "t05_session_load_error_has_context_without_metadata" {
   let model = ScriptedModel([])
   let store = RecordingSessionStore()
-  store.fail_load(
-    "load-target",
-    @error.SessionError::Load("backend unavailable"),
-  )
+  store.fail_load("load-target", Load("backend unavailable"))
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
@@ -155,7 +151,7 @@ async test "t05_session_load_error_has_context_without_metadata" {
     e => Err(e)
   }
   match result {
-    Err(@error.AgentError::Session(err)) => {
+    Err(Session(err)) => {
       let message = err.to_string()
       assert_true(message.contains("load-target"))
       assert_true(message.contains("load"))
@@ -172,7 +168,7 @@ async test "t05_session_error_uses_bounded_single_line_id" {
   let raw_id = "line-one\n" + "x".repeat(100) + "TAIL_SESSION_SECRET"
   let model = ScriptedModel([])
   let store = RecordingSessionStore()
-  store.fail_load(raw_id, @error.SessionError::Load("backend unavailable"))
+  store.fail_load(raw_id, Load("backend unavailable"))
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
@@ -184,7 +180,7 @@ async test "t05_session_error_uses_bounded_single_line_id" {
     error => Err(error)
   }
   match result {
-    Err(@error.AgentError::Session(error)) => {
+    Err(Session(error)) => {
       let message = error.to_string()
       assert_true(message.contains("line-one "))
       assert_true(message.contains("...(truncated)"))
@@ -215,7 +211,7 @@ async test "t05_session_save_cause_cannot_reexpand_raw_id" {
     error => Err(error)
   }
   match result {
-    Err(@error.AgentError::Session(error)) => {
+    Err(Session(error)) => {
       let message = error.to_string()
       assert_true(message.contains("final_append"))
       assert_true(message.contains("SessionError::Save"))
@@ -235,7 +231,7 @@ async test "t05_session_save_cause_cannot_reexpand_raw_id" {
 ///|
 fn poison_json(value : Json, label : String) -> Unit {
   match value {
-    Json::Object(fields) => {
+    Object(fields) => {
       fields["poison"] = Json::string(label)
       for key in fields.keys() {
         if key != "poison" {
@@ -243,7 +239,7 @@ fn poison_json(value : Json, label : String) -> Unit {
         }
       }
     }
-    Json::Array(items) => items.push(Json::string(label))
+    Array(items) => items.push(Json::string(label))
     _ => ()
   }
 }
@@ -251,9 +247,9 @@ fn poison_json(value : Json, label : String) -> Unit {
 ///|
 fn json_has_poison(value : Json) -> Bool {
   match value {
-    Json::String(text) => text.contains("poison")
-    Json::Array(items) => items.iter().any(json_has_poison)
-    Json::Object(fields) => {
+    String(text) => text.contains("poison")
+    Array(items) => items.iter().any(json_has_poison)
+    Object(fields) => {
       if fields.contains("poison") {
         return true
       }
@@ -277,17 +273,17 @@ fn poison_first_message(
   match messages {
     [first, ..] =>
       match first {
-        @kernel.SystemMessage(content~) => content.push(@kernel.Text(label))
-        @kernel.UserMessage(content~) => content.push(@kernel.Text(label))
-        @kernel.AssistantMessage(content~, tool_calls~, ..) => {
-          content.push(@kernel.Text(label))
+        SystemMessage(content~) => content.push(Text(label))
+        UserMessage(content~) => content.push(Text(label))
+        AssistantMessage(content~, tool_calls~, ..) => {
+          content.push(Text(label))
           tool_calls.push({
             call_id: @kernel.CallId::unchecked(label),
             name: @kernel.ToolName::unchecked(label),
             arguments: Json::null(),
           })
         }
-        @kernel.ToolMessage(..) => ()
+        ToolMessage(..) => ()
       }
     [] => ()
   }
@@ -305,34 +301,34 @@ fn assert_session_has_no_boundary_poison(session : @types.Session) -> Unit {
   }
   for message in session.messages {
     match message {
-      @kernel.SystemMessage(content~) =>
+      SystemMessage(content~) =>
         for c in content {
           match c {
-            @kernel.Text(text) =>
+            Text(text) =>
               if text.contains("poison") {
                 abort("message content mutation leaked across session snapshot")
               }
-            @kernel.Image(..) => ()
+            Image(..) => ()
           }
         }
-      @kernel.UserMessage(content~) =>
+      UserMessage(content~) =>
         for c in content {
           match c {
-            @kernel.Text(text) =>
+            Text(text) =>
               if text.contains("poison") {
                 abort("message content mutation leaked across session snapshot")
               }
-            @kernel.Image(..) => ()
+            Image(..) => ()
           }
         }
-      @kernel.AssistantMessage(content~, tool_calls~, ..) => {
+      AssistantMessage(content~, tool_calls~, ..) => {
         for c in content {
           match c {
-            @kernel.Text(text) =>
+            Text(text) =>
               if text.contains("poison") {
                 abort("message content mutation leaked across session snapshot")
               }
-            @kernel.Image(..) => ()
+            Image(..) => ()
           }
         }
         for call in tool_calls {
@@ -345,7 +341,7 @@ fn assert_session_has_no_boundary_poison(session : @types.Session) -> Unit {
           }
         }
       }
-      @kernel.ToolMessage(..) => ()
+      ToolMessage(..) => ()
     }
   }
 }
@@ -409,18 +405,18 @@ pub impl @port.Observer for BoundaryMutatingObserver with fn on_event(
   event,
 ) {
   match event {
-    @types.TurnEvent::ModelResponseReceived(message~, ..) =>
+    ModelResponseReceived(message~, ..) =>
       poison_first_message([message], "observer-model-poison")
-    @types.TurnEvent::ToolCallPending(call) =>
+    ToolCallPending(call) =>
       poison_json(call.arguments, "observer-pending-poison")
-    @types.TurnEvent::ToolCallResult(call~, result~, ..) => {
+    ToolCallResult(call~, result~, ..) => {
       poison_json(call.arguments, "observer-result-poison")
       // R3 M3.7: result is ToolOutcome; we can only mutate the Json payload
       // of Success/ToolReportedError variants.
       match result {
-        @kernel.Success(content=_, structured=Some(value)) =>
+        Success(content=_, structured=Some(value)) =>
           poison_json(value, "observer-result-poison")
-        @kernel.ToolReportedError(content=_, structured=Some(value)) =>
+        ToolReportedError(content=_, structured=Some(value)) =>
           poison_json(value, "observer-result-poison")
         _ => ()
       }
@@ -503,7 +499,7 @@ async test "t05_tool_ports_hooks_and_observers_get_json_snapshots" {
       ),
     ]),
   )
-  let provider_result : @kernel.ToolOutcome = @kernel.Success(
+  let provider_result : @kernel.ToolOutcome = Success(
     content="clean result",
     structured=Some(provider_structured),
   )
@@ -535,7 +531,7 @@ async test "t05_tool_ports_hooks_and_observers_get_json_snapshots" {
   assert_true(!json_has_poison(call_args))
   assert_true(!json_has_poison(provider_structured))
   match result.tool_results[0] {
-    @kernel.Success(content=_, structured=Some(value)) =>
+    Success(content=_, structured=Some(value)) =>
       assert_true(!json_has_poison(value))
     _ => fail("expected structured tool result")
   }
@@ -547,12 +543,11 @@ async test "t05_tool_ports_hooks_and_observers_get_json_snapshots" {
   }
   for event in recording_observer.events() {
     match event {
-      @types.TurnEvent::ToolCallPending(call) =>
-        assert_true(!json_has_poison(call.arguments))
-      @types.TurnEvent::ToolCallResult(call~, result~, ..) => {
+      ToolCallPending(call) => assert_true(!json_has_poison(call.arguments))
+      ToolCallResult(call~, result~, ..) => {
         assert_true(!json_has_poison(call.arguments))
         match result {
-          @kernel.Success(content=_, structured=Some(value)) =>
+          Success(content=_, structured=Some(value)) =>
             assert_true(!json_has_poison(value))
           _ => fail("expected structured result event")
         }

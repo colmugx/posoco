@@ -22,7 +22,7 @@
 ///|
 /// Deep-copy a `@kernel.ToolDef`.
 fn testkit_snapshot_tool_def(tool : @kernel.ToolDef) -> @kernel.ToolDef {
-  @kernel.ToolDef(
+  ToolDef(
     name=tool.name,
     description=tool.description,
     input_schema=snapshot_json(tool.input_schema),
@@ -37,7 +37,7 @@ fn testkit_snapshot_completion(
   completion : @kernel.Completion,
 ) -> @kernel.Completion {
   let msg = completion.message
-  @kernel.Completion(
+  Completion(
     content=msg.content.map(snapshot_content),
     tool_calls=msg.tool_calls.map(snapshot_tool_call),
     reasoning=msg.reasoning,
@@ -63,30 +63,29 @@ fn testkit_snapshot_model_call_result(
 /// what it actually saw, even if some emitter disagreed with the result.
 fn testkit_snapshot_event(event : @types.TurnEvent) -> @types.TurnEvent {
   match event {
-    @types.TurnStarted => @types.TurnStarted
-    @types.ToolCallPending(call) =>
-      @types.ToolCallPending(snapshot_tool_call(call))
-    @types.ToolCallResult(call~, result~, is_error~) =>
-      @types.ToolCallResult(
+    TurnStarted => TurnStarted
+    ToolCallPending(call) => ToolCallPending(snapshot_tool_call(call))
+    ToolCallResult(call~, result~, is_error~) =>
+      ToolCallResult(
         call=snapshot_tool_call(call),
         result=snapshot_tool_outcome(result),
         is_error~,
       )
-    @types.ModelResponseReceived(message~, usage~) =>
-      @types.ModelResponseReceived(message=snapshot_message(message), usage~)
-    @types.SessionRedirect(from~, to~, messages_before~, messages_after~) =>
-      @types.SessionRedirect(from~, to~, messages_before~, messages_after~)
-    @types.TurnCompleted => @types.TurnCompleted
-    @types.TurnFailed(reason) => @types.TurnFailed(reason)
-    @types.ToolCallDeferred(call~, reason~) =>
-      @types.ToolCallDeferred(call=snapshot_tool_call(call), reason~)
-    @types.StreamChunkReceived(chunk~) => @types.StreamChunkReceived(chunk~)
-    @types.StreamChunksDropped(count~) => @types.StreamChunksDropped(count~)
-    @types.ConfigWarning(field~, value~, reason~) =>
-      @types.ConfigWarning(field~, value~, reason~)
-    @types.ConfigChanged(field~, old_value~, new_value~) =>
-      @types.ConfigChanged(field~, old_value~, new_value~)
-    @types.Custom(source~, label~, data~) =>
-      @types.Custom(source~, label~, data=snapshot_json(data))
+    ModelResponseReceived(message~, usage~) =>
+      ModelResponseReceived(message=snapshot_message(message), usage~)
+    SessionRedirect(from~, to~, messages_before~, messages_after~) =>
+      SessionRedirect(from~, to~, messages_before~, messages_after~)
+    TurnCompleted => TurnCompleted
+    TurnFailed(reason) => TurnFailed(reason)
+    ToolCallDeferred(call~, reason~) =>
+      ToolCallDeferred(call=snapshot_tool_call(call), reason~)
+    StreamChunkReceived(chunk~) => StreamChunkReceived(chunk~)
+    StreamChunksDropped(count~) => StreamChunksDropped(count~)
+    ConfigWarning(field~, value~, reason~) =>
+      ConfigWarning(field~, value~, reason~)
+    ConfigChanged(field~, old_value~, new_value~) =>
+      ConfigChanged(field~, old_value~, new_value~)
+    Custom(source~, label~, data~) =>
+      Custom(source~, label~, data=snapshot_json(data))
   }
 }

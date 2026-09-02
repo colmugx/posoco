@@ -53,12 +53,12 @@ fn compact_trigger_response(total_tokens : Int) -> @kernel.ModelCallResult {
   // Tool-calls response keeps the pump in ReadyForModel so the auto-compact
   // safe-point is reached; the tool outcome is ignored by the test.
   let base = tk_tool_call_response("echo", "call_1", Json::null())
-  let completion : @kernel.Completion = @kernel.Completion(
+  let completion : @kernel.Completion = Completion(
     content=[],
     tool_calls=base.completion.tool_calls(),
     reasoning=None,
-    finish_reason=@kernel.ToolCalls,
-    usage=Some(@kernel.Usage::{
+    finish_reason=ToolCalls,
+    usage=Some({
       input_tokens: Some(total_tokens),
       output_tokens: Some(0),
       total_tokens: Some(total_tokens),
@@ -79,14 +79,12 @@ async test "t06_compact_turn_uses_full_save_not_append" {
     ],
     compact_result={
       compacted_messages: [tk_user_msg("summary")],
-      mode: @kernel.Replace,
+      mode: Replace,
     },
   )
   let tools = RecordingToolProvider(
     [tk_tool_def("echo", "echo tool")],
-    Map::from_array([
-      ("echo", ScriptedToolOutcome::OutcomeOk(tk_ok_result("echoed"))),
-    ]),
+    Map::from_array([("echo", OutcomeOk(tk_ok_result("echoed")))]),
   )
   let store = RecordingSessionStore()
   let agent = Agent(

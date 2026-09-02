@@ -45,9 +45,7 @@ async test "scope/tool_loop_shares_run_effect_ids_increase" {
   ])
   let tools = RecordingToolProvider(
     [tk_tool_def("echo", "echo tool")],
-    Map::from_array([
-      ("echo", ScriptedToolOutcome::OutcomeOk(tk_ok_result("echoed"))),
-    ]),
+    Map::from_array([("echo", OutcomeOk(tk_ok_result("echoed")))]),
   )
   let agent = Agent(
     exts=[
@@ -72,12 +70,12 @@ async test "scope/tool_loop_shares_run_effect_ids_increase" {
 /// so the auto-compact pump fires against a small context window.
 fn scope_test_tool_call_with_usage(total : Int) -> @kernel.ModelCallResult {
   let base = tk_tool_call_response("echo", "call_1", Json::null())
-  let completion : @kernel.Completion = @kernel.Completion(
+  let completion : @kernel.Completion = Completion(
     content=[],
     tool_calls=base.completion.tool_calls(),
     reasoning=None,
-    finish_reason=@kernel.ToolCalls,
-    usage=Some(@kernel.Usage::{
+    finish_reason=ToolCalls,
+    usage=Some({
       input_tokens: Some(total),
       output_tokens: Some(0),
       total_tokens: Some(total),
@@ -95,7 +93,7 @@ fn scope_test_tool_call_with_usage(total : Int) -> @kernel.ModelCallResult {
 async test "scope/compact_scoped_to_run_without_effect_id" {
   let compacted : @kernel.CompactResult = {
     compacted_messages: [tk_user_msg("summary")],
-    mode: @kernel.Replace,
+    mode: Replace,
   }
   let model = ScopeRecordingModel(
     [
@@ -106,9 +104,7 @@ async test "scope/compact_scoped_to_run_without_effect_id" {
   )
   let tools = RecordingToolProvider(
     [tk_tool_def("echo", "echo tool")],
-    Map::from_array([
-      ("echo", ScriptedToolOutcome::OutcomeOk(tk_ok_result("echoed"))),
-    ]),
+    Map::from_array([("echo", OutcomeOk(tk_ok_result("echoed")))]),
   )
   let agent = Agent(
     exts=[

@@ -180,10 +180,7 @@ async test "turn_end/failed_path_also_dispatches_after_turn_failed" {
   let obs = TurnEndLogObserver::{ log, }
   let agent = Agent(
     exts=[
-      tk_ext(
-        id="model",
-        model=Some(ScriptedModel([Fail(@error.ModelError::Transport("boom"))])),
-      ),
+      tk_ext(id="model", model=Some(ScriptedModel([Fail(Transport("boom"))]))),
       tk_ext(id="io", sessions=[RecordingSessionStore()], observers=[
         obs as &@port.Observer,
       ]),
@@ -192,7 +189,7 @@ async test "turn_end/failed_path_also_dispatches_after_turn_failed" {
     config=tk_config(),
   )
   try agent.run_turn(tk_user_msg("hello"), "s1") catch {
-    @error.AgentError::Model(_) => ()
+    Model(_) => ()
     _ => fail("expected AgentError::Model from the failed script")
   } noraise {
     _ => fail("expected the failed-script turn to raise")

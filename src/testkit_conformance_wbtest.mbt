@@ -87,7 +87,7 @@ async test "tk_model_stream_replays_exact_chunks_in_order" {
     [],
     [],
     tk_opts(),
-    @types.Stream(fn(chunk) { observed.push(chunk) }),
+    Stream(fn(chunk) { observed.push(chunk) }),
   )
   assert_eq(model.call_count(), 1)
   assert_eq(observed.length(), chunks.length())
@@ -105,7 +105,7 @@ async test "tk_model_stream_does_not_synthesize_chunks_for_response_step" {
     [],
     [],
     tk_opts(),
-    @types.Stream(fn(_chunk) { () }),
+    Stream(fn(_chunk) { () }),
   )
   assert_true(model.received_chunks.is_empty())
 }
@@ -127,7 +127,7 @@ async test "tk_model_fail_step_raises_typed_model_error" {
 ///|
 async test "tk_tool_records_execute_with_call_id" {
   let outcomes : Map[String, ScriptedToolOutcome] = Map::from_array([
-    ("lookup", ScriptedToolOutcome::OutcomeOk(tk_ok_result("found"))),
+    ("lookup", OutcomeOk(tk_ok_result("found"))),
   ])
   let provider = RecordingToolProvider([tk_tool_def("lookup", "")], outcomes)
   let call = tk_call("tc_42", "lookup")
@@ -168,7 +168,7 @@ async test "tk_tool_unknown_raises_typed_error" {
 ///|
 async test "tk_tool_records_raised_runtime_error" {
   let outcomes : Map[String, ScriptedToolOutcome] = Map::from_array([
-    ("flaky", ScriptedToolOutcome::OutcomeErr(InvocationFailed("boom"))),
+    ("flaky", OutcomeErr(InvocationFailed("boom"))),
   ])
   let provider = RecordingToolProvider([tk_tool_def("flaky", "")], outcomes)
   let call = tk_call("tc_9", "flaky")
@@ -189,7 +189,7 @@ async test "tk_tool_records_raised_runtime_error" {
 ///|
 async test "tk_tool_unified_trace_preserves_list_execute_order" {
   let outcomes : Map[String, ScriptedToolOutcome] = Map::from_array([
-    ("lookup", ScriptedToolOutcome::OutcomeOk(tk_ok_result("found"))),
+    ("lookup", OutcomeOk(tk_ok_result("found"))),
   ])
   let provider = RecordingToolProvider([tk_tool_def("lookup", "")], outcomes)
   let _ = provider.list_tools()
@@ -419,7 +419,7 @@ async test "tk_store_fail_save_returns_typed_error" {
     e => Err(e)
   }
   match result {
-    Err(SessionError::Save(_)) => ()
+    Err(Save(_)) => ()
     _ => fail("expected SessionError::Save for configured failure")
   }
 }
@@ -505,7 +505,7 @@ async test "tk_hook_records_stage_and_configured_abort" {
   let result : Result[Array[@kernel.Message], String] = try
     hook.before_model([])
   catch {
-    @port.HookAbort::Aborted(reason~) => Err(reason)
+    Aborted(reason~) => Err(reason)
   } noraise {
     _ => Ok([])
   }
@@ -517,8 +517,7 @@ async test "tk_hook_records_stage_and_configured_abort" {
   assert_eq(records.length(), 1)
   assert_eq(records[0].label, "before_model")
   match records[0].outcome {
-    RecordedHookOutcome::AbortedWith(message) =>
-      assert_eq(message, "policy rejected model call")
+    AbortedWith(message) => assert_eq(message, "policy rejected model call")
     _ => fail("recorded hook outcome should be AbortedWith")
   }
 }
@@ -534,15 +533,14 @@ async test "tk_hook_records_stage_and_configured_deferral" {
   }
   let result = hook.before_tool(call)
   match result {
-    @port.ToolDecision::Defer(reason~) => assert_eq(reason, "approval required")
+    Defer(reason~) => assert_eq(reason, "approval required")
     _ => fail("configured hook deferral should return Defer")
   }
   let records = hook.records()
   assert_eq(records.length(), 1)
   assert_eq(records[0].label, "before_tool")
   match records[0].outcome {
-    RecordedHookOutcome::DeferredWith(reason) =>
-      assert_eq(reason, "approval required")
+    DeferredWith(reason) => assert_eq(reason, "approval required")
     _ => fail("recorded hook outcome should be DeferredWith")
   }
 }
@@ -550,16 +548,14 @@ async test "tk_hook_records_stage_and_configured_deferral" {
 ///|
 async test "tk_hook_records_pass_through_outcome" {
   let hook = RecordingHook()
-  let msgs = [
-    @kernel.Message::UserMessage(content=[@kernel.Content::Text("hello")]),
-  ]
+  let msgs = [@kernel.Message::UserMessage(content=[Text("hello")])]
   let returned = hook.before_model(msgs)
   assert_eq(returned.length(), 1)
   let records = hook.records()
   assert_eq(records.length(), 1)
   assert_eq(records[0].label, "before_model")
   match records[0].outcome {
-    RecordedHookOutcome::PassedThrough => ()
+    PassedThrough => ()
     _ => fail("recorded hook outcome should be PassedThrough")
   }
 }
@@ -567,23 +563,21 @@ async test "tk_hook_records_pass_through_outcome" {
 ///|
 async test "tk_hook_record_accessor_is_deep_snapshot" {
   let hook = RecordingHook()
-  let msg = @kernel.Message::UserMessage(content=[
-    @kernel.Content::Text("original"),
-  ])
+  let msg = @kernel.Message::UserMessage(content=[Text("original")])
   let _ = hook.before_model([msg])
   let first = hook.records()
   assert_eq(first[0].label, "before_model")
   match first[0].outcome {
-    RecordedHookOutcome::PassedThrough => ()
+    PassedThrough => ()
     _ => fail("expected PassedThrough outcome")
   }
   // Mutate the returned array to prove snapshot isolation
-  first[0] = HookRecord::{ label: "tampered", outcome: PassedThrough, }
+  first[0] = { label: "tampered", outcome: PassedThrough, }
   let second = hook.records()
   assert_eq(second.length(), 1)
   assert_eq(second[0].label, "before_model")
   match second[0].outcome {
-    RecordedHookOutcome::PassedThrough => ()
+    PassedThrough => ()
     _ => fail("expected second PassedThrough outcome")
   }
 }
@@ -594,37 +588,30 @@ async test "tk_hook_record_accessor_is_deep_snapshot" {
 
 ///|
 async test "tk_assert_events_eq_passes_on_match" {
-  let expected : Array[TurnEvent] = [
-    TurnEvent::TurnStarted,
-    TurnEvent::TurnCompleted,
-  ]
-  let actual : Array[TurnEvent] = [
-    TurnEvent::TurnStarted,
-    TurnEvent::TurnCompleted,
-  ]
+  let expected : Array[TurnEvent] = [TurnStarted, TurnCompleted]
+  let actual : Array[TurnEvent] = [TurnStarted, TurnCompleted]
   assert_events_eq(expected, actual)
 }
 
 ///|
 async test "tk_assert_events_contain_finds_subsequence" {
   let hay : Array[TurnEvent] = [
-    TurnEvent::TurnStarted,
-    TurnEvent::ToolCallPending(tk_call("c1", "t")),
-    TurnEvent::TurnCompleted,
+    TurnStarted,
+    ToolCallPending(tk_call("c1", "t")),
+    TurnCompleted,
   ]
   let needle : Array[TurnEvent] = [
-    TurnEvent::ToolCallPending(tk_call("c1", "t")),
-    TurnEvent::TurnCompleted,
+    ToolCallPending(tk_call("c1", "t")),
+    TurnCompleted,
   ]
   assert_events_contain(hay, needle)
 }
 
 ///|
 test "tk_trace_diff_detects_missing_event_at_first_index" {
-  let mismatch = event_trace_mismatch(
-    [TurnEvent::TurnStarted, TurnEvent::TurnCompleted],
-    [TurnEvent::TurnStarted],
-  )
+  let mismatch = event_trace_mismatch([TurnStarted, TurnCompleted], [
+    TurnStarted,
+  ])
   match mismatch {
     Some(message) => {
       assert_true(message.contains("index 1"))
@@ -637,10 +624,11 @@ test "tk_trace_diff_detects_missing_event_at_first_index" {
 
 ///|
 test "tk_trace_diff_detects_duplicate_event_at_first_index" {
-  let mismatch = event_trace_mismatch(
-    [TurnEvent::TurnStarted, TurnEvent::TurnCompleted],
-    [TurnEvent::TurnStarted, TurnEvent::TurnStarted, TurnEvent::TurnCompleted],
-  )
+  let mismatch = event_trace_mismatch([TurnStarted, TurnCompleted], [
+    TurnStarted,
+    TurnStarted,
+    TurnCompleted,
+  ])
   match mismatch {
     Some(message) => {
       assert_true(message.contains("index 1"))
@@ -654,16 +642,8 @@ test "tk_trace_diff_detects_duplicate_event_at_first_index" {
 ///|
 test "tk_trace_diff_detects_out_of_order_event_at_first_index" {
   let mismatch = event_trace_mismatch(
-    [
-      TurnEvent::TurnStarted,
-      TurnEvent::ToolCallPending(tk_call("c1", "tool")),
-      TurnEvent::TurnCompleted,
-    ],
-    [
-      TurnEvent::ToolCallPending(tk_call("c1", "tool")),
-      TurnEvent::TurnStarted,
-      TurnEvent::TurnCompleted,
-    ],
+    [TurnStarted, ToolCallPending(tk_call("c1", "tool")), TurnCompleted],
+    [ToolCallPending(tk_call("c1", "tool")), TurnStarted, TurnCompleted],
   )
   match mismatch {
     Some(message) => {

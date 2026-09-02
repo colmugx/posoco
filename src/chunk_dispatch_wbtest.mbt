@@ -23,26 +23,26 @@ async test "chunk dispatch: streaming turn delivers chunks in order before TurnC
   )
   let _ = agent.run_turn(tk_user_msg("hello"), "s1")
   let events = observer.events()
-  guard events[0] is @types.TurnStarted else {
+  guard events[0] is TurnStarted else {
     fail("first event must be TurnStarted")
   }
-  guard events[events.length() - 1] is @types.TurnCompleted else {
+  guard events[events.length() - 1] is TurnCompleted else {
     fail("last event must be TurnCompleted")
   }
-  let chunk_events = events.filter(fn(e) { e is @types.StreamChunkReceived(_) })
+  let chunk_events = events.filter(fn(e) { e is StreamChunkReceived(_) })
   assert_eq(chunk_events.length(), 10)
   for i = 0; i < 10; i = i + 1 {
     match chunk_events[i] {
-      @types.StreamChunkReceived(chunk~) =>
+      StreamChunkReceived(chunk~) =>
         match chunk {
-          @types.TextDelta(token~) => assert_eq(token, "t\{i}")
+          TextDelta(token~) => assert_eq(token, "t\{i}")
           _ => fail("expected TextDelta")
         }
       _ => fail("expected StreamChunkReceived at index \{i}")
     }
   }
   // Every chunk must precede TurnCompleted.
-  let completed_index = events.search_by(fn(e) { e is @types.TurnCompleted })
+  let completed_index = events.search_by(fn(e) { e is TurnCompleted })
   guard completed_index is Some(idx) else { fail("TurnCompleted not found") }
   for chunk_event in chunk_events {
     let chunk_idx = events.search_by(fn(e) { e == chunk_event })
@@ -59,7 +59,7 @@ async test "chunk dispatch: streaming turn delivers chunks in order before TurnC
 test "chunk dispatch: enqueue does not call observer synchronously" {
   let observer = RecordingObserver()
   let dispatcher = ChunkDispatcher([observer])
-  dispatcher.enqueue(@types.TextDelta(token="x"))
+  dispatcher.enqueue(TextDelta(token="x"))
   assert_eq(observer.events().length(), 0)
 }
 
@@ -86,26 +86,26 @@ async test "chunk dispatch: overflow drops oldest and emits StreamChunksDropped"
   let _ = agent.run_turn(tk_user_msg("hello"), "s1")
   let events = observer.events()
   // Terminal event is last.
-  guard events[events.length() - 1] is @types.TurnCompleted else {
+  guard events[events.length() - 1] is TurnCompleted else {
     fail("last event must be TurnCompleted")
   }
   // Some chunks were delivered.
-  let chunk_events = events.filter(fn(e) { e is @types.StreamChunkReceived(_) })
+  let chunk_events = events.filter(fn(e) { e is StreamChunkReceived(_) })
   assert_true(chunk_events.length() > 0)
   assert_true(chunk_events.length() <= 1024)
   // A drop event was synthesized and appears before TurnCompleted.
-  let drop_events = events.filter(fn(e) { e is @types.StreamChunksDropped(_) })
+  let drop_events = events.filter(fn(e) { e is StreamChunksDropped(_) })
   assert_eq(drop_events.length(), 1)
   match drop_events[0] {
-    @types.StreamChunksDropped(count~) => {
+    StreamChunksDropped(count~) => {
       let delivered = chunk_events.length()
       assert_eq(count + delivered, total_chunks)
     }
     _ => fail("expected StreamChunksDropped")
   }
   // The drop event must come before TurnCompleted.
-  let drop_idx = events.search_by(fn(e) { e is @types.StreamChunksDropped(_) })
-  let completed_idx = events.search_by(fn(e) { e is @types.TurnCompleted })
+  let drop_idx = events.search_by(fn(e) { e is StreamChunksDropped(_) })
+  let completed_idx = events.search_by(fn(e) { e is TurnCompleted })
   guard drop_idx is Some(didx) && completed_idx is Some(cidx) else {
     fail("drop or completed index missing")
   }
@@ -115,9 +115,9 @@ async test "chunk dispatch: overflow drops oldest and emits StreamChunksDropped"
   // Delivered chunks preserve FIFO order (they are the newest ones).
   for i = 0; i < chunk_events.length(); i = i + 1 {
     match chunk_events[i] {
-      @types.StreamChunkReceived(chunk~) =>
+      StreamChunkReceived(chunk~) =>
         match chunk {
-          @types.TextDelta(token~) =>
+          TextDelta(token~) =>
             assert_eq(token, "c\{total_chunks - chunk_events.length() + i}")
           _ => fail("expected TextDelta")
         }
@@ -149,7 +149,7 @@ async test "chunk dispatch: flush drains chunks before TurnFailed" {
         Json::object(Map::from_array([])),
       ),
     ),
-    Fail(@error.ModelError::Transport("boom")),
+    Fail(Transport("boom")),
   ])
   let store = RecordingSessionStore()
   let observer = RecordingObserver()
@@ -168,14 +168,14 @@ async test "chunk dispatch: flush drains chunks before TurnFailed" {
   guard result is Err(_) else { fail("expected turn to fail") }
   let events = observer.events()
   // Find TurnFailed.
-  let failed_idx = events.search_by(fn(e) { e is @types.TurnFailed(_) })
+  let failed_idx = events.search_by(fn(e) { e is TurnFailed(_) })
   guard failed_idx is Some(fidx) else { fail("TurnFailed not found") }
   // Some chunks were delivered before the failure.
-  let chunk_events = events.filter(fn(e) { e is @types.StreamChunkReceived(_) })
+  let chunk_events = events.filter(fn(e) { e is StreamChunkReceived(_) })
   assert_eq(chunk_events.length(), 10)
   // No chunk may appear at or after TurnFailed.
   for i, event in events {
-    if i >= fidx && event is @types.StreamChunkReceived(_) {
+    if i >= fidx && event is StreamChunkReceived(_) {
       fail("chunk observed at or after TurnFailed")
     }
   }
@@ -188,7 +188,7 @@ async test "chunk dispatch: drain_loop delivers queued events in order" {
   let observer = RecordingObserver()
   let dispatcher = ChunkDispatcher([observer])
   for i in 0..<5 {
-    dispatcher.enqueue(@types.TextDelta(token="d\{i}"))
+    dispatcher.enqueue(TextDelta(token="d\{i}"))
   }
   @async.with_task_group(async fn(group) {
     group.spawn_bg(async fn() { dispatcher.drain_loop() })
@@ -200,9 +200,9 @@ async test "chunk dispatch: drain_loop delivers queued events in order" {
   assert_eq(events.length(), 5)
   for i = 0; i < 5; i = i + 1 {
     match events[i] {
-      @types.StreamChunkReceived(chunk~) =>
+      StreamChunkReceived(chunk~) =>
         match chunk {
-          @types.TextDelta(token~) => assert_eq(token, "d\{i}")
+          TextDelta(token~) => assert_eq(token, "d\{i}")
           _ => fail("expected TextDelta")
         }
       _ => fail("expected StreamChunkReceived at index \{i}")

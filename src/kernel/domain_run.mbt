@@ -21,13 +21,13 @@ pub fn RunId::checked(value : String) -> Result[RunId, String] {
   if value == "" {
     Err("RunId must be non-empty")
   } else {
-    Ok(RunId::{ value, })
+    Ok({ value, })
   }
 }
 
 ///|
 pub fn RunId::unchecked(value : String) -> RunId {
-  RunId::{ value, }
+  { value, }
 }
 
 ///|
@@ -53,13 +53,13 @@ pub fn TurnId::checked(value : String) -> Result[TurnId, String] {
   if value == "" {
     Err("TurnId must be non-empty")
   } else {
-    Ok(TurnId::{ value, })
+    Ok({ value, })
   }
 }
 
 ///|
 pub fn TurnId::unchecked(value : String) -> TurnId {
-  TurnId::{ value, }
+  { value, }
 }
 
 ///|
@@ -85,13 +85,13 @@ pub fn SessionId::checked(value : String) -> Result[SessionId, String] {
   if value == "" {
     Err("SessionId must be non-empty")
   } else {
-    Ok(SessionId::{ value, })
+    Ok({ value, })
   }
 }
 
 ///|
 pub fn SessionId::unchecked(value : String) -> SessionId {
-  SessionId::{ value, }
+  { value, }
 }
 
 ///|
@@ -158,7 +158,7 @@ pub fn CatalogVersion::CatalogVersion(
 ) -> CatalogVersion where {
   proof_ensure: result => catalog_version_mk_ok(result, value),
 } {
-  CatalogVersion::{ value, }
+  { value, }
 }
 
 ///|

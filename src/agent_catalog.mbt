@@ -10,7 +10,7 @@
 /// without each one having to construct `{}`.
 fn normalize_tool_schema(schema : Json) -> Json {
   match schema {
-    Json::Null => Json::object(Map::from_array([]))
+    Null => Json::object(Map::from_array([]))
     other => other
   }
 }
@@ -39,7 +39,7 @@ fn build_catalog_from_defs(
       let _ = builder.add(def)
     } catch {
       e =>
-        raise @error.CompositionError::ManifestSchemaError(
+        raise ManifestSchemaError(
           manifest_id="agent.catalog",
           detail="catalog add '\{tool.name.to_string()}': " +
             safe_error_label(e.to_string()),
@@ -48,7 +48,7 @@ fn build_catalog_from_defs(
   }
   builder.finish(version~) catch {
     e =>
-      raise @error.CompositionError::ManifestSchemaError(
+      raise ManifestSchemaError(
         manifest_id="agent.catalog",
         detail="catalog finish: " + safe_error_label(e.to_string()),
       )
@@ -79,7 +79,7 @@ fn build_agent_catalog(
         tool.owner
       }
       defs.push(
-        @kernel.ToolDef(
+        ToolDef(
           name=tool.name,
           description=tool.description,
           input_schema=tool.input_schema,
@@ -90,7 +90,7 @@ fn build_agent_catalog(
       )
     }
   }
-  build_catalog_from_defs(defs, @kernel.CatalogVersion(1))
+  build_catalog_from_defs(defs, CatalogVersion(1))
 }
 
 ///|

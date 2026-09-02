@@ -99,9 +99,7 @@ async fn collect_memory_inbound(
 /// provider bodies in registration order. Placed before the real first user
 /// input; never rewritten, never re-read.
 fn memory_inbound_message(bodies : Array[String]) -> @kernel.Message {
-  @kernel.UserMessage(content=[
-    @kernel.Text(MEMORY_INBOUND_LEAD + "\n\n" + bodies.join("\n\n")),
-  ])
+  UserMessage(content=[Text(MEMORY_INBOUND_LEAD + "\n\n" + bodies.join("\n\n"))])
 }
 
 ///|
@@ -157,7 +155,7 @@ fn memory_required_string_arg(
   key : String,
 ) -> Result[String, String] {
   match args.get(key) {
-    Some(Json::String(s)) => Ok(s)
+    Some(String(s)) => Ok(s)
     Some(_) => Err("\{tool}: argument '\{key}' must be a string")
     None => Err("\{tool}: missing required argument '\{key}'")
   }
@@ -192,20 +190,20 @@ impl @port.ToolProvider for MemoryToolProvider with fn list_tools(
     valid_sources.push(id)
   }
   [
-    @kernel.ToolDef(
+    ToolDef(
       name=@kernel.ToolName::unchecked("memory_search"),
       description="Search accumulated memory (past work, settled decisions, SOPs) before answering questions it may have settled, and before saving anything new.",
       input_schema=memory_search_schema(),
       owner=@kernel.OwnerId::unchecked("placeholder"),
-      policy=@kernel.ExecutionPolicy::Sequential,
+      policy=Sequential,
       provenance=Some("posoco.core"),
     ),
-    @kernel.ToolDef(
+    ToolDef(
       name=@kernel.ToolName::unchecked("memory_add"),
       description="Save a durable memory for future sessions. Omit source to save to every connected memory provider; valid sources: \{valid_sources.join(", ")}",
       input_schema=memory_add_schema(),
       owner=@kernel.OwnerId::unchecked("placeholder"),
-      policy=@kernel.ExecutionPolicy::Sequential,
+      policy=Sequential,
       provenance=Some("posoco.core"),
     ),
   ]
@@ -218,12 +216,12 @@ async fn MemoryToolProvider::execute_memory_search(
 ) -> @kernel.ToolOutcome noraise {
   let query = match memory_required_string_arg(args, "memory_search", "query") {
     Ok(q) => q
-    Err(msg) => return @kernel.ToolReportedError(content=msg, structured=None)
+    Err(msg) => return ToolReportedError(content=msg, structured=None)
   }
   let top_k : Int? = match args.get("top_k") {
-    Some(Json::Number(n, ..)) => Some(n.to_int())
+    Some(Number(n, ..)) => Some(n.to_int())
     Some(_) =>
-      return @kernel.ToolReportedError(
+      return ToolReportedError(
         content="memory_search: argument 'top_k' must be an integer",
         structured=None,
       )
@@ -256,9 +254,9 @@ async fn MemoryToolProvider::execute_memory_search(
     }
   }
   if hits.is_empty() {
-    @kernel.Success(content="No matching memory.", structured=None)
+    Success(content="No matching memory.", structured=None)
   } else {
-    @kernel.Success(content=hits.join("\n\n"), structured=None)
+    Success(content=hits.join("\n\n"), structured=None)
   }
 }
 
@@ -270,18 +268,18 @@ async fn MemoryToolProvider::execute_memory_add(
   let content = match
     memory_required_string_arg(args, "memory_add", "content") {
     Ok(c) => c
-    Err(msg) => return @kernel.ToolReportedError(content=msg, structured=None)
+    Err(msg) => return ToolReportedError(content=msg, structured=None)
   }
   if content.trim() == "" {
-    return @kernel.ToolReportedError(
+    return ToolReportedError(
       content="memory_add: argument 'content' must be non-empty",
       structured=None,
     )
   }
   let source = match args.get("source") {
-    Some(Json::String(s)) => Some(s)
+    Some(String(s)) => Some(s)
     Some(_) =>
-      return @kernel.ToolReportedError(
+      return ToolReportedError(
         content="memory_add: argument 'source' must be a string",
         structured=None,
       )
@@ -302,7 +300,7 @@ async fn MemoryToolProvider::execute_memory_add(
           let (mid, _) = pair
           valid.push(mid)
         }
-        return @kernel.ToolReportedError(
+        return ToolReportedError(
           content="memory_add: unknown source '\{id}'; valid sources: \{valid.join(", ")}",
           structured=None,
         )
@@ -341,9 +339,9 @@ async fn MemoryToolProvider::execute_memory_add(
     }
   }
   if failures == targets.length() {
-    @kernel.ToolReportedError(content=lines.join("\n"), structured=None)
+    ToolReportedError(content=lines.join("\n"), structured=None)
   } else {
-    @kernel.Success(content=lines.join("\n"), structured=None)
+    Success(content=lines.join("\n"), structured=None)
   }
 }
 
@@ -354,9 +352,9 @@ impl @port.ToolProvider for MemoryToolProvider with fn execute(
   call : @kernel.ToolCall,
 ) -> @kernel.ToolOutcome raise @error.RuntimeError {
   let args : Map[String, Json] = match call.arguments {
-    Json::Object(fields) => fields
+    Object(fields) => fields
     _ =>
-      return @kernel.ToolReportedError(
+      return ToolReportedError(
         content="\{name}: arguments must be a JSON object",
         structured=None,
       )
@@ -364,9 +362,6 @@ impl @port.ToolProvider for MemoryToolProvider with fn execute(
   match name {
     "memory_search" => self.execute_memory_search(args)
     "memory_add" => self.execute_memory_add(args)
-    _ =>
-      raise @error.RuntimeError::UnknownTool(
-        "No executor registered for tool '\{name}'",
-      )
+    _ => raise UnknownTool("No executor registered for tool '\{name}'")
   }
 }

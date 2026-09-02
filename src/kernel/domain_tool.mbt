@@ -45,13 +45,13 @@ pub fn OwnerId::checked(value : String) -> Result[OwnerId, String] {
   if value == "" {
     Err("OwnerId must be non-empty")
   } else {
-    Ok(OwnerId::{ value, })
+    Ok({ value, })
   }
 }
 
 ///|
 pub fn OwnerId::unchecked(value : String) -> OwnerId {
-  OwnerId::{ value, }
+  { value, }
 }
 
 ///|

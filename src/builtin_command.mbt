@@ -46,7 +46,7 @@ impl @port.CommandPort for BuiltinCommandPort with fn commands(
 ) -> Array[@port.CommandDef] {
   let definitions : Array[@port.CommandDef] = []
   if self.compact_enabled {
-    definitions.push(@port.CommandDef::{
+    definitions.push({
       id: "compact",
       label: "Compact",
       description: "Compact the conversation (the modelport decides the strategy)",
@@ -61,14 +61,14 @@ impl @port.CommandPort for BuiltinCommandPort with fn commands(
     })
   }
   if self.fork_enabled {
-    definitions.push(@port.CommandDef::{
+    definitions.push({
       id: "fork-here",
       label: "Fork Here",
       description: "Fork the conversation at the given message index (0-based)",
       category: "session",
       ctype: Action,
       params: [
-        @port.CommandParam::{
+        {
           name: "index",
           label: "Message Index",
           description: "The 0-based transcript index at which to split the new thread",
@@ -104,10 +104,10 @@ fn BuiltinCommandPort::resolve_command(
 ) -> BuiltinCommandKind raise @error.CommandError {
   match id {
     "compact" if self.compact_enabled => Compact
-    "compact" => raise @error.CommandError::NotFound(id)
+    "compact" => raise NotFound(id)
     "fork-here" if self.fork_enabled => ForkHere
-    "fork-here" => raise @error.CommandError::NotFound(id)
-    other => raise @error.CommandError::NotFound(other)
+    "fork-here" => raise NotFound(id)
+    other => raise NotFound(other)
   }
 }
 
@@ -120,18 +120,11 @@ fn enqueue_outcome(
 ) -> @port.CommandOutcome {
   match result {
     Accepted(_) =>
-      @port.CommandOutcome::Success(
-        feedback=accepted_feedback,
-        structured=None,
-        ui_hint=Some(@port.UiHint::Toast),
-      )
-    RejectedStale(reason~, ..) =>
-      @port.CommandOutcome::Failure(reason=name + " rejected: " + reason)
+      Success(feedback=accepted_feedback, structured=None, ui_hint=Some(Toast))
+    RejectedStale(reason~, ..) => Failure(reason=name + " rejected: " + reason)
     RejectedQueueFull(depth~, ..) =>
-      @port.CommandOutcome::Failure(
-        reason="\{name} queue full (depth=\{depth})",
-      )
-    _ => @port.CommandOutcome::Failure(reason="\{name} already requested")
+      Failure(reason="\{name} queue full (depth=\{depth})")
+    _ => Failure(reason="\{name} already requested")
   }
 }
 
@@ -152,7 +145,7 @@ impl @port.CommandPort for BuiltinCommandPort with fn invoke(
             command_id,
             target_run_id: run_id,
             target_turn_id: turn_id,
-            trigger: @kernel.Manual,
+            trigger: Manual,
           }
           enqueue_outcome(
             "compact",
@@ -182,7 +175,7 @@ impl @port.CommandPort for BuiltinCommandPort with fn invoke(
       // No active run: nothing for the pump to consume. Tell the caller
       // so they can surface it (or queue an out-of-band compact/fork,
       // which M3.5 does not deliver).
-      @port.CommandOutcome::Failure(
+      Failure(
         reason="no active run: " +
           id +
           " can only be invoked while a turn is in flight",
@@ -204,16 +197,16 @@ extend BuiltinCommandPort with @port.CommandPort::{commands, invoke}
 /// transcript reference the BuiltinCommandPort does not hold today.
 fn parse_fork_index(args : Json) -> Int {
   match args {
-    Json::Object(map) =>
+    Object(map) =>
       if map.contains("index") {
         match map["index"] {
-          Json::Number(n, ..) => n.to_int()
+          Number(n, ..) => n.to_int()
           _ => 0
         }
       } else {
         0
       }
-    Json::Number(n, ..) => n.to_int()
+    Number(n, ..) => n.to_int()
     _ => 0
   }
 }

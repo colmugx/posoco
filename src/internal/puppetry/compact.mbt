@@ -72,14 +72,14 @@ async fn Puppet::handle_compact(
   }
   let compact_result = match attempted {
     Err(error) =>
-      return CompactFlow::Failed(
+      return Failed(
         EffectExecutionFailed(
           phase="compact",
           cause="host compact raised: " + error.to_string(),
         ),
       )
     Ok(Err(failure)) =>
-      return CompactFlow::Failed(
+      return Failed(
         EffectExecutionFailed(
           phase="compact",
           cause="modelport compact failed: " + failure.to_string(),
@@ -88,7 +88,7 @@ async fn Puppet::handle_compact(
     Ok(Ok(result)) => result
   }
   match compact_result.mode {
-    @kernel.NewThread => {
+    NewThread => {
       let new_session_id = session_id.to_string() +
         "_compact_" +
         compact_cmd.command_id().to_string()
@@ -104,7 +104,7 @@ async fn Puppet::handle_compact(
           )
           store.save(new_session_id, with_lineage) catch {
             error =>
-              return CompactFlow::Failed(
+              return Failed(
                 EffectExecutionFailed(
                   phase="compact",
                   cause="session save failed: " + error.to_string(),
@@ -118,25 +118,25 @@ async fn Puppet::handle_compact(
       self.phase_gate = self.phase_gate.transition(Terminalizing)
       self.phase_gate = self.phase_gate.transition(Idle)
       self.mailbox.clear_run()
-      CompactFlow::ReturnedResult(
+      ReturnedResult(
         CompactCompleted(
           run_id~,
           turn_id~,
-          mode=@kernel.NewThread,
+          mode=NewThread,
           trigger=compact_cmd.trigger(),
           new_session_id=Some(new_session_id),
           compacted_messages=compact_result.compacted_messages,
         ),
       )
     }
-    @kernel.Replace =>
+    Replace =>
       self.rewrite_transcript_for_compact(
         state,
         compact_result.compacted_messages,
         "compact_replace",
         "compact-replace",
       )
-    @kernel.Append => {
+    Append => {
       let current = state.transcript().messages_snapshot()
       let combined : Array[@kernel.Message] = current +
         compact_result.compacted_messages
@@ -171,12 +171,12 @@ fn Puppet::rewrite_transcript_for_compact(
   }
   match reduced {
     Err(e) =>
-      CompactFlow::Failed(
+      Failed(
         ReducerInvariantViolation(
           category=IllegalPhase(phase~, detail=e.to_string()),
         ),
       )
-    Ok(out) => CompactFlow::UpdatedState(out.next_state(), out.events())
+    Ok(out) => UpdatedState(out.next_state(), out.events())
   }
 }
 
@@ -240,7 +240,7 @@ fn Puppet::check_auto_compact(
           // branch is unreachable in practice.
           return None
       },
-      trigger: @kernel.Auto,
+      trigger: Auto,
     })
   } else {
     None

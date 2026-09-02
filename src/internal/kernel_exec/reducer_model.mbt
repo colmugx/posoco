@@ -67,8 +67,7 @@ fn reduce_awaiting_model(
     ModelFailed(payload~) => reduce_model_failed(state, payload)
     CancelRequested(payload~) =>
       reduce_cancel_with_pending(state, payload.detail)
-    DeadlineReached(_) =>
-      reduce_terminal_fail(state, FailureReason::DeadlineReached)
+    DeadlineReached(_) => reduce_terminal_fail(state, DeadlineReached)
     BudgetExhausted(payload~) =>
       reduce_terminal_fail(state, BudgetExhausted(dimension=payload.dimension))
     SuspendRequested(payload~) => reduce_suspend(state, payload.requirement)
@@ -113,10 +112,10 @@ fn reduce_model_completed(
   let completion = payload.completion
   // Length finish reason → terminal failure (ADR §2.7).
   match completion.finish_reason() {
-    @kernel.Length =>
+    Length =>
       return reduce_terminal_fail(
         append_completion_to_state(state, completion),
-        FailureReason::ModelParseFailure(detail="finish_reason=Length"),
+        ModelParseFailure(detail="finish_reason=Length"),
       )
     _ => ()
   }
@@ -383,28 +382,18 @@ fn classify_rejected_outcome(
 ) -> @kernel.ToolOutcome? {
   // Unknown tool → NotExecuted(UnknownTool)
   if !catalog.contains(call.name) {
-    return Some(
-      @kernel.NotExecuted(
-        reason=@kernel.UnknownTool,
-        original_call_id=call.call_id,
-      ),
-    )
+    return Some(NotExecuted(reason=UnknownTool, original_call_id=call.call_id))
   }
   // Schema validation against the catalog.
   match catalog.validate_arguments(call.name, call.arguments) {
     Err(diag) =>
       if is_unknown_tool_diagnostic(diag) {
         // Should be unreachable (we checked contains above), but be safe.
-        Some(
-          @kernel.NotExecuted(
-            reason=@kernel.UnknownTool,
-            original_call_id=call.call_id,
-          ),
-        )
+        Some(NotExecuted(reason=UnknownTool, original_call_id=call.call_id))
       } else {
         Some(
-          @kernel.NotExecuted(
-            reason=@kernel.SchemaMismatch(
+          NotExecuted(
+            reason=SchemaMismatch(
               json_path=diag.json_path,
               expected=diag.expected,
               actual=diag.actual,
@@ -471,12 +460,12 @@ fn reduce_model_failed(
     )
   }
   let reason : FailureReason = match payload.failure {
-    @kernel.RequestBuild(reason~) => ModelParseFailure(detail=reason)
-    @kernel.Transport(reason~) => ModelTransport(detail=reason)
-    @kernel.Runtime(reason~) => ModelRuntime(detail=reason)
-    @kernel.Parse(reason~) => ModelParseFailure(detail=reason)
-    @kernel.HostRejected(reason~) => FailureReason::HostRejected(detail=reason)
-    @kernel.RateLimited(reason~, reset_at_ms~, provider_code~) =>
+    RequestBuild(reason~) => ModelParseFailure(detail=reason)
+    Transport(reason~) => ModelTransport(detail=reason)
+    Runtime(reason~) => ModelRuntime(detail=reason)
+    Parse(reason~) => ModelParseFailure(detail=reason)
+    HostRejected(reason~) => HostRejected(detail=reason)
+    RateLimited(reason~, reset_at_ms~, provider_code~) =>
       ModelQuotaExhausted(detail=reason, reset_at_ms~, provider_code~)
   }
   reduce_terminal_fail(state, reason)

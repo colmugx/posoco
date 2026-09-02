@@ -96,8 +96,8 @@ fn safe_error_label(value : String) -> String {
 ///|
 fn snapshot_json(value : Json) -> Json {
   match value {
-    Json::Array(items) => Json::array(items.map(snapshot_json))
-    Json::Object(fields) => {
+    Array(items) => Json::array(items.map(snapshot_json))
+    Object(fields) => {
       let snapshot : Map[String, Json] = Map::from_array([])
       for key in fields.keys() {
         snapshot[key] = snapshot_json(fields[key])
@@ -120,27 +120,26 @@ fn snapshot_tool_call(call : @kernel.ToolCall) -> @kernel.ToolCall {
 ///|
 fn snapshot_content(content : @kernel.Content) -> @kernel.Content {
   match content {
-    @kernel.Text(text) => @kernel.Text(text)
-    @kernel.Image(media_type~, data~) => @kernel.Image(media_type~, data~)
+    Text(text) => Text(text)
+    Image(media_type~, data~) => Image(media_type~, data~)
   }
 }
 
 ///|
 fn snapshot_message(message : @kernel.Message) -> @kernel.Message {
   match message {
-    @kernel.SystemMessage(content~) =>
-      @kernel.SystemMessage(content=content.map(snapshot_content))
-    @kernel.UserMessage(content~) =>
-      @kernel.UserMessage(content=content.map(snapshot_content))
-    @kernel.AssistantMessage(content~, tool_calls~, reasoning~, finish_reason~) =>
-      @kernel.AssistantMessage(
+    SystemMessage(content~) =>
+      SystemMessage(content=content.map(snapshot_content))
+    UserMessage(content~) => UserMessage(content=content.map(snapshot_content))
+    AssistantMessage(content~, tool_calls~, reasoning~, finish_reason~) =>
+      AssistantMessage(
         content=content.map(snapshot_content),
         tool_calls=tool_calls.map(snapshot_tool_call),
         reasoning~,
         finish_reason~,
       )
-    @kernel.ToolMessage(call_id~, tool_name~, outcome~) =>
-      @kernel.ToolMessage(call_id~, tool_name~, outcome~)
+    ToolMessage(call_id~, tool_name~, outcome~) =>
+      ToolMessage(call_id~, tool_name~, outcome~)
   }
 }
 
@@ -174,26 +173,26 @@ fn snapshot_session(
 ///|
 fn snapshot_tool_outcome(outcome : @kernel.ToolOutcome) -> @kernel.ToolOutcome {
   match outcome {
-    @kernel.Success(content~, structured~) =>
-      @kernel.Success(
+    Success(content~, structured~) =>
+      Success(
         content~,
         structured=match structured {
           Some(j) => Some(snapshot_json(j))
           None => None
         },
       )
-    @kernel.ToolReportedError(content~, structured~) =>
-      @kernel.ToolReportedError(
+    ToolReportedError(content~, structured~) =>
+      ToolReportedError(
         content~,
         structured=match structured {
           Some(j) => Some(snapshot_json(j))
           None => None
         },
       )
-    @kernel.RuntimeFailure(error_category~, message~) =>
-      @kernel.RuntimeFailure(error_category~, message~)
-    @kernel.NotExecuted(reason~, original_call_id~) =>
-      @kernel.NotExecuted(reason~, original_call_id~)
+    RuntimeFailure(error_category~, message~) =>
+      RuntimeFailure(error_category~, message~)
+    NotExecuted(reason~, original_call_id~) =>
+      NotExecuted(reason~, original_call_id~)
   }
 }
 
@@ -225,7 +224,7 @@ fn build_tool_routing(
         Some(labels) =>
           // T06-B: fail-fast on collision. The error names the tool and both
           // sources so the caller can locate the conflict without guessing.
-          raise @error.CompositionError::ToolCollision(
+          raise ToolCollision(
             safe_error_label(name),
             tool_collision_message(labels[0], provenance),
             manifests=[],
@@ -304,7 +303,7 @@ fn validate_agent_config(
 ) -> Unit raise @error.CompositionError {
   match config.max_tool_rounds {
     Some(value) if value < 0 =>
-      raise @error.CompositionError::ManifestSchemaError(
+      raise ManifestSchemaError(
         manifest_id="agent.config",
         detail="max_tool_rounds must be non-negative",
       )
@@ -312,7 +311,7 @@ fn validate_agent_config(
   }
   match config.model_context_window {
     Some(value) if value <= 0 =>
-      raise @error.CompositionError::ManifestSchemaError(
+      raise ManifestSchemaError(
         manifest_id="agent.config",
         detail="model_context_window must be positive",
       )
@@ -320,7 +319,7 @@ fn validate_agent_config(
   }
   match config.compact_threshold {
     Some(value) if value <= 0.0 || value > 1.0 =>
-      raise @error.CompositionError::ManifestSchemaError(
+      raise ManifestSchemaError(
         manifest_id="agent.config",
         detail="compact_threshold must be in (0, 1]",
       )
@@ -328,7 +327,7 @@ fn validate_agent_config(
   }
   match config.memory_inbound_timeout_ms {
     Some(value) if value <= 0 =>
-      raise @error.CompositionError::ManifestSchemaError(
+      raise ManifestSchemaError(
         manifest_id="agent.config",
         detail="memory_inbound_timeout_ms must be positive",
       )
@@ -363,7 +362,7 @@ fn compose_tool_catalog(
   let (catalog, initial_catalog_revision) = match catalog_source {
     Some(source) =>
       (
-        build_catalog_from_defs(source.tools(), @kernel.CatalogVersion(1)),
+        build_catalog_from_defs(source.tools(), CatalogVersion(1)),
         source.revision(),
       )
     None => (build_agent_catalog(tool_routing.providers), 0)
@@ -463,7 +462,7 @@ fn AgentRuntime::compose(
 ) -> Agent raise @error.CompositionError {
   validate_agent_config(config)
   if agg.sessions.is_empty() {
-    raise @error.CompositionError::EmptyPort("SessionStore")
+    raise EmptyPort("SessionStore")
   }
   let (tool_routing, catalog, initial_catalog_revision) = compose_tool_catalog(
     agg, catalog_source,
@@ -520,7 +519,7 @@ fn AgentRuntime::compose(
     entry.port.on_compose(view)
   }
   let runtime : AgentRuntime = {
-    puppet: @puppetry.Puppet(puppet_config),
+    puppet: Puppet(puppet_config),
     model: agg.model,
     observers: agg.observers,
     hooks: composed_hooks,
@@ -530,7 +529,7 @@ fn AgentRuntime::compose(
     lifecycle: agg.lifecycle.map(fn(entry) { entry.port }),
     commands: agg.commands,
     builtin_command_port,
-    control: @runtime.RuntimeControl(mailbox_ref),
+    control: RuntimeControl(mailbox_ref),
     config,
     catalog_source,
     last_catalog_revision: initial_catalog_revision,
@@ -604,7 +603,7 @@ async fn AgentRuntime::shutdown(self : AgentRuntime) -> Unit {
   self.puppet.shutdown() catch {
     error =>
       raise @error.AgentError::Runtime(
-        @error.RuntimeError::InvocationFailed(
+        InvocationFailed(
           "puppet shutdown: " + safe_error_label(error.to_string()),
         ),
       )
@@ -638,14 +637,14 @@ fn contextualize_session_error(
   operation : String,
 ) -> @error.AgentError {
   let cause = safe_error_label(error.to_string())
-  @error.AgentError::Session(
+  Session(
     match error {
       Load(_) =>
-        @error.SessionError::Load(
+        Load(
           "session_id='\{safe_error_label(session_id)}', operation='\{operation}', category='SessionError::Load', cause='\{cause}'",
         )
       Save(_) =>
-        @error.SessionError::Save(
+        Save(
           "session_id='\{safe_error_label(session_id)}', operation='\{operation}', category='SessionError::Save', cause='\{cause}'",
         )
     },
@@ -663,7 +662,7 @@ fn save_error_context(
   operation : String,
 ) -> @error.AgentError {
   let context = "session_id='\{safe_error_label(session_id)}', operation='\{operation}', category='SessionError::Save', cause='\{safe_error_label(error.to_string())}'"
-  @error.AgentError::Session(@error.SessionError::Save(context))
+  Session(Save(context))
 }
 
 ///|
@@ -799,9 +798,7 @@ fn AgentRuntime::ensure_agent_running(
   self : AgentRuntime,
 ) -> Unit raise @error.AgentError {
   if self.shutdown_started {
-    raise @error.AgentError::Runtime(
-      @error.RuntimeError::InvocationFailed("agent is shut down"),
-    )
+    raise Runtime(InvocationFailed("agent is shut down"))
   }
 }
 
@@ -853,8 +850,8 @@ async fn AgentRuntime::run_single_turn(
     for lc in self.lifecycle {
       lc.on_start() catch {
         error =>
-          raise @error.AgentError::Runtime(
-            @error.RuntimeError::InvocationFailed(
+          raise Runtime(
+            InvocationFailed(
               "lifecycle on_start: " + safe_error_label(error.to_string()),
             ),
           )

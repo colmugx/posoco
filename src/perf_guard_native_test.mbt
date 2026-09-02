@@ -12,7 +12,7 @@ async test "perf guard: stream accumulator text push is sub-quadratic" {
   let acc = @types.StreamAccumulator()
   let t0 = @async.now()
   for _i in 0..<n {
-    acc.push(@types.TextDelta(token="abcd"))
+    acc.push(TextDelta(token="abcd"))
   }
   let dt = @async.now() - t0
   assert_true(
@@ -40,19 +40,19 @@ async test "perf guard: multi-wave tool commit is linear in transcript" {
         arguments: Json::object(Map::from_array([])),
       })
     }
-    let completion : @kernel.Completion = @kernel.Completion(
+    let completion : @kernel.Completion = Completion(
       content=[],
       tool_calls=calls,
       reasoning=None,
-      finish_reason=@kernel.ToolCalls,
+      finish_reason=ToolCalls,
       usage=None,
     )
-    steps.push(@posoco.Respond({ completion, processed_messages: [], }))
+    steps.push(Respond({ completion, processed_messages: [], }))
   }
-  steps.push(@posoco.Respond(@posoco.tk_stop_response("done")))
+  steps.push(Respond(@posoco.tk_stop_response("done")))
 
   let outcomes : Map[String, @posoco.ScriptedToolOutcome] = Map::from_array([])
-  outcomes["echo"] = @posoco.OutcomeOk(@posoco.tk_ok_result("ok"))
+  outcomes["echo"] = OutcomeOk(@posoco.tk_ok_result("ok"))
   let provider = @posoco.RecordingToolProvider(
     [@posoco.tk_tool_def("echo", "echo tool")],
     outcomes,
@@ -88,10 +88,10 @@ async test "perf guard: streaming turn drains 50k chunks fast" {
   let n = 50_000
   let chunks : Array[@types.StreamChunk] = []
   for _i in 0..<n {
-    chunks.push(@types.TextDelta(token="abcd"))
+    chunks.push(TextDelta(token="abcd"))
   }
   let model = @posoco.ScriptedModel([
-    @posoco.Stream(chunks~, response=@posoco.tk_stop_response("ok")),
+    Stream(chunks~, response=@posoco.tk_stop_response("ok")),
   ])
   let store = @posoco.RecordingSessionStore()
   let observer = @posoco.RecordingObserver()

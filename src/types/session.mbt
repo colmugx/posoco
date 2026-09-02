@@ -29,7 +29,7 @@ pub const PARENT_THREAD_ID_KEY = "posoco.parent_thread_id"
 /// the key is absent or not a string.
 pub fn Session::parent_thread_id(self : Session) -> String? {
   match self.metadata.get(PARENT_THREAD_ID_KEY) {
-    Some(Json::String(s)) => Some(s)
+    Some(String(s)) => Some(s)
     _ => None
   }
 }

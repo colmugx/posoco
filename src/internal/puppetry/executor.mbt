@@ -36,13 +36,13 @@ pub fn ModelId::checked(value : String) -> Result[ModelId, String] {
   if value == "" {
     Err("ModelId must be non-empty")
   } else {
-    Ok(ModelId::{ value, })
+    Ok({ value, })
   }
 }
 
 ///|
 pub fn ModelId::unchecked(value : String) -> ModelId {
-  ModelId::{ value, }
+  { value, }
 }
 
 ///|
@@ -112,11 +112,11 @@ async fn execute_one(
   on_chunk : @kernel_exec.HostChunkCallback?,
 ) -> @kernel_exec.RunInput raise PuppetError {
   match effect {
-    @kernel_exec.CallModel(effect_id~, payload~) =>
+    CallModel(effect_id~, payload~) =>
       execute_call_model(effect_id, payload, ctx, on_chunk)
-    @kernel_exec.ExecuteTool(effect_id~, payload~) =>
+    ExecuteTool(effect_id~, payload~) =>
       execute_execute_tool(effect_id, payload, ctx)
-    @kernel_exec.CancelOutstanding(..) =>
+    CancelOutstanding(..) =>
       raise EffectExecutionFailed(
         phase="executor",
         cause="CancelOutstanding must be propagated at the terminal boundary, not converted to RunInput",
@@ -161,14 +161,14 @@ async fn execute_call_model(
     Err(error) =>
       raise EffectExecutionFailed(phase="CallModel", cause=error.to_string())
     Ok(Ok(result)) =>
-      @kernel_exec.ModelCompleted(payload=@kernel_exec.ModelCompletedPayload::{
+      ModelCompleted(payload={
         effect_id,
         model_step_id: payload.model_step_id,
         completion: result.completion,
         processed_messages: result.processed_messages,
       })
     Ok(Err(failure)) =>
-      @kernel_exec.ModelFailed(payload=@kernel_exec.ModelFailedPayload::{
+      ModelFailed(payload={
         effect_id,
         model_step_id: payload.model_step_id,
         failure,
@@ -208,38 +208,36 @@ async fn execute_execute_tool(
       raise EffectExecutionFailed(phase="ExecuteTool", cause=error.to_string())
   }
   match outcome {
-    @kernel.NotExecuted(reason~, ..) =>
+    NotExecuted(reason~, ..) =>
       // Host contract violation: NotExecuted crossed the host boundary.
       // Surface as a typed ToolFailed with a Parse-flavoured runtime failure
       // so the reducer records an explicit, observable signal.
-      @kernel_exec.ToolFailed(payload=@kernel_exec.ToolFailedPayload::{
+      ToolFailed(payload={
         effect_id,
         call_id: payload.call_id,
         tool_name: payload.tool_name,
         arguments: payload.arguments,
         reason: "host returned NotExecuted: " + reason.to_string(),
         runtime: Some(
-          @kernel.Parse(
-            reason="host returned NotExecuted: " + reason.to_string(),
-          ),
+          Parse(reason="host returned NotExecuted: " + reason.to_string()),
         ),
         invariant_failure: None,
       })
-    @kernel.RuntimeFailure(error_category="MissingOwner", ..) =>
+    RuntimeFailure(error_category="MissingOwner", ..) =>
       // A missing owner is a Kernel composition/runtime invariant, not a
       // tool-level failure. Do not let the reducer turn it into a normal
       // RuntimeFailure message and continue with a broken catalog binding.
-      @kernel_exec.ToolFailed(payload=@kernel_exec.ToolFailedPayload::{
+      ToolFailed(payload={
         effect_id,
         call_id: payload.call_id,
         tool_name: payload.tool_name,
         arguments: payload.arguments,
         reason: "missing owner: " + payload.owner.to_string(),
         runtime: None,
-        invariant_failure: Some(@kernel_exec.MissingOwner(owner=payload.owner)),
+        invariant_failure: Some(MissingOwner(owner=payload.owner)),
       })
     _ =>
-      @kernel_exec.ToolCompleted(payload=@kernel_exec.ToolCompletedPayload::{
+      ToolCompleted(payload={
         effect_id,
         call_id: payload.call_id,
         tool_name: payload.tool_name,

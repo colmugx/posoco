@@ -10,12 +10,12 @@ fn bound_control() -> @runtime.RuntimeControl {
     @kernel.RunId::unchecked("run_1"),
     @kernel.TurnId::unchecked("turn_1"),
   )
-  @runtime.RuntimeControl(mailbox as &@puppetry.Mailbox)
+  RuntimeControl(mailbox as &@puppetry.Mailbox)
 }
 
 ///|
 fn text_message(text : String) -> @kernel.Message {
-  @kernel.UserMessage(content=[@kernel.Text(text)])
+  UserMessage(content=[Text(text)])
 }
 
 ///|
@@ -38,13 +38,11 @@ test "runtime control/follow_up accepted and drained FIFO" {
   assert_true(control.enqueue_follow_up(text_message("second")) is Accepted(_))
   assert_eq(control.pending_follow_ups(), 2)
   match control.take_follow_up() {
-    Some(@kernel.UserMessage(content=[@kernel.Text(text)])) =>
-      assert_eq(text, "first")
+    Some(UserMessage(content=[Text(text)])) => assert_eq(text, "first")
     other => fail("expected first follow-up, got \{repr(other)}")
   }
   match control.take_follow_up() {
-    Some(@kernel.UserMessage(content=[@kernel.Text(text)])) =>
-      assert_eq(text, "second")
+    Some(UserMessage(content=[Text(text)])) => assert_eq(text, "second")
     other => fail("expected second follow-up, got \{repr(other)}")
   }
   assert_true(control.take_follow_up() is None)

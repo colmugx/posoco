@@ -64,14 +64,14 @@ async fn Puppet::fold_effect_input(
           snap,
         )
         match compact_outcome {
-          CompactFlow::ReturnedResult(r) => return FoldOutcome::Return(r)
-          CompactFlow::UpdatedState(new_state, events) => {
+          ReturnedResult(r) => return Return(r)
+          UpdatedState(new_state, events) => {
             for event in events {
               rewrite_events.push(event)
             }
             new_state
           }
-          CompactFlow::Failed(error) => {
+          Failed(error) => {
             // Auto-trigger compaction is best-effort: a modelport that does
             // not implement compact (or a transport hiccup during the
             // summarize call) must not kill the turn. Record the skip for
@@ -114,7 +114,7 @@ async fn Puppet::fold_effect_input(
   }
   match committed {
     Err(error) => raise error
-    Ok(_) => FoldOutcome::Continue(next_state)
+    Ok(_) => Continue(next_state)
   }
 }
 

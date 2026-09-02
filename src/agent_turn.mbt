@@ -59,11 +59,11 @@ async fn AgentRuntime::inject_memory_inbound(
     !self.memory_inbound_attempted.contains(session_id) {
     self.memory_inbound_attempted[session_id] = true
     let request = match input {
-      @kernel.UserMessage(content~) => {
+      UserMessage(content~) => {
         let parts : Array[String] = []
         for item in content {
           match item {
-            @kernel.Text(t) => parts.push(t)
+            Text(t) => parts.push(t)
             _ => ()
           }
         }
@@ -116,7 +116,7 @@ async fn AgentRuntime::run_turn_via_puppet(
       }
     [] =>
       raise contextualize_session_error(
-        @error.SessionError::Load("no session store configured"),
+        Load("no session store configured"),
         session_id,
         "load",
       )
@@ -218,12 +218,7 @@ async fn AgentRuntime::run_turn_via_puppet(
       self.chunk_dispatcher.val = None
       let original : @error.AgentError = match turn_error.val {
         Some(ae) => ae
-        None =>
-          @error.AgentError::Runtime(
-            @error.RuntimeError::InvocationFailed(
-              "turn body: unclassified error",
-            ),
-          )
+        None => Runtime(InvocationFailed("turn body: unclassified error"))
       }
       raise original
     }
@@ -249,10 +244,8 @@ async fn AgentRuntime::run_puppet_turn_body(
   // Step 4: drive the already-started, Agent-owned Puppet.
   let prompt_result = self.puppet.prompt(request) catch {
     e =>
-      raise @error.AgentError::Runtime(
-        @error.RuntimeError::InvocationFailed(
-          "puppet prompt: " + safe_error_label(e.to_string()),
-        ),
+      raise Runtime(
+        InvocationFailed("puppet prompt: " + safe_error_label(e.to_string())),
       )
   }
 
@@ -267,47 +260,33 @@ async fn AgentRuntime::run_puppet_turn_body(
 
   // Step 5: handle non-Accepted prompt results.
   match prompt_result {
-    @puppetry.Rejected(error=@puppetry.HookRejected(reason~)) =>
-      raise @error.AgentError::PipelineAborted(reason)
-    @puppetry.Rejected(error=@puppetry.PumpLoopExceeded(..)) =>
+    Rejected(error=HookRejected(reason~)) => raise PipelineAborted(reason)
+    Rejected(error=PumpLoopExceeded(..)) =>
       // With a correctly sized backstop (2 * rounds + 1) the kernel budget
       // always fires first; reaching this branch means a livelock or an
       // internal accounting defect, not a budget hit.
-      raise @error.AgentError::Runtime(
-        @error.RuntimeError::InvocationFailed(
-          "pump loop exceeded (internal livelock guard)",
-        ),
+      raise Runtime(
+        InvocationFailed("pump loop exceeded (internal livelock guard)"),
       )
-    @puppetry.Rejected(error=@puppetry.ReducerInvariantViolation(..)) =>
-      raise @error.AgentError::Runtime(
-        @error.RuntimeError::InvocationFailed("puppet invariant violation"),
+    Rejected(error=ReducerInvariantViolation(..)) =>
+      raise Runtime(InvocationFailed("puppet invariant violation"))
+    Rejected(error=EffectExecutionFailed(cause~, ..)) =>
+      raise Runtime(
+        InvocationFailed("puppet effect execution: " + safe_error_label(cause)),
       )
-    @puppetry.Rejected(error=@puppetry.EffectExecutionFailed(cause~, ..)) =>
-      raise @error.AgentError::Runtime(
-        @error.RuntimeError::InvocationFailed(
-          "puppet effect execution: " + safe_error_label(cause),
-        ),
+    Rejected(error~) =>
+      raise Runtime(
+        InvocationFailed("puppet rejected the prompt: " + error.to_string()),
       )
-    @puppetry.Rejected(error~) =>
-      raise @error.AgentError::Runtime(
-        @error.RuntimeError::InvocationFailed(
-          "puppet rejected the prompt: " + error.to_string(),
-        ),
-      )
-    @puppetry.ForkCompleted(
-      parent_session_id~,
-      new_session_id~,
-      forked_messages~,
-      ..
-    ) =>
+    ForkCompleted(parent_session_id~, new_session_id~, forked_messages~, ..) =>
       return self.complete_fork_turn(
         identity, parent_session_id, new_session_id, forked_messages, input,
       )
-    @puppetry.CompactCompleted(mode~, new_session_id~, compacted_messages~, ..) =>
+    CompactCompleted(mode~, new_session_id~, compacted_messages~, ..) =>
       return self.complete_compact_turn(
         identity, session_id, mode, new_session_id, compacted_messages, input, current_metadata,
       )
-    @puppetry.Accepted(..) => {
+    Accepted(..) => {
       // Check terminal outcome for model failures.
       let failure : @error.AgentError? = self.terminal_failure_to_agent_error()
       match failure {
@@ -336,10 +315,7 @@ async fn AgentRuntime::run_puppet_turn_body(
         None => ()
       }
     }
-    @puppetry.LeaseBusy(..) =>
-      raise @error.AgentError::Runtime(
-        @error.RuntimeError::InvocationFailed("puppet lease busy"),
-      )
+    LeaseBusy(..) => raise Runtime(InvocationFailed("puppet lease busy"))
   }
 
   // Step 6: materialize the terminal transcript for persistence and the
@@ -348,10 +324,8 @@ async fn AgentRuntime::run_puppet_turn_body(
   let final_transcript = match self.puppet.last_completed_transcript() {
     Some(t) => t
     None =>
-      raise @error.AgentError::Runtime(
-        @error.RuntimeError::InvocationFailed(
-          "puppet did not produce a terminal transcript",
-        ),
+      raise Runtime(
+        InvocationFailed("puppet did not produce a terminal transcript"),
       )
   }
   let transcript_msgs = final_transcript.messages_snapshot()
@@ -360,8 +334,8 @@ async fn AgentRuntime::run_puppet_turn_body(
   for i in current_turn_start..<transcript_msgs.length() {
     let message = transcript_msgs[i]
     match message {
-      @kernel.AssistantMessage(..) => final_message = message
-      @kernel.ToolMessage(outcome~, ..) => all_results.push(outcome)
+      AssistantMessage(..) => final_message = message
+      ToolMessage(outcome~, ..) => all_results.push(outcome)
       _ => ()
     }
   }
@@ -391,78 +365,53 @@ fn AgentRuntime::terminal_failure_to_agent_error(
   self : AgentRuntime,
 ) -> @error.AgentError? {
   match self.puppet.last_terminal_outcome() {
-    Some(@kernel_exec.Failed(reason=@kernel_exec.ModelTransport(detail~))) =>
-      Some(@error.AgentError::Model("model transport: " + detail))
-    Some(@kernel_exec.Failed(reason=@kernel_exec.ModelParseFailure(detail~))) =>
-      Some(@error.AgentError::Model("model parse failure: " + detail))
-    Some(@kernel_exec.Failed(reason=@kernel_exec.ModelRuntime(detail~))) =>
-      Some(@error.AgentError::Model("model runtime failure: " + detail))
+    Some(Failed(reason=ModelTransport(detail~))) =>
+      Some(Model("model transport: " + detail))
+    Some(Failed(reason=ModelParseFailure(detail~))) =>
+      Some(Model("model parse failure: " + detail))
+    Some(Failed(reason=ModelRuntime(detail~))) =>
+      Some(Model("model runtime failure: " + detail))
     Some(
-      @kernel_exec.Failed(
-        reason=@kernel_exec.ModelQuotaExhausted(
-          detail~,
-          reset_at_ms~,
-          provider_code~
-        )
-      )
+      Failed(reason=ModelQuotaExhausted(detail~, reset_at_ms~, provider_code~))
     ) =>
       // Provider quota/rate-limit verdict. The message keeps the provider
       // code and reset time so hosts can schedule a retry instead of
       // parsing the provider excerpt for scheduling data.
       Some(
-        @error.AgentError::Model(
+        Model(
           "model quota exhausted: " +
           quota_error_detail(detail, reset_at_ms, provider_code),
         ),
       )
-    Some(@kernel_exec.Failed(reason=@kernel_exec.HostRejected(detail~))) =>
+    Some(Failed(reason=HostRejected(detail~))) =>
+      Some(Runtime(InvocationFailed("host rejected: " + detail)))
+    Some(Failed(reason=InvariantViolation(category~))) =>
       Some(
-        @error.AgentError::Runtime(
-          @error.RuntimeError::InvocationFailed("host rejected: " + detail),
-        ),
-      )
-    Some(@kernel_exec.Failed(reason=@kernel_exec.InvariantViolation(category~))) =>
-      Some(
-        @error.AgentError::Runtime(
-          @error.RuntimeError::InvocationFailed(
+        Runtime(
+          InvocationFailed(
             "kernel invariant violation: " + category.to_string(),
           ),
         ),
       )
-    Some(@kernel_exec.Failed(reason=@kernel_exec.DeadlineReached)) =>
-      Some(
-        @error.AgentError::Runtime(
-          @error.RuntimeError::InvocationFailed("deadline reached"),
-        ),
-      )
-    Some(
-      @kernel_exec.Failed(
-        reason=@kernel_exec.BudgetExhausted(
-          dimension=@kernel_exec.BudgetDimension::ToolRounds
-        )
-      )
-    ) =>
+    Some(Failed(reason=DeadlineReached)) =>
+      Some(Runtime(InvocationFailed("deadline reached")))
+    Some(Failed(reason=BudgetExhausted(dimension=ToolRounds))) =>
       // The reducer rejects exactly the batch that would push consumed
       // to limit + 1, so consumed is derivable; Agent only ever wires
       // the ToolRounds dimension (other budget dims are None here).
       match self.config.max_tool_rounds {
-        Some(limit) =>
-          Some(@error.AgentError::ToolLoopExceeded(consumed=limit + 1, limit~))
+        Some(limit) => Some(ToolLoopExceeded(consumed=limit + 1, limit~))
         None =>
           Some(
-            @error.AgentError::Runtime(
-              @error.RuntimeError::InvocationFailed(
+            Runtime(
+              InvocationFailed(
                 "tool-round budget exhausted without a configured limit",
               ),
             ),
           )
       }
-    Some(@kernel_exec.Failed(reason=@kernel_exec.BudgetExhausted(..))) =>
-      Some(
-        @error.AgentError::Runtime(
-          @error.RuntimeError::InvocationFailed("budget exhausted"),
-        ),
-      )
+    Some(Failed(reason=BudgetExhausted(..))) =>
+      Some(Runtime(InvocationFailed("budget exhausted")))
     _ => None
   }
 }
@@ -532,7 +481,7 @@ async fn AgentRuntime::complete_compact_turn(
   current_metadata : Map[String, Json],
 ) -> @types.TurnResult raise @error.AgentError {
   match mode {
-    @kernel.NewThread =>
+    NewThread =>
       match new_session_id {
         Some(new_sid) => {
           let new_session : @types.Session = {
@@ -567,13 +516,13 @@ async fn AgentRuntime::complete_compact_turn(
           return result
         }
         None =>
-          raise @error.AgentError::Runtime(
-            @error.RuntimeError::InvocationFailed(
+          raise Runtime(
+            InvocationFailed(
               "CompactCompleted::NewThread without new_session_id",
             ),
           )
       }
-    @kernel.Replace | @kernel.Append => {
+    Replace | Append => {
       // Save the updated original session body. The product caller
       // stays on the same session id.
       let updated_session : @types.Session = {

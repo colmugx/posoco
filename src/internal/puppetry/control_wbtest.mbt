@@ -425,7 +425,7 @@ fn make_compact(
 test "puppet_control/compact_enqueue_manual_accepted" {
   let mb = bound_mailbox()
   let result = mb.enqueue_compact(
-    make_compact("cm1", mb_run_id(), mb_turn_id(), @kernel.Manual),
+    make_compact("cm1", mb_run_id(), mb_turn_id(), Manual),
   )
   assert_true(result is Accepted(_))
   assert_true(mb.compact_depth() == 1)
@@ -435,7 +435,7 @@ test "puppet_control/compact_enqueue_manual_accepted" {
 test "puppet_control/compact_enqueue_auto_accepted" {
   let mb = bound_mailbox()
   let result = mb.enqueue_compact(
-    make_compact("cm1", mb_run_id(), mb_turn_id(), @kernel.Auto),
+    make_compact("cm1", mb_run_id(), mb_turn_id(), Auto),
   )
   assert_true(result is Accepted(_))
 }
@@ -444,12 +444,7 @@ test "puppet_control/compact_enqueue_auto_accepted" {
 test "puppet_control/compact_enqueue_stale_rejected" {
   let mb = bound_mailbox()
   let result = mb.enqueue_compact(
-    make_compact(
-      "cm1",
-      RunId::unchecked("run_OTHER"),
-      mb_turn_id(),
-      @kernel.Manual,
-    ),
+    make_compact("cm1", RunId::unchecked("run_OTHER"), mb_turn_id(), Manual),
   )
   assert_true(result is RejectedStale(_))
   assert_true(mb.compact_depth() == 0)
@@ -459,16 +454,16 @@ test "puppet_control/compact_enqueue_stale_rejected" {
 test "puppet_control/compact_consume_one_at_a_time" {
   let mb = bound_mailbox()
   let _ = mb.enqueue_compact(
-    make_compact("cm1", mb_run_id(), mb_turn_id(), @kernel.Manual),
+    make_compact("cm1", mb_run_id(), mb_turn_id(), Manual),
   )
   let _ = mb.enqueue_compact(
-    make_compact("cm2", mb_run_id(), mb_turn_id(), @kernel.Auto),
+    make_compact("cm2", mb_run_id(), mb_turn_id(), Auto),
   )
   let first = mb.consume_one_compact()
   match first {
     Some(cmd) => {
       assert_true(cmd.command_id().to_string() == "cm1")
-      assert_true(cmd.trigger() == @kernel.Manual)
+      assert_true(cmd.trigger() == Manual)
     }
     None => assert_true(false)
   }
@@ -476,7 +471,7 @@ test "puppet_control/compact_consume_one_at_a_time" {
   match second {
     Some(cmd) => {
       assert_true(cmd.command_id().to_string() == "cm2")
-      assert_true(cmd.trigger() == @kernel.Auto)
+      assert_true(cmd.trigger() == Auto)
     }
     None => assert_true(false)
   }

@@ -24,7 +24,7 @@
 fn make_catalog_v1() -> ToolCatalogSnapshot raise CatalogCompositionError {
   let builder = ToolCatalogBuilder()
   let _ = builder.add(
-    @kernel.ToolDef(
+    ToolDef(
       name=@kernel.ToolName::unchecked("read"),
       description="read a file",
       input_schema=Json::object(
@@ -47,7 +47,7 @@ fn make_catalog_v1() -> ToolCatalogSnapshot raise CatalogCompositionError {
         ]),
       ),
       owner=@kernel.OwnerId::unchecked("fs"),
-      policy=@kernel.Sequential,
+      policy=Sequential,
       provenance=Some("fs-provider"),
     ),
   )
@@ -74,19 +74,19 @@ fn fresh_state_with_budget(budget : Budget) -> RunState raise KernelError {
 
 ///|
 fn start_input() -> RunInput {
-  Start(payload=StartPayload::{
-    initial_messages: [@kernel.UserMessage(content=[@kernel.Text("hi")])],
+  Start(payload={
+    initial_messages: [UserMessage(content=[Text("hi")])],
     catalog_version: CatalogVersion(1),
   })
 }
 
 ///|
 fn make_completion_no_tools() -> @kernel.Completion {
-  @kernel.Completion(
-    content=[@kernel.Text("hello")],
+  Completion(
+    content=[Text("hello")],
     tool_calls=[],
     reasoning=None,
-    finish_reason=@kernel.Stop,
+    finish_reason=Stop,
     usage=None,
   )
 }
@@ -97,8 +97,8 @@ fn make_completion_with_tool_call(
   name : String,
   args : Json,
 ) -> @kernel.Completion {
-  @kernel.Completion(
-    content=[@kernel.Text("calling")],
+  Completion(
+    content=[Text("calling")],
     tool_calls=[
       {
         call_id: @kernel.CallId::unchecked(call_id),
@@ -107,7 +107,7 @@ fn make_completion_with_tool_call(
       },
     ],
     reasoning=None,
-    finish_reason=@kernel.ToolCalls,
+    finish_reason=ToolCalls,
     usage=None,
   )
 }
@@ -138,7 +138,7 @@ test "C-HAPPY-NO-TOOLS: Start → CallModel → ModelCompleted → Terminal(Comp
   let (st_awaiting, eff_id, step_id) = run_until_awaiting_model()
   let catalog = make_catalog_v1()
   let completion = make_completion_no_tools()
-  let input : RunInput = ModelCompleted(payload=ModelCompletedPayload::{
+  let input : RunInput = ModelCompleted(payload={
     effect_id: eff_id,
     model_step_id: step_id,
     completion,
@@ -181,7 +181,7 @@ test "C-HAPPY-ONE-TOOL: model step → tool call → ExecuteTool → ToolComplet
     "read",
     Json::object(Map::from_array([("path", Json::string("/etc/x"))])),
   )
-  let input : RunInput = ModelCompleted(payload=ModelCompletedPayload::{
+  let input : RunInput = ModelCompleted(payload={
     effect_id: eff_id,
     model_step_id: step_id,
     completion,
@@ -198,12 +198,12 @@ test "C-HAPPY-ONE-TOOL: model step → tool call → ExecuteTool → ToolComplet
     _ => fail("expected ExecuteTool effect")
   }
   // Tool completes successfully.
-  let tool_input : RunInput = ToolCompleted(payload=ToolCompletedPayload::{
+  let tool_input : RunInput = ToolCompleted(payload={
     effect_id: exec_id,
     call_id: @kernel.CallId::unchecked("call_1"),
     tool_name: @kernel.ToolName::unchecked("read"),
     arguments: Json::null(),
-    outcome: @kernel.Success(content="data", structured=None),
+    outcome: Success(content="data", structured=None),
   })
   let out2 = reduce(st_tools, catalog, tool_input)
   let st_ready = out2.next_state()
@@ -232,7 +232,7 @@ test "C-BUDGET-TOOL-BATCH: count atomically before any tool effect is exposed" {
     _ => fail("expected CallModel effect")
   }
   let completion = @kernel.Completion(
-    content=[@kernel.Text("calling two tools")],
+    content=[Text("calling two tools")],
     tool_calls=[
       {
         call_id: @kernel.CallId::unchecked("budget_1"),
@@ -246,7 +246,7 @@ test "C-BUDGET-TOOL-BATCH: count atomically before any tool effect is exposed" {
       },
     ],
     reasoning=None,
-    finish_reason=@kernel.ToolCalls,
+    finish_reason=ToolCalls,
     usage=None,
   )
   let out = reduce(
@@ -288,7 +288,7 @@ test "C-MODEL-UNKNOWN-TOOL: unknown tool name → NotExecuted(UnknownTool), zero
     "nonexistent_tool",
     Json::object(Map::from_array([])),
   )
-  let input : RunInput = ModelCompleted(payload=ModelCompletedPayload::{
+  let input : RunInput = ModelCompleted(payload={
     effect_id: eff_id,
     model_step_id: step_id,
     completion,
@@ -306,9 +306,9 @@ test "C-MODEL-UNKNOWN-TOOL: unknown tool name → NotExecuted(UnknownTool), zero
   // Verify the tool message carries NotExecuted(UnknownTool).
   let msgs = st.transcript().messages_snapshot()
   match msgs[2] {
-    @kernel.ToolMessage(outcome~, ..) =>
+    ToolMessage(outcome~, ..) =>
       match outcome {
-        @kernel.NotExecuted(reason=@kernel.UnknownTool, ..) => ()
+        NotExecuted(reason=UnknownTool, ..) => ()
         _ => fail("expected NotExecuted(UnknownTool)")
       }
     _ => fail("expected ToolMessage at index 2")
@@ -329,7 +329,7 @@ test "C-MODEL-SCHEMA-MISMATCH: parsed args fail schema → NotExecuted(SchemaMis
     "read",
     Json::object(Map::from_array([])),
   )
-  let input : RunInput = ModelCompleted(payload=ModelCompletedPayload::{
+  let input : RunInput = ModelCompleted(payload={
     effect_id: eff_id,
     model_step_id: step_id,
     completion,
@@ -342,9 +342,9 @@ test "C-MODEL-SCHEMA-MISMATCH: parsed args fail schema → NotExecuted(SchemaMis
   let msgs = st.transcript().messages_snapshot()
   assert_eq(msgs.length(), 3)
   match msgs[2] {
-    @kernel.ToolMessage(outcome~, ..) =>
+    ToolMessage(outcome~, ..) =>
       match outcome {
-        @kernel.NotExecuted(reason=@kernel.SchemaMismatch(..), ..) => ()
+        NotExecuted(reason=SchemaMismatch(..), ..) => ()
         _ => fail("expected NotExecuted(SchemaMismatch)")
       }
     _ => fail("expected ToolMessage at index 2")
@@ -360,13 +360,13 @@ test "C-MODEL-LENGTH-FINISH: finish_reason=Length → Terminal(Failed)" {
   let (st_awaiting, eff_id, step_id) = run_until_awaiting_model()
   let catalog = make_catalog_v1()
   let completion = @kernel.Completion(
-    content=[@kernel.Text("truncated")],
+    content=[Text("truncated")],
     tool_calls=[],
     reasoning=None,
-    finish_reason=@kernel.Length,
+    finish_reason=Length,
     usage=None,
   )
-  let input : RunInput = ModelCompleted(payload=ModelCompletedPayload::{
+  let input : RunInput = ModelCompleted(payload={
     effect_id: eff_id,
     model_step_id: step_id,
     completion,
@@ -389,10 +389,10 @@ test "C-MODEL-LENGTH-FINISH: finish_reason=Length → Terminal(Failed)" {
 test "C-MODEL-TRANSPORT-FAILURE: ModelFailed(Transport) → Terminal(Failed)" {
   let (st_awaiting, eff_id, step_id) = run_until_awaiting_model()
   let catalog = make_catalog_v1()
-  let input : RunInput = ModelFailed(payload=ModelFailedPayload::{
+  let input : RunInput = ModelFailed(payload={
     effect_id: eff_id,
     model_step_id: step_id,
-    failure: @kernel.Transport(reason="HTTP 500"),
+    failure: Transport(reason="HTTP 500"),
   })
   let out = reduce(st_awaiting, catalog, input)
   let st = out.next_state()
@@ -413,7 +413,7 @@ test "C-INVARIANT-DUPLICATE-CALL-ID: same call_id twice in one batch → Failed"
   let catalog = make_catalog_v1()
   // Two tool calls with the SAME call_id, both valid schema.
   let completion = @kernel.Completion(
-    content=[@kernel.Text("calling")],
+    content=[Text("calling")],
     tool_calls=[
       {
         call_id: @kernel.CallId::unchecked("dup"),
@@ -427,10 +427,10 @@ test "C-INVARIANT-DUPLICATE-CALL-ID: same call_id twice in one batch → Failed"
       },
     ],
     reasoning=None,
-    finish_reason=@kernel.ToolCalls,
+    finish_reason=ToolCalls,
     usage=None,
   )
-  let input : RunInput = ModelCompleted(payload=ModelCompletedPayload::{
+  let input : RunInput = ModelCompleted(payload={
     effect_id: eff_id,
     model_step_id: step_id,
     completion,
@@ -457,11 +457,8 @@ test "C-INVARIANT-DUPLICATE-CALL-ID: same call_id twice in one batch → Failed"
 test "C-SUSPEND-RESUME-IN-PROCESS: AwaitingModel → Suspended → ReadyForModel" {
   let (st_awaiting, _eff_id, _step_id) = run_until_awaiting_model()
   let catalog = make_catalog_v1()
-  let suspend_input : RunInput = SuspendRequested(payload=SuspendRequestedPayload::{
-    requirement: SuspensionRequirement::{
-      kind: "approval",
-      payload: Json::null(),
-    },
+  let suspend_input : RunInput = SuspendRequested(payload={
+    requirement: { kind: "approval", payload: Json::null(), },
   })
   let out = reduce(st_awaiting, catalog, suspend_input)
   let st_suspended = out.next_state()
@@ -482,9 +479,7 @@ test "C-SUSPEND-RESUME-IN-PROCESS: AwaitingModel → Suspended → ReadyForModel
   let has_terminal = events.iter().any(fn(e) { e.is_terminal() })
   assert_false(has_terminal)
   // Resume.
-  let resume_input : RunInput = Resume(payload=ResumePayload::{
-    payload: Json::null(),
-  })
+  let resume_input : RunInput = Resume(payload={ payload: Json::null(), })
   let out2 = reduce(st_suspended, catalog, resume_input)
   let st_resumed = out2.next_state()
   assert_eq(st_resumed.phase(), ReadyForModel)
@@ -501,16 +496,13 @@ test "C-SUSPEND-LATE-COMPLETION-REJECTED: ModelCompleted while Suspended rejecte
   let (st_awaiting, eff_id, step_id) = run_until_awaiting_model()
   let catalog = make_catalog_v1()
   // Suspend.
-  let suspend_input : RunInput = SuspendRequested(payload=SuspendRequestedPayload::{
-    requirement: SuspensionRequirement::{
-      kind: "approval",
-      payload: Json::null(),
-    },
+  let suspend_input : RunInput = SuspendRequested(payload={
+    requirement: { kind: "approval", payload: Json::null(), },
   })
   let out_s = reduce(st_awaiting, catalog, suspend_input)
   let st_suspended = out_s.next_state()
   // Stray ModelCompleted (for the dropped model effect).
-  let stray : RunInput = ModelCompleted(payload=ModelCompletedPayload::{
+  let stray : RunInput = ModelCompleted(payload={
     effect_id: eff_id,
     model_step_id: step_id,
     completion: make_completion_no_tools(),
@@ -541,9 +533,7 @@ test "C-CANCEL-BEFORE-MODEL: ReadyForModel + CancelRequested → Terminal(Cancel
   let st0 = fresh_state()
   let catalog = make_catalog_v1()
   let st1 = reduce(st0, catalog, start_input()).next_state()
-  let cancel_input : RunInput = CancelRequested(payload=CancelRequestedPayload::{
-    detail: None,
-  })
+  let cancel_input : RunInput = CancelRequested(payload={ detail: None, })
   let out = reduce(st1, catalog, cancel_input)
   let st = out.next_state()
   assert_eq(st.phase(), Terminal)
@@ -561,9 +551,7 @@ test "C-CANCEL-BEFORE-MODEL: ReadyForModel + CancelRequested → Terminal(Cancel
 test "C-CANCEL-WHILE-MODEL: AwaitingModel + CancelRequested → CancelOutstanding + Cancelled" {
   let (st_awaiting, _eff_id, _step_id) = run_until_awaiting_model()
   let catalog = make_catalog_v1()
-  let cancel_input : RunInput = CancelRequested(payload=CancelRequestedPayload::{
-    detail: None,
-  })
+  let cancel_input : RunInput = CancelRequested(payload={ detail: None, })
   let out = reduce(st_awaiting, catalog, cancel_input)
   let st = out.next_state()
   assert_eq(st.phase(), Terminal)
@@ -592,9 +580,7 @@ test "C-CANCEL-WHILE-MODEL: AwaitingModel + CancelRequested → CancelOutstandin
 test "C-DEADLINE-DURING-MODEL: DeadlineReached wins → Terminal(Failed)" {
   let (st_awaiting, _eff_id, _step_id) = run_until_awaiting_model()
   let catalog = make_catalog_v1()
-  let dl_input : RunInput = DeadlineReached(payload=DeadlineReachedPayload::{
-    detail: "elapsed",
-  })
+  let dl_input : RunInput = DeadlineReached(payload={ detail: "elapsed", })
   let out = reduce(st_awaiting, catalog, dl_input)
   let st = out.next_state()
   assert_eq(st.phase(), Terminal)
@@ -614,7 +600,7 @@ test "C-POST-TERMINAL-REJECTED: any input after Terminal is rejected" {
   let catalog = make_catalog_v1()
   // Drive to Terminal(Completed).
   let completion = make_completion_no_tools()
-  let input : RunInput = ModelCompleted(payload=ModelCompletedPayload::{
+  let input : RunInput = ModelCompleted(payload={
     effect_id: eff_id,
     model_step_id: step_id,
     completion,
@@ -624,7 +610,7 @@ test "C-POST-TERMINAL-REJECTED: any input after Terminal is rejected" {
   let st_terminal = out.next_state()
   assert_eq(st_terminal.phase(), Terminal)
   // Send another input — should be rejected.
-  let stray : RunInput = ModelCompleted(payload=ModelCompletedPayload::{
+  let stray : RunInput = ModelCompleted(payload={
     effect_id: eff_id,
     model_step_id: step_id,
     completion,
@@ -657,7 +643,7 @@ test "C-TOOL-RUNTIME-FAILURE: ToolFailed(runtime) → RuntimeFailure outcome, Ru
     "read",
     Json::object(Map::from_array([("path", Json::string("/x"))])),
   )
-  let input : RunInput = ModelCompleted(payload=ModelCompletedPayload::{
+  let input : RunInput = ModelCompleted(payload={
     effect_id: eff_id,
     model_step_id: step_id,
     completion,
@@ -670,13 +656,13 @@ test "C-TOOL-RUNTIME-FAILURE: ToolFailed(runtime) → RuntimeFailure outcome, Ru
     _ => fail("expected ExecuteTool")
   }
   // Tool fails with runtime error.
-  let tool_fail : RunInput = ToolFailed(payload=ToolFailedPayload::{
+  let tool_fail : RunInput = ToolFailed(payload={
     effect_id: exec_id,
     call_id: @kernel.CallId::unchecked("call_1"),
     tool_name: @kernel.ToolName::unchecked("read"),
     arguments: Json::null(),
     reason: "test runtime failure",
-    runtime: Some(@kernel.Transport(reason="connection reset")),
+    runtime: Some(Transport(reason="connection reset")),
     invariant_failure: None,
   })
   let out2 = reduce(st_tools, catalog, tool_fail)
@@ -686,9 +672,9 @@ test "C-TOOL-RUNTIME-FAILURE: ToolFailed(runtime) → RuntimeFailure outcome, Ru
   // Outcome was RuntimeFailure.
   let msgs = st_ready.transcript().messages_snapshot()
   match msgs[2] {
-    @kernel.ToolMessage(outcome~, ..) =>
+    ToolMessage(outcome~, ..) =>
       match outcome {
-        @kernel.RuntimeFailure(..) => ()
+        RuntimeFailure(..) => ()
         _ => fail("expected RuntimeFailure outcome")
       }
     _ => fail("expected ToolMessage with RuntimeFailure")
@@ -706,7 +692,7 @@ test "C-COMPRESS-PROCESSED-MESSAGES: ModelCompleted processed_messages replaces 
   let catalog = make_catalog_v1()
   // Simulate a modelport that elided the user message before sending.
   let trimmed : Array[@kernel.Message] = []
-  let input : RunInput = ModelCompleted(payload=ModelCompletedPayload::{
+  let input : RunInput = ModelCompleted(payload={
     effect_id: eff_id,
     model_step_id: step_id,
     completion: make_completion_no_tools(),
@@ -727,10 +713,7 @@ fn rewrite_input(
   messages : Array[@kernel.Message],
   reason : String,
 ) -> RunInput {
-  TranscriptRewrite(payload=TranscriptRewritePayload::{
-    rewritten_messages: messages,
-    reason,
-  })
+  TranscriptRewrite(payload={ rewritten_messages: messages, reason, })
 }
 
 ///|
@@ -741,8 +724,8 @@ test "C-TRANSCRIPT-REWRITE-READY: ReadyForModel folds rewrite with TranscriptRew
   let st1 = out_start.next_state()
   assert_eq(st1.phase(), ReadyForModel)
   let rewritten : Array[@kernel.Message] = [
-    @kernel.UserMessage(content=[@kernel.Text("hi")]),
-    @kernel.UserMessage(content=[@kernel.Text("injected by hook")]),
+    UserMessage(content=[Text("hi")]),
+    UserMessage(content=[Text("injected by hook")]),
   ]
   let out = reduce(st1, catalog, rewrite_input(rewritten, "pre_model_hook"))
   let next = out.next_state()
@@ -767,7 +750,7 @@ test "C-TRANSCRIPT-REWRITE-AWAITING-MODEL: rewrite keeps the pending model effec
   let (st_awaiting, _eff, _step) = run_until_awaiting_model()
   let catalog = make_catalog_v1()
   let rewritten : Array[@kernel.Message] = [
-    @kernel.UserMessage(content=[@kernel.Text("compacted")]),
+    UserMessage(content=[Text("compacted")]),
   ]
   let out = reduce(
     st_awaiting,
@@ -800,7 +783,7 @@ test "C-TRANSCRIPT-REWRITE-AWAITING-TOOLS: rewrite keeps the pending tool effect
   let out1 = reduce(
     st_awaiting,
     catalog,
-    ModelCompleted(payload=ModelCompletedPayload::{
+    ModelCompleted(payload={
       effect_id: eff_id,
       model_step_id: step_id,
       completion,
@@ -812,10 +795,7 @@ test "C-TRANSCRIPT-REWRITE-AWAITING-TOOLS: rewrite keeps the pending tool effect
   let out = reduce(
     st_tools,
     catalog,
-    rewrite_input(
-      [@kernel.UserMessage(content=[@kernel.Text("compacted")])],
-      "compact_append",
-    ),
+    rewrite_input([UserMessage(content=[Text("compacted")])], "compact_append"),
   )
   let next = out.next_state()
   assert_eq(next.phase(), AwaitingTools)
@@ -835,10 +815,7 @@ test "C-TRANSCRIPT-REWRITE-SUSPENDED-REJECTED: Suspended rejects rewrite without
     st_awaiting,
     catalog,
     SuspendRequested(payload={
-      requirement: SuspensionRequirement::{
-        kind: "approval",
-        payload: Json::null(),
-      },
+      requirement: { kind: "approval", payload: Json::null(), },
     }),
   )
   let st_suspended = out_suspend.next_state()
@@ -846,10 +823,7 @@ test "C-TRANSCRIPT-REWRITE-SUSPENDED-REJECTED: Suspended rejects rewrite without
   let out = reduce(
     st_suspended,
     catalog,
-    rewrite_input(
-      [@kernel.UserMessage(content=[@kernel.Text("nope")])],
-      "compact_replace",
-    ),
+    rewrite_input([UserMessage(content=[Text("nope")])], "compact_replace"),
   )
   let next = out.next_state()
   assert_eq(next.phase(), Suspended)
@@ -868,10 +842,7 @@ test "C-TRANSCRIPT-REWRITE-INITIALIZING-REJECTED: nothing to rewrite before Star
   let out = reduce(
     st0,
     catalog,
-    rewrite_input(
-      [@kernel.UserMessage(content=[@kernel.Text("x")])],
-      "pre_model_hook",
-    ),
+    rewrite_input([UserMessage(content=[Text("x")])], "pre_model_hook"),
   )
   assert_eq(out.next_state().phase(), Initializing)
   match out.events()[0] {
@@ -892,7 +863,7 @@ test "C-TOOL-WAVE-OUT-OF-ORDER: reverse completions preserve source order" {
   let catalog = make_catalog_v1()
   // Assistant requests four tools in source order: alpha, beta, gamma, delta.
   let completion = @kernel.Completion(
-    content=[@kernel.Text("calling")],
+    content=[Text("calling")],
     tool_calls=[
       {
         call_id: @kernel.CallId::unchecked("alpha"),
@@ -916,13 +887,13 @@ test "C-TOOL-WAVE-OUT-OF-ORDER: reverse completions preserve source order" {
       },
     ],
     reasoning=None,
-    finish_reason=@kernel.ToolCalls,
+    finish_reason=ToolCalls,
     usage=None,
   )
   let out1 = reduce(
     st_awaiting,
     catalog,
-    ModelCompleted(payload=ModelCompletedPayload::{
+    ModelCompleted(payload={
       effect_id: eff_id,
       model_step_id: step_id,
       completion,
@@ -950,12 +921,12 @@ test "C-TOOL-WAVE-OUT-OF-ORDER: reverse completions preserve source order" {
     let out = reduce(
       state,
       catalog,
-      ToolCompleted(payload=ToolCompletedPayload::{
+      ToolCompleted(payload={
         effect_id: exec_id,
         call_id,
         tool_name: @kernel.ToolName::unchecked("read"),
         arguments: Json::null(),
-        outcome: @kernel.Success(content=call_id.to_string(), structured=None),
+        outcome: Success(content=call_id.to_string(), structured=None),
       }),
     )
     state = out.next_state()
@@ -968,8 +939,7 @@ test "C-TOOL-WAVE-OUT-OF-ORDER: reverse completions preserve source order" {
   let expected_call_ids = ["alpha", "beta", "gamma", "delta"]
   for i, expected in expected_call_ids {
     match msgs[i + 2] {
-      @kernel.ToolMessage(call_id~, ..) =>
-        assert_eq(call_id.to_string(), expected)
+      ToolMessage(call_id~, ..) => assert_eq(call_id.to_string(), expected)
       _ => fail("expected ToolMessage at index \{i + 2}")
     }
   }
@@ -979,13 +949,13 @@ test "C-TOOL-WAVE-OUT-OF-ORDER: reverse completions preserve source order" {
     .messages_snapshot()
     .filter(fn(msg) {
       match msg {
-        @kernel.ToolMessage(..) => true
+        ToolMessage(..) => true
         _ => false
       }
     })
     .map(fn(msg) {
       match msg {
-        @kernel.ToolMessage(call_id~, ..) => call_id.to_string()
+        ToolMessage(call_id~, ..) => call_id.to_string()
         _ => ""
       }
     })
@@ -1001,7 +971,7 @@ test "C-MODEL-MIXED-WAVE: rejected pair precedes effect batch, no duplicate tool
   let (st_awaiting, eff_id, step_id) = run_until_awaiting_model()
   let catalog = make_catalog_v1()
   let completion = @kernel.Completion(
-    content=[@kernel.Text("mixed")],
+    content=[Text("mixed")],
     tool_calls=[
       {
         call_id: @kernel.CallId::unchecked("c_read"),
@@ -1015,10 +985,10 @@ test "C-MODEL-MIXED-WAVE: rejected pair precedes effect batch, no duplicate tool
       },
     ],
     reasoning=None,
-    finish_reason=@kernel.ToolCalls,
+    finish_reason=ToolCalls,
     usage=None,
   )
-  let input : RunInput = ModelCompleted(payload=ModelCompletedPayload::{
+  let input : RunInput = ModelCompleted(payload={
     effect_id: eff_id,
     model_step_id: step_id,
     completion,
@@ -1030,11 +1000,10 @@ test "C-MODEL-MIXED-WAVE: rejected pair precedes effect batch, no duplicate tool
   let kinds = StringBuilder()
   for m in st_tools.transcript().messages_snapshot() {
     match m {
-      @kernel.UserMessage(..) => kinds <+ "[U]"
-      @kernel.AssistantMessage(tool_calls~, ..) =>
+      UserMessage(..) => kinds <+ "[U]"
+      AssistantMessage(tool_calls~, ..) =>
         kinds <+ "[A(\{tool_calls.length()})]"
-      @kernel.ToolMessage(call_id~, ..) =>
-        kinds <+ "[T(\{call_id.to_string()})]"
+      ToolMessage(call_id~, ..) => kinds <+ "[T(\{call_id.to_string()})]"
       _ => kinds <+ "[?]"
     }
   }
@@ -1053,7 +1022,7 @@ test "C-MODEL-MIXED-WAVE: rejected pair precedes effect batch, no duplicate tool
     ToolCompleted(call_id~, outcome~) => {
       assert_eq(call_id.to_string(), "c_ghost")
       match outcome {
-        @kernel.NotExecuted(reason=@kernel.UnknownTool, ..) => ()
+        NotExecuted(reason=UnknownTool, ..) => ()
         _ => fail("expected NotExecuted(UnknownTool) for c_ghost")
       }
     }
@@ -1072,12 +1041,12 @@ test "C-MODEL-MIXED-WAVE: rejected pair precedes effect batch, no duplicate tool
     ExecuteTool(effect_id~, ..) => effect_id
     _ => fail("expected ExecuteTool effect")
   }
-  let tool_input : RunInput = ToolCompleted(payload=ToolCompletedPayload::{
+  let tool_input : RunInput = ToolCompleted(payload={
     effect_id: exec_id,
     call_id: @kernel.CallId::unchecked("c_read"),
     tool_name: @kernel.ToolName::unchecked("read"),
     arguments: Json::null(),
-    outcome: @kernel.Success(content="data", structured=None),
+    outcome: Success(content="data", structured=None),
   })
   let out2 = reduce(st_tools, catalog, tool_input)
   let st_ready = out2.next_state()
@@ -1085,11 +1054,10 @@ test "C-MODEL-MIXED-WAVE: rejected pair precedes effect batch, no duplicate tool
   let kinds2 = StringBuilder()
   for m in st_ready.transcript().messages_snapshot() {
     match m {
-      @kernel.UserMessage(..) => kinds2 <+ "[U]"
-      @kernel.AssistantMessage(tool_calls~, ..) =>
+      UserMessage(..) => kinds2 <+ "[U]"
+      AssistantMessage(tool_calls~, ..) =>
         kinds2 <+ "[A(\{tool_calls.length()})]"
-      @kernel.ToolMessage(call_id~, ..) =>
-        kinds2 <+ "[T(\{call_id.to_string()})]"
+      ToolMessage(call_id~, ..) => kinds2 <+ "[T(\{call_id.to_string()})]"
       _ => kinds2 <+ "[?]"
     }
   }

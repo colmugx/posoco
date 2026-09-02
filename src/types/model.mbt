@@ -180,19 +180,19 @@ pub fn StreamAccumulator::to_completion(
   let reasoning_opt : @kernel.Reasoning? = if reasoning_text == "" {
     None
   } else {
-    Some(@kernel.Reasoning::{ content: reasoning_text, raw: None, })
+    Some({ content: reasoning_text, raw: None, })
   }
   let text = self.text()
   let content : Array[@kernel.Content] = if text == "" {
     []
   } else {
-    [@kernel.Text(text)]
+    [Text(text)]
   }
   let finish : @kernel.FinishReason = match self.finish_reason {
-    "stop" => @kernel.Stop
-    "length" => @kernel.Length
-    "tool_calls" | "toolcalls" => @kernel.ToolCalls
-    other => @kernel.Other(other)
+    "stop" => Stop
+    "length" => Length
+    "tool_calls" | "toolcalls" => ToolCalls
+    other => Other(other)
   }
   let usage : @kernel.Usage? = match self.usage_total {
     Some(_) =>
@@ -205,7 +205,7 @@ pub fn StreamAccumulator::to_completion(
       })
     None => None
   }
-  @kernel.Completion(
+  Completion(
     content~,
     tool_calls~,
     reasoning=reasoning_opt,

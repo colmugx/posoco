@@ -157,7 +157,7 @@ fn input_for_effect(
   let (input, effect_kind, input_kind) = match (eff, outcome) {
     (CallModel(effect_id~, payload~), ScriptedModelCompleted(completion)) =>
       (
-        ModelCompleted(payload=ModelCompletedPayload::{
+        ModelCompleted(payload={
           effect_id,
           model_step_id: payload.model_step_id,
           completion,
@@ -168,7 +168,7 @@ fn input_for_effect(
       )
     (CallModel(effect_id~, payload~), ScriptedModelFailed(failure)) =>
       (
-        ModelFailed(payload=ModelFailedPayload::{
+        ModelFailed(payload={
           effect_id,
           model_step_id: payload.model_step_id,
           failure,
@@ -178,7 +178,7 @@ fn input_for_effect(
       )
     (ExecuteTool(effect_id~, payload~), ScriptedToolCompleted(outcome)) =>
       (
-        ToolCompleted(payload=ToolCompletedPayload::{
+        ToolCompleted(payload={
           effect_id,
           call_id: payload.call_id,
           tool_name: payload.tool_name,
@@ -190,7 +190,7 @@ fn input_for_effect(
       )
     (ExecuteTool(effect_id~, payload~), ScriptedToolRuntime(failure)) =>
       (
-        ToolFailed(payload=ToolFailedPayload::{
+        ToolFailed(payload={
           effect_id,
           call_id: payload.call_id,
           tool_name: payload.tool_name,
@@ -204,7 +204,7 @@ fn input_for_effect(
       )
     (ExecuteTool(effect_id~, payload~), ScriptedToolInvariant(cat)) =>
       (
-        ToolFailed(payload=ToolFailedPayload::{
+        ToolFailed(payload={
           effect_id,
           call_id: payload.call_id,
           tool_name: payload.tool_name,
@@ -219,12 +219,12 @@ fn input_for_effect(
     (CancelOutstanding(..), _) =>
       // CancelOutstanding is fire-and-forget; the reducer already terminalised.
       (
-        ToolCompleted(payload=ToolCompletedPayload::{
+        ToolCompleted(payload={
           effect_id: EffectId::first(),
           call_id: @kernel.CallId::unchecked("__cancel_ack__"),
           tool_name: @kernel.ToolName::unchecked("__cancel__"),
           arguments: Json::null(),
-          outcome: @kernel.RuntimeFailure(
+          outcome: RuntimeFailure(
             error_category="CancelAck",
             message="cancel recorded",
           ),
@@ -235,19 +235,17 @@ fn input_for_effect(
     // Mismatched effect/outcome combinations: treat as invariant failure.
     (CallModel(effect_id~, payload~), _) =>
       (
-        ModelFailed(payload=ModelFailedPayload::{
+        ModelFailed(payload={
           effect_id,
           model_step_id: payload.model_step_id,
-          failure: @kernel.Runtime(
-            reason="scripted outcome mismatch for CallModel",
-          ),
+          failure: Runtime(reason="scripted outcome mismatch for CallModel"),
         }),
         "CallModel",
         "ModelFailed(mismatch)",
       )
     (ExecuteTool(effect_id~, payload~), _) =>
       (
-        ToolFailed(payload=ToolFailedPayload::{
+        ToolFailed(payload={
           effect_id,
           call_id: payload.call_id,
           tool_name: payload.tool_name,

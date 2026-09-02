@@ -189,10 +189,10 @@ test "RunState: Terminal rejects None outcome" {
 test "RunState: Terminal legal with Completed" {
   let st = make_initial_state()
   let final_msg = @kernel.AssistantMessage(
-    content=[@kernel.Text("done")],
+    content=[Text("done")],
     tool_calls=[],
     reasoning=None,
-    finish_reason=@kernel.Stop,
+    finish_reason=Stop,
   )
   let result = try_transition(
     st,
@@ -287,20 +287,16 @@ test "BudgetConsumed: UnknownUsage for tokens when no usage verified" {
 
 ///|
 test "RunInput: kind labels are stable" {
-  let start : RunInput = Start(payload=StartPayload::{
+  let start : RunInput = Start(payload={
     initial_messages: [],
     catalog_version: CatalogVersion(1),
   })
   assert_eq(start.kind(), "Start")
 
-  let cancel_input : RunInput = CancelRequested(payload=CancelRequestedPayload::{
-    detail: None,
-  })
+  let cancel_input : RunInput = CancelRequested(payload={ detail: None, })
   assert_eq(cancel_input.kind(), "CancelRequested")
 
-  let resume_input : RunInput = Resume(payload=ResumePayload::{
-    payload: Json::null(),
-  })
+  let resume_input : RunInput = Resume(payload={ payload: Json::null(), })
   assert_eq(resume_input.kind(), "Resume")
 }
 
@@ -321,17 +317,14 @@ test "KernelEvent: terminal events classified correctly" {
   )
   assert_true(terminal_cancelled.is_terminal())
 
-  let non_terminal : KernelEvent = RunStarted(details=StartedDetails::{
+  let non_terminal : KernelEvent = RunStarted(details={
     run_id: RunId::unchecked("r"),
     session_id: SessionId::unchecked("s"),
   })
   assert_false(non_terminal.is_terminal())
 
   let suspended : KernelEvent = RunSuspended(
-    requirement=SuspensionRequirement::{
-      kind: "approval",
-      payload: Json::null(),
-    },
+    requirement={ kind: "approval", payload: Json::null(), },
     model_step_id=ModelStepId::first(),
   )
   assert_false(suspended.is_terminal())
@@ -346,7 +339,7 @@ test "Effect: effect_id accessor works for all variants" {
     None => fail("CallModel should carry a model_step_id")
   }
 
-  let cancel_effect : Effect = CancelOutstanding(effect_id=EffectId::first(), payload=CancelOutstandingPayload::{
+  let cancel_effect : Effect = CancelOutstanding(effect_id=EffectId::first(), payload={
     effect_ids: [],
     reason: HostRequested(detail=None),
   })
@@ -358,7 +351,7 @@ test "Effect: effect_id accessor works for all variants" {
 
 ///|
 test "ToolOutcome: summary excludes raw payloads" {
-  let success : @kernel.ToolOutcome = @kernel.Success(
+  let success : @kernel.ToolOutcome = Success(
     content="short",
     structured=Some(Json::string("data")),
   )
@@ -366,12 +359,8 @@ test "ToolOutcome: summary excludes raw payloads" {
   assert_true(summary.contains("Success"))
   assert_false(summary.contains("data")) // payload must not leak
 
-  let not_executed : @kernel.ToolOutcome = @kernel.NotExecuted(
-    reason=@kernel.SchemaMismatch(
-      json_path="$.x",
-      expected="number",
-      actual="string",
-    ),
+  let not_executed : @kernel.ToolOutcome = NotExecuted(
+    reason=SchemaMismatch(json_path="$.x", expected="number", actual="string"),
     original_call_id=@kernel.CallId::unchecked("c1"),
   )
   let summary = not_executed.summary()

@@ -54,7 +54,7 @@ async fn propagate_terminal_cancellations(
 ) -> Unit raise PuppetError {
   for effect in effects {
     match effect {
-      @kernel_exec.CancelOutstanding(payload~, ..) => {
+      CancelOutstanding(payload~, ..) => {
         let cancel_ids = Array::from_iter(payload.effect_ids.iter())
         let attempted : Result[Array[(EffectId, CancelDisposition)], Error] = Ok(
           context.host.cancel_effects(cancel_ids, payload.reason),

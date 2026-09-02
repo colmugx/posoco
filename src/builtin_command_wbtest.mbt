@@ -38,7 +38,7 @@ async test "m35_builtin/compact_enqueues_manual_signal" {
   assert_true(mb.compact_depth() == 1)
   let cmd = mb.consume_one_compact()
   match cmd {
-    Some(c) => assert_true(c.trigger() == @kernel.Manual)
+    Some(c) => assert_true(c.trigger() == Manual)
     None => assert_true(false)
   }
 }
@@ -87,7 +87,7 @@ async test "m35_builtin/unknown_id_raises_not_found" {
   let mb = bind_test_mailbox()
   let port = BuiltinCommandPort(mb)
   try port.invoke("nope", Json::null()) catch {
-    @error.CommandError::NotFound(id) => assert_true(id == "nope")
+    NotFound(id) => assert_true(id == "nope")
     _ => assert_true(false)
   } noraise {
     _ => assert_true(false)
@@ -158,7 +158,7 @@ async test "d1_mailbox/builtin_port_shares_mailbox_instance" {
   // held an independent copy, this consume would return None.
   let cmd = mb.consume_one_compact()
   match cmd {
-    Some(c) => assert_true(c.trigger() == @kernel.Manual)
+    Some(c) => assert_true(c.trigger() == Manual)
     None => fail("expected compact signal on the shared mailbox")
   }
 }

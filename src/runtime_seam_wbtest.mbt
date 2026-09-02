@@ -78,9 +78,7 @@ impl @runtime.Runtime for FakeRuntime with fn execute_tool(
       Some(control) =>
         ignore(
           control.enqueue_follow_up(
-            @kernel.UserMessage(content=[
-              @kernel.Text("background task finished"),
-            ]),
+            UserMessage(content=[Text("background task finished")]),
           ),
         )
       None => ()
@@ -124,9 +122,7 @@ fn build_fake_runtime_agent(
   ])
   let tools = RecordingToolProvider(
     [tk_tool_def("echo", "echo tool")],
-    Map::from_array([
-      ("echo", ScriptedToolOutcome::OutcomeOk(tk_ok_result("echoed"))),
-    ]),
+    Map::from_array([("echo", OutcomeOk(tk_ok_result("echoed")))]),
   )
   let port_runtime = @runtime.PortRuntime(
     model~,
@@ -202,9 +198,7 @@ async test "runtime seam/follow-up during turn drives a subsequent turn" {
   ])
   let tools = RecordingToolProvider(
     [tk_tool_def("echo", "echo tool")],
-    Map::from_array([
-      ("echo", ScriptedToolOutcome::OutcomeOk(tk_ok_result("echoed"))),
-    ]),
+    Map::from_array([("echo", OutcomeOk(tk_ok_result("echoed")))]),
   )
   let port_runtime = @runtime.PortRuntime(
     model~,
@@ -232,10 +226,10 @@ async test "runtime seam/follow-up during turn drives a subsequent turn" {
   assert_eq(model.call_count(), 3)
   let mut result_text = ""
   match result.message {
-    @kernel.AssistantMessage(content~, ..) =>
+    AssistantMessage(content~, ..) =>
       for block in content {
         match block {
-          @kernel.Text(text) => result_text = text
+          Text(text) => result_text = text
           _ => ()
         }
       }
@@ -247,8 +241,8 @@ async test "runtime seam/follow-up during turn drives a subsequent turn" {
   let mut completed = 0
   for event in observer.events() {
     match event {
-      @types.TurnStarted => started = started + 1
-      @types.TurnCompleted => completed = completed + 1
+      TurnStarted => started = started + 1
+      TurnCompleted => completed = completed + 1
       _ => ()
     }
   }
@@ -260,10 +254,10 @@ async test "runtime seam/follow-up during turn drives a subsequent turn" {
   let mut follow_up_committed = false
   for message in saved.messages {
     match message {
-      @kernel.UserMessage(content~) =>
+      UserMessage(content~) =>
         for block in content {
           match block {
-            @kernel.Text(text) =>
+            Text(text) =>
               if text == "background task finished" {
                 follow_up_committed = true
               }
@@ -278,7 +272,7 @@ async test "runtime seam/follow-up during turn drives a subsequent turn" {
   // rejected at enqueue time rather than sneaking into a later run.
   assert_true(
     agent.control().enqueue_follow_up(tk_user_msg("too late"))
-    is @runtime.RejectedStale(_),
+    is RejectedStale(_),
   )
 }
 
@@ -355,9 +349,7 @@ async test "runtime seam/catalog change mid-run does not disturb the active run"
   ])
   let tools = RecordingToolProvider(
     [tk_tool_def("echo", "echo tool")],
-    Map::from_array([
-      ("echo", ScriptedToolOutcome::OutcomeOk(tk_ok_result("echoed"))),
-    ]),
+    Map::from_array([("echo", OutcomeOk(tk_ok_result("echoed")))]),
   )
   let source = FakeCatalogSource([echo_def])
   let port_runtime = @runtime.PortRuntime(
@@ -427,12 +419,12 @@ async test "runtime seam/invalid catalog rebuild keeps the previous snapshot" {
   let mut saw_refresh_failure = false
   for event in observer.events() {
     match event {
-      @types.Custom(source=event_source, label~, data~) =>
+      Custom(source=event_source, label~, data~) =>
         if event_source == "posoco.core" && label == "secondary_failure" {
           match data {
-            Json::Object(fields) =>
+            Object(fields) =>
               match fields.get("hook_point") {
-                Some(Json::String(point)) if point == "catalog_refresh" =>
+                Some(String(point)) if point == "catalog_refresh" =>
                   saw_refresh_failure = true
                 _ => ()
               }

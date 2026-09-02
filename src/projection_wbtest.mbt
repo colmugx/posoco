@@ -77,7 +77,7 @@ pub impl @port.MemoryPort for FailingInboundPort with fn inbound(
   session_id~ : String,
   request~ : String,
 ) -> String? raise @error.MemoryError {
-  raise @error.MemoryError::Inbound("always fails for \{session_id} \{request}")
+  raise Inbound("always fails for \{session_id} \{request}")
 }
 
 ///|
@@ -86,9 +86,7 @@ pub impl @port.MemoryPort for FailingInboundPort with fn store(
   content~ : String,
   metadata~ : Map[String, Json],
 ) -> String raise @error.MemoryError {
-  raise @error.MemoryError::Store(
-    "always fails: \{content} \{metadata.length()}",
-  )
+  raise Store("always fails: \{content} \{metadata.length()}")
 }
 
 ///|
@@ -98,7 +96,7 @@ pub impl @port.MemoryPort for FailingInboundPort with fn search(
   top_k? : Int,
 ) -> String? raise @error.MemoryError {
   ignore(top_k)
-  raise @error.MemoryError::Search("always fails: \{query}")
+  raise Search("always fails: \{query}")
 }
 
 ///|
@@ -106,7 +104,7 @@ pub impl @port.MemoryPort for FailingInboundPort with fn delete(
   _self : FailingInboundPort,
   id : String,
 ) -> Unit raise @error.MemoryError {
-  raise @error.MemoryError::Delete("always fails: \{id}")
+  raise Delete("always fails: \{id}")
 }
 
 ///|
@@ -166,9 +164,9 @@ fn expect_inbound_message(
   bodies : Array[String],
 ) -> Unit raise {
   match message {
-    @kernel.UserMessage(content~) =>
+    UserMessage(content~) =>
       match content {
-        [@kernel.Text(text), ..] =>
+        [Text(text), ..] =>
           assert_eq(text, MEMORY_INBOUND_LEAD + "\n\n" + bodies.join("\n\n"))
         _ => fail("expected Text content in inbound memory message")
       }
@@ -212,11 +210,11 @@ fn secondary_failure_errors(
       Custom(source~, label~, data~) =>
         if source == "posoco.core" && label == "secondary_failure" {
           match data {
-            Json::Object(fields) =>
+            Object(fields) =>
               match fields.get("hook_point") {
-                Some(Json::String(hp)) if hp == hook_point =>
+                Some(String(hp)) if hp == hook_point =>
                   match fields.get("error") {
-                    Some(Json::String(err)) => out.push(err)
+                    Some(String(err)) => out.push(err)
                     _ => fail("secondary_failure event missing 'error'")
                   }
                 _ => ()
@@ -285,12 +283,8 @@ async test "m38_sysprompt/idempotent_across_rounds" {
 /// second one.
 async test "m38_sysprompt/replaces_existing_system_message" {
   let hook = SystemPromptHook(base_prompt="NEW", contributors=[])
-  let seed : @kernel.Message = @kernel.SystemMessage(content=[
-    @kernel.Text("OLD"),
-  ])
-  let user : @kernel.Message = @kernel.UserMessage(content=[
-    @kernel.Text("hello"),
-  ])
+  let seed : @kernel.Message = SystemMessage(content=[Text("OLD")])
+  let user : @kernel.Message = UserMessage(content=[Text("hello")])
   let out = hook.before_model([seed, user])
   assert_true(out.length() == 2)
   // Head is now the new system message.
@@ -339,9 +333,7 @@ async test "m38_sysprompt/empty_prompt_short_circuits" {
   let hook = SystemPromptHook(base_prompt="", contributors=[
     SystemPromptSection(id="empty", contributor=empty),
   ])
-  let user : @kernel.Message = @kernel.UserMessage(content=[
-    @kernel.Text("hello"),
-  ])
+  let user : @kernel.Message = UserMessage(content=[Text("hello")])
   let input = [user]
   let out = hook.before_model(input)
   assert_true(out.length() == 1)
@@ -352,9 +344,7 @@ async test "m38_sysprompt/empty_prompt_short_circuits" {
 /// When there is no SystemMessage at index 0, the hook prepends one.
 async test "m38_sysprompt/prepends_when_no_system_message" {
   let hook = SystemPromptHook(base_prompt="BASE", contributors=[])
-  let user : @kernel.Message = @kernel.UserMessage(content=[
-    @kernel.Text("hello"),
-  ])
+  let user : @kernel.Message = UserMessage(content=[Text("hello")])
   let out = hook.before_model([user])
   assert_true(out.length() == 2)
   match out[0] {
@@ -429,7 +419,7 @@ async test "m38_sysprompt/config_base_precedes_contributors" {
   let prompt = model.received_messages[0]
   assert_true(prompt.length() >= 1)
   match prompt[0] {
-    @kernel.SystemMessage(content~) =>
+    SystemMessage(content~) =>
       match content {
         [Text(s), ..] => assert_eq(s, "host_base\n\next:\nfrom_ext")
         _ => fail("expected Text content")
@@ -462,7 +452,7 @@ async test "m38_sysprompt/lazy_assembly_reads_post_on_start" {
   assert_true(model.received_messages.length() == 1)
   let prompt = model.received_messages[0]
   match prompt[0] {
-    @kernel.SystemMessage(content~) =>
+    SystemMessage(content~) =>
       match content {
         [Text(s), ..] => assert_eq(s, "ext:\nafter_start")
         _ => fail("expected Text content")
@@ -498,18 +488,18 @@ async test "m38_memory/fresh_session_injects_once" {
   let prompt = model.received_messages[0]
   assert_eq(prompt.length(), 3)
   match prompt[0] {
-    @kernel.SystemMessage(content~) =>
+    SystemMessage(content~) =>
       match content {
-        [@kernel.Text(s), ..] => assert_eq(s, "SYS")
+        [Text(s), ..] => assert_eq(s, "SYS")
         _ => fail("expected Text content in system message")
       }
     _ => fail("expected SystemMessage at index 0")
   }
   expect_inbound_message(prompt[1], ["fact one"])
   match prompt[2] {
-    @kernel.UserMessage(content~) =>
+    UserMessage(content~) =>
       match content {
-        [@kernel.Text(s), ..] => assert_eq(s, "hello")
+        [Text(s), ..] => assert_eq(s, "hello")
         _ => fail("expected Text content in the user input")
       }
     _ => fail("expected the real input at index 2")
@@ -535,9 +525,9 @@ async test "m38_memory/memory_at_front_without_system_prompt" {
   assert_eq(prompt.length(), 2)
   expect_inbound_message(prompt[0], ["fact"])
   match prompt[1] {
-    @kernel.UserMessage(content~) =>
+    UserMessage(content~) =>
       match content {
-        [@kernel.Text(s), ..] => assert_eq(s, "query")
+        [Text(s), ..] => assert_eq(s, "query")
         _ => fail("expected Text content in the user input")
       }
     _ => fail("expected the real input at index 1")
@@ -603,9 +593,9 @@ async test "m38_memory/empty_inbound_spends_attempt_per_session" {
   assert_eq(mem.call_count(), 1)
   assert_eq(model.received_messages[1].length(), 3)
   match model.received_messages[1][0] {
-    @kernel.UserMessage(content~) =>
+    UserMessage(content~) =>
       match content {
-        [@kernel.Text(s), ..] => assert_eq(s, "q1")
+        [Text(s), ..] => assert_eq(s, "q1")
         _ => fail("expected Text content")
       }
     _ => fail("expected history replay to start with the first input")
@@ -676,11 +666,11 @@ async test "m38_memory/preseeded_history_never_injects" {
   store.seed("session_pre", {
     messages: [
       tk_user_msg("old question"),
-      @kernel.AssistantMessage(
-        content=[@kernel.Text("old answer")],
+      AssistantMessage(
+        content=[Text("old answer")],
         tool_calls=[],
         reasoning=None,
-        finish_reason=@kernel.Stop,
+        finish_reason=Stop,
       ),
     ],
     metadata: Map::from_array([]),
@@ -698,9 +688,9 @@ async test "m38_memory/preseeded_history_never_injects" {
   let prompt = model.received_messages[0]
   assert_eq(prompt.length(), 3)
   match prompt[0] {
-    @kernel.UserMessage(content~) =>
+    UserMessage(content~) =>
       match content {
-        [@kernel.Text(s), ..] => assert_eq(s, "old question")
+        [Text(s), ..] => assert_eq(s, "old question")
         _ => fail("expected Text content")
       }
     _ => fail("expected the seeded history to start unshifted")
@@ -804,8 +794,7 @@ async test "m38_memory/search_merges_sources_in_order" {
     ("query", Json::string("prefs")),
   ])
   match outcome {
-    @kernel.Success(content~, structured=None) =>
-      assert_eq(content, "hit-a\n\nhit-b")
+    Success(content~, structured=None) => assert_eq(content, "hit-a\n\nhit-b")
     _ => fail("expected Success outcome for memory_search merge")
   }
   assert_eq(a.received_searches(), [("prefs", None)])
@@ -826,7 +815,7 @@ async test "m38_memory/search_all_empty_reports_no_match" {
     ("query", Json::string("anything")),
   ])
   match outcome {
-    @kernel.Success(content~, structured=None) =>
+    Success(content~, structured=None) =>
       assert_eq(content, "No matching memory.")
     _ => fail("expected Success outcome for all-empty search")
   }
@@ -847,7 +836,7 @@ async test "m38_memory/search_failure_skips_source_and_names_it" {
     ("query", Json::string("prefs")),
   ])
   match outcome {
-    @kernel.Success(content~, structured=None) => assert_eq(content, "hit-b")
+    Success(content~, structured=None) => assert_eq(content, "hit-b")
     _ => fail("expected the surviving sibling's hit")
   }
   assert_eq(reasons.length(), 1)
@@ -870,7 +859,7 @@ async test "m38_memory/add_writes_all_sources_with_receipts" {
     ("content", Json::string("remember this")),
   ])
   match outcome {
-    @kernel.Success(content~, structured=None) =>
+    Success(content~, structured=None) =>
       // Tickets are per source (each fake numbers from 0); the receipt
       // prefixes are what identify the target.
       assert_eq(content, "a: scripted-0\nb: scripted-0")
@@ -899,8 +888,7 @@ async test "m38_memory/add_targeted_source_routes_to_one" {
     ("source", Json::string("b")),
   ])
   match outcome {
-    @kernel.Success(content~, structured=None) =>
-      assert_eq(content, "b: scripted-0")
+    Success(content~, structured=None) => assert_eq(content, "b: scripted-0")
     _ => fail("expected Success outcome for targeted memory_add")
   }
   assert_eq(a.received_stores().length(), 0)
@@ -923,7 +911,7 @@ async test "m38_memory/add_rejects_unknown_source_and_empty_content" {
     ("source", Json::string("zz")),
   ])
   match unknown {
-    @kernel.ToolReportedError(content~, structured=None) => {
+    ToolReportedError(content~, structured=None) => {
       assert_true(content.contains("unknown source 'zz'"))
       assert_true(content.contains("valid sources: a"))
     }
@@ -933,7 +921,7 @@ async test "m38_memory/add_rejects_unknown_source_and_empty_content" {
     ("content", Json::string("  ")),
   ])
   match blank {
-    @kernel.ToolReportedError(content~, structured=None) =>
+    ToolReportedError(content~, structured=None) =>
       assert_eq(content, "memory_add: argument 'content' must be non-empty")
     _ => fail("expected ToolReportedError for empty content")
   }
@@ -1036,7 +1024,7 @@ async test "m38_memory/memory_search_collision_at_composition" {
     e => Err(e)
   }
   match composition_result {
-    Err(@error.CompositionError::ToolCollision(name, msg, ..)) => {
+    Err(ToolCollision(name, msg, ..)) => {
       assert_eq(name, "memory_search")
       assert_true(msg.contains("collision"))
     }
@@ -1059,7 +1047,7 @@ pub impl @port.PipelineHook for SameLengthAgentHook with fn before_model(
   _self,
   _messages : Array[@kernel.Message],
 ) -> Array[@kernel.Message] raise @port.HookAbort {
-  [@kernel.UserMessage(content=[@kernel.Text("rewritten-by-hook")])]
+  [UserMessage(content=[Text("rewritten-by-hook")])]
 }
 
 ///|
@@ -1085,9 +1073,9 @@ async test "m38_hooks/same_length_rewrite_reaches_model" {
   let received = model.received_messages[0]
   assert_eq(received.length(), 1)
   match received[0] {
-    @kernel.UserMessage(content~) =>
+    UserMessage(content~) =>
       match content[0] {
-        @kernel.Text(text) => assert_eq(text, "rewritten-by-hook")
+        Text(text) => assert_eq(text, "rewritten-by-hook")
         _ => fail("expected text content")
       }
     _ => fail("expected rewritten user message")
@@ -1123,9 +1111,7 @@ fn build_ui_agent(
   ])
   let tools = RecordingToolProvider(
     [tk_tool_def("echo", "echo tool")],
-    Map::from_array([
-      ("echo", ScriptedToolOutcome::OutcomeOk(tk_ok_result("echoed"))),
-    ]),
+    Map::from_array([("echo", OutcomeOk(tk_ok_result("echoed")))]),
   )
   Agent(
     exts=[
@@ -1157,6 +1143,6 @@ async test "br5_ui_projection/opt_in_renders_tool_notice" {
   let result = agent.run_turn(tk_user_msg("hi"), "session_ui_on")
   assert_eq(result.final_session_id, "session_ui_on")
   assert_true(ui.render_count() > 0)
-  let notices = ui.rendered_in_slot(@port.UiSlot::Notice)
+  let notices = ui.rendered_in_slot(Notice)
   assert_eq(notices.length(), 1)
 }

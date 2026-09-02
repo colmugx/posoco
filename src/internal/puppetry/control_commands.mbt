@@ -35,13 +35,13 @@ pub fn CommandId::checked(value : String) -> Result[CommandId, String] {
   if value == "" {
     Err("CommandId must be non-empty")
   } else {
-    Ok(CommandId::{ value, })
+    Ok({ value, })
   }
 }
 
 ///|
 pub fn CommandId::unchecked(value : String) -> CommandId {
-  CommandId::{ value, }
+  { value, }
 }
 
 ///|

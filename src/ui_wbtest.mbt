@@ -8,11 +8,11 @@
 ///|
 test "noop_ui_port_render_is_silent" {
   let ui = NoopUiPort()
-  ui.render(UiRender::{
-    slot: UiSlot::Status,
+  ui.render({
+    slot: Status,
     key: "x",
     title: None,
-    body: UiBody::Text("anything"),
+    body: Text("anything"),
     ttl_ms: None,
   })
   // No assertion needed — silent return is the contract.
@@ -29,12 +29,12 @@ test "noop_ui_port_descriptor_is_empty" {
 async test "noop_ui_port_request_raises_unsupported" {
   let ui = NoopUiPort()
   let result : Result[UiResponse, UiError] = Ok(
-    ui.request(UiRequest::Confirm(prompt="ok?")),
+    ui.request(Confirm(prompt="ok?")),
   ) catch {
     e => Err(e)
   }
   match result {
-    Err(UiError::Unsupported(_)) => ()
+    Err(Unsupported(_)) => ()
     Ok(_) => fail("expected Unsupported, got Ok response")
     Err(other) => fail("expected Unsupported, got error: " + other.to_string())
   }
@@ -47,10 +47,10 @@ test "composite_ui_port_render_broadcasts_in_order" {
   let c = RecordingUiPort()
   let composite = CompositeUiPort([a, b, c])
   let intent = UiRender::{
-    slot: UiSlot::Status,
+    slot: Status,
     key: "k",
     title: None,
-    body: UiBody::Text("hi"),
+    body: Text("hi"),
     ttl_ms: None,
   }
   composite.render(intent)
@@ -62,10 +62,10 @@ test "composite_ui_port_render_broadcasts_in_order" {
 ///|
 async test "composite_ui_port_request_first_supporting_wins" {
   let unsupported_a = RecordingUiPort::new_unsupported()
-  let supporting_b = RecordingUiPort(responses=[UiResponse::Yes])
+  let supporting_b = RecordingUiPort(responses=[Yes])
   let composite = CompositeUiPort([unsupported_a, supporting_b])
-  let resp = composite.request(UiRequest::Confirm(prompt="ok?"))
-  assert_true(resp is UiResponse::Yes)
+  let resp = composite.request(Confirm(prompt="ok?"))
+  assert_true(resp is Yes)
 }
 
 ///|
@@ -74,12 +74,12 @@ async test "composite_ui_port_request_all_unsupported_raises" {
   let b = RecordingUiPort::new_unsupported()
   let composite = CompositeUiPort([a, b])
   let result : Result[UiResponse, UiError] = Ok(
-    composite.request(UiRequest::Confirm(prompt="ok?")),
+    composite.request(Confirm(prompt="ok?")),
   ) catch {
     e => Err(e)
   }
   match result {
-    Err(UiError::Unsupported(_)) => ()
+    Err(Unsupported(_)) => ()
     Ok(_) => fail("expected Unsupported, got Ok response")
     Err(other) => fail("expected Unsupported, got error: " + other.to_string())
   }
@@ -89,10 +89,10 @@ async test "composite_ui_port_request_all_unsupported_raises" {
 async test "composite_ui_port_request_propagates_non_unsupported_error" {
   // RecordingUiPort with empty script raises Unsupported from the second
   // contributor, but if we set the script we can simulate a Cancelled flow.
-  let supporting_then_cancel = RecordingUiPort(responses=[UiResponse::Cancelled])
+  let supporting_then_cancel = RecordingUiPort(responses=[Cancelled])
   let composite = CompositeUiPort([supporting_then_cancel])
-  let resp = composite.request(UiRequest::Confirm(prompt="ok?"))
-  assert_true(resp is UiResponse::Cancelled)
+  let resp = composite.request(Confirm(prompt="ok?"))
+  assert_true(resp is Cancelled)
 }
 
 ///|
@@ -100,21 +100,13 @@ test "composite_ui_port_descriptor_concatenates_sources" {
   let with_one_source_a = RecordingUiPort()
   with_one_source_a.set_descriptor({
     autocomplete_sources: [
-      AutocompleteSource::{
-        trigger: "/",
-        kind: "command",
-        fetch: fn(_) { [] },
-      },
+      { trigger: "/", kind: "command", fetch: fn(_) { [] }, },
     ],
   })
   let with_one_source_b = RecordingUiPort()
   with_one_source_b.set_descriptor({
     autocomplete_sources: [
-      AutocompleteSource::{
-        trigger: "@",
-        kind: "mention",
-        fetch: fn(_) { [] },
-      },
+      { trigger: "@", kind: "mention", fetch: fn(_) { [] }, },
     ],
   })
   let composite = CompositeUiPort([with_one_source_a, with_one_source_b])
@@ -127,18 +119,18 @@ test "composite_ui_port_descriptor_concatenates_sources" {
 ///|
 test "recording_ui_port_records_render_in_order" {
   let r = RecordingUiPort()
-  r.render(UiRender::{
-    slot: UiSlot::Notice,
+  r.render({
+    slot: Notice,
     key: "first",
     title: None,
-    body: UiBody::Text("1"),
+    body: Text("1"),
     ttl_ms: None,
   })
-  r.render(UiRender::{
-    slot: UiSlot::Status,
+  r.render({
+    slot: Status,
     key: "second",
     title: None,
-    body: UiBody::Text("2"),
+    body: Text("2"),
     ttl_ms: None,
   })
   let rendered = r.rendered_intents()
@@ -149,18 +141,15 @@ test "recording_ui_port_records_render_in_order" {
 
 ///|
 async test "recording_ui_port_request_drains_script_in_fifo_order" {
-  let r = RecordingUiPort(responses=[
-    UiResponse::Text("first"),
-    UiResponse::Text("second"),
-  ])
-  let resp1 = r.request(UiRequest::Input(prompt="?", default=None))
-  let resp2 = r.request(UiRequest::Input(prompt="?", default=None))
+  let r = RecordingUiPort(responses=[Text("first"), Text("second")])
+  let resp1 = r.request(Input(prompt="?", default=None))
+  let resp2 = r.request(Input(prompt="?", default=None))
   match resp1 {
-    UiResponse::Text(s) => assert_eq(s, "first")
+    Text(s) => assert_eq(s, "first")
     other => fail("first response wrong: " + other.to_string())
   }
   match resp2 {
-    UiResponse::Text(s) => assert_eq(s, "second")
+    Text(s) => assert_eq(s, "second")
     other => fail("second response wrong: " + other.to_string())
   }
   // Script exhausted; further requests raise Unsupported.
@@ -171,12 +160,12 @@ async test "recording_ui_port_request_drains_script_in_fifo_order" {
 async test "recording_ui_port_request_unsupported_when_exhausted" {
   let r = RecordingUiPort(responses=[])
   let result : Result[UiResponse, UiError] = Ok(
-    r.request(UiRequest::Confirm(prompt="ok?")),
+    r.request(Confirm(prompt="ok?")),
   ) catch {
     e => Err(e)
   }
   match result {
-    Err(UiError::Unsupported(_)) => ()
+    Err(Unsupported(_)) => ()
     Ok(_) => fail("expected Unsupported, got Ok response")
     Err(other) => fail("expected Unsupported, got error: " + other.to_string())
   }
@@ -185,31 +174,31 @@ async test "recording_ui_port_request_unsupported_when_exhausted" {
 ///|
 test "recording_ui_port_rendered_in_slot_filters_by_slot" {
   let r = RecordingUiPort()
-  r.render(UiRender::{
-    slot: UiSlot::Status,
+  r.render({
+    slot: Status,
     key: "s1",
     title: None,
-    body: UiBody::Text(""),
+    body: Text(""),
     ttl_ms: None,
   })
-  r.render(UiRender::{
-    slot: UiSlot::Notice,
+  r.render({
+    slot: Notice,
     key: "n1",
     title: None,
-    body: UiBody::Text(""),
+    body: Text(""),
     ttl_ms: None,
   })
-  r.render(UiRender::{
-    slot: UiSlot::Status,
+  r.render({
+    slot: Status,
     key: "s2",
     title: None,
-    body: UiBody::Text(""),
+    body: Text(""),
     ttl_ms: None,
   })
-  let notices = r.rendered_in_slot(UiSlot::Notice)
+  let notices = r.rendered_in_slot(Notice)
   assert_eq(notices.length(), 1)
   assert_eq(notices[0].key, "n1")
-  let statuses = r.rendered_in_slot(UiSlot::Status)
+  let statuses = r.rendered_in_slot(Status)
   assert_eq(statuses.length(), 2)
 }
 
@@ -227,6 +216,6 @@ test "ui_request_show_round_trip" {
 
 ///|
 test "ui_response_equality_for_yes_no" {
-  assert_eq(UiResponse::Yes, UiResponse::Yes)
-  assert_false(UiResponse::Yes == UiResponse::No)
+  assert_eq(UiResponse::Yes, Yes)
+  assert_false(UiResponse::Yes == No)
 }

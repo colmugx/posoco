@@ -15,7 +15,7 @@ fn make_def(
   schema : Json,
   policy : @kernel.ExecutionPolicy,
 ) -> @kernel.ToolDef {
-  @kernel.ToolDef(
+  ToolDef(
     name=@kernel.ToolName::unchecked(name),
     description="test",
     input_schema=schema,
@@ -50,13 +50,8 @@ test "ToolCatalogBuilder: empty finish produces empty snapshot" {
 
 ///|
 test "ToolCatalogBuilder: add + finish produces ordered entries" {
-  let d1 = make_def("tool_a", "owner1", empty_object_schema(), @kernel.Parallel)
-  let d2 = make_def(
-    "tool_b",
-    "owner2",
-    empty_object_schema(),
-    @kernel.Sequential,
-  )
+  let d1 = make_def("tool_a", "owner1", empty_object_schema(), Parallel)
+  let d2 = make_def("tool_b", "owner2", empty_object_schema(), Sequential)
   let snapshot = make_snapshot([d1, d2])
   assert_eq(snapshot.size(), 2)
   let entries = snapshot.entries()
@@ -68,8 +63,8 @@ test "ToolCatalogBuilder: add + finish produces ordered entries" {
 
 ///|
 test "ToolCatalogBuilder: name collision fails" {
-  let d1 = make_def("dup", "owner1", empty_object_schema(), @kernel.Parallel)
-  let d2 = make_def("dup", "owner2", empty_object_schema(), @kernel.Parallel)
+  let d1 = make_def("dup", "owner1", empty_object_schema(), Parallel)
+  let d2 = make_def("dup", "owner2", empty_object_schema(), Parallel)
   let result : Result[ToolCatalogSnapshot, CatalogCompositionError] = Ok(
     make_snapshot([d1, d2]),
   ) catch {
@@ -89,7 +84,7 @@ test "ToolCatalogBuilder: unsupported schema keyword fails" {
       ("pattern", Json::string(".*")),
     ]),
   )
-  let d = make_def("bad", "owner1", bad_schema, @kernel.Parallel)
+  let d = make_def("bad", "owner1", bad_schema, Parallel)
   let result : Result[ToolCatalogSnapshot, CatalogCompositionError] = Ok(
     make_snapshot([d]),
   ) catch {
@@ -127,7 +122,7 @@ test "ToolCatalogBuilder: nested unsupported keyword fails" {
       ),
     ]),
   )
-  let d = make_def("nested_bad", "owner1", bad_schema, @kernel.Parallel)
+  let d = make_def("nested_bad", "owner1", bad_schema, Parallel)
   let result : Result[ToolCatalogSnapshot, CatalogCompositionError] = Ok(
     make_snapshot([d]),
   ) catch {
@@ -144,12 +139,7 @@ test "ToolCatalogBuilder: nested unsupported keyword fails" {
 
 ///|
 test "ToolCatalogBuilder: malformed top-level schema fails" {
-  let d = make_def(
-    "bad",
-    "owner1",
-    Json::string("not-a-schema"),
-    @kernel.Parallel,
-  )
+  let d = make_def("bad", "owner1", Json::string("not-a-schema"), Parallel)
   let result : Result[ToolCatalogSnapshot, CatalogCompositionError] = Ok(
     make_snapshot([d]),
   ) catch {
@@ -166,7 +156,7 @@ test "ToolCatalogBuilder: cannot add after finish" {
   let result : Result[ToolCatalogBuilder, CatalogCompositionError] = try {
     let b = ToolCatalogBuilder()
     let _ = b.finish(version=CatalogVersion(1))
-    Ok(b.add(make_def("x", "o", empty_object_schema(), @kernel.Parallel)))
+    Ok(b.add(make_def("x", "o", empty_object_schema(), Parallel)))
   } catch {
     e => Err(e)
   }
@@ -179,8 +169,8 @@ test "ToolCatalogBuilder: cannot add after finish" {
 ///|
 test "ToolCatalogSnapshot: find by name" {
   let snapshot = make_snapshot([
-    make_def("alpha", "owner1", empty_object_schema(), @kernel.Parallel),
-    make_def("beta", "owner2", empty_object_schema(), @kernel.Sequential),
+    make_def("alpha", "owner1", empty_object_schema(), Parallel),
+    make_def("beta", "owner2", empty_object_schema(), Sequential),
   ])
   assert_true(snapshot.contains(@kernel.ToolName::unchecked("alpha")))
   assert_false(snapshot.contains(@kernel.ToolName::unchecked("missing")))
@@ -193,9 +183,9 @@ test "ToolCatalogSnapshot: find by name" {
 ///|
 test "ToolCatalogSnapshot: definitions in source order" {
   let snapshot = make_snapshot([
-    make_def("first", "o", empty_object_schema(), @kernel.Parallel),
-    make_def("second", "o", empty_object_schema(), @kernel.Parallel),
-    make_def("third", "o", empty_object_schema(), @kernel.Parallel),
+    make_def("first", "o", empty_object_schema(), Parallel),
+    make_def("second", "o", empty_object_schema(), Parallel),
+    make_def("third", "o", empty_object_schema(), Parallel),
   ])
   let defs = snapshot.definitions()
   assert_eq(defs.length(), 3)
@@ -414,7 +404,7 @@ test "Catalog: validate_arguments against known tool" {
     ]),
   )
   let snapshot = make_snapshot([
-    make_def("read_file", "owner1", schema, @kernel.Sequential),
+    make_def("read_file", "owner1", schema, Sequential),
   ])
   let ok = snapshot.validate_arguments(
     @kernel.ToolName::unchecked("read_file"),
@@ -437,7 +427,7 @@ test "Catalog: validate_arguments against known tool" {
 ///|
 test "Catalog: validate_arguments against unknown tool" {
   let snapshot = make_snapshot([
-    make_def("known", "owner1", empty_object_schema(), @kernel.Parallel),
+    make_def("known", "owner1", empty_object_schema(), Parallel),
   ])
   let result = snapshot.validate_arguments(
     @kernel.ToolName::unchecked("unknown"),
@@ -452,7 +442,7 @@ test "Catalog: validate_arguments against unknown tool" {
 ///|
 test "Catalog: same version always yields same definitions" {
   let snapshot = make_snapshot([
-    make_def("alpha", "owner1", empty_object_schema(), @kernel.Parallel),
+    make_def("alpha", "owner1", empty_object_schema(), Parallel),
   ])
   let d1 = snapshot.definitions()
   let d2 = snapshot.definitions()

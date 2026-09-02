@@ -61,7 +61,7 @@ async fn Puppet::drive_run(
   let mut seeded_messages = initial_messages.copy()
   for hook in self.config.hooks {
     seeded_messages = hook.before_model(seeded_messages) catch {
-      HookAbort::Aborted(reason~) =>
+      Aborted(reason~) =>
         return self.reject_run(
           error=HookRejected(reason="pre_model_hook: " + reason),
         )
@@ -408,8 +408,8 @@ async fn Puppet::pump_compact(
     state, compact_cmd, run_id, turn_id, session_id, dispatcher, snap,
   )
   match compact_outcome {
-    CompactFlow::ReturnedResult(r) => StopWith(r)
-    CompactFlow::UpdatedState(new_state, rewrite_events) => {
+    ReturnedResult(r) => StopWith(r)
+    UpdatedState(new_state, rewrite_events) => {
       let cr : Result[Unit, PuppetError] = Ok(
         self.commit_boundary(
           new_state,
@@ -429,7 +429,7 @@ async fn Puppet::pump_compact(
         Ok(_) => ContinueWith(new_state)
       }
     }
-    CompactFlow::Failed(error) => StopWith(self.reject_run(error~))
+    Failed(error) => StopWith(self.reject_run(error~))
   }
 }
 
@@ -460,7 +460,7 @@ async fn Puppet::pump_ready_for_model(
   let mut hook_changed = false
   for hook in self.config.hooks {
     let new_messages = hook.before_model(current_messages) catch {
-      HookAbort::Aborted(reason~) => {
+      Aborted(reason~) => {
         hook_aborted = true
         abort_reason = reason
         []
@@ -619,8 +619,8 @@ async fn Puppet::pump_awaiting_model(
   }
   match folded {
     Err(error) => return StopWith(self.reject_run(error~))
-    Ok(FoldOutcome::Return(r)) => StopWith(r)
-    Ok(FoldOutcome::Continue(next_state)) => {
+    Ok(Return(r)) => StopWith(r)
+    Ok(Continue(next_state)) => {
       self.fire_post_event_hooks(input, hook_scope)
       ContinueWith(next_state)
     }
@@ -665,7 +665,7 @@ async fn Puppet::pump_awaiting_tools(
     let hook_rejected_inputs : Array[RunInput] = []
     for effect in wave {
       match effect {
-        @kernel_exec.ExecuteTool(effect_id~, payload~) => {
+        ExecuteTool(effect_id~, payload~) => {
           let mut current_call : ToolCall = {
             call_id: payload.call_id,
             name: payload.tool_name,
@@ -743,15 +743,13 @@ async fn Puppet::pump_awaiting_tools(
             // journal stays causal and the model sees the joined
             // reasons on the next model step.
             hook_rejected_inputs.push(
-              @kernel_exec.RunInput::ToolCompleted(payload=@kernel_exec.ToolCompletedPayload::{
+              ToolCompleted(payload={
                 effect_id,
                 call_id: payload.call_id,
                 tool_name: payload.tool_name,
                 arguments: payload.arguments,
-                outcome: @kernel.NotExecuted(
-                  reason=@kernel.RejectedByHook(
-                    reason=reject_reasons.join("; "),
-                  ),
+                outcome: NotExecuted(
+                  reason=RejectedByHook(reason=reject_reasons.join("; ")),
                   original_call_id=payload.call_id,
                 ),
               }),
@@ -761,7 +759,7 @@ async fn Puppet::pump_awaiting_tools(
           // Reconstruct the effect with the rewritten name/arguments.
           // call_id, owner, model_step_id, catalog_version are preserved.
           rewritten_wave.push(
-            @kernel_exec.ExecuteTool(effect_id~, payload=@kernel_exec.ExecuteToolPayload::{
+            ExecuteTool(effect_id~, payload={
               call_id: payload.call_id,
               tool_name: current_call.name,
               arguments: current_call.arguments,
@@ -809,8 +807,8 @@ async fn Puppet::pump_awaiting_tools(
       }
       match folded {
         Err(error) => return StopWith(self.reject_run(error~))
-        Ok(FoldOutcome::Return(r)) => return StopWith(r)
-        Ok(FoldOutcome::Continue(next_state)) => {
+        Ok(Return(r)) => return StopWith(r)
+        Ok(Continue(next_state)) => {
           self.fire_post_event_hooks(input, hook_scope)
           state = next_state
         }
