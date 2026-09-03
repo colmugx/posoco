@@ -29,6 +29,10 @@ pub(all) enum UiBody {
   Text(String)
   Lines(Array[String])
   KeyValue(Array[(String, String)])
+  /// Keyed entries with an optional semantic color role per entry. The role
+  /// vocabulary is host-negotiated; raw color values never travel through
+  /// this type.
+  Entries(Array[UiEntry])
   Progress(Double)
   Markdown(String)
 } derive(Debug)
@@ -39,10 +43,27 @@ pub impl Show for UiBody with fn to_string(self) -> String {
     Text(s) => "Text(\{s.length()} chars)"
     Lines(lines) => "Lines(\{lines.length()})"
     KeyValue(pairs) => "KeyValue(\{pairs.length()})"
+    Entries(entries) => {
+      let roles = entries.filter_map(e => e.color).join(",")
+      if roles == "" {
+        "Entries(\{entries.length()})"
+      } else {
+        "Entries(\{entries.length()}, roles=\{roles})"
+      }
+    }
     Progress(p) => "Progress(\{p})"
     Markdown(s) => "Markdown(\{s.length()} chars)"
   }
 }
+
+///|
+/// One keyed entry of an `Entries` body. `color` carries a semantic role
+/// name from the host-negotiated vocabulary, never a raw color value.
+pub(all) struct UiEntry {
+  key : String
+  value : String
+  color : String?
+} derive(Debug)
 
 ///|
 /// One render intent. Same `key` replaces a prior intent in the same `UiSlot`.

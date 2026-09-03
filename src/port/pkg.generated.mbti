@@ -134,6 +134,7 @@ pub(all) enum UiBody {
   Text(String)
   Lines(Array[String])
   KeyValue(Array[(String, String)])
+  Entries(Array[UiEntry])
   Progress(Double)
   Markdown(String)
 } derive(@debug.Debug)
@@ -144,6 +145,12 @@ pub(all) struct UiDescriptor {
   autocomplete_sources : Array[AutocompleteSource]
 } derive(@debug.Debug)
 pub fn UiDescriptor::empty() -> Self
+
+pub(all) struct UiEntry {
+  key : String
+  value : String
+  color : String?
+} derive(@debug.Debug)
 
 pub(all) enum UiHint {
   RefreshModelList

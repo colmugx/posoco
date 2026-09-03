@@ -49,6 +49,7 @@ pub using @port {
   type AutocompleteSource,
   type UiDescriptor,
   type UiRender,
+  type UiEntry,
   type ExtensionManifest,
   type ProviderConfig,
   // Consumption direction: declared capability requirements and the curated

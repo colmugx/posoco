@@ -436,6 +436,8 @@ pub using @port {type UiBody}
 
 pub using @port {type UiDescriptor}
 
+pub using @port {type UiEntry}
+
 pub using @error {type UiError}
 
 pub using @port {type UiHint}

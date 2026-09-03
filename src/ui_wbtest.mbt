@@ -219,3 +219,44 @@ test "ui_response_equality_for_yes_no" {
   assert_eq(UiResponse::Yes, Yes)
   assert_false(UiResponse::Yes == No)
 }
+
+///|
+test "ui_body_entries_show_appends_color_roles" {
+  let with_roles : UiBody = Entries([
+    { key: "plan", value: "codex", color: Some("accent"), },
+    { key: "ctx", value: "42%", color: None, },
+  ])
+  inspect(with_roles.to_string(), content="Entries(2, roles=accent)")
+  let no_roles : UiBody = Entries([{ key: "model", value: "glm", color: None, }])
+  inspect(no_roles.to_string(), content="Entries(1)")
+}
+
+///|
+test "recording_ui_port_preserves_entries_body" {
+  let r = RecordingUiPort()
+  let entries : Array[@port.UiEntry] = [
+    { key: "plan", value: "codex", color: Some("accent"), },
+    { key: "model", value: "glm", color: None, },
+  ]
+  r.render({
+    slot: Status,
+    key: "statusbar",
+    title: None,
+    body: Entries(entries),
+    ttl_ms: None,
+  })
+  let rendered = r.rendered_intents()
+  assert_eq(rendered.length(), 1)
+  match rendered[0].body {
+    Entries(ets) => {
+      assert_eq(ets.length(), 2)
+      assert_eq(ets[0].key, "plan")
+      assert_eq(ets[0].value, "codex")
+      assert_eq(ets[0].color, Some("accent"))
+      assert_eq(ets[1].key, "model")
+      assert_eq(ets[1].value, "glm")
+      assert_eq(ets[1].color, None)
+    }
+    other => fail("expected Entries body, got: " + other.to_string())
+  }
+}

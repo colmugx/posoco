@@ -182,6 +182,45 @@ async test "chunk dispatch: flush drains chunks before TurnFailed" {
 }
 
 ///|
+/// R5-w2 duplicate-chunk investigation: adjacent identical tokens (CJK
+/// punctuation, backticks) are legal model output and must cross the dispatch
+/// path verbatim — one observer event per streamed chunk, no dedup and no
+/// duplication. A duplicate seen in outbound telemetry therefore enters at or
+/// below the ModelPort stream boundary, never in posoco core.
+async test "chunk dispatch: adjacent identical tokens pass through 1:1 without dedup or duplication" {
+  let sent = ["、", "、", "。", "。", "`", "`", "`"]
+  let chunks = []
+  for token in sent {
+    chunks.push(@types.TextDelta(token~))
+  }
+  let model = ScriptedModel([Stream(chunks~, response=tk_stop_response("ok"))])
+  let store = RecordingSessionStore()
+  let observer = RecordingObserver()
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", sessions=[store], observers=[observer]),
+    ],
+    config=tk_config(),
+  )
+  let _ = agent.run_turn(tk_user_msg("hello"), "s1")
+  let chunk_events = observer
+    .events()
+    .filter(fn(e) { e is StreamChunkReceived(_) })
+  assert_eq(chunk_events.length(), sent.length())
+  for i = 0; i < sent.length(); i = i + 1 {
+    match chunk_events[i] {
+      StreamChunkReceived(chunk~) =>
+        match chunk {
+          TextDelta(token~) => assert_eq(token, sent[i])
+          _ => fail("expected TextDelta")
+        }
+      _ => fail("expected StreamChunkReceived at index \{i}")
+    }
+  }
+}
+
+///|
 /// Direct white-box drain test: a small dispatcher delivers queued events in
 /// FIFO order and terminates when the queue is closed.
 async test "chunk dispatch: drain_loop delivers queued events in order" {
