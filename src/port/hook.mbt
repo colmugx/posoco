@@ -39,14 +39,20 @@ pub impl Show for HookAbort with fn to_string(self : HookAbort) -> String {
 /// terminal-rejects until M5; `ApproveAfterConsent` beats `Reject`;
 /// `Reject` skips the call and feeds the joined reasons back to the model
 /// as a `NotExecuted(RejectedByHook)` tool result; otherwise the call
-/// executes with the chained rewrite.
+/// executes with the chained rewrite. The complete chain is finalized before
+/// catalog validation and scheduling, so the final call determines its
+/// schema, owner, and execution policy. Consent binds to the exact
+/// `call_id`, name, and arguments returned by that consent decision; a later
+/// mutation cannot reuse it, and `call_id` is never rewriteable.
 pub(all) enum ToolDecision {
-  /// Execute the tool, possibly with a rewritten call.
+  /// Execute the tool, possibly with a rewritten call. Rewrites are finalized
+  /// and validated after every hook has run.
   Approve(call~ : @kernel.ToolCall)
   /// Execute because the user explicitly consented (permission approval
   /// or remembered session approval). Behaves like `Approve` but beats
   /// any `Reject` in the chain; only raising outranks it.
-  /// `consent_scope` names what the user agreed to (e.g. `bash:ls`).
+  /// `consent_scope` names what the user agreed to (e.g. `bash:ls`). The
+  /// consent applies only to the exact call carried by this decision.
   ApproveAfterConsent(call~ : @kernel.ToolCall, consent_scope~ : String)
   /// Request suspension: keep the call pending so the host can resolve it
   /// later. **Current runtime semantics: treated as a terminal reject** —

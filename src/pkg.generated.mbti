@@ -59,7 +59,7 @@ pub struct Agent {
 }
 pub fn Agent::Agent(exts~ : Array[&@port.Extension], config~ : AgentConfig, ui_projection? : Bool) -> Self raise @error.CompositionError
 pub fn Agent::commands(Self) -> Array[&@port.CommandPort]
-pub fn Agent::control(Self) -> @runtime.RuntimeControl
+pub fn Agent::control(Self) -> AgentControl
 pub async fn Agent::run_turn(Self, @kernel.Message, String) -> @types.TurnResult raise @error.AgentError
 pub async fn Agent::shutdown(Self) -> Unit
 pub fn Agent::with_runtime(exts~ : Array[&@port.Extension], config~ : AgentConfig, runtime~ : &@runtime.Runtime, ui_projection? : Bool, catalog_source? : &@runtime.CatalogSource) -> Self raise @error.CompositionError
@@ -73,6 +73,15 @@ pub struct AgentConfig {
   system_prompt : String?
   memory_inbound_timeout_ms : Int?
 }
+
+pub struct AgentControl {
+  // private fields
+}
+pub fn AgentControl::abort_active(Self, String?) -> @runtime.EnqueueOutcome
+pub fn AgentControl::active_run_id(Self) -> @kernel.RunId?
+pub fn AgentControl::active_turn_id(Self) -> @kernel.TurnId?
+pub fn AgentControl::enqueue_follow_up(Self, @kernel.Message) -> @runtime.EnqueueOutcome
+pub fn AgentControl::pending_follow_ups(Self) -> Int
 
 pub(all) struct CompositeToolProvider {
   providers : Array[&@port.ToolProvider]

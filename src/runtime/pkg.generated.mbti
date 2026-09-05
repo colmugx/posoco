@@ -2,7 +2,6 @@
 package "colmugx/posoco/runtime"
 
 import {
-  "colmugx/posoco/internal/puppetry",
   "colmugx/posoco/kernel",
   "colmugx/posoco/port",
   "colmugx/posoco/types",
@@ -27,6 +26,7 @@ pub(all) enum EnqueueOutcome {
   RejectedStale(reason~ : String)
   RejectedQueueFull(depth~ : Int)
   AbortAlreadyRequested
+  RejectedQueueFailure(reason~ : String)
 } derive(Eq, @debug.Debug)
 pub impl Show for EnqueueOutcome
 
@@ -35,17 +35,6 @@ pub struct PortRuntime {
 }
 pub fn PortRuntime::PortRuntime(model~ : &@port.ModelPort, tools~ : Map[String, &@port.ToolProvider]) -> Self
 pub impl Runtime for PortRuntime
-
-pub struct RuntimeControl {
-  // private fields
-}
-pub fn RuntimeControl::RuntimeControl(&@puppetry.Mailbox) -> Self
-pub fn RuntimeControl::abort_active(Self, String?) -> EnqueueOutcome
-pub fn RuntimeControl::active_run_id(Self) -> @kernel.RunId?
-pub fn RuntimeControl::active_turn_id(Self) -> @kernel.TurnId?
-pub fn RuntimeControl::enqueue_follow_up(Self, @kernel.Message) -> EnqueueOutcome
-pub fn RuntimeControl::pending_follow_ups(Self) -> Int
-pub fn RuntimeControl::take_follow_up(Self) -> @kernel.Message?
 
 // Type aliases
 

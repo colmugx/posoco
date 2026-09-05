@@ -17,6 +17,14 @@ pub(all) struct FixtureHost {
   /// Effect ids received via `execute_tool`, in execution order. Used to
   /// verify the host receives the reducer-allocated effect identity.
   executed_effect_ids : Array[EffectId]
+  /// Chunks to deliver through the live callback during a model call. Tests
+  /// use this to exercise the executor's trust-boundary validation without
+  /// involving a concrete provider adapter.
+  mut stream_chunks : Array[@types.StreamChunk]
+  /// Raise a host transport error after delivering any configured chunks.
+  /// This models a provider that reports a transport/cancellation failure
+  /// after an invalid callback, so executor error precedence is testable.
+  mut raise_model_transport : Bool
 }
 
 ///|
@@ -34,7 +42,24 @@ pub fn FixtureHost::FixtureHost(
     observed_definition_count: -1,
     observed_call_options: [],
     executed_effect_ids: [],
+    stream_chunks: [],
+    raise_model_transport: false,
   }
+}
+
+///|
+fn FixtureHost::with_stream_chunks(
+  self : FixtureHost,
+  chunks : Array[@types.StreamChunk],
+) -> FixtureHost {
+  self.stream_chunks = chunks.copy()
+  self
+}
+
+///|
+fn FixtureHost::with_model_transport_failure(self : FixtureHost) -> FixtureHost {
+  self.raise_model_transport = true
+  self
 }
 
 ///|
@@ -69,13 +94,23 @@ pub impl @kernel_exec.HostRuntime for FixtureHost with fn call_model(
   messages : ArrayView[Message],
   tool_definitions : Array[ToolDef],
   call_options : Json,
-  _on_chunk : HostChunkCallback?,
+  on_chunk : HostChunkCallback?,
 ) -> Result[ModelCallResult, ModelFailure] {
   self.model_call_count = self.model_call_count + 1
   self.observed_definition_count = tool_definitions.length()
   self.observed_call_options.push(call_options)
   let index = self.model_index
   self.model_index = index + 1
+  match on_chunk {
+    Some(callback) =>
+      for chunk in self.stream_chunks {
+        callback(chunk)
+      }
+    None => ()
+  }
+  if self.raise_model_transport {
+    raise @error.ModelError::Transport("fixture host transport failure")
+  }
   if index >= self.model_results.length() {
     Err(Runtime(reason="fixture host exhausted model results"))
   } else {
@@ -147,6 +182,20 @@ fn fixture_stop(text : String) -> @kernel.Completion {
     reasoning=None,
     finish_reason=Stop,
     usage=None,
+  )
+}
+
+///|
+fn fixture_stop_with_usage(
+  text : String,
+  usage : @kernel.Usage,
+) -> @kernel.Completion {
+  Completion(
+    content=[Text(text)],
+    tool_calls=[],
+    reasoning=None,
+    finish_reason=Stop,
+    usage=Some(usage),
   )
 }
 
@@ -433,6 +482,217 @@ async test "puppet/C-MODEL-FAILURE" {
     status =>
       fail(
         "expected terminal model transport failure, got " + status.to_string(),
+      )
+  }
+}
+
+///|
+async test "puppet/C-NEGATIVE-USAGE-FAILS-BEFORE-MODEL-COMPLETED" {
+  let invalid_usage : @kernel.Usage = {
+    input_tokens: Some(100),
+    output_tokens: Some(-1),
+    total_tokens: Some(99),
+    cached_input_tokens: None,
+    uncached_input_tokens: None,
+  }
+  let host = FixtureHost(
+    [Ok(fixture_stop_with_usage("must fail", invalid_usage))],
+    Map::from_array([]),
+  )
+  let journal = InMemoryJournal()
+  let puppet = Puppet(
+    fixture_config(host, fixture_empty_catalog(), journal, [], []),
+  )
+  assert_true(fixture_prompt(puppet, "negative_usage") is Accepted(_))
+  match puppet.wait_idle() {
+    Terminal(outcome=Failed(reason=ModelParseFailure(detail~))) =>
+      assert_true(detail.contains("model usage validation failed"))
+    status =>
+      fail(
+        "expected terminal model parse failure for negative usage, got " +
+        status.to_string(),
+      )
+  }
+}
+
+///|
+async test "puppet/C-INVALID-STREAM-CHUNK-NOT-BROADCAST" {
+  let host = FixtureHost([Ok(fixture_stop("must fail"))], Map::from_array([])).with_stream_chunks([
+      @types.StreamChunk::ToolCallDelta(
+        index=3,
+        id=Some("sparse"),
+        name=Some("echo"),
+        arguments_delta=Some("{}"),
+      ),
+    ],
+  )
+  let journal = InMemoryJournal()
+  let seen : Array[@types.StreamChunk] = []
+  let sink = fn(chunk : @types.StreamChunk) { seen.push(chunk) }
+  let puppet = Puppet(
+    canonical_puppet_config(
+      host as &@kernel_exec.HostRuntime,
+      fixture_empty_catalog(),
+      journal,
+      [],
+      [],
+      Some(sink),
+    ),
+  )
+  assert_true(fixture_prompt(puppet, "invalid_stream") is Accepted(_))
+  assert_eq(seen.length(), 0)
+  match puppet.wait_idle() {
+    Terminal(outcome=Failed(reason=ModelParseFailure(detail~))) =>
+      assert_true(detail.contains("stream chunk validation failed"))
+    status =>
+      fail(
+        "expected terminal model parse failure for invalid stream chunk, got " +
+        status.to_string(),
+      )
+  }
+}
+
+///|
+async test "puppet/C-INVALID-STREAM-CHUNK-HOST-RAISE-PRIMARY" {
+  let host = FixtureHost(
+      [Ok(fixture_stop("host must fail"))],
+      Map::from_array([]),
+    )
+    .with_stream_chunks([
+      @types.StreamChunk::ToolCallDelta(
+        index=3,
+        id=Some("sparse"),
+        name=Some("echo"),
+        arguments_delta=Some("{}"),
+      ),
+    ])
+    .with_model_transport_failure()
+  let journal = InMemoryJournal()
+  let seen : Array[@types.StreamChunk] = []
+  let sink = fn(chunk : @types.StreamChunk) { seen.push(chunk) }
+  let puppet = Puppet(
+    canonical_puppet_config(
+      host as &@kernel_exec.HostRuntime,
+      fixture_empty_catalog(),
+      journal,
+      [],
+      [],
+      Some(sink),
+    ),
+  )
+  match fixture_prompt(puppet, "invalid_stream_host_failure") {
+    Rejected(error=EffectExecutionFailed(phase~, cause~)) => {
+      assert_eq(phase, "AwaitingModel")
+      assert_true(cause.contains("fixture host transport failure"))
+      assert_false(cause.contains("stream chunk validation failed"))
+    }
+    other =>
+      fail(
+        "expected host EffectExecutionFailed to remain primary, got " +
+        other.to_string(),
+      )
+  }
+  // The callback ABI cannot stop the provider, but the invalid chunk must
+  // never cross Posoco's observer boundary.
+  assert_eq(seen.length(), 0)
+}
+
+///|
+async test "puppet/C-INVALID-STREAM-CHUNK-RETURNED-TRANSPORT-PRIMARY" {
+  let host = FixtureHost(
+    [Err(Transport(reason="fixture returned transport failure"))],
+    Map::from_array([]),
+  ).with_stream_chunks([
+    @types.StreamChunk::ToolCallDelta(
+      index=3,
+      id=Some("sparse"),
+      name=Some("echo"),
+      arguments_delta=Some("{}"),
+    ),
+  ])
+  let journal = InMemoryJournal()
+  let seen : Array[@types.StreamChunk] = []
+  let sink = fn(chunk : @types.StreamChunk) { seen.push(chunk) }
+  let puppet = Puppet(
+    canonical_puppet_config(
+      host as &@kernel_exec.HostRuntime,
+      fixture_empty_catalog(),
+      journal,
+      [],
+      [],
+      Some(sink),
+    ),
+  )
+  assert_true(
+    fixture_prompt(puppet, "invalid_stream_returned_transport") is Accepted(_),
+  )
+  assert_eq(seen.length(), 0)
+  match puppet.wait_idle() {
+    Terminal(outcome=Failed(reason=ModelTransport(detail~))) => {
+      assert_true(detail.contains("fixture returned transport failure"))
+      assert_false(detail.contains("stream chunk validation failed"))
+    }
+    status =>
+      fail(
+        "expected returned ModelTransport to remain primary, got " +
+        status.to_string(),
+      )
+  }
+}
+
+///|
+async test "puppet/C-INVALID-STREAM-CHUNK-RETURNED-RATE-LIMITED-PRIMARY" {
+  let host = FixtureHost(
+    [
+      Err(
+        RateLimited(
+          reason="fixture returned rate limit",
+          reset_at_ms=Some(1234L),
+          provider_code=Some("429"),
+        ),
+      ),
+    ],
+    Map::from_array([]),
+  ).with_stream_chunks([
+    @types.StreamChunk::ToolCallDelta(
+      index=3,
+      id=Some("sparse"),
+      name=Some("echo"),
+      arguments_delta=Some("{}"),
+    ),
+  ])
+  let journal = InMemoryJournal()
+  let seen : Array[@types.StreamChunk] = []
+  let sink = fn(chunk : @types.StreamChunk) { seen.push(chunk) }
+  let puppet = Puppet(
+    canonical_puppet_config(
+      host as &@kernel_exec.HostRuntime,
+      fixture_empty_catalog(),
+      journal,
+      [],
+      [],
+      Some(sink),
+    ),
+  )
+  assert_true(
+    fixture_prompt(puppet, "invalid_stream_returned_rate_limit") is Accepted(_),
+  )
+  assert_eq(seen.length(), 0)
+  match puppet.wait_idle() {
+    Terminal(
+      outcome=Failed(
+        reason=ModelQuotaExhausted(detail~, reset_at_ms~, provider_code~)
+      )
+    ) => {
+      assert_true(detail.contains("fixture returned rate limit"))
+      assert_false(detail.contains("stream chunk validation failed"))
+      assert_eq(reset_at_ms, Some(1234L))
+      assert_eq(provider_code, Some("429"))
+    }
+    status =>
+      fail(
+        "expected returned ModelQuotaExhausted to remain primary, got " +
+        status.to_string(),
       )
   }
 }

@@ -194,11 +194,13 @@ fn kernel_event_payload(event : KernelEvent) -> Json {
           ("call_count", Json::number(calls.length().to_double())),
         ]),
       )
-    ToolCompleted(call_id~, outcome~) =>
+    ToolCompleted(call~, outcome~) =>
+      // The committed call is available to in-memory subscribers, but this
+      // durable diagnostic payload intentionally excludes its arguments.
       Json::object(
         Map::from_array([
           ("kind", Json::string("ToolCompleted")),
-          ("call_id", Json::string(call_id.to_string())),
+          ("call_id", Json::string(call.call_id.to_string())),
           ("outcome", Json::string(outcome.summary())),
         ]),
       )

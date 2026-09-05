@@ -110,6 +110,23 @@ fn reduce_model_completed(
     )
   }
   let completion = payload.completion
+  // ModelCompleted is a direct reducer input as well as the executor's
+  // normal output. Re-validate the canonical usage before constructing the
+  // assistant message or bumping BudgetConsumed; otherwise a caller that
+  // bypasses HostRuntime can make observed_total_tokens move backwards.
+  match completion.usage {
+    Some(usage) =>
+      match usage.validate() {
+        Err(reason) =>
+          return reduce_model_failed(state, {
+            effect_id: payload.effect_id,
+            model_step_id: payload.model_step_id,
+            failure: Parse(reason="model usage validation failed: " + reason),
+          })
+        Ok(_) => ()
+      }
+    None => ()
+  }
   // Length finish reason → terminal failure (ADR §2.7).
   match completion.finish_reason() {
     Length =>
@@ -283,10 +300,7 @@ fn reduce_model_completed_with_tools(
     )
     for i in 0..<rejected_calls.length() {
       events.push(
-        ToolCompleted(
-          call_id=rejected_calls[i].call_id,
-          outcome=rejected_outcomes[i],
-        ),
+        ToolCompleted(call=rejected_calls[i], outcome=rejected_outcomes[i]),
       )
     }
   }

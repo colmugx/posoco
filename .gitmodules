@@ -1,6 +1,3 @@
-[submodule "external/extension"]
-	path = external/extension
-	url = https://github.com/colmugx/posoco-extension.git
-[submodule "external/examples"]
-	path = external/examples
-	url = https://github.com/colmugx/posoco-examples.git
+[submodule "external/cetas"]
+	path = external/cetas
+	url = https://github.com/colmugx/cetas.git

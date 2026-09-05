@@ -183,7 +183,7 @@ pub(all) enum KernelEvent {
   ModelStepStarted(model_step_id~ : ModelStepId, effect_id~ : @kernel.EffectId)
   ModelStepCompleted(model_step_id~ : ModelStepId, completion~ : @kernel.Completion)
   ToolBatchStarted(model_step_id~ : ModelStepId, calls~ : Array[@kernel.ToolCall])
-  ToolCompleted(call_id~ : @kernel.CallId, outcome~ : @kernel.ToolOutcome)
+  ToolCompleted(call~ : @kernel.ToolCall, outcome~ : @kernel.ToolOutcome)
   RunSuspended(requirement~ : SuspensionRequirement, model_step_id~ : ModelStepId)
   RunResumed(model_step_id~ : ModelStepId)
   CancelRequested(effect_ids~ : Array[@kernel.EffectId], reason~ : @kernel.CancelReason)

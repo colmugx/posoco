@@ -27,6 +27,31 @@ pub(all) struct Usage {
 } derive(Eq, Debug)
 
 ///|
+/// Validate provider-reported token usage before it enters the reducer.
+///
+/// Every field is optional because providers omit different dimensions, but a
+/// reported value is always a count and therefore must be non-negative. Keep
+/// this check here as the single canonical usage invariant so every host
+/// adapter applies exactly the same rule.
+pub fn Usage::validate(self : Usage) -> Result[Unit, String] {
+  let fields : Array[(String, Int?)] = [
+    ("input_tokens", self.input_tokens),
+    ("output_tokens", self.output_tokens),
+    ("total_tokens", self.total_tokens),
+    ("cached_input_tokens", self.cached_input_tokens),
+    ("uncached_input_tokens", self.uncached_input_tokens),
+  ]
+  for entry in fields {
+    let (field, value) = entry
+    match value {
+      Some(n) if n < 0 => return Err("usage." + field + " must be non-negative")
+      _ => ()
+    }
+  }
+  Ok(())
+}
+
+///|
 pub impl Show for Usage with fn to_string(self : Usage) -> String {
   let fmt = fn(opt : Int?) -> String {
     match opt {

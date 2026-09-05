@@ -260,7 +260,7 @@ priv struct AgentRuntime {
   lifecycle : Array[&@port.Lifecycle]
   commands : Array[&@port.CommandPort]
   builtin_command_port : BuiltinCommandPort
-  control : @runtime.RuntimeControl
+  control : AgentControl
   config : AgentConfig
   /// Host-owned versioned catalog (experimental runtime seam). `None` keeps
   /// the static composition-time snapshot for the Agent's lifetime.
@@ -278,6 +278,11 @@ priv struct AgentRuntime {
   /// `on_start` notification. Fired inside the first `run_single_turn`,
   /// after the shutdown guard and before the first `TurnStarted`.
   mut start_notified : Bool
+  /// Synchronous product-boundary guard for the full `run_turn` call,
+  /// including any follow-ups drained by that call.  The guard is acquired
+  /// before the first await so a rejected concurrent call cannot mutate
+  /// turn-scoped state before Puppet reports its lease as busy.
+  mut turn_active : Bool
   /// Per-turn chunk dispatcher handle. The callback installed in the Puppet
   /// reads this reference to route `StreamChunk` events to the active turn's
   /// buffered queue; `run_turn_via_puppet` creates and swaps the dispatcher
@@ -529,7 +534,7 @@ fn AgentRuntime::compose(
     lifecycle: agg.lifecycle.map(fn(entry) { entry.port }),
     commands: agg.commands,
     builtin_command_port,
-    control: RuntimeControl(mailbox_ref),
+    control: AgentControl(mailbox_ref),
     config,
     catalog_source,
     last_catalog_revision: initial_catalog_revision,
@@ -539,6 +544,7 @@ fn AgentRuntime::compose(
     shutdown_complete: false,
     next_lifecycle_shutdown: agg.lifecycle.length() - 1,
     start_notified: false,
+    turn_active: false,
     chunk_dispatcher: chunk_dispatcher_ref,
     session_cursors: Map::from_array([]),
   }
@@ -818,18 +824,36 @@ async fn AgentRuntime::run_turn(
   input : @kernel.Message,
   session_id : String,
 ) -> @types.TurnResult raise @error.AgentError {
-  let mut result = self.run_single_turn(input, session_id)
-  let mut drained = 0
-  while drained < follow_up_drain_limit {
-    match self.control.take_follow_up() {
-      Some(message) => {
-        drained = drained + 1
-        result = self.run_single_turn(message, session_id)
-      }
-      None => break
-    }
+  if self.turn_active {
+    raise Runtime(InvocationFailed("agent turn busy"))
   }
-  result
+  // Acquire before the first async call. The guard covers the initial turn
+  // and every follow-up drained below, so no loser can touch lifecycle,
+  // identity, session, memory, catalog, or dispatcher state.
+  self.turn_active = true
+  let result : Result[@types.TurnResult, @error.AgentError] = Ok(
+    {
+      let mut result = self.run_single_turn(input, session_id)
+      let mut drained = 0
+      while drained < follow_up_drain_limit {
+        match self.control.take_follow_up() {
+          Some(message) => {
+            drained = drained + 1
+            result = self.run_single_turn(message, session_id)
+          }
+          None => break
+        }
+      }
+      result
+    },
+  ) catch {
+    error => Err(error)
+  }
+  self.turn_active = false
+  match result {
+    Ok(value) => value
+    Err(error) => raise error
+  }
 }
 
 ///|
@@ -901,6 +925,6 @@ pub async fn Agent::shutdown(self : Agent) -> Unit {
 /// use it to abort the active run or to submit follow-up messages that the
 /// Agent consumes at turn boundaries. The handle is identity-guarded:
 /// submissions against a stale or absent run are rejected at enqueue time.
-pub fn Agent::control(self : Agent) -> @runtime.RuntimeControl {
+pub fn Agent::control(self : Agent) -> AgentControl {
   self.runtime.control
 }

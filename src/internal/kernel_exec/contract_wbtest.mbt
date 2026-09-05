@@ -286,6 +286,110 @@ test "BudgetConsumed: UnknownUsage for tokens when no usage verified" {
 }
 
 ///|
+test "Reducer: negative model usage is typed failure without budget decrease" {
+  let catalog = make_catalog_v1()
+  let (st_first_awaiting, first_effect_id, first_model_step_id) = run_until_awaiting_model()
+  // Establish a positive observed total before the malformed direct input.
+  // This proves the rejection preserves the monotonic budget value rather
+  // than only proving that zero does not become negative.
+  let first_usage : @kernel.Usage = {
+    input_tokens: Some(10),
+    output_tokens: Some(5),
+    total_tokens: Some(15),
+    cached_input_tokens: None,
+    uncached_input_tokens: None,
+  }
+  let first_completion : @kernel.Completion = @kernel.Completion(
+    content=[Text("first")],
+    tool_calls=[
+      {
+        call_id: @kernel.CallId::unchecked("positive_usage_call"),
+        name: @kernel.ToolName::unchecked("read"),
+        arguments: Json::object(
+          Map::from_array([("path", Json::string("/positive"))]),
+        ),
+      },
+    ],
+    reasoning=None,
+    finish_reason=ToolCalls,
+    usage=Some(first_usage),
+  )
+  let first_out = reduce(
+    st_first_awaiting,
+    catalog,
+    ModelCompleted(payload={
+      effect_id: first_effect_id,
+      model_step_id: first_model_step_id,
+      completion: first_completion,
+      processed_messages: st_first_awaiting.transcript().messages_snapshot(),
+    }),
+  )
+  let st_tools = first_out.next_state()
+  let tool_effect_id = match st_tools.pending_effects()[0] {
+    ExecuteTool(effect_id~, ..) => effect_id
+    _ => fail("expected a tool effect after the positive model completion")
+  }
+  let after_tool = reduce(
+    st_tools,
+    catalog,
+    ToolCompleted(payload={
+      effect_id: tool_effect_id,
+      call_id: @kernel.CallId::unchecked("positive_usage_call"),
+      tool_name: @kernel.ToolName::unchecked("read"),
+      arguments: Json::null(),
+      outcome: Success(content="tool done", structured=None),
+    }),
+  )
+  let st_ready = after_tool.next_state()
+  let second_out = run_model_step(st_ready, catalog, Json::null())
+  let st_awaiting = second_out.next_state()
+  assert_eq(st_awaiting.budget_consumed().observed_total_tokens, 15)
+  let (effect_id, model_step_id) = match st_awaiting.pending_effects()[0] {
+    CallModel(effect_id~, payload~) => (effect_id, payload.model_step_id)
+    _ => fail("expected the second CallModel effect")
+  }
+  let invalid_usage : @kernel.Usage = {
+    input_tokens: Some(12),
+    output_tokens: Some(4),
+    total_tokens: Some(-4),
+    cached_input_tokens: None,
+    uncached_input_tokens: None,
+  }
+  let input : RunInput = ModelCompleted(payload={
+    effect_id,
+    model_step_id,
+    completion: @kernel.Completion(
+      content=[Text("must not fold")],
+      tool_calls=[],
+      reasoning=None,
+      finish_reason=Stop,
+      usage=Some(invalid_usage),
+    ),
+    processed_messages: st_awaiting.transcript().messages_snapshot(),
+  })
+  let out = reduce(st_awaiting, catalog, input)
+  let next = out.next_state()
+  // The reducer rejects before append/transcript/budget mutation. In
+  // particular, bump_model_step must never observe the negative usage.
+  assert_eq(
+    next.budget_consumed().observed_total_tokens,
+    st_awaiting.budget_consumed().observed_total_tokens,
+  )
+  assert_eq(next.budget_consumed().observed_total_tokens, 15)
+  assert_eq(
+    next.budget_consumed().model_steps,
+    st_awaiting.budget_consumed().model_steps,
+  )
+  assert_eq(next.transcript().length(), st_awaiting.transcript().length())
+  assert_eq(next.pending_effects().length(), 0)
+  match next.outcome() {
+    Some(Failed(reason=ModelParseFailure(detail~))) =>
+      assert_true(detail.contains("usage"))
+    _ => fail("expected typed ModelParseFailure for negative model usage")
+  }
+}
+
+///|
 test "RunInput: kind labels are stable" {
   let start : RunInput = Start(payload={
     initial_messages: [],
@@ -366,4 +470,13 @@ test "ToolOutcome: summary excludes raw payloads" {
   let summary = not_executed.summary()
   assert_true(summary.contains("c1"))
   assert_true(summary.contains("SchemaMismatch"))
+
+  let rejected_by_hook : @kernel.ToolOutcome = NotExecuted(
+    reason=RejectedByHook(reason="secret-hook-reason"),
+    original_call_id=@kernel.CallId::unchecked("c2"),
+  )
+  let rejected_summary = rejected_by_hook.summary()
+  assert_true(rejected_summary.contains("RejectedByHook"))
+  assert_true(rejected_summary.contains("c2"))
+  assert_false(rejected_summary.contains("secret-hook-reason"))
 }

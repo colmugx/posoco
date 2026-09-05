@@ -296,7 +296,12 @@ async fn AgentRuntime::run_puppet_turn_body(
           // reloads pre-turn state and the model loses the context of what it
           // was doing — and what the user asked.
           match self.puppet.last_completed_transcript() {
-            Some(t) =>
+            Some(t) => {
+              let operation = transcript_save_operation(
+                t,
+                request.initial_messages,
+                current_turn_start,
+              )
               self.save_turn_transcript(
                 session_id,
                 t,
@@ -305,9 +310,26 @@ async fn AgentRuntime::run_puppet_turn_body(
                 current_turn_start,
               ) catch {
                 // The turn's own failure is the primary signal; a secondary
-                // save failure must not mask it.
-                _ => ()
+                // save failure must not mask it. Keep the persistence
+                // failure observable without copying untrusted transcript
+                // content into the event.
+                error => {
+                  let cause = match error {
+                    Session(_) => "SessionError::Save"
+                    Model(_) => "AgentError::Model"
+                    Runtime(_) => "AgentError::Runtime"
+                    ToolLoopExceeded(..) => "AgentError::ToolLoopExceeded"
+                    PipelineAborted(_) => "AgentError::PipelineAborted"
+                  }
+                  let detail = "session_id=\{safe_error_label(session_id)};op=\{operation};cause=\{cause}"
+                  emit_secondary_failure(
+                    self.observers,
+                    "failed_turn_transcript_save",
+                    detail,
+                  )
+                }
               }
+            }
             None => ()
           }
           raise err
@@ -579,6 +601,24 @@ async fn AgentRuntime::save_sessions_all(
 }
 
 ///|
+/// Select the persistence operation from the same prefix invariant used by
+/// `save_turn_transcript`, so failure diagnostics identify the actual path.
+fn transcript_save_operation(
+  transcript : @kernel.Transcript,
+  initial_messages : Array[@kernel.Message],
+  current_turn_start : Int,
+) -> String {
+  let final_messages = transcript.messages_snapshot()
+  let initial_len = current_turn_start + 1
+  if final_messages.length() >= initial_len &&
+    messages_prefix_equal(final_messages, initial_messages, initial_len) {
+    "final_append"
+  } else {
+    "final_save"
+  }
+}
+
+///|
 /// Persist a terminal transcript to every session store (write-all, with
 /// carried metadata). Shared by the completed and failed turn paths — a
 /// failed turn's progress is exactly the context the next turn needs.
@@ -600,10 +640,10 @@ async fn AgentRuntime::save_turn_transcript(
     Some(n) => n
     None => 0
   }
-  let initial_len = current_turn_start + 1
-  let is_pure_append = final_messages.length() >= initial_len &&
-    messages_prefix_equal(final_messages, initial_messages, initial_len)
-  if is_pure_append {
+  let operation = transcript_save_operation(
+    transcript, initial_messages, current_turn_start,
+  )
+  if operation == "final_append" {
     // Append tail from cursor. Each store receives its own deep snapshot of
     // the tail so a misbehaving store cannot mutate another store's payload.
     let save_results : Array[Result[Unit, @error.SessionError]] = @async.all(

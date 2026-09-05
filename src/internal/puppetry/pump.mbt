@@ -628,10 +628,24 @@ async fn Puppet::pump_awaiting_model(
 }
 
 ///|
-/// AwaitingTools step: schedule the pending tool effects into parallel
-/// waves, run the pre_tool hook chain over each wave, execute the wave,
-/// and fold every completion. Later waves are not launched once the run
-/// reached terminal/suspended or an abort was requested.
+/// AwaitingTools step: finalize every pending tool call through the complete
+/// pre_tool hook chain, validate and reschedule the final calls, then execute
+/// their parallel waves and fold every completion. Later waves are not
+/// launched once the run reached terminal/suspended or an abort was requested.
+
+///|
+/// Hook inputs and consent records own independent JSON trees. A hook is
+/// allowed to retain and mutate its input, but that mutation must never reach
+/// reducer-owned pending effects or an earlier consent snapshot.
+fn snapshot_tool_call(call : ToolCall) -> ToolCall {
+  {
+    call_id: call.call_id,
+    name: call.name,
+    arguments: snapshot_json(call.arguments),
+  }
+}
+
+///|
 async fn Puppet::pump_awaiting_tools(
   self : Puppet,
   state : RunState,
@@ -643,10 +657,285 @@ async fn Puppet::pump_awaiting_tools(
   snap : TurnSnapshot,
   hook_scope : @types.EventScope,
 ) -> PumpStep noraise {
+  let pending = state.pending_effects()
   let mut state = state
+  // Every hook runs before scheduling. Scheduling first would make a later
+  // rewrite execute with the original tool's owner/policy and wave barriers.
+  let executable_effects : Array[Effect] = []
+  let normalized_pending : Array[Effect] = []
+  let hook_rejected_inputs : Array[RunInput] = []
+  for effect in pending {
+    match effect {
+      ExecuteTool(effect_id~, payload~) => {
+        let mut current_call : ToolCall = snapshot_tool_call({
+          call_id: payload.call_id,
+          name: payload.tool_name,
+          arguments: payload.arguments,
+        })
+        let mut deferred_reason : String? = None
+        let mut consented_call : ToolCall? = None
+        let mut call_id_mutated = false
+        let reject_reasons : Array[String] = []
+        for hook in self.config.hooks {
+          // Never lend the hook the current tree: a malicious hook may mutate
+          // the argument object before returning its decision.
+          let hook_input = snapshot_tool_call(current_call)
+          let attempted = Ok(hook.before_tool(hook_input)) catch {
+            err => Err(err)
+          }
+          let decision = match attempted {
+            Err(err) => {
+              // Keep the `execution_error` classification: a cancellation
+              // raised inside the hook is not a hook defect.
+              if @async.is_cancellation_error(err) {
+                return StopWith(
+                  self.reject_run(
+                    error=EffectExecutionCancelled(phase="AwaitingTools"),
+                  ),
+                )
+              }
+              return StopWith(
+                self.reject_run(
+                  error=HookRejected(
+                    reason="pre_tool_hook raised: " + err.to_string(),
+                  ),
+                ),
+              )
+            }
+            Ok(decision) => decision
+          }
+          match decision {
+            Approve(call~) => {
+              if call.call_id != payload.call_id {
+                call_id_mutated = true
+              }
+              current_call = snapshot_tool_call(call)
+              continue
+            }
+            ApproveAfterConsent(call~, consent_scope~) => {
+              ignore(consent_scope)
+              if call.call_id != payload.call_id {
+                call_id_mutated = true
+              }
+              // Keep consent and the live chain state on separate trees. A
+              // later hook retaining its input cannot mutate the grant.
+              consented_call = Some(snapshot_tool_call(call))
+              current_call = snapshot_tool_call(call)
+              // Each explicit consent authorizes the exact call it carries.
+              // A later consent may intentionally authorize a new call; a
+              // plain Approve rewrite after it fails the equality check below.
+              continue
+            }
+            // Terminal until M5: stop polling further hooks.
+            Defer(reason~) => {
+              deferred_reason = Some(reason)
+              break
+            }
+            // Keep polling: a later hook's consent outranks this.
+            Reject(reason~) => {
+              reject_reasons.push(reason)
+              continue
+            }
+          }
+        }
+        match deferred_reason {
+          // Frozen wording: extensions (e.g. posoco-ext-permission)
+          // document this exact terminal-reject behavior; M5 will replace
+          // it with real suspension.
+          Some(reason) =>
+            return StopWith(
+              self.reject_run(
+                error=HookRejected(
+                  reason="pre_tool_hook defer not yet supported: " + reason,
+                ),
+              ),
+            )
+          None => ()
+        }
+        if call_id_mutated {
+          // call_id is the reducer correlation identity. It is never a
+          // rewriteable part of a tool request.
+          return StopWith(
+            self.reject_run(
+              error=HookRejected(
+                reason="pre_tool_hook changed call_id for a pending tool call",
+              ),
+            ),
+          )
+        }
+        let consent_invalidated = match consented_call {
+          Some(consented) => consented != current_call
+          None => false
+        }
+        let hook_outcome : @kernel.ToolOutcome? = if consent_invalidated {
+          // Consent is a capability grant for one exact call, not a general
+          // approval that a later hook can reuse after changing the request.
+          Some(
+            NotExecuted(
+              reason=RejectedByHook(
+                reason="tool call changed after consent; authorization was not reused",
+              ),
+              original_call_id=payload.call_id,
+            ),
+          )
+        } else if consented_call is None && !reject_reasons.is_empty() {
+          Some(
+            NotExecuted(
+              reason=RejectedByHook(reason=reject_reasons.join("; ")),
+              original_call_id=payload.call_id,
+            ),
+          )
+        } else if !self.config.catalog.contains(current_call.name) {
+          Some(
+            NotExecuted(reason=UnknownTool, original_call_id=payload.call_id),
+          )
+        } else {
+          match
+            self.config.catalog.validate_arguments(
+              current_call.name,
+              current_call.arguments,
+            ) {
+            Ok(_) => None
+            Err(diag) =>
+              Some(
+                NotExecuted(
+                  reason=SchemaMismatch(
+                    json_path=diag.json_path,
+                    expected=diag.expected,
+                    actual=diag.actual,
+                  ),
+                  original_call_id=payload.call_id,
+                ),
+              )
+          }
+        }
+        let final_owner = match self.config.catalog.find(current_call.name) {
+          Some(entry) => entry.definition.owner
+          None => payload.owner
+        }
+        let final_call = snapshot_tool_call(current_call)
+        let normalized_pending_effect : Effect = ExecuteTool(effect_id~, payload={
+          call_id: payload.call_id,
+          tool_name: final_call.name,
+          // Keep the reducer's pending payload independent from the effect
+          // handed to the host as well as from every hook input.
+          arguments: snapshot_json(final_call.arguments),
+          owner: final_owner,
+          model_step_id: payload.model_step_id,
+          catalog_version: payload.catalog_version,
+        })
+        normalized_pending.push(normalized_pending_effect)
+        match hook_outcome {
+          Some(outcome) =>
+            hook_rejected_inputs.push(
+              ToolCompleted(payload={
+                effect_id,
+                call_id: payload.call_id,
+                tool_name: final_call.name,
+                arguments: final_call.arguments,
+                outcome,
+              }),
+            )
+          None => {
+            let executable_effect : Effect = ExecuteTool(effect_id~, payload={
+              call_id: payload.call_id,
+              tool_name: final_call.name,
+              arguments: snapshot_json(final_call.arguments),
+              owner: final_owner,
+              model_step_id: payload.model_step_id,
+              catalog_version: payload.catalog_version,
+            })
+            executable_effects.push(executable_effect)
+          }
+        }
+      }
+      _ =>
+        return StopWith(
+          self.reject_run(
+            error=ReducerInvariantViolation(
+              category=IllegalPhase(
+                phase="AwaitingTools",
+                detail="pending effect is not ExecuteTool",
+              ),
+            ),
+          ),
+        )
+    }
+  }
+
+  // The reducer correlates completions against its pending effect payload.
+  // Replace that payload before folding hook outcomes or executing tools so
+  // the final name/arguments/owner remain canonical all the way through the
+  // transcript and correlation checks. Rejected effects stay present until
+  // their explicit NotExecuted input is folded.
+  let normalized_result : Result[RunState, PuppetError] = Ok(
+    state.transition(
+      phase=AwaitingTools,
+      transcript=state.transcript(),
+      pending_effects=normalized_pending,
+      next_event_sequence=state.next_event_sequence(),
+      next_effect_id=state.next_effect_id(),
+      current_model_step_id=state.current_model_step_id(),
+      catalog_version=None,
+      budget_consumed=state.budget_consumed(),
+      outcome=state.outcome(),
+      suspension_requirement=state.suspension_requirement(),
+    ),
+  ) catch {
+    error =>
+      Err(
+        ReducerInvariantViolation(
+          category=IllegalPhase(
+            phase="AwaitingTools",
+            detail="failed to normalize finalized tool effects: " +
+              error.to_string(),
+          ),
+        ),
+      )
+  }
+  state = match normalized_result {
+    Err(error) => return StopWith(self.reject_run(error~))
+    Ok(value) => value
+  }
+
+  // Resolve explicit hook rejections before launching side effects. This
+  // keeps the pending-effect correlation valid while making the rejection
+  // durable through the normal reducer path.
+  for rejection_index, input in hook_rejected_inputs {
+    let folded : Result[FoldOutcome, PuppetError] = Ok(
+      self.fold_effect_input(
+        state,
+        input,
+        dispatcher,
+        run_id,
+        turn_id,
+        session_id,
+        "sp_tool_hook_\{rejection_index}",
+        snap,
+      ),
+    ) catch {
+      error => Err(error)
+    }
+    match folded {
+      Err(error) => return StopWith(self.reject_run(error~))
+      Ok(Return(r)) => return StopWith(r)
+      Ok(Continue(next_state)) => {
+        self.fire_post_event_hooks(input, hook_scope)
+        state = next_state
+      }
+    }
+    if state.phase() == Terminal || state.phase() == Suspended {
+      return ContinueWith(state)
+    }
+  }
+
+  if executable_effects.is_empty() {
+    return ContinueWith(state)
+  }
+
   let wave_result : Result[Array[Array[Effect]], PuppetError] = Ok(
     scheduled_tool_effect_waves(
-      state.pending_effects(),
+      executable_effects,
       self.config.catalog,
       state.catalog_version(),
     ),
@@ -658,124 +947,9 @@ async fn Puppet::pump_awaiting_tools(
     Ok(value) => value
   }
   for wave_index, wave in waves {
-    // Run pre-tool hooks on each ExecuteTool effect in the wave.
-    // Every hook is evaluated (no short-circuit on Reject); the
-    // merge contract lives on ToolDecision in port/hook.mbt.
-    let rewritten_wave : Array[Effect] = []
-    let hook_rejected_inputs : Array[RunInput] = []
-    for effect in wave {
-      match effect {
-        ExecuteTool(effect_id~, payload~) => {
-          let mut current_call : ToolCall = {
-            call_id: payload.call_id,
-            name: payload.tool_name,
-            arguments: payload.arguments,
-          }
-          let mut deferred_reason : String? = None
-          let mut consent : String? = None
-          let reject_reasons : Array[String] = []
-          for hook in self.config.hooks {
-            let attempted = Ok(hook.before_tool(current_call)) catch {
-              err => Err(err)
-            }
-            let decision = match attempted {
-              Err(err) => {
-                // Keep the `execution_error` classification: a
-                // cancellation raised inside the hook (e.g. the host
-                // aborts an approval prompt) is NOT a hook defect.
-                if @async.is_cancellation_error(err) {
-                  return StopWith(
-                    self.reject_run(
-                      error=EffectExecutionCancelled(phase="AwaitingTools"),
-                    ),
-                  )
-                }
-                return StopWith(
-                  self.reject_run(
-                    error=HookRejected(
-                      reason="pre_tool_hook raised: " + err.to_string(),
-                    ),
-                  ),
-                )
-              }
-              Ok(decision) => decision
-            }
-            match decision {
-              Approve(call~) => {
-                current_call = call
-                continue
-              }
-              ApproveAfterConsent(call~, consent_scope~) => {
-                current_call = call
-                if consent is None {
-                  consent = Some(consent_scope)
-                }
-                continue
-              }
-              // Terminal until M5: stop polling further hooks.
-              Defer(reason~) => {
-                deferred_reason = Some(reason)
-                break
-              }
-              // Keep polling: a later hook's consent outranks this.
-              Reject(reason~) => {
-                reject_reasons.push(reason)
-                continue
-              }
-            }
-          }
-          match deferred_reason {
-            // Frozen wording: extensions (e.g. posoco-ext-permission)
-            // document this exact terminal-reject behavior; M5 will
-            // replace it with real suspension.
-            Some(reason) =>
-              return StopWith(
-                self.reject_run(
-                  error=HookRejected(
-                    reason="pre_tool_hook defer not yet supported: " + reason,
-                  ),
-                ),
-              )
-            None => ()
-          }
-          if consent is None && !reject_reasons.is_empty() {
-            // Resolve the pending effect without dispatching, so the
-            // journal stays causal and the model sees the joined
-            // reasons on the next model step.
-            hook_rejected_inputs.push(
-              ToolCompleted(payload={
-                effect_id,
-                call_id: payload.call_id,
-                tool_name: payload.tool_name,
-                arguments: payload.arguments,
-                outcome: NotExecuted(
-                  reason=RejectedByHook(reason=reject_reasons.join("; ")),
-                  original_call_id=payload.call_id,
-                ),
-              }),
-            )
-            continue
-          }
-          // Reconstruct the effect with the rewritten name/arguments.
-          // call_id, owner, model_step_id, catalog_version are preserved.
-          rewritten_wave.push(
-            ExecuteTool(effect_id~, payload={
-              call_id: payload.call_id,
-              tool_name: current_call.name,
-              arguments: current_call.arguments,
-              owner: payload.owner,
-              model_step_id: payload.model_step_id,
-              catalog_version: payload.catalog_version,
-            }),
-          )
-        }
-        _ => rewritten_wave.push(effect)
-      }
-    }
-    let wave = rewritten_wave
-    // `@async.all` starts every effect in the reducer-approved wave,
-    // waits at its barrier, and returns inputs in source order. The
-    // reducer remains the sole owner of transcript/result ordering.
+    // `@async.all` starts every effect in the finalized wave, waits at its
+    // barrier, and returns inputs in source order. The reducer remains the
+    // sole owner of transcript/result ordering.
     let executed : Result[Array[RunInput], PuppetError] = Ok(
       execute_tool_wave(wave, exec_ctx),
     ) catch {
@@ -784,11 +958,6 @@ async fn Puppet::pump_awaiting_tools(
     let inputs = match executed {
       Err(error) => return StopWith(self.reject_run(error~))
       Ok(value) => value
-    }
-    // Reducer orders tool results by source call order; fold order
-    // is irrelevant.
-    for input in hook_rejected_inputs {
-      inputs.push(input)
     }
     for input in inputs {
       let folded : Result[FoldOutcome, PuppetError] = Ok(
@@ -817,8 +986,8 @@ async fn Puppet::pump_awaiting_tools(
         break
       }
     }
-    // Abort is observed at a side-effect boundary. Do not launch a
-    // later wave after it was requested; the next pump iteration feeds
+    // Abort is observed at a side-effect boundary. Do not launch a later
+    // wave after it was requested; the next pump iteration feeds
     // CancelRequested into the reducer.
     if state.phase() == Terminal ||
       state.phase() == Suspended ||

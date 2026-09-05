@@ -245,6 +245,70 @@ async test "t07_save_error_emits_exactly_one_turnfailed" {
 }
 
 ///|
+async test "t07_failed_transcript_save_is_secondary_and_preserves_primary" {
+  let model = @posoco.ScriptedModel([Fail(Transport("primary network failure"))])
+  let store = @posoco.RecordingSessionStore()
+  store.fail_save("failed-save")
+  let obs = @posoco.RecordingObserver()
+  let agent = @posoco.Agent(
+    exts=[
+      @posoco.tk_ext(id="model", model=Some(model)),
+      @posoco.tk_ext(id="io", sessions=[store], observers=[obs]),
+    ],
+    config=err_config(),
+  )
+  let result = Ok(
+    agent.run_turn(
+      @posoco.tk_user_msg("private prompt with tool-secret"),
+      "failed-save",
+    ),
+  ) catch {
+    error => Err(error)
+  }
+  match result {
+    Err(Model(message)) => assert_true(message.contains("model transport"))
+    _ => fail("the primary model error must remain the returned error")
+  }
+  let events = obs.events()
+  assert_eq(count_terminal_events(events), 1)
+  assert_true(events.iter().any(fn(event) { event is TurnFailed(_) }))
+  let mut secondary_count = 0
+  for event in events {
+    match event {
+      Custom(source~, label~, data~) =>
+        if source == "posoco.core" && label == "secondary_failure" {
+          match data {
+            Object(fields) => {
+              match fields.get("hook_point") {
+                Some(String(point)) =>
+                  assert_eq(point, "failed_turn_transcript_save")
+                _ =>
+                  fail("transcript save failure must identify its hook point")
+              }
+              match fields.get("error") {
+                Some(String(detail)) => {
+                  assert_true(detail.contains("session_id=failed-save"))
+                  assert_true(detail.contains("op=final_append"))
+                  assert_true(detail.contains("final_append"))
+                  assert_true(detail.contains("SessionError::Save"))
+                  assert_true(!detail.contains("private prompt"))
+                  assert_true(!detail.contains("tool-secret"))
+                  assert_true(!detail.contains("primary network failure"))
+                }
+                _ => fail("transcript save failure must include safe detail")
+              }
+              secondary_count = secondary_count + 1
+            }
+            _ => fail("secondary failure data must be a JSON object")
+          }
+        }
+      _ => ()
+    }
+  }
+  assert_eq(secondary_count, 1)
+}
+
+///|
 async test "t07_load_error_emits_one_safe_turnfailed" {
   let model = @posoco.ScriptedModel([])
   let store = @posoco.RecordingSessionStore()

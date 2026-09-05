@@ -56,8 +56,11 @@ pub(all) enum KernelEvent {
   )
   /// Emitted per tool outcome (success, error, runtime failure or
   /// NotExecuted). The outcome tag IS the error status — there is no
-  /// parallel `is_error` boolean (ADR §2.11).
-  ToolCompleted(call_id~ : @kernel.CallId, outcome~ : @kernel.ToolOutcome)
+  /// parallel `is_error` boolean (ADR §2.11). The call is the canonical
+  /// request that was resolved, including the final call after hook
+  /// finalization. Arguments are available to in-memory observers, never to
+  /// durable diagnostic summaries.
+  ToolCompleted(call~ : @kernel.ToolCall, outcome~ : @kernel.ToolOutcome)
   /// Emitted when entering the `Suspended` phase. Non-terminal.
   RunSuspended(
     requirement~ : SuspensionRequirement,
@@ -107,8 +110,8 @@ pub impl Show for KernelEvent with fn to_string(self : KernelEvent) -> String {
       "ModelStepCompleted(step=\{model_step_id.to_int()}, \{completion_summary(completion)})"
     ToolBatchStarted(model_step_id~, calls~) =>
       "ToolBatchStarted(step=\{model_step_id.to_int()}, \{calls.length()} calls)"
-    ToolCompleted(call_id~, outcome~) =>
-      "ToolCompleted(call=\{call_id.to_string()}, \{outcome.summary()})"
+    ToolCompleted(call~, outcome~) =>
+      "ToolCompleted(call=\{call.call_id.to_string()}, \{outcome.summary()})"
     RunSuspended(requirement~, model_step_id~) =>
       "RunSuspended(kind=\{requirement.kind}, step=\{model_step_id.to_int()})"
     RunResumed(model_step_id~) => "RunResumed(step=\{model_step_id.to_int()})"

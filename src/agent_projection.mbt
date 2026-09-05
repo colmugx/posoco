@@ -5,7 +5,9 @@
 ///|
 /// Agent-facing projection of committed Puppet envelopes. It never scans a
 /// final transcript. The pending call cache is correlation state populated by
-/// `ToolBatchStarted` and consumed by `ToolCompleted`.
+/// `ToolBatchStarted` and consumed by completion events. A committed
+/// Pending events retain the model's original call; completion events carry
+/// the canonical call that reached the host.
 priv struct AgentEventSubscriber {
   observers : Array[&@port.Observer]
   pending_calls : Map[String, @kernel.ToolCall]
@@ -53,6 +55,24 @@ fn AgentEventSubscriber::emit(
 }
 
 ///|
+fn AgentEventSubscriber::emit_tool_result(
+  self : AgentEventSubscriber,
+  scope : @types.EventScope,
+  call : @kernel.ToolCall,
+  outcome : @kernel.ToolOutcome,
+) -> Unit raise @puppetry.SubscriberError {
+  let key = call.call_id.to_string()
+  if !self.pending_calls.contains(key) {
+    raise ContractViolation(
+      subscriber_id="agent_committed_event_projection",
+      detail="ToolCompleted without committed ToolBatchStarted for call " + key,
+    )
+  }
+  self.pending_calls.remove(key)
+  self.emit(Some(scope), @types.TurnEvent::tool_call_result(call, outcome))
+}
+
+///|
 impl @puppetry.EventSubscriber for AgentEventSubscriber with fn on_event(
   self : AgentEventSubscriber,
   envelope : @puppetry.EventEnvelope,
@@ -86,20 +106,8 @@ impl @puppetry.EventSubscriber for AgentEventSubscriber with fn on_event(
         self.pending_calls[snapshot.call_id.to_string()] = snapshot
         self.emit(Some(scope), ToolCallPending(snapshot))
       }
-    ToolCompleted(call_id~, outcome~) => {
-      let key = call_id.to_string()
-      let call = match self.pending_calls.get(key) {
-        Some(call) => call
-        None =>
-          raise ContractViolation(
-            subscriber_id="agent_committed_event_projection",
-            detail="ToolCompleted without committed ToolBatchStarted for call " +
-              key,
-          )
-      }
-      self.pending_calls.remove(key)
-      self.emit(Some(scope), @types.TurnEvent::tool_call_result(call, outcome))
-    }
+    ToolCompleted(call~, outcome~) =>
+      self.emit_tool_result(scope, call, outcome)
     _ => ()
   }
 }

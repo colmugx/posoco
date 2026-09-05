@@ -1019,8 +1019,10 @@ test "C-MODEL-MIXED-WAVE: rejected pair precedes effect batch, no duplicate tool
     _ => fail("expected ToolBatchStarted for the rejected call")
   }
   match out.events()[2] {
-    ToolCompleted(call_id~, outcome~) => {
-      assert_eq(call_id.to_string(), "c_ghost")
+    ToolCompleted(call~, outcome~) => {
+      assert_eq(call.call_id.to_string(), "c_ghost")
+      assert_eq(call.name.to_string(), "ghost")
+      assert_eq(call.arguments, Json::null())
       match outcome {
         NotExecuted(reason=UnknownTool, ..) => ()
         _ => fail("expected NotExecuted(UnknownTool) for c_ghost")

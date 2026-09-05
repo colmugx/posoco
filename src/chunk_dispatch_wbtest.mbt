@@ -4,6 +4,253 @@
 /// the model read loop.
 
 ///|
+/// Gate the first model hook after the Puppet has accepted the turn. The
+/// queue rendezvous makes the concurrent-turn regression deterministic while
+/// keeping the first turn inside the pump.
+struct TurnLoopGate {
+  entered : @aqueue.Queue[Int]
+  release : @aqueue.Queue[Int]
+}
+
+///|
+impl @port.PipelineHook for TurnLoopGate with fn before_model(
+  self : TurnLoopGate,
+  messages : Array[@kernel.Message],
+) -> Array[@kernel.Message] {
+  self.entered.put(1) catch {
+    _ => raise Aborted(reason="turn gate enter failed")
+  }
+  ignore(
+    self.release.get() catch {
+      _ => raise Aborted(reason="turn gate release failed")
+    },
+  )
+  messages
+}
+
+///|
+/// Model fixture that yields after every stream callback. This lets the
+/// dispatcher drain one chunk at a time, so the regression observes ordering
+/// independently of scheduler timing at the model-response boundary.
+struct YieldingStreamModel {
+  chunks : Array[@types.StreamChunk]
+  response : @kernel.ModelCallResult
+  mut calls : Int
+}
+
+///|
+fn YieldingStreamModel::YieldingStreamModel(
+  chunks : Array[@types.StreamChunk],
+  response : @kernel.ModelCallResult,
+) -> YieldingStreamModel {
+  { chunks, response, calls: 0, }
+}
+
+///|
+fn YieldingStreamModel::call_count(self : YieldingStreamModel) -> Int {
+  self.calls
+}
+
+///|
+impl @port.ModelPort for YieldingStreamModel with fn chat(
+  self,
+  _scope : @kernel.InvocationScope,
+  _messages : ArrayView[@kernel.Message],
+  _tools : Array[@kernel.ToolDef],
+  _options : @types.ChatOptions,
+  stream : @types.StreamMode,
+) -> @kernel.ModelCallResult raise @error.ModelError {
+  self.calls = self.calls + 1
+  match stream {
+    Stream(callback) =>
+      for chunk in self.chunks {
+        callback(chunk)
+        @async.pause() catch {
+          _ => raise ResponseParse("stream fixture pause failed")
+        }
+      }
+    NoStream => ()
+  }
+  self.response
+}
+
+///|
+impl @port.ModelPort for YieldingStreamModel with fn compact(
+  _self : YieldingStreamModel,
+  _scope : @kernel.InvocationScope,
+  _messages : ArrayView[@kernel.Message],
+  _options : @types.ChatOptions,
+  _trigger : @kernel.CompactTrigger,
+) -> @kernel.CompactResult raise @error.ModelError {
+  raise ResponseParse("YieldingStreamModel does not implement compact")
+}
+
+///|
+impl @port.ModelPort for YieldingStreamModel with fn provider_config(
+  _self : YieldingStreamModel,
+) -> @port.ProviderConfig {
+  @port.ProviderConfig::empty()
+}
+
+///|
+async test "p2 concurrent run_turn rejects before side effects and preserves first stream" {
+  let chunks = [
+    @types.TextDelta(token="p2-0"),
+    @types.TextDelta(token="p2-1"),
+    @types.TextDelta(token="p2-2"),
+  ]
+  let model = YieldingStreamModel(chunks, tk_stop_response("done"))
+  let store = RecordingSessionStore()
+  let observer = RecordingObserver()
+  let entered : @aqueue.Queue[Int] = Queue(kind=Unbounded)
+  let release : @aqueue.Queue[Int] = Queue(kind=Unbounded)
+  let gate = TurnLoopGate::{ entered, release, }
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", hooks=[gate], sessions=[store], observers=[observer]),
+    ],
+    config=tk_config(),
+  )
+  @async.with_task_group(group => {
+    let first = group.spawn(async fn() {
+      agent.run_turn(tk_user_msg("first"), "p2-session")
+    })
+    // before_model runs after Puppet::prompt acquired its lease, so the
+    // second invocation exercises the Agent guard rather than a race in the
+    // internal lease implementation.
+    ignore(entered.get())
+    assert_eq(model.call_count(), 0)
+
+    // The first task is suspended at the gate, so this direct call is a
+    // concurrent invocation while retaining the typed AgentError result.
+    let second_result = Ok(agent.run_turn(tk_user_msg("second"), "p2-session")) catch {
+      error => Err(error)
+    }
+    match second_result {
+      Err(Runtime(InvocationFailed(reason))) =>
+        assert_true(reason.contains("agent turn busy"))
+      _ => fail("concurrent run_turn must fail with the typed busy error")
+    }
+
+    // The rejected call must not emit a turn event or load the session.
+    let events_before = observer.events()
+    let mut starts_before = 0
+    let mut terminal_before = 0
+    for event in events_before {
+      match event {
+        TurnStarted => starts_before = starts_before + 1
+        TurnCompleted | TurnFailed(_) => terminal_before = terminal_before + 1
+        _ => ()
+      }
+    }
+    assert_eq(starts_before, 1)
+    assert_eq(terminal_before, 0)
+    assert_eq(model.call_count(), 0)
+    let mut loads = 0
+    for operation in store.ops() {
+      match operation {
+        OpLoad(..) => loads = loads + 1
+        _ => ()
+      }
+    }
+    assert_eq(loads, 1)
+
+    release.put(1)
+    let first_result = first.wait()
+    assert_eq(first_result.final_session_id, "p2-session")
+  })
+
+  let events = observer.events()
+  let mut terminal_count = 0
+  for event in events {
+    match event {
+      TurnCompleted | TurnFailed(_) => terminal_count = terminal_count + 1
+      _ => ()
+    }
+  }
+  assert_eq(terminal_count, 1)
+  assert_eq(model.call_count(), 1)
+  let chunk_events = events.filter(fn(event) { event is StreamChunkReceived(_) })
+  assert_eq(chunk_events.length(), chunks.length())
+  for i = 0; i < chunks.length(); i = i + 1 {
+    match chunk_events[i] {
+      StreamChunkReceived(chunk~) =>
+        match chunk {
+          TextDelta(token~) => assert_eq(token, "p2-\{i}")
+          _ => fail("expected text stream chunk")
+        }
+      _ => fail("expected the first turn's streamed chunks in FIFO order")
+    }
+  }
+  let completed_idx = events.search_by(fn(event) { event is TurnCompleted })
+  guard completed_idx is Some(idx) else { fail("first turn must complete") }
+  for event in chunk_events {
+    let chunk_idx = events.search_by(fn(candidate) { candidate == event })
+    guard chunk_idx is Some(cidx) else { fail("chunk index not found") }
+    if cidx >= idx {
+      fail("stream chunk must precede the sole terminal event")
+    }
+  }
+}
+
+///|
+/// Cancellation must release the synchronous Agent guard even when the turn
+/// is suspended inside the Puppet path. The release token is deliberately
+/// withheld until the first task has been cancelled; the second turn uses the
+/// same Agent and gate to prove no stale `turn_active` bit remains.
+async test "p2 cancelled turn releases Agent guard for the next turn" {
+  let model = ScriptedModel([Respond(tk_stop_response("after-cancel"))])
+  let store = RecordingSessionStore()
+  let entered : @aqueue.Queue[Int] = Queue(kind=Unbounded)
+  let release : @aqueue.Queue[Int] = Queue(kind=Unbounded)
+  let gate = TurnLoopGate::{ entered, release, }
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", hooks=[gate], sessions=[store]),
+    ],
+    config=tk_config(),
+  )
+  @async.with_task_group(group => {
+    let first = group.spawn(
+      async fn() {
+        let result : Result[@types.TurnResult, Error] = Ok(
+          agent.run_turn(tk_user_msg("cancel-me"), "p2-cancel"),
+        ) catch {
+          error => Err(error)
+        }
+        result
+      },
+      allow_failure=true,
+    )
+    ignore(entered.get())
+    first.cancel()
+    let first_result = first.wait()
+    match first_result {
+      Err(_) => ()
+      Ok(_) => fail("cancelled turn unexpectedly completed")
+    }
+
+    // The cancelled gate no longer owns the release wait. Supplying the
+    // token lets the same hook admit the second turn if the Agent guard was
+    // correctly released.
+    release.put(1)
+    let second_result : Result[@types.TurnResult, @error.AgentError] = Ok(
+      agent.run_turn(tk_user_msg("after-cancel"), "p2-cancel"),
+    ) catch {
+      error => Err(error)
+    }
+    match second_result {
+      Ok(result) => assert_eq(result.final_session_id, "p2-cancel")
+      Err(Runtime(InvocationFailed(_))) =>
+        fail("turn guard was not released after cancellation")
+      Err(_) => fail("second turn failed after cancellation")
+    }
+  })
+}
+
+///|
 /// A streaming turn still delivers every chunk to observers, in order, and
 /// every chunk arrives before `TurnCompleted`.
 async test "chunk dispatch: streaming turn delivers chunks in order before TurnCompleted" {

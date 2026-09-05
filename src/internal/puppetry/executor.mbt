@@ -146,27 +146,117 @@ async fn execute_call_model(
     effect_id: Some(effect_id),
     pressure: None,
   }
+
+  // The callback is a live boundary: providers may invoke it before their
+  // final ModelCallResult exists. Validate there as well as on the returned
+  // completion, and only forward accepted chunks to observers. Indexes use
+  // the same continuous 0-based protocol as StreamAccumulator: an existing
+  // index may be revisited, but a new index must be exactly the next one.
+  // HostChunkCallback is a non-raising ABI, so an invalid chunk cannot
+  // interrupt provider-owned work. Posoco's guarantee is narrower and
+  // observable: the invalid chunk and all later chunks are not sent to the
+  // Posoco sink/observer, accumulator, or reducer.
+  let stream_failure : Array[String] = []
+  let mut highest_tool_index = -1
+  let checked_on_chunk : @kernel_exec.HostChunkCallback? = match on_chunk {
+    None => None
+    Some(sink) =>
+      Some(fn(chunk : @types.StreamChunk) {
+        if !stream_failure.is_empty() {
+          return
+        }
+        match chunk.validate() {
+          Err(reason) => stream_failure.push(reason)
+          Ok(_) => {
+            let index_result : Result[Unit, String] = match chunk {
+              @types.ToolCallDelta(index~, ..) =>
+                if highest_tool_index < 0 {
+                  if index == 0 {
+                    highest_tool_index = 0
+                    Ok(())
+                  } else {
+                    Err(
+                      "stream tool-call index is sparse; expected index 0 for the first tool call",
+                    )
+                  }
+                } else if index > highest_tool_index {
+                  if index - highest_tool_index == 1 {
+                    highest_tool_index = index
+                    Ok(())
+                  } else {
+                    Err(
+                      "stream tool-call index is sparse; expected the next contiguous 0-based index",
+                    )
+                  }
+                } else {
+                  Ok(())
+                }
+              _ => Ok(())
+            }
+            match index_result {
+              Err(reason) => stream_failure.push(reason)
+              Ok(_) => sink(chunk)
+            }
+          }
+        }
+      })
+  }
   let attempted : Result[Result[ModelCallResult, @kernel.ModelFailure], Error] = Ok(
     ctx.host.call_model(
       scope,
       payload.messages[:],
       tool_definitions,
       payload.call_options,
-      on_chunk,
+      checked_on_chunk,
     ),
   ) catch {
     error => Err(error)
   }
   match attempted {
-    Err(error) =>
-      raise EffectExecutionFailed(phase="CallModel", cause=error.to_string())
+    // A host raise (including transport errors and async cancellation) is the
+    // primary outcome. A malformed callback observed before that raise must
+    // never reclassify the host failure as a parse failure.
+    Err(error) => raise execution_error("CallModel", error)
     Ok(Ok(result)) =>
-      ModelCompleted(payload={
-        effect_id,
-        model_step_id: payload.model_step_id,
-        completion: result.completion,
-        processed_messages: result.processed_messages,
-      })
+      match stream_failure.get(0) {
+        Some(reason) =>
+          ModelFailed(payload={
+            effect_id,
+            model_step_id: payload.model_step_id,
+            failure: Parse(reason="stream chunk validation failed: " + reason),
+          })
+        None =>
+          match result.completion.usage {
+            Some(usage) =>
+              match usage.validate() {
+                Err(reason) =>
+                  ModelFailed(payload={
+                    effect_id,
+                    model_step_id: payload.model_step_id,
+                    failure: Parse(
+                      reason="model usage validation failed: " + reason,
+                    ),
+                  })
+                Ok(_) =>
+                  ModelCompleted(payload={
+                    effect_id,
+                    model_step_id: payload.model_step_id,
+                    completion: result.completion,
+                    processed_messages: result.processed_messages,
+                  })
+              }
+            None =>
+              ModelCompleted(payload={
+                effect_id,
+                model_step_id: payload.model_step_id,
+                completion: result.completion,
+                processed_messages: result.processed_messages,
+              })
+          }
+      }
+    // A returned provider failure is already the host's typed primary
+    // outcome. Stream validation only controls the successful-return path;
+    // it must not erase retry/rate-limit semantics from `failure`.
     Ok(Err(failure)) =>
       ModelFailed(payload={
         effect_id,

@@ -13,7 +13,7 @@ priv struct FakeRuntime {
   seen_scopes : Array[@kernel.InvocationScope]
   mut cancel_calls : Int
   cancel_seen : Array[Array[@kernel.EffectId]]
-  mut control : @runtime.RuntimeControl?
+  mut control : AgentControl?
   mut abort_on_tool : Bool
   mut follow_up_on_tool : Bool
   mut follow_up_sent : Bool

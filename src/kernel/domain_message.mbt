@@ -259,8 +259,13 @@ pub fn ToolOutcome::summary(self : ToolOutcome) -> String {
       "ToolReportedError(\{content.length()} chars)"
     RuntimeFailure(error_category~, message~) =>
       "RuntimeFailure(\{error_category}, \{safe_outcome_label(message)})"
-    NotExecuted(reason~, original_call_id~) =>
-      "NotExecuted(\{reason.to_string()}, call_id=\{original_call_id.to_string()})"
+    NotExecuted(reason~, original_call_id~) => {
+      let reason_summary = match reason {
+        RejectedByHook(..) => "RejectedByHook"
+        _ => reason.to_string()
+      }
+      "NotExecuted(\{reason_summary}, call_id=\{original_call_id.to_string()})"
+    }
   }
 }
 

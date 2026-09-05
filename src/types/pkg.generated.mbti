@@ -31,19 +31,11 @@ pub(all) struct Session {
 pub fn Session::parent_thread_id(Self) -> String?
 pub fn Session::with_parent_thread_id(Self, String) -> Self
 
-pub(all) struct StreamAccumulator {
-  mut text_buf : StringBuilder
-  mut reasoning_buf : StringBuilder
-  tool_calls : Array[ToolCallBuilder]
-  mut finish_reason : String
-  mut usage_input : Int?
-  mut usage_cached : Int?
-  mut usage_uncached : Int?
-  mut usage_output : Int?
-  mut usage_total : Int?
+pub struct StreamAccumulator {
+  // private fields
 } derive(@debug.Debug)
 pub fn StreamAccumulator::StreamAccumulator() -> Self
-pub fn StreamAccumulator::push(Self, StreamChunk) -> Unit
+pub fn StreamAccumulator::push(Self, StreamChunk) -> Unit raise @error.ModelError
 pub fn StreamAccumulator::reasoning(Self) -> String
 pub fn StreamAccumulator::text(Self) -> String
 pub fn StreamAccumulator::to_completion(Self) -> @kernel.Completion raise @error.ModelError
@@ -55,6 +47,7 @@ pub(all) enum StreamChunk {
   Usage(input_tokens~ : Int, output_tokens~ : Int, total_tokens~ : Int, cached_input_tokens~ : Int?, uncached_input_tokens~ : Int?)
   Finish(reason~ : String)
 } derive(Eq, @debug.Debug)
+pub fn StreamChunk::validate(Self) -> Result[Unit, String]
 
 pub(all) enum StreamMode {
   NoStream

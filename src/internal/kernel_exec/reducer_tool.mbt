@@ -34,13 +34,17 @@ fn reduce_tool_completed(
   // Correlation: find the matching ExecuteTool in pending.
   let pending = state.pending_effects()
   let mut found = false
-  let mut matched_tool_name : @kernel.ToolName? = None
+  let mut matched_call : @kernel.ToolCall? = None
   for e in pending {
     match e {
       ExecuteTool(effect_id~, payload=ep) =>
         if effect_id == payload.effect_id && ep.call_id == payload.call_id {
           found = true
-          matched_tool_name = Some(ep.tool_name)
+          matched_call = Some({
+            call_id: ep.call_id,
+            name: ep.tool_name,
+            arguments: ep.arguments,
+          })
         }
       _ => ()
     }
@@ -51,8 +55,8 @@ fn reduce_tool_completed(
       StaleCorrelation(effect_id=payload.effect_id),
     )
   }
-  let tool_name = match matched_tool_name {
-    Some(n) => n
+  let canonical_call = match matched_call {
+    Some(call) => call
     None =>
       return reduce_invariant_violation(
         state,
@@ -62,6 +66,7 @@ fn reduce_tool_completed(
         ),
       )
   }
+  let tool_name = canonical_call.name
   let new_pending = remove_execute_tool_effect(pending, payload.effect_id)
   let position = match
     state.tool_call_positions.get(payload.call_id.to_string()) {
@@ -71,7 +76,7 @@ fn reduce_tool_completed(
   let staged = state.completed_tool_results.copy()
   staged[payload.call_id.to_string()] = (tool_name, payload.outcome, position)
   let event : KernelEvent = ToolCompleted(
-    call_id=payload.call_id,
+    call=canonical_call,
     outcome=payload.outcome,
   )
   let events = [event]
@@ -131,13 +136,17 @@ fn reduce_tool_failed(
   // Correlation check.
   let pending = state.pending_effects()
   let mut found = false
-  let mut matched_tool_name : @kernel.ToolName? = None
+  let mut matched_call : @kernel.ToolCall? = None
   for e in pending {
     match e {
       ExecuteTool(effect_id~, payload=ep) =>
         if effect_id == payload.effect_id && ep.call_id == payload.call_id {
           found = true
-          matched_tool_name = Some(ep.tool_name)
+          matched_call = Some({
+            call_id: ep.call_id,
+            name: ep.tool_name,
+            arguments: ep.arguments,
+          })
         }
       _ => ()
     }
@@ -171,8 +180,8 @@ fn reduce_tool_failed(
     error_category=cat,
     message=msg,
   )
-  let tool_name = match matched_tool_name {
-    Some(n) => n
+  let canonical_call = match matched_call {
+    Some(call) => call
     None =>
       return reduce_invariant_violation(
         state,
@@ -182,6 +191,7 @@ fn reduce_tool_failed(
         ),
       )
   }
+  let tool_name = canonical_call.name
   let new_pending = remove_execute_tool_effect(pending, payload.effect_id)
   let position = match
     state.tool_call_positions.get(payload.call_id.to_string()) {
@@ -190,7 +200,7 @@ fn reduce_tool_failed(
   }
   let staged = state.completed_tool_results.copy()
   staged[payload.call_id.to_string()] = (tool_name, outcome, position)
-  let event : KernelEvent = ToolCompleted(call_id=payload.call_id, outcome~)
+  let event : KernelEvent = ToolCompleted(call=canonical_call, outcome~)
   let events = [event]
   if new_pending.is_empty() {
     let (committed_transcript, committed_tool_results) = commit_tool_wave(
