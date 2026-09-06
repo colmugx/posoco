@@ -102,6 +102,7 @@ async fn AgentRuntime::run_turn_via_puppet(
   input : @kernel.Message,
   session_id : String,
   identity : TurnIdentity,
+  resume_persisted_user : Bool,
 ) -> @types.TurnResult raise @error.AgentError {
   // Step 0: catalog refresh at the prompt boundary. No run is active yet,
   // so a swap cannot disturb an in-flight run; a failed rebuild keeps the
@@ -124,12 +125,20 @@ async fn AgentRuntime::run_turn_via_puppet(
   // The loaded session is the authoritative persisted prefix for this turn.
   self.session_cursors[session_id] = session.messages.length()
 
-  // Step 2: snapshot + append input. Deep-copy so callers cannot mutate
-  // recorded state via the recorded arrays.
+  // Step 2: snapshot + seed this turn. Recovery replays a persisted trailing
+  // user message without appending it again; every other path appends the
+  // supplied input. Deep-copy so callers cannot mutate recorded state.
   let messages = snapshot_messages(session.messages)
-  self.inject_memory_inbound(session, session_id, input, messages)
-  let current_turn_start = messages.length()
-  messages.push(snapshot_message(input))
+  let (input, current_turn_start) = match messages.last() {
+    Some(last) if resume_persisted_user && last is UserMessage(..) =>
+      (snapshot_message(last), messages.length() - 1)
+    _ => {
+      self.inject_memory_inbound(session, session_id, input, messages)
+      let current_turn_start = messages.length()
+      messages.push(snapshot_message(input))
+      (input, current_turn_start)
+    }
+  }
   let current_metadata = snapshot_metadata(session.metadata)
 
   // Step 3: per-prompt policy on the caller-minted identity. The counter is

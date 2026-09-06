@@ -132,7 +132,7 @@ pub impl Show for Reasoning with fn to_string(self : Reasoning) -> String {
 ///
 /// Invariants:
 /// - `SystemMessage` / `UserMessage` never carry tool calls.
-/// - `AssistantMessage` is the ONLY variant that carries tool calls and the
+/// - `AssistantMessage` is the ONLY variant that carries tool calls, the
 ///   ONLY variant that carries reasoning.
 /// - `ToolMessage` is the ONLY variant that carries a `call_id` correlation
 ///   and a `ToolOutcome`. It never carries tool calls.

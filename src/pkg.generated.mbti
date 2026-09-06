@@ -60,6 +60,7 @@ pub struct Agent {
 pub fn Agent::Agent(exts~ : Array[&@port.Extension], config~ : AgentConfig, ui_projection? : Bool) -> Self raise @error.CompositionError
 pub fn Agent::commands(Self) -> Array[&@port.CommandPort]
 pub fn Agent::control(Self) -> AgentControl
+pub async fn Agent::resume_turn(Self, String, continuation? : String) -> @types.TurnResult raise @error.AgentError
 pub async fn Agent::run_turn(Self, @kernel.Message, String) -> @types.TurnResult raise @error.AgentError
 pub async fn Agent::shutdown(Self) -> Unit
 pub fn Agent::with_runtime(exts~ : Array[&@port.Extension], config~ : AgentConfig, runtime~ : &@runtime.Runtime, ui_projection? : Bool, catalog_source? : &@runtime.CatalogSource) -> Self raise @error.CompositionError

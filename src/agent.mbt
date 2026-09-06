@@ -824,6 +824,19 @@ async fn AgentRuntime::run_turn(
   input : @kernel.Message,
   session_id : String,
 ) -> @types.TurnResult raise @error.AgentError {
+  self.run_turn_with_mode(input, session_id, false)
+}
+
+///|
+/// Run a turn under the Agent's single-turn guard. Recovery may replay a
+/// persisted trailing user message; ordinary turns and drained follow-ups
+/// always append their input.
+async fn AgentRuntime::run_turn_with_mode(
+  self : AgentRuntime,
+  input : @kernel.Message,
+  session_id : String,
+  resume_persisted_user : Bool,
+) -> @types.TurnResult raise @error.AgentError {
   if self.turn_active {
     raise Runtime(InvocationFailed("agent turn busy"))
   }
@@ -833,13 +846,15 @@ async fn AgentRuntime::run_turn(
   self.turn_active = true
   let result : Result[@types.TurnResult, @error.AgentError] = Ok(
     {
-      let mut result = self.run_single_turn(input, session_id)
+      let mut result = self.run_single_turn(
+        input, session_id, resume_persisted_user,
+      )
       let mut drained = 0
       while drained < follow_up_drain_limit {
         match self.control.take_follow_up() {
           Some(message) => {
             drained = drained + 1
-            result = self.run_single_turn(message, session_id)
+            result = self.run_single_turn(message, session_id, false)
           }
           None => break
         }
@@ -864,6 +879,7 @@ async fn AgentRuntime::run_single_turn(
   self : AgentRuntime,
   input : @kernel.Message,
   session_id : String,
+  resume_persisted_user : Bool,
 ) -> @types.TurnResult raise @error.AgentError {
   self.ensure_agent_running()
   if !self.start_notified {
@@ -892,7 +908,9 @@ async fn AgentRuntime::run_single_turn(
   // symmetric with on_turn_end's terminal-position semantics.
   self.dispatch_on_turn_begin()
 
-  let result = self.run_turn_via_puppet(input, session_id, identity) catch {
+  let result = self.run_turn_via_puppet(
+    input, session_id, identity, resume_persisted_user,
+  ) catch {
     primary => {
       let safe_reason = "turn failed: " + agent_error_category(primary)
       self.emit_turn_event(Some(identity.scope()), TurnFailed(safe_reason))
@@ -913,6 +931,23 @@ pub async fn Agent::run_turn(
   session_id : String,
 ) -> @types.TurnResult raise @error.AgentError {
   self.runtime.run_turn(input, session_id)
+}
+
+///|
+/// Resume an interrupted turn from its persisted transcript. If the
+/// transcript ends with a user message, that message is replayed as the
+/// model input without appending a duplicate. Otherwise `continuation` is
+/// appended as a new user message.
+pub async fn Agent::resume_turn(
+  self : Agent,
+  session_id : String,
+  continuation? : String = "continue",
+) -> @types.TurnResult raise @error.AgentError {
+  self.runtime.run_turn_with_mode(
+    @kernel.Message::UserMessage(content=[@kernel.Content::Text(continuation)]),
+    session_id,
+    true,
+  )
 }
 
 ///|
