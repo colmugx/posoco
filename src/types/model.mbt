@@ -82,6 +82,14 @@ pub fn ToolCallBuilder::arguments_json(self : ToolCallBuilder) -> String {
 }
 
 ///|
+/// Immutable point-in-time snapshot of one accumulated streamed tool call.
+pub struct ToolCallSnapshot {
+  id : String
+  name : String
+  arguments_json : String
+} derive(Eq, Debug)
+
+///|
 /// Accumulates `StreamChunk` events during a streaming chat call. Modelports
 /// that want a standard "double-write" implementation (one chunk to the
 /// `Stream(cb)` callback for telemetry, one chunk to the accumulator for the
@@ -128,6 +136,24 @@ pub fn StreamAccumulator::text(self : StreamAccumulator) -> String {
 ///|
 pub fn StreamAccumulator::reasoning(self : StreamAccumulator) -> String {
   self.reasoning_buf.to_string()
+}
+
+///|
+/// Read-only snapshots of the accumulated streamed tool calls, in index
+/// order. Returns a fresh array per call; a later `push` never alters a
+/// previously returned snapshot, and no snapshot path leads back into
+/// accumulator state.
+pub fn StreamAccumulator::tool_calls(
+  self : StreamAccumulator,
+) -> Array[ToolCallSnapshot] {
+  self.tool_calls.map(fn(tc) {
+    let snapshot : ToolCallSnapshot = {
+      id: tc.id,
+      name: tc.name,
+      arguments_json: tc.arguments_json(),
+    }
+    snapshot
+  })
 }
 
 ///|

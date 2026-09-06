@@ -39,6 +39,7 @@ pub fn StreamAccumulator::push(Self, StreamChunk) -> Unit raise @error.ModelErro
 pub fn StreamAccumulator::reasoning(Self) -> String
 pub fn StreamAccumulator::text(Self) -> String
 pub fn StreamAccumulator::to_completion(Self) -> @kernel.Completion raise @error.ModelError
+pub fn StreamAccumulator::tool_calls(Self) -> Array[ToolCallSnapshot]
 
 pub(all) enum StreamChunk {
   TextDelta(token~ : String)
@@ -62,6 +63,12 @@ pub(all) struct ToolCallBuilder {
 } derive(@debug.Debug)
 pub fn ToolCallBuilder::ToolCallBuilder() -> Self
 pub fn ToolCallBuilder::arguments_json(Self) -> String
+
+pub struct ToolCallSnapshot {
+  id : String
+  name : String
+  arguments_json : String
+} derive(Eq, @debug.Debug)
 
 pub(all) enum TurnEvent {
   TurnStarted

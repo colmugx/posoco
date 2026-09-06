@@ -210,3 +210,63 @@ test "to_completion revalidates internally polluted usage" {
     _ => fail("to_completion accepted internally invalid usage")
   }
 }
+
+///|
+test "tool_calls snapshots reflect accumulated state in index order" {
+  let acc = StreamAccumulator()
+  acc.push(
+    ToolCallDelta(
+      index=0,
+      id=Some("call_0"),
+      name=Some("lookup"),
+      arguments_delta=Some("{\"a\":"),
+    ),
+  )
+  acc.push(
+    ToolCallDelta(index=0, id=None, name=None, arguments_delta=Some("1}")),
+  )
+  acc.push(
+    ToolCallDelta(
+      index=1,
+      id=Some("call_1"),
+      name=Some("noop"),
+      arguments_delta=None,
+    ),
+  )
+  let snapshots = acc.tool_calls()
+  assert_eq(snapshots.length(), 2)
+  assert_eq(snapshots[0].id, "call_0")
+  assert_eq(snapshots[0].name, "lookup")
+  assert_eq(snapshots[0].arguments_json, "{\"a\":1}")
+  assert_eq(snapshots[1].id, "call_1")
+  assert_eq(snapshots[1].name, "noop")
+  // Partial state stays visible through the snapshot: an arguments delta has
+  // not arrived for index 1 yet, so its accumulated JSON is still empty.
+  assert_eq(snapshots[1].arguments_json, "")
+}
+
+///|
+test "tool_calls snapshots are isolated from later pushes and caller mutation" {
+  let acc = StreamAccumulator()
+  acc.push(
+    ToolCallDelta(
+      index=0,
+      id=Some("call_0"),
+      name=Some("lookup"),
+      arguments_delta=Some("{"),
+    ),
+  )
+  let snapshots = acc.tool_calls()
+  acc.push(
+    ToolCallDelta(index=0, id=None, name=None, arguments_delta=Some("}")),
+  )
+  // The earlier snapshot is frozen: a later push cannot rewrite it.
+  assert_eq(snapshots[0].arguments_json, "{")
+  // Tampering with a returned array must not touch the accumulator.
+  snapshots.push({ id: "fake", name: "fake", arguments_json: "{}", })
+  let fresh = acc.tool_calls()
+  assert_eq(fresh.length(), 1)
+  let completion = acc.to_completion()
+  assert_eq(completion.tool_calls().length(), 1)
+  assert_eq(completion.tool_calls()[0].arguments, @json.parse("{}"))
+}
