@@ -61,7 +61,7 @@ pub impl @posoco.ModelPort for FixedModel with fn chat(
     finish_reason=@posoco.FinishReason::Stop,
     usage=None,
   )
-  { completion, processed_messages: [] }
+  { completion, processed_messages: [], }
 }
 
 ///|
@@ -182,7 +182,7 @@ fn copy_session(session : @posoco.Session) -> @posoco.Session {
 pub impl @posoco.SessionStore for InMemoryStore with fn load(self, id : String) -> @posoco.Session raise @posoco.SessionError {
   match self.sessions.get(id) {
     Some(s) => copy_session(s)
-    None => { messages: [], metadata: Map::from_array([]) }
+    None => { messages: [], metadata: Map::from_array([]), }
   }
 }
 
@@ -241,17 +241,11 @@ pub extend InMemoryStore with @posoco.Extension::{extension_id, manifest}
 ///|
 /// 组装并运行第一个 Agent：用户说你好，模型回复。
 async test "first_agent_runs_one_turn" {
-  let model = FixedModel::{  }
-  let store = InMemoryStore::{ sessions: Map::from_array([]) }
+  let model = FixedModel::{ }
+  let store = InMemoryStore::{ sessions: Map::from_array([]), }
   let agent = @posoco.Agent(
     exts=[model, store], // 两个自报告扩展，顺序无关
-    config={
-      max_tool_rounds: Some(10),
-      compact_threshold: None,
-      temperature: None,
-      max_output_tokens: None,
-      model_context_window: None,
-    },
+    config=@posoco.agent_config(max_tool_rounds=Some(10)),
   )
 
   // 构造用户消息。Message 是 ADT，不是 record——每种角色一个构造器。
@@ -364,15 +358,12 @@ pub extend FailingModel with @posoco.Extension::{extension_id, manifest}
 ///|
 /// 验证：模型失败时 run_turn raises AgentError::Model，不返回 TurnCompleted。
 async test "first_agent_model_failure_is_typed" {
-  let model = FailingModel::{  }
-  let store = InMemoryStore::{ sessions: Map::from_array([]) }
-  let agent = @posoco.Agent(exts=[model, store], config={
-    max_tool_rounds: Some(10),
-    compact_threshold: None,
-    temperature: None,
-    max_output_tokens: None,
-    model_context_window: None,
-  })
+  let model = FailingModel::{ }
+  let store = InMemoryStore::{ sessions: Map::from_array([]), }
+  let agent = @posoco.Agent(
+    exts=[model, store],
+    config=@posoco.agent_config(max_tool_rounds=Some(10)),
+  )
   let user_message : @posoco.Message = @posoco.Message::UserMessage(content=[
     @posoco.Content::Text("你好"),
   ])

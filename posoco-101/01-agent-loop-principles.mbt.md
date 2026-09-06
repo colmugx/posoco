@@ -96,7 +96,7 @@ fn run_agent(
 fn execute_tool(tools : ToolSet, call : ToolCall) -> ToolResult {
   match tools.executors.get(call.name) {
     Some(exec) => exec(call)
-    None => { call_id: call.id, content: "unknown tool: " + call.name }
+    None => { call_id: call.id, content: "unknown tool: " + call.name, }
   }
 }
 ```
@@ -127,23 +127,23 @@ fn scripted_model(messages : Array[String]) -> Reply {
   let turn = messages.length()
   if turn <= 1 {
     // 第一次：请求调用 echo 工具
-    { message: "let me check", tool_calls: [{ id: "call_1", name: "echo" }] }
+    { message: "let me check", tool_calls: [{ id: "call_1", name: "echo", }], }
   } else {
     // 第二次：工具结果已在 messages 里，给出最终答案
-    { message: "done", tool_calls: [] }
+    { message: "done", tool_calls: [], }
   }
 }
 
 ///|
 /// echo 工具：原样返回 call id。
 fn echo_tool(call : ToolCall) -> ToolResult {
-  { call_id: call.id, content: "echoed:" + call.id }
+  { call_id: call.id, content: "echoed:" + call.id, }
 }
 
 ///|
 /// 组装工具集。
 fn make_tools() -> ToolSet {
-  { executors: Map::from_array([("echo", echo_tool)]) }
+  { executors: Map::from_array([("echo", echo_tool)]), }
 }
 
 ///|
