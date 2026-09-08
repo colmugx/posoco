@@ -20,7 +20,16 @@ struct QcSlot {
 ///|
 fn qc_slot(idx : Int, kind : Int, val : Int, flag : Int) -> QcSlot {
   // 缩水可能产生负种子；归一化到文档声明的非负值域。
-  let norm = fn(i : Int) -> Int { if i < 0 { -i } else { i } }
+  // Int::MIN 取反回绕仍为负，需单独映射。
+  let norm = fn(i : Int) -> Int {
+    if i == -2147483648 {
+      2147483647
+    } else if i < 0 {
+      -i
+    } else {
+      i
+    }
+  }
   let kind = norm(kind)
   let val = norm(val)
   let flag = norm(flag)
