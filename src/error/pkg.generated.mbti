@@ -14,6 +14,8 @@ pub(all) suberror AgentError {
   Runtime(RuntimeError)
   ToolLoopExceeded(consumed~ : Int, limit~ : Int)
   PipelineAborted(String)
+  Cancelled(String)
+  AutoCompactFailed(String)
 } derive(@debug.Debug)
 pub impl Show for AgentError
 
@@ -64,6 +66,7 @@ pub impl Show for RuntimeError
 pub(all) suberror SessionError {
   Load(String)
   Save(String)
+  Conflict(String)
 } derive(@debug.Debug)
 pub fn SessionError::to_string(Self) -> String
 pub impl Show for SessionError

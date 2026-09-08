@@ -171,8 +171,14 @@ async test "runtime seam/custom runtime receives full effect context" {
 ///|
 async test "runtime seam/abort during execution propagates to cancel_effects" {
   let (agent, fake, model) = build_fake_runtime_agent(abort_on_tool=true)
-  let result = agent.run_turn(tk_user_msg("hi"), "session_seam_abort")
-  assert_eq(result.final_session_id, "session_seam_abort")
+  let result : Result[@types.TurnResult, @error.AgentError] = Ok(
+    agent.run_turn(tk_user_msg("hi"), "session_seam_abort"),
+  ) catch {
+    error => Err(error)
+  }
+  guard result is Err(@error.AgentError::Cancelled(_)) else {
+    fail("expected the cancelled turn to surface as a structured outcome")
+  }
   // The abort landed during execute_tool: the pump observed it at the next
   // loop top and went terminal, so the second scripted model step was never
   // consumed.

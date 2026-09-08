@@ -160,12 +160,9 @@ pub async fn Puppet::prompt(
     TurnSnapshot::capture(snap_input)
   })
   let snap = match snap_result {
-    Err(e) => {
+    Err(e) =>
       // Roll back the lease on snapshot failure.
-      self.phase_gate = PhaseGate::idle()
-      self.mailbox.set_quiescent(Idle)
-      return Rejected(error=e)
-    }
+      return self.finalize_rejected(error=e)
     Ok(s) => s
   }
   // Step 3: bind mailbox.

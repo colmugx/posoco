@@ -32,7 +32,7 @@ async fn Puppet::drive_run(
   })
   let initial_state = match initial_result {
     Err(e) =>
-      return self.reject_run(
+      return self.finalize_rejected(
         error=ReducerInvariantViolation(
           category=IllegalPhase(phase="initial", detail=e.to_string()),
         ),
@@ -62,7 +62,7 @@ async fn Puppet::drive_run(
   for hook in self.config.hooks {
     seeded_messages = hook.before_model(seeded_messages) catch {
       Aborted(reason~) =>
-        return self.reject_run(
+        return self.finalize_rejected(
           error=HookRejected(reason="pre_model_hook: " + reason),
         )
     }
@@ -77,24 +77,58 @@ async fn Puppet::drive_run(
   })
   let out0 = match out0_result {
     Err(e) =>
-      return self.reject_run(
+      return self.finalize_rejected(
         error=ReducerInvariantViolation(
           category=IllegalPhase(phase="Start", detail=e.to_string()),
         ),
       )
     Ok(o) => o
   }
+  let initial_events : Array[KernelEvent] = out0.events()
+  let mut pre_compact_fired = false
+  let pre_compact_state : RunState = match
+    self.check_auto_compact_pre_request(session_id, seeded_messages, snap) {
+    Some(compact_cmd) => {
+      pre_compact_fired = true
+      match
+        self.handle_compact(
+          out0.next_state(),
+          compact_cmd,
+          run_id,
+          turn_id,
+          session_id,
+          dispatcher,
+          snap,
+        ) {
+        ReturnedResult(r) => return r
+        UpdatedState(new_state, events) => {
+          for event in events {
+            initial_events.push(event)
+          }
+          new_state
+        }
+        Failed(error) =>
+          return self.finalize_rejected(
+            error=EffectExecutionFailed(
+              phase="auto_compact",
+              cause="pre-request: " + error.to_string(),
+            ),
+          )
+      }
+    }
+    None => out0.next_state()
+  }
   let initial_boundary : Result[(RunState, Array[KernelEvent]), PuppetError] = attempt(() => {
       declare_model_effect_if_ready(
-        out0.next_state(),
-        out0.events(),
+        pre_compact_state,
+        initial_events,
         self.config.catalog,
         snap.call_options(),
       )
     },
   )
-  let (initial_state, initial_events) = match initial_boundary {
-    Err(error) => return self.reject_run(error~)
+  let (initial_state, initial_boundary_events) = match initial_boundary {
+    Err(error) => return self.finalize_rejected(error~)
     Ok(value) => value
   }
   // The initial boundary durably accepts input, starts the run, and declares
@@ -103,7 +137,7 @@ async fn Puppet::drive_run(
     self.commit_boundary(
       initial_state,
       InputAccepted,
-      initial_events,
+      initial_boundary_events,
       dispatcher,
       run_id,
       turn_id,
@@ -114,8 +148,15 @@ async fn Puppet::drive_run(
     e => Err(e)
   }
   match commit_result {
-    Err(e) => return self.reject_run(error=e)
-    Ok(_) => ()
+    Err(e) => return self.finalize_rejected(error=e)
+    Ok(_) =>
+      if pre_compact_fired {
+        self.mark_context_awaiting_measurement(
+          session_id,
+          initial_state.transcript().messages_snapshot().length(),
+          snap,
+        )
+      }
   }
   state = initial_state
   // Drive the loop.
@@ -125,7 +166,7 @@ async fn Puppet::drive_run(
     iter = iter + 1
     match max_iter {
       Some(m) if iter > m =>
-        return self.reject_run(error=PumpLoopExceeded(iterations=iter))
+        return self.finalize_rejected(error=PumpLoopExceeded(iterations=iter))
       _ => ()
     }
     // Check abort.
@@ -205,9 +246,9 @@ async fn Puppet::drive_run(
   match state.phase() {
     Terminal => {
       let outcome = match state.outcome() {
-        Some(o) => o
+        Some(outcome) => outcome
         None =>
-          return self.reject_run(
+          return self.finalize_rejected(
             error=ReducerInvariantViolation(
               category=IllegalPhase(
                 phase="Terminal",
@@ -216,20 +257,15 @@ async fn Puppet::drive_run(
             ),
           )
       }
-      self.mailbox.set_quiescent(Terminal(outcome~))
-      self.last_completed_transcript = Some(state.transcript())
-      self.last_outcome = Some(outcome)
-      // Release lease + clear mailbox.
-      self.phase_gate = self.phase_gate.transition(Terminalizing)
-      self.phase_gate = self.phase_gate.transition(Idle)
-      self.mailbox.clear_run()
-      Accepted(run_id~, turn_id~)
+      return self.finalize_run(
+        Terminated(run_id~, turn_id~, outcome~, transcript=state.transcript()),
+      )
     }
     Suspended => {
       let req = match state.suspension_requirement() {
-        Some(r) => r
+        Some(req) => req
         None =>
-          return self.reject_run(
+          return self.finalize_rejected(
             error=ReducerInvariantViolation(
               category=IllegalPhase(
                 phase="Suspended",
@@ -240,16 +276,13 @@ async fn Puppet::drive_run(
       }
       // Generate a suspension_id (deterministic; M5 will use a durable id).
       let suspension_id = "susp_\{run_id.to_string()}_\{state.current_model_step_id().to_int()}"
-      self.phase_gate = self.phase_gate.enter_suspended(suspension_id)
-      self.mailbox.set_quiescent(
-        Suspended(run_id~, suspension_id~, requirement_kind=req.kind),
+      return self.finalize_run(
+        Suspended(run_id~, turn_id~, suspension_id~, requirement_kind=req.kind),
       )
-      // Lease is NOT released: resume will continue under the same lease.
-      Accepted(run_id~, turn_id~)
     }
     _ =>
       // Pump exited without reaching terminal or suspended.
-      self.reject_run(error=PumpLoopExceeded(iterations=iter))
+      return self.finalize_rejected(error=PumpLoopExceeded(iterations=iter))
   }
 }
 
@@ -284,7 +317,7 @@ async fn Puppet::pump_abort(
   match r {
     Err(e) =>
       StopWith(
-        self.reject_run(
+        self.finalize_rejected(
           error=ReducerInvariantViolation(
             category=IllegalPhase(phase="cancel", detail=e.to_string()),
           ),
@@ -298,7 +331,7 @@ async fn Puppet::pump_abort(
         error => Err(error)
       }
       match propagated {
-        Err(error) => return StopWith(self.reject_run(error~))
+        Err(error) => return StopWith(self.finalize_rejected(error~))
         Ok(_) => ()
       }
       let cr : Result[Unit, PuppetError] = Ok(
@@ -316,7 +349,7 @@ async fn Puppet::pump_abort(
         e => Err(e)
       }
       match cr {
-        Err(e) => return StopWith(self.reject_run(error=e))
+        Err(e) => return StopWith(self.finalize_rejected(error=e))
         Ok(_) => ()
       }
       ContinueWith(state)
@@ -365,7 +398,7 @@ async fn Puppet::pump_fork(
       let with_lineage = new_session.with_parent_thread_id(parent_session_id)
       store.save(new_session_id, with_lineage) catch {
         error =>
-          return self.reject_run(
+          return self.finalize_rejected(
             error=EffectExecutionFailed(
               phase="fork",
               cause="session save failed: " + error.to_string(),
@@ -377,15 +410,16 @@ async fn Puppet::pump_fork(
   }
   // Release lease + clear mailbox before returning ForkCompleted so
   // the next prompt can bind cleanly.
-  self.phase_gate = self.phase_gate.transition(Terminalizing)
-  self.phase_gate = self.phase_gate.transition(Idle)
-  self.mailbox.clear_run()
-  ForkCompleted(
-    run_id~,
-    turn_id~,
-    parent_session_id~,
-    new_session_id~,
-    forked_messages~,
+  return self.finalize_run(
+    ReleasedNoCommit(
+      result=ForkCompleted(
+        run_id~,
+        turn_id~,
+        parent_session_id~,
+        new_session_id~,
+        forked_messages~,
+      ),
+    ),
   )
 }
 
@@ -425,11 +459,20 @@ async fn Puppet::pump_compact(
         e => Err(e)
       }
       match cr {
-        Err(e) => StopWith(self.reject_run(error=e))
-        Ok(_) => ContinueWith(new_state)
+        Err(e) => StopWith(self.finalize_rejected(error=e))
+        Ok(_) => {
+          if rewrite_events.length() > 0 {
+            self.mark_context_awaiting_measurement(
+              session_id,
+              new_state.transcript().messages_snapshot().length(),
+              snap,
+            )
+          }
+          ContinueWith(new_state)
+        }
       }
     }
-    Failed(error) => StopWith(self.reject_run(error~))
+    Failed(error) => StopWith(self.finalize_rejected(error~))
   }
 }
 
@@ -476,7 +519,7 @@ async fn Puppet::pump_ready_for_model(
   }
   if hook_aborted {
     return StopWith(
-      self.reject_run(
+      self.finalize_rejected(
         error=HookRejected(reason="pre_model_hook: " + abort_reason),
       ),
     )
@@ -503,7 +546,7 @@ async fn Puppet::pump_ready_for_model(
     match reduced {
       Err(e) =>
         return StopWith(
-          self.reject_run(
+          self.finalize_rejected(
             error=ReducerInvariantViolation(
               category=IllegalPhase(
                 phase="ReadyForModel",
@@ -540,7 +583,7 @@ async fn Puppet::pump_ready_for_model(
     error => Err(error)
   }
   match declared {
-    Err(error) => return StopWith(self.reject_run(error~))
+    Err(error) => return StopWith(self.finalize_rejected(error~))
     Ok((next_state, events)) => {
       state = next_state
       let cr : Result[Unit, PuppetError] = Ok(
@@ -558,7 +601,7 @@ async fn Puppet::pump_ready_for_model(
         e => Err(e)
       }
       match cr {
-        Err(e) => return StopWith(self.reject_run(error=e))
+        Err(e) => return StopWith(self.finalize_rejected(error=e))
         Ok(_) => ()
       }
     }
@@ -584,7 +627,7 @@ async fn Puppet::pump_awaiting_model(
   let pending = state.pending_effects()
   if pending.length() != 1 {
     return StopWith(
-      self.reject_run(
+      self.finalize_rejected(
         error=ReducerInvariantViolation(
           category=IllegalPhase(
             phase="AwaitingModel",
@@ -600,7 +643,7 @@ async fn Puppet::pump_awaiting_model(
     error => Err(error)
   }
   let input = match executed {
-    Err(error) => return StopWith(self.reject_run(error~))
+    Err(error) => return StopWith(self.finalize_rejected(error~))
     Ok(value) => value
   }
   let folded : Result[FoldOutcome, PuppetError] = Ok(
@@ -618,7 +661,7 @@ async fn Puppet::pump_awaiting_model(
     error => Err(error)
   }
   match folded {
-    Err(error) => return StopWith(self.reject_run(error~))
+    Err(error) => return StopWith(self.finalize_rejected(error~))
     Ok(Return(r)) => StopWith(r)
     Ok(Continue(next_state)) => {
       self.fire_post_event_hooks(input, hook_scope)
@@ -689,13 +732,13 @@ async fn Puppet::pump_awaiting_tools(
               // raised inside the hook is not a hook defect.
               if @async.is_cancellation_error(err) {
                 return StopWith(
-                  self.reject_run(
+                  self.finalize_rejected(
                     error=EffectExecutionCancelled(phase="AwaitingTools"),
                   ),
                 )
               }
               return StopWith(
-                self.reject_run(
+                self.finalize_rejected(
                   error=HookRejected(
                     reason="pre_tool_hook raised: " + err.to_string(),
                   ),
@@ -744,7 +787,7 @@ async fn Puppet::pump_awaiting_tools(
           // it with real suspension.
           Some(reason) =>
             return StopWith(
-              self.reject_run(
+              self.finalize_rejected(
                 error=HookRejected(
                   reason="pre_tool_hook defer not yet supported: " + reason,
                 ),
@@ -756,7 +799,7 @@ async fn Puppet::pump_awaiting_tools(
           // call_id is the reducer correlation identity. It is never a
           // rewriteable part of a tool request.
           return StopWith(
-            self.reject_run(
+            self.finalize_rejected(
               error=HookRejected(
                 reason="pre_tool_hook changed call_id for a pending tool call",
               ),
@@ -851,7 +894,7 @@ async fn Puppet::pump_awaiting_tools(
       }
       _ =>
         return StopWith(
-          self.reject_run(
+          self.finalize_rejected(
             error=ReducerInvariantViolation(
               category=IllegalPhase(
                 phase="AwaitingTools",
@@ -894,7 +937,7 @@ async fn Puppet::pump_awaiting_tools(
       )
   }
   state = match normalized_result {
-    Err(error) => return StopWith(self.reject_run(error~))
+    Err(error) => return StopWith(self.finalize_rejected(error~))
     Ok(value) => value
   }
 
@@ -917,7 +960,7 @@ async fn Puppet::pump_awaiting_tools(
       error => Err(error)
     }
     match folded {
-      Err(error) => return StopWith(self.reject_run(error~))
+      Err(error) => return StopWith(self.finalize_rejected(error~))
       Ok(Return(r)) => return StopWith(r)
       Ok(Continue(next_state)) => {
         self.fire_post_event_hooks(input, hook_scope)
@@ -943,7 +986,7 @@ async fn Puppet::pump_awaiting_tools(
     error => Err(error)
   }
   let waves = match wave_result {
-    Err(error) => return StopWith(self.reject_run(error~))
+    Err(error) => return StopWith(self.finalize_rejected(error~))
     Ok(value) => value
   }
   for wave_index, wave in waves {
@@ -956,7 +999,7 @@ async fn Puppet::pump_awaiting_tools(
       error => Err(error)
     }
     let inputs = match executed {
-      Err(error) => return StopWith(self.reject_run(error~))
+      Err(error) => return StopWith(self.finalize_rejected(error~))
       Ok(value) => value
     }
     for input in inputs {
@@ -975,7 +1018,7 @@ async fn Puppet::pump_awaiting_tools(
         error => Err(error)
       }
       match folded {
-        Err(error) => return StopWith(self.reject_run(error~))
+        Err(error) => return StopWith(self.finalize_rejected(error~))
         Ok(Return(r)) => return StopWith(r)
         Ok(Continue(next_state)) => {
           self.fire_post_event_hooks(input, hook_scope)

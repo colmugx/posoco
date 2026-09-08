@@ -1902,3 +1902,369 @@ async test "mixed_wave_executes_and_rejects_with_paired_events" {
   assert_pending_before_result(trace, "c_probe")
   assert_pending_before_result(trace, "c_ghost")
 }
+
+///|
+fn wave3_stop_with_usage(text : String, total : Int) -> @kernel.ModelCallResult {
+  let completion : @kernel.Completion = Completion(
+    content=[Text(text)],
+    tool_calls=[],
+    reasoning=None,
+    finish_reason=Stop,
+    usage=Some({
+      input_tokens: Some(total),
+      output_tokens: Some(0),
+      total_tokens: Some(total),
+      cached_input_tokens: None,
+      uncached_input_tokens: None,
+    }),
+  )
+  { completion, processed_messages: [], }
+}
+
+///|
+async test "wave3/compact_session/idle full chain without a chat request" {
+  let model = ScriptedModel([
+    Compact(result={
+      compacted_messages: [tk_user_msg("summary")],
+      mode: Replace,
+    }),
+  ])
+  let observer = RecordingObserver()
+  let store = RecordingSessionStore()
+  store.seed("wave3-compact", {
+    messages: [tk_user_msg("hello"), tk_user_msg("more")],
+    metadata: Map::from_array([]),
+  })
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", sessions=[store], observers=[observer]),
+    ],
+    config=tk_config(),
+  )
+  let outcome = agent.compact_session("wave3-compact")
+  assert_eq(outcome.final_session_id, "wave3-compact")
+  guard outcome.mode is Replace else { fail("expected Replace mode") }
+  assert_eq(outcome.messages_after, 1)
+  assert_eq(model.call_count(), 0)
+  assert_eq(model.compact_call_count(), 1)
+  assert_eq(model.received_compacts()[0].0.length(), 2)
+  assert_eq(model.received_compacts()[0].1, Manual)
+  let persisted = store.store["wave3-compact"]
+  assert_eq(persisted.messages.length(), 1)
+  assert_true(persisted.messages[0] == tk_user_msg("summary"))
+  let mut saw_started = false
+  let mut saw_finished = false
+  let mut finalized = 0
+  for event in observer.events() {
+    match event {
+      CompactStarted(trigger~) => {
+        assert_eq(trigger, "manual")
+        saw_started = true
+      }
+      CompactFinished(..) => saw_finished = true
+      OperationFinalized(operation~, outcome~, ..) => {
+        assert_eq(operation, "compact")
+        assert_eq(outcome, "completed")
+        finalized = finalized + 1
+      }
+      TurnStarted => fail("compact_session must not project a TurnStarted")
+      _ => ()
+    }
+  }
+  assert_true(saw_started)
+  assert_true(saw_finished)
+  assert_eq(finalized, 1)
+}
+
+///|
+async test "wave3/compact_session/pending tools fixated as interrupted" {
+  let dangling_call : @kernel.ToolCall = {
+    call_id: @kernel.CallId::unchecked("call_fix"),
+    name: @kernel.ToolName::unchecked("echo"),
+    arguments: Json::null(),
+  }
+  let model = ScriptedModel([
+    Compact(result={
+      compacted_messages: [tk_user_msg("summary")],
+      mode: Replace,
+    }),
+  ])
+  let store = RecordingSessionStore()
+  store.seed("wave3-fixate", {
+    messages: [
+      tk_user_msg("do the thing"),
+      AssistantMessage(
+        content=[Text("working on it")],
+        tool_calls=[dangling_call],
+        reasoning=None,
+        finish_reason=ToolCalls,
+      ),
+    ],
+    metadata: Map::from_array([]),
+  })
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", sessions=[store]),
+    ],
+    config=tk_config(),
+  )
+  let outcome = agent.compact_session("wave3-fixate")
+  guard outcome.mode is Replace else { fail("expected Replace mode") }
+  let compact_input = model.received_compacts()[0].0
+  assert_eq(compact_input.length(), 3)
+  guard compact_input[2]
+    is ToolMessage(outcome=RuntimeFailure(error_category~, ..), ..) else {
+    fail("expected an interrupted marker for the pending tool call")
+  }
+  assert_eq(error_category, "Interrupted")
+  assert_eq(store.store["wave3-fixate"].messages.length(), 1)
+}
+
+///|
+async test "wave3/compact_session/journal committed + body save failure recovers on next operation" {
+  let model = ScriptedModel([
+    Compact(result={
+      compacted_messages: [tk_user_msg("summary")],
+      mode: Replace,
+    }),
+    Respond(tk_stop_response("on the compacted window")),
+  ])
+  let store = RecordingSessionStore()
+  store.seed("wave3-recover", {
+    messages: [tk_user_msg("hello")],
+    metadata: Map::from_array([]),
+  })
+  store.fail_save("wave3-recover")
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", sessions=[store]),
+    ],
+    config=tk_config(),
+  )
+  let compacted : Result[@types.CompactOutcome, @error.AgentError] = Ok(
+    agent.compact_session("wave3-recover"),
+  ) catch {
+    error => Err(error)
+  }
+  guard compacted
+    is Err(@error.AgentError::Session(@error.SessionError::Conflict(_))) else {
+    fail("expected a needs-recovery conflict error")
+  }
+  assert_eq(store.store["wave3-recover"].messages.length(), 1)
+  store.heal_save("wave3-recover")
+  ignore(agent.run_turn(tk_user_msg("next"), "wave3-recover"))
+  assert_eq(model.call_count(), 1)
+  let request = model.received_messages[0]
+  assert_eq(request.length(), 2)
+  assert_true(request[0] == tk_user_msg("summary"))
+  assert_true(request[1] == tk_user_msg("next"))
+  let persisted = store.store["wave3-recover"]
+  assert_eq(persisted.messages.length(), 3)
+  assert_true(persisted.messages[0] == tk_user_msg("summary"))
+}
+
+///|
+struct Wave3ParkingRuntime {
+  inner : &@runtime.Runtime
+  mut model_calls : Int
+  mut park_seen : Int
+}
+
+///|
+impl @runtime.Runtime for Wave3ParkingRuntime with fn call_model(
+  self,
+  scope : @kernel.InvocationScope,
+  messages : ArrayView[@kernel.Message],
+  tool_definitions : Array[@kernel.ToolDef],
+  call_options : Json,
+  on_chunk : ((@types.StreamChunk) -> Unit)?,
+) -> Result[@kernel.ModelCallResult, @kernel.ModelFailure] {
+  self.model_calls = self.model_calls + 1
+  if self.model_calls == 1 {
+    self.park_seen = self.park_seen + 1
+    while !@async.is_being_cancelled() {
+      @async.pause()
+    }
+    @async.pause()
+  }
+  self.inner.call_model(
+    scope, messages, tool_definitions, call_options, on_chunk,
+  )
+}
+
+///|
+impl @runtime.Runtime for Wave3ParkingRuntime with fn execute_tool(
+  self,
+  ctx : @runtime.EffectContext,
+) -> @kernel.ToolOutcome {
+  self.inner.execute_tool(ctx)
+}
+
+///|
+impl @runtime.Runtime for Wave3ParkingRuntime with fn cancel_effects(
+  self,
+  effect_ids : Array[@kernel.EffectId],
+  reason : @kernel.CancelReason,
+) -> Array[(@kernel.EffectId, @kernel.CancelDisposition)] {
+  self.inner.cancel_effects(effect_ids, reason)
+}
+
+///|
+impl @runtime.Runtime for Wave3ParkingRuntime with fn compact(
+  self,
+  scope : @kernel.InvocationScope,
+  messages : ArrayView[@kernel.Message],
+  call_options : Json,
+  trigger : @kernel.CompactTrigger,
+) -> Result[@kernel.CompactResult, @kernel.ModelFailure] {
+  self.inner.compact(scope, messages, call_options, trigger)
+}
+
+///|
+async test "wave3/cancellation/mid-stream cancel is structured and the session stays usable" {
+  let model = ScriptedModel([
+    Compact(result={
+      compacted_messages: [tk_user_msg("summary")],
+      mode: Replace,
+    }),
+    Respond(tk_stop_response("first turn after cancel")),
+    Respond(tk_stop_response("second turn after late esc")),
+  ])
+  let observer = RecordingObserver()
+  let store = RecordingSessionStore()
+  store.seed("wave3-cancel", {
+    messages: [tk_user_msg("seeded question")],
+    metadata: Map::from_array([]),
+  })
+  let port_runtime = @runtime.PortRuntime(model~, tools=Map::from_array([]))
+  let parking : Wave3ParkingRuntime = {
+    inner: port_runtime as &@runtime.Runtime,
+    model_calls: 0,
+    park_seen: 0,
+  }
+  let runtime : &@runtime.Runtime = parking as &@runtime.Runtime
+  let agent = Agent::with_runtime(
+    exts=[
+      tk_ext(id="model", model=Some(model), sessions=[store], observers=[
+        observer,
+      ]),
+    ],
+    config=tk_config(),
+    runtime~,
+  )
+  let control = agent.control()
+  let outcome : Ref[Result[@types.TurnResult, @error.AgentError]] = Ref(
+    Err(Runtime(InvocationFailed("unset"))),
+  )
+  @async.with_task_group(async fn(group) {
+    let task = group.spawn(async fn() {
+      let r : Result[@types.TurnResult, @error.AgentError] = Ok(
+        agent.run_turn(tk_user_msg("long task"), "wave3-cancel"),
+      ) catch {
+        e => Err(e)
+      }
+      outcome.val = r
+    })
+    while parking.park_seen == 0 {
+      @async.pause()
+    }
+    task.cancel()
+  })
+  guard outcome.val is Err(@error.AgentError::Cancelled(_)) else {
+    fail("expected a structured Cancelled outcome, got \{repr(outcome.val)}")
+  }
+  let compacted = agent.compact_session("wave3-cancel")
+  guard compacted.mode is Replace else { fail("expected Replace mode") }
+  assert_eq(compacted.messages_after, 1)
+  let turn = agent.run_turn(tk_user_msg("next"), "wave3-cancel")
+  guard turn.message
+    is AssistantMessage(content=[Text("first turn after cancel")], ..) else {
+    fail("expected the post-cancel turn to complete normally")
+  }
+  assert_true(
+    control.abort_active(Some("late esc")) is @runtime.RejectedStale(_),
+  )
+  let turn2 = agent.run_turn(tk_user_msg("again"), "wave3-cancel")
+  guard turn2.message
+    is AssistantMessage(content=[Text("second turn after late esc")], ..) else {
+    fail("expected the next turn to complete after a late abort request")
+  }
+  let mut cancelled_turns = 0
+  for event in observer.events() {
+    match event {
+      TurnFailed(reason) =>
+        if reason.contains("AgentError::Cancelled") {
+          cancelled_turns = cancelled_turns + 1
+        }
+      _ => ()
+    }
+  }
+  assert_eq(cancelled_turns, 1)
+}
+
+///|
+async test "wave3/context_state/retrievable at initial load and not cleared by TurnStarted" {
+  let store = RecordingSessionStore()
+  store.seed("wave3-ctx", {
+    messages: [tk_user_msg("earlier")],
+    metadata: policy_context_metadata(
+      session_id="wave3-ctx",
+      measured=50,
+      window=100,
+      reading_count=1,
+    ),
+  })
+  let observer = RecordingObserver()
+  let model = ScriptedModel([Respond(wave3_stop_with_usage("done", 30))])
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", sessions=[store], observers=[observer]),
+    ],
+    config=agent_config(
+      max_tool_rounds=Some(10),
+      model_context_window=Some(100),
+    ),
+  )
+  let initial = agent.context_state("wave3-ctx")
+  guard initial is Some(loaded) else {
+    fail("expected the persisted context state at initial load")
+  }
+  assert_eq(loaded.last_measured_tokens, Some(50))
+  assert_eq(loaded.source, Measured)
+  ignore(agent.run_turn(tk_user_msg("hi there"), "wave3-ctx"))
+  let events = observer.events()
+  let mut turn_started_at = -1
+  for i, event in events {
+    match event {
+      TurnStarted => turn_started_at = i
+      _ => ()
+    }
+  }
+  assert_true(turn_started_at >= 0)
+  let mut after_start = None
+  for i in turn_started_at..<events.length() {
+    match events[i] {
+      ContextStateUpdated(state~) => {
+        after_start = Some(state)
+        break
+      }
+      _ => ()
+    }
+  }
+  guard after_start is Some(projected) else {
+    fail("expected a context-state update after TurnStarted")
+  }
+  assert_eq(projected.last_measured_tokens, Some(50))
+  let latest = agent.context_state("wave3-ctx")
+  guard latest is Some(current) else {
+    fail("expected the live context state after the turn")
+  }
+  assert_eq(current.last_measured_tokens, Some(30))
+  assert_eq(current.source, Measured)
+  let metadata = store.store["wave3-ctx"].metadata
+  assert_true(metadata.contains(@types.CONTEXT_STATE_METADATA_KEY))
+}

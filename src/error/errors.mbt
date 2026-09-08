@@ -75,13 +75,15 @@ pub impl Show for ModelError with fn to_string(self) -> String {
 pub(all) suberror SessionError {
   Load(String)
   Save(String)
+  Conflict(String)
 } derive(Debug)
 
 ///|
-pub impl Show for SessionError with fn to_string(self) -> String {
+pub impl Show for SessionError with fn to_string(self : SessionError) -> String {
   match self {
     Load(msg) => "SessionError::Load(\{msg})"
     Save(msg) => "SessionError::Save(\{msg})"
+    Conflict(msg) => "SessionError::Conflict(\{msg})"
   }
 }
 
@@ -113,10 +115,12 @@ pub(all) suberror AgentError {
   /// count at rejection (`limit + 1`); `limit` is the configured bound.
   ToolLoopExceeded(consumed~ : Int, limit~ : Int)
   PipelineAborted(String)
+  Cancelled(String)
+  AutoCompactFailed(String)
 } derive(Debug)
 
 ///|
-pub impl Show for AgentError with fn to_string(self) -> String {
+pub impl Show for AgentError with fn to_string(self : AgentError) -> String {
   match self {
     Model(msg) => "AgentError::Model(\{msg})"
     Session(err) => "AgentError::Session(\{err.to_string()})"
@@ -124,6 +128,8 @@ pub impl Show for AgentError with fn to_string(self) -> String {
     ToolLoopExceeded(consumed~, limit~) =>
       "AgentError::ToolLoopExceeded(consumed=\{consumed}, limit=\{limit}; raise AgentConfig.max_tool_rounds or set None for unbounded)"
     PipelineAborted(msg) => "AgentError::PipelineAborted(\{msg})"
+    Cancelled(msg) => "AgentError::Cancelled(\{msg})"
+    AutoCompactFailed(msg) => "AgentError::AutoCompactFailed(\{msg})"
   }
 }
 

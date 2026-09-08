@@ -59,6 +59,8 @@ pub struct Agent {
 }
 pub fn Agent::Agent(exts~ : Array[&@port.Extension], config~ : AgentConfig, ui_projection? : Bool) -> Self raise @error.CompositionError
 pub fn Agent::commands(Self) -> Array[&@port.CommandPort]
+pub async fn Agent::compact_session(Self, String) -> @types.CompactOutcome raise @error.AgentError
+pub async fn Agent::context_state(Self, String) -> @types.ContextState?
 pub fn Agent::control(Self) -> AgentControl
 pub async fn Agent::resume_turn(Self, String, continuation? : String) -> @types.TurnResult raise @error.AgentError
 pub async fn Agent::run_turn(Self, @kernel.Message, String) -> @types.TurnResult raise @error.AgentError
@@ -178,6 +180,7 @@ pub(all) struct RecordingSessionStore {
 pub fn RecordingSessionStore::RecordingSessionStore() -> Self
 pub fn RecordingSessionStore::fail_load(Self, String, @error.SessionError) -> Unit
 pub fn RecordingSessionStore::fail_save(Self, String) -> Unit
+pub fn RecordingSessionStore::heal_save(Self, String) -> Unit
 pub async fn RecordingSessionStore::load(Self, String) -> @types.Session raise @error.SessionError
 pub fn RecordingSessionStore::ops(Self) -> Array[SessionOp]
 pub async fn RecordingSessionStore::save(Self, String, @types.Session) -> Unit raise @error.SessionError
@@ -260,17 +263,26 @@ pub(all) struct ScriptedModel {
   received_tools : Array[Array[@kernel.ToolDef]]
   received_options : Array[@types.ChatOptions]
   received_chunks : Array[@types.StreamChunk]
+  mut compact_calls : Int
+  received_compacts : Array[(Array[@kernel.Message], @kernel.CompactTrigger)]
+  mut parked_calls : Int
 }
 pub fn ScriptedModel::ScriptedModel(Array[ScriptedModelStep]) -> Self
 pub fn ScriptedModel::call_count(Self) -> Int
 pub async fn ScriptedModel::chat_direct(Self, Array[@kernel.Message], Array[@kernel.ToolDef], @types.ChatOptions) -> @kernel.ModelCallResult raise @error.ModelError
+pub fn ScriptedModel::compact_call_count(Self) -> Int
 pub fn ScriptedModel::options_received(Self) -> Array[@types.ChatOptions]
+pub fn ScriptedModel::parked_calls(Self) -> Int
+pub fn ScriptedModel::received_compacts(Self) -> Array[(Array[@kernel.Message], @kernel.CompactTrigger)]
 pub impl @port.ModelPort for ScriptedModel
 
 pub(all) enum ScriptedModelStep {
   Respond(@kernel.ModelCallResult)
   Stream(chunks~ : Array[@types.StreamChunk], response~ : @kernel.ModelCallResult)
+  StreamParked(chunks~ : Array[@types.StreamChunk])
   Fail(@error.ModelError)
+  Compact(result~ : @kernel.CompactResult)
+  CompactFail(error~ : @error.ModelError)
 }
 
 pub(all) enum ScriptedToolOutcome {

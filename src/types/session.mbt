@@ -25,6 +25,154 @@ pub(all) struct Session {
 pub const PARENT_THREAD_ID_KEY = "posoco.parent_thread_id"
 
 ///|
+pub const CONTEXT_STATE_METADATA_KEY = "posoco.context_state"
+
+///|
+pub(all) enum ContextReadingSource {
+  Measured
+  Estimated
+  Unknown
+} derive(Eq, Debug)
+
+///|
+pub impl Show for ContextReadingSource with fn to_string(
+  self : ContextReadingSource,
+) -> String {
+  match self {
+    Measured => "measured"
+    Estimated => "estimated"
+    Unknown => "unknown"
+  }
+}
+
+///|
+pub(all) struct ContextState {
+  session_id : String
+  model_id : String
+  context_version : Int
+  last_measured_tokens : Int?
+  estimated_added_tokens : Int
+  window_tokens : Int?
+  compact_threshold : Double
+  source : ContextReadingSource
+  reading_message_count : Int
+} derive(Eq, Debug)
+
+///|
+pub impl Show for ContextState with fn to_string(self : ContextState) -> String {
+  let measured = match self.last_measured_tokens {
+    Some(n) => n.to_string()
+    None => "unknown"
+  }
+  "ContextState(session=\{self.session_id}, model=\{self.model_id}, version=\{self.context_version}, measured=\{measured}, estimated_added=\{self.estimated_added_tokens}, window=\{match self.window_tokens { Some(w) => w.to_string(); None => "unknown" }}, threshold=\{self.compact_threshold}, source=\{self.source.to_string()})"
+}
+
+///|
+pub fn ContextState::to_metadata_json(self : ContextState) -> Json {
+  Json::object(
+    Map::from_array([
+      ("session_id", Json::string(self.session_id)),
+      ("model_id", Json::string(self.model_id)),
+      ("context_version", Json::number(self.context_version.to_double())),
+      (
+        "last_measured_tokens",
+        match self.last_measured_tokens {
+          Some(n) => Json::number(n.to_double())
+          None => Json::null()
+        },
+      ),
+      (
+        "estimated_added_tokens",
+        Json::number(self.estimated_added_tokens.to_double()),
+      ),
+      (
+        "window_tokens",
+        match self.window_tokens {
+          Some(n) => Json::number(n.to_double())
+          None => Json::null()
+        },
+      ),
+      ("compact_threshold", Json::number(self.compact_threshold)),
+      ("source", Json::string(self.source.to_string())),
+      (
+        "reading_message_count",
+        Json::number(self.reading_message_count.to_double()),
+      ),
+    ]),
+  )
+}
+
+///|
+pub fn ContextState::from_metadata(
+  metadata : Map[String, Json],
+) -> ContextState? {
+  match metadata.get(CONTEXT_STATE_METADATA_KEY) {
+    Some(Object(fields)) => {
+      let session_id = match fields.get("session_id") {
+        Some(String(s)) => s
+        _ => return None
+      }
+      let model_id = match fields.get("model_id") {
+        Some(String(s)) => s
+        _ => return None
+      }
+      let context_version = match fields.get("context_version") {
+        Some(Number(n, ..)) => n.to_int()
+        _ => return None
+      }
+      let last_measured : Int? = match fields.get("last_measured_tokens") {
+        Some(Number(n, ..)) => Some(n.to_int())
+        _ => None
+      }
+      let estimated_added = match fields.get("estimated_added_tokens") {
+        Some(Number(n, ..)) => n.to_int()
+        _ => 0
+      }
+      let window : Int? = match fields.get("window_tokens") {
+        Some(Number(n, ..)) => Some(n.to_int())
+        _ => None
+      }
+      let threshold = match fields.get("compact_threshold") {
+        Some(Number(n, ..)) => n
+        _ => return None
+      }
+      let source : ContextReadingSource = match fields.get("source") {
+        Some(String(s)) =>
+          match s {
+            "measured" => Measured
+            "estimated" => Estimated
+            _ => Unknown
+          }
+        _ => Unknown
+      }
+      let reading_count = match fields.get("reading_message_count") {
+        Some(Number(n, ..)) => n.to_int()
+        _ => 0
+      }
+      Some({
+        session_id,
+        model_id,
+        context_version,
+        last_measured_tokens: last_measured,
+        estimated_added_tokens: estimated_added,
+        window_tokens: window,
+        compact_threshold: threshold,
+        source,
+        reading_message_count: reading_count,
+      })
+    }
+    _ => None
+  }
+}
+
+///|
+pub(all) struct CompactOutcome {
+  final_session_id : String
+  mode : @kernel.CompactMode
+  messages_after : Int
+} derive(Eq)
+
+///|
 /// Read the parent thread id from a session's metadata. Returns `None` when
 /// the key is absent or not a string.
 pub fn Session::parent_thread_id(self : Session) -> String? {
@@ -104,6 +252,15 @@ pub(all) enum TurnEvent {
   /// `old_value` is empty when the field was previously unset.
   /// `new_value` is empty when the field was reset to `None`.
   ConfigChanged(field~ : String, old_value~ : String, new_value~ : String)
+  ContextStateUpdated(state~ : ContextState)
+  CompactStarted(trigger~ : String)
+  CompactFinished(
+    trigger~ : String,
+    mode~ : String,
+    final_session_id~ : String,
+    messages_after~ : Int
+  )
+  OperationFinalized(operation~ : String, outcome~ : String, detail~ : String)
   Custom(source~ : String, label~ : String, data~ : Json)
 } derive(Eq, Debug)
 
@@ -126,6 +283,12 @@ pub impl Show for TurnEvent with fn to_string(self : TurnEvent) -> String {
       "ConfigWarning(field=\{field}, value=\{value}, reason=\{reason})"
     ConfigChanged(field~, old_value~, new_value~) =>
       "ConfigChanged(field=\{field}, \{old_value} → \{new_value})"
+    ContextStateUpdated(state~) => "ContextStateUpdated(\{state.to_string()})"
+    CompactStarted(trigger~) => "CompactStarted(trigger=\{trigger})"
+    CompactFinished(trigger~, mode~, final_session_id~, messages_after~) =>
+      "CompactFinished(trigger=\{trigger}, mode=\{mode}, session=\{final_session_id}, msgs=\{messages_after})"
+    OperationFinalized(operation~, outcome~, detail~) =>
+      "OperationFinalized(op=\{operation}, outcome=\{outcome}, detail=\{detail})"
     Custom(source~, label~, ..) => "Custom(source:\{source}, label:\{label})"
   }
 }

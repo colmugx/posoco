@@ -15,6 +15,7 @@
 /// instance, three views. The Agent owns the concrete composition.
 priv struct BuiltinCommandPort {
   mailbox : &@puppetry.Mailbox
+  runtime : Ref[AgentRuntime?]
   /// Monotonic counter for command ids. Lives on the port so successive
   /// invokes produce distinct ids without needing wall-clock time.
   mut seq : Int
@@ -26,7 +27,13 @@ priv struct BuiltinCommandPort {
 fn BuiltinCommandPort::BuiltinCommandPort(
   mailbox : &@puppetry.Mailbox,
 ) -> BuiltinCommandPort {
-  { mailbox, seq: 0, compact_enabled: true, fork_enabled: true, }
+  {
+    mailbox,
+    runtime: Ref(None),
+    seq: 0,
+    compact_enabled: true,
+    fork_enabled: true,
+  }
 }
 
 ///|
@@ -129,15 +136,61 @@ fn enqueue_outcome(
 }
 
 ///|
+async fn BuiltinCommandPort::invoke_idle_compact(
+  self : BuiltinCommandPort,
+  args : Json,
+) -> @port.CommandOutcome {
+  let session_id = match args {
+    Object(fields) =>
+      match fields.get("session_id") {
+        Some(String(s)) => s
+        _ => ""
+      }
+    String(s) => s
+    _ => ""
+  }
+  if session_id == "" {
+    return Failure(
+      reason="compact requires a \"session_id\" argument when no run is active",
+    )
+  }
+  match self.runtime.val {
+    Some(runtime) => {
+      let attempted : Result[@types.CompactOutcome, @error.AgentError] = Ok(
+        runtime.compact_session(session_id),
+      ) catch {
+        error => Err(error)
+      }
+      match attempted {
+        Err(error) =>
+          Failure(
+            reason="compact failed: " + safe_error_label(error.to_string()),
+          )
+        Ok(outcome) =>
+          Success(
+            feedback="compact completed (\{outcome.mode.to_string()}, session '\{outcome.final_session_id}', \{outcome.messages_after} messages)",
+            structured=None,
+            ui_hint=Some(Toast),
+          )
+      }
+    }
+    None =>
+      Failure(
+        reason="no active run and no agent runtime bound: compact unavailable",
+      )
+  }
+}
+
+///|
 impl @port.CommandPort for BuiltinCommandPort with fn invoke(
   self : BuiltinCommandPort,
   id : String,
   args : Json,
 ) -> @port.CommandOutcome raise @error.CommandError {
-  match (self.mailbox.active_run_id(), self.mailbox.active_turn_id()) {
-    (Some(run_id), Some(turn_id)) =>
-      match self.resolve_command(id) {
-        Compact => {
+  match self.resolve_command(id) {
+    Compact =>
+      match (self.mailbox.active_run_id(), self.mailbox.active_turn_id()) {
+        (Some(run_id), Some(turn_id)) => {
           // Manual compact: trigger=Manual. The modelport can pick a
           // thorough strategy (LLM summary, OpenAI compat compact endpoint).
           let command_id = self.next_command_id("compact")
@@ -153,7 +206,25 @@ impl @port.CommandPort for BuiltinCommandPort with fn invoke(
             self.mailbox.enqueue_compact(cmd),
           )
         }
-        ForkHere => {
+        _ => {
+          let attempted : Result[@port.CommandOutcome, @error.AgentError] = Ok(
+            self.invoke_idle_compact(args),
+          ) catch {
+            error => Err(Runtime(InvocationFailed(error.to_string())))
+          }
+          let outcome : @port.CommandOutcome = match attempted {
+            Ok(value) => value
+            Err(error) =>
+              Failure(
+                reason="compact failed: " + safe_error_label(error.to_string()),
+              )
+          }
+          outcome
+        }
+      }
+    ForkHere =>
+      match (self.mailbox.active_run_id(), self.mailbox.active_turn_id()) {
+        (Some(run_id), Some(turn_id)) => {
           // Parse optional `index` from args. Default is the current
           // transcript length (fork at the tail).
           let index = parse_fork_index(args)
@@ -170,16 +241,13 @@ impl @port.CommandPort for BuiltinCommandPort with fn invoke(
             self.mailbox.enqueue_fork(cmd),
           )
         }
+        _ =>
+          Failure(
+            reason="no active run: " +
+              id +
+              " can only be invoked while a turn is in flight",
+          )
       }
-    _ =>
-      // No active run: nothing for the pump to consume. Tell the caller
-      // so they can surface it (or queue an out-of-band compact/fork,
-      // which M3.5 does not deliver).
-      Failure(
-        reason="no active run: " +
-          id +
-          " can only be invoked while a turn is in flight",
-      )
   }
 }
 

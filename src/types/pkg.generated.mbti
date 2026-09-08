@@ -8,6 +8,8 @@ import {
 }
 
 // Values
+pub const CONTEXT_STATE_METADATA_KEY : String = "posoco.context_state"
+
 pub const PARENT_THREAD_ID_KEY : String = "posoco.parent_thread_id"
 
 // Errors
@@ -17,6 +19,34 @@ pub(all) struct ChatOptions {
   temperature : Double?
   max_output_tokens : Int?
 } derive(Eq, @debug.Debug)
+
+pub(all) struct CompactOutcome {
+  final_session_id : String
+  mode : @kernel.CompactMode
+  messages_after : Int
+} derive(Eq)
+
+pub(all) enum ContextReadingSource {
+  Measured
+  Estimated
+  Unknown
+} derive(Eq, @debug.Debug)
+pub impl Show for ContextReadingSource
+
+pub(all) struct ContextState {
+  session_id : String
+  model_id : String
+  context_version : Int
+  last_measured_tokens : Int?
+  estimated_added_tokens : Int
+  window_tokens : Int?
+  compact_threshold : Double
+  source : ContextReadingSource
+  reading_message_count : Int
+} derive(Eq, @debug.Debug)
+pub fn ContextState::from_metadata(Map[String, Json]) -> Self?
+pub fn ContextState::to_metadata_json(Self) -> Json
+pub impl Show for ContextState
 
 pub(all) struct EventScope {
   session_id : @kernel.SessionId
@@ -83,6 +113,10 @@ pub(all) enum TurnEvent {
   StreamChunksDropped(count~ : Int)
   ConfigWarning(field~ : String, value~ : String, reason~ : String)
   ConfigChanged(field~ : String, old_value~ : String, new_value~ : String)
+  ContextStateUpdated(state~ : ContextState)
+  CompactStarted(trigger~ : String)
+  CompactFinished(trigger~ : String, mode~ : String, final_session_id~ : String, messages_after~ : Int)
+  OperationFinalized(operation~ : String, outcome~ : String, detail~ : String)
   Custom(source~ : String, label~ : String, data~ : Json)
 } derive(Eq, @debug.Debug)
 pub impl Show for TurnEvent

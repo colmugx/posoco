@@ -109,21 +109,18 @@ async fn AgentRuntime::run_turn_via_puppet(
   // previous snapshot and is surfaced as a secondary failure.
   self.refresh_catalog_if_changed()
 
-  // Step 1: load session.
-  let session = match self.sessions {
-    [first, ..] =>
-      first.load(session_id) catch {
-        error => raise contextualize_session_error(error, session_id, "load")
-      }
-    [] =>
-      raise contextualize_session_error(
-        Load("no session store configured"),
-        session_id,
-        "load",
-      )
-  }
+  let session = self.load_session_for_operation(session_id)
   // The loaded session is the authoritative persisted prefix for this turn.
   self.session_cursors[session_id] = session.messages.length()
+  match @types.ContextState::from_metadata(session.metadata) {
+    Some(state) =>
+      match self.puppet.session_context_state(session_id) {
+        Some(_) => ()
+        None => self.puppet.adopt_context_state(session_id, state)
+      }
+    None => ()
+  }
+  self.project_context_state(Some(identity.scope()), session_id)
 
   // Step 2: snapshot + seed this turn. Recovery replays a persisted trailing
   // user message without appending it again; every other path appends the
@@ -223,11 +220,16 @@ async fn AgentRuntime::run_turn_via_puppet(
     dispatcher.close()
     turn_result
   }) catch {
-    _ => {
+    error => {
       self.chunk_dispatcher.val = None
       let original : @error.AgentError = match turn_error.val {
         Some(ae) => ae
-        None => Runtime(InvocationFailed("turn body: unclassified error"))
+        None =>
+          if @async.is_cancellation_error(error) {
+            @error.AgentError::Cancelled("turn cancelled")
+          } else {
+            Runtime(InvocationFailed("turn body: unclassified error"))
+          }
       }
       raise original
     }
@@ -253,18 +255,13 @@ async fn AgentRuntime::run_puppet_turn_body(
   // Step 4: drive the already-started, Agent-owned Puppet.
   let prompt_result = self.puppet.prompt(request) catch {
     e =>
-      raise Runtime(
-        InvocationFailed("puppet prompt: " + safe_error_label(e.to_string())),
-      )
-  }
-
-  // A best-effort auto-compact that fired but failed (e.g. the modelport
-  // does not implement compact) already let the turn continue; surface the
-  // skip to observers here as a secondary failure.
-  match self.puppet.take_last_auto_compact_failure() {
-    Some(reason) =>
-      emit_secondary_failure(self.observers, "auto_compact", reason)
-    None => ()
+      if @async.is_cancellation_error(e) {
+        raise @error.AgentError::Cancelled("puppet prompt cancelled")
+      } else {
+        raise Runtime(
+          InvocationFailed("puppet prompt: " + safe_error_label(e.to_string())),
+        )
+      }
   }
 
   // Step 5: handle non-Accepted prompt results.
@@ -279,6 +276,37 @@ async fn AgentRuntime::run_puppet_turn_body(
       )
     Rejected(error=ReducerInvariantViolation(..)) =>
       raise Runtime(InvocationFailed("puppet invariant violation"))
+    Rejected(error=EffectExecutionFailed(phase="auto_compact", cause~)) => {
+      match self.puppet.last_completed_transcript() {
+        Some(t) => {
+          let operation = transcript_save_operation(
+            t,
+            request.initial_messages,
+            current_turn_start,
+          )
+          self.save_turn_transcript(
+            session_id,
+            t,
+            current_metadata,
+            request.initial_messages,
+            current_turn_start,
+          ) catch {
+            error =>
+              emit_secondary_failure(
+                self.observers,
+                "failed_turn_transcript_save",
+                "session_id=\{safe_error_label(session_id)};op=\{operation};cause=\{failed_save_cause_label(error)}",
+              )
+          }
+        }
+        None => ()
+      }
+      raise @error.AgentError::AutoCompactFailed(cause)
+    }
+    Rejected(error=EffectExecutionCancelled(phase~)) =>
+      raise @error.AgentError::Cancelled(
+        "effect execution cancelled in \{phase}",
+      )
     Rejected(error=EffectExecutionFailed(cause~, ..)) =>
       raise Runtime(
         InvocationFailed("puppet effect execution: " + safe_error_label(cause)),
@@ -322,21 +350,12 @@ async fn AgentRuntime::run_puppet_turn_body(
                 // save failure must not mask it. Keep the persistence
                 // failure observable without copying untrusted transcript
                 // content into the event.
-                error => {
-                  let cause = match error {
-                    Session(_) => "SessionError::Save"
-                    Model(_) => "AgentError::Model"
-                    Runtime(_) => "AgentError::Runtime"
-                    ToolLoopExceeded(..) => "AgentError::ToolLoopExceeded"
-                    PipelineAborted(_) => "AgentError::PipelineAborted"
-                  }
-                  let detail = "session_id=\{safe_error_label(session_id)};op=\{operation};cause=\{cause}"
+                error =>
                   emit_secondary_failure(
                     self.observers,
                     "failed_turn_transcript_save",
-                    detail,
+                    "session_id=\{safe_error_label(session_id)};op=\{operation};cause=\{failed_save_cause_label(error)}",
                   )
-                }
               }
             }
             None => ()
@@ -379,6 +398,7 @@ async fn AgentRuntime::run_puppet_turn_body(
     request.initial_messages,
     current_turn_start,
   )
+  self.project_context_state(Some(identity.scope()), session_id)
 
   // Step 7: build TurnResult.
   let result : @types.TurnResult = {
@@ -443,6 +463,8 @@ fn AgentRuntime::terminal_failure_to_agent_error(
       }
     Some(Failed(reason=BudgetExhausted(..))) =>
       Some(Runtime(InvocationFailed("budget exhausted")))
+    Some(Cancelled(reason~)) =>
+      Some(@error.AgentError::Cancelled("run cancelled: " + reason.to_string()))
     _ => None
   }
 }
@@ -645,6 +667,7 @@ async fn AgentRuntime::save_turn_transcript(
   current_turn_start : Int,
 ) -> Unit raise @error.AgentError {
   let final_messages = snapshot_messages(transcript.messages_snapshot())
+  let metadata = self.metadata_with_context_state(session_id, metadata)
   let cursor = match self.session_cursors.get(session_id) {
     Some(n) => n
     None => 0
@@ -679,4 +702,369 @@ async fn AgentRuntime::save_turn_transcript(
     self.save_sessions_all(session_id, final_messages, metadata, "final_save")
   }
   self.session_cursors[session_id] = final_messages.length()
+}
+
+///|
+fn failed_save_cause_label(error : @error.AgentError) -> String {
+  match error {
+    Session(_) => "SessionError::Save"
+    Model(_) => "AgentError::Model"
+    Runtime(_) => "AgentError::Runtime"
+    ToolLoopExceeded(..) => "AgentError::ToolLoopExceeded"
+    PipelineAborted(_) => "AgentError::PipelineAborted"
+    Cancelled(_) => "AgentError::Cancelled"
+    AutoCompactFailed(_) => "AgentError::AutoCompactFailed"
+  }
+}
+
+///|
+fn AgentRuntime::metadata_with_context_state(
+  self : AgentRuntime,
+  session_id : String,
+  metadata : Map[String, Json],
+) -> Map[String, Json] {
+  let metadata = snapshot_metadata(metadata)
+  match self.puppet.session_context_state(session_id) {
+    Some(state) =>
+      metadata[@types.CONTEXT_STATE_METADATA_KEY] = state.to_metadata_json()
+    None => ()
+  }
+  metadata
+}
+
+///|
+fn AgentRuntime::project_context_state(
+  self : AgentRuntime,
+  scope : @types.EventScope?,
+  session_id : String,
+) -> Unit {
+  match self.puppet.session_context_state(session_id) {
+    Some(state) => self.emit_turn_event(scope, ContextStateUpdated(state~))
+    None => ()
+  }
+}
+
+///|
+async fn AgentRuntime::load_session_for_operation(
+  self : AgentRuntime,
+  session_id : String,
+) -> @types.Session raise @error.AgentError {
+  match self.body_recovery.get(session_id) {
+    Some(pending) => {
+      self.save_sessions_all(
+        session_id,
+        pending.messages,
+        pending.metadata,
+        "compact_recovery_save",
+      )
+      self.body_recovery.remove(session_id)
+      pending
+    }
+    None =>
+      match self.sessions {
+        [first, ..] =>
+          first.load(session_id) catch {
+            error =>
+              raise contextualize_session_error(error, session_id, "load")
+          }
+        [] =>
+          raise contextualize_session_error(
+            Load("no session store configured"),
+            session_id,
+            "load",
+          )
+      }
+  }
+}
+
+///|
+fn fixate_pending_tool_calls(
+  messages : Array[@kernel.Message],
+) -> Array[@kernel.Message] {
+  let answered : Map[String, Bool] = Map::from_array([])
+  for message in messages {
+    match message {
+      ToolMessage(call_id~, ..) => answered[call_id.to_string()] = true
+      _ => ()
+    }
+  }
+  let out = messages.copy()
+  for message in messages {
+    match message {
+      AssistantMessage(tool_calls~, ..) =>
+        for call in tool_calls {
+          if !answered.contains(call.call_id.to_string()) {
+            answered[call.call_id.to_string()] = true
+            out.push(
+              ToolMessage(
+                call_id=call.call_id,
+                tool_name=call.name,
+                outcome=RuntimeFailure(
+                  error_category="Interrupted",
+                  message="tool call was pending when the operation ended; recorded as interrupted before compaction",
+                ),
+              ),
+            )
+          }
+        }
+      _ => ()
+    }
+  }
+  out
+}
+
+///|
+async fn AgentRuntime::compact_session(
+  self : AgentRuntime,
+  session_id : String,
+) -> @types.CompactOutcome raise @error.AgentError {
+  if self.turn_active {
+    raise Runtime(InvocationFailed("agent turn busy"))
+  }
+  self.turn_active = true
+  let result : Result[@types.CompactOutcome, @error.AgentError] = Ok(
+    self.run_compact_operation(session_id),
+  ) catch {
+    error => Err(error)
+  }
+  self.turn_active = false
+  match result {
+    Ok(value) => value
+    Err(error) => raise error
+  }
+}
+
+///|
+#warnings("-fragile_catch_all")
+async fn AgentRuntime::run_compact_operation(
+  self : AgentRuntime,
+  session_id : String,
+) -> @types.CompactOutcome raise @error.AgentError {
+  self.ensure_agent_running()
+  self.notify_start_if_first()
+  let identity = self.mint_turn_identity(session_id)
+  let scope = identity.scope()
+  let session = self.load_session_for_operation(session_id)
+  self.session_cursors[session_id] = session.messages.length()
+  match @types.ContextState::from_metadata(session.metadata) {
+    Some(state) =>
+      match self.puppet.session_context_state(session_id) {
+        Some(_) => ()
+        None => self.puppet.adopt_context_state(session_id, state)
+      }
+    None => ()
+  }
+  self.project_context_state(Some(scope), session_id)
+  let messages = fixate_pending_tool_calls(snapshot_messages(session.messages))
+  let live = self.model.provider_config()
+  let policy : @puppetry.RunPolicy = {
+    model_id: "agent",
+    call_options: self.config.to_call_options_json(),
+    budget: {
+      max_model_steps: None,
+      max_tool_rounds: self.config.max_tool_rounds,
+      max_tool_calls: None,
+      max_total_tokens: None,
+    },
+    context_window: match self.config.model_context_window {
+      Some(window) => Some(window)
+      None => live.context_window
+    },
+    compact_threshold: match self.config.compact_threshold {
+      Some(threshold) => threshold
+      None =>
+        match live.compact_threshold {
+          Some(threshold) => threshold
+          None => 0.88
+        }
+    },
+  }
+  self.emit_turn_event(Some(scope), CompactStarted(trigger="manual"))
+  let prompt_result = self.puppet.compact_standalone(
+    identity.run_id,
+    identity.turn_id,
+    identity.session_id,
+    messages,
+    policy,
+    "agent_compact_session_\{identity.seq}",
+    Manual,
+  ) catch {
+    e =>
+      if @async.is_cancellation_error(e) {
+        self.emit_turn_event(
+          Some(scope),
+          OperationFinalized(
+            operation="compact",
+            outcome="cancelled",
+            detail="compact cancelled",
+          ),
+        )
+        raise @error.AgentError::Cancelled("compact cancelled")
+      } else {
+        raise Runtime(
+          InvocationFailed("puppet compact: " + safe_error_label(e.to_string())),
+        )
+      }
+  }
+  match prompt_result {
+    Rejected(error=EffectExecutionCancelled(..)) => {
+      self.emit_turn_event(
+        Some(scope),
+        OperationFinalized(
+          operation="compact",
+          outcome="cancelled",
+          detail="compact cancelled",
+        ),
+      )
+      raise @error.AgentError::Cancelled("compact cancelled")
+    }
+    Rejected(error~) => {
+      let detail = safe_error_label(error.to_string())
+      self.emit_turn_event(
+        Some(scope),
+        OperationFinalized(operation="compact", outcome="failed", detail~),
+      )
+      raise Runtime(InvocationFailed("puppet rejected the compact: " + detail))
+    }
+    CompactCompleted(mode~, trigger~, new_session_id~, compacted_messages~, ..) =>
+      match mode {
+        NewThread =>
+          match new_session_id {
+            Some(new_sid) => {
+              let new_session : @types.Session = {
+                messages: snapshot_messages(compacted_messages),
+                metadata: Map::from_array([]),
+              }
+              let with_lineage = new_session.with_parent_thread_id(session_id)
+              self.save_sessions_all(
+                new_sid,
+                with_lineage.messages,
+                with_lineage.metadata,
+                "compact_newthread_save",
+              )
+              self.session_cursors[new_sid] = with_lineage.messages.length()
+              let redirect : @types.TurnEvent = SessionRedirect(
+                from=session_id,
+                to=new_sid,
+                messages_before=compacted_messages.length(),
+                messages_after=compacted_messages.length(),
+              )
+              for observer in self.observers {
+                observer.on_event_at(Some(scope), snapshot_turn_event(redirect))
+              }
+              self.project_context_state(Some(scope), new_sid)
+              self.emit_turn_event(
+                Some(scope),
+                CompactFinished(
+                  trigger=trigger.to_string(),
+                  mode="NewThread",
+                  final_session_id=new_sid,
+                  messages_after=compacted_messages.length(),
+                ),
+              )
+              self.emit_turn_event(
+                Some(scope),
+                OperationFinalized(
+                  operation="compact",
+                  outcome="completed",
+                  detail="",
+                ),
+              )
+              let outcome : @types.CompactOutcome = {
+                final_session_id: new_sid,
+                mode: NewThread,
+                messages_after: compacted_messages.length(),
+              }
+              outcome
+            }
+            None => {
+              let detail = "CompactCompleted::NewThread without new_session_id"
+              self.emit_turn_event(
+                Some(scope),
+                OperationFinalized(
+                  operation="compact",
+                  outcome="failed",
+                  detail~,
+                ),
+              )
+              raise Runtime(InvocationFailed(detail))
+            }
+          }
+        Replace | Append => {
+          let updated_metadata = self.metadata_with_context_state(
+            session_id,
+            session.metadata,
+          )
+          let updated_session : @types.Session = {
+            messages: snapshot_messages(compacted_messages),
+            metadata: updated_metadata,
+          }
+          let saved : Result[Unit, Error] = Ok(
+            self.save_sessions_all(
+              session_id,
+              updated_session.messages,
+              updated_session.metadata,
+              "compact_body_save",
+            ),
+          ) catch {
+            e => Err(e)
+          }
+          match saved {
+            Err(_) => {
+              self.body_recovery[session_id] = updated_session
+              self.emit_turn_event(
+                Some(scope),
+                OperationFinalized(
+                  operation="compact",
+                  outcome="failed",
+                  detail="journal committed; body save failed; next operation repairs the projection",
+                ),
+              )
+              raise contextualize_session_error(
+                @error.Conflict(
+                  "compact committed but body save failed; session needs recovery",
+                ),
+                session_id,
+                "compact_body_save",
+              )
+            }
+            Ok(_) => ()
+          }
+          self.body_recovery.remove(session_id)
+          self.session_cursors[session_id] = updated_session.messages.length()
+          self.project_context_state(Some(scope), session_id)
+          self.emit_turn_event(
+            Some(scope),
+            CompactFinished(
+              trigger=trigger.to_string(),
+              mode=mode.to_string(),
+              final_session_id=session_id,
+              messages_after=updated_session.messages.length(),
+            ),
+          )
+          self.emit_turn_event(
+            Some(scope),
+            OperationFinalized(
+              operation="compact",
+              outcome="completed",
+              detail="",
+            ),
+          )
+          let outcome : @types.CompactOutcome = {
+            final_session_id: session_id,
+            mode,
+            messages_after: updated_session.messages.length(),
+          }
+          outcome
+        }
+      }
+    Accepted(..) | ForkCompleted(..) | LeaseBusy(..) => {
+      let detail = "unexpected prompt result from standalone compact"
+      self.emit_turn_event(
+        Some(scope),
+        OperationFinalized(operation="compact", outcome="failed", detail~),
+      )
+      raise Runtime(InvocationFailed(detail))
+    }
+  }
 }

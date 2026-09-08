@@ -292,6 +292,7 @@ priv struct AgentRuntime {
   /// persisted. Reset to the loaded session length on load and advanced to
   /// the final transcript length on every successful save.
   session_cursors : Map[String, Int]
+  body_recovery : Map[String, @types.Session]
 }
 
 ///|
@@ -547,7 +548,9 @@ fn AgentRuntime::compose(
     turn_active: false,
     chunk_dispatcher: chunk_dispatcher_ref,
     session_cursors: Map::from_array([]),
+    body_recovery: Map::from_array([]),
   }
+  builtin_command_port.runtime.val = Some(runtime)
   { runtime, }
 }
 
@@ -632,6 +635,8 @@ fn agent_error_category(error : Error) -> String {
     @error.AgentError::Runtime(_) => "AgentError::Runtime"
     @error.AgentError::ToolLoopExceeded(..) => "AgentError::ToolLoopExceeded"
     @error.AgentError::PipelineAborted(_) => "AgentError::PipelineAborted"
+    @error.AgentError::Cancelled(_) => "AgentError::Cancelled"
+    @error.AgentError::AutoCompactFailed(_) => "AgentError::AutoCompactFailed"
     _ => "Unclassified"
   }
 }
@@ -652,6 +657,10 @@ fn contextualize_session_error(
       Save(_) =>
         Save(
           "session_id='\{safe_error_label(session_id)}', operation='\{operation}', category='SessionError::Save', cause='\{cause}'",
+        )
+      Conflict(_) =>
+        Conflict(
+          "session_id='\{safe_error_label(session_id)}', operation='\{operation}', category='SessionError::Conflict', cause='\{cause}'",
         )
     },
   )
@@ -703,6 +712,12 @@ fn snapshot_turn_event(event : @types.TurnEvent) -> @types.TurnEvent {
       ConfigWarning(field~, value~, reason~)
     ConfigChanged(field~, old_value~, new_value~) =>
       ConfigChanged(field~, old_value~, new_value~)
+    ContextStateUpdated(state~) => ContextStateUpdated(state~)
+    CompactStarted(trigger~) => CompactStarted(trigger~)
+    CompactFinished(trigger~, mode~, final_session_id~, messages_after~) =>
+      CompactFinished(trigger~, mode~, final_session_id~, messages_after~)
+    OperationFinalized(operation~, outcome~, detail~) =>
+      OperationFinalized(operation~, outcome~, detail~)
     Custom(source~, label~, data~) =>
       Custom(source~, label~, data=snapshot_json(data))
   }
@@ -872,6 +887,26 @@ async fn AgentRuntime::run_turn_with_mode(
 }
 
 ///|
+async fn AgentRuntime::notify_start_if_first(
+  self : AgentRuntime,
+) -> Unit raise @error.AgentError {
+  if self.start_notified {
+    return
+  }
+  for lc in self.lifecycle {
+    lc.on_start() catch {
+      error =>
+        raise Runtime(
+          InvocationFailed(
+            "lifecycle on_start: " + safe_error_label(error.to_string()),
+          ),
+        )
+    }
+  }
+  self.start_notified = true
+}
+
+///|
 /// Run exactly one turn: delegate to Puppet; emit start/end events for
 /// observers.
 #warnings("-fragile_catch_all")
@@ -882,23 +917,7 @@ async fn AgentRuntime::run_single_turn(
   resume_persisted_user : Bool,
 ) -> @types.TurnResult raise @error.AgentError {
   self.ensure_agent_running()
-  if !self.start_notified {
-    // Once-per-Agent boot notification, in registration order, before the
-    // first TurnStarted is projected. A raised error is wrapped loud and the
-    // turn fails before any terminal event (consistent with pre-TurnStarted
-    // failures emitting neither TurnStarted nor TurnFailed).
-    for lc in self.lifecycle {
-      lc.on_start() catch {
-        error =>
-          raise Runtime(
-            InvocationFailed(
-              "lifecycle on_start: " + safe_error_label(error.to_string()),
-            ),
-          )
-      }
-    }
-    self.start_notified = true
-  }
+  self.notify_start_if_first()
   // Mint run/turn identity up front so even TurnStarted carries attribution
   // scope; the same identity drives the Puppet request below.
   let identity = self.mint_turn_identity(session_id)
@@ -948,6 +967,39 @@ pub async fn Agent::resume_turn(
     session_id,
     true,
   )
+}
+
+///|
+pub async fn Agent::compact_session(
+  self : Agent,
+  session_id : String,
+) -> @types.CompactOutcome raise @error.AgentError {
+  self.runtime.compact_session(session_id)
+}
+
+///|
+pub async fn Agent::context_state(
+  self : Agent,
+  session_id : String,
+) -> @types.ContextState? {
+  match self.runtime.puppet.session_context_state(session_id) {
+    Some(state) => Some(state)
+    None => {
+      let loaded_result : Result[@types.Session, @error.AgentError] = Ok(
+        self.runtime.load_session_for_operation(session_id),
+      ) catch {
+        error => Err(error)
+      }
+      let loaded : @types.Session? = match loaded_result {
+        Ok(session) => Some(session)
+        Err(_) => None
+      }
+      match loaded {
+        Some(session) => @types.ContextState::from_metadata(session.metadata)
+        None => None
+      }
+    }
+  }
 }
 
 ///|

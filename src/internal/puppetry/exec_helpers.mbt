@@ -135,7 +135,11 @@ fn execution_error(phase : String, error : Error) -> PuppetError {
   if @async.is_cancellation_error(error) {
     EffectExecutionCancelled(phase~)
   } else {
-    EffectExecutionFailed(phase~, cause=error.to_string())
+    match error {
+      EffectExecutionCancelled(phase=inner_phase) =>
+        EffectExecutionCancelled(phase=inner_phase)
+      other => EffectExecutionFailed(phase~, cause=other.to_string())
+    }
   }
 }
 

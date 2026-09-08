@@ -82,13 +82,8 @@ pub struct Puppet {
   /// Last terminal outcome captured by the Puppet. `None` means no run has
   /// completed or the current run is suspended.
   mut last_outcome : RunOutcome?
-  /// Run that already consumed its single auto-compact attempt (fired
-  /// regardless of outcome, so a failed compact cannot become a retry loop).
-  mut auto_compact_fired_run : RunId?
-  /// Why the current/last run's auto-compact attempt was skipped, if it was.
-  /// Drained by the Agent facade after each prompt and surfaced to observers
-  /// as a secondary failure; the Puppet itself owns no observer channel.
-  mut last_auto_compact_failure : String?
+  mut auto_compact_attempt_version : Int?
+  context_states : Map[String, @types.ContextState]
 }
 
 ///|
@@ -99,18 +94,26 @@ pub fn Puppet::Puppet(config : PuppetConfig) -> Puppet {
     mailbox: config.mailbox,
     last_completed_transcript: None,
     last_outcome: None,
-    auto_compact_fired_run: None,
-    last_auto_compact_failure: None,
+    auto_compact_attempt_version: None,
+    context_states: Map::from_array([]),
   }
 }
 
 ///|
-/// Drain the recorded auto-compact skip reason, if any. Resets the slot so
-/// the next run starts clean.
-pub fn Puppet::take_last_auto_compact_failure(self : Puppet) -> String? {
-  let value = self.last_auto_compact_failure
-  self.last_auto_compact_failure = None
-  value
+pub fn Puppet::session_context_state(
+  self : Puppet,
+  session_id : String,
+) -> @types.ContextState? {
+  self.context_states.get(session_id)
+}
+
+///|
+pub fn Puppet::adopt_context_state(
+  self : Puppet,
+  session_id : String,
+  state : @types.ContextState,
+) -> Unit {
+  self.context_states[session_id] = state
 }
 
 ///|

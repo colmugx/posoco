@@ -41,6 +41,7 @@ async fn Puppet::fold_effect_input(
       )
     Ok(value) => value
   }
+  self.record_context_reading(session_id, output.next_state(), snap)
   // M3.5: auto-compact threshold check. If the reducer just landed in
   // ReadyForModel AND observed token usage crossed the threshold, fire
   // a compact (trigger=Auto) BEFORE declaring the next model effect.
@@ -51,9 +52,6 @@ async fn Puppet::fold_effect_input(
   let state_after_auto_compact = if output.next_state().phase() == ReadyForModel {
     match self.check_auto_compact(output.next_state(), snap) {
       Some(compact_cmd) => {
-        // The attempt spends the run's single auto-compact slot whether it
-        // succeeds or fails — set the latch before executing.
-        self.auto_compact_fired_run = Some(run_id)
         let compact_outcome = self.handle_compact(
           output.next_state(),
           compact_cmd,
@@ -72,16 +70,35 @@ async fn Puppet::fold_effect_input(
             new_state
           }
           Failed(error) => {
-            // Auto-trigger compaction is best-effort: a modelport that does
-            // not implement compact (or a transport hiccup during the
-            // summarize call) must not kill the turn. Record the skip for
-            // the facade to surface as a secondary failure and continue on
-            // the un-compacted transcript. Manual `/compact` failures take
-            // the loud path in the pump, not here.
-            if self.last_auto_compact_failure is None {
-              self.last_auto_compact_failure = Some(error.to_string())
+            let facts_committed : Result[Unit, PuppetError] = Ok(
+              self.commit_boundary(
+                output.next_state(),
+                boundary_kind_for_events(output.events()),
+                output.events(),
+                dispatcher,
+                run_id,
+                turn_id,
+                session_id,
+                savepoint_id_prefix + "_autocompact_fail",
+              ),
+            ) catch {
+              e => Err(e)
             }
-            output.next_state()
+            match facts_committed {
+              Err(e) => return Return(self.finalize_rejected(error=e))
+              Ok(_) => ()
+            }
+            self.last_completed_transcript = Some(
+              output.next_state().transcript(),
+            )
+            return Return(
+              self.finalize_rejected(
+                error=EffectExecutionFailed(
+                  phase="auto_compact",
+                  cause=error.to_string(),
+                ),
+              ),
+            )
           }
         }
       }
@@ -114,7 +131,16 @@ async fn Puppet::fold_effect_input(
   }
   match committed {
     Err(error) => raise error
-    Ok(_) => Continue(next_state)
+    Ok(_) => {
+      if !rewrite_events.is_empty() {
+        self.mark_context_awaiting_measurement(
+          session_id,
+          next_state.transcript().messages_snapshot().length(),
+          snap,
+        )
+      }
+      Continue(next_state)
+    }
   }
 }
 

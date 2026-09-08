@@ -800,40 +800,288 @@ test "puppet/C-SUSPEND-RESUME-IN-PROCESS" {
 }
 
 ///|
-test "puppet/C-ABORT-DURING-MODEL" {
-  let mailbox = ControlMailbox()
-  let run = RunId::unchecked("run_abort_model")
-  mailbox.bind_run(run, TurnId::unchecked("turn_abort_model"))
-  let first = mailbox.enqueue_abort({
-    command_id: CommandId::unchecked("abort_1"),
-    target_run_id: run,
-    detail: Some("operator"),
-  })
-  let repeated = mailbox.enqueue_abort({
-    command_id: CommandId::unchecked("abort_2"),
-    target_run_id: run,
-    detail: None,
-  })
-  assert_true(first is Accepted(_))
-  assert_true(repeated is AbortAlreadyRequested(_))
-  assert_true(mailbox.abort_requested())
+struct AbortProbeHost {
+  model_results : Array[Result[@kernel.Completion, ModelFailure]]
+  mut model_index : Int
+  tool_delays_ms : Map[String, Int]
+  started_calls : Array[String]
+  tool_started_signal : @aqueue.Queue[String]
+  model_started_signal : @aqueue.Queue[Unit]
 }
 
 ///|
-test "puppet/C-ABORT-DURING-TOOLS" {
-  let gate = PhaseGate::idle()
-  let run = RunId::unchecked("run_abort_tools")
-  let (gate, _) = gate.acquire_prompt(
-    "op",
-    run,
-    TurnId::unchecked("turn_abort_tools"),
-  )
-  let active = gate.transition(Active)
-  match active.authorise(Structural) {
-    Err(OperationNotAllowedInPhase(phase=Active, operation=Structural, ..)) =>
-      ()
-    _ => fail("mid-run structural control must fail with a typed phase error")
+fn AbortProbeHost::AbortProbeHost(
+  model_results : Array[Result[@kernel.Completion, ModelFailure]],
+  tool_delays_ms : Map[String, Int],
+  tool_started_signal : @aqueue.Queue[String],
+) -> AbortProbeHost {
+  {
+    model_results: model_results.copy(),
+    model_index: 0,
+    tool_delays_ms,
+    started_calls: [],
+    tool_started_signal,
+    model_started_signal: Queue(kind=Unbounded),
   }
+}
+
+///|
+pub impl @kernel_exec.HostRuntime for AbortProbeHost with fn call_model(
+  self,
+  _scope : InvocationScope,
+  messages : ArrayView[Message],
+  _tool_definitions : Array[ToolDef],
+  _call_options : Json,
+  _on_chunk : HostChunkCallback?,
+) -> Result[ModelCallResult, ModelFailure] {
+  self.model_started_signal.put(())
+  @async.sleep(200)
+  let index = self.model_index
+  self.model_index = index + 1
+  if index >= self.model_results.length() {
+    Err(Runtime(reason="abort probe exhausted model results"))
+  } else {
+    match self.model_results[index] {
+      Ok(completion) =>
+        Ok({ completion, processed_messages: messages.to_owned(), })
+      Err(failure) => Err(failure)
+    }
+  }
+}
+
+///|
+pub impl @kernel_exec.HostRuntime for AbortProbeHost with fn execute_tool(
+  self,
+  _effect_id : EffectId,
+  _owner_id : OwnerId,
+  call_id : CallId,
+  _tool_name : ToolName,
+  _arguments : Json,
+) -> @kernel.ToolOutcome {
+  let id = call_id.to_string()
+  self.started_calls.push(id)
+  self.tool_started_signal.put(id)
+  let delay = match self.tool_delays_ms.get(id) {
+    Some(d) => d
+    None => 10
+  }
+  @async.sleep(delay)
+  Success(content=id + "-done", structured=None)
+}
+
+///|
+pub impl @kernel_exec.HostRuntime for AbortProbeHost with fn cancel_effects(
+  self : AbortProbeHost,
+  effect_ids : Array[EffectId],
+  _reason : CancelReason,
+) -> Array[(EffectId, CancelDisposition)] {
+  ignore(self)
+  effect_ids.map(id => (id, NotPropagated))
+}
+
+///|
+/// M3.5: compact stub — AbortProbeHost does not exercise compact.
+pub impl @kernel_exec.HostRuntime for AbortProbeHost with fn compact(
+  self : AbortProbeHost,
+  _scope : InvocationScope,
+  _messages : ArrayView[Message],
+  _call_options : Json,
+  _trigger : @kernel.CompactTrigger,
+) -> Result[CompactResult, ModelFailure] {
+  ignore(self)
+  Err(Parse(reason="AbortProbeHost does not implement compact"))
+}
+
+///|
+async test "puppet/C-ABORT-DURING-MODEL" {
+  let host = AbortProbeHost(
+    [
+      Ok(fixture_tool_calls([fixture_call("parallel_one", "call_1")])),
+      Ok(fixture_tool_calls([fixture_call("parallel_one", "call_2")])),
+    ],
+    Map::from_array([("call_1", 10), ("call_2", 400)]),
+    Queue(kind=Unbounded),
+  )
+  let catalog = fixture_tool_catalog("parallel_one")
+  let journal = InMemoryJournal()
+  let puppet = Puppet(
+    canonical_puppet_config(
+      host as &@kernel_exec.HostRuntime,
+      catalog,
+      journal,
+      [],
+      [],
+      None,
+    ),
+  )
+  let mailbox = puppet.mailbox()
+  let run = RunId::unchecked("run_abort_model")
+  let turn = TurnId::unchecked("turn_abort_model")
+  @async.with_task_group(group => {
+    let task = group.spawn(async fn() {
+      puppet.prompt({
+        run_id: run,
+        turn_id: turn,
+        session_id: SessionId::unchecked("session_abort_model"),
+        initial_messages: [UserMessage(content=[Text("hello")])],
+        operation_id: "operation_abort_model",
+        policy: fixture_run_policy("fixture-model", Json::null()),
+      })
+    })
+    group.spawn_bg(async fn() {
+      ignore(host.model_started_signal.get())
+      ignore(host.model_started_signal.get())
+      @async.sleep(20)
+      let first = mailbox.enqueue_abort({
+        command_id: CommandId::unchecked("abort_1"),
+        target_run_id: run,
+        detail: Some("operator"),
+      })
+      assert_true(first is Accepted(_))
+      let repeated = mailbox.enqueue_abort({
+        command_id: CommandId::unchecked("abort_2"),
+        target_run_id: run,
+        detail: None,
+      })
+      assert_true(repeated is AbortAlreadyRequested(_))
+    })
+    let result = task.wait()
+    assert_true(result is Accepted(_))
+  })
+  match mailbox.quiescent_status() {
+    Terminal(outcome~) =>
+      match outcome {
+        Cancelled(..) => ()
+        _ => fail("expected Cancelled outcome")
+      }
+    other =>
+      fail("expected Terminal quiescent status, got " + other.to_string())
+  }
+  assert_true(puppet.is_quiescent())
+  assert_false(mailbox.abort_requested())
+  let transcript = match puppet.last_completed_transcript() {
+    Some(t) => t
+    None => fail("expected terminal transcript")
+  }
+  let msgs = transcript.messages_snapshot()
+  assert_eq(msgs.length(), 5)
+  match msgs[2] {
+    ToolMessage(call_id~, outcome~, ..) => {
+      assert_eq(call_id.to_string(), "call_1")
+      match outcome {
+        Success(content~, ..) => assert_eq(content, "call_1-done")
+        _ => fail("expected call_1 success fact")
+      }
+    }
+    _ => fail("expected tool message for call_1")
+  }
+  match msgs[4] {
+    ToolMessage(call_id~, outcome~, ..) => {
+      assert_eq(call_id.to_string(), "call_2")
+      match outcome {
+        RuntimeFailure(..) => ()
+        _ =>
+          fail("expected interrupted marker for call_2, not fabricated success")
+      }
+    }
+    _ => fail("expected tool message for call_2")
+  }
+  assert_eq(host.started_calls, ["call_1"])
+  assert_true(fixture_prompt(puppet, "after_abort_model") is Accepted(_))
+}
+
+///|
+async test "puppet/C-ABORT-DURING-TOOLS" {
+  let entered : @aqueue.Queue[String] = Queue(kind=Unbounded)
+  let host = AbortProbeHost(
+    [
+      Ok(
+        fixture_tool_calls([
+          fixture_call("parallel_one", "call_1"),
+          fixture_call("exclusive", "call_2"),
+        ]),
+      ),
+    ],
+    Map::from_array([("call_1", 150), ("call_2", 400)]),
+    entered,
+  )
+  let catalog = wave_catalog()
+  let journal = InMemoryJournal()
+  let puppet = Puppet(
+    canonical_puppet_config(
+      host as &@kernel_exec.HostRuntime,
+      catalog,
+      journal,
+      [],
+      [],
+      None,
+    ),
+  )
+  let mailbox = puppet.mailbox()
+  let run = RunId::unchecked("run_abort_tools")
+  let turn = TurnId::unchecked("turn_abort_tools")
+  @async.with_task_group(group => {
+    let task = group.spawn(async fn() {
+      puppet.prompt({
+        run_id: run,
+        turn_id: turn,
+        session_id: SessionId::unchecked("session_abort_tools"),
+        initial_messages: [UserMessage(content=[Text("hello")])],
+        operation_id: "operation_abort_tools",
+        policy: fixture_run_policy("fixture-model", Json::null()),
+      })
+    })
+    group.spawn_bg(async fn() {
+      let started = entered.get()
+      assert_eq(started, "call_1")
+      let first = mailbox.enqueue_abort({
+        command_id: CommandId::unchecked("abort_tools_1"),
+        target_run_id: run,
+        detail: Some("operator"),
+      })
+      assert_true(first is Accepted(_))
+    })
+    let result = task.wait()
+    assert_true(result is Accepted(_))
+  })
+  match mailbox.quiescent_status() {
+    Terminal(outcome~) =>
+      match outcome {
+        Cancelled(..) => ()
+        _ => fail("expected Cancelled outcome")
+      }
+    other =>
+      fail("expected Terminal quiescent status, got " + other.to_string())
+  }
+  assert_false(mailbox.abort_requested())
+  let transcript = match puppet.last_completed_transcript() {
+    Some(t) => t
+    None => fail("expected terminal transcript")
+  }
+  let msgs = transcript.messages_snapshot()
+  assert_eq(msgs.length(), 4)
+  match msgs[2] {
+    ToolMessage(call_id~, outcome~, ..) => {
+      assert_eq(call_id.to_string(), "call_1")
+      match outcome {
+        Success(content~, ..) => assert_eq(content, "call_1-done")
+        _ => fail("expected call_1 success fact")
+      }
+    }
+    _ => fail("expected tool message for call_1")
+  }
+  match msgs[3] {
+    ToolMessage(call_id~, outcome~, ..) => {
+      assert_eq(call_id.to_string(), "call_2")
+      match outcome {
+        RuntimeFailure(..) => ()
+        _ =>
+          fail("expected interrupted marker for call_2, not fabricated success")
+      }
+    }
+    _ => fail("expected tool message for call_2")
+  }
+  assert_eq(host.started_calls, ["call_1"])
 }
 
 ///|

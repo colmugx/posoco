@@ -76,6 +76,23 @@ pub fn RecordingSessionStore::fail_save(
 }
 
 ///|
+pub fn RecordingSessionStore::heal_save(
+  self : RecordingSessionStore,
+  id : String,
+) -> Unit {
+  let kept : Array[String] = []
+  for entry in self.save_failures {
+    if entry != id {
+      kept.push(entry)
+    }
+  }
+  self.save_failures.clear()
+  for entry in kept {
+    self.save_failures.push(entry)
+  }
+}
+
+///|
 /// Recorded operations in order.
 pub fn RecordingSessionStore::ops(
   self : RecordingSessionStore,

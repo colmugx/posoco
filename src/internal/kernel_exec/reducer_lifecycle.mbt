@@ -195,6 +195,67 @@ fn reduce_cancel_ready(
 }
 
 ///|
+fn reduce_cancel_tool_facts(
+  state : RunState,
+) -> (RunState, Array[KernelEvent]) raise KernelError {
+  let staged = state.completed_tool_results.copy()
+  let markers : Array[KernelEvent] = []
+  for effect in state.pending_effects() {
+    match effect {
+      ExecuteTool(effect_id=_, payload=ep) => {
+        let outcome : @kernel.ToolOutcome = RuntimeFailure(
+          error_category="Cancelled",
+          message="tool call interrupted before completion",
+        )
+        let position = match
+          state.tool_call_positions.get(ep.call_id.to_string()) {
+          Some(p) => p
+          None => missing_tool_position
+        }
+        staged[ep.call_id.to_string()] = (ep.tool_name, outcome, position)
+        markers.push(
+          ToolCompleted(
+            call={
+              call_id: ep.call_id,
+              name: ep.tool_name,
+              arguments: ep.arguments,
+            },
+            outcome~,
+          ),
+        )
+      }
+      _ => ()
+    }
+  }
+  if staged.is_empty() {
+    return (state, [])
+  }
+  let (committed_transcript, committed_tool_results) = commit_tool_wave(
+    state.transcript(),
+    state.tool_call_positions,
+    staged,
+    state.tool_results_snapshot(),
+  )
+  let with_facts = state
+    .transition(
+      phase=state.phase(),
+      transcript=committed_transcript,
+      pending_effects=state.pending_effects(),
+      next_event_sequence=state.next_event_sequence(),
+      next_effect_id=state.next_effect_id(),
+      current_model_step_id=state.current_model_step_id(),
+      catalog_version=None,
+      budget_consumed=state.budget_consumed(),
+      outcome=state.outcome(),
+      completed_tool_results=Map::from_array([]),
+      tool_call_positions=Map::from_array([]),
+      suspension_requirement=state.suspension_requirement(),
+    )
+    .with_tool_results(committed_tool_results)
+  (with_facts, markers)
+}
+
+///|
 /// Cancel when there are pending effects (AwaitingModel, AwaitingTools).
 /// Emit CancelOutstanding for them, then terminate.
 fn reduce_cancel_with_pending(
@@ -221,9 +282,13 @@ fn reduce_cancel_with_pending(
       ),
     )
   }
-  let terminal_state = state.transition(
+  let (fact_state, marker_events) = reduce_cancel_tool_facts(state)
+  for event in marker_events {
+    events.push(event)
+  }
+  let terminal_state = fact_state.transition(
     phase=Terminal,
-    transcript=state.transcript(),
+    transcript=fact_state.transcript(),
     pending_effects=[],
     next_event_sequence=advance_seq_by(state, events.length() + 1),
     next_effect_id=state.next_effect_id().add(effects.length()),
@@ -297,9 +362,10 @@ fn reduce_terminal_cancel(
   state : RunState,
   reason : CancelReason,
 ) -> ReduceOutput raise KernelError {
-  let terminal_state = state.transition(
+  let (fact_state, _markers) = reduce_cancel_tool_facts(state)
+  let terminal_state = fact_state.transition(
     phase=Terminal,
-    transcript=state.transcript(),
+    transcript=fact_state.transcript(),
     pending_effects=[],
     next_event_sequence=next_seq(state),
     next_effect_id=state.next_effect_id(),

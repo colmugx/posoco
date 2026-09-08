@@ -210,7 +210,7 @@ async test "policy/cumulative usage does not trigger, latest occupancy does" {
 }
 
 ///|
-async test "policy/one auto-compact per run even when occupancy stays over" {
+async test "policy/same task crossing twice compacts twice" {
   let model = PolicyModel::{
     inner: ScopeRecordingModel(
       [
@@ -233,14 +233,12 @@ async test "policy/one auto-compact per run even when occupancy stays over" {
     ],
     config=tk_config(),
   )
-  ignore(agent.run_turn(tk_user_msg("hi"), "session_single_fire"))
-  // The first crossing fires; the post-Replace observation crosses again but
-  // the per-run latch must hold it at exactly one attempt.
-  assert_eq(model.inner.compact_scopes().length(), 1)
+  ignore(agent.run_turn(tk_user_msg("hi"), "session_double_fire"))
+  assert_eq(model.inner.compact_scopes().length(), 2)
 }
 
 ///|
-async test "policy/auto-compact failure skips observably and the turn survives" {
+async test "policy/auto-compact failure stops the turn immediately and is reported" {
   let observer = RecordingObserver()
   // compact_result absent: ScopeRecordingModel::compact raises, standing in
   // for a modelport that does not implement compact.
@@ -254,36 +252,40 @@ async test "policy/auto-compact failure skips observably and the turn survives" 
       compact_threshold=Some(0.9),
     ),
   }
+  let store = RecordingSessionStore()
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
       tk_ext(id="tools", tools=[policy_tools()]),
-      tk_ext(id="io", sessions=[RecordingSessionStore()], observers=[observer]),
+      tk_ext(id="io", sessions=[store], observers=[observer]),
     ],
     config=tk_config(),
   )
-  // Must not raise: a best-effort auto-compact failure continues the turn.
-  ignore(agent.run_turn(tk_user_msg("hi"), "session_failed_compact"))
+  let result : Result[@types.TurnResult, @error.AgentError] = Ok(
+    agent.run_turn(tk_user_msg("hi"), "session_failed_compact"),
+  ) catch {
+    error => Err(error)
+  }
+  guard result is Err(@error.AgentError::AutoCompactFailed(_)) else {
+    fail("expected a typed AutoCompactFailed outcome, got \{repr(result)}")
+  }
   assert_eq(model.inner.compact_scopes().length(), 1)
-  let mut seen_secondary = false
+  assert_eq(model.inner.chat_scopes().length(), 1)
+  let persisted = store.store["session_failed_compact"]
+  assert_eq(persisted.messages.length(), 3)
+  assert_true(persisted.messages[0] == tk_user_msg("hi"))
+  assert_true(persisted.messages[2] is ToolMessage(..))
+  let mut seen_failed = false
   for event in observer.events() {
     match event {
-      Custom(source~, label~, data~) =>
-        if source == "posoco.core" && label == "secondary_failure" {
-          match data {
-            Object(fields) =>
-              match fields.get("hook_point") {
-                Some(String(point)) if point == "auto_compact" =>
-                  seen_secondary = true
-                _ => ()
-              }
-            _ => ()
-          }
+      TurnFailed(reason) =>
+        if reason.contains("AutoCompactFailed") {
+          seen_failed = true
         }
       _ => ()
     }
   }
-  assert_true(seen_secondary)
+  assert_true(seen_failed)
 }
 
 // ---------------------------------------------------------------------------
@@ -432,6 +434,118 @@ async test "policy/e2e compacted transcript is what the next model call sees" {
 }
 
 ///|
+fn policy_context_metadata(
+  session_id~ : String,
+  measured~ : Int,
+  window~ : Int,
+  reading_count~ : Int,
+) -> Map[String, Json] {
+  let state : @types.ContextState = {
+    session_id,
+    model_id: "agent",
+    context_version: 0,
+    last_measured_tokens: Some(measured),
+    estimated_added_tokens: 0,
+    window_tokens: Some(window),
+    compact_threshold: 0.9,
+    source: Measured,
+    reading_message_count: reading_count,
+  }
+  Map::from_array([
+    (@types.CONTEXT_STATE_METADATA_KEY, state.to_metadata_json()),
+  ])
+}
+
+///|
+async test "policy/pre-request check compacts before the first request" {
+  let store = RecordingSessionStore()
+  store.seed("session_pre", {
+    messages: [tk_user_msg("hello")],
+    metadata: policy_context_metadata(
+      session_id="session_pre",
+      measured=95,
+      window=100,
+      reading_count=1,
+    ),
+  })
+  let model = auto_compact_e2e_model([Respond(tk_stop_response("done"))], [
+    tk_user_msg("summary"),
+  ])
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", sessions=[store]),
+    ],
+    config=tk_config(),
+  )
+  ignore(agent.run_turn(tk_user_msg("hi there"), "session_pre"))
+  assert_eq(model.compact_calls.val, 1)
+  let seen = model.seen_chats()
+  assert_eq(seen.length(), 1)
+  assert_eq(seen[0].length(), 1)
+  guard seen[0][0] is UserMessage(content=[Text(text)]) else {
+    fail("expected the compacted summary as the first request body")
+  }
+  assert_eq(text, "summary")
+}
+
+///|
+async test "policy/pre-request check stays quiet below the threshold" {
+  let store = RecordingSessionStore()
+  store.seed("session_pre_low", {
+    messages: [tk_user_msg("hello")],
+    metadata: policy_context_metadata(
+      session_id="session_pre_low",
+      measured=60,
+      window=100,
+      reading_count=1,
+    ),
+  })
+  let model = auto_compact_e2e_model([Respond(tk_stop_response("done"))], [
+    tk_user_msg("summary"),
+  ])
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", sessions=[store]),
+    ],
+    config=tk_config(),
+  )
+  ignore(agent.run_turn(tk_user_msg("hi there"), "session_pre_low"))
+  assert_eq(model.compact_calls.val, 0)
+  let seen = model.seen_chats()
+  assert_eq(seen.length(), 1)
+  assert_eq(seen[0].length(), 2)
+}
+
+///|
+async test "policy/pre-request check ignores readings from another window" {
+  let store = RecordingSessionStore()
+  store.seed("session_pre_window", {
+    messages: [tk_user_msg("hello")],
+    metadata: policy_context_metadata(
+      session_id="session_pre_window",
+      measured=950,
+      window=1000,
+      reading_count=1,
+    ),
+  })
+  let model = auto_compact_e2e_model([Respond(tk_stop_response("done"))], [
+    tk_user_msg("summary"),
+  ])
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", sessions=[store]),
+    ],
+    config=tk_config(),
+  )
+  ignore(agent.run_turn(tk_user_msg("hi there"), "session_pre_window"))
+  assert_eq(model.compact_calls.val, 0)
+  assert_eq(model.seen_chats().length(), 1)
+}
+
+///|
 async test "policy/e2e compacted transcript persists into the next turn" {
   let compacted = auto_compact_kit_shaped_compacted()
   let model = auto_compact_e2e_model(
@@ -480,4 +594,41 @@ async test "policy/e2e compacted transcript persists into the next turn" {
   }
   guard content[0] is Text(text) else { fail("expected text content") }
   assert_eq(text, "second turn")
+}
+
+///|
+async test "policy/pre-request check covers the first request after resume" {
+  let store = RecordingSessionStore()
+  store.seed("session_pre_resume", {
+    messages: [
+      tk_user_msg("hello"),
+      AssistantMessage(
+        content=[Text("partial progress from the interrupted run")],
+        reasoning=None,
+        tool_calls=[],
+        finish_reason=Stop,
+      ),
+    ],
+    metadata: policy_context_metadata(
+      session_id="session_pre_resume",
+      measured=95,
+      window=100,
+      reading_count=1,
+    ),
+  })
+  let model = auto_compact_e2e_model([Respond(tk_stop_response("resumed"))], [
+    tk_user_msg("summary"),
+  ])
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", sessions=[store]),
+    ],
+    config=tk_config(),
+  )
+  ignore(agent.resume_turn("session_pre_resume"))
+  assert_eq(model.compact_calls.val, 1)
+  let seen = model.seen_chats()
+  assert_eq(seen.length(), 1)
+  assert_eq(seen[0].length(), 1)
 }

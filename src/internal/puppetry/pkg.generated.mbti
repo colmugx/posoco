@@ -333,10 +333,13 @@ pub struct Puppet {
   mailbox : &Mailbox
   mut last_completed_transcript : @kernel.Transcript?
   mut last_outcome : @kernel_exec.RunOutcome?
-  mut auto_compact_fired_run : @kernel.RunId?
-  mut last_auto_compact_failure : String?
+  mut auto_compact_attempt_version : Int?
+  context_states : Map[String, @types.ContextState]
 }
 pub fn Puppet::Puppet(PuppetConfig) -> Self
+pub fn Puppet::adopt_context_state(Self, String, @types.ContextState) -> Unit
+pub async fn Puppet::compact_standalone(Self, @kernel.RunId, @kernel.TurnId, @kernel.SessionId, Array[@kernel.Message], RunPolicy, String, @kernel.CompactTrigger) -> PromptResult raise PuppetError
+pub fn Puppet::context_version(Self) -> Int
 pub fn Puppet::is_quiescent(Self) -> Bool
 pub fn Puppet::last_completed_transcript(Self) -> @kernel.Transcript?
 pub fn Puppet::last_terminal_outcome(Self) -> @kernel_exec.RunOutcome?
@@ -344,8 +347,8 @@ pub fn Puppet::mailbox(Self) -> &Mailbox
 pub fn Puppet::phase(Self) -> PuppetPhase
 pub async fn Puppet::prompt(Self, PromptRequest) -> PromptResult raise PuppetError
 pub fn Puppet::replace_catalog(Self, @kernel_exec.ToolCatalogSnapshot) -> Bool
+pub fn Puppet::session_context_state(Self, String) -> @types.ContextState?
 pub fn Puppet::shutdown(Self) -> Unit raise PuppetError
-pub fn Puppet::take_last_auto_compact_failure(Self) -> String?
 pub async fn Puppet::wait_idle(Self) -> QuiescentStatus
 
 pub(all) struct PuppetConfig {

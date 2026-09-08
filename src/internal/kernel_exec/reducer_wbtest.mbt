@@ -113,6 +113,66 @@ fn make_completion_with_tool_call(
 }
 
 ///|
+fn make_completion_with_two_tool_calls(
+  call_id_a : String,
+  call_id_b : String,
+  args : Json,
+) -> @kernel.Completion {
+  Completion(
+    content=[Text("calling")],
+    tool_calls=[
+      {
+        call_id: @kernel.CallId::unchecked(call_id_a),
+        name: @kernel.ToolName::unchecked("read"),
+        arguments: args,
+      },
+      {
+        call_id: @kernel.CallId::unchecked(call_id_b),
+        name: @kernel.ToolName::unchecked("read"),
+        arguments: args,
+      },
+    ],
+    reasoning=None,
+    finish_reason=ToolCalls,
+    usage=None,
+  )
+}
+
+///|
+fn run_until_awaiting_tools_two_calls() -> (RunState, EffectId, EffectId) raise {
+  let (st_awaiting, eff_id, step_id) = run_until_awaiting_model()
+  let catalog = make_catalog_v1()
+  let completion = make_completion_with_two_tool_calls(
+    "call_1",
+    "call_2",
+    Json::object(Map::from_array([("path", Json::string("/etc/x"))])),
+  )
+  let out = reduce(
+    st_awaiting,
+    catalog,
+    ModelCompleted(payload={
+      effect_id: eff_id,
+      model_step_id: step_id,
+      completion,
+      processed_messages: st_awaiting.transcript().messages_snapshot(),
+    }),
+  )
+  let st_tools = out.next_state()
+  assert_eq(st_tools.phase(), AwaitingTools)
+  let effects = out.effects()
+  assert_eq(effects.length(), 2)
+  let exec1 = match effects[0] {
+    ExecuteTool(effect_id~, ..) => effect_id
+    _ => abort("expected ExecuteTool effect")
+  }
+  let exec2 = match effects[1] {
+    ExecuteTool(effect_id~, ..) => effect_id
+    _ => abort("expected ExecuteTool effect")
+  }
+  (st_tools, exec1, exec2)
+}
+
+///|
 fn run_until_awaiting_model() -> (RunState, EffectId, ModelStepId) raise {
   let st0 = fresh_state()
   let catalog = make_catalog_v1()
@@ -570,6 +630,120 @@ test "C-CANCEL-WHILE-MODEL: AwaitingModel + CancelRequested → CancelOutstandin
       }
     })
   assert_true(has_cancel_effect)
+  assert_eq(st.transcript(), st_awaiting.transcript())
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// C-CANCEL-DURING-TOOLS: staged tool-wave durability (contract A invariant 4)
+// ──────────────────────────────────────────────────────────────────────────
+
+///|
+test "C-CANCEL-DURING-TOOLS: staged completed result kept, pending tool marked interrupted" {
+  let (st_tools, exec1, _exec2) = run_until_awaiting_tools_two_calls()
+  let catalog = make_catalog_v1()
+  let out1 = reduce(
+    st_tools,
+    catalog,
+    ToolCompleted(payload={
+      effect_id: exec1,
+      call_id: @kernel.CallId::unchecked("call_1"),
+      tool_name: @kernel.ToolName::unchecked("read"),
+      arguments: Json::null(),
+      outcome: Success(content="data", structured=None),
+    }),
+  )
+  let st_staged = out1.next_state()
+  assert_eq(st_staged.phase(), AwaitingTools)
+  assert_eq(st_staged.transcript().length(), 2)
+  let out = reduce(
+    st_staged,
+    catalog,
+    CancelRequested(payload={ detail: None, }),
+  )
+  let st = out.next_state()
+  assert_eq(st.phase(), Terminal)
+  match st.outcome() {
+    Some(Cancelled(..)) => ()
+    _ => fail("expected Cancelled outcome")
+  }
+  let msgs = st.transcript().messages_snapshot()
+  assert_eq(msgs.length(), 4)
+  match msgs[2] {
+    ToolMessage(call_id~, outcome~, ..) => {
+      assert_eq(call_id.to_string(), "call_1")
+      assert_true(outcome is Success(..))
+    }
+    _ => fail("expected tool message for call_1")
+  }
+  match msgs[3] {
+    ToolMessage(call_id~, outcome~, ..) => {
+      assert_eq(call_id.to_string(), "call_2")
+      match outcome {
+        RuntimeFailure(..) => ()
+        _ =>
+          fail("expected interrupted marker for call_2, not fabricated success")
+      }
+    }
+    _ => fail("expected tool message for call_2")
+  }
+  let has_cancel_effect = out
+    .effects()
+    .iter()
+    .any(fn(e) {
+      match e {
+        CancelOutstanding(..) => true
+        _ => false
+      }
+    })
+  assert_true(has_cancel_effect)
+  let markers = out
+    .events()
+    .filter(fn(e) {
+      match e {
+        ToolCompleted(..) => true
+        _ => false
+      }
+    })
+  assert_eq(markers.length(), 1)
+}
+
+///|
+test "C-CANCEL-DURING-TOOLS-NO-STAGED: every pending tool gets an interrupted marker" {
+  let (st_tools, _exec1, _exec2) = run_until_awaiting_tools_two_calls()
+  let catalog = make_catalog_v1()
+  let out = reduce(
+    st_tools,
+    catalog,
+    CancelRequested(payload={ detail: None, }),
+  )
+  let st = out.next_state()
+  assert_eq(st.phase(), Terminal)
+  match st.outcome() {
+    Some(Cancelled(..)) => ()
+    _ => fail("expected Cancelled outcome")
+  }
+  let msgs = st.transcript().messages_snapshot()
+  assert_eq(msgs.length(), 4)
+  match msgs[2] {
+    ToolMessage(call_id~, outcome~, ..) => {
+      assert_eq(call_id.to_string(), "call_1")
+      match outcome {
+        RuntimeFailure(..) => ()
+        _ => fail("expected interrupted marker for call_1")
+      }
+    }
+    _ => fail("expected tool message for call_1")
+  }
+  match msgs[3] {
+    ToolMessage(call_id~, outcome~, ..) => {
+      assert_eq(call_id.to_string(), "call_2")
+      match outcome {
+        RuntimeFailure(..) => ()
+        _ => fail("expected interrupted marker for call_2")
+      }
+    }
+    _ => fail("expected tool message for call_2")
+  }
 }
 
 // ──────────────────────────────────────────────────────────────────────────

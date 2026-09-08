@@ -280,13 +280,70 @@ fn kernel_event_payload(event : KernelEvent) -> Json {
 }
 
 ///|
+priv enum RunExitDisposition {
+  Terminated(
+    run_id~ : RunId,
+    turn_id~ : TurnId,
+    outcome~ : RunOutcome,
+    transcript~ : Transcript
+  )
+  Suspended(
+    run_id~ : RunId,
+    turn_id~ : TurnId,
+    suspension_id~ : String,
+    requirement_kind~ : String
+  )
+  ReleasedNoCommit(result~ : PromptResult)
+}
+
+///|
+fn Puppet::finalize_run(
+  self : Puppet,
+  disposition : RunExitDisposition,
+) -> PromptResult raise PuppetError {
+  match disposition {
+    Terminated(run_id~, turn_id~, outcome~, transcript~) => {
+      self.mailbox.set_quiescent(Terminal(outcome~))
+      self.last_completed_transcript = Some(transcript)
+      self.last_outcome = Some(outcome)
+      self.release_run_binding()
+      Accepted(run_id~, turn_id~)
+    }
+    Suspended(run_id~, turn_id~, suspension_id~, requirement_kind~) => {
+      self.phase_gate = self.phase_gate.enter_suspended(suspension_id)
+      self.mailbox.set_quiescent(
+        Suspended(run_id~, suspension_id~, requirement_kind~),
+      )
+      Accepted(run_id~, turn_id~)
+    }
+    ReleasedNoCommit(result~) => {
+      self.release_run_binding()
+      result
+    }
+  }
+}
+
+///|
+fn Puppet::finalize_rejected(
+  self : Puppet,
+  error~ : PuppetError,
+) -> PromptResult {
+  self.reject_run(error~)
+}
+
+///|
+fn Puppet::release_run_binding(self : Puppet) -> Unit {
+  self.phase_gate = PhaseGate::idle()
+  self.mailbox.clear_run()
+}
+
+///|
 /// Put the Puppet back into a quiescent, retryable state on a host-level
 /// failure that prevents the reducer from producing a terminal outcome. The
 /// typed error remains the caller-visible diagnostic; cleanup must not leave a
 /// stale lease or an active mailbox behind.
 fn Puppet::reject_run(self : Puppet, error~ : PuppetError) -> PromptResult {
-  self.phase_gate = PhaseGate::idle()
-  self.mailbox.clear_run()
+  self.release_run_binding()
   self.mailbox.set_quiescent(Idle)
   Rejected(error~)
 }

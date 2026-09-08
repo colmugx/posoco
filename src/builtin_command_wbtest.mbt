@@ -2,10 +2,10 @@
 /// M3.5 — BuiltinCommandPort whitebox tests.
 ///
 /// Covers:
-/// - `/compact` invoke enqueues a Manual compact on the mailbox
+/// - `/compact` invoke enqueues a Manual compact on the mailbox (mid-run)
+/// - idle `/compact` starts `compact_session` directly on the composed Agent
 /// - `/fork-here N` invoke enqueues a fork at index N
 /// - `commands()` declares the two builtin command ids
-/// - invoke without an active run returns Failure
 /// - parse_fork_index accepts object form, bare number, and defaults
 
 ///|
@@ -74,12 +74,112 @@ async test "m35_builtin/fork_here_default_index_zero" {
 }
 
 ///|
-async test "m35_builtin/invoke_without_active_run_returns_failure" {
-  // Unbound mailbox (no active run).
+async test "m35_builtin/idle_compact_starts_compact_session_directly" {
+  let model = ScriptedModel([
+    Compact(result={
+      compacted_messages: [tk_user_msg("summary")],
+      mode: Replace,
+    }),
+  ])
+  let store = RecordingSessionStore()
+  store.seed("idle-session", {
+    messages: [tk_user_msg("hello"), tk_user_msg("more")],
+    metadata: Map::from_array([]),
+  })
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", sessions=[store]),
+    ],
+    config=tk_config(),
+  )
+  let mut builtin : &@port.CommandPort? = None
+  for port in agent.commands() {
+    for def in port.commands() {
+      if def.id == "compact" {
+        builtin = Some(port)
+      }
+    }
+  }
+  guard builtin is Some(port) else {
+    fail("expected the builtin compact command to be declared")
+  }
+  let outcome = port.invoke(
+    "compact",
+    Json::object(
+      Map::from_array([("session_id", Json::string("idle-session"))]),
+    ),
+  )
+  guard outcome is Success(feedback~, ..) else {
+    fail("expected idle compact to succeed, got \{repr(outcome)}")
+  }
+  assert_true(feedback.contains("compact completed"))
+  assert_eq(model.call_count(), 0)
+  assert_eq(model.compact_call_count(), 1)
+  let compacts = model.received_compacts()
+  assert_eq(compacts[0].0.length(), 2)
+  let persisted = store.store["idle-session"]
+  assert_eq(persisted.messages.length(), 1)
+  assert_true(persisted.messages[0] == tk_user_msg("summary"))
+}
+
+///|
+async test "m35_builtin/idle_compact_requires_session_identity" {
   let mb = @puppetry.ControlMailbox()
   let port = BuiltinCommandPort(mb)
   let outcome = port.invoke("compact", Json::null())
-  assert_true(outcome is Failure(_))
+  guard outcome is Failure(reason~) else {
+    fail("expected a failure for missing session identity")
+  }
+  assert_true(reason.contains("session_id"))
+}
+
+///|
+async test "m35_builtin/idle_compact_reports_modelport_failure_not_locked_session" {
+  let model = ScriptedModel([
+    CompactFail(error=ResponseParse("no compact endpoint")),
+  ])
+  let store = RecordingSessionStore()
+  store.seed("fail-session", {
+    messages: [tk_user_msg("hello")],
+    metadata: Map::from_array([]),
+  })
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", sessions=[store]),
+    ],
+    config=tk_config(),
+  )
+  let mut builtin : &@port.CommandPort? = None
+  for port in agent.commands() {
+    for def in port.commands() {
+      if def.id == "compact" {
+        builtin = Some(port)
+      }
+    }
+  }
+  guard builtin is Some(port) else {
+    fail("expected the builtin compact command to be declared")
+  }
+  let outcome = port.invoke(
+    "compact",
+    Json::object(
+      Map::from_array([("session_id", Json::string("fail-session"))]),
+    ),
+  )
+  guard outcome is Failure(reason~) else {
+    fail("expected the failed compact to report a failure")
+  }
+  assert_true(reason.contains("compact failed"))
+  assert_eq(store.store["fail-session"].messages.length(), 1)
+  let retry = port.invoke(
+    "compact",
+    Json::object(
+      Map::from_array([("session_id", Json::string("fail-session"))]),
+    ),
+  )
+  assert_true(retry is Failure(_))
 }
 
 ///|

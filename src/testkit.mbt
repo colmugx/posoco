@@ -85,6 +85,12 @@ fn testkit_snapshot_event(event : @types.TurnEvent) -> @types.TurnEvent {
       ConfigWarning(field~, value~, reason~)
     ConfigChanged(field~, old_value~, new_value~) =>
       ConfigChanged(field~, old_value~, new_value~)
+    ContextStateUpdated(state~) => ContextStateUpdated(state~)
+    CompactStarted(trigger~) => CompactStarted(trigger~)
+    CompactFinished(trigger~, mode~, final_session_id~, messages_after~) =>
+      CompactFinished(trigger~, mode~, final_session_id~, messages_after~)
+    OperationFinalized(operation~, outcome~, detail~) =>
+      OperationFinalized(operation~, outcome~, detail~)
     Custom(source~, label~, data~) =>
       Custom(source~, label~, data=snapshot_json(data))
   }
