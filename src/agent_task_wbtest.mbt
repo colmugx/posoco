@@ -76,13 +76,106 @@ impl @port.ModelPort for ForegroundAbortModel with fn provider_config(_self) -> 
 
 ///|
 priv struct CompactBusyModel {
+  mut tasks : @port.Tasks?
+  mut first_compact : Bool
+  foreground_started : @aqueue.Queue[Int]
+  cleanup_started : @aqueue.Queue[Int]
+  cleanup_release : @aqueue.Queue[Int]
+  foreground_hold : @aqueue.Queue[Int]
   started : @aqueue.Queue[Int]
   release : @aqueue.Queue[Int]
 }
 
 ///|
 fn CompactBusyModel::new() -> CompactBusyModel {
-  { started: Queue(kind=Unbounded), release: Queue(kind=Unbounded), }
+  {
+    tasks: None,
+    first_compact: true,
+    foreground_started: Queue(kind=Unbounded),
+    cleanup_started: Queue(kind=Unbounded),
+    cleanup_release: Queue(kind=Unbounded),
+    foreground_hold: Queue(kind=Unbounded),
+    started: Queue(kind=Unbounded),
+    release: Queue(kind=Unbounded),
+  }
+}
+
+///|
+fn CompactBusyModel::submit_foreground(
+  self : CompactBusyModel,
+) -> Unit raise @error.ModelError {
+  let tasks = match self.tasks {
+    Some(value) => value
+    None =>
+      raise @error.ModelError::ResponseParse(
+        "compact task capability was not composed",
+      )
+  }
+  ignore(
+    match
+      tasks.submit({
+        session_id: "compact-busy",
+        mode: @port.TaskMode::Foreground,
+        label: "compact-cleanup",
+        timeout_ms: None,
+        run: async fn() {
+          self.foreground_started.put(1) catch {
+            _ => abort("compact foreground start signal failed")
+          }
+          let held : Result[Unit, Error] = Ok(
+            ignore(self.foreground_hold.get()),
+          ) catch {
+            error => Err(error)
+          }
+          match held {
+            Ok(_) =>
+              @kernel.Message::UserMessage(content=[
+                @kernel.Content::Text("unexpected foreground release"),
+              ])
+            Err(_) => {
+              ignore(
+                @async.protect_from_cancel(async fn() {
+                  self.cleanup_started.put(1) catch {
+                    _ => abort("compact cleanup start signal failed")
+                  }
+                  ignore(
+                    self.cleanup_release.get() catch {
+                      _ => abort("compact cleanup release failed")
+                    },
+                  )
+                }) catch {
+                  _ => ()
+                },
+              )
+              @kernel.Message::UserMessage(content=[
+                @kernel.Content::Text("foreground cleanup released"),
+              ])
+            }
+          }
+        },
+      }) {
+      Ok(value) => value
+      Err(_) =>
+        raise @error.ModelError::ResponseParse(
+          "compact foreground task admission failed",
+        )
+    },
+  )
+}
+
+///|
+impl @port.Lifecycle for CompactBusyModel with fn on_compose(
+  self : CompactBusyModel,
+  view : @port.CompositionView,
+) {
+  self.tasks = view.tasks()
+}
+
+///|
+impl @port.Lifecycle for CompactBusyModel with fn on_shutdown(
+  _self : CompactBusyModel,
+) {
+  ()
 }
 
 ///|
@@ -110,14 +203,23 @@ impl @port.ModelPort for CompactBusyModel with fn compact(
   _options : @types.ChatOptions,
   _trigger : @kernel.CompactTrigger,
 ) -> @kernel.CompactResult raise @error.ModelError {
-  self.started.put(1) catch {
-    error => raise @error.ModelError::ResponseParse(error.to_string())
-  }
-  ignore(
-    self.release.get() catch {
+  if self.first_compact {
+    self.first_compact = false
+    self.submit_foreground()
+    ignore(
+      self.foreground_started.get() catch {
+        error => raise @error.ModelError::ResponseParse(error.to_string())
+      },
+    )
+    self.started.put(1) catch {
       error => raise @error.ModelError::ResponseParse(error.to_string())
-    },
-  )
+    }
+    ignore(
+      self.release.get() catch {
+        error => raise @error.ModelError::ResponseParse(error.to_string())
+      },
+    )
+  }
   {
     compacted_messages: messages.to_owned(),
     mode: @kernel.CompactMode::Replace,
@@ -576,38 +678,58 @@ async test "managed_tasks/compact_keeps_busy_guard_through_blocked_operation" {
   let store = RecordingSessionStore()
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
+      tk_ext(
+        id="model",
+        model=Some(model),
+        lifecycle=[model as &@port.Lifecycle],
+        requires=[@port.Capability::Tasks],
+      ),
       tk_ext(id="io", sessions=[store]),
     ],
     config=tk_config(),
   )
   let compact_result : Ref[Result[@types.CompactOutcome, Error]?] = Ref(None)
-  @async.with_task_group(async fn(group) {
-    let compact = group.spawn(async fn() {
-      let result : Result[@types.CompactOutcome, Error] = Ok(
-        agent.compact_session("compact-busy"),
+  agent.run_scoped(async fn(agent) {
+    @async.with_task_group(async fn(group) {
+      let compact = group.spawn(async fn() {
+        let result : Result[@types.CompactOutcome, Error] = Ok(
+          agent.compact_session("compact-busy"),
+        ) catch {
+          error => Err(error)
+        }
+        compact_result.val = Some(result)
+      })
+      ignore(model.started.get())
+      model.release()
+      ignore(model.cleanup_started.get())
+      let turn_result : Result[@types.TurnResult, Error] = Ok(
+        agent.run_turn(tk_user_msg("busy turn"), "compact-busy"),
       ) catch {
         error => Err(error)
       }
-      compact_result.val = Some(result)
+      guard turn_result
+        is Err(
+          @error.AgentError::Runtime(
+            @error.RuntimeError::InvocationFailed(detail)
+          )
+        ) &&
+        detail.contains("agent turn busy") else {
+        fail("a turn must be rejected while compact cleanup is joining")
+      }
+      model.cleanup_release.put(1)
+      ignore(compact.wait())
     })
-    ignore(model.started.get())
-    let turn_result : Result[@types.TurnResult, Error] = Ok(
-      agent.run_turn(tk_user_msg("busy turn"), "compact-busy"),
-    ) catch {
-      error => Err(error)
+    let next = agent.run_turn(tk_user_msg("after compact"), "compact-busy")
+    guard next.message
+      is @kernel.Message::AssistantMessage(
+        content=[@kernel.Content::Text(text)],
+        ..
+      ) else {
+      fail("same Agent did not accept a turn after compact cleanup")
     }
-    guard turn_result
-      is Err(
-        @error.AgentError::Runtime(
-          @error.RuntimeError::InvocationFailed(detail)
-        )
-      ) &&
-      detail.contains("agent turn busy") else {
-      fail("a turn must be rejected while compact is still running")
-    }
-    model.release()
-    ignore(compact.wait())
+    assert_eq(text, "turn must not enter while compact is busy")
+    let compact_again = agent.compact_session("compact-busy")
+    assert_eq(compact_again.final_session_id, "compact-busy")
   })
   guard compact_result.val is Some(Ok(_)) else {
     fail("blocked compact did not finish after release")

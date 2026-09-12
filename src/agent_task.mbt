@@ -293,40 +293,46 @@ async fn AgentTaskRuntime::finish_active_operation(
       self.cancel_foreground(operation)
       let reaped : Array[String] = []
       let mut first_error : @error.AgentError? = None
-      for record in self.tasks.values() {
+      // Snapshot records before the first await. A handle waiter may reap
+      // its record concurrently while cleanup is joining, and mutating a Map
+      // during `values()` traversal can otherwise skip a foreground task.
+      let records : Array[AgentTaskRecord] = Array::from_iter(
+        self.tasks.values(),
+      ).filter(fn(record) {
         match record.receipt.mode {
           @port.TaskMode::Foreground =>
             match record.operation {
               Some(owner) if owner.session_id == operation.session_id &&
                 owner.run_id == operation.run_id &&
-                owner.turn_id == operation.turn_id => {
-                let task = record.task
-                let waited : Result[@port.TaskOutcome, Error] = Ok(
-                  @async.protect_from_cancel(async fn() { task.wait() }),
-                ) catch {
-                  error => Err(error)
-                }
-                match waited {
-                  Ok(_) => reaped.push(record.receipt.id)
-                  Err(error) if @async.is_cancellation_error(error) =>
-                    reaped.push(record.receipt.id)
-                  Err(error) => {
-                    reaped.push(record.receipt.id)
-                    if first_error is None {
-                      first_error = Some(
-                        @error.AgentError::Runtime(
-                          @error.RuntimeError::InvocationFailed(
-                            "foreground task wait: " + error.to_string(),
-                          ),
-                        ),
-                      )
-                    }
-                  }
-                }
-              }
-              _ => ()
+                owner.turn_id == operation.turn_id => true
+              _ => false
             }
-          @port.TaskMode::Background => ()
+          @port.TaskMode::Background => false
+        }
+      })
+      for record in records {
+        let task = record.task
+        let waited : Result[@port.TaskOutcome, Error] = Ok(
+          @async.protect_from_cancel(async fn() { task.wait() }),
+        ) catch {
+          error => Err(error)
+        }
+        match waited {
+          Ok(_) => reaped.push(record.receipt.id)
+          Err(error) if @async.is_cancellation_error(error) =>
+            reaped.push(record.receipt.id)
+          Err(error) => {
+            reaped.push(record.receipt.id)
+            if first_error is None {
+              first_error = Some(
+                @error.AgentError::Runtime(
+                  @error.RuntimeError::InvocationFailed(
+                    "foreground task wait: " + error.to_string(),
+                  ),
+                ),
+              )
+            }
+          }
         }
       }
       for id in reaped {
@@ -536,12 +542,14 @@ async fn AgentTaskRuntime::shutdown(self : AgentTaskRuntime) -> Unit {
     self.closed = true
     self.scope_active = false
     self.spawn = None
-    for record in self.tasks.values() {
+    let records : Array[AgentTaskRecord] = Array::from_iter(self.tasks.values())
+    for record in records {
       record.task.cancel()
     }
   }
   let reaped : Array[String] = []
-  for record in self.tasks.values() {
+  let records : Array[AgentTaskRecord] = Array::from_iter(self.tasks.values())
+  for record in records {
     let task = record.task
     ignore(task.wait())
     reaped.push(record.receipt.id)

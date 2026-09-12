@@ -1,6 +1,6 @@
 name = "colmugx/posoco"
 
-version = "0.16.0"
+version = "0.16.1"
 
 import {
   "Tigls/mb-getrandom@0.1.0",

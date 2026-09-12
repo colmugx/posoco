@@ -64,6 +64,63 @@ priv struct AcceptanceTurnGate {
 }
 
 ///|
+/// Captures the composed task capability and probes foreground admission
+/// while a real turn owns a different operation.
+priv struct AcceptanceForegroundAdmissionProbe {
+  mut tasks : @port.Tasks?
+  mut submitted : Bool
+  mut mismatch : Result[@port.TaskHandle, @port.TaskSubmitError]?
+}
+
+///|
+fn AcceptanceForegroundAdmissionProbe::new() -> AcceptanceForegroundAdmissionProbe {
+  { tasks: None, submitted: false, mismatch: None, }
+}
+
+///|
+impl @port.Lifecycle for AcceptanceForegroundAdmissionProbe with fn on_compose(
+  self : AcceptanceForegroundAdmissionProbe,
+  view : @port.CompositionView,
+) {
+  self.tasks = view.tasks()
+}
+
+///|
+impl @port.Lifecycle for AcceptanceForegroundAdmissionProbe with fn on_shutdown(
+  _self : AcceptanceForegroundAdmissionProbe,
+) {
+  ()
+}
+
+///|
+impl @port.PipelineHook for AcceptanceForegroundAdmissionProbe with fn before_model(
+  self : AcceptanceForegroundAdmissionProbe,
+  messages : Array[@kernel.Message],
+) -> Array[@kernel.Message] {
+  if !self.submitted {
+    self.submitted = true
+    let tasks = match self.tasks {
+      Some(value) => value
+      None => abort("foreground admission task capability was not composed")
+    }
+    self.mismatch = Some(
+      tasks.submit({
+        session_id: "foreground-wrong-session",
+        mode: @port.TaskMode::Foreground,
+        label: "foreground-session-mismatch",
+        timeout_ms: None,
+        run: fn() {
+          @kernel.Message::UserMessage(content=[
+            @kernel.Content::Text("must not be admitted"),
+          ])
+        },
+      }),
+    )
+  }
+  messages
+}
+
+///|
 fn acceptance_content_text(content : @kernel.Content) -> String {
   match content {
     @kernel.Content::Text(text) => text
@@ -163,6 +220,21 @@ fn acceptance_background_task(
     }) {
     Ok(handle) => handle
     Err(_) => abort("background task admission failed")
+  }
+}
+
+///|
+fn acceptance_task_handle(
+  tasks : @port.Tasks,
+  session_id : String,
+  mode : @port.TaskMode,
+  label : String,
+  timeout_ms : Int?,
+  run : async () -> @kernel.Message,
+) -> @port.TaskHandle {
+  match tasks.submit({ session_id, mode, label, timeout_ms, run, }) {
+    Ok(handle) => handle
+    Err(_) => abort("task admission failed")
   }
 }
 
@@ -743,5 +815,165 @@ async test "managed_tasks/wait_result_mutation_isolated_from_late_wait_and_deliv
     assert_eq(acceptance_text_count(prompt, "terminal-original"), 1)
     assert_eq(acceptance_text_count(prompt, "caller-mutated"), 0)
     assert_true(acceptance_user_message_contains(prompt, "terminal-original"))
+  })
+}
+
+///|
+async test "managed_tasks/tasks_requires_gate_and_scope_admission" {
+  let hidden = AcceptanceTaskCapture::new()
+  let declared = AcceptanceTaskCapture::new()
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(ScriptedModel([]))),
+      tk_ext(id="io", sessions=[RecordingSessionStore()]),
+      tk_ext(id="hidden", lifecycle=[hidden as &@port.Lifecycle]),
+      tk_ext(id="declared", lifecycle=[declared as &@port.Lifecycle], requires=[
+        @port.Capability::Tasks,
+      ]),
+    ],
+    config=tk_config(),
+  )
+  assert_true(hidden.tasks is None)
+  let tasks = acceptance_tasks(declared)
+  let before_scope = tasks.submit({
+    session_id: "before-scope",
+    mode: @port.TaskMode::Background,
+    label: "before-scope",
+    timeout_ms: None,
+    run: fn() {
+      @kernel.Message::UserMessage(content=[
+        @kernel.Content::Text("must not start before scope"),
+      ])
+    },
+  })
+  assert_true(before_scope is Err(@port.TaskSubmitError::Unavailable))
+  agent.shutdown()
+}
+
+///|
+async test "managed_tasks/foreground_requires_operation_and_matching_session" {
+  let probe = AcceptanceForegroundAdmissionProbe::new()
+  let agent = Agent(
+    exts=[
+      tk_ext(
+        id="model",
+        model=Some(
+          ScriptedModel([Respond(tk_stop_response("foreground admission turn"))]),
+        ),
+      ),
+      tk_ext(id="io", sessions=[RecordingSessionStore()]),
+      tk_ext(
+        id="foreground-probe",
+        hooks=[probe as &@port.PipelineHook],
+        lifecycle=[probe as &@port.Lifecycle],
+        requires=[@port.Capability::Tasks],
+      ),
+    ],
+    config=tk_config(),
+  )
+  agent.run_scoped(async fn(agent) {
+    let tasks = match probe.tasks {
+      Some(value) => value
+      None => abort("foreground admission task capability was not composed")
+    }
+    let no_operation = tasks.submit({
+      session_id: "foreground-session",
+      mode: @port.TaskMode::Foreground,
+      label: "foreground-without-operation",
+      timeout_ms: None,
+      run: fn() {
+        @kernel.Message::UserMessage(content=[
+          @kernel.Content::Text("must not start without operation"),
+        ])
+      },
+    })
+    assert_true(no_operation is Err(@port.TaskSubmitError::Unavailable))
+    ignore(
+      agent.run_turn(tk_user_msg("foreground admission"), "foreground-session"),
+    )
+  })
+  match probe.mismatch {
+    Some(Err(@port.TaskSubmitError::InvalidSession(reason~))) =>
+      assert_true(reason.contains("does not match"))
+    Some(Err(_)) =>
+      fail("foreground mismatch returned the wrong admission error")
+    Some(Ok(_)) => fail("foreground mismatch was admitted")
+    None => fail("foreground hook did not attempt the mismatched admission")
+  }
+}
+
+///|
+async test "managed_tasks/background_failure_timeout_and_immediate_cancel_are_stable" {
+  let capture = AcceptanceTaskCapture::new()
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(ScriptedModel([]))),
+      tk_ext(id="io", sessions=[RecordingSessionStore()]),
+      tk_ext(id="tasks", lifecycle=[capture as &@port.Lifecycle], requires=[
+        @port.Capability::Tasks,
+      ]),
+    ],
+    config=tk_config(),
+  )
+  agent.run_scoped(async fn(_agent) {
+    let tasks = acceptance_tasks(capture)
+    let failed = acceptance_task_handle(
+      tasks,
+      "terminal-failed",
+      @port.TaskMode::Background,
+      "failed",
+      None,
+      fn() -> @kernel.Message raise Error {
+        raise AcceptanceScopeBodyFailed::AcceptanceScopeBodyFailed
+      },
+    )
+    let timeout_gate : @aqueue.Queue[Int] = Queue(kind=Unbounded)
+    let timed_out = acceptance_task_handle(
+      tasks,
+      "terminal-timeout",
+      @port.TaskMode::Background,
+      "timed-out",
+      Some(20),
+      async fn() {
+        ignore(timeout_gate.get())
+        @kernel.Message::UserMessage(content=[
+          @kernel.Content::Text("must time out"),
+        ])
+      },
+    )
+    let cancel_gate : @aqueue.Queue[Int] = Queue(kind=Unbounded)
+    let cancelled = acceptance_task_handle(
+      tasks,
+      "terminal-cancelled",
+      @port.TaskMode::Background,
+      "cancelled-before-wait",
+      None,
+      async fn() {
+        ignore(cancel_gate.get())
+        @kernel.Message::UserMessage(content=[
+          @kernel.Content::Text("must be cancelled"),
+        ])
+      },
+    )
+    // Cancel immediately after admission, before any wait can observe start.
+    cancelled.cancel()
+
+    let failed_first = failed.wait()
+    let failed_late = failed.wait()
+    assert_eq(failed_first, failed_late)
+    match failed_first.status {
+      @port.TaskStatus::Failed(reason~) => assert_true(reason != "")
+      _ => fail("failed background task did not remain Failed")
+    }
+
+    let timeout_first = timed_out.wait()
+    let timeout_late = timed_out.wait()
+    assert_eq(timeout_first, timeout_late)
+    assert_true(timeout_first.status is @port.TaskStatus::TimedOut)
+
+    let cancelled_first = cancelled.wait()
+    let cancelled_late = cancelled.wait()
+    assert_eq(cancelled_first, cancelled_late)
+    acceptance_assert_cancelled(cancelled_first)
   })
 }
