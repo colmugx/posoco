@@ -2014,10 +2014,18 @@ async test "wave3/compact_session/pending tools fixated as interrupted" {
   guard outcome.mode is Replace else { fail("expected Replace mode") }
   let compact_input = model.received_compacts()[0].0
   assert_eq(compact_input.length(), 3)
+  guard compact_input[1] is AssistantMessage(tool_calls=[owner, ..], ..) else {
+    fail("expected the owning assistant message directly before its output")
+  }
   guard compact_input[2]
-    is ToolMessage(outcome=RuntimeFailure(error_category~, ..), ..) else {
+    is ToolMessage(
+      call_id=synthesized_id,
+      outcome=RuntimeFailure(error_category~, ..),
+      ..
+    ) else {
     fail("expected an interrupted marker for the pending tool call")
   }
+  assert_eq(synthesized_id, owner.call_id)
   assert_eq(error_category, "Interrupted")
   assert_eq(store.store["wave3-fixate"].messages.length(), 1)
 }

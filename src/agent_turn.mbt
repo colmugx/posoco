@@ -110,8 +110,7 @@ async fn AgentRuntime::run_turn_via_puppet(
   self.refresh_catalog_if_changed()
 
   let session = self.load_session_for_operation(session_id)
-  // The loaded session is the authoritative persisted prefix for this turn.
-  self.session_cursors[session_id] = session.messages.length()
+  let applied_task_ids = parse_task_applied_ids(session.metadata)
   match @types.ContextState::from_metadata(session.metadata) {
     Some(state) =>
       match self.puppet.session_context_state(session_id) {
@@ -122,10 +121,22 @@ async fn AgentRuntime::run_turn_via_puppet(
   }
   self.project_context_state(Some(identity.scope()), session_id)
 
-  // Step 2: snapshot + seed this turn. Recovery replays a persisted trailing
-  // user message without appending it again; every other path appends the
-  // supplied input. Deep-copy so callers cannot mutate recorded state.
-  let messages = snapshot_messages(session.messages)
+  // Step 2: snapshot + seed this turn. The window is fixated so persisted
+  // dangling tool calls replay wire-valid. Recovery replays a persisted
+  // trailing user message without appending it again; every other path
+  // appends the supplied input. Deep-copy so callers cannot mutate recorded
+  // state.
+  let raw = snapshot_messages(session.messages)
+  let messages = fixate_pending_tool_calls(raw)
+  self.session_cursors[session_id] = fixated_persisted_boundary(raw, messages)
+  if !resume_persisted_user {
+    let pending = self.task_runtime.peek_outcomes(session_id)
+    for outcome in pending {
+      if !task_outcome_is_applied(applied_task_ids, outcome) {
+        messages.push(task_outcome_message(outcome))
+      }
+    }
+  }
   let (input, current_turn_start) = match messages.last() {
     Some(last) if resume_persisted_user && last is UserMessage(..) =>
       (snapshot_message(last), messages.length() - 1)
@@ -284,14 +295,20 @@ async fn AgentRuntime::run_puppet_turn_body(
             request.initial_messages,
             current_turn_start,
           )
-          self.save_turn_transcript(
-            session_id,
-            t,
-            current_metadata,
-            request.initial_messages,
-            current_turn_start,
+          let saved : Result[Unit, @error.AgentError] = Ok(
+            self.save_turn_transcript(
+              session_id,
+              t,
+              current_metadata,
+              request.initial_messages,
+              current_turn_start,
+            ),
           ) catch {
-            error =>
+            error => Err(error)
+          }
+          match saved {
+            Ok(_) => self.task_runtime.commit_outcomes(session_id)
+            Err(error) =>
               emit_secondary_failure(
                 self.observers,
                 "failed_turn_transcript_save",
@@ -339,18 +356,22 @@ async fn AgentRuntime::run_puppet_turn_body(
                 request.initial_messages,
                 current_turn_start,
               )
-              self.save_turn_transcript(
-                session_id,
-                t,
-                current_metadata,
-                request.initial_messages,
-                current_turn_start,
+              let saved : Result[Unit, @error.AgentError] = Ok(
+                self.save_turn_transcript(
+                  session_id,
+                  t,
+                  current_metadata,
+                  request.initial_messages,
+                  current_turn_start,
+                ),
               ) catch {
-                // The turn's own failure is the primary signal; a secondary
-                // save failure must not mask it. Keep the persistence
-                // failure observable without copying untrusted transcript
-                // content into the event.
-                error =>
+                error => Err(error)
+              }
+              match saved {
+                Ok(_) => self.task_runtime.commit_outcomes(session_id)
+                Err(error) =>
+                  // The turn's own failure is the primary signal; a
+                  // secondary save failure must remain observable.
                   emit_secondary_failure(
                     self.observers,
                     "failed_turn_transcript_save",
@@ -398,6 +419,7 @@ async fn AgentRuntime::run_puppet_turn_body(
     request.initial_messages,
     current_turn_start,
   )
+  self.task_runtime.commit_outcomes(session_id)
   self.project_context_state(Some(identity.scope()), session_id)
 
   // Step 7: build TurnResult.
@@ -668,13 +690,18 @@ async fn AgentRuntime::save_turn_transcript(
 ) -> Unit raise @error.AgentError {
   let final_messages = snapshot_messages(transcript.messages_snapshot())
   let metadata = self.metadata_with_context_state(session_id, metadata)
+  let metadata = self.task_runtime.metadata_with_applied_outcomes(
+    session_id, metadata,
+  )
   let cursor = match self.session_cursors.get(session_id) {
     Some(n) => n
     None => 0
   }
-  let operation = transcript_save_operation(
-    transcript, initial_messages, current_turn_start,
-  )
+  let operation = if self.task_runtime.has_inflight(session_id) {
+    "final_save"
+  } else {
+    transcript_save_operation(transcript, initial_messages, current_turn_start)
+  }
   if operation == "final_append" {
     // Append tail from cursor. Each store receives its own deep snapshot of
     // the tail so a misbehaving store cannot mutate another store's payload.
@@ -751,6 +778,7 @@ async fn AgentRuntime::load_session_for_operation(
 ) -> @types.Session raise @error.AgentError {
   match self.body_recovery.get(session_id) {
     Some(pending) => {
+      ignore(parse_task_applied_ids(pending.metadata))
       self.save_sessions_all(
         session_id,
         pending.messages,
@@ -762,11 +790,14 @@ async fn AgentRuntime::load_session_for_operation(
     }
     None =>
       match self.sessions {
-        [first, ..] =>
-          first.load(session_id) catch {
+        [first, ..] => {
+          let loaded = first.load(session_id) catch {
             error =>
               raise contextualize_session_error(error, session_id, "load")
           }
+          ignore(parse_task_applied_ids(loaded.metadata))
+          loaded
+        }
         [] =>
           raise contextualize_session_error(
             Load("no session store configured"),
@@ -778,6 +809,12 @@ async fn AgentRuntime::load_session_for_operation(
 }
 
 ///|
+/// Repair a loaded window for wire replay: every assistant `tool_call` must
+/// have a matching ToolMessage. Each unanswered call gets a synthesized
+/// `RuntimeFailure(Interrupted)` output inserted immediately after its owning
+/// assistant message (one message's outputs grouped together, in tool_calls
+/// order), so adjacency holds even when later user input follows. Shared by
+/// the turn path and the compact path.
 fn fixate_pending_tool_calls(
   messages : Array[@kernel.Message],
 ) -> Array[@kernel.Message] {
@@ -788,8 +825,9 @@ fn fixate_pending_tool_calls(
       _ => ()
     }
   }
-  let out = messages.copy()
+  let out : Array[@kernel.Message] = []
   for message in messages {
+    out.push(message)
     match message {
       AssistantMessage(tool_calls~, ..) =>
         for call in tool_calls {
@@ -801,7 +839,7 @@ fn fixate_pending_tool_calls(
                 tool_name=call.name,
                 outcome=RuntimeFailure(
                   error_category="Interrupted",
-                  message="tool call was pending when the operation ended; recorded as interrupted before compaction",
+                  message="tool call was pending when the previous operation ended; recorded as interrupted",
                 ),
               ),
             )
@@ -811,6 +849,27 @@ fn fixate_pending_tool_calls(
     }
   }
   out
+}
+
+///|
+/// Append-save cursor for a fixated window: the fixated index just past the
+/// last persisted (raw) message. Synthesized outputs interleaved before that
+/// point cannot cross a concatenating append, so they stay a per-load
+/// derivation; outputs owned by the trailing persisted message ride the
+/// appended tail and become persisted. Returns 0 for an empty raw window.
+fn fixated_persisted_boundary(
+  raw : Array[@kernel.Message],
+  fixated : Array[@kernel.Message],
+) -> Int {
+  let mut i = 0
+  let mut matched = 0
+  while matched < raw.length() && i < fixated.length() {
+    if fixated[i] == raw[matched] {
+      matched = matched + 1
+    }
+    i = i + 1
+  }
+  i
 }
 
 ///|
@@ -827,10 +886,38 @@ async fn AgentRuntime::compact_session(
   ) catch {
     error => Err(error)
   }
+  let cleanup : Result[Unit, @error.AgentError] = Ok(
+    self.task_runtime.finish_active_operation(),
+  ) catch {
+    error => Err(error)
+  }
+  self.task_runtime.end_operation()
   self.turn_active = false
   match result {
-    Ok(value) => value
-    Err(error) => raise error
+    Ok(value) =>
+      match cleanup {
+        Ok(_) => value
+        Err(error) => {
+          emit_secondary_failure(
+            self.observers,
+            "foreground_task_cleanup",
+            error.to_string(),
+          )
+          raise error
+        }
+      }
+    Err(error) => {
+      match cleanup {
+        Err(cleanup_error) =>
+          emit_secondary_failure(
+            self.observers,
+            "foreground_task_cleanup",
+            cleanup_error.to_string(),
+          )
+        Ok(_) => ()
+      }
+      raise error
+    }
   }
 }
 
@@ -843,6 +930,11 @@ async fn AgentRuntime::run_compact_operation(
   self.ensure_agent_running()
   self.notify_start_if_first()
   let identity = self.mint_turn_identity(session_id)
+  self.task_runtime.begin_operation(
+    session_id,
+    identity.run_id,
+    identity.turn_id,
+  )
   let scope = identity.scope()
   let session = self.load_session_for_operation(session_id)
   self.session_cursors[session_id] = session.messages.length()

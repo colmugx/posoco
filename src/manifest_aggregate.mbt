@@ -6,10 +6,10 @@
 /// A registered Lifecycle contributor paired with its declared capability
 /// requirements. The pairing survives aggregation so the composition can
 /// gate each contributor's `CompositionView` on its own declared `requires`
-/// at `Lifecycle::on_compose` delivery time. (The manifest id is not carried:
-/// an extension that fails composition identifies itself through the
-/// `manifest_id` of the `CompositionError` it raises.)
+/// at `Lifecycle::on_compose` delivery time. The manifest id also binds
+/// Agent-owned capabilities to their declaring extension.
 priv struct LifecycleEntry {
+  id : String
   requires : Array[@port.Capability]
   port : &@port.Lifecycle
 }
@@ -178,7 +178,7 @@ fn aggregate_extensions(
       memory.push((mid, m))
     }
     for l in manifest.lifecycle {
-      lifecycle.push({ requires: manifest.requires.copy(), port: l, })
+      lifecycle.push({ id: mid, requires: manifest.requires.copy(), port: l, })
     }
     for u in manifest.ui {
       ui.push(u)

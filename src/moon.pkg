@@ -6,10 +6,10 @@ import {
   "colmugx/posoco/internal/kernel_exec",
   "colmugx/posoco/error",
   "colmugx/posoco/internal/puppetry",
+  "Tigls/mb-getrandom/lib" @getrandom,
   "moonbitlang/async",
   "moonbitlang/async/aqueue",
   "moonbitlang/core/json",
-  "moonbitlang/core/strconv",
   "moonbitlang/core/string",
 }
 

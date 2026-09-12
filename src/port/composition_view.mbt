@@ -15,6 +15,7 @@
 pub struct CompositionView {
   priv model_ : &ModelPort?
   priv ui_ : &UiPort?
+  priv tasks_ : Tasks?
 }
 
 ///|
@@ -38,6 +39,13 @@ pub fn CompositionView::ui(self : CompositionView) -> &UiPort? {
 }
 
 ///|
+/// The Agent-owned structured task capability, present only when the
+/// extension declares `Capability::Tasks`.
+pub fn CompositionView::tasks(self : CompositionView) -> Tasks? {
+  self.tasks_
+}
+
+///|
 /// Gate a view on a manifest's declared `requires`: a declared capability is
 /// populated from the composed ports, an undeclared one reads `None`.
 /// Called by the composition after every gate has passed, so `model` and
@@ -46,6 +54,7 @@ pub fn CompositionView::resolve(
   requires~ : Array[Capability],
   model~ : &ModelPort,
   ui~ : &UiPort,
+  tasks? : Tasks? = None,
 ) -> CompositionView {
   {
     model_: if requires.contains(Model) {
@@ -55,6 +64,11 @@ pub fn CompositionView::resolve(
     },
     ui_: if requires.contains(Ui) {
       Some(ui)
+    } else {
+      None
+    },
+    tasks_: if requires.contains(Tasks) {
+      tasks
     } else {
       None
     },

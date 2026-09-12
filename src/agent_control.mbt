@@ -15,6 +15,7 @@ pub struct AgentControl {
   priv mut follow_up_depth : Int
   priv mut seq : Int
   priv max_depth : Int
+  priv mut abort_hook : ((@kernel.RunId) -> Unit)?
 }
 
 ///|
@@ -27,7 +28,18 @@ fn AgentControl::AgentControl(mailbox : &@puppetry.Mailbox) -> AgentControl {
     follow_up_depth: 0,
     seq: 0,
     max_depth: default_max_follow_up_depth,
+    abort_hook: None,
   }
+}
+
+///|
+/// Install the Agent-owned foreground cancellation callback. The callback is
+/// invoked only after the mailbox accepts an abort for a live run.
+fn AgentControl::set_abort_hook(
+  self : AgentControl,
+  hook : (@kernel.RunId) -> Unit,
+) -> Unit {
+  self.abort_hook = Some(hook)
 }
 
 ///|
@@ -131,8 +143,13 @@ pub fn AgentControl::abort_active(
     detail,
   }
   match self.mailbox.enqueue_abort(cmd) {
-    @puppetry.Accepted(command_id~) =>
+    @puppetry.Accepted(command_id~) => {
+      match self.abort_hook {
+        Some(hook) => hook(cmd.target_run_id)
+        None => ()
+      }
       @runtime.Accepted(command_id=command_id.to_string())
+    }
     @puppetry.RejectedStale(reason~, ..) => @runtime.RejectedStale(reason~)
     @puppetry.RejectedQueueFull(depth~, ..) =>
       @runtime.RejectedQueueFull(depth~)

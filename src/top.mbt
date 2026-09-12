@@ -56,6 +56,14 @@ pub using @port {
   // composed-capability view delivered at Lifecycle::on_compose.
   type Capability,
   type CompositionView,
+  type TaskMode,
+  type TaskSpec,
+  type TaskReceipt,
+  type TaskStatus,
+  type TaskOutcome,
+  type TaskSubmitError,
+  type TaskHandle,
+  type Tasks,
 }
 
 ///|

@@ -16,6 +16,8 @@ pub(all) enum Capability {
   Model
   /// The composed UiPort (single / Composite / Noop), for human interaction.
   Ui
+  /// The Agent-owned structured task capability.
+  Tasks
 } derive(Eq, Debug)
 
 ///|

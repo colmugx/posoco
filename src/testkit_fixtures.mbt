@@ -352,7 +352,10 @@ pub fn tk_view(
   model~ : &@port.ModelPort,
   ui~ : &@port.UiPort,
 ) -> @port.CompositionView {
-  @port.CompositionView::resolve(requires~, model~, ui~)
+  let tasks = @port.Tasks::from_submit(submit=fn(_) {
+    Err(@port.TaskSubmitError::Unavailable)
+  })
+  @port.CompositionView::resolve(requires~, model~, ui~, tasks=Some(tasks))
 }
 
 ///|

@@ -33,6 +33,7 @@ pub(all) struct AutocompleteSource {
 pub(all) enum Capability {
   Model
   Ui
+  Tasks
 } derive(Eq, @debug.Debug)
 
 pub(all) struct CommandDef {
@@ -78,7 +79,8 @@ pub struct CompositionView {
   // private fields
 }
 pub fn CompositionView::model(Self) -> &ModelPort?
-pub fn CompositionView::resolve(requires~ : Array[Capability], model~ : &ModelPort, ui~ : &UiPort) -> Self
+pub fn CompositionView::resolve(requires~ : Array[Capability], model~ : &ModelPort, ui~ : &UiPort, tasks? : Tasks?) -> Self
+pub fn CompositionView::tasks(Self) -> Tasks?
 pub fn CompositionView::ui(Self) -> &UiPort?
 
 pub(all) struct ExtensionManifest {
@@ -121,6 +123,60 @@ pub fn ProviderConfig::ProviderConfig(reasoning_effort_values~ : Array[String], 
 pub fn ProviderConfig::accepts_reasoning_effort(Self, String) -> Bool
 pub fn ProviderConfig::empty() -> Self
 pub impl Show for ProviderConfig
+
+pub struct TaskHandle {
+  // private fields
+}
+pub fn TaskHandle::cancel(Self) -> Unit
+pub fn TaskHandle::from_callbacks(receipt~ : TaskReceipt, wait~ : async (TaskReceipt) -> TaskOutcome, cancel~ : (TaskReceipt) -> Unit) -> Self
+pub fn TaskHandle::receipt(Self) -> TaskReceipt
+pub async fn TaskHandle::wait(Self) -> TaskOutcome
+
+pub(all) enum TaskMode {
+  Foreground
+  Background
+} derive(Eq, @debug.Debug)
+
+pub(all) struct TaskOutcome {
+  receipt : TaskReceipt
+  status : TaskStatus
+} derive(Eq, @debug.Debug)
+
+pub(all) struct TaskReceipt {
+  id : String
+  session_id : String
+  mode : TaskMode
+  label : String
+  extension_id : String
+} derive(Eq, @debug.Debug)
+
+pub(all) struct TaskSpec {
+  session_id : String
+  mode : TaskMode
+  label : String
+  timeout_ms : Int?
+  run : async () -> @kernel.Message
+}
+
+pub(all) enum TaskStatus {
+  Completed(message~ : @kernel.Message)
+  Failed(reason~ : String)
+  TimedOut
+  Cancelled(reason~ : String)
+} derive(Eq, @debug.Debug)
+
+pub(all) enum TaskSubmitError {
+  Unavailable
+  Closed
+  QueueFull
+  InvalidSession(reason~ : String)
+} derive(Eq, @debug.Debug)
+
+pub struct Tasks {
+  // private fields
+}
+pub fn Tasks::from_submit(submit~ : (TaskSpec) -> Result[TaskHandle, TaskSubmitError]) -> Self
+pub fn Tasks::submit(Self, TaskSpec) -> Result[TaskHandle, TaskSubmitError]
 
 pub(all) enum ToolDecision {
   Approve(call~ : @kernel.ToolCall)

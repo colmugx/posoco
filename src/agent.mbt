@@ -261,6 +261,7 @@ priv struct AgentRuntime {
   commands : Array[&@port.CommandPort]
   builtin_command_port : BuiltinCommandPort
   control : AgentControl
+  task_runtime : AgentTaskRuntime
   config : AgentConfig
   /// Host-owned versioned catalog (experimental runtime seam). `None` keeps
   /// the static composition-time snapshot for the Agent's lifetime.
@@ -479,6 +480,11 @@ fn AgentRuntime::compose(
   )
   let journal = @puppetry.InMemoryJournal()
   let chunk_dispatcher_ref : Ref[ChunkDispatcher?] = Ref(None)
+  let task_runtime = AgentTaskRuntime::AgentTaskRuntime()
+  let control = AgentControl(mailbox_ref)
+  control.set_abort_hook(fn(run_id) {
+    task_runtime.cancel_foreground_for_run(run_id)
+  })
   let event_subscriber = AgentEventSubscriber(
     agg.observers,
     chunk_dispatcher_ref,
@@ -517,10 +523,12 @@ fn AgentRuntime::compose(
   // (e.g. CompositionError::ExtensionComposeFailed for an undeclared
   // capability) fails the composition loudly; no partial Agent is produced.
   for entry in agg.lifecycle {
+    let task_capability = task_runtime.capability(entry.id)
     let view = @port.CompositionView::resolve(
       requires=entry.requires,
       model=agg.model,
       ui=agg.ui,
+      tasks=Some(task_capability),
     )
     entry.port.on_compose(view)
   }
@@ -535,7 +543,8 @@ fn AgentRuntime::compose(
     lifecycle: agg.lifecycle.map(fn(entry) { entry.port }),
     commands: agg.commands,
     builtin_command_port,
-    control: AgentControl(mailbox_ref),
+    control,
+    task_runtime,
     config,
     catalog_source,
     last_catalog_revision: initial_catalog_revision,
@@ -604,11 +613,72 @@ pub fn Agent::with_runtime(
 }
 
 ///|
+/// Own an Agent and all of its managed work for one structured lifetime.
+/// The body receives the same Agent value that extensions use for turns;
+/// returning, raising, or being cancelled closes the task scope and then
+/// shuts down the Agent.
+pub async fn[X] Agent::run_scoped(self : Agent, body : async (Agent) -> X) -> X {
+  if !self.runtime.task_runtime.scope_available() {
+    raise @error.AgentError::Runtime(
+      @error.RuntimeError::InvocationFailed(
+        "task scope is already active or the Agent is closed",
+      ),
+    )
+  }
+  @async.with_task_group(async fn(group) {
+    let owns_scope = Ref(false)
+    let spawn : (async () -> @port.TaskOutcome) -> @async.Task[
+      @port.TaskOutcome,
+    ] = fn(task) { group.spawn(task) }
+    let startup : Result[Unit, Error] = Ok(
+      {
+        self.runtime.task_runtime.activate(spawn)
+        owns_scope.val = true
+        self.runtime.notify_start_if_first()
+      },
+    ) catch {
+      error => Err(error)
+    }
+    let body_result : Result[X, Error] = match startup {
+      Err(error) => Err(error)
+      Ok(_) => Ok(body(self)) catch { error => Err(error) }
+    }
+    let shutdown_result : Result[Unit, Error] = if owns_scope.val {
+      Ok(@async.protect_from_cancel(async fn() { self.runtime.shutdown() })) catch {
+        error => Err(error)
+      }
+    } else {
+      Ok(())
+    }
+    match body_result {
+      Ok(value) =>
+        match shutdown_result {
+          Ok(_) => value
+          Err(error) => raise error
+        }
+      Err(error) =>
+        match shutdown_result {
+          Ok(_) => raise error
+          Err(cleanup_error) => {
+            emit_secondary_failure(
+              self.runtime.observers,
+              "run_scoped_shutdown",
+              cleanup_error.to_string(),
+            )
+            raise error
+          }
+        }
+    }
+  })
+}
+
+///|
 async fn AgentRuntime::shutdown(self : AgentRuntime) -> Unit {
   if self.shutdown_complete {
     return
   }
   self.shutdown_started = true
+  self.task_runtime.shutdown()
   self.puppet.shutdown() catch {
     error =>
       raise @error.AgentError::Runtime(
@@ -921,6 +991,11 @@ async fn AgentRuntime::run_single_turn(
   // Mint run/turn identity up front so even TurnStarted carries attribution
   // scope; the same identity drives the Puppet request below.
   let identity = self.mint_turn_identity(session_id)
+  self.task_runtime.begin_operation(
+    session_id,
+    identity.run_id,
+    identity.turn_id,
+  )
   self.emit_turn_event(Some(identity.scope()), TurnStarted)
   // Turn-begin hooks fire after the TurnStarted projection and before the
   // pump's first before_model. Pre-turn failures above dispatch nothing —
@@ -931,6 +1006,21 @@ async fn AgentRuntime::run_single_turn(
     input, session_id, identity, resume_persisted_user,
   ) catch {
     primary => {
+      let cleanup : Result[Unit, @error.AgentError] = Ok(
+        self.task_runtime.finish_active_operation(),
+      ) catch {
+        error => Err(error)
+      }
+      self.task_runtime.end_operation()
+      match cleanup {
+        Ok(_) => ()
+        Err(error) =>
+          emit_secondary_failure(
+            self.observers,
+            "foreground_task_cleanup",
+            error.to_string(),
+          )
+      }
       let safe_reason = "turn failed: " + agent_error_category(primary)
       self.emit_turn_event(Some(identity.scope()), TurnFailed(safe_reason))
       self.dispatch_on_turn_end()
@@ -938,9 +1028,27 @@ async fn AgentRuntime::run_single_turn(
     }
   }
 
-  self.emit_turn_event(Some(identity.scope()), TurnCompleted)
-  self.dispatch_on_turn_end()
-  result
+  let cleanup : Result[Unit, @error.AgentError] = Ok(
+    self.task_runtime.finish_active_operation(),
+  ) catch {
+    error => Err(error)
+  }
+  self.task_runtime.end_operation()
+  match cleanup {
+    Ok(_) => {
+      self.emit_turn_event(Some(identity.scope()), TurnCompleted)
+      self.dispatch_on_turn_end()
+      result
+    }
+    Err(error) => {
+      self.emit_turn_event(
+        Some(identity.scope()),
+        TurnFailed("turn failed: AgentError::Runtime"),
+      )
+      self.dispatch_on_turn_end()
+      raise error
+    }
+  }
 }
 
 ///|

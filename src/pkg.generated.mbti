@@ -63,6 +63,7 @@ pub async fn Agent::compact_session(Self, String) -> @types.CompactOutcome raise
 pub async fn Agent::context_state(Self, String) -> @types.ContextState?
 pub fn Agent::control(Self) -> AgentControl
 pub async fn Agent::resume_turn(Self, String, continuation? : String) -> @types.TurnResult raise @error.AgentError
+pub async fn[X] Agent::run_scoped(Self, async (Self) -> X) -> X
 pub async fn Agent::run_turn(Self, @kernel.Message, String) -> @types.TurnResult raise @error.AgentError
 pub async fn Agent::shutdown(Self) -> Unit
 pub fn Agent::with_runtime(exts~ : Array[&@port.Extension], config~ : AgentConfig, runtime~ : &@runtime.Runtime, ui_projection? : Bool, catalog_source? : &@runtime.CatalogSource) -> Self raise @error.CompositionError
@@ -435,6 +436,22 @@ pub using @types {type StreamAccumulator}
 pub using @types {type StreamChunk}
 
 pub using @types {type StreamMode}
+
+pub using @port {type TaskHandle}
+
+pub using @port {type TaskMode}
+
+pub using @port {type TaskOutcome}
+
+pub using @port {type TaskReceipt}
+
+pub using @port {type TaskSpec}
+
+pub using @port {type TaskStatus}
+
+pub using @port {type TaskSubmitError}
+
+pub using @port {type Tasks}
 
 pub using @kernel {type ToolCall}
 
