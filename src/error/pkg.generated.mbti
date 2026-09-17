@@ -31,12 +31,22 @@ pub(all) suberror CompositionError {
   CommandCollision(String, manifests~ : Array[String])
   MissingModel
   MultipleModels(manifests~ : Array[String])
+  MultipleDecisions(manifests~ : Array[String])
   EmptyManifests
   ManifestSchemaError(manifest_id~ : String, detail~ : String)
   EmptyPort(String)
   ExtensionComposeFailed(manifest_id~ : String, detail~ : String)
 } derive(@debug.Debug)
 pub impl Show for CompositionError
+
+pub(all) suberror DecisionError {
+  InvalidRequest(String)
+  RequestBuild(String)
+  Transport(String)
+  ResponseParse(String)
+  RateLimited(RateLimitInfo)
+} derive(@debug.Debug)
+pub impl Show for DecisionError
 
 pub(all) suberror MemoryError {
   Inbound(String)

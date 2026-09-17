@@ -527,6 +527,7 @@ fn AgentRuntime::compose(
     let view = @port.CompositionView::resolve(
       requires=entry.requires,
       model=agg.model,
+      decision=agg.decision,
       ui=agg.ui,
       tasks=Some(task_capability),
     )

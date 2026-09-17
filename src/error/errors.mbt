@@ -72,6 +72,38 @@ pub impl Show for ModelError with fn to_string(self) -> String {
 }
 
 ///|
+/// Errors raised by `DecisionPort::evaluate`. Provider adapters normalize
+/// transport/protocol failures into this bounded provider-neutral surface.
+pub(all) suberror DecisionError {
+  InvalidRequest(String)
+  RequestBuild(String)
+  Transport(String)
+  ResponseParse(String)
+  RateLimited(RateLimitInfo)
+} derive(Debug)
+
+///|
+pub impl Show for DecisionError with fn to_string(self) -> String {
+  match self {
+    InvalidRequest(msg) => "DecisionError::InvalidRequest(\{msg})"
+    RequestBuild(msg) => "DecisionError::RequestBuild(\{msg})"
+    Transport(msg) => "DecisionError::Transport(\{msg})"
+    ResponseParse(msg) => "DecisionError::ResponseParse(\{msg})"
+    RateLimited(info) => {
+      let code_label = match info.provider_code {
+        Some(code) => code
+        None => "none"
+      }
+      let reset_label = match info.reset_at_ms {
+        Some(at) => "\{at}"
+        None => "none"
+      }
+      "DecisionError::RateLimited(code=\{code_label}, reset_at_ms=\{reset_label}, message=\{bounded_rate_limit_message(info.message)})"
+    }
+  }
+}
+
+///|
 pub(all) suberror SessionError {
   Load(String)
   Save(String)
@@ -170,6 +202,9 @@ pub(all) suberror CompositionError {
   /// must be solved inside a meta-extension (e.g. posoco-ext-llm), not by
   /// declaring multiple top-level models.
   MultipleModels(manifests~ : Array[String])
+  /// More than one extension contributed a DecisionPort. Routing among
+  /// decision providers belongs inside one meta-extension.
+  MultipleDecisions(manifests~ : Array[String])
   /// Empty extension list passed to Agent::new.
   EmptyManifests
   /// An extension manifest was malformed (e.g. empty id, structural issue).
@@ -194,6 +229,8 @@ pub impl Show for CompositionError with fn to_string(self) -> String {
     MissingModel => "CompositionError::MissingModel"
     MultipleModels(manifests~) =>
       "CompositionError::MultipleModels(manifests=\{manifests.join(",")})"
+    MultipleDecisions(manifests~) =>
+      "CompositionError::MultipleDecisions(manifests=\{manifests.join(",")})"
     EmptyManifests => "CompositionError::EmptyManifests"
     ManifestSchemaError(manifest_id~, detail~) =>
       "CompositionError::ManifestSchemaError(manifest=\{manifest_id}, detail=\{detail})"

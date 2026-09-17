@@ -311,6 +311,7 @@ pub impl @port.MemoryPort for ScriptedMemoryPort with fn delete(
 pub fn tk_ext(
   id~ : String,
   model? : &@port.ModelPort? = None,
+  decision? : &@port.DecisionPort? = None,
   tools? : Array[&@port.ToolProvider] = [],
   sessions? : Array[&@port.SessionStore] = [],
   observers? : Array[&@port.Observer] = [],
@@ -326,9 +327,14 @@ pub fn tk_ext(
     Some(m) => [m]
     None => []
   }
+  let decisions : Array[&@port.DecisionPort] = match decision {
+    Some(d) => [d]
+    None => []
+  }
   ManifestOnly({
     id,
     models,
+    decisions,
     tools,
     sessions,
     observers,
@@ -350,12 +356,19 @@ pub fn tk_ext(
 pub fn tk_view(
   requires~ : Array[@port.Capability],
   model~ : &@port.ModelPort,
+  decision? : &@port.DecisionPort? = None,
   ui~ : &@port.UiPort,
 ) -> @port.CompositionView {
   let tasks = @port.Tasks::from_submit(submit=fn(_) {
     Err(@port.TaskSubmitError::Unavailable)
   })
-  @port.CompositionView::resolve(requires~, model~, ui~, tasks=Some(tasks))
+  @port.CompositionView::resolve(
+    requires~,
+    model~,
+    decision~,
+    ui~,
+    tasks=Some(tasks),
+  )
 }
 
 ///|

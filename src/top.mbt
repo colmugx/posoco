@@ -19,6 +19,7 @@ pub using @types {
 // Core port traits.
 pub using @port {
   trait ModelPort,
+  trait DecisionPort,
   trait ToolProvider,
   trait SessionStore,
   trait Observer,
@@ -38,12 +39,19 @@ pub using @port {
   type ParamType,
   type HookStage,
   type ToolDecision,
+  type DecisionQuestion,
+  type DecisionAnswer,
   type UiHint,
   type UiSlot,
   type UiBody,
   type UiRequest,
   type UiResponse,
   // Port-related structs.
+  type DecisionOption,
+  type DecisionRequest,
+  type DecisionNamedProbability,
+  type DecisionUsage,
+  type DecisionResult,
   type CommandDef,
   type AutocompleteItem,
   type AutocompleteSource,
@@ -70,6 +78,7 @@ pub using @port {
 pub using @error {
   type AgentError,
   type ModelError,
+  type DecisionError,
   type RateLimitInfo,
   type RuntimeError,
   type SessionError,

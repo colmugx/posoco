@@ -120,6 +120,7 @@ pub impl @posoco.Extension for FixedModel with fn manifest(self) -> @posoco.Exte
   {
     id: "fixed_model",
     models: [self], // ← 关键：把自己放进 models 数组
+    decisions: [],
     tools: [],
     sessions: [],
     observers: [],
@@ -207,6 +208,7 @@ pub impl @posoco.Extension for InMemoryStore with fn manifest(self) -> @posoco.E
   {
     id: "in_memory_store",
     models: [],
+    decisions: [],
     tools: [],
     sessions: [self], // ← 贡献 SessionStore
     observers: [],
@@ -339,6 +341,7 @@ pub impl @posoco.Extension for FailingModel with fn manifest(self) -> @posoco.Ex
   {
     id: "failing_model",
     models: [self],
+    decisions: [],
     tools: [],
     sessions: [],
     observers: [],

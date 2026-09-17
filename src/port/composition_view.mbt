@@ -14,6 +14,7 @@
 /// extensions that destructure or construct views in tests.
 pub struct CompositionView {
   priv model_ : &ModelPort?
+  priv decision_ : &DecisionPort?
   priv ui_ : &UiPort?
   priv tasks_ : Tasks?
 }
@@ -26,6 +27,15 @@ pub struct CompositionView {
 /// meta-extension, and must not).
 pub fn CompositionView::model(self : CompositionView) -> &ModelPort? {
   self.model_
+}
+
+///|
+/// The single optional composed DecisionPort — visible only when the extension
+/// declared `Capability::Decision`. Absence is legal: consumers that treat
+/// decision support as an enhancement should keep their deterministic
+/// fallback; consumers that require it may fail explicitly in `on_compose`.
+pub fn CompositionView::decision(self : CompositionView) -> &DecisionPort? {
+  self.decision_
 }
 
 ///|
@@ -53,12 +63,18 @@ pub fn CompositionView::tasks(self : CompositionView) -> Tasks? {
 pub fn CompositionView::resolve(
   requires~ : Array[Capability],
   model~ : &ModelPort,
+  decision? : &DecisionPort? = None,
   ui~ : &UiPort,
   tasks? : Tasks? = None,
 ) -> CompositionView {
   {
     model_: if requires.contains(Model) {
       Some(model)
+    } else {
+      None
+    },
+    decision_: if requires.contains(Decision) {
+      decision
     } else {
       None
     },

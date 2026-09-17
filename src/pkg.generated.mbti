@@ -31,7 +31,7 @@ pub fn tk_config() -> AgentConfig
 
 pub fn tk_error_result(String) -> @kernel.ToolOutcome
 
-pub fn tk_ext(id~ : String, model? : &@port.ModelPort?, tools? : Array[&@port.ToolProvider], sessions? : Array[&@port.SessionStore], observers? : Array[&@port.Observer], hooks? : Array[&@port.PipelineHook], memory? : Array[&@port.MemoryPort], lifecycle? : Array[&@port.Lifecycle], commands? : Array[&@port.CommandPort], ui? : Array[&@port.UiPort], prompt_contributors? : Array[&@port.SystemPromptContributor], requires? : Array[@port.Capability]) -> ManifestOnly
+pub fn tk_ext(id~ : String, model? : &@port.ModelPort?, decision? : &@port.DecisionPort?, tools? : Array[&@port.ToolProvider], sessions? : Array[&@port.SessionStore], observers? : Array[&@port.Observer], hooks? : Array[&@port.PipelineHook], memory? : Array[&@port.MemoryPort], lifecycle? : Array[&@port.Lifecycle], commands? : Array[&@port.CommandPort], ui? : Array[&@port.UiPort], prompt_contributors? : Array[&@port.SystemPromptContributor], requires? : Array[@port.Capability]) -> ManifestOnly
 
 pub fn tk_ok_result(String) -> @kernel.ToolOutcome
 
@@ -47,7 +47,7 @@ pub fn tk_tool_def(String, String) -> @kernel.ToolDef
 
 pub fn tk_user_msg(String) -> @kernel.Message
 
-pub fn tk_view(requires~ : Array[@port.Capability], model~ : &@port.ModelPort, ui~ : &@port.UiPort) -> @port.CompositionView
+pub fn tk_view(requires~ : Array[@port.Capability], model~ : &@port.ModelPort, decision? : &@port.DecisionPort?, ui~ : &@port.UiPort) -> @port.CompositionView
 
 pub fn validate_args(@port.CommandDef, Json) -> Result[Json, String]
 
@@ -233,6 +233,22 @@ pub fn ScopeRecordingModel::chat_scopes(Self) -> Array[@kernel.InvocationScope]
 pub fn ScopeRecordingModel::compact_scopes(Self) -> Array[@kernel.InvocationScope]
 pub impl @port.ModelPort for ScopeRecordingModel
 
+pub(all) struct ScriptedDecisionPort {
+  steps : Array[ScriptedDecisionStep]
+  mut index : Int
+  received : Array[@port.DecisionRequest]
+}
+pub fn ScriptedDecisionPort::ScriptedDecisionPort(Array[ScriptedDecisionStep]) -> Self
+pub fn ScriptedDecisionPort::call_count(Self) -> Int
+pub async fn ScriptedDecisionPort::evaluate_direct(Self, @port.DecisionRequest) -> @port.DecisionResult raise @error.DecisionError
+pub fn ScriptedDecisionPort::received_requests(Self) -> Array[@port.DecisionRequest]
+pub impl @port.DecisionPort for ScriptedDecisionPort
+
+pub(all) enum ScriptedDecisionStep {
+  Return(@port.DecisionResult)
+  Fail(@error.DecisionError)
+}
+
 pub(all) struct ScriptedMemoryPort {
   inbounds : Array[String?]
   mut index : Int
@@ -385,6 +401,22 @@ pub using @kernel {type Content}
 
 pub using @kernel {type ContextPressure}
 
+pub using @port {type DecisionAnswer}
+
+pub using @error {type DecisionError}
+
+pub using @port {type DecisionNamedProbability}
+
+pub using @port {type DecisionOption}
+
+pub using @port {type DecisionQuestion}
+
+pub using @port {type DecisionRequest}
+
+pub using @port {type DecisionResult}
+
+pub using @port {type DecisionUsage}
+
 pub using @types {type EventScope}
 
 pub using @kernel {type ExecutionPolicy}
@@ -492,6 +524,8 @@ pub using @port {type UiSlot}
 pub using @kernel {type Usage}
 
 pub using @port {trait CommandPort}
+
+pub using @port {trait DecisionPort}
 
 pub using @port {trait Extension}
 

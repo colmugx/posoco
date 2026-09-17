@@ -14,6 +14,8 @@
 pub(all) enum Capability {
   /// The single composed ModelPort (post cardinality gate, source-agnostic).
   Model
+  /// The single optional composed DecisionPort for semantic judgement.
+  Decision
   /// The composed UiPort (single / Composite / Noop), for human interaction.
   Ui
   /// The Agent-owned structured task capability.
@@ -31,6 +33,7 @@ pub(all) enum Capability {
 pub(all) struct ExtensionManifest {
   id : String
   models : Array[&ModelPort]
+  decisions : Array[&DecisionPort]
   tools : Array[&ToolProvider]
   sessions : Array[&SessionStore]
   observers : Array[&Observer]
@@ -54,6 +57,7 @@ pub fn ExtensionManifest::empty(id~ : String) -> ExtensionManifest {
   {
     id,
     models: [],
+    decisions: [],
     tools: [],
     sessions: [],
     observers: [],
