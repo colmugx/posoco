@@ -15,7 +15,7 @@ license = "Apache-2.0"
 
 keywords = [ "llm", "agent", "framework", "ports-and-adapters", "ai-runtime" ]
 
-description = "LLM Agent framework with hexagonal (ports-and-adapters) architecture. Defines 9 traits + Agent loop. Depends on moonbitlang/async."
+description = "LLM Agent framework with hexagonal (ports-and-adapters) architecture. Defines extension ports + Agent loop. Depends on moonbitlang/async."
 
 source = "src"
 

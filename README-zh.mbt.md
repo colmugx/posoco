@@ -61,6 +61,7 @@ pub impl @posoco.Extension for ReadTools with fn manifest(self) -> @posoco.Exten
   {
     id: "posoco_ext_read",
     models: [],
+    decisions: [],
     tools: [self],
     sessions: [],
     observers: [],

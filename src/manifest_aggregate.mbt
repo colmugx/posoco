@@ -20,6 +20,7 @@ priv struct LifecycleEntry {
 /// is wrapped into one UiPort reference (the agent never sees a bare array).
 priv struct AggregatedPorts {
   model : &@port.ModelPort
+  decision : &@port.DecisionPort?
   tools : Array[&@port.ToolProvider]
   sessions : Array[&@port.SessionStore]
   observers : Array[&@port.Observer]
@@ -97,6 +98,8 @@ fn aggregate_extensions(
   // Per-port collectors.
   let models : Array[&@port.ModelPort] = []
   let model_manifests : Array[String] = []
+  let decisions : Array[&@port.DecisionPort] = []
+  let decision_manifests : Array[String] = []
   let tools : Array[&@port.ToolProvider] = []
   let tool_index = ToolNameIndex::new()
   let sessions : Array[&@port.SessionStore] = []
@@ -121,6 +124,11 @@ fn aggregate_extensions(
     for m in manifest.models {
       models.push(m)
       model_manifests.push(mid)
+    }
+    // decisions: optional singleton capability; cardinality checked below
+    for d in manifest.decisions {
+      decisions.push(d)
+      decision_manifests.push(mid)
     }
     // tools: collect + collision check by tool name
     for provider in manifest.tools {
@@ -193,6 +201,13 @@ fn aggregate_extensions(
     1 => ()
     _ => raise MultipleModels(manifests=model_manifests)
   }
+  // Decision cardinality: optional singleton. Multi-provider routing belongs
+  // inside one DecisionPort meta-extension.
+  let decision : &@port.DecisionPort? = match decisions.length() {
+    0 => None
+    1 => Some(decisions[0])
+    _ => raise MultipleDecisions(manifests=decision_manifests)
+  }
   // UI cardinality: 0 → NoopUiPort, 1 → passthrough, 2+ → CompositeUiPort.
   let ui_ref : &@port.UiPort = match ui.length() {
     0 => (NoopUiPort() : &@port.UiPort)
@@ -201,6 +216,7 @@ fn aggregate_extensions(
   }
   {
     model: models[0],
+    decision,
     tools,
     sessions,
     observers,

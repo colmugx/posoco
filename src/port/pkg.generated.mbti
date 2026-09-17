@@ -32,6 +32,7 @@ pub(all) struct AutocompleteSource {
 
 pub(all) enum Capability {
   Model
+  Decision
   Ui
   Tasks
 } derive(Eq, @debug.Debug)
@@ -78,14 +79,56 @@ pub(all) enum CommandType {
 pub struct CompositionView {
   // private fields
 }
+pub fn CompositionView::decision(Self) -> &DecisionPort?
 pub fn CompositionView::model(Self) -> &ModelPort?
-pub fn CompositionView::resolve(requires~ : Array[Capability], model~ : &ModelPort, ui~ : &UiPort, tasks? : Tasks?) -> Self
+pub fn CompositionView::resolve(requires~ : Array[Capability], model~ : &ModelPort, decision? : &DecisionPort?, ui~ : &UiPort, tasks? : Tasks?) -> Self
 pub fn CompositionView::tasks(Self) -> Tasks?
 pub fn CompositionView::ui(Self) -> &UiPort?
+
+pub(all) enum DecisionAnswer {
+  BooleanAnswer(id~ : String, probability_true~ : Double)
+  ChoiceAnswer(id~ : String, selected~ : String, probabilities~ : Array[DecisionNamedProbability], confidence~ : Double?)
+  ScoreAnswer(id~ : String, score~ : Double, probabilities~ : Array[Double], confidence~ : Double?)
+} derive(Eq, @debug.Debug)
+
+pub(all) struct DecisionNamedProbability {
+  id : String
+  probability : Double
+} derive(Eq, @debug.Debug)
+
+pub(all) struct DecisionOption {
+  id : String
+  description : Json?
+} derive(Eq, @debug.Debug)
+
+pub(all) enum DecisionQuestion {
+  Boolean(id~ : String, instructions~ : Json, true_criteria~ : Json?, false_criteria~ : Json?)
+  Choice(id~ : String, instructions~ : Json, options~ : Array[DecisionOption])
+  Score(id~ : String, instructions~ : Json, levels~ : Array[Json])
+} derive(Eq, @debug.Debug)
+
+pub(all) struct DecisionRequest {
+  state : Json
+  questions : Array[DecisionQuestion]
+} derive(Eq, @debug.Debug)
+pub fn DecisionRequest::validate(Self) -> Unit raise @error.DecisionError
+
+pub(all) struct DecisionResult {
+  answers : Array[DecisionAnswer]
+  model : String?
+  usage : DecisionUsage?
+} derive(Eq, @debug.Debug)
+pub fn DecisionResult::validate_for(Self, DecisionRequest) -> Unit raise @error.DecisionError
+
+pub(all) struct DecisionUsage {
+  input_tokens : Int?
+  output_tokens : Int?
+} derive(Eq, @debug.Debug)
 
 pub(all) struct ExtensionManifest {
   id : String
   models : Array[&ModelPort]
+  decisions : Array[&DecisionPort]
   tools : Array[&ToolProvider]
   sessions : Array[&SessionStore]
   observers : Array[&Observer]
@@ -255,6 +298,10 @@ pub impl Show for UiSlot
 pub(open) trait CommandPort {
   fn commands(Self) -> Array[CommandDef]
   async fn invoke(Self, String, Json) -> CommandOutcome raise @error.CommandError
+}
+
+pub(open) trait DecisionPort {
+  async fn evaluate(Self, DecisionRequest) -> DecisionResult raise @error.DecisionError
 }
 
 pub(open) trait Extension {
