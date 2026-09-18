@@ -199,16 +199,32 @@ fn AgentTaskRuntime::submit(
 }
 
 ///|
+#warnings("-fragile_catch_all")
 async fn AgentTaskRuntime::execute(
   self : AgentTaskRuntime,
   spec : @port.TaskSpec,
   receipt : @port.TaskReceipt,
   _operation : AgentTaskOperation?,
 ) -> @port.TaskOutcome {
+  // Cancellation-masking guard: a cancelled coroutine stays cancelled — an
+  // adapter that catches the incoming cancellation and raises a typed error
+  // (or returns a value) must not overwrite the task group's recorded state;
+  // pause() re-raises the genuine cancellation on both exit paths, and is a
+  // no-op yield when nothing is pending. (Q4: see docs/questions.md.)
+  let guarded : async () -> @kernel.Message = async fn() {
+    let message = (spec.run)() catch {
+      error => {
+        @async.pause()
+        raise error
+      }
+    }
+    @async.pause()
+    message
+  }
   let status : @port.TaskStatus = match spec.timeout_ms {
     Some(timeout_ms) => {
       let result : Result[@kernel.Message, Error] = Ok(
-        @async.with_timeout(timeout_ms, () => (spec.run)()),
+        @async.with_timeout(timeout_ms, () => guarded()),
       ) catch {
         error => Err(error)
       }
@@ -222,7 +238,7 @@ async fn AgentTaskRuntime::execute(
       }
     }
     None => {
-      let result : Result[@kernel.Message, Error] = Ok((spec.run)()) catch {
+      let result : Result[@kernel.Message, Error] = Ok(guarded()) catch {
         error => Err(error)
       }
       match result {

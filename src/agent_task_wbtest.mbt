@@ -735,3 +735,150 @@ async test "managed_tasks/compact_keeps_busy_guard_through_blocked_operation" {
     fail("blocked compact did not finish after release")
   }
 }
+
+///|
+async test "managed_tasks/timeout_survives_masked_raise" {
+  let capture = TaskCapture::new()
+  let model = ScriptedModel([Respond(tk_stop_response("unused"))])
+  let store = RecordingSessionStore()
+  let agent = task_test_agent(model as &@port.ModelPort, store, capture)
+  agent.run_scoped(async fn(_agent) {
+    let tasks = match capture.tasks {
+      Some(value) => value
+      None => abort("task capability was not composed")
+    }
+    let handle = match
+      tasks.submit({
+        session_id: "masked-raise",
+        mode: @port.TaskMode::Background,
+        label: "masked-raise",
+        timeout_ms: Some(150),
+        run: async fn() {
+          @async.sleep(60000) catch {
+            _ =>
+              raise @error.AgentError::Runtime(
+                @error.RuntimeError::InvocationFailed("masked"),
+              )
+          }
+          @kernel.Message::UserMessage(content=[@kernel.Content::Text("never")])
+        },
+      }) {
+      Ok(value) => value
+      Err(_) => abort("task submit failed")
+    }
+    let outcome = handle.wait()
+    guard outcome.status is @port.TaskStatus::TimedOut else {
+      fail("masked raise degraded the timeout: \{repr(outcome.status)}")
+    }
+  })
+}
+
+///|
+async test "managed_tasks/timeout_survives_masked_return" {
+  let capture = TaskCapture::new()
+  let model = ScriptedModel([Respond(tk_stop_response("unused"))])
+  let store = RecordingSessionStore()
+  let agent = task_test_agent(model as &@port.ModelPort, store, capture)
+  agent.run_scoped(async fn(_agent) {
+    let tasks = match capture.tasks {
+      Some(value) => value
+      None => abort("task capability was not composed")
+    }
+    let handle = match
+      tasks.submit({
+        session_id: "masked-return",
+        mode: @port.TaskMode::Background,
+        label: "masked-return",
+        timeout_ms: Some(150),
+        run: async fn() {
+          @async.sleep(60000) catch {
+            _ => ()
+          }
+          @kernel.Message::UserMessage(content=[
+            @kernel.Content::Text("garbage-after-cancel"),
+          ])
+        },
+      }) {
+      Ok(value) => value
+      Err(_) => abort("task submit failed")
+    }
+    let outcome = handle.wait()
+    guard outcome.status is @port.TaskStatus::TimedOut else {
+      fail("masked return degraded the timeout: \{repr(outcome.status)}")
+    }
+  })
+}
+
+///|
+async test "managed_tasks/business_error_survives_cancel_guard" {
+  let capture = TaskCapture::new()
+  let model = ScriptedModel([Respond(tk_stop_response("unused"))])
+  let store = RecordingSessionStore()
+  let agent = task_test_agent(model as &@port.ModelPort, store, capture)
+  agent.run_scoped(async fn(_agent) {
+    let tasks = match capture.tasks {
+      Some(value) => value
+      None => abort("task capability was not composed")
+    }
+    let handle = match
+      tasks.submit({
+        session_id: "business-error",
+        mode: @port.TaskMode::Background,
+        label: "business-error",
+        timeout_ms: None,
+        run: fn() raise {
+          raise @error.AgentError::Runtime(
+            @error.RuntimeError::InvocationFailed("boom"),
+          )
+        },
+      }) {
+      Ok(value) => value
+      Err(_) => abort("task submit failed")
+    }
+    let outcome = handle.wait()
+    let reason = match outcome.status {
+      @port.TaskStatus::Failed(reason~) => reason
+      other => fail("business error must stay Failed: \{repr(other)}")
+    }
+    assert_true(reason.contains("boom"))
+  })
+}
+
+///|
+async test "managed_tasks/plain_completion_unaffected_by_guard" {
+  let capture = TaskCapture::new()
+  let model = ScriptedModel([Respond(tk_stop_response("unused"))])
+  let store = RecordingSessionStore()
+  let agent = task_test_agent(model as &@port.ModelPort, store, capture)
+  agent.run_scoped(async fn(_agent) {
+    let tasks = match capture.tasks {
+      Some(value) => value
+      None => abort("task capability was not composed")
+    }
+    let handle = match
+      tasks.submit({
+        session_id: "plain-complete",
+        mode: @port.TaskMode::Background,
+        label: "plain-complete",
+        timeout_ms: Some(150),
+        run: fn() {
+          @kernel.Message::UserMessage(content=[
+            @kernel.Content::Text("quick-finish"),
+          ])
+        },
+      }) {
+      Ok(value) => value
+      Err(_) => abort("task submit failed")
+    }
+    let outcome = handle.wait()
+    let message = match outcome.status {
+      @port.TaskStatus::Completed(message~) => message
+      other => fail("plain task must complete: \{repr(other)}")
+    }
+    match message {
+      @kernel.Message::UserMessage(content=[@kernel.Content::Text(text)]) =>
+        assert_eq(text, "quick-finish")
+      _ => fail("completion message mismatch")
+    }
+  })
+}
