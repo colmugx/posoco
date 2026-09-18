@@ -1,13 +1,7 @@
 import {
   "colmugx/posoco/kernel",
   "colmugx/posoco/types",
-  "moonbitlang/core/json",
-  "moonbitlang/core/string",
 }
-
-// .mbtp 谓词只接受裸构造器名模式（`..`/`label~`/位置参数均被 proof
-// 前端拒绝），必然触发 warning 57；.mbt 侧作者本就用 `..` 或
-// `label = _` 显式通配，不受影响。
 
 warnings = "-missing_pattern_payload"
 

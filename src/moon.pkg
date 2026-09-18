@@ -9,7 +9,6 @@ import {
   "Tigls/mb-getrandom/lib" @getrandom,
   "moonbitlang/async",
   "moonbitlang/async/aqueue",
-  "moonbitlang/core/json",
   "moonbitlang/core/string",
 }
 

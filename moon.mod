@@ -18,7 +18,3 @@ keywords = [ "llm", "agent", "framework", "ports-and-adapters", "ai-runtime" ]
 description = "LLM Agent framework with hexagonal (ports-and-adapters) architecture. Defines extension ports + Agent loop. Depends on moonbitlang/async."
 
 source = "src"
-
-// 暂时引入
-
-preferred_target = "native"

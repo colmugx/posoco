@@ -64,7 +64,7 @@ pub impl Show for ContextState with fn to_string(self : ContextState) -> String 
     Some(n) => n.to_string()
     None => "unknown"
   }
-  "ContextState(session=\{self.session_id}, model=\{self.model_id}, version=\{self.context_version}, measured=\{measured}, estimated_added=\{self.estimated_added_tokens}, window=\{match self.window_tokens { Some(w) => w.to_string(); None => "unknown" }}, threshold=\{self.compact_threshold}, source=\{self.source.to_string()})"
+  "ContextState(session=\{self.session_id}, model=\{self.model_id}, version=\{self.context_version}, measured=\{measured}, estimated_added=\{self.estimated_added_tokens}, window=\{match self.window_tokens { Some(w) => Show::to_string(w); None => "unknown" }}, threshold=\{self.compact_threshold}, source=\{Show::to_string(self.source)})"
 }
 
 ///|
@@ -93,7 +93,7 @@ pub fn ContextState::to_metadata_json(self : ContextState) -> Json {
         },
       ),
       ("compact_threshold", Json::number(self.compact_threshold)),
-      ("source", Json::string(self.source.to_string())),
+      ("source", Json::string(Show::to_string(self.source))),
       (
         "reading_message_count",
         Json::number(self.reading_message_count.to_double()),
@@ -283,7 +283,7 @@ pub impl Show for TurnEvent with fn to_string(self : TurnEvent) -> String {
       "ConfigWarning(field=\{field}, value=\{value}, reason=\{reason})"
     ConfigChanged(field~, old_value~, new_value~) =>
       "ConfigChanged(field=\{field}, \{old_value} → \{new_value})"
-    ContextStateUpdated(state~) => "ContextStateUpdated(\{state.to_string()})"
+    ContextStateUpdated(state~) => "ContextStateUpdated(\{Show::to_string(state)})"
     CompactStarted(trigger~) => "CompactStarted(trigger=\{trigger})"
     CompactFinished(trigger~, mode~, final_session_id~, messages_after~) =>
       "CompactFinished(trigger=\{trigger}, mode=\{mode}, session=\{final_session_id}, msgs=\{messages_after})"
