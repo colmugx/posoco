@@ -283,7 +283,8 @@ pub impl Show for TurnEvent with fn to_string(self : TurnEvent) -> String {
       "ConfigWarning(field=\{field}, value=\{value}, reason=\{reason})"
     ConfigChanged(field~, old_value~, new_value~) =>
       "ConfigChanged(field=\{field}, \{old_value} → \{new_value})"
-    ContextStateUpdated(state~) => "ContextStateUpdated(\{Show::to_string(state)})"
+    ContextStateUpdated(state~) =>
+      "ContextStateUpdated(\{Show::to_string(state)})"
     CompactStarted(trigger~) => "CompactStarted(trigger=\{trigger})"
     CompactFinished(trigger~, mode~, final_session_id~, messages_after~) =>
       "CompactFinished(trigger=\{trigger}, mode=\{mode}, session=\{final_session_id}, msgs=\{messages_after})"

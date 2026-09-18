@@ -1,9 +1,8 @@
 name = "colmugx/posoco"
 
-version = "0.17.0"
+version = "0.17.1"
 
 import {
-  "Tigls/mb-getrandom@0.1.0",
   "moonbitlang/async@0.21.2",
 }
 

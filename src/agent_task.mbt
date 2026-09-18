@@ -6,12 +6,12 @@ let task_outcomes_applied_metadata_key : String = "posoco.task.applied_ids"
 /// counter alone cannot identify a new runtime. Use the platform entropy
 /// source and fail activation if it is unavailable.
 fn next_task_runtime_identity() -> String raise @error.AgentError {
-  let bytes = match @getrandom.getrandom(16) {
-    Ok(value) => value
-    Err(reason) =>
+  let bytes = match @env.rand(16) {
+    Some(value) => value
+    None =>
       raise @error.AgentError::Runtime(
         @error.RuntimeError::InvocationFailed(
-          "task runtime nonce unavailable: " + reason,
+          "task runtime nonce unavailable: platform entropy source returned no bytes",
         ),
       )
   }
