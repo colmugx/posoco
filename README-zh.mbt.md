@@ -14,7 +14,7 @@ command、prompt、memory、lifecycle——都通过开放的 port trait 注入�
 ## 安装
 
 ```bash
-moon add colmugx/posoco@0.13.1
+moon add colmugx/posoco@0.17.2
 ```
 
 ## Port
@@ -56,23 +56,9 @@ pub impl @posoco.Extension for ReadTools with fn extension_id(_self) -> String {
 
 ///|
 /// 2. 声明 ReadTools 贡献哪些 port。同一个 `self` 放进它实现的每个槽位，
-///    其余保持空数组。
+///    省略的槽位默认为空数组。
 pub impl @posoco.Extension for ReadTools with fn manifest(self) -> @posoco.ExtensionManifest {
-  {
-    id: "posoco_ext_read",
-    models: [],
-    decisions: [],
-    tools: [self],
-    sessions: [],
-    observers: [],
-    hooks: [],
-    memory: [],
-    lifecycle: [],
-    commands: [],
-    ui: [],
-    prompt_contributors: [],
-    requires: [],
-  }
+  @posoco.ExtensionManifest::make(id="posoco_ext_read", tools=[self])
 }
 
 ///|
@@ -87,7 +73,8 @@ pub fn read_extension() -> ReadTools {
 }
 ```
 
-如果是 `ModelPort` 扩展，把 `self` 放到 `models: [self]`，`tools` 留空
+如果是 `ModelPort` 扩展，把 `self` 放到 `models: [self]`：
+`make(id=..., models=[self])`。
 
 ## 组合一个 agent
 

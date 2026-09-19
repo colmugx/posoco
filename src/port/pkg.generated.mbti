@@ -140,7 +140,8 @@ pub(all) struct ExtensionManifest {
   prompt_contributors : Array[&SystemPromptContributor]
   requires : Array[Capability]
 }
-pub fn ExtensionManifest::empty(id~ : String) -> Self
+pub fn ExtensionManifest::ExtensionManifest(id~ : String, models? : Array[&ModelPort], decisions? : Array[&DecisionPort], tools? : Array[&ToolProvider], sessions? : Array[&SessionStore], observers? : Array[&Observer], hooks? : Array[&PipelineHook], memory? : Array[&MemoryPort], lifecycle? : Array[&Lifecycle], commands? : Array[&CommandPort], ui? : Array[&UiPort], prompt_contributors? : Array[&SystemPromptContributor], requires? : Array[Capability]) -> Self
+pub fn ExtensionManifest::default(id~ : String) -> Self
 
 pub(all) enum HookStage {
   ModelCompleted(completion~ : @kernel.Completion)

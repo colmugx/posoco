@@ -15,7 +15,7 @@ core never dictates shape.
 ## Installation
 
 ```bash
-moon add colmugx/posoco@0.13.1
+moon add colmugx/posoco@0.17.2
 ```
 
 ## Ports
@@ -59,23 +59,9 @@ pub impl @posoco.Extension for ReadTools with fn extension_id(_self) -> String {
 
 ///|
 /// 2. Declare which ports ReadTools contributes. The same `self` goes under
-///    every slot whose trait ReadTools implements; the rest stay empty.
+///    every slot whose trait ReadTools implements; omitted slots default to [].
 pub impl @posoco.Extension for ReadTools with fn manifest(self) -> @posoco.ExtensionManifest {
-  {
-    id: "posoco_ext_read",
-    models: [],
-    decisions: [],
-    tools: [self],
-    sessions: [],
-    observers: [],
-    hooks: [],
-    memory: [],
-    lifecycle: [],
-    commands: [],
-    ui: [],
-    prompt_contributors: [],
-    requires: [],
-  }
+  @posoco.ExtensionManifest::make(id="posoco_ext_read", tools=[self])
 }
 
 ///|
@@ -90,8 +76,8 @@ pub fn read_extension() -> ReadTools {
 }
 ```
 
-For a `ModelPort` extension, put `self` under `models: [self]` instead and
-leave `tools: []`.
+For a `ModelPort` extension, put `self` under `models: [self]` instead:
+`make(id=..., models=[self])`.
 
 ## compose an agent
 

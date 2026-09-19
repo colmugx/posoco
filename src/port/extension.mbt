@@ -23,8 +23,9 @@ pub(all) enum Capability {
 } derive(Eq, Debug)
 
 ///|
-/// Self-reported port contributions. All fields default to empty arrays;
-/// multi-trait extensions put `self` under each applicable field.
+/// Self-reported port contributions. Build one with `ExtensionManifest::make`,
+/// which defaults every omitted field to an empty array; multi-trait extensions
+/// put `self` under each applicable field.
 ///
 /// `requires` is the consumption direction: the extension declares which
 /// composed capabilities it wants delivered at `Lifecycle::on_compose`.
@@ -51,24 +52,43 @@ pub(all) struct ExtensionManifest {
 }
 
 ///|
-/// Construct an empty manifest with only the id set. Fields can then be
-/// assigned individually.
-pub fn ExtensionManifest::empty(id~ : String) -> ExtensionManifest {
+pub fn ExtensionManifest::ExtensionManifest(
+  id~ : String,
+  models? : Array[&ModelPort] = [],
+  decisions? : Array[&DecisionPort] = [],
+  tools? : Array[&ToolProvider] = [],
+  sessions? : Array[&SessionStore] = [],
+  observers? : Array[&Observer] = [],
+  hooks? : Array[&PipelineHook] = [],
+  memory? : Array[&MemoryPort] = [],
+  lifecycle? : Array[&Lifecycle] = [],
+  commands? : Array[&CommandPort] = [],
+  ui? : Array[&UiPort] = [],
+  prompt_contributors? : Array[&SystemPromptContributor] = [],
+  requires? : Array[Capability] = [],
+) -> ExtensionManifest {
   {
     id,
-    models: [],
-    decisions: [],
-    tools: [],
-    sessions: [],
-    observers: [],
-    hooks: [],
-    memory: [],
-    lifecycle: [],
-    commands: [],
-    ui: [],
-    prompt_contributors: [],
-    requires: [],
+    models,
+    decisions,
+    tools,
+    sessions,
+    observers,
+    hooks,
+    memory,
+    lifecycle,
+    commands,
+    ui,
+    prompt_contributors,
+    requires,
   }
+}
+
+///|
+/// Construct an empty manifest with only the id set. Fields can then be
+/// assigned individually.
+pub fn ExtensionManifest::default(id~ : String) -> ExtensionManifest {
+  ExtensionManifest(id~)
 }
 
 // Extension trait

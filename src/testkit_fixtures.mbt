@@ -331,21 +331,23 @@ pub fn tk_ext(
     Some(d) => [d]
     None => []
   }
-  ManifestOnly({
-    id,
-    models,
-    decisions,
-    tools,
-    sessions,
-    observers,
-    hooks,
-    memory,
-    lifecycle,
-    commands,
-    ui,
-    prompt_contributors,
-    requires,
-  })
+  ManifestOnly(
+    @port.ExtensionManifest(
+      id~,
+      models~,
+      decisions~,
+      tools~,
+      sessions~,
+      observers~,
+      hooks~,
+      memory~,
+      lifecycle~,
+      commands~,
+      ui~,
+      prompt_contributors~,
+      requires~,
+    ),
+  )
 }
 
 ///|
