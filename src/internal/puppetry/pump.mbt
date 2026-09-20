@@ -151,9 +151,9 @@ async fn Puppet::drive_run(
     Err(e) => return self.finalize_rejected(error=e)
     Ok(_) =>
       if pre_compact_fired {
-        self.mark_context_awaiting_measurement(
+        self.record_context_estimate(
           session_id,
-          initial_state.transcript().messages_snapshot().length(),
+          initial_state.transcript().messages_snapshot(),
           snap,
         )
       }
@@ -462,9 +462,9 @@ async fn Puppet::pump_compact(
         Err(e) => StopWith(self.finalize_rejected(error=e))
         Ok(_) => {
           if rewrite_events.length() > 0 {
-            self.mark_context_awaiting_measurement(
+            self.record_context_estimate(
               session_id,
-              new_state.transcript().messages_snapshot().length(),
+              new_state.transcript().messages_snapshot(),
               snap,
             )
           }

@@ -118,6 +118,8 @@ pub(all) enum TurnEvent {
   CompactFinished(trigger~ : String, mode~ : String, final_session_id~ : String, messages_after~ : Int)
   OperationFinalized(operation~ : String, outcome~ : String, detail~ : String)
   Custom(source~ : String, label~ : String, data~ : Json)
+  UserRequestStarted(kind~ : String, prompt~ : String)
+  UserRequestFinished(kind~ : String, outcome~ : String)
 } derive(Eq, @debug.Debug)
 pub impl Show for TurnEvent
 

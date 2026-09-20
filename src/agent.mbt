@@ -791,6 +791,9 @@ fn snapshot_turn_event(event : @types.TurnEvent) -> @types.TurnEvent {
       OperationFinalized(operation~, outcome~, detail~)
     Custom(source~, label~, data~) =>
       Custom(source~, label~, data=snapshot_json(data))
+    UserRequestStarted(kind~, prompt~) =>
+      UserRequestStarted(kind~, prompt=safe_error_label(prompt))
+    UserRequestFinished(kind~, outcome~) => UserRequestFinished(kind~, outcome~)
   }
 }
 

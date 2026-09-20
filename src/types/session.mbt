@@ -262,6 +262,15 @@ pub(all) enum TurnEvent {
   )
   OperationFinalized(operation~ : String, outcome~ : String, detail~ : String)
   Custom(source~ : String, label~ : String, data~ : Json)
+  /// An interactive user request entered the composed `UiPort::request`
+  /// (permission confirm, plan review, ask_question). Emitted by the core
+  /// wrapper around the aggregated port; `kind` is "input" | "confirm" |
+  /// "select" and `prompt` is the request text (snapshot-truncated).
+  UserRequestStarted(kind~ : String, prompt~ : String)
+  /// The request above left `UiPort::request`: "answered" (a response was
+  /// produced), "cancelled" (user dismissed), "unsupported" (no contributor
+  /// could service it), or "failed" (transport/IO error).
+  UserRequestFinished(kind~ : String, outcome~ : String)
 } derive(Eq, Debug)
 
 ///|
@@ -291,6 +300,10 @@ pub impl Show for TurnEvent with fn to_string(self : TurnEvent) -> String {
     OperationFinalized(operation~, outcome~, detail~) =>
       "OperationFinalized(op=\{operation}, outcome=\{outcome}, detail=\{detail})"
     Custom(source~, label~, ..) => "Custom(source:\{source}, label:\{label})"
+    UserRequestStarted(kind~, prompt~) =>
+      "UserRequestStarted(kind=\{kind}, prompt=\{prompt})"
+    UserRequestFinished(kind~, outcome~) =>
+      "UserRequestFinished(kind=\{kind}, outcome=\{outcome})"
   }
 }
 

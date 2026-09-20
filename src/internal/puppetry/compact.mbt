@@ -381,10 +381,15 @@ fn Puppet::record_context_reading(
 }
 
 ///|
-fn Puppet::mark_context_awaiting_measurement(
+/// Post-compact context projection: the transcript was rewritten, so the
+/// previous measured occupancy no longer describes the window. Record a
+/// char-based estimate of the compacted transcript (`Estimated`, rendered
+/// with a `~` marker) so the context indicator shows post-compact occupancy
+/// instead of an unknown; the next real usage overwrites it with `Measured`.
+fn Puppet::record_context_estimate(
   self : Puppet,
   session_id : SessionId,
-  message_count : Int,
+  messages : Array[Message],
   snap : TurnSnapshot,
 ) -> Unit {
   let sid = session_id.to_string()
@@ -397,12 +402,12 @@ fn Puppet::mark_context_awaiting_measurement(
     session_id: sid,
     model_id,
     context_version: self.config.journal.revision(),
-    last_measured_tokens: None,
+    last_measured_tokens: Some(estimate_tokens_of_messages(messages[:])),
     estimated_added_tokens: 0,
     window_tokens: window,
     compact_threshold: threshold,
-    source: @types.Unknown,
-    reading_message_count: message_count,
+    source: @types.Estimated,
+    reading_message_count: messages.length(),
   }
 }
 
@@ -534,9 +539,9 @@ pub async fn Puppet::compact_standalone(
         }
         None => ()
       }
-      self.mark_context_awaiting_measurement(
+      self.record_context_estimate(
         @kernel.SessionId::unchecked(new_session_id),
-        compact_result.compacted_messages.length(),
+        compact_result.compacted_messages,
         snap,
       )
       let result : PromptResult = CompactCompleted(
@@ -609,11 +614,7 @@ pub async fn Puppet::compact_standalone(
     Err(e) => return self.finalize_rejected(error=e)
     Ok(_) => ()
   }
-  self.mark_context_awaiting_measurement(
-    session_id,
-    final_messages.length(),
-    snap,
-  )
+  self.record_context_estimate(session_id, final_messages, snap)
   self.mailbox.set_quiescent(Idle)
   self.release_run_binding()
   CompactCompleted(

@@ -133,9 +133,9 @@ async fn Puppet::fold_effect_input(
     Err(error) => raise error
     Ok(_) => {
       if !rewrite_events.is_empty() {
-        self.mark_context_awaiting_measurement(
+        self.record_context_estimate(
           session_id,
-          next_state.transcript().messages_snapshot().length(),
+          next_state.transcript().messages_snapshot(),
           snap,
         )
       }

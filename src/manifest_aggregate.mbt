@@ -208,11 +208,21 @@ fn aggregate_extensions(
     1 => Some(decisions[0])
     _ => raise MultipleDecisions(manifests=decision_manifests)
   }
-  // UI cardinality: 0 → NoopUiPort, 1 → passthrough, 2+ → CompositeUiPort.
+  // UI cardinality: 0 → NoopUiPort (unwrapped: a UI-less composition never
+  // waits for a user, so no request events), 1 → wrapped passthrough,
+  // 2+ → wrapped CompositeUiPort.
   let ui_ref : &@port.UiPort = match ui.length() {
     0 => (NoopUiPort() : &@port.UiPort)
-    1 => ui[0]
-    _ => (CompositeUiPort(ui.copy()) : &@port.UiPort)
+    1 =>
+      (
+        UserRequestObservingUiPort::UserRequestObservingUiPort(ui[0], observers) :
+        &@port.UiPort)
+    _ =>
+      (
+        UserRequestObservingUiPort::UserRequestObservingUiPort(
+          CompositeUiPort(ui.copy()),
+          observers,
+        ) : &@port.UiPort)
   }
   {
     model: models[0],
@@ -226,5 +236,86 @@ fn aggregate_extensions(
     commands,
     ui: ui_ref,
     prompt_contributors,
+  }
+}
+
+///|
+/// Core-owned wrapper around the aggregated `UiPort`. Every interactive user
+/// request (permission confirm, plan review, ask_question) that enters the
+/// port broadcasts `UserRequestStarted` / `UserRequestFinished` to the
+/// observer bus, so presence-style observers can surface "waiting for user"
+/// without coupling to any single caller. The wrapper only sees requests that
+/// resolve the port from a `CompositionView` (requires `Capability::Ui`);
+/// holders of a raw contributor reference bypass it by construction.
+priv struct UserRequestObservingUiPort {
+  inner : &@port.UiPort
+  observers : Array[&@port.Observer]
+}
+
+///|
+fn UserRequestObservingUiPort::UserRequestObservingUiPort(
+  inner : &@port.UiPort,
+  observers : Array[&@port.Observer],
+) -> UserRequestObservingUiPort {
+  { inner, observers, }
+}
+
+///|
+fn user_request_label(req : @port.UiRequest) -> (String, String) {
+  match req {
+    Input(prompt~, ..) => ("input", prompt)
+    Confirm(prompt~) => ("confirm", prompt)
+    Select(prompt~, ..) => ("select", prompt)
+  }
+}
+
+///|
+fn UserRequestObservingUiPort::emit_user_request_event(
+  self : UserRequestObservingUiPort,
+  event : @types.TurnEvent,
+) -> Unit {
+  let snapshot = snapshot_turn_event(event)
+  for observer in self.observers {
+    // Scope is None: the wrapper sits outside any run identity (v1, same
+    // precedent as secondary-failure diagnostics).
+    observer.on_event_at(None, snapshot)
+  }
+}
+
+///|
+impl @port.UiPort for UserRequestObservingUiPort with fn ui_descriptor(self) -> @port.UiDescriptor {
+  self.inner.ui_descriptor()
+}
+
+///|
+impl @port.UiPort for UserRequestObservingUiPort with fn render(
+  self,
+  intent : @port.UiRender,
+) -> Unit {
+  self.inner.render(intent)
+}
+
+///|
+impl @port.UiPort for UserRequestObservingUiPort with fn request(
+  self,
+  req : @port.UiRequest,
+) -> @port.UiResponse raise @error.UiError {
+  let (kind, prompt) = user_request_label(req)
+  self.emit_user_request_event(UserRequestStarted(kind~, prompt~))
+  let result : Result[@port.UiResponse, @error.UiError] = Ok(
+    self.inner.request(req),
+  ) catch {
+    e => Err(e)
+  }
+  let outcome : String = match result {
+    Ok(_) => "answered"
+    Err(Unsupported(..)) => "unsupported"
+    Err(Cancelled) => "cancelled"
+    Err(_) => "failed"
+  }
+  self.emit_user_request_event(UserRequestFinished(kind~, outcome~))
+  match result {
+    Ok(response) => response
+    Err(error) => raise error
   }
 }

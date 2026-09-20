@@ -1978,6 +1978,57 @@ async test "wave3/compact_session/idle full chain without a chat request" {
 }
 
 ///|
+async test "wave3/compact_session/context state records the post-compact estimate" {
+  let model = ScriptedModel([
+    Compact(result={
+      compacted_messages: [tk_user_msg("summary")],
+      mode: Replace,
+    }),
+  ])
+  let observer = RecordingObserver()
+  let store = RecordingSessionStore()
+  store.seed("wave3-compact-ctx", {
+    messages: [tk_user_msg("hello"), tk_user_msg("more")],
+    metadata: Map::from_array([]),
+  })
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", sessions=[store], observers=[observer]),
+    ],
+    config=tk_config(),
+  )
+  ignore(agent.compact_session("wave3-compact-ctx"))
+  let state = agent.context_state("wave3-compact-ctx")
+  guard state is Some(current) else {
+    fail("expected the live context state after the compact")
+  }
+  // "summary" is 7 chars; the chars/4 estimator rounds down to 1 token.
+  assert_eq(current.last_measured_tokens, Some(1))
+  assert_eq(current.source, Estimated)
+  assert_eq(current.estimated_added_tokens, 0)
+  assert_eq(current.reading_message_count, 1)
+  let persisted = store.store["wave3-compact-ctx"]
+  guard @types.ContextState::from_metadata(persisted.metadata) is Some(saved) else {
+    fail("expected the persisted context state metadata after the compact")
+  }
+  assert_eq(saved.last_measured_tokens, Some(1))
+  assert_eq(saved.source, Estimated)
+  let mut projected = None
+  for event in observer.events() {
+    match event {
+      ContextStateUpdated(state~) => projected = Some(state)
+      _ => ()
+    }
+  }
+  guard projected is Some(updated) else {
+    fail("expected a context-state projection after the compact")
+  }
+  assert_eq(updated.source, Estimated)
+  assert_eq(updated.last_measured_tokens, Some(1))
+}
+
+///|
 async test "wave3/compact_session/pending tools fixated as interrupted" {
   let dangling_call : @kernel.ToolCall = {
     call_id: @kernel.CallId::unchecked("call_fix"),
