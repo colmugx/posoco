@@ -70,7 +70,7 @@ graph TD
 | `ToolProvider` | 任意 | 可选 | 声明并执行工具 |
 | `Observer` | 任意 | 可选 | 只读旁观：收到 turn 生命周期事件 |
 | `PipelineHook` | 任意 | 可选 | 插手流程：改写消息、审批工具调用 |
-| `MemoryPort` | 任意 | 可选 | 跨会话的长期记忆 |
+| `MemoryPort` | 任意 | 可选 | 长期记忆存储与检索：`inbound` 在 session 首轮（transcript 为空时）按首条请求召回记忆，core 注入一次、位于首条用户输入之前，resume 后原样保留；有 provider 时 core 自动注册 `memory_search`/`memory_add` 内置工具 |
 | `Lifecycle` | 任意 | 可选 | Agent 关闭时的资源清理 |
 
 Agent 在构造时汇总所有 manifest，并做一次**快速失败（fail-fast）**校验：缺模型、
@@ -270,7 +270,7 @@ flowchart TD
   end
 
   subgraph "次要（主结果不受影响）"
-    AFTER_HOOK["MemoryPort::search 失败"] --> DIAG["Custom 事件<br/>source=posoco.core<br/>label=secondary_failure"]
+    AFTER_HOOK["MemoryPort::inbound / memory_search 抛错"] --> DIAG["Custom 事件<br/>source=posoco.core<br/>label=secondary_failure"]
     DIAG --> SAFE_FIELDS["只含 hook_point + error_category<br/>不含原始内容"]
   end
 ```
@@ -302,7 +302,6 @@ flowchart TD
 |------|-----------|------|-----------|
 | Agent 内置工具路由 | ToolProvider | 合并多个 provider，按工具名路由 | Agent 自动处理，无需你组装 |
 | `ToolRegistry` | ToolProvider | 运行期动态注册 / 注销工具 | 工具集合会变化的场景 |
-| `NoopMemoryPort` | MemoryPort | 所有操作抛错 | 不需要记忆时的占位 |
 | `NoopLifecycle` | Lifecycle | shutdown 空操作 | 没有资源需要清理 |
 
 Hook 不需要内置占位类型——`Hook` 的每个方法都有默认实现（透传 / 一律批准 /

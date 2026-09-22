@@ -35,7 +35,7 @@ struct FixedModel {}
 pub impl @posoco.ModelPort for FixedModel with fn chat(
   _self,
   _scope : @posoco.InvocationScope,
-  messages : Array[@posoco.Message],
+  messages : ArrayView[@posoco.Message],
   _tools : Array[@posoco.ToolDef],
   _options : @posoco.ChatOptions,
   _stream : @posoco.StreamMode,
@@ -47,13 +47,13 @@ pub impl @posoco.ModelPort for FixedModel with fn chat(
     finish_reason=@posoco.FinishReason::Stop,
     usage=None,
   )
-  { completion, processed_messages: messages.copy() }
+  { completion, processed_messages: messages.to_owned() }
 }
 
 pub impl @posoco.ModelPort for FixedModel with fn compact(
   _self,
   _scope : @posoco.InvocationScope,
-  _messages : Array[@posoco.Message],
+  _messages : ArrayView[@posoco.Message],
   _options : @posoco.ChatOptions,
   _trigger : @posoco.CompactTrigger,
 ) -> @posoco.CompactResult raise @posoco.ModelError {
@@ -73,8 +73,7 @@ pub impl @posoco.Extension for FixedModel with fn extension_id(_self) -> String 
 pub impl @posoco.Extension for FixedModel with fn manifest(
   self,
 ) -> @posoco.ExtensionManifest {
-  let manifest = @posoco.ExtensionManifest::empty(id="quickstart-model")
-  { ..manifest, models: [self] }
+  @posoco.ExtensionManifest::make(id="quickstart-model", models=[self])
 }
 
 pub extend FixedModel with @posoco.Extension::{extension_id, manifest}
@@ -87,8 +86,9 @@ pub extend FixedModel with @posoco.Extension::{extension_id, manifest}
   不是带 `role` 字段的 record。文本内容用 `Content::Text` 包装。
 - **`chat` 返回两部分**：`completion` 是模型这次的回复
   （文本、工具调用、推理内容、结束原因、用量），`processed_messages` 是你真正
-  发给 provider 的消息副本。Agent 会用这份副本替换对话记录——如果你没有做任何
-  预处理，原样返回收到的 `messages` 的副本即可。
+  发给 provider 的消息副本。Agent 会用这份副本替换对话记录。`messages` 参数是
+  `ArrayView` 借用，不要持有它越过这次调用；如果没有做任何预处理，用
+  `messages.to_owned()` 返回一份拥有的副本即可。
 - **`InvocationScope` 是这次调用的身份**：里面记着这次调用服务于哪个 session、
   哪次 run。需要按会话区分行为（遥测、计费、按会话切换策略）时从它读取，
   不需要就忽略。把它当作只读的。
@@ -191,8 +191,8 @@ let result = agent.run_turn(input, "quickstart-session")
 ## 5. 验证
 
 ```bash
-rtk moon check --output-json
-rtk moon test --output-json -f 'quickstart_fixture*'
+moon check --output-json
+moon test --output-json -f 'quickstart_fixture*'
 ```
 
 测试应显示 `1/1 passed`。这个 fixture 覆盖了：消息与 `Completion` 的构造、

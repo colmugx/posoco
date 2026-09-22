@@ -125,7 +125,8 @@ let outcome : Result[@posoco.TurnResult, @posoco.AgentError] =
   `Approve` 的决定胜出；`on_post_event` 在效果完成后只读通知。
 - observer 只收 `TurnEvent`，不改变主数据流。
 
-只提供一个端口的扩展，manifest 直接写 `{ ..manifest, observers: [self] }`；
+只提供一个端口的扩展，manifest 直接写
+`ExtensionManifest::make(id=..., observers: [self])`；省略的字段默认为空数组。
 同时实现多个端口时，在相应字段里登记同一个 `self`。具体实现见
 [03 端口配方](./03-trait-recipes.md) 的第 5、6 节。
 
@@ -197,9 +198,14 @@ async fn report_turn(agent : @posoco.Agent) -> Unit {
 { messages: [], metadata: Map::from_array([]) }
 ```
 
-多个 store 时：**load 只读第一个，save 写所有**（write-all / read-first）。
-这不是事务——后面某个 save 失败时，前面的写入不会回滚。需要原子复制就自己实现
-事务型适配器。
+多个 store 时：**load 只读第一个，save 写所有**（write-all / read-first），且
+多 store 写入并行执行。这不是事务——后面某个 save 失败时，前面的写入不会回滚。
+需要原子复制就自己实现事务型适配器。
+
+当一次 turn 只是追加消息时，Agent 会调用 `SessionStore::append_messages(id,
+from_index, messages)` 而不是完整的 `save`；compact、fork 或 rewrite 之后仍走完整
+`save`。`append_messages` 有默认的 load-concat-save 实现，所以现有 store 无需修改；
+能真正追加的 store（如 JSONL 文件 store）应该覆盖它以获得更好的性能。
 
 `metadata` 对模型适配器是不透明的：**未知 key 必须原样保留**，一轮对话后不能
 丢。压缩产生新线程时，父线程 id 也会记进 metadata（lineage），`TurnResult
@@ -224,7 +230,7 @@ async fn follow_redirect(agent : @posoco.Agent, input : @posoco.Message)
 async fn compact_model(
   model : &@posoco.ModelPort,
   scope : @posoco.InvocationScope,
-  messages : Array[@posoco.Message],
+  messages : ArrayView[@posoco.Message],
 ) -> @posoco.CompactResult raise @posoco.ModelError {
   model.compact(
     scope,

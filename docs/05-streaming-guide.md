@@ -13,7 +13,7 @@ pub(open) trait ModelPort {
   async fn chat(
     Self,
     scope : InvocationScope,
-    messages : Array[Message],
+    messages : ArrayView[Message],
     tools : Array[ToolDef],
     options : ChatOptions,
     stream : StreamMode,
@@ -22,15 +22,15 @@ pub(open) trait ModelPort {
 
 pub(all) enum StreamMode {
   NoStream
-  Stream((Json) -> Unit)
+  Stream((StreamChunk) -> Unit)
 }
 ```
 
 - `NoStream`：适合后台任务、批处理，或不需要增量 UI 的调用。适配器可以完全跳过
   流式解析工作。
-- `Stream(callback)`：适配器每解析到一个可消费的 provider chunk，就调用一次
-  `callback`。**回调的载荷是 `Json`**——流式的 wire 格式由你的适配器和消费方
-  自己约定，Posoco 不规定统一的 chunk schema。
+- `Stream(callback)`：适配器每解析到一个可消费的 chunk，就调用一次
+  `callback`。**回调的载荷是 `StreamChunk`**——Posoco 的规范 chunk 类型，不是
+  私有的 JSON 形状。
 
 注意：无论是否流式，`chat` 最终都要返回完整的 `ModelCallResult`，其中
 `completion` 是**完整、权威**的结果（完整文本、推理、工具调用、结束原因、用量）。
@@ -49,22 +49,20 @@ sequenceDiagram
 
   Agent->>Model: chat(scope, messages, tools, options, Stream(cb))
   loop provider 事件
-    Model->>Host: cb(Json chunk)
-    Host-->>Obs: StreamChunkReceived（可识别时投影）
+    Model->>Host: cb(StreamChunk chunk)
+    Host-->>Obs: StreamChunkReceived
   end
   Model->>Agent: ModelCallResult(completion, processed_messages)
 ```
 
-- **回调是实时通道**：给 UI / 遥测用的，JSON 形状是适配器与宿主之间的私有约定。
+- **回调是实时通道**：给 UI / 遥测用的，载荷是规范的 `StreamChunk`。
 - **返回值是最终事实**：必须包含完整文本、reasoning、tool calls、finish reason
   和 usage，不能只返回最后发出去的那一块。
 - 没有 observer 时，Agent 不建立投影；适配器仍然可以用回调把数据直接交给宿主
   自己的 sink。
 
-Posoco 导出的 `StreamChunk` 是一套**可选的共享词汇表**，方便多个适配器复用同一
-套 SSE 解析和 `StreamAccumulator`（官方 OpenAI / DeepSeek / Kimi 适配器都用它）。
-它不是强制的 wire schema——你想定义自己的 chunk JSON 完全没问题，只要消费方
-知道怎么解码。
+Posoco 导出的 `StreamChunk` 是规范 chunk 类型。官方 OpenAI / DeepSeek / Kimi
+适配器都把它作为标准 SSE 解析和 `StreamAccumulator` 的输入。
 
 ## 3. 共享词汇表：StreamChunk
 
@@ -80,7 +78,13 @@ pub(all) enum StreamChunk {
     name~ : String?,
     arguments_delta~ : String?
   )
-  Usage(input_tokens~ : Int, output_tokens~ : Int, total_tokens~ : Int)
+  Usage(
+    input_tokens~ : Int,
+    output_tokens~ : Int,
+    total_tokens~ : Int,
+    cached_input_tokens~ : Int?,
+    uncached_input_tokens~ : Int?
+  )
   Finish(reason~ : String)
 }
 ```
@@ -137,14 +141,14 @@ fn emit_chunk(
   acc.push(chunk)
   match stream {
     @posoco.StreamMode::NoStream => ()
-    @posoco.StreamMode::Stream(callback) => callback(chunk_to_json(chunk))
+    @posoco.StreamMode::Stream(callback) => callback(chunk)
   }
 }
 
 pub impl @posoco.ModelPort for StreamingModel with fn chat(
   self,
   _scope : @posoco.InvocationScope,
-  messages : Array[@posoco.Message],
+  messages : ArrayView[@posoco.Message],
   _tools : Array[@posoco.ToolDef],
   _options : @posoco.ChatOptions,
   stream : @posoco.StreamMode,
@@ -158,62 +162,16 @@ pub impl @posoco.ModelPort for StreamingModel with fn chat(
       // 3. 每个 chunk 都调用 emit_chunk(stream, acc, chunk)。
       // 4. 只在收到 provider 明确的成功终态时停止。
       let completion = acc.to_completion()
-      { completion, processed_messages: messages.copy() }
+      { completion, processed_messages: messages.to_owned() }
     }
   }
 }
 ```
 
-`chunk_to_json` 是适配器与宿主之间的约定。文本/推理遥测的常见约定是
-`{"kind": ..., "token": ...}`：
-
-```moonbit
-fn chunk_to_json(chunk : @posoco.StreamChunk) -> Json {
-  match chunk {
-    @posoco.StreamChunk::TextDelta(token~) => Json::object(Map::from_array([
-      ("kind", Json::string("text")),
-      ("token", Json::string(token)),
-    ]))
-    @posoco.StreamChunk::ReasoningDelta(token~) => Json::object(Map::from_array([
-      ("kind", Json::string("reasoning")),
-      ("token", Json::string(token)),
-    ]))
-    @posoco.StreamChunk::ToolCallDelta(index~, id~, name~, arguments_delta~) =>
-      Json::object(Map::from_array([
-        ("kind", Json::string("tool_call_delta")),
-        ("index", Json::number(index.to_double())),
-        ("id", match id {
-          Some(value) => Json::string(value)
-          None => Json::null()
-        }),
-        ("name", match name {
-          Some(value) => Json::string(value)
-          None => Json::null()
-        }),
-        ("arguments_delta", match arguments_delta {
-          Some(value) => Json::string(value)
-          None => Json::null()
-        }),
-      ]))
-    @posoco.StreamChunk::Usage(input_tokens~, output_tokens~, total_tokens~) =>
-      Json::object(Map::from_array([
-        ("kind", Json::string("usage")),
-        ("input_tokens", Json::number(input_tokens.to_double())),
-        ("output_tokens", Json::number(output_tokens.to_double())),
-        ("total_tokens", Json::number(total_tokens.to_double())),
-      ]))
-    @posoco.StreamChunk::Finish(reason~) => Json::object(Map::from_array([
-      ("kind", Json::string("finish")),
-      ("reason", Json::string(reason)),
-    ]))
-  }
-}
-```
-
 生产适配器的标准动作就是这套流程：解析 provider 事件 → 喂一次 accumulator →
-转发一次回调 → 校验终态后返回 `ModelCallResult`。如果你的适配器有更复杂的流式
-需求（比如 DeepSeek 在流式中动态移除工具结果），完全可以不依赖 accumulator，
-自己维护状态。
+转发一次 `StreamChunk` 回调 → 校验终态后返回 `ModelCallResult`。如果你的适配器有
+更复杂的流式需求（比如 DeepSeek 在流式中动态移除工具结果），完全可以不依赖
+accumulator，自己维护状态。
 
 ## 6. 终态与错误
 
@@ -233,9 +191,9 @@ JSON 同样适用这条规则。
 
 ## 7. Observer 侧消费
 
-Agent 能把回调的 JSON 投影成 `TurnEvent::StreamChunkReceived` 事件。内置投影
-可靠识别 `{kind: "text" | "reasoning", token: "..."}` 这种形式；其他 kind 属于
-宿主私有载荷，不要假设它们能在所有宿主里变成 typed 的 observer 事件。
+Agent 会把 `StreamChunk` 回调投影成 `TurnEvent::StreamChunkReceived` 事件。
+如果宿主 observer 处理不过来，核心还会发出 `TurnEvent::StreamChunksDropped(count~)`
+表示有 telemetry chunk 被丢弃；这是非终端事件，只用于遥测。
 
 ```moonbit
 pub impl @posoco.Observer for TokenPrinter with fn on_event(
@@ -256,7 +214,7 @@ pub impl @posoco.Observer for TokenPrinter with fn on_event(
 ```
 
 如果你的产品需要**无损**的工具调用增量或用量遥测，就在宿主 sink 里直接消费
-适配器的回调 JSON，不要试图从最终 transcript 里重建。最终的
+适配器的 `StreamChunk` 回调，不要试图从最终 transcript 里重建。最终的
 `TurnResult.message` 始终是权威的 assistant 消息。
 
 ## 8. 测试清单
@@ -286,8 +244,8 @@ test "accumulator assembles streamed completion" {
 - 合法的终态事件返回一个完整的 `ModelCallResult`；
 - 干净 EOF、provider 失败、畸形 JSON 都抛 typed 错误；
 - 缺工具调用字段、arguments 畸形时抛 `ResponseParse`，且不泄漏原始载荷；
-- 组合好的 Agent 会发出 `StreamChunkReceived` 事件，且恰好一个 terminal turn
-  事件。
+- 组合好的 Agent 会发出 `StreamChunkReceived` 事件，恰好一个 terminal turn
+  事件；如果 observer 慢到积压，还会看到 `StreamChunksDropped`。
 
 写扩展时用 testkit 里的 `ScriptedModelStep::Stream` 做一致性假件很方便，但它是
 测试专用 API——生产扩展要直接实现 `ModelPort` 和 `Extension`。
