@@ -21,6 +21,7 @@ priv struct LifecycleEntry {
 priv struct AggregatedPorts {
   model : &@port.ModelPort
   decision : &@port.DecisionPort?
+  log : &@port.LogPort?
   tools : Array[&@port.ToolProvider]
   sessions : Array[&@port.SessionStore]
   observers : Array[&@port.Observer]
@@ -100,6 +101,8 @@ fn aggregate_extensions(
   let model_manifests : Array[String] = []
   let decisions : Array[&@port.DecisionPort] = []
   let decision_manifests : Array[String] = []
+  let logs : Array[&@port.LogPort] = []
+  let log_manifests : Array[String] = []
   let tools : Array[&@port.ToolProvider] = []
   let tool_index = ToolNameIndex::new()
   let sessions : Array[&@port.SessionStore] = []
@@ -129,6 +132,11 @@ fn aggregate_extensions(
     for d in manifest.decisions {
       decisions.push(d)
       decision_manifests.push(mid)
+    }
+    // logs: optional singleton capability; cardinality checked below
+    for log in manifest.logs {
+      logs.push(log)
+      log_manifests.push(mid)
     }
     // tools: collect + collision check by tool name
     for provider in manifest.tools {
@@ -208,6 +216,13 @@ fn aggregate_extensions(
     1 => Some(decisions[0])
     _ => raise MultipleDecisions(manifests=decision_manifests)
   }
+  // Log cardinality: optional singleton. Multi-sink fan-out belongs inside
+  // one LogPort meta-extension so write/durability failure semantics are local.
+  let log : &@port.LogPort? = match logs.length() {
+    0 => None
+    1 => Some(logs[0])
+    _ => raise MultipleLogs(manifests=log_manifests)
+  }
   // UI cardinality: 0 → NoopUiPort (unwrapped: a UI-less composition never
   // waits for a user, so no request events), 1 → wrapped passthrough,
   // 2+ → wrapped CompositeUiPort.
@@ -227,6 +242,7 @@ fn aggregate_extensions(
   {
     model: models[0],
     decision,
+    log,
     tools,
     sessions,
     observers,

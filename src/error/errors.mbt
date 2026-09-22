@@ -122,6 +122,34 @@ pub impl Show for DecisionError with fn to_string(self) -> String {
 }
 
 ///|
+
+///|
+/// Errors raised by LogPort implementations. Logging failures stay explicit:
+/// each consumer decides whether a failed write is best-effort or fatal.
+pub(all) suberror LogError {
+  InvalidRecord(String)
+  Write(String)
+  Flush(String)
+  Unavailable(String)
+} derive(Debug)
+
+///|
+pub extend LogError with Show::{to_string, output}
+
+///|
+pub extend LogError with Debug::{to_repr}
+
+///|
+pub impl Show for LogError with fn to_string(self) -> String {
+  match self {
+    InvalidRecord(msg) => "LogError::InvalidRecord(\{msg})"
+    Write(msg) => "LogError::Write(\{msg})"
+    Flush(msg) => "LogError::Flush(\{msg})"
+    Unavailable(msg) => "LogError::Unavailable(\{msg})"
+  }
+}
+
+///|
 pub(all) suberror SessionError {
   Load(String)
   Save(String)
@@ -247,6 +275,9 @@ pub(all) suberror CompositionError {
   /// More than one extension contributed a DecisionPort. Routing among
   /// decision providers belongs inside one meta-extension.
   MultipleDecisions(manifests~ : Array[String])
+  /// More than one extension contributed a LogPort. Fan-out belongs inside
+  /// one logging meta-extension so durability/failure semantics stay explicit.
+  MultipleLogs(manifests~ : Array[String])
   /// Empty extension list passed to Agent::new.
   EmptyManifests
   /// An extension manifest was malformed (e.g. empty id, structural issue).
@@ -279,6 +310,8 @@ pub impl Show for CompositionError with fn to_string(self) -> String {
       "CompositionError::MultipleModels(manifests=\{manifests.join(",")})"
     MultipleDecisions(manifests~) =>
       "CompositionError::MultipleDecisions(manifests=\{manifests.join(",")})"
+    MultipleLogs(manifests~) =>
+      "CompositionError::MultipleLogs(manifests=\{manifests.join(",")})"
     EmptyManifests => "CompositionError::EmptyManifests"
     ManifestSchemaError(manifest_id~, detail~) =>
       "CompositionError::ManifestSchemaError(manifest=\{manifest_id}, detail=\{detail})"

@@ -37,6 +37,7 @@ pub fn AutocompleteSource::to_repr(Self) -> @debug.Repr
 pub(all) enum Capability {
   Model
   Decision
+  Log
   Ui
   Tasks
 } derive(Eq, @debug.Debug)
@@ -99,8 +100,9 @@ pub struct CompositionView {
   // private fields
 }
 pub fn CompositionView::decision(Self) -> &DecisionPort?
+pub fn CompositionView::log(Self) -> &LogPort?
 pub fn CompositionView::model(Self) -> &ModelPort?
-pub fn CompositionView::resolve(requires~ : Array[Capability], model~ : &ModelPort, decision? : &DecisionPort?, ui~ : &UiPort, tasks? : Tasks?) -> Self
+pub fn CompositionView::resolve(requires~ : Array[Capability], model~ : &ModelPort, decision? : &DecisionPort?, log? : &LogPort?, ui~ : &UiPort, tasks? : Tasks?) -> Self
 pub fn CompositionView::tasks(Self) -> Tasks?
 pub fn CompositionView::ui(Self) -> &UiPort?
 
@@ -169,6 +171,7 @@ pub(all) struct ExtensionManifest {
   id : String
   models : Array[&ModelPort]
   decisions : Array[&DecisionPort]
+  logs : Array[&LogPort]
   tools : Array[&ToolProvider]
   sessions : Array[&SessionStore]
   observers : Array[&Observer]
@@ -180,7 +183,7 @@ pub(all) struct ExtensionManifest {
   prompt_contributors : Array[&SystemPromptContributor]
   requires : Array[Capability]
 }
-pub fn ExtensionManifest::ExtensionManifest(id~ : String, models? : Array[&ModelPort], decisions? : Array[&DecisionPort], tools? : Array[&ToolProvider], sessions? : Array[&SessionStore], observers? : Array[&Observer], hooks? : Array[&PipelineHook], memory? : Array[&MemoryPort], lifecycle? : Array[&Lifecycle], commands? : Array[&CommandPort], ui? : Array[&UiPort], prompt_contributors? : Array[&SystemPromptContributor], requires? : Array[Capability]) -> Self
+pub fn ExtensionManifest::ExtensionManifest(id~ : String, models? : Array[&ModelPort], decisions? : Array[&DecisionPort], logs? : Array[&LogPort], tools? : Array[&ToolProvider], sessions? : Array[&SessionStore], observers? : Array[&Observer], hooks? : Array[&PipelineHook], memory? : Array[&MemoryPort], lifecycle? : Array[&Lifecycle], commands? : Array[&CommandPort], ui? : Array[&UiPort], prompt_contributors? : Array[&SystemPromptContributor], requires? : Array[Capability]) -> Self
 pub fn ExtensionManifest::default(id~ : String) -> Self
 
 pub(all) enum HookStage {
@@ -193,6 +196,31 @@ pub fn HookStage::output(Self, &Logger) -> Unit
 pub fn HookStage::to_repr(Self) -> @debug.Repr
 pub fn HookStage::to_string(Self) -> String
 pub impl Show for HookStage
+
+pub(all) enum LogDurability {
+  Buffered
+  Written
+  Durable
+} derive(Eq, @debug.Debug)
+
+pub(all) enum LogLevel {
+  Trace
+  Debug
+  Info
+  Warn
+  Error
+} derive(Eq, @debug.Debug)
+
+pub(all) struct LogRecord {
+  level : LogLevel
+  source : String
+  channel : String
+  event : String
+  message : String?
+  scope : @types.EventScope?
+  data : Json
+} derive(Eq, @debug.Debug)
+pub fn LogRecord::validate(Self) -> Unit raise @error.LogError
 
 pub(all) enum ParamType {
   Str
@@ -405,6 +433,11 @@ pub(open) trait Lifecycle {
   fn on_compose(Self, CompositionView) -> Unit raise @error.CompositionError = _
   async fn on_start(Self) -> Unit = _
   async fn on_shutdown(Self) -> Unit
+}
+
+pub(open) trait LogPort {
+  async fn write(Self, LogRecord, LogDurability) -> Unit raise @error.LogError
+  async fn flush(Self) -> Unit raise @error.LogError
 }
 
 pub(open) trait MemoryPort {

@@ -530,6 +530,7 @@ fn AgentRuntime::compose(
       requires=entry.requires,
       model=agg.model,
       decision=agg.decision,
+      log=agg.log,
       ui=agg.ui,
       tasks=Some(task_capability),
     )

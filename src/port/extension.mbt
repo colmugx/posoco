@@ -16,6 +16,8 @@ pub(all) enum Capability {
   Model
   /// The single optional composed DecisionPort for semantic judgement.
   Decision
+  /// The single optional composed LogPort for structured application logging.
+  Log
   /// The composed UiPort (single / Composite / Noop), for human interaction.
   Ui
   /// The Agent-owned structured task capability.
@@ -41,6 +43,7 @@ pub(all) struct ExtensionManifest {
   id : String
   models : Array[&ModelPort]
   decisions : Array[&DecisionPort]
+  logs : Array[&LogPort]
   tools : Array[&ToolProvider]
   sessions : Array[&SessionStore]
   observers : Array[&Observer]
@@ -62,6 +65,7 @@ pub fn ExtensionManifest::ExtensionManifest(
   id~ : String,
   models? : Array[&ModelPort] = [],
   decisions? : Array[&DecisionPort] = [],
+  logs? : Array[&LogPort] = [],
   tools? : Array[&ToolProvider] = [],
   sessions? : Array[&SessionStore] = [],
   observers? : Array[&Observer] = [],
@@ -77,6 +81,7 @@ pub fn ExtensionManifest::ExtensionManifest(
     id,
     models,
     decisions,
+    logs,
     tools,
     sessions,
     observers,

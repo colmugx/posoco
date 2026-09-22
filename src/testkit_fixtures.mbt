@@ -315,6 +315,7 @@ pub fn tk_ext(
   id~ : String,
   model? : &@port.ModelPort? = None,
   decision? : &@port.DecisionPort? = None,
+  log? : &@port.LogPort? = None,
   tools? : Array[&@port.ToolProvider] = [],
   sessions? : Array[&@port.SessionStore] = [],
   observers? : Array[&@port.Observer] = [],
@@ -334,11 +335,16 @@ pub fn tk_ext(
     Some(d) => [d]
     None => []
   }
+  let logs : Array[&@port.LogPort] = match log {
+    Some(l) => [l]
+    None => []
+  }
   ManifestOnly(
     @port.ExtensionManifest(
       id~,
       models~,
       decisions~,
+      logs~,
       tools~,
       sessions~,
       observers~,
@@ -362,6 +368,7 @@ pub fn tk_view(
   requires~ : Array[@port.Capability],
   model~ : &@port.ModelPort,
   decision? : &@port.DecisionPort? = None,
+  log? : &@port.LogPort? = None,
   ui~ : &@port.UiPort,
 ) -> @port.CompositionView {
   let tasks = @port.Tasks::from_submit(submit=fn(_) {
@@ -371,6 +378,7 @@ pub fn tk_view(
     requires~,
     model~,
     decision~,
+    log~,
     ui~,
     tasks=Some(tasks),
   )

@@ -24,7 +24,9 @@ Port 是 Posoco 核心与 agent 所用能力之间唯一的接缝。
 | Port | 作用 |
 |---|---|
 | `ModelPort` | 模型调用 + 上下文压缩（`chat`、`compact`、`provider_config`） |
+| `DecisionPort` | provider-neutral 的结构化语义判断 |
 | `ToolProvider` | 工具发现与执行 |
+| `LogPort` | 结构化应用日志，调用方选择持久化强度 |
 | `SessionStore` | 会话加载 / 保存 |
 | `Observer` | 只读 turn 事件观察 |
 | `Hook` | 单 trait 带默认方法的管线拦截：模型前改写消息或中止（`before_model`）、工具前审批/推迟/拒绝（`before_tool`）、每个效果后只读（`on_post_event`） |

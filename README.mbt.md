@@ -26,7 +26,9 @@ uses.
 | Port | Purpose |
 |---|---|
 | `ModelPort` | Model chat + context compaction (`chat`, `compact`, `provider_config`) |
+| `DecisionPort` | Provider-neutral structured semantic judgement |
 | `ToolProvider` | Tool discovery and execution |
+| `LogPort` | Structured application logging with caller-selected durability |
 | `SessionStore` | Load / save conversation session |
 | `Observer` | Read-only turn-event observation |
 | `Hook` | Pipeline interception with default methods: rewrite messages or abort before model (`before_model`), approve / defer / reject before tool (`before_tool`), read-only after each effect (`on_post_event`) |
