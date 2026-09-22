@@ -31,7 +31,7 @@ pub fn tk_config() -> AgentConfig
 
 pub fn tk_error_result(String) -> @kernel.ToolOutcome
 
-pub fn tk_ext(id~ : String, model? : &@port.ModelPort?, decision? : &@port.DecisionPort?, tools? : Array[&@port.ToolProvider], sessions? : Array[&@port.SessionStore], observers? : Array[&@port.Observer], hooks? : Array[&@port.PipelineHook], memory? : Array[&@port.MemoryPort], lifecycle? : Array[&@port.Lifecycle], commands? : Array[&@port.CommandPort], ui? : Array[&@port.UiPort], prompt_contributors? : Array[&@port.SystemPromptContributor], requires? : Array[@port.Capability]) -> ManifestOnly
+pub fn tk_ext(id~ : String, model? : &@port.ModelPort?, decision? : &@port.DecisionPort?, log? : &@port.LogPort?, tools? : Array[&@port.ToolProvider], sessions? : Array[&@port.SessionStore], observers? : Array[&@port.Observer], hooks? : Array[&@port.PipelineHook], memory? : Array[&@port.MemoryPort], lifecycle? : Array[&@port.Lifecycle], commands? : Array[&@port.CommandPort], ui? : Array[&@port.UiPort], prompt_contributors? : Array[&@port.SystemPromptContributor], requires? : Array[@port.Capability]) -> ManifestOnly
 
 pub fn tk_ok_result(String) -> @kernel.ToolOutcome
 
@@ -47,7 +47,7 @@ pub fn tk_tool_def(String, String) -> @kernel.ToolDef
 
 pub fn tk_user_msg(String) -> @kernel.Message
 
-pub fn tk_view(requires~ : Array[@port.Capability], model~ : &@port.ModelPort, decision? : &@port.DecisionPort?, ui~ : &@port.UiPort) -> @port.CompositionView
+pub fn tk_view(requires~ : Array[@port.Capability], model~ : &@port.ModelPort, decision? : &@port.DecisionPort?, log? : &@port.LogPort?, ui~ : &@port.UiPort) -> @port.CompositionView
 
 pub fn validate_args(@port.CommandDef, Json) -> Result[Json, String]
 
@@ -146,6 +146,11 @@ pub(all) enum RecordedHookOutcome {
 } derive(@debug.Debug)
 pub fn RecordedHookOutcome::to_repr(Self) -> @debug.Repr
 
+pub(all) struct RecordedLogWrite {
+  record : @port.LogRecord
+  durability : @port.LogDurability
+} derive(Eq, @debug.Debug)
+
 pub(all) struct RecordingHook {
   mut records : Array[HookRecord]
   abort_on : Map[String, String]
@@ -174,6 +179,18 @@ pub fn RecordingLifecycle::on_compose(Self, @port.CompositionView) -> Unit raise
 pub async fn RecordingLifecycle::on_shutdown(Self) -> Unit
 pub async fn RecordingLifecycle::on_start(Self) -> Unit
 pub impl @port.Lifecycle for RecordingLifecycle
+
+pub(all) struct RecordingLogPort {
+  writes_ : Array[RecordedLogWrite]
+  mut flush_count_ : Int
+}
+pub fn RecordingLogPort::RecordingLogPort() -> Self
+pub async fn RecordingLogPort::flush(Self) -> Unit raise @error.LogError
+pub fn RecordingLogPort::flush_count(Self) -> Int
+pub async fn RecordingLogPort::write(Self, @port.LogRecord, @port.LogDurability) -> Unit raise @error.LogError
+pub async fn RecordingLogPort::write_direct(Self, @port.LogRecord, @port.LogDurability) -> Unit raise @error.LogError
+pub fn RecordingLogPort::writes(Self) -> Array[RecordedLogWrite]
+pub impl @port.LogPort for RecordingLogPort
 
 pub(all) struct RecordingObserver {
   mut events : Array[@types.TurnEvent]
@@ -472,6 +489,14 @@ pub using @port {type HookStage}
 
 pub using @kernel {type InvocationScope}
 
+pub using @port {type LogDurability}
+
+pub using @error {type LogError}
+
+pub using @port {type LogLevel}
+
+pub using @port {type LogRecord}
+
 pub using @error {type MemoryError}
 
 pub using @kernel {type Message}
@@ -571,6 +596,8 @@ pub using @port {trait DecisionPort}
 pub using @port {trait Extension}
 
 pub using @port {trait Lifecycle}
+
+pub using @port {trait LogPort}
 
 pub using @port {trait MemoryPort}
 

@@ -15,6 +15,7 @@
 pub struct CompositionView {
   priv model_ : &ModelPort?
   priv decision_ : &DecisionPort?
+  priv log_ : &LogPort?
   priv ui_ : &UiPort?
   priv tasks_ : Tasks?
 }
@@ -36,6 +37,14 @@ pub fn CompositionView::model(self : CompositionView) -> &ModelPort? {
 /// fallback; consumers that require it may fail explicitly in `on_compose`.
 pub fn CompositionView::decision(self : CompositionView) -> &DecisionPort? {
   self.decision_
+}
+
+///|
+/// The single optional composed LogPort — visible only when the extension
+/// declared Capability::Log. Absence is legal: logging is optional
+/// infrastructure, and consumers decide whether a missing sink is acceptable.
+pub fn CompositionView::log(self : CompositionView) -> &LogPort? {
+  self.log_
 }
 
 ///|
@@ -64,6 +73,7 @@ pub fn CompositionView::resolve(
   requires~ : Array[Capability],
   model~ : &ModelPort,
   decision? : &DecisionPort? = None,
+  log? : &LogPort? = None,
   ui~ : &UiPort,
   tasks? : Tasks? = None,
 ) -> CompositionView {
@@ -75,6 +85,11 @@ pub fn CompositionView::resolve(
     },
     decision_: if requires.contains(Decision) {
       decision
+    } else {
+      None
+    },
+    log_: if requires.contains(Log) {
+      log
     } else {
       None
     },

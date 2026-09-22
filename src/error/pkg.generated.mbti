@@ -38,6 +38,7 @@ pub(all) suberror CompositionError {
   MissingModel
   MultipleModels(manifests~ : Array[String])
   MultipleDecisions(manifests~ : Array[String])
+  MultipleLogs(manifests~ : Array[String])
   EmptyManifests
   ManifestSchemaError(manifest_id~ : String, detail~ : String)
   EmptyPort(String)
@@ -59,6 +60,17 @@ pub fn DecisionError::output(Self, &Logger) -> Unit
 pub fn DecisionError::to_repr(Self) -> @debug.Repr
 pub fn DecisionError::to_string(Self) -> String
 pub impl Show for DecisionError
+
+pub(all) suberror LogError {
+  InvalidRecord(String)
+  Write(String)
+  Flush(String)
+  Unavailable(String)
+} derive(@debug.Debug)
+pub fn LogError::output(Self, &Logger) -> Unit
+pub fn LogError::to_repr(Self) -> @debug.Repr
+pub fn LogError::to_string(Self) -> String
+pub impl Show for LogError
 
 pub(all) suberror MemoryError {
   Inbound(String)
