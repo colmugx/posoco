@@ -48,8 +48,13 @@ impl @runtime.Runtime for FakeRuntime with fn call_model(
   on_chunk : ((@types.StreamChunk) -> Unit)?,
 ) -> Result[@kernel.ModelCallResult, @kernel.ModelFailure] {
   self.seen_scopes.push(scope)
-  return self.inner.call_model(
-    scope, messages, tool_definitions, call_options, on_chunk,
+  return @runtime.Runtime::call_model(
+    self.inner,
+    scope,
+    messages,
+    tool_definitions,
+    call_options,
+    on_chunk,
   )
 }
 
@@ -84,7 +89,7 @@ impl @runtime.Runtime for FakeRuntime with fn execute_tool(
       None => ()
     }
   }
-  self.inner.execute_tool(ctx)
+  @runtime.Runtime::execute_tool(self.inner, ctx)
 }
 
 ///|
@@ -95,7 +100,7 @@ impl @runtime.Runtime for FakeRuntime with fn cancel_effects(
 ) -> Array[(@kernel.EffectId, @kernel.CancelDisposition)] {
   self.cancel_calls = self.cancel_calls + 1
   self.cancel_seen.push(effect_ids.copy())
-  self.inner.cancel_effects(effect_ids, reason)
+  @runtime.Runtime::cancel_effects(self.inner, effect_ids, reason)
 }
 
 ///|
@@ -106,7 +111,7 @@ impl @runtime.Runtime for FakeRuntime with fn compact(
   call_options : Json,
   trigger : @kernel.CompactTrigger,
 ) -> Result[@kernel.CompactResult, @kernel.ModelFailure] {
-  self.inner.compact(scope, messages, call_options, trigger)
+  @runtime.Runtime::compact(self.inner, scope, messages, call_options, trigger)
 }
 
 ///|

@@ -12,6 +12,12 @@ pub(all) struct DecisionOption {
 } derive(Eq, Debug)
 
 ///|
+pub extend DecisionOption with Eq::{not_equal, equal}
+
+///|
+pub extend DecisionOption with Debug::{to_repr}
+
+///|
 /// Typed question understood by a `DecisionPort`.
 pub(all) enum DecisionQuestion {
   /// Probability that the proposition is true. Criteria are optional outcome
@@ -31,6 +37,12 @@ pub(all) enum DecisionQuestion {
 } derive(Eq, Debug)
 
 ///|
+pub extend DecisionQuestion with Eq::{not_equal, equal}
+
+///|
+pub extend DecisionQuestion with Debug::{to_repr}
+
+///|
 /// Structured state plus a non-empty set of independent semantic questions.
 pub(all) struct DecisionRequest {
   state : Json
@@ -38,11 +50,23 @@ pub(all) struct DecisionRequest {
 } derive(Eq, Debug)
 
 ///|
+pub extend DecisionRequest with Eq::{not_equal, equal}
+
+///|
+pub extend DecisionRequest with Debug::{to_repr}
+
+///|
 /// One named probability in a choice distribution.
 pub(all) struct DecisionNamedProbability {
   id : String
   probability : Double
 } derive(Eq, Debug)
+
+///|
+pub extend DecisionNamedProbability with Eq::{not_equal, equal}
+
+///|
+pub extend DecisionNamedProbability with Debug::{to_repr}
 
 ///|
 /// Provider-neutral typed answer. The question id is repeated so adapters can
@@ -64,11 +88,23 @@ pub(all) enum DecisionAnswer {
 } derive(Eq, Debug)
 
 ///|
+pub extend DecisionAnswer with Eq::{not_equal, equal}
+
+///|
+pub extend DecisionAnswer with Debug::{to_repr}
+
+///|
 /// Optional token accounting supplied by decision providers.
 pub(all) struct DecisionUsage {
   input_tokens : Int?
   output_tokens : Int?
 } derive(Eq, Debug)
+
+///|
+pub extend DecisionUsage with Eq::{not_equal, equal}
+
+///|
+pub extend DecisionUsage with Debug::{to_repr}
 
 ///|
 /// Typed answers plus provider-reported model/usage metadata. `model` is
@@ -79,6 +115,12 @@ pub(all) struct DecisionResult {
   model : String?
   usage : DecisionUsage?
 } derive(Eq, Debug)
+
+///|
+pub extend DecisionResult with Eq::{not_equal, equal}
+
+///|
+pub extend DecisionResult with Debug::{to_repr}
 
 ///|
 /// A low-cost semantic judgement capability. The port does not decide final

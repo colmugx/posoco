@@ -27,6 +27,12 @@ pub(all) struct Usage {
 } derive(Eq, Debug)
 
 ///|
+pub extend Usage with Eq::{not_equal, equal}
+
+///|
+pub extend Usage with Debug::{to_repr}
+
+///|
 /// Validate provider-reported token usage before it enters the reducer.
 ///
 /// Every field is optional because providers omit different dimensions, but a
@@ -50,6 +56,9 @@ pub fn Usage::validate(self : Usage) -> Result[Unit, String] {
   }
   Ok(())
 }
+
+///|
+pub extend Usage with Show::{to_string, output}
 
 ///|
 pub impl Show for Usage with fn to_string(self : Usage) -> String {
@@ -78,6 +87,12 @@ pub(all) struct Completion {
 } derive(Eq, Debug)
 
 ///|
+pub extend Completion with Eq::{not_equal, equal}
+
+///|
+pub extend Completion with Debug::{to_repr}
+
+///|
 /// Re-flattened assistant payload used inside `Completion`. We cannot
 /// reuse `Message::AssistantMessage` directly because that variant
 /// already carries `finish_reason`; the completion's `message` field is the
@@ -90,6 +105,12 @@ pub(all) struct CompletionPayload {
   reasoning : Reasoning?
   finish_reason : FinishReason
 } derive(Eq, Debug)
+
+///|
+pub extend CompletionPayload with Eq::{not_equal, equal}
+
+///|
+pub extend CompletionPayload with Debug::{to_repr}
 
 ///|
 /// Build an `Completion` from its parts. The reducer constructs this
@@ -154,6 +175,15 @@ pub(all) enum ModelFailure {
   /// package in the dependency order.
   RateLimited(reason~ : String, reset_at_ms~ : Int64?, provider_code~ : String?)
 } derive(Eq, Debug)
+
+///|
+pub extend ModelFailure with Eq::{not_equal, equal}
+
+///|
+pub extend ModelFailure with Debug::{to_repr}
+
+///|
+pub extend ModelFailure with Show::{to_string, output}
 
 ///|
 pub impl Show for ModelFailure with fn to_string(self : ModelFailure) -> String {

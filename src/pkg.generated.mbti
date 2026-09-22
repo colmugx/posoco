@@ -90,6 +90,8 @@ pub fn AgentControl::pending_follow_ups(Self) -> Int
 pub(all) struct CompositeToolProvider {
   providers : Array[&@port.ToolProvider]
 }
+pub async fn CompositeToolProvider::execute(Self, String, @kernel.ToolCall) -> @kernel.ToolOutcome raise @error.RuntimeError
+pub fn CompositeToolProvider::list_tools(Self) -> Array[@kernel.ToolDef]
 pub impl @port.ToolProvider for CompositeToolProvider
 
 pub(all) struct CompositeUiPort {
@@ -106,6 +108,7 @@ pub(all) struct HookRecord {
   label : String
   outcome : RecordedHookOutcome
 } derive(@debug.Debug)
+pub fn HookRecord::to_repr(Self) -> @debug.Repr
 
 pub(all) struct ManifestOnly {
   cached : @port.ExtensionManifest
@@ -123,6 +126,9 @@ pub impl @port.CommandPort for NoopCommandPort
 
 pub(all) struct NoopLifecycle {
 }
+pub fn NoopLifecycle::on_compose(Self, @port.CompositionView) -> Unit raise @error.CompositionError
+pub async fn NoopLifecycle::on_shutdown(Self) -> Unit
+pub async fn NoopLifecycle::on_start(Self) -> Unit
 pub impl @port.Lifecycle for NoopLifecycle
 
 pub(all) struct NoopUiPort {
@@ -138,6 +144,7 @@ pub(all) enum RecordedHookOutcome {
   AbortedWith(String)
   DeferredWith(String)
 } derive(@debug.Debug)
+pub fn RecordedHookOutcome::to_repr(Self) -> @debug.Repr
 
 pub(all) struct RecordingHook {
   mut records : Array[HookRecord]
@@ -149,6 +156,10 @@ pub fn RecordingHook::abort_when(Self, String, String) -> Unit
 pub async fn RecordingHook::before_model(Self, Array[@kernel.Message]) -> Array[@kernel.Message] raise @port.HookAbort
 pub async fn RecordingHook::before_tool(Self, @kernel.ToolCall) -> @port.ToolDecision
 pub fn RecordingHook::defer_when(Self, String, String) -> Unit
+pub async fn RecordingHook::on_post_event(Self, @port.HookStage) -> Unit noraise
+pub async fn RecordingHook::on_post_event_at(Self, @types.EventScope?, @port.HookStage) -> Unit noraise
+pub async fn RecordingHook::on_turn_begin(Self) -> Unit
+pub async fn RecordingHook::on_turn_end(Self) -> Unit
 pub fn RecordingHook::records(Self) -> Array[HookRecord]
 pub impl @port.PipelineHook for RecordingHook
 
@@ -170,6 +181,7 @@ pub(all) struct RecordingObserver {
 pub fn RecordingObserver::RecordingObserver() -> Self
 pub fn RecordingObserver::events(Self) -> Array[@types.TurnEvent]
 pub fn RecordingObserver::on_event(Self, @types.TurnEvent) -> Unit
+pub fn RecordingObserver::on_event_at(Self, @types.EventScope?, @types.TurnEvent) -> Unit
 pub impl @port.Observer for RecordingObserver
 
 pub(all) struct RecordingSessionStore {
@@ -179,6 +191,7 @@ pub(all) struct RecordingSessionStore {
   mut ops : Array[SessionOp]
 }
 pub fn RecordingSessionStore::RecordingSessionStore() -> Self
+pub async fn RecordingSessionStore::append_messages(Self, String, Int, ArrayView[@kernel.Message]) -> Unit raise @error.SessionError
 pub fn RecordingSessionStore::fail_load(Self, String, @error.SessionError) -> Unit
 pub fn RecordingSessionStore::fail_save(Self, String) -> Unit
 pub fn RecordingSessionStore::heal_save(Self, String) -> Unit
@@ -187,6 +200,7 @@ pub fn RecordingSessionStore::ops(Self) -> Array[SessionOp]
 pub async fn RecordingSessionStore::save(Self, String, @types.Session) -> Unit raise @error.SessionError
 pub fn RecordingSessionStore::save_snapshots(Self) -> Array[(String, Map[String, Json])]
 pub fn RecordingSessionStore::seed(Self, String, @types.Session) -> Unit
+pub async fn RecordingSessionStore::truncate(Self, String, Int) -> Unit raise @error.SessionError
 pub impl @port.SessionStore for RecordingSessionStore
 
 pub(all) struct RecordingToolProvider {
@@ -198,6 +212,7 @@ pub(all) struct RecordingToolProvider {
 }
 pub fn RecordingToolProvider::RecordingToolProvider(Array[@kernel.ToolDef], Map[String, ScriptedToolOutcome]) -> Self
 pub fn RecordingToolProvider::exec_records(Self) -> Array[ToolExecRecord]
+pub async fn RecordingToolProvider::execute(Self, String, @kernel.ToolCall) -> @kernel.ToolOutcome raise @error.RuntimeError
 pub async fn RecordingToolProvider::execute_direct(Self, String, @kernel.ToolCall) -> @kernel.ToolOutcome raise @error.RuntimeError
 pub fn RecordingToolProvider::list_call_count(Self) -> Int
 pub fn RecordingToolProvider::list_tools(Self) -> Array[@kernel.ToolDef]
@@ -229,8 +244,11 @@ pub struct ScopeRecordingModel {
   compact_scopes : Array[@kernel.InvocationScope]
 }
 pub fn ScopeRecordingModel::ScopeRecordingModel(Array[ScriptedModelStep], compact_result? : @kernel.CompactResult) -> Self
+pub async fn ScopeRecordingModel::chat(Self, @kernel.InvocationScope, ArrayView[@kernel.Message], Array[@kernel.ToolDef], @types.ChatOptions, @types.StreamMode) -> @kernel.ModelCallResult raise @error.ModelError
 pub fn ScopeRecordingModel::chat_scopes(Self) -> Array[@kernel.InvocationScope]
+pub async fn ScopeRecordingModel::compact(Self, @kernel.InvocationScope, ArrayView[@kernel.Message], @types.ChatOptions, @kernel.CompactTrigger) -> @kernel.CompactResult raise @error.ModelError
 pub fn ScopeRecordingModel::compact_scopes(Self) -> Array[@kernel.InvocationScope]
+pub fn ScopeRecordingModel::provider_config(Self) -> @port.ProviderConfig
 pub impl @port.ModelPort for ScopeRecordingModel
 
 pub(all) struct ScriptedDecisionPort {
@@ -240,6 +258,7 @@ pub(all) struct ScriptedDecisionPort {
 }
 pub fn ScriptedDecisionPort::ScriptedDecisionPort(Array[ScriptedDecisionStep]) -> Self
 pub fn ScriptedDecisionPort::call_count(Self) -> Int
+pub async fn ScriptedDecisionPort::evaluate(Self, @port.DecisionRequest) -> @port.DecisionResult raise @error.DecisionError
 pub async fn ScriptedDecisionPort::evaluate_direct(Self, @port.DecisionRequest) -> @port.DecisionResult raise @error.DecisionError
 pub fn ScriptedDecisionPort::received_requests(Self) -> Array[@port.DecisionRequest]
 pub impl @port.DecisionPort for ScriptedDecisionPort
@@ -264,12 +283,15 @@ pub(all) struct ScriptedMemoryPort {
 }
 pub fn ScriptedMemoryPort::ScriptedMemoryPort(inbounds~ : Array[String?], search_script? : Array[String?]) -> Self
 pub fn ScriptedMemoryPort::call_count(Self) -> Int
+pub async fn ScriptedMemoryPort::delete(Self, String) -> Unit raise @error.MemoryError
 pub async fn ScriptedMemoryPort::inbound(Self, session_id~ : String, request~ : String) -> String? raise @error.MemoryError
 pub fn ScriptedMemoryPort::received_deletes(Self) -> Array[String]
 pub fn ScriptedMemoryPort::received_requests(Self) -> Array[String]
 pub fn ScriptedMemoryPort::received_searches(Self) -> Array[(String, Int?)]
 pub fn ScriptedMemoryPort::received_sessions(Self) -> Array[String]
 pub fn ScriptedMemoryPort::received_stores(Self) -> Array[(String, Map[String, Json])]
+pub async fn ScriptedMemoryPort::search(Self, query~ : String, top_k? : Int) -> String? raise @error.MemoryError
+pub async fn ScriptedMemoryPort::store(Self, content~ : String, metadata~ : Map[String, Json]) -> String raise @error.MemoryError
 pub impl @port.MemoryPort for ScriptedMemoryPort
 
 pub(all) struct ScriptedModel {
@@ -286,10 +308,13 @@ pub(all) struct ScriptedModel {
 }
 pub fn ScriptedModel::ScriptedModel(Array[ScriptedModelStep]) -> Self
 pub fn ScriptedModel::call_count(Self) -> Int
+pub async fn ScriptedModel::chat(Self, @kernel.InvocationScope, ArrayView[@kernel.Message], Array[@kernel.ToolDef], @types.ChatOptions, @types.StreamMode) -> @kernel.ModelCallResult raise @error.ModelError
 pub async fn ScriptedModel::chat_direct(Self, Array[@kernel.Message], Array[@kernel.ToolDef], @types.ChatOptions) -> @kernel.ModelCallResult raise @error.ModelError
+pub async fn ScriptedModel::compact(Self, @kernel.InvocationScope, ArrayView[@kernel.Message], @types.ChatOptions, @kernel.CompactTrigger) -> @kernel.CompactResult raise @error.ModelError
 pub fn ScriptedModel::compact_call_count(Self) -> Int
 pub fn ScriptedModel::options_received(Self) -> Array[@types.ChatOptions]
 pub fn ScriptedModel::parked_calls(Self) -> Int
+pub fn ScriptedModel::provider_config(Self) -> @port.ProviderConfig
 pub fn ScriptedModel::received_compacts(Self) -> Array[(Array[@kernel.Message], @kernel.CompactTrigger)]
 pub impl @port.ModelPort for ScriptedModel
 
@@ -306,6 +331,7 @@ pub(all) enum ScriptedToolOutcome {
   OutcomeOk(@kernel.ToolOutcome)
   OutcomeErr(@error.RuntimeError)
 } derive(@debug.Debug)
+pub fn ScriptedToolOutcome::to_repr(Self) -> @debug.Repr
 
 pub(all) enum SessionOp {
   OpLoad(id~ : String, result~ : Result[@types.Session, @error.SessionError])
@@ -313,6 +339,7 @@ pub(all) enum SessionOp {
   OpAppend(id~ : String, from_index~ : Int, messages~ : Array[@kernel.Message], result~ : Result[Unit, @error.SessionError])
   OpTruncate(id~ : String, from_index~ : Int, result~ : Result[Unit, @error.SessionError])
 } derive(@debug.Debug)
+pub fn SessionOp::to_repr(Self) -> @debug.Repr
 
 pub(all) struct SystemPromptHook {
   base_prompt : String
@@ -322,6 +349,11 @@ pub(all) struct SystemPromptHook {
 pub fn SystemPromptHook::SystemPromptHook(base_prompt~ : String, contributors~ : Array[SystemPromptSection]) -> Self
 pub fn SystemPromptHook::assemble(Self) -> String
 pub async fn SystemPromptHook::before_model(Self, Array[@kernel.Message]) -> Array[@kernel.Message] raise @port.HookAbort
+pub async fn SystemPromptHook::before_tool(Self, @kernel.ToolCall) -> @port.ToolDecision
+pub async fn SystemPromptHook::on_post_event(Self, @port.HookStage) -> Unit noraise
+pub async fn SystemPromptHook::on_post_event_at(Self, @types.EventScope?, @port.HookStage) -> Unit noraise
+pub async fn SystemPromptHook::on_turn_begin(Self) -> Unit
+pub async fn SystemPromptHook::on_turn_end(Self) -> Unit
 pub impl @port.PipelineHook for SystemPromptHook
 
 pub(all) struct SystemPromptSection {
@@ -337,17 +369,21 @@ pub(all) struct ToolExecRecord {
   arguments : Json
   outcome : ScriptedToolOutcome
 } derive(@debug.Debug)
+pub fn ToolExecRecord::to_repr(Self) -> @debug.Repr
 
 pub(all) enum ToolProviderOp {
   ListTools
   ExecuteTool(requested_name~ : String, call~ : @kernel.ToolCall)
 } derive(@debug.Debug)
+pub fn ToolProviderOp::to_repr(Self) -> @debug.Repr
 
 pub(all) struct ToolRegistry {
   mut tools : Map[String, @kernel.ToolDef]
   mut executors : Map[String, (@kernel.ToolCall) -> @kernel.ToolOutcome]
 }
 pub fn ToolRegistry::ToolRegistry() -> Self
+pub async fn ToolRegistry::execute(Self, String, @kernel.ToolCall) -> @kernel.ToolOutcome raise @error.RuntimeError
+pub fn ToolRegistry::list_tools(Self) -> Array[@kernel.ToolDef]
 pub fn ToolRegistry::register(Self, @kernel.ToolDef, (@kernel.ToolCall) -> @kernel.ToolOutcome) -> Unit
 pub fn ToolRegistry::register_strict(Self, @kernel.ToolDef, (@kernel.ToolCall) -> @kernel.ToolOutcome) -> Unit raise @error.RuntimeError
 pub fn ToolRegistry::unregister(Self, String) -> Unit
@@ -357,7 +393,12 @@ pub(all) struct UiRenderHook {
   ui : &@port.UiPort
 }
 pub fn UiRenderHook::UiRenderHook(ui~ : &@port.UiPort) -> Self
+pub async fn UiRenderHook::before_model(Self, Array[@kernel.Message]) -> Array[@kernel.Message] raise @port.HookAbort
+pub async fn UiRenderHook::before_tool(Self, @kernel.ToolCall) -> @port.ToolDecision
 pub async fn UiRenderHook::on_post_event(Self, @port.HookStage) -> Unit noraise
+pub async fn UiRenderHook::on_post_event_at(Self, @types.EventScope?, @port.HookStage) -> Unit noraise
+pub async fn UiRenderHook::on_turn_begin(Self) -> Unit
+pub async fn UiRenderHook::on_turn_end(Self) -> Unit
 pub impl @port.PipelineHook for UiRenderHook
 
 // Type aliases

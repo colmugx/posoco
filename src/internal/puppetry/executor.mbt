@@ -32,6 +32,15 @@ pub(all) struct ModelId {
 } derive(Eq, Hash, Debug)
 
 ///|
+pub extend ModelId with Eq::{not_equal, equal}
+
+///|
+pub extend ModelId with Hash::{hash, hash_combine}
+
+///|
+pub extend ModelId with Debug::{to_repr}
+
+///|
 pub fn ModelId::checked(value : String) -> Result[ModelId, String] {
   if value == "" {
     Err("ModelId must be non-empty")

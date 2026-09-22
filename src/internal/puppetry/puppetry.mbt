@@ -35,6 +35,12 @@ pub(all) struct PromptRequest {
 } derive(Eq, Debug)
 
 ///|
+pub extend PromptRequest with Eq::{not_equal, equal}
+
+///|
+pub extend PromptRequest with Debug::{to_repr}
+
+///|
 /// Result of `prompt`.
 pub(all) enum PromptResult {
   /// Run accepted; the puppet has entered Active phase and is driving.
@@ -81,6 +87,9 @@ pub(all) enum PromptResult {
     compacted_messages~ : Array[@kernel.Message]
   )
 }
+
+///|
+pub extend PromptResult with Show::{output}
 
 ///|
 pub impl Show for PromptResult with fn to_string(self : PromptResult) -> String {

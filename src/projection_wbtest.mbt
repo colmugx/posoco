@@ -14,6 +14,11 @@ struct FixedPromptContributor {
 }
 
 ///|
+pub extend FixedPromptContributor with @port.SystemPromptContributor::{
+  system_prompt,
+}
+
+///|
 pub impl @port.SystemPromptContributor for FixedPromptContributor with fn system_prompt(
   self : FixedPromptContributor,
 ) -> String {
@@ -29,6 +34,11 @@ struct MutablePromptContributor {
 }
 
 ///|
+pub extend MutablePromptContributor with @port.SystemPromptContributor::{
+  system_prompt,
+}
+
+///|
 pub impl @port.SystemPromptContributor for MutablePromptContributor with fn system_prompt(
   self : MutablePromptContributor,
 ) -> String {
@@ -39,6 +49,13 @@ pub impl @port.SystemPromptContributor for MutablePromptContributor with fn syst
 /// Lifecycle fake that mutates a contributor from its on_start callback.
 struct StartSettingLifecycle {
   target : Ref[String]
+}
+
+///|
+pub extend StartSettingLifecycle with @port.Lifecycle::{
+  on_compose,
+  on_shutdown,
+  on_start,
 }
 
 ///|
@@ -69,6 +86,14 @@ pub impl @port.Lifecycle for StartSettingLifecycle with fn on_shutdown(
 /// testkit `ScriptedMemoryPort`.
 struct FailingInboundPort {
   _dummy : Unit
+}
+
+///|
+pub extend FailingInboundPort with @port.MemoryPort::{
+  inbound,
+  search,
+  delete,
+  store,
 }
 
 ///|
@@ -112,6 +137,14 @@ pub impl @port.MemoryPort for FailingInboundPort with fn delete(
 /// the timeout arm of the inbound collector.
 struct SlowInboundPort {
   _dummy : Unit
+}
+
+///|
+pub extend SlowInboundPort with @port.MemoryPort::{
+  inbound,
+  search,
+  delete,
+  store,
 }
 
 ///|
@@ -1041,6 +1074,16 @@ async test "m38_memory/memory_search_collision_at_composition" {
 /// SAME count. Before the reducer became the sole transcript writer the
 /// pump's length-compare guard silently dropped this rewrite.
 struct SameLengthAgentHook {}
+
+///|
+pub extend SameLengthAgentHook with @port.PipelineHook::{
+  on_post_event,
+  on_turn_begin,
+  on_post_event_at,
+  before_model,
+  before_tool,
+  on_turn_end,
+}
 
 ///|
 pub impl @port.PipelineHook for SameLengthAgentHook with fn before_model(

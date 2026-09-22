@@ -31,6 +31,15 @@ pub(all) struct CommandId {
 } derive(Eq, Hash, Debug)
 
 ///|
+pub extend CommandId with Eq::{not_equal, equal}
+
+///|
+pub extend CommandId with Hash::{hash, hash_combine}
+
+///|
+pub extend CommandId with Debug::{to_repr}
+
+///|
 pub fn CommandId::checked(value : String) -> Result[CommandId, String] {
   if value == "" {
     Err("CommandId must be non-empty")
@@ -48,6 +57,9 @@ pub fn CommandId::unchecked(value : String) -> CommandId {
 pub fn CommandId::to_string(self : CommandId) -> String {
   self.value
 }
+
+///|
+pub extend CommandId with Show::{output}
 
 ///|
 pub impl Show for CommandId with fn to_string(self : CommandId) -> String {
@@ -68,6 +80,15 @@ pub(all) enum QueuePolicy {
   /// turn boundary).
   OneAtATime
 } derive(Eq, Debug)
+
+///|
+pub extend QueuePolicy with Eq::{not_equal, equal}
+
+///|
+pub extend QueuePolicy with Debug::{to_repr}
+
+///|
+pub extend QueuePolicy with Show::{to_string, output}
 
 ///|
 pub impl Show for QueuePolicy with fn to_string(self : QueuePolicy) -> String {
@@ -101,6 +122,12 @@ pub(all) struct SteerCommand {
 } derive(Eq, Debug)
 
 ///|
+pub extend SteerCommand with Eq::{not_equal, equal}
+
+///|
+pub extend SteerCommand with Debug::{to_repr}
+
+///|
 /// A follow-up command. Creates a new turn under the same run_id at a
 /// turn boundary.
 pub(all) struct FollowUpCommand {
@@ -109,6 +136,12 @@ pub(all) struct FollowUpCommand {
   source_turn_id : TurnId
   payload : Json
 } derive(Eq, Debug)
+
+///|
+pub extend FollowUpCommand with Eq::{not_equal, equal}
+
+///|
+pub extend FollowUpCommand with Debug::{to_repr}
 
 ///|
 /// A resume command. Targets a specific suspension under a specific run.
@@ -121,6 +154,12 @@ pub(all) struct ResumeCommand {
 } derive(Eq, Debug)
 
 ///|
+pub extend ResumeCommand with Eq::{not_equal, equal}
+
+///|
+pub extend ResumeCommand with Debug::{to_repr}
+
+///|
 /// An abort command. Idempotent: the first call converts to
 /// `RunInput::CancelRequested`; subsequent calls return
 /// `AbortAlreadyRequested`.
@@ -129,6 +168,12 @@ pub(all) struct AbortCommand {
   target_run_id : RunId
   detail : String?
 } derive(Eq, Debug)
+
+///|
+pub extend AbortCommand with Eq::{not_equal, equal}
+
+///|
+pub extend AbortCommand with Debug::{to_repr}
 
 // ──────────────────────────────────────────────────────────────────────────
 // Fork / Compact commands (M3.5)
@@ -153,6 +198,12 @@ pub(all) struct ForkCommand {
 } derive(Eq, Debug)
 
 ///|
+pub extend ForkCommand with Eq::{not_equal, equal}
+
+///|
+pub extend ForkCommand with Debug::{to_repr}
+
+///|
 pub fn ForkCommand::command_id(self : ForkCommand) -> CommandId {
   self.command_id
 }
@@ -172,6 +223,12 @@ pub(all) struct CompactCommand {
   target_turn_id : TurnId
   trigger : @kernel.CompactTrigger
 } derive(Eq, Debug)
+
+///|
+pub extend CompactCommand with Eq::{not_equal, equal}
+
+///|
+pub extend CompactCommand with Debug::{to_repr}
 
 ///|
 pub fn CompactCommand::command_id(self : CompactCommand) -> CommandId {
@@ -201,6 +258,15 @@ pub(all) enum EnqueueResult {
   /// after a previous abort already fired.
   AbortAlreadyRequested(command_id~ : CommandId)
 } derive(Eq, Debug)
+
+///|
+pub extend EnqueueResult with Eq::{not_equal, equal}
+
+///|
+pub extend EnqueueResult with Debug::{to_repr}
+
+///|
+pub extend EnqueueResult with Show::{to_string, output}
 
 ///|
 pub impl Show for EnqueueResult with fn to_string(self : EnqueueResult) -> String {

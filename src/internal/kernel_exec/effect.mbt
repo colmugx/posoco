@@ -30,6 +30,12 @@ pub(all) struct CallModelPayload {
 } derive(Eq, Debug)
 
 ///|
+pub extend CallModelPayload with Eq::{not_equal, equal}
+
+///|
+pub extend CallModelPayload with Debug::{to_repr}
+
+///|
 /// Payload for `Effect::ExecuteTool`. The executor looks up
 /// `catalog_version`+`owner` in the runtime registry; if either is missing,
 /// the executor returns a typed `ToolFailed` input carrying an
@@ -46,6 +52,12 @@ pub(all) struct ExecuteToolPayload {
   owner : @kernel.OwnerId
   catalog_version : CatalogVersion
 } derive(Eq, Debug)
+
+///|
+pub extend ExecuteToolPayload with Eq::{not_equal, equal}
+
+///|
+pub extend ExecuteToolPayload with Debug::{to_repr}
 
 ///|
 /// Payload for `Effect::CancelOutstanding`. Lists the effect ids the reducer
@@ -65,6 +77,12 @@ pub(all) struct CancelOutstandingPayload {
 } derive(Eq, Debug)
 
 ///|
+pub extend CancelOutstandingPayload with Eq::{not_equal, equal}
+
+///|
+pub extend CancelOutstandingPayload with Debug::{to_repr}
+
+///|
 /// A single declared Effect. Each variant carries its own id and the
 /// `model_step_id` it belongs to. The executor consumes exactly one Effect at
 /// a time and returns exactly one completion Input (ADR §2.5).
@@ -75,6 +93,15 @@ pub(all) enum Effect {
   ExecuteTool(effect_id~ : EffectId, payload~ : ExecuteToolPayload)
   CancelOutstanding(effect_id~ : EffectId, payload~ : CancelOutstandingPayload)
 } derive(Eq, Debug)
+
+///|
+pub extend Effect with Eq::{not_equal, equal}
+
+///|
+pub extend Effect with Debug::{to_repr}
+
+///|
+pub extend Effect with Show::{output}
 
 ///|
 pub impl Show for Effect with fn to_string(self : Effect) -> String {

@@ -14,6 +14,15 @@ pub(all) enum Phase {
 } derive(Eq, Debug)
 
 ///|
+pub extend Phase with Eq::{not_equal, equal}
+
+///|
+pub extend Phase with Debug::{to_repr}
+
+///|
+pub extend Phase with Show::{output}
+
+///|
 pub impl Show for Phase with fn to_string(self : Phase) -> String {
   match self {
     Initializing => "Initializing"
@@ -35,6 +44,15 @@ pub(all) enum RunOutcome {
   Failed(reason~ : FailureReason)
   Cancelled(reason~ : CancelReason)
 } derive(Eq, Debug)
+
+///|
+pub extend RunOutcome with Eq::{not_equal, equal}
+
+///|
+pub extend RunOutcome with Debug::{to_repr}
+
+///|
+pub extend RunOutcome with Show::{output}
 
 ///|
 pub impl Show for RunOutcome with fn to_string(self : RunOutcome) -> String {
@@ -433,6 +451,15 @@ pub fn RunState::suspension_requirement(
 pub fn RunState::budget(self : RunState) -> Budget {
   self.budget
 }
+
+///|
+pub extend RunState with Show::{output}
+
+///|
+pub extend RunState with Eq::{not_equal, equal}
+
+///|
+pub extend RunState with Debug::{to_repr}
 
 ///|
 pub impl Show for RunState with fn to_string(self : RunState) -> String {

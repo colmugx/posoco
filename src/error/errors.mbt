@@ -19,6 +19,12 @@ pub(all) struct RateLimitInfo {
 } derive(Eq, Debug)
 
 ///|
+pub extend RateLimitInfo with Eq::{not_equal, equal}
+
+///|
+pub extend RateLimitInfo with Debug::{to_repr}
+
+///|
 fn bounded_rate_limit_message(message : String) -> String {
   let chars : Array[Char] = []
   let mut truncated = false
@@ -52,6 +58,12 @@ pub(all) suberror ModelError {
 } derive(Debug)
 
 ///|
+pub extend ModelError with Debug::{to_repr}
+
+///|
+pub extend ModelError with Show::{to_string, output}
+
+///|
 pub impl Show for ModelError with fn to_string(self) -> String {
   match self {
     RequestBuild(msg) => "ModelError::RequestBuild(\{msg})"
@@ -83,6 +95,12 @@ pub(all) suberror DecisionError {
 } derive(Debug)
 
 ///|
+pub extend DecisionError with Show::{to_string, output}
+
+///|
+pub extend DecisionError with Debug::{to_repr}
+
+///|
 pub impl Show for DecisionError with fn to_string(self) -> String {
   match self {
     InvalidRequest(msg) => "DecisionError::InvalidRequest(\{msg})"
@@ -111,6 +129,12 @@ pub(all) suberror SessionError {
 } derive(Debug)
 
 ///|
+pub extend SessionError with Show::{output}
+
+///|
+pub extend SessionError with Debug::{to_repr}
+
+///|
 pub impl Show for SessionError with fn to_string(self : SessionError) -> String {
   match self {
     Load(msg) => "SessionError::Load(\{msg})"
@@ -127,6 +151,12 @@ pub(all) suberror RuntimeError {
   /// `ToolRegistry::register_strict` rejected a duplicate tool name.
   ToolAlreadyRegistered(String)
 } derive(Debug)
+
+///|
+pub extend RuntimeError with Show::{output}
+
+///|
+pub extend RuntimeError with Debug::{to_repr}
 
 ///|
 pub impl Show for RuntimeError with fn to_string(self) -> String {
@@ -152,6 +182,12 @@ pub(all) suberror AgentError {
 } derive(Debug)
 
 ///|
+pub extend AgentError with Show::{to_string, output}
+
+///|
+pub extend AgentError with Debug::{to_repr}
+
+///|
 pub impl Show for AgentError with fn to_string(self : AgentError) -> String {
   match self {
     Model(msg) => "AgentError::Model(\{msg})"
@@ -172,6 +208,12 @@ pub(all) suberror MemoryError {
   Search(String)
   Delete(String)
 } derive(Debug)
+
+///|
+pub extend MemoryError with Show::{to_string, output}
+
+///|
+pub extend MemoryError with Debug::{to_repr}
 
 ///|
 pub impl Show for MemoryError with fn to_string(self) -> String {
@@ -220,6 +262,12 @@ pub(all) suberror CompositionError {
 } derive(Debug)
 
 ///|
+pub extend CompositionError with Show::{to_string, output}
+
+///|
+pub extend CompositionError with Debug::{to_repr}
+
+///|
 pub impl Show for CompositionError with fn to_string(self) -> String {
   match self {
     ToolCollision(name, msg, manifests~) =>
@@ -259,6 +307,12 @@ pub(all) suberror UiError {
 } derive(Debug)
 
 ///|
+pub extend UiError with Show::{to_string, output}
+
+///|
+pub extend UiError with Debug::{to_repr}
+
+///|
 pub impl Show for UiError with fn to_string(self) -> String {
   match self {
     Unsupported(detail~) => "UiError::Unsupported(\{detail})"
@@ -276,6 +330,12 @@ pub(all) suberror CommandError {
   InvalidArgs(reason~ : String)
   ExecutionFailed(String)
 } derive(Debug)
+
+///|
+pub extend CommandError with Show::{to_string, output}
+
+///|
+pub extend CommandError with Debug::{to_repr}
 
 ///|
 pub impl Show for CommandError with fn to_string(self) -> String {

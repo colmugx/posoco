@@ -38,6 +38,9 @@ pub(all) struct CompositeToolProvider {
 }
 
 ///|
+pub extend CompositeToolProvider with @port.ToolProvider::{execute, list_tools}
+
+///|
 pub impl @port.ToolProvider for CompositeToolProvider with fn list_tools(self) {
   let all : Array[@kernel.ToolDef] = []
   for p in self.providers {
@@ -110,6 +113,9 @@ pub fn ToolRegistry::unregister(self : ToolRegistry, name : String) -> Unit {
 }
 
 ///|
+pub extend ToolRegistry with @port.ToolProvider::{execute, list_tools}
+
+///|
 pub impl @port.ToolProvider for ToolRegistry with fn list_tools(self) {
   let all : Array[@kernel.ToolDef] = []
   for v in self.tools.values() {
@@ -132,6 +138,13 @@ pub impl @port.ToolProvider for ToolRegistry with fn execute(
 
 ///|
 pub(all) struct NoopLifecycle {}
+
+///|
+pub extend NoopLifecycle with @port.Lifecycle::{
+  on_compose,
+  on_shutdown,
+  on_start,
+}
 
 ///|
 pub impl @port.Lifecycle for NoopLifecycle with fn on_shutdown(_self) -> Unit {

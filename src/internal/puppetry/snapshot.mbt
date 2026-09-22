@@ -58,6 +58,12 @@ pub struct TurnSnapshot {
   fingerprint : String
 } derive(Eq, Debug)
 
+///|
+pub extend TurnSnapshot with Eq::{not_equal, equal}
+
+///|
+pub extend TurnSnapshot with Debug::{to_repr}
+
 // ──────────────────────────────────────────────────────────────────────────
 // Capture input (builder pattern)
 // ──────────────────────────────────────────────────────────────────────────
@@ -77,6 +83,12 @@ pub(all) struct RunPolicy {
 } derive(Eq, Debug)
 
 ///|
+pub extend RunPolicy with Eq::{not_equal, equal}
+
+///|
+pub extend RunPolicy with Debug::{to_repr}
+
+///|
 /// Inputs to `TurnSnapshot::capture`. Kept separate from the snapshot struct
 /// so callers cannot accidentally construct a snapshot with un-validated
 /// fields; they go through `capture`, which copies and fingerprints.
@@ -91,6 +103,12 @@ pub(all) struct TurnSnapshotInput {
   lifecycle_provenance : Array[String]
   subscriber_provenance : Array[String]
 } derive(Eq, Debug)
+
+///|
+pub extend TurnSnapshotInput with Eq::{not_equal, equal}
+
+///|
+pub extend TurnSnapshotInput with Debug::{to_repr}
 
 // ──────────────────────────────────────────────────────────────────────────
 // Capture — the only constructor
@@ -411,6 +429,9 @@ fn fp_prefix(s : String) -> String {
   }
   String::from_array(chars)
 }
+
+///|
+pub extend TurnSnapshot with Show::{output}
 
 ///|
 pub impl Show for TurnSnapshot with fn to_string(self : TurnSnapshot) -> String {

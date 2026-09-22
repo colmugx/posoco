@@ -24,6 +24,12 @@ pub(all) struct ReduceOutput {
 } derive(Eq, Debug)
 
 ///|
+pub extend ReduceOutput with Eq::{not_equal, equal}
+
+///|
+pub extend ReduceOutput with Debug::{to_repr}
+
+///|
 /// Construct a ReduceOutput. Internal helper used by the reducer branches.
 fn reduce_output(
   next_state : RunState,
@@ -47,6 +53,9 @@ pub fn ReduceOutput::effects(self : ReduceOutput) -> Array[Effect] {
 pub fn ReduceOutput::events(self : ReduceOutput) -> Array[KernelEvent] {
   self.events.copy()
 }
+
+///|
+pub extend ReduceOutput with Show::{to_string, output}
 
 ///|
 pub impl Show for ReduceOutput with fn to_string(self : ReduceOutput) -> String {

@@ -66,6 +66,15 @@ pub(all) struct DriverStep {
 } derive(Eq, Debug)
 
 ///|
+pub extend DriverStep with Eq::{not_equal, equal}
+
+///|
+pub extend DriverStep with Debug::{to_repr}
+
+///|
+pub extend DriverStep with Show::{to_string, output}
+
+///|
 pub impl Show for DriverStep with fn to_string(self : DriverStep) -> String {
   "DriverStep(\{self.effect_kind} \{self.effect_id.to_int()} → \{self.input_kind})"
 }
@@ -76,6 +85,9 @@ pub(all) struct DriverTrace {
   events : Array[KernelEvent]
   final_state : RunState
 } derive(Debug)
+
+///|
+pub extend DriverTrace with Debug::{to_repr}
 
 ///|
 pub fn DriverTrace::steps(self : DriverTrace) -> Array[DriverStep] {

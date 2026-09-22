@@ -25,6 +25,12 @@ pub(all) enum StreamChunk {
 } derive(Eq, Debug)
 
 ///|
+pub extend StreamChunk with Eq::{not_equal, equal}
+
+///|
+pub extend StreamChunk with Debug::{to_repr}
+
+///|
 /// Validate the scalar part of one provider stream chunk before it reaches a
 /// live sink or the mutable accumulator. Tool-call sparsity is stateful and
 /// is checked by `StreamAccumulator::push` (and by the executor's callback
@@ -72,6 +78,9 @@ pub(all) struct ToolCallBuilder {
 } derive(Debug)
 
 ///|
+pub extend ToolCallBuilder with Debug::{to_repr}
+
+///|
 pub fn ToolCallBuilder::ToolCallBuilder() -> ToolCallBuilder {
   { id: "", name: "", arguments_buf: StringBuilder(), }
 }
@@ -88,6 +97,12 @@ pub struct ToolCallSnapshot {
   name : String
   arguments_json : String
 } derive(Eq, Debug)
+
+///|
+pub extend ToolCallSnapshot with Eq::{not_equal, equal}
+
+///|
+pub extend ToolCallSnapshot with Debug::{to_repr}
 
 ///|
 /// Accumulates `StreamChunk` events during a streaming chat call. Modelports
@@ -112,6 +127,9 @@ pub struct StreamAccumulator {
   priv mut usage_output : Int?
   priv mut usage_total : Int?
 } derive(Debug)
+
+///|
+pub extend StreamAccumulator with Debug::{to_repr}
 
 ///|
 pub fn StreamAccumulator::StreamAccumulator() -> StreamAccumulator {

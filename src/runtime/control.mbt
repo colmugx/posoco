@@ -14,6 +14,15 @@ pub(all) enum EnqueueOutcome {
 } derive(Eq, Debug)
 
 ///|
+pub extend EnqueueOutcome with Eq::{not_equal, equal}
+
+///|
+pub extend EnqueueOutcome with Debug::{to_repr}
+
+///|
+pub extend EnqueueOutcome with Show::{to_string, output}
+
+///|
 pub impl Show for EnqueueOutcome with fn to_string(self : EnqueueOutcome) -> String {
   match self {
     Accepted(command_id~) => "Accepted(\{command_id})"

@@ -194,6 +194,9 @@ fn ScriptedModel::record_chat_call(
 }
 
 ///|
+pub extend ScriptedModel with @port.ModelPort::{provider_config, chat, compact}
+
+///|
 pub impl @port.ModelPort for ScriptedModel with fn chat(
   self,
   _scope : @kernel.InvocationScope,
@@ -333,6 +336,13 @@ pub fn ScopeRecordingModel::compact_scopes(
   self : ScopeRecordingModel,
 ) -> Array[@kernel.InvocationScope] {
   self.compact_scopes.copy()
+}
+
+///|
+pub extend ScopeRecordingModel with @port.ModelPort::{
+  provider_config,
+  chat,
+  compact,
 }
 
 ///|

@@ -32,6 +32,14 @@ fn BoundaryProbeHost::append_counts_at_model_call(
 }
 
 ///|
+pub extend BoundaryProbeHost with @kernel_exec.HostRuntime::{
+  cancel_effects,
+  execute_tool,
+  call_model,
+  compact,
+}
+
+///|
 pub impl @kernel_exec.HostRuntime for BoundaryProbeHost with fn call_model(
   self,
   _scope : InvocationScope,
@@ -127,6 +135,13 @@ struct RewriteProbeSubscriber {
 }
 
 ///|
+pub extend RewriteProbeSubscriber with EventSubscriber::{
+  on_event,
+  provenance,
+  subscriber_id,
+}
+
+///|
 pub impl EventSubscriber for RewriteProbeSubscriber with fn subscriber_id(_self) -> String {
   "rewrite_probe"
 }
@@ -161,6 +176,14 @@ fn CompactReplaceHost::CompactReplaceHost(
     model_index: 0,
     messages_at_model_call: [],
   }
+}
+
+///|
+pub extend CompactReplaceHost with @kernel_exec.HostRuntime::{
+  cancel_effects,
+  execute_tool,
+  call_model,
+  compact,
 }
 
 ///|

@@ -15,6 +15,15 @@ pub(all) enum UiSlot {
 } derive(Eq, Debug)
 
 ///|
+pub extend UiSlot with Eq::{not_equal, equal}
+
+///|
+pub extend UiSlot with Debug::{to_repr}
+
+///|
+pub extend UiSlot with Show::{output}
+
+///|
 pub impl Show for UiSlot with fn to_string(self) -> String {
   match self {
     Status => "Status"
@@ -36,6 +45,12 @@ pub(all) enum UiBody {
   Progress(Double)
   Markdown(String)
 } derive(Debug)
+
+///|
+pub extend UiBody with Debug::{to_repr}
+
+///|
+pub extend UiBody with Show::{output}
 
 ///|
 pub impl Show for UiBody with fn to_string(self) -> String {
@@ -66,6 +81,9 @@ pub(all) struct UiEntry {
 } derive(Debug)
 
 ///|
+pub extend UiEntry with Debug::{to_repr}
+
+///|
 /// One render intent. Same `key` replaces a prior intent in the same `UiSlot`.
 pub(all) struct UiRender {
   slot : UiSlot
@@ -75,6 +93,12 @@ pub(all) struct UiRender {
   /// Visibility hint in milliseconds. `None` = persistent; hosts may ignore.
   ttl_ms : Int?
 } derive(Debug)
+
+///|
+pub extend UiRender with Debug::{to_repr}
+
+///|
+pub extend UiRender with Show::{to_string, output}
 
 ///|
 pub impl Show for UiRender with fn to_string(self) -> String {
@@ -104,6 +128,9 @@ pub(all) struct AutocompleteItem {
 } derive(Debug)
 
 ///|
+pub extend AutocompleteItem with Debug::{to_repr}
+
+///|
 /// A source of autocomplete suggestions tied to a trigger character.
 pub(all) struct AutocompleteSource {
   trigger : String
@@ -113,11 +140,17 @@ pub(all) struct AutocompleteSource {
 } derive(Debug)
 
 ///|
+pub extend AutocompleteSource with Debug::{to_repr}
+
+///|
 /// Collected at composition time: the host aggregates every UiPort's
 /// descriptors to know which autocomplete triggers to honor.
 pub(all) struct UiDescriptor {
   autocomplete_sources : Array[AutocompleteSource]
 } derive(Debug)
+
+///|
+pub extend UiDescriptor with Debug::{to_repr}
 
 ///|
 /// Empty descriptor used by UIs that contribute no autocomplete sources.
@@ -138,6 +171,12 @@ pub(all) enum UiRequest {
   /// Choose one option. `default` is the pre-select index.
   Select(prompt~ : String, options~ : Array[String], default~ : Int?)
 } derive(Debug)
+
+///|
+pub extend UiRequest with Debug::{to_repr}
+
+///|
+pub extend UiRequest with Show::{to_string, output}
 
 ///|
 pub impl Show for UiRequest with fn to_string(self) -> String {
@@ -185,6 +224,15 @@ pub(all) enum UiResponse {
   Selected(Int)
   Cancelled
 } derive(Eq, Debug)
+
+///|
+pub extend UiResponse with Eq::{not_equal, equal}
+
+///|
+pub extend UiResponse with Debug::{to_repr}
+
+///|
+pub extend UiResponse with Show::{to_string, output}
 
 ///|
 pub impl Show for UiResponse with fn to_string(self) -> String {

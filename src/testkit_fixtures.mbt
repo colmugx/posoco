@@ -232,6 +232,9 @@ pub fn ScriptedMemoryPort::received_searches(
 }
 
 ///|
+pub extend ScriptedMemoryPort with @port.MemoryPort::{search, delete, store}
+
+///|
 pub impl @port.MemoryPort for ScriptedMemoryPort with fn inbound(
   self : ScriptedMemoryPort,
   session_id~ : String,

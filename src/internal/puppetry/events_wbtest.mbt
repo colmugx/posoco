@@ -36,6 +36,13 @@ pub fn RecordingSubscriber::received(
 }
 
 ///|
+pub extend RecordingSubscriber with EventSubscriber::{
+  on_event,
+  provenance,
+  subscriber_id,
+}
+
+///|
 pub impl EventSubscriber for RecordingSubscriber with fn subscriber_id(self) -> String {
   self.id_value
 }
@@ -62,6 +69,13 @@ pub(all) struct FailingSubscriber {
 ///|
 pub fn FailingSubscriber::FailingSubscriber(id : String) -> FailingSubscriber {
   { id_value: id, }
+}
+
+///|
+pub extend FailingSubscriber with EventSubscriber::{
+  on_event,
+  provenance,
+  subscriber_id,
 }
 
 ///|

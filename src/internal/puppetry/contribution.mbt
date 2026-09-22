@@ -45,6 +45,12 @@ pub(all) struct PreCommitContext {
   catalog_version : CatalogVersion
 } derive(Eq, Debug)
 
+///|
+pub extend PreCommitContext with Eq::{not_equal, equal}
+
+///|
+pub extend PreCommitContext with Debug::{to_repr}
+
 // ──────────────────────────────────────────────────────────────────────────
 // JournalContribution — what a contributor proposes
 // ──────────────────────────────────────────────────────────────────────────
@@ -62,6 +68,12 @@ pub(all) struct JournalContribution {
   provenance : String
   proposed_entries : Array[JournalEntry]
 } derive(Eq, Debug)
+
+///|
+pub extend JournalContribution with Eq::{not_equal, equal}
+
+///|
+pub extend JournalContribution with Debug::{to_repr}
 
 ///|
 /// Construct an empty contribution (contributor chooses to add nothing).
@@ -98,6 +110,9 @@ pub(all) suberror ContributionError {
   /// Contributor observed inconsistent state (e.g. wrong run id).
   Inconsistent(contributor_id~ : String, detail~ : String)
 }
+
+///|
+pub extend ContributionError with Show::{output}
 
 ///|
 pub impl Show for ContributionError with fn to_string(self : ContributionError) -> String {
@@ -159,6 +174,9 @@ pub fn NoopContributor::with_id(id : String) -> NoopContributor {
 }
 
 ///|
+pub extend NoopContributor with JournalContributor::{contributor_id, provenance}
+
+///|
 pub impl JournalContributor for NoopContributor with fn contributor_id(self) -> String {
   self.id
 }
@@ -197,6 +215,12 @@ pub(all) struct FrozenBatch {
   /// post-freeze mutation of the underlying arrays.
   frozen_entry_keys : Array[String]
 } derive(Eq, Debug)
+
+///|
+pub extend FrozenBatch with Eq::{not_equal, equal}
+
+///|
+pub extend FrozenBatch with Debug::{to_repr}
 
 // ──────────────────────────────────────────────────────────────────────────
 // Prepare + validate + freeze

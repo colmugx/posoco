@@ -23,6 +23,12 @@ pub(all) enum Capability {
 } derive(Eq, Debug)
 
 ///|
+pub extend Capability with Eq::{not_equal, equal}
+
+///|
+pub extend Capability with Debug::{to_repr}
+
+///|
 /// Self-reported port contributions. Build one with `ExtensionManifest::make`,
 /// which defaults every omitted field to an empty array; multi-trait extensions
 /// put `self` under each applicable field.

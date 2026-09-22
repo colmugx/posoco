@@ -13,6 +13,12 @@ pub(all) struct Session {
 } derive(Eq, Debug)
 
 ///|
+pub extend Session with Eq::{not_equal, equal}
+
+///|
+pub extend Session with Debug::{to_repr}
+
+///|
 /// Metadata key under which a session's parent thread id is stored. Absent
 /// for threads created via the `new` command (fresh, no parent). Present
 /// when this session was forked from another thread (user-initiated
@@ -33,6 +39,15 @@ pub(all) enum ContextReadingSource {
   Estimated
   Unknown
 } derive(Eq, Debug)
+
+///|
+pub extend ContextReadingSource with Eq::{not_equal, equal}
+
+///|
+pub extend ContextReadingSource with Debug::{to_repr}
+
+///|
+pub extend ContextReadingSource with Show::{to_string, output}
 
 ///|
 pub impl Show for ContextReadingSource with fn to_string(
@@ -57,6 +72,15 @@ pub(all) struct ContextState {
   source : ContextReadingSource
   reading_message_count : Int
 } derive(Eq, Debug)
+
+///|
+pub extend ContextState with Eq::{not_equal, equal}
+
+///|
+pub extend ContextState with Debug::{to_repr}
+
+///|
+pub extend ContextState with Show::{to_string, output}
 
 ///|
 pub impl Show for ContextState with fn to_string(self : ContextState) -> String {
@@ -173,6 +197,9 @@ pub(all) struct CompactOutcome {
 } derive(Eq)
 
 ///|
+pub extend CompactOutcome with Eq::{not_equal, equal}
+
+///|
 /// Read the parent thread id from a session's metadata. Returns `None` when
 /// the key is absent or not a string.
 pub fn Session::parent_thread_id(self : Session) -> String? {
@@ -206,6 +233,12 @@ pub(all) struct EventScope {
   run_id : @kernel.RunId
   turn_id : @kernel.TurnId
 } derive(Eq, Debug)
+
+///|
+pub extend EventScope with Eq::{not_equal, equal}
+
+///|
+pub extend EventScope with Debug::{to_repr}
 
 ///|
 /// Turn lifecycle events observed via `Observer::on_event`. R3 M3.7: payload
@@ -274,6 +307,15 @@ pub(all) enum TurnEvent {
 } derive(Eq, Debug)
 
 ///|
+pub extend TurnEvent with Show::{to_string, output}
+
+///|
+pub extend TurnEvent with Eq::{not_equal, equal}
+
+///|
+pub extend TurnEvent with Debug::{to_repr}
+
+///|
 pub impl Show for TurnEvent with fn to_string(self : TurnEvent) -> String {
   match self {
     TurnStarted => "TurnStarted"
@@ -314,3 +356,9 @@ pub(all) struct TurnResult {
   tool_results : Array[@kernel.ToolOutcome]
   final_session_id : String
 } derive(Eq, Debug)
+
+///|
+pub extend TurnResult with Eq::{not_equal, equal}
+
+///|
+pub extend TurnResult with Debug::{to_repr}

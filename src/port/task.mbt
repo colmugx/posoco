@@ -6,6 +6,12 @@ pub(all) enum TaskMode {
 } derive(Eq, Debug)
 
 ///|
+pub extend TaskMode with Eq::{not_equal, equal}
+
+///|
+pub extend TaskMode with Debug::{to_repr}
+
+///|
 /// A unit of Agent-owned work. The Agent supplies the structured scope and
 /// records the terminal outcome; callers never supply a TaskGroup.
 pub(all) struct TaskSpec {
@@ -27,6 +33,12 @@ pub(all) struct TaskReceipt {
 } derive(Eq, Debug)
 
 ///|
+pub extend TaskReceipt with Eq::{not_equal, equal}
+
+///|
+pub extend TaskReceipt with Debug::{to_repr}
+
+///|
 /// The single terminal state shared by foreground waits and background inbox
 /// delivery.
 pub(all) enum TaskStatus {
@@ -37,12 +49,24 @@ pub(all) enum TaskStatus {
 } derive(Eq, Debug)
 
 ///|
+pub extend TaskStatus with Eq::{not_equal, equal}
+
+///|
+pub extend TaskStatus with Debug::{to_repr}
+
+///|
 /// A task's terminal result. Background outcomes are retained by session
 /// until the owning Agent successfully commits them.
 pub(all) struct TaskOutcome {
   receipt : TaskReceipt
   status : TaskStatus
 } derive(Eq, Debug)
+
+///|
+pub extend TaskOutcome with Eq::{not_equal, equal}
+
+///|
+pub extend TaskOutcome with Debug::{to_repr}
 
 ///|
 /// Admission failures are explicit so an extension cannot mistake an
@@ -53,6 +77,12 @@ pub(all) enum TaskSubmitError {
   QueueFull
   InvalidSession(reason~ : String)
 } derive(Eq, Debug)
+
+///|
+pub extend TaskSubmitError with Eq::{not_equal, equal}
+
+///|
+pub extend TaskSubmitError with Debug::{to_repr}
 
 ///|
 /// Opaque handle for one admitted task. The callbacks are installed by core

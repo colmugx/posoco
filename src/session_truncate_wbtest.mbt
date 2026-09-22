@@ -19,13 +19,20 @@ struct TruncateFallbackStore {
 }
 
 ///|
-extend TruncateFallbackStore with @port.SessionStore::{truncate}
+pub extend TruncateFallbackStore with @port.SessionStore::{truncate}
 
 ///|
 fn TruncateFallbackStore::make(
   session : @types.Session,
 ) -> TruncateFallbackStore {
   { session, saved: [], fail_load: false, fail_save: false, }
+}
+
+///|
+pub extend TruncateFallbackStore with @port.SessionStore::{
+  save,
+  append_messages,
+  load,
 }
 
 ///|
@@ -135,7 +142,6 @@ async test "rewind_truncate_default_impl_labels_load_and_save_failures" {
 // ---------------------------------------------------------------------------
 
 ///|
-extend RecordingSessionStore with @port.SessionStore::{truncate}
 
 ///|
 async test "rewind_recording_store_truncate_slices_and_records_op" {

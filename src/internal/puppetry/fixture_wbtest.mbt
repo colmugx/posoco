@@ -88,6 +88,14 @@ pub fn FixtureHost::executed_effect_ids(self : FixtureHost) -> Array[EffectId] {
 }
 
 ///|
+pub extend FixtureHost with @kernel_exec.HostRuntime::{
+  cancel_effects,
+  execute_tool,
+  call_model,
+  compact,
+}
+
+///|
 pub impl @kernel_exec.HostRuntime for FixtureHost with fn call_model(
   self,
   _scope : InvocationScope,
@@ -823,6 +831,14 @@ fn AbortProbeHost::AbortProbeHost(
     tool_started_signal,
     model_started_signal: Queue(kind=Unbounded),
   }
+}
+
+///|
+pub extend AbortProbeHost with @kernel_exec.HostRuntime::{
+  cancel_effects,
+  execute_tool,
+  call_model,
+  compact,
 }
 
 ///|

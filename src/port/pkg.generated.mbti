@@ -14,6 +14,8 @@ import {
 pub(all) suberror HookAbort {
   Aborted(reason~ : String)
 }
+pub fn HookAbort::output(Self, &Logger) -> Unit
+pub fn HookAbort::to_string(Self) -> String
 pub impl Show for HookAbort
 
 // Types and methods
@@ -23,12 +25,14 @@ pub(all) struct AutocompleteItem {
   detail : String?
   kind : String
 } derive(@debug.Debug)
+pub fn AutocompleteItem::to_repr(Self) -> @debug.Repr
 
 pub(all) struct AutocompleteSource {
   trigger : String
   kind : String
   fetch : (String) -> Array[AutocompleteItem]
 } derive(@debug.Debug)
+pub fn AutocompleteSource::to_repr(Self) -> @debug.Repr
 
 pub(all) enum Capability {
   Model
@@ -36,6 +40,9 @@ pub(all) enum Capability {
   Ui
   Tasks
 } derive(Eq, @debug.Debug)
+pub fn Capability::equal(Self, Self) -> Bool
+pub fn Capability::not_equal(Self, Self) -> Bool
+pub fn Capability::to_repr(Self) -> @debug.Repr
 
 pub(all) struct CommandDef {
   id : String
@@ -50,12 +57,18 @@ pub(all) struct CommandDef {
   visible : Bool
   metadata : Json?
 } derive(Eq, @debug.Debug)
+pub fn CommandDef::equal(Self, Self) -> Bool
+pub fn CommandDef::not_equal(Self, Self) -> Bool
+pub fn CommandDef::to_repr(Self) -> @debug.Repr
 
 pub(all) enum CommandOutcome {
   Success(feedback~ : String, structured~ : Json?, ui_hint~ : UiHint?)
   Failure(reason~ : String)
   NeedsInput(prompt~ : String)
 } derive(Eq, @debug.Debug)
+pub fn CommandOutcome::equal(Self, Self) -> Bool
+pub fn CommandOutcome::not_equal(Self, Self) -> Bool
+pub fn CommandOutcome::to_repr(Self) -> @debug.Repr
 
 pub(all) struct CommandParam {
   name : String
@@ -67,6 +80,9 @@ pub(all) struct CommandParam {
   choices : Array[String]?
   positional : Bool
 } derive(Eq, @debug.Debug)
+pub fn CommandParam::equal(Self, Self) -> Bool
+pub fn CommandParam::not_equal(Self, Self) -> Bool
+pub fn CommandParam::to_repr(Self) -> @debug.Repr
 
 pub(all) enum CommandType {
   Action
@@ -75,6 +91,9 @@ pub(all) enum CommandType {
   Input
   MultiStep
 } derive(Eq, @debug.Debug)
+pub fn CommandType::equal(Self, Self) -> Bool
+pub fn CommandType::not_equal(Self, Self) -> Bool
+pub fn CommandType::to_repr(Self) -> @debug.Repr
 
 pub struct CompositionView {
   // private fields
@@ -90,27 +109,42 @@ pub(all) enum DecisionAnswer {
   ChoiceAnswer(id~ : String, selected~ : String, probabilities~ : Array[DecisionNamedProbability], confidence~ : Double?)
   ScoreAnswer(id~ : String, score~ : Double, probabilities~ : Array[Double], confidence~ : Double?)
 } derive(Eq, @debug.Debug)
+pub fn DecisionAnswer::equal(Self, Self) -> Bool
+pub fn DecisionAnswer::not_equal(Self, Self) -> Bool
+pub fn DecisionAnswer::to_repr(Self) -> @debug.Repr
 
 pub(all) struct DecisionNamedProbability {
   id : String
   probability : Double
 } derive(Eq, @debug.Debug)
+pub fn DecisionNamedProbability::equal(Self, Self) -> Bool
+pub fn DecisionNamedProbability::not_equal(Self, Self) -> Bool
+pub fn DecisionNamedProbability::to_repr(Self) -> @debug.Repr
 
 pub(all) struct DecisionOption {
   id : String
   description : Json?
 } derive(Eq, @debug.Debug)
+pub fn DecisionOption::equal(Self, Self) -> Bool
+pub fn DecisionOption::not_equal(Self, Self) -> Bool
+pub fn DecisionOption::to_repr(Self) -> @debug.Repr
 
 pub(all) enum DecisionQuestion {
   Boolean(id~ : String, instructions~ : Json, true_criteria~ : Json?, false_criteria~ : Json?)
   Choice(id~ : String, instructions~ : Json, options~ : Array[DecisionOption])
   Score(id~ : String, instructions~ : Json, levels~ : Array[Json])
 } derive(Eq, @debug.Debug)
+pub fn DecisionQuestion::equal(Self, Self) -> Bool
+pub fn DecisionQuestion::not_equal(Self, Self) -> Bool
+pub fn DecisionQuestion::to_repr(Self) -> @debug.Repr
 
 pub(all) struct DecisionRequest {
   state : Json
   questions : Array[DecisionQuestion]
 } derive(Eq, @debug.Debug)
+pub fn DecisionRequest::equal(Self, Self) -> Bool
+pub fn DecisionRequest::not_equal(Self, Self) -> Bool
+pub fn DecisionRequest::to_repr(Self) -> @debug.Repr
 pub fn DecisionRequest::validate(Self) -> Unit raise @error.DecisionError
 
 pub(all) struct DecisionResult {
@@ -118,12 +152,18 @@ pub(all) struct DecisionResult {
   model : String?
   usage : DecisionUsage?
 } derive(Eq, @debug.Debug)
+pub fn DecisionResult::equal(Self, Self) -> Bool
+pub fn DecisionResult::not_equal(Self, Self) -> Bool
+pub fn DecisionResult::to_repr(Self) -> @debug.Repr
 pub fn DecisionResult::validate_for(Self, DecisionRequest) -> Unit raise @error.DecisionError
 
 pub(all) struct DecisionUsage {
   input_tokens : Int?
   output_tokens : Int?
 } derive(Eq, @debug.Debug)
+pub fn DecisionUsage::equal(Self, Self) -> Bool
+pub fn DecisionUsage::not_equal(Self, Self) -> Bool
+pub fn DecisionUsage::to_repr(Self) -> @debug.Repr
 
 pub(all) struct ExtensionManifest {
   id : String
@@ -149,6 +189,9 @@ pub(all) enum HookStage {
   ToolFailed(call~ : @kernel.ToolCall, reason~ : String)
   ModelFailed(failure~ : @kernel.ModelFailure)
 } derive(@debug.Debug)
+pub fn HookStage::output(Self, &Logger) -> Unit
+pub fn HookStage::to_repr(Self) -> @debug.Repr
+pub fn HookStage::to_string(Self) -> String
 pub impl Show for HookStage
 
 pub(all) enum ParamType {
@@ -157,6 +200,9 @@ pub(all) enum ParamType {
   Bool
   Strs
 } derive(Eq, @debug.Debug)
+pub fn ParamType::equal(Self, Self) -> Bool
+pub fn ParamType::not_equal(Self, Self) -> Bool
+pub fn ParamType::to_repr(Self) -> @debug.Repr
 
 pub(all) struct ProviderConfig {
   reasoning_effort_values : Array[String]
@@ -166,6 +212,11 @@ pub(all) struct ProviderConfig {
 pub fn ProviderConfig::ProviderConfig(reasoning_effort_values~ : Array[String], context_window? : Int?, compact_threshold? : Double?) -> Self
 pub fn ProviderConfig::accepts_reasoning_effort(Self, String) -> Bool
 pub fn ProviderConfig::empty() -> Self
+pub fn ProviderConfig::equal(Self, Self) -> Bool
+pub fn ProviderConfig::not_equal(Self, Self) -> Bool
+pub fn ProviderConfig::output(Self, &Logger) -> Unit
+pub fn ProviderConfig::to_repr(Self) -> @debug.Repr
+pub fn ProviderConfig::to_string(Self) -> String
 pub impl Show for ProviderConfig
 
 pub struct TaskHandle {
@@ -180,11 +231,17 @@ pub(all) enum TaskMode {
   Foreground
   Background
 } derive(Eq, @debug.Debug)
+pub fn TaskMode::equal(Self, Self) -> Bool
+pub fn TaskMode::not_equal(Self, Self) -> Bool
+pub fn TaskMode::to_repr(Self) -> @debug.Repr
 
 pub(all) struct TaskOutcome {
   receipt : TaskReceipt
   status : TaskStatus
 } derive(Eq, @debug.Debug)
+pub fn TaskOutcome::equal(Self, Self) -> Bool
+pub fn TaskOutcome::not_equal(Self, Self) -> Bool
+pub fn TaskOutcome::to_repr(Self) -> @debug.Repr
 
 pub(all) struct TaskReceipt {
   id : String
@@ -193,6 +250,9 @@ pub(all) struct TaskReceipt {
   label : String
   extension_id : String
 } derive(Eq, @debug.Debug)
+pub fn TaskReceipt::equal(Self, Self) -> Bool
+pub fn TaskReceipt::not_equal(Self, Self) -> Bool
+pub fn TaskReceipt::to_repr(Self) -> @debug.Repr
 
 pub(all) struct TaskSpec {
   session_id : String
@@ -208,6 +268,9 @@ pub(all) enum TaskStatus {
   TimedOut
   Cancelled(reason~ : String)
 } derive(Eq, @debug.Debug)
+pub fn TaskStatus::equal(Self, Self) -> Bool
+pub fn TaskStatus::not_equal(Self, Self) -> Bool
+pub fn TaskStatus::to_repr(Self) -> @debug.Repr
 
 pub(all) enum TaskSubmitError {
   Unavailable
@@ -215,6 +278,9 @@ pub(all) enum TaskSubmitError {
   QueueFull
   InvalidSession(reason~ : String)
 } derive(Eq, @debug.Debug)
+pub fn TaskSubmitError::equal(Self, Self) -> Bool
+pub fn TaskSubmitError::not_equal(Self, Self) -> Bool
+pub fn TaskSubmitError::to_repr(Self) -> @debug.Repr
 
 pub struct Tasks {
   // private fields
@@ -228,6 +294,9 @@ pub(all) enum ToolDecision {
   Defer(reason~ : String)
   Reject(reason~ : String)
 } derive(@debug.Debug)
+pub fn ToolDecision::output(Self, &Logger) -> Unit
+pub fn ToolDecision::to_repr(Self) -> @debug.Repr
+pub fn ToolDecision::to_string(Self) -> String
 pub impl Show for ToolDecision
 
 pub(all) enum UiBody {
@@ -238,6 +307,8 @@ pub(all) enum UiBody {
   Progress(Double)
   Markdown(String)
 } derive(@debug.Debug)
+pub fn UiBody::output(Self, &Logger) -> Unit
+pub fn UiBody::to_repr(Self) -> @debug.Repr
 pub fn UiBody::to_string(Self) -> String
 pub impl Show for UiBody
 
@@ -245,12 +316,14 @@ pub(all) struct UiDescriptor {
   autocomplete_sources : Array[AutocompleteSource]
 } derive(@debug.Debug)
 pub fn UiDescriptor::empty() -> Self
+pub fn UiDescriptor::to_repr(Self) -> @debug.Repr
 
 pub(all) struct UiEntry {
   key : String
   value : String
   color : String?
 } derive(@debug.Debug)
+pub fn UiEntry::to_repr(Self) -> @debug.Repr
 
 pub(all) enum UiHint {
   RefreshModelList
@@ -259,6 +332,9 @@ pub(all) enum UiHint {
   Toast
   None
 } derive(Eq, @debug.Debug)
+pub fn UiHint::equal(Self, Self) -> Bool
+pub fn UiHint::not_equal(Self, Self) -> Bool
+pub fn UiHint::to_repr(Self) -> @debug.Repr
 
 pub(all) struct UiRender {
   slot : UiSlot
@@ -267,6 +343,9 @@ pub(all) struct UiRender {
   body : UiBody
   ttl_ms : Int?
 } derive(@debug.Debug)
+pub fn UiRender::output(Self, &Logger) -> Unit
+pub fn UiRender::to_repr(Self) -> @debug.Repr
+pub fn UiRender::to_string(Self) -> String
 pub impl Show for UiRender
 
 pub(all) enum UiRequest {
@@ -274,6 +353,9 @@ pub(all) enum UiRequest {
   Confirm(prompt~ : String)
   Select(prompt~ : String, options~ : Array[String], default~ : Int?)
 } derive(@debug.Debug)
+pub fn UiRequest::output(Self, &Logger) -> Unit
+pub fn UiRequest::to_repr(Self) -> @debug.Repr
+pub fn UiRequest::to_string(Self) -> String
 pub impl Show for UiRequest
 
 pub(all) enum UiResponse {
@@ -283,6 +365,11 @@ pub(all) enum UiResponse {
   Selected(Int)
   Cancelled
 } derive(Eq, @debug.Debug)
+pub fn UiResponse::equal(Self, Self) -> Bool
+pub fn UiResponse::not_equal(Self, Self) -> Bool
+pub fn UiResponse::output(Self, &Logger) -> Unit
+pub fn UiResponse::to_repr(Self) -> @debug.Repr
+pub fn UiResponse::to_string(Self) -> String
 pub impl Show for UiResponse
 
 pub(all) enum UiSlot {
@@ -290,6 +377,10 @@ pub(all) enum UiSlot {
   Notice
   Widget
 } derive(Eq, @debug.Debug)
+pub fn UiSlot::equal(Self, Self) -> Bool
+pub fn UiSlot::not_equal(Self, Self) -> Bool
+pub fn UiSlot::output(Self, &Logger) -> Unit
+pub fn UiSlot::to_repr(Self) -> @debug.Repr
 pub fn UiSlot::to_string(Self) -> String
 pub impl Show for UiSlot
 

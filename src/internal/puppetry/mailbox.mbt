@@ -74,6 +74,15 @@ pub(all) enum QuiescentStatus {
 } derive(Eq, Debug)
 
 ///|
+pub extend QuiescentStatus with Eq::{not_equal, equal}
+
+///|
+pub extend QuiescentStatus with Debug::{to_repr}
+
+///|
+pub extend QuiescentStatus with Show::{output}
+
+///|
 pub impl Show for QuiescentStatus with fn to_string(self : QuiescentStatus) -> String {
   match self {
     Idle => "Idle"

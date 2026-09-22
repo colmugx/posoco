@@ -38,6 +38,15 @@ pub(all) enum SavepointKind {
 } derive(Eq, Debug)
 
 ///|
+pub extend SavepointKind with Eq::{not_equal, equal}
+
+///|
+pub extend SavepointKind with Debug::{to_repr}
+
+///|
+pub extend SavepointKind with Show::{output}
+
+///|
 pub impl Show for SavepointKind with fn to_string(self : SavepointKind) -> String {
   match self {
     InputAccepted => "InputAccepted"
@@ -67,6 +76,15 @@ pub(all) struct JournalEntryIdentity {
 } derive(Eq, Debug)
 
 ///|
+pub extend JournalEntryIdentity with Eq::{not_equal, equal}
+
+///|
+pub extend JournalEntryIdentity with Debug::{to_repr}
+
+///|
+pub extend JournalEntryIdentity with Show::{to_string, output}
+
+///|
 pub impl Show for JournalEntryIdentity with fn to_string(
   self : JournalEntryIdentity,
 ) -> String {
@@ -94,6 +112,12 @@ pub(all) struct JournalEntry {
   /// Opaque canonical payload. The journal does not interpret this.
   payload : Json
 } derive(Eq, Debug)
+
+///|
+pub extend JournalEntry with Eq::{not_equal, equal}
+
+///|
+pub extend JournalEntry with Debug::{to_repr}
 
 // ──────────────────────────────────────────────────────────────────────────
 // RunJournal trait (port — Q7.2 recommendation: pub(open) trait)
@@ -327,6 +351,14 @@ pub fn FailOnNthJournal::FailOnNthJournal(
   fail_on : Int,
 ) -> FailOnNthJournal {
   { inner, fail_on, call_count: 0, }
+}
+
+///|
+pub extend FailOnNthJournal with RunJournal::{
+  entries_for_run,
+  entries_for_savepoint,
+  append,
+  revision,
 }
 
 ///|

@@ -46,6 +46,14 @@ fn WaveFixtureHost::finished(self : WaveFixtureHost) -> Array[String] {
 }
 
 ///|
+pub extend WaveFixtureHost with @kernel_exec.HostRuntime::{
+  cancel_effects,
+  execute_tool,
+  call_model,
+  compact,
+}
+
+///|
 pub impl @kernel_exec.HostRuntime for WaveFixtureHost with fn call_model(
   self,
   _scope : InvocationScope,

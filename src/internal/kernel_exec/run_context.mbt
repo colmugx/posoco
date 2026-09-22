@@ -24,6 +24,12 @@ pub(all) struct ModelStepId {
 } derive(Eq, Debug)
 
 ///|
+pub extend ModelStepId with Eq::{not_equal, equal}
+
+///|
+pub extend ModelStepId with Debug::{to_repr}
+
+///|
 /// Contract: the first model step is exactly 1, establishing the non-negative
 /// lower bound for every reducer-allocated id (ids only grow via `next`).
 /// (Contracts read the `value` field directly: runtime `.mbt` function calls
@@ -57,6 +63,9 @@ pub fn ModelStepId::to_int(
 }
 
 ///|
+pub extend ModelStepId with Show::{output}
+
+///|
 pub impl Show for ModelStepId with fn to_string(self : ModelStepId) -> String {
   "ModelStepId(\{self.value})"
 }
@@ -66,6 +75,12 @@ pub impl Show for ModelStepId with fn to_string(self : ModelStepId) -> String {
 pub(all) struct EventSequence {
   value : Int
 } derive(Eq, Debug)
+
+///|
+pub extend EventSequence with Eq::{not_equal, equal}
+
+///|
+pub extend EventSequence with Debug::{to_repr}
 
 ///|
 /// Contract: the sequence starts at exactly 0, the non-negative lower bound
@@ -112,6 +127,12 @@ pub(all) struct Budget {
   /// Limit. `None` = unbounded.
   max_total_tokens : Int?
 } derive(Eq, Debug)
+
+///|
+pub extend Budget with Eq::{not_equal, equal}
+
+///|
+pub extend Budget with Debug::{to_repr}
 
 ///|
 /// Default budget: only `max_tool_rounds` is bounded, at a conservative 32.
@@ -164,6 +185,12 @@ pub(all) struct BudgetConsumed {
   /// several large-but-far-from-full calls cannot sum into a false trigger.
   last_context_tokens : Int?
 } derive(Eq, Debug)
+
+///|
+pub extend BudgetConsumed with Eq::{not_equal, equal}
+
+///|
+pub extend BudgetConsumed with Debug::{to_repr}
 
 ///|
 /// Contract: `zero` produces all-zero counters and no verified usage.
@@ -230,6 +257,15 @@ pub enum BudgetState {
 } derive(Eq, Debug)
 
 ///|
+pub extend BudgetState with Eq::{not_equal, equal}
+
+///|
+pub extend BudgetState with Debug::{to_repr}
+
+///|
+pub extend BudgetState with Show::{output}
+
+///|
 pub impl Show for BudgetState with fn to_string(self : BudgetState) -> String {
   match self {
     WithinBudget => "WithinBudget"
@@ -245,6 +281,15 @@ pub(all) enum BudgetDimension {
   ToolCalls
   TotalTokens
 } derive(Eq, Debug)
+
+///|
+pub extend BudgetDimension with Eq::{not_equal, equal}
+
+///|
+pub extend BudgetDimension with Debug::{to_repr}
+
+///|
+pub extend BudgetDimension with Show::{output}
 
 ///|
 pub impl Show for BudgetDimension with fn to_string(self : BudgetDimension) -> String {

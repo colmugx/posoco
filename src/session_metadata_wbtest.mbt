@@ -350,6 +350,14 @@ fn assert_session_has_no_boundary_poison(session : @types.Session) -> Unit {
 struct BoundaryMutatingStore {}
 
 ///|
+pub extend BoundaryMutatingStore with @port.SessionStore::{
+  save,
+  append_messages,
+  load,
+  truncate,
+}
+
+///|
 pub impl @port.SessionStore for BoundaryMutatingStore with fn load(_self, _id) -> @types.Session {
   {
     messages: [],
@@ -381,6 +389,16 @@ pub impl @port.SessionStore for BoundaryMutatingStore with fn save(
 struct BoundaryMutatingHook {}
 
 ///|
+pub extend BoundaryMutatingHook with @port.PipelineHook::{
+  on_post_event,
+  on_turn_begin,
+  on_post_event_at,
+  before_model,
+  before_tool,
+  on_turn_end,
+}
+
+///|
 pub impl @port.PipelineHook for BoundaryMutatingHook with fn before_model(
   _self,
   messages : Array[@kernel.Message],
@@ -398,6 +416,9 @@ pub impl @port.PipelineHook for BoundaryMutatingHook with fn before_tool(
 
 ///|
 struct BoundaryMutatingObserver {}
+
+///|
+pub extend BoundaryMutatingObserver with @port.Observer::{on_event, on_event_at}
 
 ///|
 pub impl @port.Observer for BoundaryMutatingObserver with fn on_event(
@@ -458,6 +479,12 @@ async test "t05_each_final_save_store_gets_independent_deep_snapshot" {
 struct BoundaryRecordingToolProvider {
   result : @kernel.ToolOutcome
   calls : Array[@kernel.ToolCall]
+}
+
+///|
+pub extend BoundaryRecordingToolProvider with @port.ToolProvider::{
+  execute,
+  list_tools,
 }
 
 ///|

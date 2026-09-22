@@ -19,18 +19,28 @@ pub(all) struct ChatOptions {
   temperature : Double?
   max_output_tokens : Int?
 } derive(Eq, @debug.Debug)
+pub fn ChatOptions::equal(Self, Self) -> Bool
+pub fn ChatOptions::not_equal(Self, Self) -> Bool
+pub fn ChatOptions::to_repr(Self) -> @debug.Repr
 
 pub(all) struct CompactOutcome {
   final_session_id : String
   mode : @kernel.CompactMode
   messages_after : Int
 } derive(Eq)
+pub fn CompactOutcome::equal(Self, Self) -> Bool
+pub fn CompactOutcome::not_equal(Self, Self) -> Bool
 
 pub(all) enum ContextReadingSource {
   Measured
   Estimated
   Unknown
 } derive(Eq, @debug.Debug)
+pub fn ContextReadingSource::equal(Self, Self) -> Bool
+pub fn ContextReadingSource::not_equal(Self, Self) -> Bool
+pub fn ContextReadingSource::output(Self, &Logger) -> Unit
+pub fn ContextReadingSource::to_repr(Self) -> @debug.Repr
+pub fn ContextReadingSource::to_string(Self) -> String
 pub impl Show for ContextReadingSource
 
 pub(all) struct ContextState {
@@ -44,8 +54,13 @@ pub(all) struct ContextState {
   source : ContextReadingSource
   reading_message_count : Int
 } derive(Eq, @debug.Debug)
+pub fn ContextState::equal(Self, Self) -> Bool
 pub fn ContextState::from_metadata(Map[String, Json]) -> Self?
+pub fn ContextState::not_equal(Self, Self) -> Bool
+pub fn ContextState::output(Self, &Logger) -> Unit
 pub fn ContextState::to_metadata_json(Self) -> Json
+pub fn ContextState::to_repr(Self) -> @debug.Repr
+pub fn ContextState::to_string(Self) -> String
 pub impl Show for ContextState
 
 pub(all) struct EventScope {
@@ -53,12 +68,18 @@ pub(all) struct EventScope {
   run_id : @kernel.RunId
   turn_id : @kernel.TurnId
 } derive(Eq, @debug.Debug)
+pub fn EventScope::equal(Self, Self) -> Bool
+pub fn EventScope::not_equal(Self, Self) -> Bool
+pub fn EventScope::to_repr(Self) -> @debug.Repr
 
 pub(all) struct Session {
   messages : Array[@kernel.Message]
   metadata : Map[String, Json]
 } derive(Eq, @debug.Debug)
+pub fn Session::equal(Self, Self) -> Bool
+pub fn Session::not_equal(Self, Self) -> Bool
 pub fn Session::parent_thread_id(Self) -> String?
+pub fn Session::to_repr(Self) -> @debug.Repr
 pub fn Session::with_parent_thread_id(Self, String) -> Self
 
 pub struct StreamAccumulator {
@@ -69,6 +90,7 @@ pub fn StreamAccumulator::push(Self, StreamChunk) -> Unit raise @error.ModelErro
 pub fn StreamAccumulator::reasoning(Self) -> String
 pub fn StreamAccumulator::text(Self) -> String
 pub fn StreamAccumulator::to_completion(Self) -> @kernel.Completion raise @error.ModelError
+pub fn StreamAccumulator::to_repr(Self) -> @debug.Repr
 pub fn StreamAccumulator::tool_calls(Self) -> Array[ToolCallSnapshot]
 
 pub(all) enum StreamChunk {
@@ -78,12 +100,18 @@ pub(all) enum StreamChunk {
   Usage(input_tokens~ : Int, output_tokens~ : Int, total_tokens~ : Int, cached_input_tokens~ : Int?, uncached_input_tokens~ : Int?)
   Finish(reason~ : String)
 } derive(Eq, @debug.Debug)
+pub fn StreamChunk::equal(Self, Self) -> Bool
+pub fn StreamChunk::not_equal(Self, Self) -> Bool
+pub fn StreamChunk::to_repr(Self) -> @debug.Repr
 pub fn StreamChunk::validate(Self) -> Result[Unit, String]
 
 pub(all) enum StreamMode {
   NoStream
   Stream((StreamChunk) -> Unit)
 } derive(@debug.Debug)
+pub fn StreamMode::output(Self, &Logger) -> Unit
+pub fn StreamMode::to_repr(Self) -> @debug.Repr
+pub fn StreamMode::to_string(Self) -> String
 pub impl Show for StreamMode
 
 pub(all) struct ToolCallBuilder {
@@ -93,12 +121,16 @@ pub(all) struct ToolCallBuilder {
 } derive(@debug.Debug)
 pub fn ToolCallBuilder::ToolCallBuilder() -> Self
 pub fn ToolCallBuilder::arguments_json(Self) -> String
+pub fn ToolCallBuilder::to_repr(Self) -> @debug.Repr
 
 pub struct ToolCallSnapshot {
   id : String
   name : String
   arguments_json : String
 } derive(Eq, @debug.Debug)
+pub fn ToolCallSnapshot::equal(Self, Self) -> Bool
+pub fn ToolCallSnapshot::not_equal(Self, Self) -> Bool
+pub fn ToolCallSnapshot::to_repr(Self) -> @debug.Repr
 
 pub(all) enum TurnEvent {
   TurnStarted
@@ -121,6 +153,11 @@ pub(all) enum TurnEvent {
   UserRequestStarted(kind~ : String, prompt~ : String)
   UserRequestFinished(kind~ : String, outcome~ : String)
 } derive(Eq, @debug.Debug)
+pub fn TurnEvent::equal(Self, Self) -> Bool
+pub fn TurnEvent::not_equal(Self, Self) -> Bool
+pub fn TurnEvent::output(Self, &Logger) -> Unit
+pub fn TurnEvent::to_repr(Self) -> @debug.Repr
+pub fn TurnEvent::to_string(Self) -> String
 pub impl Show for TurnEvent
 
 pub(all) struct TurnResult {
@@ -128,6 +165,9 @@ pub(all) struct TurnResult {
   tool_results : Array[@kernel.ToolOutcome]
   final_session_id : String
 } derive(Eq, @debug.Debug)
+pub fn TurnResult::equal(Self, Self) -> Bool
+pub fn TurnResult::not_equal(Self, Self) -> Bool
+pub fn TurnResult::to_repr(Self) -> @debug.Repr
 
 // Type aliases
 

@@ -24,6 +24,14 @@ fn ChunkDemandHost::delivered_chunks(self : ChunkDemandHost) -> Int {
 }
 
 ///|
+pub extend ChunkDemandHost with @kernel_exec.HostRuntime::{
+  cancel_effects,
+  execute_tool,
+  call_model,
+  compact,
+}
+
+///|
 pub impl @kernel_exec.HostRuntime for ChunkDemandHost with fn call_model(
   self,
   _scope : InvocationScope,

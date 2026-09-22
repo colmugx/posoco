@@ -20,6 +20,12 @@ pub(all) struct ModelCallResult {
 } derive(Eq)
 
 ///|
+pub extend ModelCallResult with Eq::{not_equal, equal}
+
+///|
+pub extend ModelCallResult with Show::{to_string, output}
+
+///|
 pub impl Show for ModelCallResult with fn to_string(self : ModelCallResult) -> String {
   "ModelCallResult(processed=\{self.processed_messages.length()} msgs)"
 }
@@ -34,6 +40,12 @@ pub(all) enum CompactMode {
   /// Append compacted messages to current session.
   Append
 } derive(Eq)
+
+///|
+pub extend CompactMode with Eq::{not_equal, equal}
+
+///|
+pub extend CompactMode with Show::{to_string, output}
 
 ///|
 pub impl Show for CompactMode with fn to_string(self : CompactMode) -> String {
@@ -52,6 +64,12 @@ pub(all) struct CompactResult {
 } derive(Eq)
 
 ///|
+pub extend CompactResult with Eq::{not_equal, equal}
+
+///|
+pub extend CompactResult with Show::{to_string, output}
+
+///|
 pub impl Show for CompactResult with fn to_string(self : CompactResult) -> String {
   "CompactResult(mode=\{self.mode}, msgs=\{self.compacted_messages.length()})"
 }
@@ -62,6 +80,15 @@ pub(all) enum CompactTrigger {
   Auto
   Manual
 } derive(Eq, Debug)
+
+///|
+pub extend CompactTrigger with Eq::{not_equal, equal}
+
+///|
+pub extend CompactTrigger with Debug::{to_repr}
+
+///|
+pub extend CompactTrigger with Show::{to_string, output}
 
 ///|
 pub impl Show for CompactTrigger with fn to_string(self : CompactTrigger) -> String {

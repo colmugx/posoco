@@ -14,6 +14,12 @@ pub(all) struct ProviderConfig {
 } derive(Eq, Debug)
 
 ///|
+pub extend ProviderConfig with Eq::{not_equal, equal}
+
+///|
+pub extend ProviderConfig with Debug::{to_repr}
+
+///|
 pub fn ProviderConfig::ProviderConfig(
   reasoning_effort_values~ : Array[String],
   context_window? : Int? = None,
@@ -40,6 +46,9 @@ pub fn ProviderConfig::accepts_reasoning_effort(
 ) -> Bool {
   self.reasoning_effort_values.contains(value)
 }
+
+///|
+pub extend ProviderConfig with Show::{to_string, output}
 
 ///|
 pub impl Show for ProviderConfig with fn to_string(self : ProviderConfig) -> String {

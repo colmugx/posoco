@@ -15,3 +15,9 @@ pub(all) struct ContextPressure {
   /// Resolved auto-compact trigger point as a fraction of the window.
   compact_threshold : Double
 } derive(Eq, Debug)
+
+///|
+pub extend ContextPressure with Eq::{not_equal, equal}
+
+///|
+pub extend ContextPressure with Debug::{to_repr}

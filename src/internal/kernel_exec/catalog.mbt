@@ -28,6 +28,9 @@ pub(all) suberror CatalogCompositionError {
 }
 
 ///|
+pub extend CatalogCompositionError with Show::{to_string, output}
+
+///|
 pub impl Show for CatalogCompositionError with fn to_string(
   self : CatalogCompositionError,
 ) -> String {
@@ -59,6 +62,12 @@ pub(all) struct CatalogEntry {
 } derive(Eq, Debug)
 
 ///|
+pub extend CatalogEntry with Eq::{not_equal, equal}
+
+///|
+pub extend CatalogEntry with Debug::{to_repr}
+
+///|
 /// Immutable, versioned catalog. Built by `ToolCatalogBuilder`; consumed
 /// read-only by the reducer and executor.
 pub struct ToolCatalogSnapshot {
@@ -66,6 +75,12 @@ pub struct ToolCatalogSnapshot {
   entries : Array[CatalogEntry]
   by_name : Map[String, CatalogEntry]
 } derive(Eq, Debug)
+
+///|
+pub extend ToolCatalogSnapshot with Eq::{not_equal, equal}
+
+///|
+pub extend ToolCatalogSnapshot with Debug::{to_repr}
 
 ///|
 /// Incremental builder for `ToolCatalogSnapshot`. Validates each insertion

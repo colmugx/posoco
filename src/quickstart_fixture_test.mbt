@@ -87,8 +87,8 @@ async test "quickstart_fixture_uses_current_public_api" {
   let store = QuickstartMemoryStore::{ sessions: Map::from_array([]), }
   let agent = @posoco.Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", sessions=[store]),
+      @posoco.tk_ext(id="model", model=Some(model)),
+      @posoco.tk_ext(id="io", sessions=[store]),
     ],
     config=@posoco.agent_config(max_tool_rounds=Some(10)),
   )

@@ -37,6 +37,12 @@ pub(all) struct EventEnvelope {
 } derive(Eq, Debug)
 
 ///|
+pub extend EventEnvelope with Eq::{not_equal, equal}
+
+///|
+pub extend EventEnvelope with Debug::{to_repr}
+
+///|
 pub fn EventEnvelope::run_id(self : EventEnvelope) -> RunId {
   self.run_id
 }
@@ -76,6 +82,9 @@ pub fn EventEnvelope::EventEnvelope(
 ) -> EventEnvelope {
   { run_id, turn_id, session_id, seq, committed_revision, event, }
 }
+
+///|
+pub extend EventEnvelope with Show::{to_string, output}
 
 ///|
 pub impl Show for EventEnvelope with fn to_string(self : EventEnvelope) -> String {
@@ -121,6 +130,9 @@ pub(all) suberror SubscriberError {
 }
 
 ///|
+pub extend SubscriberError with Show::{output}
+
+///|
 pub impl Show for SubscriberError with fn to_string(self : SubscriberError) -> String {
   match self {
     Internal(subscriber_id~, detail~) => "Internal(\{subscriber_id}: \{detail})"
@@ -148,6 +160,13 @@ pub fn NoopSubscriber::NoopSubscriber() -> NoopSubscriber {
 ///|
 pub fn NoopSubscriber::with_id(id : String) -> NoopSubscriber {
   { id, }
+}
+
+///|
+pub extend NoopSubscriber with EventSubscriber::{
+  on_event,
+  provenance,
+  subscriber_id,
 }
 
 ///|

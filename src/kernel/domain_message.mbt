@@ -13,6 +13,15 @@ pub(all) enum Content {
 } derive(Eq, Debug)
 
 ///|
+pub extend Content with Eq::{not_equal, equal}
+
+///|
+pub extend Content with Debug::{to_repr}
+
+///|
+pub extend Content with Show::{to_string, output}
+
+///|
 pub impl Show for Content with fn to_string(self) -> String {
   match self {
     Text(s) => "Text(\{s.length()} chars)"
@@ -28,6 +37,15 @@ pub impl Show for Content with fn to_string(self) -> String {
 pub(all) struct CallId {
   value : String
 } derive(Eq, Hash, Debug)
+
+///|
+pub extend CallId with Eq::{not_equal, equal}
+
+///|
+pub extend CallId with Hash::{hash, hash_combine}
+
+///|
+pub extend CallId with Debug::{to_repr}
 
 ///|
 /// Construct a `CallId`. Empty strings are rejected — an empty id would make
@@ -63,6 +81,15 @@ pub(all) struct ToolName {
 } derive(Eq, Hash, Debug)
 
 ///|
+pub extend ToolName with Eq::{not_equal, equal}
+
+///|
+pub extend ToolName with Hash::{hash, hash_combine}
+
+///|
+pub extend ToolName with Debug::{to_repr}
+
+///|
 pub fn ToolName::checked(value : String) -> Result[ToolName, String] {
   if value == "" {
     Err("ToolName must be non-empty")
@@ -95,6 +122,15 @@ pub(all) struct ToolCall {
 } derive(Eq, Debug)
 
 ///|
+pub extend ToolCall with Eq::{not_equal, equal}
+
+///|
+pub extend ToolCall with Debug::{to_repr}
+
+///|
+pub extend ToolCall with Show::{to_string, output}
+
+///|
 pub impl Show for ToolCall with fn to_string(self) -> String {
   let args_summary = match self.arguments {
     Object(_) => "object"
@@ -120,6 +156,15 @@ pub(all) struct Reasoning {
   content : String
   raw : Json?
 } derive(Eq, Debug)
+
+///|
+pub extend Reasoning with Eq::{not_equal, equal}
+
+///|
+pub extend Reasoning with Debug::{to_repr}
+
+///|
+pub extend Reasoning with Show::{to_string, output}
 
 ///|
 pub impl Show for Reasoning with fn to_string(self : Reasoning) -> String {
@@ -153,6 +198,12 @@ pub(all) enum Message {
 } derive(Eq, Debug)
 
 ///|
+pub extend Message with Eq::{not_equal, equal}
+
+///|
+pub extend Message with Debug::{to_repr}
+
+///|
 /// Why the assistant finished a step. It is owned by the assistant message
 /// (per ADR §2.11: single source of truth).
 ///
@@ -165,6 +216,15 @@ pub(all) enum FinishReason {
   ToolCalls
   Other(String)
 } derive(Eq, Debug)
+
+///|
+pub extend FinishReason with Eq::{not_equal, equal}
+
+///|
+pub extend FinishReason with Debug::{to_repr}
+
+///|
+pub extend FinishReason with Show::{to_string, output}
 
 ///|
 pub impl Show for FinishReason with fn to_string(self : FinishReason) -> String {
@@ -197,6 +257,15 @@ pub(all) enum NotExecutedReason {
   SchemaMismatch(json_path~ : String, expected~ : String, actual~ : String)
   RejectedByHook(reason~ : String)
 } derive(Eq, Debug)
+
+///|
+pub extend NotExecutedReason with Eq::{not_equal, equal}
+
+///|
+pub extend NotExecutedReason with Debug::{to_repr}
+
+///|
+pub extend NotExecutedReason with Show::{output}
 
 ///|
 pub impl Show for NotExecutedReason with fn to_string(self : NotExecutedReason) -> String {
@@ -238,6 +307,12 @@ pub(all) enum ToolOutcome {
 } derive(Eq, Debug)
 
 ///|
+pub extend ToolOutcome with Eq::{not_equal, equal}
+
+///|
+pub extend ToolOutcome with Debug::{to_repr}
+
+///|
 /// Whether the outcome represents a non-success path (any variant other than
 /// `Success`). Product adapters may use this for presentation, while canonical
 /// control flow pattern-matches the outcome exhaustively.
@@ -268,6 +343,9 @@ pub fn ToolOutcome::summary(self : ToolOutcome) -> String {
     }
   }
 }
+
+///|
+pub extend ToolOutcome with Show::{to_string, output}
 
 ///|
 pub impl Show for ToolOutcome with fn to_string(self : ToolOutcome) -> String {
@@ -307,6 +385,12 @@ fn safe_outcome_label(value : String) -> String {
 pub(all) struct Transcript {
   messages : Array[Message]
 } derive(Eq, Debug)
+
+///|
+pub extend Transcript with Eq::{not_equal, equal}
+
+///|
+pub extend Transcript with Debug::{to_repr}
 
 ///|
 pub fn Transcript::empty() -> Transcript {

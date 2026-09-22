@@ -12,6 +12,9 @@ pub(all) enum ScriptedToolOutcome {
 } derive(Debug)
 
 ///|
+pub extend ScriptedToolOutcome with Debug::{to_repr}
+
+///|
 /// A recorded tool execution: call id, tool name, and outcome.
 pub(all) struct ToolExecRecord {
   requested_name : String
@@ -22,11 +25,17 @@ pub(all) struct ToolExecRecord {
 } derive(Debug)
 
 ///|
+pub extend ToolExecRecord with Debug::{to_repr}
+
+///|
 /// Unified provider operation trace, preserving list/execute interleaving.
 pub(all) enum ToolProviderOp {
   ListTools
   ExecuteTool(requested_name~ : String, call~ : @kernel.ToolCall)
 } derive(Debug)
+
+///|
+pub extend ToolProviderOp with Debug::{to_repr}
 
 ///|
 fn testkit_snapshot_tool_outcome(
@@ -115,6 +124,9 @@ pub async fn RecordingToolProvider::execute_direct(
 ) -> @kernel.ToolOutcome raise @error.RuntimeError {
   (self as &@port.ToolProvider).execute(name, call)
 }
+
+///|
+pub extend RecordingToolProvider with @port.ToolProvider::{execute}
 
 ///|
 pub impl @port.ToolProvider for RecordingToolProvider with fn list_tools(self) {

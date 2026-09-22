@@ -17,6 +17,15 @@ pub(all) struct RunId {
 } derive(Eq, Hash, Debug)
 
 ///|
+pub extend RunId with Eq::{not_equal, equal}
+
+///|
+pub extend RunId with Hash::{hash, hash_combine}
+
+///|
+pub extend RunId with Debug::{to_repr}
+
+///|
 pub fn RunId::checked(value : String) -> Result[RunId, String] {
   if value == "" {
     Err("RunId must be non-empty")
@@ -36,6 +45,9 @@ pub fn RunId::to_string(self : RunId) -> String {
 }
 
 ///|
+pub extend RunId with Show::{output}
+
+///|
 pub impl Show for RunId with fn to_string(self : RunId) -> String {
   "RunId(\{self.value})"
 }
@@ -47,6 +59,15 @@ pub impl Show for RunId with fn to_string(self : RunId) -> String {
 pub(all) struct TurnId {
   value : String
 } derive(Eq, Hash, Debug)
+
+///|
+pub extend TurnId with Eq::{not_equal, equal}
+
+///|
+pub extend TurnId with Hash::{hash, hash_combine}
+
+///|
+pub extend TurnId with Debug::{to_repr}
 
 ///|
 pub fn TurnId::checked(value : String) -> Result[TurnId, String] {
@@ -68,6 +89,9 @@ pub fn TurnId::to_string(self : TurnId) -> String {
 }
 
 ///|
+pub extend TurnId with Show::{output}
+
+///|
 pub impl Show for TurnId with fn to_string(self : TurnId) -> String {
   self.value
 }
@@ -79,6 +103,15 @@ pub impl Show for TurnId with fn to_string(self : TurnId) -> String {
 pub(all) struct SessionId {
   value : String
 } derive(Eq, Hash, Debug)
+
+///|
+pub extend SessionId with Eq::{not_equal, equal}
+
+///|
+pub extend SessionId with Hash::{hash, hash_combine}
+
+///|
+pub extend SessionId with Debug::{to_repr}
 
 ///|
 pub fn SessionId::checked(value : String) -> Result[SessionId, String] {
@@ -106,6 +139,15 @@ pub fn SessionId::to_string(self : SessionId) -> String {
 pub(all) struct EffectId {
   value : Int
 } derive(Eq, Hash, Debug)
+
+///|
+pub extend EffectId with Eq::{not_equal, equal}
+
+///|
+pub extend EffectId with Hash::{hash, hash_combine}
+
+///|
+pub extend EffectId with Debug::{to_repr}
 
 ///|
 /// Contract: the counter origin is exactly 1 (strictly positive start).
@@ -138,6 +180,9 @@ pub fn EffectId::to_int(
 }
 
 ///|
+pub extend EffectId with Show::{to_string, output}
+
+///|
 pub impl Show for EffectId with fn to_string(self : EffectId) -> String {
   "EffectId(\{self.value})"
 }
@@ -150,6 +195,12 @@ pub impl Show for EffectId with fn to_string(self : EffectId) -> String {
 pub(all) struct CatalogVersion {
   value : Int
 } derive(Eq, Debug)
+
+///|
+pub extend CatalogVersion with Eq::{not_equal, equal}
+
+///|
+pub extend CatalogVersion with Debug::{to_repr}
 
 ///|
 /// Contract: the canonical constructor wraps its argument unchanged.
@@ -173,6 +224,9 @@ pub fn CatalogVersion::to_int(
 }
 
 ///|
+pub extend CatalogVersion with Show::{to_string, output}
+
+///|
 pub impl Show for CatalogVersion with fn to_string(self : CatalogVersion) -> String {
   "CatalogVersion(\{self.value})"
 }
@@ -187,12 +241,21 @@ pub(all) enum CancelReason {
 } derive(Eq, Debug)
 
 ///|
+pub extend CancelReason with Eq::{not_equal, equal}
+
+///|
+pub extend CancelReason with Debug::{to_repr}
+
+///|
 fn detail_or_empty(detail : String?) -> String {
   match detail {
     Some(s) => s
     None => ""
   }
 }
+
+///|
+pub extend CancelReason with Show::{to_string, output}
 
 ///|
 pub impl Show for CancelReason with fn to_string(self : CancelReason) -> String {
@@ -213,6 +276,15 @@ pub(all) enum CancelDisposition {
   /// Effect already settled before cancel arrived.
   AlreadySettled
 } derive(Eq, Debug)
+
+///|
+pub extend CancelDisposition with Eq::{not_equal, equal}
+
+///|
+pub extend CancelDisposition with Debug::{to_repr}
+
+///|
+pub extend CancelDisposition with Show::{to_string, output}
 
 ///|
 pub impl Show for CancelDisposition with fn to_string(self : CancelDisposition) -> String {
@@ -249,3 +321,9 @@ pub(all) struct InvocationScope {
   effect_id : EffectId?
   pressure : ContextPressure?
 } derive(Eq, Debug)
+
+///|
+pub extend InvocationScope with Eq::{not_equal, equal}
+
+///|
+pub extend InvocationScope with Debug::{to_repr}

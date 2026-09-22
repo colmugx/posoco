@@ -14,6 +14,11 @@ pub(all) struct CallId {
   value : String
 } derive(Eq, Hash, @debug.Debug)
 pub fn CallId::checked(String) -> Result[Self, String]
+pub fn CallId::equal(Self, Self) -> Bool
+pub fn CallId::hash(Self) -> Int
+pub fn CallId::hash_combine(Self, Hasher) -> Unit
+pub fn CallId::not_equal(Self, Self) -> Bool
+pub fn CallId::to_repr(Self) -> @debug.Repr
 pub fn CallId::to_string(Self) -> String
 pub fn CallId::unchecked(String) -> Self
 
@@ -22,19 +27,34 @@ pub(all) enum CancelDisposition {
   NotPropagated
   AlreadySettled
 } derive(Eq, @debug.Debug)
+pub fn CancelDisposition::equal(Self, Self) -> Bool
+pub fn CancelDisposition::not_equal(Self, Self) -> Bool
+pub fn CancelDisposition::output(Self, &Logger) -> Unit
+pub fn CancelDisposition::to_repr(Self) -> @debug.Repr
+pub fn CancelDisposition::to_string(Self) -> String
 pub impl Show for CancelDisposition
 
 pub(all) enum CancelReason {
   HostRequested(detail~ : String?)
   DeadlineReached
 } derive(Eq, @debug.Debug)
+pub fn CancelReason::equal(Self, Self) -> Bool
+pub fn CancelReason::not_equal(Self, Self) -> Bool
+pub fn CancelReason::output(Self, &Logger) -> Unit
+pub fn CancelReason::to_repr(Self) -> @debug.Repr
+pub fn CancelReason::to_string(Self) -> String
 pub impl Show for CancelReason
 
 pub(all) struct CatalogVersion {
   value : Int
 } derive(Eq, @debug.Debug)
 pub fn CatalogVersion::CatalogVersion(Int) -> Self
+pub fn CatalogVersion::equal(Self, Self) -> Bool
+pub fn CatalogVersion::not_equal(Self, Self) -> Bool
+pub fn CatalogVersion::output(Self, &Logger) -> Unit
 pub fn CatalogVersion::to_int(Self) -> Int
+pub fn CatalogVersion::to_repr(Self) -> @debug.Repr
+pub fn CatalogVersion::to_string(Self) -> String
 pub impl Show for CatalogVersion
 
 pub(all) enum CompactMode {
@@ -42,18 +62,31 @@ pub(all) enum CompactMode {
   Replace
   Append
 } derive(Eq)
+pub fn CompactMode::equal(Self, Self) -> Bool
+pub fn CompactMode::not_equal(Self, Self) -> Bool
+pub fn CompactMode::output(Self, &Logger) -> Unit
+pub fn CompactMode::to_string(Self) -> String
 pub impl Show for CompactMode
 
 pub(all) struct CompactResult {
   compacted_messages : Array[Message]
   mode : CompactMode
 } derive(Eq)
+pub fn CompactResult::equal(Self, Self) -> Bool
+pub fn CompactResult::not_equal(Self, Self) -> Bool
+pub fn CompactResult::output(Self, &Logger) -> Unit
+pub fn CompactResult::to_string(Self) -> String
 pub impl Show for CompactResult
 
 pub(all) enum CompactTrigger {
   Auto
   Manual
 } derive(Eq, @debug.Debug)
+pub fn CompactTrigger::equal(Self, Self) -> Bool
+pub fn CompactTrigger::not_equal(Self, Self) -> Bool
+pub fn CompactTrigger::output(Self, &Logger) -> Unit
+pub fn CompactTrigger::to_repr(Self) -> @debug.Repr
+pub fn CompactTrigger::to_string(Self) -> String
 pub impl Show for CompactTrigger
 
 pub(all) struct Completion {
@@ -61,8 +94,11 @@ pub(all) struct Completion {
   usage : Usage?
 } derive(Eq, @debug.Debug)
 pub fn Completion::Completion(content~ : Array[Content], tool_calls~ : Array[ToolCall], reasoning~ : Reasoning?, finish_reason~ : FinishReason, usage~ : Usage?) -> Self
+pub fn Completion::equal(Self, Self) -> Bool
 pub fn Completion::finish_reason(Self) -> FinishReason
 pub fn Completion::has_tool_calls(Self) -> Bool
+pub fn Completion::not_equal(Self, Self) -> Bool
+pub fn Completion::to_repr(Self) -> @debug.Repr
 pub fn Completion::tool_calls(Self) -> Array[ToolCall]
 
 pub(all) struct CompletionPayload {
@@ -71,11 +107,19 @@ pub(all) struct CompletionPayload {
   reasoning : Reasoning?
   finish_reason : FinishReason
 } derive(Eq, @debug.Debug)
+pub fn CompletionPayload::equal(Self, Self) -> Bool
+pub fn CompletionPayload::not_equal(Self, Self) -> Bool
+pub fn CompletionPayload::to_repr(Self) -> @debug.Repr
 
 pub(all) enum Content {
   Text(String)
   Image(media_type~ : String, data~ : String)
 } derive(Eq, @debug.Debug)
+pub fn Content::equal(Self, Self) -> Bool
+pub fn Content::not_equal(Self, Self) -> Bool
+pub fn Content::output(Self, &Logger) -> Unit
+pub fn Content::to_repr(Self) -> @debug.Repr
+pub fn Content::to_string(Self) -> String
 pub impl Show for Content
 
 pub(all) struct ContextPressure {
@@ -83,13 +127,23 @@ pub(all) struct ContextPressure {
   occupancy_tokens : Int?
   compact_threshold : Double
 } derive(Eq, @debug.Debug)
+pub fn ContextPressure::equal(Self, Self) -> Bool
+pub fn ContextPressure::not_equal(Self, Self) -> Bool
+pub fn ContextPressure::to_repr(Self) -> @debug.Repr
 
 pub(all) struct EffectId {
   value : Int
 } derive(Eq, Hash, @debug.Debug)
+pub fn EffectId::equal(Self, Self) -> Bool
 pub fn EffectId::first() -> Self
+pub fn EffectId::hash(Self) -> Int
+pub fn EffectId::hash_combine(Self, Hasher) -> Unit
 pub fn EffectId::next(Self) -> Self
+pub fn EffectId::not_equal(Self, Self) -> Bool
+pub fn EffectId::output(Self, &Logger) -> Unit
 pub fn EffectId::to_int(Self) -> Int
+pub fn EffectId::to_repr(Self) -> @debug.Repr
+pub fn EffectId::to_string(Self) -> String
 pub impl Show for EffectId
 
 pub(all) enum ExecutionPolicy {
@@ -97,6 +151,10 @@ pub(all) enum ExecutionPolicy {
   Parallel
   Exclusive
 } derive(Eq, @debug.Debug)
+pub fn ExecutionPolicy::equal(Self, Self) -> Bool
+pub fn ExecutionPolicy::not_equal(Self, Self) -> Bool
+pub fn ExecutionPolicy::output(Self, &Logger) -> Unit
+pub fn ExecutionPolicy::to_repr(Self) -> @debug.Repr
 pub fn ExecutionPolicy::to_string(Self) -> String
 pub impl Show for ExecutionPolicy
 
@@ -106,6 +164,11 @@ pub(all) enum FinishReason {
   ToolCalls
   Other(String)
 } derive(Eq, @debug.Debug)
+pub fn FinishReason::equal(Self, Self) -> Bool
+pub fn FinishReason::not_equal(Self, Self) -> Bool
+pub fn FinishReason::output(Self, &Logger) -> Unit
+pub fn FinishReason::to_repr(Self) -> @debug.Repr
+pub fn FinishReason::to_string(Self) -> String
 pub impl Show for FinishReason
 
 pub(all) struct InvocationScope {
@@ -114,6 +177,9 @@ pub(all) struct InvocationScope {
   effect_id : EffectId?
   pressure : ContextPressure?
 } derive(Eq, @debug.Debug)
+pub fn InvocationScope::equal(Self, Self) -> Bool
+pub fn InvocationScope::not_equal(Self, Self) -> Bool
+pub fn InvocationScope::to_repr(Self) -> @debug.Repr
 
 pub(all) enum Message {
   SystemMessage(content~ : Array[Content])
@@ -121,11 +187,18 @@ pub(all) enum Message {
   AssistantMessage(content~ : Array[Content], tool_calls~ : Array[ToolCall], reasoning~ : Reasoning?, finish_reason~ : FinishReason)
   ToolMessage(call_id~ : CallId, tool_name~ : ToolName, outcome~ : ToolOutcome)
 } derive(Eq, @debug.Debug)
+pub fn Message::equal(Self, Self) -> Bool
+pub fn Message::not_equal(Self, Self) -> Bool
+pub fn Message::to_repr(Self) -> @debug.Repr
 
 pub(all) struct ModelCallResult {
   completion : Completion
   processed_messages : Array[Message]
 } derive(Eq)
+pub fn ModelCallResult::equal(Self, Self) -> Bool
+pub fn ModelCallResult::not_equal(Self, Self) -> Bool
+pub fn ModelCallResult::output(Self, &Logger) -> Unit
+pub fn ModelCallResult::to_string(Self) -> String
 pub impl Show for ModelCallResult
 
 pub(all) enum ModelFailure {
@@ -136,6 +209,11 @@ pub(all) enum ModelFailure {
   HostRejected(reason~ : String)
   RateLimited(reason~ : String, reset_at_ms~ : Int64?, provider_code~ : String?)
 } derive(Eq, @debug.Debug)
+pub fn ModelFailure::equal(Self, Self) -> Bool
+pub fn ModelFailure::not_equal(Self, Self) -> Bool
+pub fn ModelFailure::output(Self, &Logger) -> Unit
+pub fn ModelFailure::to_repr(Self) -> @debug.Repr
+pub fn ModelFailure::to_string(Self) -> String
 pub impl Show for ModelFailure
 
 pub(all) enum NotExecutedReason {
@@ -143,6 +221,10 @@ pub(all) enum NotExecutedReason {
   SchemaMismatch(json_path~ : String, expected~ : String, actual~ : String)
   RejectedByHook(reason~ : String)
 } derive(Eq, @debug.Debug)
+pub fn NotExecutedReason::equal(Self, Self) -> Bool
+pub fn NotExecutedReason::not_equal(Self, Self) -> Bool
+pub fn NotExecutedReason::output(Self, &Logger) -> Unit
+pub fn NotExecutedReason::to_repr(Self) -> @debug.Repr
 pub fn NotExecutedReason::to_string(Self) -> String
 pub impl Show for NotExecutedReason
 
@@ -150,6 +232,11 @@ pub(all) struct OwnerId {
   value : String
 } derive(Eq, Hash, @debug.Debug)
 pub fn OwnerId::checked(String) -> Result[Self, String]
+pub fn OwnerId::equal(Self, Self) -> Bool
+pub fn OwnerId::hash(Self) -> Int
+pub fn OwnerId::hash_combine(Self, Hasher) -> Unit
+pub fn OwnerId::not_equal(Self, Self) -> Bool
+pub fn OwnerId::to_repr(Self) -> @debug.Repr
 pub fn OwnerId::to_string(Self) -> String
 pub fn OwnerId::unchecked(String) -> Self
 
@@ -157,12 +244,23 @@ pub(all) struct Reasoning {
   content : String
   raw : Json?
 } derive(Eq, @debug.Debug)
+pub fn Reasoning::equal(Self, Self) -> Bool
+pub fn Reasoning::not_equal(Self, Self) -> Bool
+pub fn Reasoning::output(Self, &Logger) -> Unit
+pub fn Reasoning::to_repr(Self) -> @debug.Repr
+pub fn Reasoning::to_string(Self) -> String
 pub impl Show for Reasoning
 
 pub(all) struct RunId {
   value : String
 } derive(Eq, Hash, @debug.Debug)
 pub fn RunId::checked(String) -> Result[Self, String]
+pub fn RunId::equal(Self, Self) -> Bool
+pub fn RunId::hash(Self) -> Int
+pub fn RunId::hash_combine(Self, Hasher) -> Unit
+pub fn RunId::not_equal(Self, Self) -> Bool
+pub fn RunId::output(Self, &Logger) -> Unit
+pub fn RunId::to_repr(Self) -> @debug.Repr
 pub fn RunId::to_string(Self) -> String
 pub fn RunId::unchecked(String) -> Self
 pub impl Show for RunId
@@ -172,12 +270,22 @@ pub(all) struct SchemaDiagnostic {
   expected : String
   actual : String
 } derive(Eq, @debug.Debug)
+pub fn SchemaDiagnostic::equal(Self, Self) -> Bool
+pub fn SchemaDiagnostic::not_equal(Self, Self) -> Bool
+pub fn SchemaDiagnostic::output(Self, &Logger) -> Unit
+pub fn SchemaDiagnostic::to_repr(Self) -> @debug.Repr
+pub fn SchemaDiagnostic::to_string(Self) -> String
 pub impl Show for SchemaDiagnostic
 
 pub(all) struct SessionId {
   value : String
 } derive(Eq, Hash, @debug.Debug)
 pub fn SessionId::checked(String) -> Result[Self, String]
+pub fn SessionId::equal(Self, Self) -> Bool
+pub fn SessionId::hash(Self) -> Int
+pub fn SessionId::hash_combine(Self, Hasher) -> Unit
+pub fn SessionId::not_equal(Self, Self) -> Bool
+pub fn SessionId::to_repr(Self) -> @debug.Repr
 pub fn SessionId::to_string(Self) -> String
 pub fn SessionId::unchecked(String) -> Self
 
@@ -186,6 +294,11 @@ pub(all) struct ToolCall {
   name : ToolName
   arguments : Json
 } derive(Eq, @debug.Debug)
+pub fn ToolCall::equal(Self, Self) -> Bool
+pub fn ToolCall::not_equal(Self, Self) -> Bool
+pub fn ToolCall::output(Self, &Logger) -> Unit
+pub fn ToolCall::to_repr(Self) -> @debug.Repr
+pub fn ToolCall::to_string(Self) -> String
 pub impl Show for ToolCall
 
 pub(all) struct ToolDef {
@@ -197,12 +310,22 @@ pub(all) struct ToolDef {
   provenance : String?
 } derive(Eq, @debug.Debug)
 pub fn ToolDef::ToolDef(name~ : ToolName, description~ : String, input_schema~ : Json, owner~ : OwnerId, policy~ : ExecutionPolicy, provenance~ : String?) -> Self
+pub fn ToolDef::equal(Self, Self) -> Bool
+pub fn ToolDef::not_equal(Self, Self) -> Bool
+pub fn ToolDef::output(Self, &Logger) -> Unit
+pub fn ToolDef::to_repr(Self) -> @debug.Repr
+pub fn ToolDef::to_string(Self) -> String
 pub impl Show for ToolDef
 
 pub(all) struct ToolName {
   value : String
 } derive(Eq, Hash, @debug.Debug)
 pub fn ToolName::checked(String) -> Result[Self, String]
+pub fn ToolName::equal(Self, Self) -> Bool
+pub fn ToolName::hash(Self) -> Int
+pub fn ToolName::hash_combine(Self, Hasher) -> Unit
+pub fn ToolName::not_equal(Self, Self) -> Bool
+pub fn ToolName::to_repr(Self) -> @debug.Repr
 pub fn ToolName::to_string(Self) -> String
 pub fn ToolName::unchecked(String) -> Self
 
@@ -212,8 +335,13 @@ pub(all) enum ToolOutcome {
   RuntimeFailure(error_category~ : String, message~ : String)
   NotExecuted(reason~ : NotExecutedReason, original_call_id~ : CallId)
 } derive(Eq, @debug.Debug)
+pub fn ToolOutcome::equal(Self, Self) -> Bool
 pub fn ToolOutcome::is_failure(Self) -> Bool
+pub fn ToolOutcome::not_equal(Self, Self) -> Bool
+pub fn ToolOutcome::output(Self, &Logger) -> Unit
 pub fn ToolOutcome::summary(Self) -> String
+pub fn ToolOutcome::to_repr(Self) -> @debug.Repr
+pub fn ToolOutcome::to_string(Self) -> String
 pub impl Show for ToolOutcome
 
 pub(all) struct Transcript {
@@ -222,14 +350,23 @@ pub(all) struct Transcript {
 pub fn Transcript::append(Self, Message) -> Self
 pub fn Transcript::append_all(Self, Array[Message]) -> Self
 pub fn Transcript::empty() -> Self
+pub fn Transcript::equal(Self, Self) -> Bool
 pub fn Transcript::from_array(Array[Message]) -> Self
 pub fn Transcript::length(Self) -> Int
 pub fn Transcript::messages_snapshot(Self) -> Array[Message]
+pub fn Transcript::not_equal(Self, Self) -> Bool
+pub fn Transcript::to_repr(Self) -> @debug.Repr
 
 pub(all) struct TurnId {
   value : String
 } derive(Eq, Hash, @debug.Debug)
 pub fn TurnId::checked(String) -> Result[Self, String]
+pub fn TurnId::equal(Self, Self) -> Bool
+pub fn TurnId::hash(Self) -> Int
+pub fn TurnId::hash_combine(Self, Hasher) -> Unit
+pub fn TurnId::not_equal(Self, Self) -> Bool
+pub fn TurnId::output(Self, &Logger) -> Unit
+pub fn TurnId::to_repr(Self) -> @debug.Repr
 pub fn TurnId::to_string(Self) -> String
 pub fn TurnId::unchecked(String) -> Self
 pub impl Show for TurnId
@@ -241,6 +378,11 @@ pub(all) struct Usage {
   cached_input_tokens : Int?
   uncached_input_tokens : Int?
 } derive(Eq, @debug.Debug)
+pub fn Usage::equal(Self, Self) -> Bool
+pub fn Usage::not_equal(Self, Self) -> Bool
+pub fn Usage::output(Self, &Logger) -> Unit
+pub fn Usage::to_repr(Self) -> @debug.Repr
+pub fn Usage::to_string(Self) -> String
 pub fn Usage::validate(Self) -> Result[Unit, String]
 pub impl Show for Usage
 

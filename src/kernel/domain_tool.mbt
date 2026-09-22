@@ -24,6 +24,15 @@ pub(all) enum ExecutionPolicy {
 } derive(Eq, Debug)
 
 ///|
+pub extend ExecutionPolicy with Eq::{not_equal, equal}
+
+///|
+pub extend ExecutionPolicy with Debug::{to_repr}
+
+///|
+pub extend ExecutionPolicy with Show::{output}
+
+///|
 pub impl Show for ExecutionPolicy with fn to_string(self : ExecutionPolicy) -> String {
   match self {
     Sequential => "Sequential"
@@ -39,6 +48,15 @@ pub impl Show for ExecutionPolicy with fn to_string(self : ExecutionPolicy) -> S
 pub(all) struct OwnerId {
   value : String
 } derive(Eq, Hash, Debug)
+
+///|
+pub extend OwnerId with Eq::{not_equal, equal}
+
+///|
+pub extend OwnerId with Hash::{hash, hash_combine}
+
+///|
+pub extend OwnerId with Debug::{to_repr}
 
 ///|
 pub fn OwnerId::checked(value : String) -> Result[OwnerId, String] {
@@ -74,6 +92,12 @@ pub(all) struct ToolDef {
 } derive(Eq, Debug)
 
 ///|
+pub extend ToolDef with Eq::{not_equal, equal}
+
+///|
+pub extend ToolDef with Debug::{to_repr}
+
+///|
 /// Internal builder used by the catalog. Most fields are required; provenance
 /// is optional. The catalog builder (T05) validates the schema and policy
 /// before constructing this, so by the time a `ToolDef` reaches the
@@ -88,6 +112,9 @@ pub fn ToolDef::ToolDef(
 ) -> ToolDef {
   { name, description, input_schema, owner, policy, provenance, }
 }
+
+///|
+pub extend ToolDef with Show::{to_string, output}
 
 ///|
 pub impl Show for ToolDef with fn to_string(self : ToolDef) -> String {
@@ -108,6 +135,15 @@ pub(all) struct SchemaDiagnostic {
   expected : String
   actual : String
 } derive(Eq, Debug)
+
+///|
+pub extend SchemaDiagnostic with Eq::{not_equal, equal}
+
+///|
+pub extend SchemaDiagnostic with Debug::{to_repr}
+
+///|
+pub extend SchemaDiagnostic with Show::{to_string, output}
 
 ///|
 pub impl Show for SchemaDiagnostic with fn to_string(self : SchemaDiagnostic) -> String {

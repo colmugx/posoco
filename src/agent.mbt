@@ -480,6 +480,7 @@ fn AgentRuntime::compose(
   )
   let journal = @puppetry.InMemoryJournal()
   let chunk_dispatcher_ref : Ref[ChunkDispatcher?] = Ref(None)
+  let context_state_of : Ref[((String) -> @types.ContextState?)?] = Ref(None)
   let task_runtime = AgentTaskRuntime::AgentTaskRuntime()
   let control = AgentControl(mailbox_ref)
   control.set_abort_hook(fn(run_id) {
@@ -488,6 +489,7 @@ fn AgentRuntime::compose(
   let event_subscriber = AgentEventSubscriber(
     agg.observers,
     chunk_dispatcher_ref,
+    context_state_of~,
   )
   let session_store : &@port.SessionStore? = match agg.sessions {
     [first, ..] => Some(first)
@@ -561,6 +563,9 @@ fn AgentRuntime::compose(
     body_recovery: Map::from_array([]),
   }
   builtin_command_port.runtime.val = Some(runtime)
+  context_state_of.val = Some(fn(session_id) {
+    runtime.puppet.session_context_state(session_id)
+  })
   { runtime, }
 }
 

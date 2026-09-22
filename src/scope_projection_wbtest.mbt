@@ -26,6 +26,9 @@ fn scope_projection_event_tag(event : @types.TurnEvent) -> String {
 }
 
 ///|
+pub extend ScopedObserver with @port.Observer::{on_event, on_event_at}
+
+///|
 pub impl @port.Observer for ScopedObserver with fn on_event_at(
   self,
   scope,
@@ -38,6 +41,16 @@ pub impl @port.Observer for ScopedObserver with fn on_event_at(
 /// PipelineHook double recording (tag, scope) for every scoped post-event dispatch.
 struct ScopedHook {
   stages : Array[(String, @types.EventScope?)]
+}
+
+///|
+pub extend ScopedHook with @port.PipelineHook::{
+  on_post_event,
+  on_turn_begin,
+  on_post_event_at,
+  before_model,
+  before_tool,
+  on_turn_end,
 }
 
 ///|

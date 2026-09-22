@@ -54,6 +54,14 @@ fn HookRewriteHost::mutated_arguments(self : HookRewriteHost) -> Array[Json] {
 }
 
 ///|
+pub extend HookRewriteHost with @kernel_exec.HostRuntime::{
+  cancel_effects,
+  execute_tool,
+  call_model,
+  compact,
+}
+
+///|
 pub impl @kernel_exec.HostRuntime for HookRewriteHost with fn call_model(
   self,
   _scope : InvocationScope,

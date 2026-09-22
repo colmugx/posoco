@@ -26,6 +26,9 @@ pub(all) enum SessionOp {
 } derive(Debug)
 
 ///|
+pub extend SessionOp with Debug::{to_repr}
+
+///|
 /// SessionStore fake that keeps an in-memory map and records every load/save
 /// with the metadata snapshot at save time. Load/save failures are
 /// configurable per id.
@@ -166,6 +169,12 @@ fn[T] RecordingSessionStore::record(
     Ok(value) => value
     Err(e) => raise e
   }
+}
+
+///|
+pub extend RecordingSessionStore with @port.SessionStore::{
+  append_messages,
+  truncate,
 }
 
 ///|

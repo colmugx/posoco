@@ -28,12 +28,21 @@ pub(all) enum EnqueueOutcome {
   AbortAlreadyRequested
   RejectedQueueFailure(reason~ : String)
 } derive(Eq, @debug.Debug)
+pub fn EnqueueOutcome::equal(Self, Self) -> Bool
+pub fn EnqueueOutcome::not_equal(Self, Self) -> Bool
+pub fn EnqueueOutcome::output(Self, &Logger) -> Unit
+pub fn EnqueueOutcome::to_repr(Self) -> @debug.Repr
+pub fn EnqueueOutcome::to_string(Self) -> String
 pub impl Show for EnqueueOutcome
 
 pub struct PortRuntime {
   // private fields
 }
 pub fn PortRuntime::PortRuntime(model~ : &@port.ModelPort, tools~ : Map[String, &@port.ToolProvider]) -> Self
+pub async fn PortRuntime::call_model(Self, @kernel.InvocationScope, ArrayView[@kernel.Message], Array[@kernel.ToolDef], Json, ((@types.StreamChunk) -> Unit)?) -> Result[@kernel.ModelCallResult, @kernel.ModelFailure]
+pub async fn PortRuntime::cancel_effects(Self, Array[@kernel.EffectId], @kernel.CancelReason) -> Array[(@kernel.EffectId, @kernel.CancelDisposition)]
+pub async fn PortRuntime::compact(Self, @kernel.InvocationScope, ArrayView[@kernel.Message], Json, @kernel.CompactTrigger) -> Result[@kernel.CompactResult, @kernel.ModelFailure]
+pub async fn PortRuntime::execute_tool(Self, EffectContext) -> @kernel.ToolOutcome
 pub impl Runtime for PortRuntime
 
 // Type aliases

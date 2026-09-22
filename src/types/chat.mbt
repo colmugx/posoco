@@ -10,6 +10,12 @@ pub(all) struct ChatOptions {
 } derive(Eq, Debug)
 
 ///|
+pub extend ChatOptions with Eq::{not_equal, equal}
+
+///|
+pub extend ChatOptions with Debug::{to_repr}
+
+///|
 /// Streaming mode for `ModelPort::chat`. See trait doc.
 ///
 /// `NoStream` lets the modelport skip chunk wire-format work entirely (no SSE
@@ -21,6 +27,12 @@ pub(all) enum StreamMode {
   NoStream
   Stream((StreamChunk) -> Unit)
 } derive(Debug)
+
+///|
+pub extend StreamMode with Debug::{to_repr}
+
+///|
+pub extend StreamMode with Show::{to_string, output}
 
 ///|
 pub impl Show for StreamMode with fn to_string(self : StreamMode) -> String {

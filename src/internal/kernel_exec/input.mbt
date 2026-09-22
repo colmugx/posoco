@@ -16,6 +16,12 @@ pub(all) struct StartPayload {
 } derive(Eq, Debug)
 
 ///|
+pub extend StartPayload with Eq::{not_equal, equal}
+
+///|
+pub extend StartPayload with Debug::{to_repr}
+
+///|
 /// A successful model step completion. Correlates to pending `CallModel` via `effect_id`.
 /// `processed_messages` carries the transcript actually sent to the provider so the pump can write it back at commit boundary.
 pub(all) struct ModelCompletedPayload {
@@ -26,12 +32,24 @@ pub(all) struct ModelCompletedPayload {
 } derive(Eq, Debug)
 
 ///|
+pub extend ModelCompletedPayload with Eq::{not_equal, equal}
+
+///|
+pub extend ModelCompletedPayload with Debug::{to_repr}
+
+///|
 /// A failed model step. The reducer transitions to `Terminal(Failed)`.
 pub(all) struct ModelFailedPayload {
   effect_id : EffectId
   model_step_id : ModelStepId
   failure : @kernel.ModelFailure
 } derive(Eq, Debug)
+
+///|
+pub extend ModelFailedPayload with Eq::{not_equal, equal}
+
+///|
+pub extend ModelFailedPayload with Debug::{to_repr}
 
 ///|
 /// A successful or business-failed tool outcome. Runtime failures arrive as `ToolFailed`.
@@ -43,6 +61,12 @@ pub(all) struct ToolCompletedPayload {
   arguments : Json
   outcome : @kernel.ToolOutcome
 } derive(Eq, Debug)
+
+///|
+pub extend ToolCompletedPayload with Eq::{not_equal, equal}
+
+///|
+pub extend ToolCompletedPayload with Debug::{to_repr}
 
 ///|
 /// Adapter runtime failure or kernel-invariant failure. Runtime → `ToolOutcome::RuntimeFailure`
@@ -60,16 +84,34 @@ pub(all) struct ToolFailedPayload {
 } derive(Eq, Debug)
 
 ///|
+pub extend ToolFailedPayload with Eq::{not_equal, equal}
+
+///|
+pub extend ToolFailedPayload with Debug::{to_repr}
+
+///|
 /// Host or adapter requested cancellation. ADR §2.5 race rules apply.
 pub(all) struct CancelRequestedPayload {
   detail : String?
 } derive(Eq, Debug)
 
 ///|
+pub extend CancelRequestedPayload with Eq::{not_equal, equal}
+
+///|
+pub extend CancelRequestedPayload with Debug::{to_repr}
+
+///|
 /// Deadline reached. Wins against queued completions (ADR §2.5 rule 2).
 pub(all) struct DeadlineReachedPayload {
   detail : String
 } derive(Eq, Debug)
+
+///|
+pub extend DeadlineReachedPayload with Eq::{not_equal, equal}
+
+///|
+pub extend DeadlineReachedPayload with Debug::{to_repr}
 
 ///|
 /// External observation that a budget dimension was crossed.
@@ -80,6 +122,12 @@ pub(all) struct BudgetExhaustedPayload {
 } derive(Eq, Debug)
 
 ///|
+pub extend BudgetExhaustedPayload with Eq::{not_equal, equal}
+
+///|
+pub extend BudgetExhaustedPayload with Debug::{to_repr}
+
+///|
 /// Suspend requested. Only legal from `AwaitingModel` with a single pending `CallModel` (ADR §2.6).
 /// Drops the pending effect, emits `CancelOutstanding`, enters `Suspended`.
 pub(all) struct SuspendRequestedPayload {
@@ -87,11 +135,23 @@ pub(all) struct SuspendRequestedPayload {
 } derive(Eq, Debug)
 
 ///|
+pub extend SuspendRequestedPayload with Eq::{not_equal, equal}
+
+///|
+pub extend SuspendRequestedPayload with Debug::{to_repr}
+
+///|
 /// Resume. Only legal from `Suspended`. Emits `RunResumed`, transitions to `ReadyForModel`.
 pub(all) struct ResumePayload {
   /// Opaque payload the host injects after resume.
   payload : Json
 } derive(Eq, Debug)
+
+///|
+pub extend ResumePayload with Eq::{not_equal, equal}
+
+///|
+pub extend ResumePayload with Debug::{to_repr}
 
 ///|
 /// Host-side transcript rewrite (pre-model hook chain, compact Replace/Append).
@@ -104,6 +164,12 @@ pub(all) struct TranscriptRewritePayload {
   rewritten_messages : Array[@kernel.Message]
   reason : String
 } derive(Eq, Debug)
+
+///|
+pub extend TranscriptRewritePayload with Eq::{not_equal, equal}
+
+///|
+pub extend TranscriptRewritePayload with Debug::{to_repr}
 
 ///|
 /// Discriminator for RunInput variants. The reducer pattern-matches on this
@@ -121,6 +187,12 @@ pub(all) enum RunInput {
   Resume(payload~ : ResumePayload)
   TranscriptRewrite(payload~ : TranscriptRewritePayload)
 } derive(Eq, Debug)
+
+///|
+pub extend RunInput with Eq::{not_equal, equal}
+
+///|
+pub extend RunInput with Debug::{to_repr}
 
 ///|
 /// Stable string label for the input kind. Used by `InputRejected` events
@@ -141,6 +213,9 @@ fn RunInput::kind(self : RunInput) -> String {
     TranscriptRewrite(..) => "TranscriptRewrite"
   }
 }
+
+///|
+pub extend RunInput with Show::{to_string, output}
 
 ///|
 pub impl Show for RunInput with fn to_string(self : RunInput) -> String {

@@ -23,6 +23,9 @@ pub fn RecordingObserver::events(
 }
 
 ///|
+pub extend RecordingObserver with @port.Observer::{on_event_at}
+
+///|
 pub impl @port.Observer for RecordingObserver with fn on_event(self, event) {
   self.events.push(testkit_snapshot_event(event))
 }
@@ -40,11 +43,17 @@ pub(all) enum RecordedHookOutcome {
 } derive(Debug)
 
 ///|
+pub extend RecordedHookOutcome with Debug::{to_repr}
+
+///|
 /// A recorded hook invocation: which hook function ran and its decision.
 pub(all) struct HookRecord {
   label : String
   outcome : RecordedHookOutcome
 } derive(Debug)
+
+///|
+pub extend HookRecord with Debug::{to_repr}
 
 ///|
 /// Multi-hook fake that implements `PipelineHook` at all three interception points.
@@ -86,6 +95,14 @@ pub fn RecordingHook::records(self : RecordingHook) -> Array[HookRecord] {
   self.records.map(fn(record) {
     { label: record.label, outcome: record.outcome, }
   })
+}
+
+///|
+pub extend RecordingHook with @port.PipelineHook::{
+  on_post_event,
+  on_turn_begin,
+  on_post_event_at,
+  on_turn_end,
 }
 
 ///|

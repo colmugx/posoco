@@ -100,6 +100,14 @@ pub fn PortRuntime::PortRuntime(
 }
 
 ///|
+pub extend PortRuntime with Runtime::{
+  cancel_effects,
+  execute_tool,
+  call_model,
+  compact,
+}
+
+///|
 pub impl Runtime for PortRuntime with fn call_model(
   self,
   scope : @kernel.InvocationScope,

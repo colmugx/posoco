@@ -133,8 +133,8 @@ async test "b1_simple_turn_no_tools" {
 
   let agent = @posoco.Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", tools=[empty_tools()], sessions=[store], observers=[
+      @posoco.tk_ext(id="model", model=Some(model)),
+      @posoco.tk_ext(id="io", tools=[empty_tools()], sessions=[store], observers=[
         observer,
       ]),
     ],
@@ -196,8 +196,8 @@ async test "b8_turn_event_lifecycle" {
 
   let agent = @posoco.Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", tools=[empty_tools()], sessions=[store], observers=[
+      @posoco.tk_ext(id="model", model=Some(model)),
+      @posoco.tk_ext(id="io", tools=[empty_tools()], sessions=[store], observers=[
         observer,
       ]),
     ],
@@ -226,8 +226,8 @@ async test "b9_model_error_aborts" {
 
   let agent = @posoco.Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", tools=[empty_tools()], sessions=[store], observers=[
+      @posoco.tk_ext(id="model", model=Some(model)),
+      @posoco.tk_ext(id="io", tools=[empty_tools()], sessions=[store], observers=[
         observer,
       ]),
     ],
@@ -250,8 +250,8 @@ async test "b10_agent_reuses_one_puppet_across_turns" {
   let observer = MockObserver::{ events: [], }
   let agent = @posoco.Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", tools=[empty_tools()], sessions=[store], observers=[
+      @posoco.tk_ext(id="model", model=Some(model)),
+      @posoco.tk_ext(id="io", tools=[empty_tools()], sessions=[store], observers=[
         observer,
       ]),
     ],
@@ -275,7 +275,7 @@ test "b11_agent_requires_session_store_at_composition" {
   let model = MockModelPort::{ responses: [], index: 0, }
   let result = Ok(
     @posoco.Agent(
-      exts=[tk_ext(id="model", model=Some(model))],
+      exts=[@posoco.tk_ext(id="model", model=Some(model))],
       config=make_config(),
     ),
   ) catch {

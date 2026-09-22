@@ -21,6 +21,16 @@ struct EffectRecorder {
 }
 
 ///|
+pub extend EffectRecorder with @port.PipelineHook::{
+  on_post_event,
+  on_turn_begin,
+  on_post_event_at,
+  before_model,
+  before_tool,
+  on_turn_end,
+}
+
+///|
 pub impl @port.PipelineHook for EffectRecorder with fn on_post_event(
   self : EffectRecorder,
   stage : @port.HookStage,

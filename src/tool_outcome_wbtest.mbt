@@ -210,6 +210,9 @@ struct SingleToolProvider {
 }
 
 ///|
+pub extend SingleToolProvider with @port.ToolProvider::{execute, list_tools}
+
+///|
 pub impl @port.ToolProvider for SingleToolProvider with fn list_tools(self) {
   [self.tool]
 }

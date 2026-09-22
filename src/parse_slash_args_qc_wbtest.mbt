@@ -18,6 +18,9 @@ struct QcSlot {
 } derive(Debug)
 
 ///|
+pub extend QcSlot with Debug::{to_repr}
+
+///|
 fn qc_slot(idx : Int, kind : Int, val : Int, flag : Int) -> QcSlot {
   // 缩水可能产生负种子；归一化到文档声明的非负值域。
   // Int::MIN 取反回绕仍为负，需单独映射。

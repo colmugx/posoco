@@ -66,6 +66,15 @@ pub fn SystemPromptHook::assemble(self : SystemPromptHook) -> String {
 }
 
 ///|
+pub extend SystemPromptHook with @port.PipelineHook::{
+  on_post_event,
+  on_turn_begin,
+  on_post_event_at,
+  before_tool,
+  on_turn_end,
+}
+
+///|
 /// Inject one stable SystemMessage at index 0.
 ///
 /// Semantics:
@@ -161,6 +170,15 @@ fn UiRenderHook::render_failure(
     ttl_ms: None,
   }
   self.ui.render(intent)
+}
+
+///|
+pub extend UiRenderHook with @port.PipelineHook::{
+  on_turn_begin,
+  on_post_event_at,
+  before_model,
+  before_tool,
+  on_turn_end,
 }
 
 ///|

@@ -35,6 +35,15 @@ pub(all) enum InvariantCategory {
 } derive(Eq, Debug)
 
 ///|
+pub extend InvariantCategory with Eq::{not_equal, equal}
+
+///|
+pub extend InvariantCategory with Debug::{to_repr}
+
+///|
+pub extend InvariantCategory with Show::{output}
+
+///|
 pub impl Show for InvariantCategory with fn to_string(self : InvariantCategory) -> String {
   match self {
     DuplicateCompletion(effect_id~) =>
@@ -82,6 +91,15 @@ pub(all) enum FailureReason {
   BudgetExhausted(dimension~ : BudgetDimension)
   DeadlineReached
 } derive(Eq, Debug)
+
+///|
+pub extend FailureReason with Eq::{not_equal, equal}
+
+///|
+pub extend FailureReason with Debug::{to_repr}
+
+///|
+pub extend FailureReason with Show::{output}
 
 ///|
 pub impl Show for FailureReason with fn to_string(self : FailureReason) -> String {
@@ -138,6 +156,9 @@ pub(all) suberror KernelError {
     detail~ : String
   )
 }
+
+///|
+pub extend KernelError with Show::{to_string, output}
 
 ///|
 pub impl Show for KernelError with fn to_string(self : KernelError) -> String {

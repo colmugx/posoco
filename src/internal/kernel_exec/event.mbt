@@ -16,6 +16,12 @@ pub(all) struct StartedDetails {
 } derive(Eq, Debug)
 
 ///|
+pub extend StartedDetails with Eq::{not_equal, equal}
+
+///|
+pub extend StartedDetails with Debug::{to_repr}
+
+///|
 /// Suspension requirement — what the host must satisfy before sending
 /// `Resume`. M1 only exercises in-process resume; cross-process durability
 /// is M5. The Kernel never interprets the payload.
@@ -27,6 +33,12 @@ pub(all) struct SuspensionRequirement {
   /// does not interpret this; M5 defines the durable encoding.
   payload : Json
 } derive(Eq, Debug)
+
+///|
+pub extend SuspensionRequirement with Eq::{not_equal, equal}
+
+///|
+pub extend SuspensionRequirement with Debug::{to_repr}
 
 // KernelEvent ADT
 
@@ -96,6 +108,15 @@ pub(all) enum KernelEvent {
   /// Cancelled termination. Exactly once per Run.
   RunCancelled(reason~ : CancelReason)
 } derive(Eq, Debug)
+
+///|
+pub extend KernelEvent with Show::{output}
+
+///|
+pub extend KernelEvent with Eq::{not_equal, equal}
+
+///|
+pub extend KernelEvent with Debug::{to_repr}
 
 ///|
 /// Single-line summary, used by `Show` and any debug surface. Excludes raw

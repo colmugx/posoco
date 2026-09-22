@@ -19,6 +19,9 @@ pub(all) suberror SchedulingError {
 }
 
 ///|
+pub extend SchedulingError with Show::{to_string, output}
+
+///|
 pub impl Show for SchedulingError with fn to_string(self : SchedulingError) -> String {
   match self {
     DuplicateCallId(call_id~) =>
@@ -43,6 +46,15 @@ pub(all) struct ExecutionWave {
 } derive(Eq, Debug)
 
 ///|
+pub extend ExecutionWave with Eq::{not_equal, equal}
+
+///|
+pub extend ExecutionWave with Debug::{to_repr}
+
+///|
+pub extend ExecutionWave with Show::{output}
+
+///|
 pub impl Show for ExecutionWave with fn to_string(self : ExecutionWave) -> String {
   "Wave([\{self.calls.map(fn(c) { c.call_id.to_string() }).join(", ")}])"
 }
@@ -58,6 +70,12 @@ pub fn ExecutionWave::calls(self : ExecutionWave) -> Array[@kernel.ToolCall] {
 pub(all) struct ExecutionPlan {
   waves : Array[ExecutionWave]
 } derive(Eq, Debug)
+
+///|
+pub extend ExecutionPlan with Eq::{not_equal, equal}
+
+///|
+pub extend ExecutionPlan with Debug::{to_repr}
 
 ///|
 pub fn ExecutionPlan::waves(self : ExecutionPlan) -> Array[ExecutionWave] {
@@ -78,6 +96,9 @@ pub fn ExecutionPlan::total_calls(self : ExecutionPlan) -> Int {
   }
   n
 }
+
+///|
+pub extend ExecutionPlan with Show::{to_string, output}
 
 ///|
 pub impl Show for ExecutionPlan with fn to_string(self : ExecutionPlan) -> String {

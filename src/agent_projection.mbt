@@ -12,14 +12,24 @@ priv struct AgentEventSubscriber {
   observers : Array[&@port.Observer]
   pending_calls : Map[String, @kernel.ToolCall]
   chunk_dispatcher : Ref[ChunkDispatcher?]
+  /// Late-bound live context-state lookup (session id -> puppet state),
+  /// wired after the runtime exists in `AgentRuntime::compose`. `None` (or
+  /// a lookup returning `None`) projects nothing.
+  context_state_of : Ref[((String) -> @types.ContextState?)?]
 }
 
 ///|
 fn AgentEventSubscriber::AgentEventSubscriber(
   observers : Array[&@port.Observer],
   chunk_dispatcher : Ref[ChunkDispatcher?],
+  context_state_of? : Ref[((String) -> @types.ContextState?)?] = Ref(None),
 ) -> AgentEventSubscriber {
-  { observers, pending_calls: Map::from_array([]), chunk_dispatcher, }
+  {
+    observers,
+    pending_calls: Map::from_array([]),
+    chunk_dispatcher,
+    context_state_of,
+  }
 }
 
 ///|
@@ -99,6 +109,18 @@ impl @puppetry.EventSubscriber for AgentEventSubscriber with fn on_event(
         Some(scope),
         ModelResponseReceived(message~, usage=completion.usage),
       )
+      // The puppet recorded this step's usage into the session's context
+      // state before the boundary committed, so the lookup is fresh.
+      // Projecting per model step keeps the ctx indicator at the same
+      // cadence as cache — every round, not only at turn boundaries.
+      match self.context_state_of.val {
+        Some(lookup) =>
+          match lookup(envelope.session_id().to_string()) {
+            Some(state) => self.emit(Some(scope), ContextStateUpdated(state~))
+            None => ()
+          }
+        None => ()
+      }
     }
     ToolBatchStarted(calls~, ..) =>
       for call in calls {

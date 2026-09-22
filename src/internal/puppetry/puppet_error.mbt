@@ -42,6 +42,15 @@ pub(all) enum PuppetPhase {
 } derive(Eq, Debug)
 
 ///|
+pub extend PuppetPhase with Eq::{not_equal, equal}
+
+///|
+pub extend PuppetPhase with Debug::{to_repr}
+
+///|
+pub extend PuppetPhase with Show::{output}
+
+///|
 pub impl Show for PuppetPhase with fn to_string(self : PuppetPhase) -> String {
   match self {
     Idle => "Idle"
@@ -96,6 +105,15 @@ pub(all) enum OperationClass {
 } derive(Eq, Debug)
 
 ///|
+pub extend OperationClass with Eq::{not_equal, equal}
+
+///|
+pub extend OperationClass with Debug::{to_repr}
+
+///|
+pub extend OperationClass with Show::{output}
+
+///|
 pub impl Show for OperationClass with fn to_string(self : OperationClass) -> String {
   match self {
     Prompt => "Prompt"
@@ -126,6 +144,15 @@ pub(all) struct OperationLease {
   /// Turn id the lease is bound to. Empty for non-Prompt leases.
   turn_id : TurnId
 } derive(Eq, Debug)
+
+///|
+pub extend OperationLease with Eq::{not_equal, equal}
+
+///|
+pub extend OperationLease with Debug::{to_repr}
+
+///|
+pub extend OperationLease with Show::{to_string, output}
 
 ///|
 pub impl Show for OperationLease with fn to_string(self : OperationLease) -> String {
@@ -267,6 +294,15 @@ pub(all) enum SavepointFailureCause {
 } derive(Eq, Debug)
 
 ///|
+pub extend SavepointFailureCause with Eq::{not_equal, equal}
+
+///|
+pub extend SavepointFailureCause with Debug::{to_repr}
+
+///|
+pub extend SavepointFailureCause with Show::{output}
+
+///|
 pub impl Show for SavepointFailureCause with fn to_string(
   self : SavepointFailureCause,
 ) -> String {
@@ -277,6 +313,9 @@ pub impl Show for SavepointFailureCause with fn to_string(
     BarrierFailed(detail~) => "BarrierFailed(\{safe_label(detail)})"
   }
 }
+
+///|
+pub extend PuppetError with Show::{output}
 
 ///|
 pub impl Show for PuppetError with fn to_string(self : PuppetError) -> String {

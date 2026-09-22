@@ -17,6 +17,9 @@ pub(all) suberror AgentError {
   Cancelled(String)
   AutoCompactFailed(String)
 } derive(@debug.Debug)
+pub fn AgentError::output(Self, &Logger) -> Unit
+pub fn AgentError::to_repr(Self) -> @debug.Repr
+pub fn AgentError::to_string(Self) -> String
 pub impl Show for AgentError
 
 pub(all) suberror CommandError {
@@ -24,6 +27,9 @@ pub(all) suberror CommandError {
   InvalidArgs(reason~ : String)
   ExecutionFailed(String)
 } derive(@debug.Debug)
+pub fn CommandError::output(Self, &Logger) -> Unit
+pub fn CommandError::to_repr(Self) -> @debug.Repr
+pub fn CommandError::to_string(Self) -> String
 pub impl Show for CommandError
 
 pub(all) suberror CompositionError {
@@ -37,6 +43,9 @@ pub(all) suberror CompositionError {
   EmptyPort(String)
   ExtensionComposeFailed(manifest_id~ : String, detail~ : String)
 } derive(@debug.Debug)
+pub fn CompositionError::output(Self, &Logger) -> Unit
+pub fn CompositionError::to_repr(Self) -> @debug.Repr
+pub fn CompositionError::to_string(Self) -> String
 pub impl Show for CompositionError
 
 pub(all) suberror DecisionError {
@@ -46,6 +55,9 @@ pub(all) suberror DecisionError {
   ResponseParse(String)
   RateLimited(RateLimitInfo)
 } derive(@debug.Debug)
+pub fn DecisionError::output(Self, &Logger) -> Unit
+pub fn DecisionError::to_repr(Self) -> @debug.Repr
+pub fn DecisionError::to_string(Self) -> String
 pub impl Show for DecisionError
 
 pub(all) suberror MemoryError {
@@ -54,6 +66,9 @@ pub(all) suberror MemoryError {
   Search(String)
   Delete(String)
 } derive(@debug.Debug)
+pub fn MemoryError::output(Self, &Logger) -> Unit
+pub fn MemoryError::to_repr(Self) -> @debug.Repr
+pub fn MemoryError::to_string(Self) -> String
 pub impl Show for MemoryError
 
 pub(all) suberror ModelError {
@@ -62,6 +77,9 @@ pub(all) suberror ModelError {
   ResponseParse(String)
   RateLimited(RateLimitInfo)
 } derive(@debug.Debug)
+pub fn ModelError::output(Self, &Logger) -> Unit
+pub fn ModelError::to_repr(Self) -> @debug.Repr
+pub fn ModelError::to_string(Self) -> String
 pub impl Show for ModelError
 
 pub(all) suberror RuntimeError {
@@ -70,6 +88,8 @@ pub(all) suberror RuntimeError {
   Transport(String)
   ToolAlreadyRegistered(String)
 } derive(@debug.Debug)
+pub fn RuntimeError::output(Self, &Logger) -> Unit
+pub fn RuntimeError::to_repr(Self) -> @debug.Repr
 pub fn RuntimeError::to_string(Self) -> String
 pub impl Show for RuntimeError
 
@@ -78,6 +98,8 @@ pub(all) suberror SessionError {
   Save(String)
   Conflict(String)
 } derive(@debug.Debug)
+pub fn SessionError::output(Self, &Logger) -> Unit
+pub fn SessionError::to_repr(Self) -> @debug.Repr
 pub fn SessionError::to_string(Self) -> String
 pub impl Show for SessionError
 
@@ -87,6 +109,9 @@ pub(all) suberror UiError {
   InvalidRequest(detail~ : String)
   IoFailure(detail~ : String)
 } derive(@debug.Debug)
+pub fn UiError::output(Self, &Logger) -> Unit
+pub fn UiError::to_repr(Self) -> @debug.Repr
+pub fn UiError::to_string(Self) -> String
 pub impl Show for UiError
 
 // Types and methods
@@ -95,6 +120,9 @@ pub(all) struct RateLimitInfo {
   reset_at_ms : Int64?
   provider_code : String?
 } derive(Eq, @debug.Debug)
+pub fn RateLimitInfo::equal(Self, Self) -> Bool
+pub fn RateLimitInfo::not_equal(Self, Self) -> Bool
+pub fn RateLimitInfo::to_repr(Self) -> @debug.Repr
 
 // Type aliases
 

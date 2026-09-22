@@ -34,6 +34,13 @@ pub fn ProposingContributor::ProposingContributor(
 }
 
 ///|
+pub extend ProposingContributor with JournalContributor::{
+  contribute,
+  contributor_id,
+  provenance,
+}
+
+///|
 pub impl JournalContributor for ProposingContributor with fn contributor_id(
   self,
 ) -> String {
@@ -64,6 +71,13 @@ pub fn FailingContributor::FailingContributor(
   id : String,
 ) -> FailingContributor {
   { id, }
+}
+
+///|
+pub extend FailingContributor with JournalContributor::{
+  contribute,
+  contributor_id,
+  provenance,
 }
 
 ///|

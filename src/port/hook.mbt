@@ -25,6 +25,9 @@ pub(all) suberror HookAbort {
 }
 
 ///|
+pub extend HookAbort with Show::{to_string, output}
+
+///|
 pub impl Show for HookAbort with fn to_string(self : HookAbort) -> String {
   match self {
     Aborted(reason~) => "HookAbort(\{reason})"
@@ -68,6 +71,12 @@ pub(all) enum ToolDecision {
 } derive(Debug)
 
 ///|
+pub extend ToolDecision with Debug::{to_repr}
+
+///|
+pub extend ToolDecision with Show::{to_string, output}
+
+///|
 pub impl Show for ToolDecision with fn to_string(self : ToolDecision) -> String {
   match self {
     Approve(call~) => "Approve(\{call.call_id.to_string()})"
@@ -92,6 +101,12 @@ pub(all) enum HookStage {
   /// Model call failed at the adapter level.
   ModelFailed(failure~ : @kernel.ModelFailure)
 } derive(Debug)
+
+///|
+pub extend HookStage with Debug::{to_repr}
+
+///|
+pub extend HookStage with Show::{to_string, output}
 
 ///|
 pub impl Show for HookStage with fn to_string(self : HookStage) -> String {
