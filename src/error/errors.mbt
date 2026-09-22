@@ -122,8 +122,6 @@ pub impl Show for DecisionError with fn to_string(self) -> String {
 }
 
 ///|
-
-///|
 /// Errors raised by LogPort implementations. Logging failures stay explicit:
 /// each consumer decides whether a failed write is best-effort or fatal.
 pub(all) suberror LogError {

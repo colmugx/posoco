@@ -9,6 +9,12 @@ pub(all) struct RecordedLogWrite {
 } derive(Eq, Debug)
 
 ///|
+pub extend RecordedLogWrite with Eq::{not_equal, equal}
+
+///|
+pub extend RecordedLogWrite with Debug::{to_repr}
+
+///|
 pub(all) struct RecordingLogPort {
   writes_ : Array[RecordedLogWrite]
   mut flush_count_ : Int

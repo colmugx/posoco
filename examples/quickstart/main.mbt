@@ -104,7 +104,7 @@ pub impl @posoco.Extension for QuickstartExtension with fn extension_id(_self) -
 
 ///|
 pub impl @posoco.Extension for QuickstartExtension with fn manifest(self) -> @posoco.ExtensionManifest {
-  let manifest = @posoco.ExtensionManifest::empty(id="quickstart")
+  let manifest = @posoco.ExtensionManifest::default(id="quickstart")
   { ..manifest, models: [self.model], sessions: [self.sessions] }
 }
 

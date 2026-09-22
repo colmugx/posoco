@@ -150,6 +150,9 @@ pub(all) struct RecordedLogWrite {
   record : @port.LogRecord
   durability : @port.LogDurability
 } derive(Eq, @debug.Debug)
+pub fn RecordedLogWrite::equal(Self, Self) -> Bool
+pub fn RecordedLogWrite::not_equal(Self, Self) -> Bool
+pub fn RecordedLogWrite::to_repr(Self) -> @debug.Repr
 
 pub(all) struct RecordingHook {
   mut records : Array[HookRecord]

@@ -202,6 +202,9 @@ pub(all) enum LogDurability {
   Written
   Durable
 } derive(Eq, @debug.Debug)
+pub fn LogDurability::equal(Self, Self) -> Bool
+pub fn LogDurability::not_equal(Self, Self) -> Bool
+pub fn LogDurability::to_repr(Self) -> @debug.Repr
 
 pub(all) enum LogLevel {
   Trace
@@ -210,6 +213,9 @@ pub(all) enum LogLevel {
   Warn
   Error
 } derive(Eq, @debug.Debug)
+pub fn LogLevel::equal(Self, Self) -> Bool
+pub fn LogLevel::not_equal(Self, Self) -> Bool
+pub fn LogLevel::to_repr(Self) -> @debug.Repr
 
 pub(all) struct LogRecord {
   level : LogLevel
@@ -220,6 +226,9 @@ pub(all) struct LogRecord {
   scope : @types.EventScope?
   data : Json
 } derive(Eq, @debug.Debug)
+pub fn LogRecord::equal(Self, Self) -> Bool
+pub fn LogRecord::not_equal(Self, Self) -> Bool
+pub fn LogRecord::to_repr(Self) -> @debug.Repr
 pub fn LogRecord::validate(Self) -> Unit raise @error.LogError
 
 pub(all) enum ParamType {

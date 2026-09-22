@@ -18,6 +18,12 @@ pub(all) enum LogLevel {
 } derive(Eq, Debug)
 
 ///|
+pub extend LogLevel with Eq::{not_equal, equal}
+
+///|
+pub extend LogLevel with Debug::{to_repr}
+
+///|
 /// Persistence acknowledgement requested by a log producer.
 ///
 /// - Buffered: the sink accepted the record; it may still live only in memory.
@@ -28,6 +34,12 @@ pub(all) enum LogDurability {
   Written
   Durable
 } derive(Eq, Debug)
+
+///|
+pub extend LogDurability with Eq::{not_equal, equal}
+
+///|
+pub extend LogDurability with Debug::{to_repr}
 
 ///|
 /// Provider-neutral structured log record.
@@ -45,6 +57,12 @@ pub(all) struct LogRecord {
   scope : @types.EventScope?
   data : Json
 } derive(Eq, Debug)
+
+///|
+pub extend LogRecord with Eq::{not_equal, equal}
+
+///|
+pub extend LogRecord with Debug::{to_repr}
 
 ///|
 /// Validate the protocol-level fields that every sink may rely on.
