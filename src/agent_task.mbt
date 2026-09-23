@@ -206,11 +206,13 @@ async fn AgentTaskRuntime::execute(
   receipt : @port.TaskReceipt,
   _operation : AgentTaskOperation?,
 ) -> @port.TaskOutcome {
-  // Cancellation-masking guard: a cancelled coroutine stays cancelled — an
-  // adapter that catches the incoming cancellation and raises a typed error
-  // (or returns a value) must not overwrite the task group's recorded state;
-  // pause() re-raises the genuine cancellation on both exit paths, and is a
-  // no-op yield when nothing is pending. (Q4: see docs/questions.md.)
+  // Cancellation-masking guard: since async 0.22 the cancellation signal
+  // cannot be caught, but an adapter may still capture it via
+  // `handle_cancellation` and raise a typed error (or return a value). The
+  // coroutine stays flagged cancelled in that case; pause() re-delivers the
+  // pending signal on both exit paths so the task still terminates as
+  // Cancelled, and is a no-op yield when nothing is pending.
+  // (Q4: see docs/questions.md.)
   let guarded : async () -> @kernel.Message = async fn() {
     let message = (spec.run)() catch {
       error => {
@@ -223,29 +225,31 @@ async fn AgentTaskRuntime::execute(
   }
   let status : @port.TaskStatus = match spec.timeout_ms {
     Some(timeout_ms) => {
-      let result : Result[@kernel.Message, Error] = Ok(
-        @async.with_timeout(timeout_ms, () => guarded()),
+      let result : Result[@kernel.Message?, Error] = Ok(
+        @async.handle_cancellation(async fn() {
+          @async.with_timeout(timeout_ms, () => guarded())
+        }),
       ) catch {
         error => Err(error)
       }
       match result {
-        Ok(message) =>
+        Ok(Some(message)) =>
           @port.TaskStatus::Completed(message=snapshot_message(message))
+        Ok(None) => @port.TaskStatus::Cancelled(reason="task cancelled")
         Err(error) if error is @async.TimeoutError => @port.TaskStatus::TimedOut
-        Err(error) if @async.is_cancellation_error(error) =>
-          @port.TaskStatus::Cancelled(reason="task cancelled")
         Err(error) => @port.TaskStatus::Failed(reason=error.to_string())
       }
     }
     None => {
-      let result : Result[@kernel.Message, Error] = Ok(guarded()) catch {
+      let result : Result[@kernel.Message?, Error] = Ok(
+        @async.handle_cancellation(guarded),
+      ) catch {
         error => Err(error)
       }
       match result {
-        Ok(message) =>
+        Ok(Some(message)) =>
           @port.TaskStatus::Completed(message=snapshot_message(message))
-        Err(error) if @async.is_cancellation_error(error) =>
-          @port.TaskStatus::Cancelled(reason="task cancelled")
+        Ok(None) => @port.TaskStatus::Cancelled(reason="task cancelled")
         Err(error) => @port.TaskStatus::Failed(reason=error.to_string())
       }
     }
@@ -335,7 +339,7 @@ async fn AgentTaskRuntime::finish_active_operation(
         }
         match waited {
           Ok(_) => reaped.push(record.receipt.id)
-          Err(error) if @async.is_cancellation_error(error) =>
+          Err(error) if error is @async.TaskCancelled =>
             reaped.push(record.receipt.id)
           Err(error) => {
             reaped.push(record.receipt.id)

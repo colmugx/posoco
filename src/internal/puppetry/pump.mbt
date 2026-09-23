@@ -26,6 +26,14 @@ async fn Puppet::drive_run(
   initial_messages : Array[Message],
   snap : TurnSnapshot,
 ) -> PromptResult raise PuppetError {
+  // Since async 0.22 a cancellation signal bypasses every catch below, so an
+  // abnormal unwind would otherwise leave the phase gate Active forever and
+  // wedge the next operation. Emergency-release the run binding on unwind;
+  // every normal return has already finalized through reject/accept paths.
+  errdefer {
+    self.release_run_binding()
+    self.mailbox.set_quiescent(Idle)
+  }
   // Build the initial RunState.
   let initial_result : Result[RunState, KernelError] = attempt(() => {
     RunState::initial(run_id~, session_id~, budget=snap.budget())
@@ -727,16 +735,10 @@ async fn Puppet::pump_awaiting_tools(
             err => Err(err)
           }
           let decision = match attempted {
-            Err(err) => {
-              // Keep the `execution_error` classification: a cancellation
-              // raised inside the hook is not a hook defect.
-              if @async.is_cancellation_error(err) {
-                return StopWith(
-                  self.finalize_rejected(
-                    error=EffectExecutionCancelled(phase="AwaitingTools"),
-                  ),
-                )
-              }
+            Err(err) =>
+              // A cancellation inside the hook travels as a runtime signal
+              // and bypasses this handler entirely; only hook defects land
+              // here, and they keep the `HookRejected` classification.
               return StopWith(
                 self.finalize_rejected(
                   error=HookRejected(
@@ -744,7 +746,6 @@ async fn Puppet::pump_awaiting_tools(
                   ),
                 ),
               )
-            }
             Ok(decision) => decision
           }
           match decision {

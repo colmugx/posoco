@@ -213,34 +213,45 @@ async fn AgentRuntime::run_turn_via_puppet(
     }
     // The Ok/Err wrapper lets the typed AgentError escape the group closure
     // as data: catch + re-raise is fragile_catch_all and try? is deprecated.
-    let turn_result = match
-      (Ok(
-        self.run_puppet_turn_body(
-          request, identity, session_id, input, current_turn_start, current_metadata,
-        ),
-      ) catch {
-        e => Err(e)
-      }) {
-      Ok(r) => r
-      Err(e) => {
+    // The body runs under handle_cancellation (async 0.22: a raw cancellation
+    // signal bypasses catch) and returns its typed outcome as data, so the
+    // wide raise crossing cannot erase the AgentError classification.
+    let outcome : Result[@types.TurnResult, @error.AgentError]? = @async.handle_cancellation(async fn() {
+        let typed : Result[@types.TurnResult, @error.AgentError] = Ok(
+          self.run_puppet_turn_body(
+            request, identity, session_id, input, current_turn_start, current_metadata,
+          ),
+        ) catch {
+          e => Err(e)
+        }
+        typed
+      },
+    )
+    let turn_result = match outcome {
+      Some(Ok(r)) => r
+      Some(Err(e)) => {
         turn_error.val = Some(e)
         raise e
+      }
+      None => {
+        let cancelled : @error.AgentError = @error.AgentError::Cancelled(
+          "turn cancelled",
+        )
+        turn_error.val = Some(cancelled)
+        raise cancelled
       }
     }
     dispatcher.flush()
     dispatcher.close()
     turn_result
   }) catch {
-    error => {
+    _ => {
       self.chunk_dispatcher.val = None
       let original : @error.AgentError = match turn_error.val {
         Some(ae) => ae
-        None =>
-          if @async.is_cancellation_error(error) {
-            @error.AgentError::Cancelled("turn cancelled")
-          } else {
-            Runtime(InvocationFailed("turn body: unclassified error"))
-          }
+        // Cancellation is translated inside the group closure, so any error
+        // reaching here is an ordinary defect with no typed classification.
+        None => Runtime(InvocationFailed("turn body: unclassified error"))
       }
       raise original
     }
@@ -266,13 +277,11 @@ async fn AgentRuntime::run_puppet_turn_body(
   // Step 4: drive the already-started, Agent-owned Puppet.
   let prompt_result = self.puppet.prompt(request) catch {
     e =>
-      if @async.is_cancellation_error(e) {
-        raise @error.AgentError::Cancelled("puppet prompt cancelled")
-      } else {
-        raise Runtime(
-          InvocationFailed("puppet prompt: " + safe_error_label(e.to_string())),
-        )
-      }
+      // A cancellation inside the prompt travels as a runtime signal and is
+      // translated at the turn boundary; only ordinary defects land here.
+      raise Runtime(
+        InvocationFailed("puppet prompt: " + safe_error_label(e.to_string())),
+      )
   }
 
   // Step 5: handle non-Accepted prompt results.
@@ -972,31 +981,40 @@ async fn AgentRuntime::run_compact_operation(
     },
   }
   self.emit_turn_event(Some(scope), CompactStarted(trigger="manual"))
-  let prompt_result = self.puppet.compact_standalone(
-    identity.run_id,
-    identity.turn_id,
-    identity.session_id,
-    messages,
-    policy,
-    "agent_compact_session_\{identity.seq}",
-    Manual,
-  ) catch {
-    e =>
-      if @async.is_cancellation_error(e) {
-        self.emit_turn_event(
-          Some(scope),
-          OperationFinalized(
-            operation="compact",
-            outcome="cancelled",
-            detail="compact cancelled",
-          ),
+  let prompt_result = match
+    (Ok(
+      @async.handle_cancellation(async fn() {
+        self.puppet.compact_standalone(
+          identity.run_id,
+          identity.turn_id,
+          identity.session_id,
+          messages,
+          policy,
+          "agent_compact_session_\{identity.seq}",
+          Manual,
         )
-        raise @error.AgentError::Cancelled("compact cancelled")
-      } else {
-        raise Runtime(
-          InvocationFailed("puppet compact: " + safe_error_label(e.to_string())),
-        )
-      }
+      }),
+    ) catch {
+      e => Err(e)
+    }) {
+    Ok(Some(result)) => result
+    Ok(None) => {
+      // The compact operation itself was cancelled: project the cancelled
+      // terminal and surface the structured outcome.
+      self.emit_turn_event(
+        Some(scope),
+        OperationFinalized(
+          operation="compact",
+          outcome="cancelled",
+          detail="compact cancelled",
+        ),
+      )
+      raise @error.AgentError::Cancelled("compact cancelled")
+    }
+    Err(e) =>
+      raise Runtime(
+        InvocationFailed("puppet compact: " + safe_error_label(e.to_string())),
+      )
   }
   match prompt_result {
     Rejected(error=EffectExecutionCancelled(..)) => {

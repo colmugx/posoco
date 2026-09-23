@@ -129,17 +129,14 @@ fn validate_cancel_dispositions(
 
 ///|
 /// Convert an executor-raised error into an observable typed product error.
-/// Cancellation stays distinct from a host defect; neither becomes a normal
-/// tool result or a synthetic model completion.
+/// Cancellation travels as a runtime signal and never reaches this function;
+/// typed cancellation outcomes and host defects stay distinct, and neither
+/// becomes a normal tool result or a synthetic model completion.
 fn execution_error(phase : String, error : Error) -> PuppetError {
-  if @async.is_cancellation_error(error) {
-    EffectExecutionCancelled(phase~)
-  } else {
-    match error {
-      EffectExecutionCancelled(phase=inner_phase) =>
-        EffectExecutionCancelled(phase=inner_phase)
-      other => EffectExecutionFailed(phase~, cause=other.to_string())
-    }
+  match error {
+    EffectExecutionCancelled(phase=inner_phase) =>
+      EffectExecutionCancelled(phase=inner_phase)
+    other => EffectExecutionFailed(phase~, cause=other.to_string())
   }
 }
 

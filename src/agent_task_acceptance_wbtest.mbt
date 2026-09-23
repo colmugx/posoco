@@ -409,7 +409,6 @@ async test "managed_tasks/cancelled_waiter_does_not_cancel_background_and_late_w
   let store = RecordingSessionStore()
   let waiter_started : @aqueue.Queue[Int] = Queue(kind=Unbounded)
   let release : @aqueue.Queue[Int] = Queue(kind=Unbounded)
-  let cancelled_wait : Ref[Result[@port.TaskOutcome, Error]?] = Ref(None)
   let late_one : Ref[@port.TaskOutcome?] = Ref(None)
   let late_two : Ref[@port.TaskOutcome?] = Ref(None)
   let agent = Agent(
@@ -437,10 +436,9 @@ async test "managed_tasks/cancelled_waiter_does_not_cancel_background_and_late_w
     @async.with_task_group(async fn(group) {
       let waiter = group.spawn(async fn() {
         waiter_started.put(1)
-        let result : Result[@port.TaskOutcome, Error] = Ok(handle.wait()) catch {
-          error => Err(error)
-        }
-        cancelled_wait.val = Some(result)
+        // The waiter is cancelled mid-wait; the signal bypasses catch, so
+        // its cancelled termination is observed from the task handle below.
+        ignore(handle.wait())
       })
       ignore(waiter_started.get())
       waiter.cancel()
@@ -448,6 +446,13 @@ async test "managed_tasks/cancelled_waiter_does_not_cancel_background_and_late_w
       // Cancellation belongs to the wait operation. It must leave the
       // Agent-owned background worker alive for a later terminal wait.
       release.put(1)
+      let waiter_done : Result[Unit, Error] = Ok(waiter.wait()) catch {
+        error => Err(error)
+      }
+      match waiter_done {
+        Err(error) if error is @async.TaskCancelled => ()
+        _ => fail("cancelled waiter must terminate with cancellation")
+      }
       let first_late = group.spawn(async fn() {
         late_one.val = Some(handle.wait())
       })
@@ -458,10 +463,6 @@ async test "managed_tasks/cancelled_waiter_does_not_cancel_background_and_late_w
       ignore(second_late.wait())
     })
   })
-  match cancelled_wait.val {
-    Some(Err(error)) if @async.is_cancellation_error(error) => ()
-    _ => fail("cancelled waiter must terminate with cancellation")
-  }
   let first = match late_one.val {
     Some(outcome) => outcome
     None => fail("first late wait did not return")
@@ -661,42 +662,40 @@ async test "managed_tasks/scope_error_and_ambient_cancel_reap_background_work" {
   let cancel_body_gate : @aqueue.Queue[Int] = Queue(kind=Unbounded)
   let cancel_cleanup : Array[String] = []
   let cancel_handle : Ref[@port.TaskHandle?] = Ref(None)
-  let cancel_result : Ref[Result[Unit, Error]?] = Ref(None)
   @async.with_task_group(async fn(group) {
     let scope_task = group.spawn(async fn() {
-      let result : Result[Unit, Error] = Ok(
-        cancel_agent.run_scoped(async fn(_agent) {
-          let handle = acceptance_background_task(
-            cancel_tasks,
-            "scope-cancel",
-            "scope-cancel-worker",
-            async fn() {
-              defer cancel_cleanup.push("cleaned")
-              cancel_worker_started.put(1)
-              ignore(cancel_worker_gate.get())
-              @kernel.Message::UserMessage(content=[
-                @kernel.Content::Text("unreachable"),
-              ])
-            },
-          )
-          cancel_handle.val = Some(handle)
-          ignore(cancel_worker_started.get())
-          cancel_body_entered.put(1)
-          ignore(cancel_body_gate.get())
-        }),
-      ) catch {
-        error => Err(error)
-      }
-      cancel_result.val = Some(result)
+      cancel_agent.run_scoped(async fn(_agent) {
+        let handle = acceptance_background_task(
+          cancel_tasks,
+          "scope-cancel",
+          "scope-cancel-worker",
+          async fn() {
+            defer cancel_cleanup.push("cleaned")
+            cancel_worker_started.put(1)
+            ignore(cancel_worker_gate.get())
+            @kernel.Message::UserMessage(content=[
+              @kernel.Content::Text("unreachable"),
+            ])
+          },
+        )
+        cancel_handle.val = Some(handle)
+        ignore(cancel_worker_started.get())
+        cancel_body_entered.put(1)
+        ignore(cancel_body_gate.get())
+      })
     })
     ignore(cancel_body_entered.get())
     scope_task.cancel()
-    ignore(scope_task.wait())
+    // Ambient cancellation stays a runtime signal that bypasses catch inside
+    // the scope body; observability is the scope task's cancelled termination.
+    let scope_done : Result[Unit, Error] = Ok(scope_task.wait()) catch {
+      error => Err(error)
+    }
+    match scope_done {
+      Err(error) if error is @async.TaskCancelled => ()
+      _ => fail("ambient cancellation must remain observable from run_scoped")
+    }
   })
-  match cancel_result.val {
-    Some(Err(error)) if @async.is_cancellation_error(error) => ()
-    _ => fail("ambient cancellation must remain observable from run_scoped")
-  }
   let cancel_handle = match cancel_handle.val {
     Some(handle) => handle
     None => fail("cancelled scope did not publish its task handle")

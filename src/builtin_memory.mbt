@@ -44,9 +44,7 @@ async fn memory_inbound_one(
       None
     }
     err => {
-      if !@async.is_cancellation_error(err) {
-        on_failure("\{source}: \{err.to_string()}")
-      }
+      on_failure("\{source}: \{err.to_string()}")
       None
     }
   }
@@ -233,9 +231,7 @@ async fn MemoryToolProvider::execute_memory_search(
       () => {
         let text : String? = port.search(query~, top_k?) catch {
           err => {
-            if !@async.is_cancellation_error(err) {
-              (self.on_failure)("memory_search \{source}: \{err.to_string()}")
-            }
+            (self.on_failure)("memory_search \{source}: \{err.to_string()}")
             None
           }
         }
@@ -243,7 +239,9 @@ async fn MemoryToolProvider::execute_memory_search(
       }
     }),
   ) catch {
-    _ => [] // cancellation: the calling turn is aborting; contribute nothing
+    // Cancellation bypasses catch as a runtime signal; this guard only
+    // absorbs unexpected ordinary propagation. Contribute nothing either way.
+    _ => []
   }
   let hits : Array[String] = []
   for pair in searched {

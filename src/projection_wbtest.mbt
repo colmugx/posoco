@@ -153,11 +153,9 @@ pub impl @port.MemoryPort for SlowInboundPort with fn inbound(
   session_id~ : String,
   request~ : String,
 ) -> String? raise @error.MemoryError {
-  // The cancellation raised into the sleeping task when the timeout fires
-  // is this task's business, not the port contract's — swallow it.
-  @async.sleep(200) catch {
-    _ => ()
-  }
+  // sleep is noraise since async 0.22; the inbound timeout handles its own
+  // teardown, so this stub simply sleeps past it.
+  @async.sleep(200)
   Some("too late for \{session_id} \{request}")
 }
 

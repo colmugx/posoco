@@ -637,6 +637,23 @@ pub async fn[X] Agent::run_scoped(self : Agent, body : async (Agent) -> X) -> X 
     let spawn : (async () -> @port.TaskOutcome) -> @async.Task[
       @port.TaskOutcome,
     ] = fn(task) { group.spawn(task) }
+    // A raw cancellation signal bypasses the catch around `body(self)`
+    // below, so the scope shutdown must also run on the unwind path
+    // (async 0.22). Idempotent: shutdown is a no-op once completed.
+    errdefer (if owns_scope.val {
+      ignore(
+        Ok(@async.protect_from_cancel(async fn() { self.runtime.shutdown() })) catch {
+          error => {
+            emit_secondary_failure(
+              self.runtime.observers,
+              "run_scoped_shutdown",
+              error.to_string(),
+            )
+            Err(error)
+          }
+        },
+      )
+    })
     let startup : Result[Unit, Error] = Ok(
       {
         self.runtime.task_runtime.activate(spawn)
@@ -821,20 +838,19 @@ fn AgentRuntime::emit_turn_event(
 /// (the shutdown guard, a lifecycle `on_start` raise) dispatch nothing — the
 /// turn never began. A raise is a secondary failure: observers get a
 /// `secondary_failure` event, the turn still proceeds, and later hooks still
-/// run. A cancellation error is not a defect and is not reported.
+/// run. Cancellation travels as a runtime signal that bypasses this handler,
+/// so only genuine defects are reported.
 async fn AgentRuntime::dispatch_on_turn_begin(
   self : AgentRuntime,
 ) -> Unit noraise {
   for hook in self.hooks {
     hook.on_turn_begin() catch {
       error =>
-        if !@async.is_cancellation_error(error) {
-          emit_secondary_failure(
-            self.observers,
-            "on_turn_begin",
-            error.to_string(),
-          )
-        }
+        emit_secondary_failure(
+          self.observers,
+          "on_turn_begin",
+          error.to_string(),
+        )
     }
   }
 }
@@ -846,21 +862,16 @@ async fn AgentRuntime::dispatch_on_turn_begin(
 /// payload — hooks read it from the Observer channel (`TurnCompleted` /
 /// `TurnFailed`), which fires first. A raise
 /// is a secondary failure: observers get a `secondary_failure` event, the
-/// turn's primary outcome is never replaced, and later hooks still run. A
-/// cancellation error is not a defect and is not reported.
+/// turn's primary outcome is never replaced, and later hooks still run.
+/// Cancellation travels as a runtime signal that bypasses this handler,
+/// so only genuine defects are reported.
 async fn AgentRuntime::dispatch_on_turn_end(
   self : AgentRuntime,
 ) -> Unit noraise {
   for hook in self.hooks {
     hook.on_turn_end() catch {
       error =>
-        if !@async.is_cancellation_error(error) {
-          emit_secondary_failure(
-            self.observers,
-            "on_turn_end",
-            error.to_string(),
-          )
-        }
+        emit_secondary_failure(self.observers, "on_turn_end", error.to_string())
     }
   }
 }

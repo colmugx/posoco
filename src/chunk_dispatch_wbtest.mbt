@@ -65,9 +65,7 @@ impl @port.ModelPort for YieldingStreamModel with fn chat(
     Stream(callback) =>
       for chunk in self.chunks {
         callback(chunk)
-        @async.pause() catch {
-          _ => raise ResponseParse("stream fixture pause failed")
-        }
+        @async.pause()
       }
     NoStream => ()
   }

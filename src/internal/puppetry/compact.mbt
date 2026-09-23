@@ -490,18 +490,15 @@ pub async fn Puppet::compact_standalone(
   }
   let compact_result = match attempted {
     Err(error) =>
-      if @async.is_cancellation_error(error) {
-        return self.finalize_rejected(
-          error=EffectExecutionCancelled(phase="compact_session"),
-        )
-      } else {
-        return self.finalize_rejected(
-          error=EffectExecutionFailed(
-            phase="compact_session",
-            cause="host compact raised: " + error.to_string(),
-          ),
-        )
-      }
+      // A cancellation of the host compact travels as a runtime signal and
+      // is translated at the Agent compact boundary; a raised error here is
+      // an ordinary host defect.
+      return self.finalize_rejected(
+        error=EffectExecutionFailed(
+          phase="compact_session",
+          cause="host compact raised: " + error.to_string(),
+        ),
+      )
     Ok(Err(failure)) =>
       return self.finalize_rejected(
         error=EffectExecutionFailed(

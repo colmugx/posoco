@@ -14,7 +14,7 @@ command、prompt、memory、lifecycle——都通过开放的 port trait 注入�
 ## 安装
 
 ```bash
-moon add colmugx/posoco@0.18.2
+moon add colmugx/posoco@0.18.3
 ```
 
 ## Port

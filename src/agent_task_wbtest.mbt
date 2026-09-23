@@ -122,35 +122,37 @@ fn CompactBusyModel::submit_foreground(
           self.foreground_started.put(1) catch {
             _ => abort("compact foreground start signal failed")
           }
-          let held : Result[Unit, Error] = Ok(
-            ignore(self.foreground_hold.get()),
-          ) catch {
-            error => Err(error)
+          // Cancellation is a runtime signal since async 0.22: detect it
+          // explicitly instead of catching a cancellation error.
+          let released : Bool = match
+            @async.handle_cancellation(async fn() {
+              ignore(self.foreground_hold.get())
+            }) {
+            Some(_) => true
+            None => false
           }
-          match held {
-            Ok(_) =>
-              @kernel.Message::UserMessage(content=[
-                @kernel.Content::Text("unexpected foreground release"),
-              ])
-            Err(_) => {
-              ignore(
-                @async.protect_from_cancel(async fn() {
-                  self.cleanup_started.put(1) catch {
-                    _ => abort("compact cleanup start signal failed")
-                  }
-                  ignore(
-                    self.cleanup_release.get() catch {
-                      _ => abort("compact cleanup release failed")
-                    },
-                  )
-                }) catch {
-                  _ => ()
-                },
-              )
-              @kernel.Message::UserMessage(content=[
-                @kernel.Content::Text("foreground cleanup released"),
-              ])
-            }
+          if released {
+            @kernel.Message::UserMessage(content=[
+              @kernel.Content::Text("unexpected foreground release"),
+            ])
+          } else {
+            ignore(
+              @async.protect_from_cancel(async fn() {
+                self.cleanup_started.put(1) catch {
+                  _ => abort("compact cleanup start signal failed")
+                }
+                ignore(
+                  self.cleanup_release.get() catch {
+                    _ => abort("compact cleanup release failed")
+                  },
+                )
+              }) catch {
+                _ => ()
+              },
+            )
+            @kernel.Message::UserMessage(content=[
+              @kernel.Content::Text("foreground cleanup released"),
+            ])
           }
         },
       }) {
@@ -754,11 +756,14 @@ async test "managed_tasks/timeout_survives_masked_raise" {
         label: "masked-raise",
         timeout_ms: Some(150),
         run: async fn() {
-          @async.sleep(60000) catch {
-            _ =>
+          match @async.handle_cancellation(async fn() { @async.sleep(60000) }) {
+            // Simulate an adapter masking the cancellation as a typed raise;
+            // the timeout must still win.
+            None =>
               raise @error.AgentError::Runtime(
                 @error.RuntimeError::InvocationFailed("masked"),
               )
+            Some(_) => ()
           }
           @kernel.Message::UserMessage(content=[@kernel.Content::Text("never")])
         },
@@ -791,8 +796,11 @@ async test "managed_tasks/timeout_survives_masked_return" {
         label: "masked-return",
         timeout_ms: Some(150),
         run: async fn() {
-          @async.sleep(60000) catch {
-            _ => ()
+          match @async.handle_cancellation(async fn() { @async.sleep(60000) }) {
+            // Simulate an adapter masking the cancellation and returning a
+            // garbage message; the masking guard must still surface Cancelled.
+            None => ()
+            Some(_) => ()
           }
           @kernel.Message::UserMessage(content=[
             @kernel.Content::Text("garbage-after-cancel"),
