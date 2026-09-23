@@ -1,6 +1,6 @@
 name = "colmugx/posoco"
 
-version = "0.18.3"
+version = "0.18.4"
 
 import {
   "moonbitlang/async@0.22.2",

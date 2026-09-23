@@ -31,5 +31,9 @@ pub(open) trait CatalogSource {
   /// declarations, these are taken verbatim: each definition's `owner` and
   /// `policy` are respected as-is, so the source controls execution
   /// scheduling (`Sequential`/`Parallel`/`Exclusive`) per tool.
+  ///
+  /// Core basic tools (the built-in memory surface) are merged ahead of
+  /// these definitions in the model-facing catalog; a source definition
+  /// colliding with a basic name is shadowed (basic wins).
   fn tools(Self) -> Array[@kernel.ToolDef]
 }

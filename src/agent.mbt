@@ -271,6 +271,9 @@ priv struct AgentRuntime {
   /// Next monotonic catalog version to assign on a successful refresh.
   /// Composition builds version 1; refreshes hand out 2, 3, ...
   mut next_catalog_version : Int
+  /// Core basic tool definitions (the built-in memory surface), merged
+  /// ahead of every `CatalogSource` read. Empty when no basic tools exist.
+  basic_tool_defs : Array[@kernel.ToolDef]
   mut next_run_seq : Int
   mut shutdown_started : Bool
   mut shutdown_complete : Bool
@@ -343,18 +346,30 @@ fn validate_agent_config(
 }
 
 ///|
-/// Build the tool routing table and the initial catalog snapshot. Built-in
-/// memory tools route through the same ToolCollision fail-fast as extension
-/// tools: an extension also declaring "memory_search" collides here at
-/// compose instead of shadowing or being shadowed. A wired CatalogSource owns
-/// the catalog from the start (version 1, built from its definitions, failing
-/// fast when invalid); otherwise the catalog is the static port-derived
-/// snapshot.
+/// Build the tool routing table and the initial catalog snapshot. Core
+/// basic tools (the built-in memory surface) are the base layer: they join
+/// the routing like extension tools and lead the model-facing catalog —
+/// both the port-derived snapshot and the merge ahead of a wired
+/// `CatalogSource`. Built-in memory tools route through the same
+/// ToolCollision fail-fast as extension tools: an extension also declaring
+/// "memory_search" collides here at compose instead of shadowing or being
+/// shadowed. A wired CatalogSource owns the extension portion of the
+/// catalog from the start (version 1, built from its definitions merged
+/// after the basic layer, failing fast when invalid); otherwise the catalog
+/// is the static port-derived snapshot.
 fn compose_tool_catalog(
   agg : AggregatedPorts,
   catalog_source : &@runtime.CatalogSource?,
-) -> (ToolRouting, @kernel_exec.ToolCatalogSnapshot, Int) raise @error.CompositionError {
+) -> (
+  ToolRouting,
+  @kernel_exec.ToolCatalogSnapshot,
+  Int,
+  Array[@kernel.ToolDef],
+  Map[String, &@port.ToolProvider],
+) raise @error.CompositionError {
   let providers = agg.tools.copy()
+  let basic_defs : Array[@kernel.ToolDef] = []
+  let basic_tools : Map[String, &@port.ToolProvider] = Map::from_array([])
   if !agg.memory.is_empty() {
     let observers = agg.observers
     let mem_provider : &@port.ToolProvider = MemoryToolProvider(
@@ -364,17 +379,24 @@ fn compose_tool_catalog(
       },
     )
     providers.push(mem_provider)
+    for def in provider_tool_defs([mem_provider]) {
+      basic_tools[def.name.to_string()] = mem_provider
+      basic_defs.push(def)
+    }
   }
   let tool_routing = build_tool_routing(providers)
   let (catalog, initial_catalog_revision) = match catalog_source {
     Some(source) =>
       (
-        build_catalog_from_defs(source.tools(), CatalogVersion(1)),
+        build_catalog_from_defs(
+          merge_basic_catalog_defs(basic_defs, source.tools()),
+          CatalogVersion(1),
+        ),
         source.revision(),
       )
     None => (build_agent_catalog(tool_routing.providers), 0)
   }
-  (tool_routing, catalog, initial_catalog_revision)
+  (tool_routing, catalog, initial_catalog_revision, basic_defs, basic_tools)
 }
 
 ///|
@@ -420,10 +442,13 @@ fn compose_hook_chain(
 ///|
 /// Assemble the control mailbox, the built-in command port front end, the
 /// aggregated command ports, and the effect-execution host (the caller's
-/// override when provided, else a shim over the aggregated ports).
+/// override when provided, else a shim over the aggregated ports). A host
+/// override is wrapped in `BasicFirstHostRuntime` when core basic tools
+/// exist, so their execution does not depend on the host chain knowing them.
 fn compose_mailbox_and_host(
   agg : AggregatedPorts,
   tool_routing : ToolRouting,
+  basic_tools : Map[String, &@port.ToolProvider],
   host_override : &@kernel_exec.HostRuntime?,
 ) -> (
   &@puppetry.Mailbox,
@@ -436,7 +461,13 @@ fn compose_mailbox_and_host(
   let builtin_command_port = BuiltinCommandPort(mailbox_ref)
   let command_ports = compose_agent_commands(agg.commands, builtin_command_port)
   let host : &@kernel_exec.HostRuntime = match host_override {
-    Some(h) => h
+    Some(h) =>
+      if basic_tools.is_empty() {
+        h
+      } else {
+        BasicFirstHostRuntime::{ inner: h, basic: basic_tools, }
+        as &@kernel_exec.HostRuntime
+      }
     None => {
       let port_runtime = @runtime.PortRuntime(
         model=agg.model,
@@ -471,12 +502,12 @@ fn AgentRuntime::compose(
   if agg.sessions.is_empty() {
     raise EmptyPort("SessionStore")
   }
-  let (tool_routing, catalog, initial_catalog_revision) = compose_tool_catalog(
+  let (tool_routing, catalog, initial_catalog_revision, basic_defs, basic_tools) = compose_tool_catalog(
     agg, catalog_source,
   )
   let composed_hooks = compose_hook_chain(agg, config, ui_projection)
   let (mailbox_ref, builtin_command_port, command_ports, host) = compose_mailbox_and_host(
-    agg, tool_routing, host_override,
+    agg, tool_routing, basic_tools, host_override,
   )
   let journal = @puppetry.InMemoryJournal()
   let chunk_dispatcher_ref : Ref[ChunkDispatcher?] = Ref(None)
@@ -553,6 +584,7 @@ fn AgentRuntime::compose(
     catalog_source,
     last_catalog_revision: initial_catalog_revision,
     next_catalog_version: 2,
+    basic_tool_defs: basic_defs,
     next_run_seq: 1,
     shutdown_started: false,
     shutdown_complete: false,
@@ -596,8 +628,10 @@ pub fn Agent::Agent(
 /// `cancel_effects` for cancellation propagation). Plain extension authors
 /// do not need this — see `docs/RUNTIME.md`.
 ///
-/// `catalog_source` (optional): when supplied, the source owns the tool
-/// catalog — Posoco reads it at construction and re-reads it at each prompt
+/// `catalog_source` (optional): when supplied, the source owns the
+/// extension portion of the tool catalog — Posoco merges the core basic
+/// tools (the built-in memory surface) ahead of the source's definitions,
+/// reads the source at construction, and re-reads it at each prompt
 /// boundary whose `revision()` changed, swapping the refreshed snapshot in
 /// for subsequent runs while in-flight runs keep their version. Definitions
 /// are taken verbatim (owner/policy respected). Without it, the catalog is
