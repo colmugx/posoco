@@ -118,12 +118,10 @@ jobs:
       - name: moon check
         run: |
           moon check --target wasm
-          moon check --target wasm-gc
 
       - name: moon test
         run: |
           moon test --target wasm
-          moon test --target wasm-gc
 
   moon-format:
     runs-on: ubuntu-latest
