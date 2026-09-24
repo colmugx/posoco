@@ -733,7 +733,22 @@ async fn AgentRuntime::shutdown(self : AgentRuntime) -> Unit {
     return
   }
   self.shutdown_started = true
-  self.task_runtime.shutdown()
+  let task_shutdown : Result[Unit, @error.AgentError] = Ok(
+    self.task_runtime.shutdown(),
+  ) catch {
+    error => Err(error)
+  }
+  match task_shutdown {
+    Ok(_) => ()
+    Err(error) => {
+      emit_managed_task_shutdown_failure(
+        self.observers,
+        error.to_string(),
+        self.task_runtime.shutdown_straggler_detail(),
+      )
+      raise error
+    }
+  }
   self.puppet.shutdown() catch {
     error =>
       raise @error.AgentError::Runtime(
@@ -932,6 +947,28 @@ fn emit_secondary_failure(
   for observer in observers {
     // Secondary failures are emitted from hook closures and refresh paths
     // that hold no run identity — scope is None by design (v1).
+    observer.on_event_at(None, snapshot_turn_event(event))
+  }
+}
+
+///|
+fn emit_managed_task_shutdown_failure(
+  observers : Array[&@port.Observer],
+  error : String,
+  stragglers : String,
+) -> Unit {
+  let event : @types.TurnEvent = Custom(
+    source="posoco.core",
+    label="secondary_failure",
+    data=Json::object(
+      Map::from_array([
+        ("hook_point", Json::string("managed_task_shutdown")),
+        ("error", Json::string(safe_error_label(error))),
+        ("stragglers", Json::string(safe_error_label(stragglers))),
+      ]),
+    ),
+  )
+  for observer in observers {
     observer.on_event_at(None, snapshot_turn_event(event))
   }
 }
