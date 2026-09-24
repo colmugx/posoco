@@ -1,7 +1,29 @@
 ///|
-/// Execute the single reducer-declared model effect. Expected provider
-/// failures travel as `ModelFailed` data; raised host defects are surfaced as
-/// a distinct Puppet error and never fabricated into a completion.
+/// Abort watcher cadence. Mirrors the SSE reader's 16ms yield interval: fine
+/// enough that an ESC abort feels immediate while an effect is in flight,
+/// coarse enough to add no measurable overhead to the awaited effect.
+let effect_abort_poll_ms : Int = 16
+
+///|
+/// Block until the control mailbox records an abort for the active run. Runs
+/// as the losing side of `@async.any`: when the effect settles first, `any`
+/// cancels this loop at its sleep suspension point.
+async fn await_abort_requested(mailbox : &Mailbox) -> Unit {
+  while !mailbox.abort_requested() {
+    @async.sleep(effect_abort_poll_ms)
+  }
+}
+
+///|
+/// Execute the single reducer-declared model effect, racing the await against
+/// the mailbox abort flag. Expected provider failures travel as `ModelFailed`
+/// data; raised host defects are surfaced as a distinct Puppet error and never
+/// fabricated into a completion.
+///
+/// Returns `None` when abort was requested while the call was in flight: the
+/// effect task is cancelled, its partial result discarded (cancellation has no
+/// reducer completion input), and the pump falls back to its loop top where
+/// `pump_abort` feeds `CancelRequested` to the reducer.
 ///
 /// (R3 M3.7: the previous `(RunInput, NewThreadSpec?)` tuple has been removed
 /// — compact is now a separate `ModelPort::compact` method driven by posoco,
@@ -10,35 +32,58 @@ async fn execute_model_effect(
   effect : Effect,
   context : ExecutionContext,
   on_chunk : @kernel_exec.HostChunkCallback?,
-) -> RunInput raise PuppetError {
-  let attempted : Result[RunInput, Error] = Ok(
-    execute_one(effect, context, on_chunk),
+) -> RunInput? raise PuppetError {
+  let raced : Result[RunInput?, Error] = Ok(
+    @async.any([
+      () => Some(execute_one(effect, context, on_chunk)),
+      () => {
+        await_abort_requested(context.mailbox)
+        None
+      },
+    ]),
   ) catch {
     error => Err(error)
   }
-  match attempted {
+  match raced {
     Ok(value) => value
     Err(error) => raise execution_error("AwaitingModel", error)
   }
 }
 
 ///|
-/// Execute one already-scheduled tool wave. `@async.all` supplies the actual
-/// parallelism and cancels peers if one task raises. Its result array remains
-/// in source order, which the caller feeds to the reducer deterministically.
+/// Execute one already-scheduled tool wave, racing the await against the
+/// mailbox abort flag. `@async.all` supplies the actual parallelism and
+/// cancels peers if one task raises. Its result array remains in source
+/// order, which the caller feeds to the reducer deterministically.
+///
+/// Returns `None` when abort was requested while the wave was in flight: the
+/// wave's effect tasks are cancelled, their partial results discarded
+/// (cancellation has no reducer completion input), and the pump falls back to
+/// its loop top where `pump_abort` feeds `CancelRequested` to the reducer,
+/// which then declares `CancelOutstanding` for the still-pending effects.
 async fn execute_tool_wave(
   effects : Array[Effect],
   context : ExecutionContext,
-) -> Array[RunInput] raise PuppetError {
-  let attempted : Result[Array[RunInput], Error] = Ok(
-    @async.all(
-      effects.map(fn(effect) { () => execute_one(effect, context, None) }),
-    ),
+) -> Array[RunInput]? raise PuppetError {
+  let raced : Result[Array[RunInput]?, Error] = Ok(
+    @async.any([
+      () => {
+        Some(
+          @async.all(
+            effects.map(fn(effect) { () => execute_one(effect, context, None) }),
+          ),
+        )
+      },
+      () => {
+        await_abort_requested(context.mailbox)
+        None
+      },
+    ]),
   ) catch {
     error => Err(error)
   }
-  match attempted {
-    Ok(values) => values
+  match raced {
+    Ok(value) => value
     Err(error) => raise execution_error("AwaitingTools", error)
   }
 }

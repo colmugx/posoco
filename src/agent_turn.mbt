@@ -890,6 +890,11 @@ async fn AgentRuntime::compact_session(
     raise Runtime(InvocationFailed("agent turn busy"))
   }
   self.turn_active = true
+  // Same unwind guard as run_turn_with_mode: a hard-cancelled compact must
+  // not wedge the Agent busy.
+  errdefer {
+    self.turn_active = false
+  }
   let result : Result[@types.CompactOutcome, @error.AgentError] = Ok(
     self.run_compact_operation(session_id),
   ) catch {

@@ -55,6 +55,7 @@ async fn Puppet::drive_run(
     catalog=self.config.catalog,
     run_id~,
     session_id~,
+    mailbox=self.mailbox,
   )
   // Build the event dispatcher.
   let dispatcher = EventDispatcher(run_id, turn_id, session_id)
@@ -645,14 +646,18 @@ async fn Puppet::pump_awaiting_model(
       ),
     )
   }
-  let executed : Result[RunInput, PuppetError] = Ok(
+  let executed : Result[RunInput?, PuppetError] = Ok(
     execute_model_effect(pending[0], exec_ctx, self.config.stream_chunks),
   ) catch {
     error => Err(error)
   }
   let input = match executed {
     Err(error) => return StopWith(self.finalize_rejected(error~))
-    Ok(value) => value
+    // Abort landed while the model call was in flight. The effect result is
+    // discarded; the loop top's abort check feeds CancelRequested to the
+    // reducer, which declares CancelOutstanding for the still-pending effect.
+    Ok(None) => return ContinueWith(state)
+    Ok(Some(value)) => value
   }
   let folded : Result[FoldOutcome, PuppetError] = Ok(
     self.fold_effect_input(
@@ -993,15 +998,19 @@ async fn Puppet::pump_awaiting_tools(
   for wave_index, wave in waves {
     // `@async.all` starts every effect in the finalized wave, waits at its
     // barrier, and returns inputs in source order. The reducer remains the
-    // sole owner of transcript/result ordering.
-    let executed : Result[Array[RunInput], PuppetError] = Ok(
+    // sole owner of transcript/result ordering. The await races the mailbox
+    // abort flag: `None` means abort landed mid-wave, the wave's partial
+    // results are discarded, and the loop top feeds CancelRequested to the
+    // reducer, which declares CancelOutstanding for the still-pending effects.
+    let executed : Result[Array[RunInput]?, PuppetError] = Ok(
       execute_tool_wave(wave, exec_ctx),
     ) catch {
       error => Err(error)
     }
     let inputs = match executed {
       Err(error) => return StopWith(self.finalize_rejected(error~))
-      Ok(value) => value
+      Ok(None) => return ContinueWith(state)
+      Ok(Some(value)) => value
     }
     for input in inputs {
       let folded : Result[FoldOutcome, PuppetError] = Ok(

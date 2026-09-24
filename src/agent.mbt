@@ -984,6 +984,12 @@ async fn AgentRuntime::run_turn_with_mode(
   // and every follow-up drained below, so no loser can touch lifecycle,
   // identity, session, memory, catalog, or dispatcher state.
   self.turn_active = true
+  // A host hard-cancel delivers a raw cancellation signal that bypasses the
+  // catch below (a re-raising with_task_group can surface it raw), so the
+  // guard must also release on unwind or the Agent stays wedged busy.
+  errdefer {
+    self.turn_active = false
+  }
   let result : Result[@types.TurnResult, @error.AgentError] = Ok(
     {
       let mut result = self.run_single_turn(

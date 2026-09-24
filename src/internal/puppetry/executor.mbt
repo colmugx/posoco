@@ -81,6 +81,7 @@ priv struct ExecutionContext {
   catalog : @kernel_exec.ToolCatalogSnapshot
   run_id : RunId
   session_id : SessionId
+  mailbox : &Mailbox
 }
 
 ///|
@@ -89,8 +90,9 @@ fn ExecutionContext::ExecutionContext(
   catalog~ : @kernel_exec.ToolCatalogSnapshot,
   run_id~ : RunId,
   session_id~ : SessionId,
+  mailbox~ : &Mailbox,
 ) -> ExecutionContext {
-  { host, catalog, run_id, session_id, }
+  { host, catalog, run_id, session_id, mailbox, }
 }
 
 ///|

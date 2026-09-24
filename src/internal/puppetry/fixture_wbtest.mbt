@@ -980,7 +980,10 @@ async test "puppet/C-ABORT-DURING-MODEL" {
     None => fail("expected terminal transcript")
   }
   let msgs = transcript.messages_snapshot()
-  assert_eq(msgs.length(), 5)
+  // The abort preempts the second model call mid-flight: its completion is
+  // discarded, so the transcript ends after call_1's folded success. call_2
+  // is never declared (no assistant message, no tool marker).
+  assert_eq(msgs.length(), 3)
   match msgs[2] {
     ToolMessage(call_id~, outcome~, ..) => {
       assert_eq(call_id.to_string(), "call_1")
@@ -990,17 +993,6 @@ async test "puppet/C-ABORT-DURING-MODEL" {
       }
     }
     _ => fail("expected tool message for call_1")
-  }
-  match msgs[4] {
-    ToolMessage(call_id~, outcome~, ..) => {
-      assert_eq(call_id.to_string(), "call_2")
-      match outcome {
-        RuntimeFailure(..) => ()
-        _ =>
-          fail("expected interrupted marker for call_2, not fabricated success")
-      }
-    }
-    _ => fail("expected tool message for call_2")
   }
   assert_eq(host.started_calls, ["call_1"])
   assert_true(fixture_prompt(puppet, "after_abort_model") is Accepted(_))
@@ -1076,12 +1068,16 @@ async test "puppet/C-ABORT-DURING-TOOLS" {
   }
   let msgs = transcript.messages_snapshot()
   assert_eq(msgs.length(), 4)
+  // The abort preempts the first wave mid-flight: call_1 is cancelled before
+  // its 150ms sleep settles, so BOTH declared calls get the reducer's
+  // interrupted marker instead of a folded result.
   match msgs[2] {
     ToolMessage(call_id~, outcome~, ..) => {
       assert_eq(call_id.to_string(), "call_1")
       match outcome {
-        Success(content~, ..) => assert_eq(content, "call_1-done")
-        _ => fail("expected call_1 success fact")
+        RuntimeFailure(..) => ()
+        _ =>
+          fail("expected interrupted marker for call_1, not fabricated success")
       }
     }
     _ => fail("expected tool message for call_1")
