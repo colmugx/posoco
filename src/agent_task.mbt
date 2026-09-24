@@ -2,6 +2,9 @@
 let task_outcomes_applied_metadata_key : String = "posoco.task.applied_ids"
 
 ///|
+let foreground_task_settle_timeout_ms : Int = 5_000
+
+///|
 /// Applied task ids may survive a session-store restart, so a process-local
 /// counter alone cannot identify a new runtime. Use the platform entropy
 /// source and fail activation if it is unavailable.
@@ -37,34 +40,36 @@ priv struct AgentTaskOperation {
 ///|
 priv struct AgentTaskRecord {
   receipt : @port.TaskReceipt
-  task : @async.Task[@port.TaskOutcome]
+  task : @fuwaroid.SupervisedTask[@port.TaskOutcome]
   operation : AgentTaskOperation?
 }
 
 ///|
-/// Agent-owned task execution. The group itself is represented only by
-/// the private spawn callback installed for one run_scoped lifetime.
 priv struct AgentTaskRuntime {
-  mut spawn : ((async () -> @port.TaskOutcome) -> @async.Task[@port.TaskOutcome])?
+  mut supervisor : @fuwaroid.Supervisor[@port.TaskOutcome]?
   mut scope_active : Bool
   mut closed : Bool
   mut runtime_id : String?
   mut next_id : Int
   mut active_operation : AgentTaskOperation?
+  foreground_settle_timeout_ms : Int
   tasks : Map[String, AgentTaskRecord]
   outcomes : Map[String, Array[@port.TaskOutcome]]
   inflight : Map[String, Array[String]]
 }
 
 ///|
-fn AgentTaskRuntime::AgentTaskRuntime() -> AgentTaskRuntime {
+fn AgentTaskRuntime::AgentTaskRuntime(
+  foreground_settle_timeout_ms? : Int = foreground_task_settle_timeout_ms,
+) -> AgentTaskRuntime {
   {
-    spawn: None,
+    supervisor: None,
     scope_active: false,
     closed: false,
     runtime_id: None,
     next_id: 1,
     active_operation: None,
+    foreground_settle_timeout_ms,
     tasks: Map::from_array([]),
     outcomes: Map::from_array([]),
     inflight: Map::from_array([]),
@@ -72,9 +77,6 @@ fn AgentTaskRuntime::AgentTaskRuntime() -> AgentTaskRuntime {
 }
 
 ///|
-/// Each composed lifecycle contributor receives a closure that captures its
-/// manifest id. That keeps attribution with the capability instead of asking
-/// extensions to copy an id into every task specification.
 fn AgentTaskRuntime::capability(
   self : AgentTaskRuntime,
   extension_id : String,
@@ -83,9 +85,9 @@ fn AgentTaskRuntime::capability(
 }
 
 ///|
-fn AgentTaskRuntime::activate(
+fn[G] AgentTaskRuntime::activate(
   self : AgentTaskRuntime,
-  spawn : (async () -> @port.TaskOutcome) -> @async.Task[@port.TaskOutcome],
+  group : @async.TaskGroup[G],
 ) -> Unit raise @error.AgentError {
   if self.closed {
     raise @error.AgentError::Runtime(
@@ -98,7 +100,7 @@ fn AgentTaskRuntime::activate(
     )
   }
   self.runtime_id = Some(next_task_runtime_identity())
-  self.spawn = Some(spawn)
+  self.supervisor = Some(@fuwaroid.Supervisor(group~))
   self.scope_active = true
 }
 
@@ -108,18 +110,84 @@ fn AgentTaskRuntime::scope_available(self : AgentTaskRuntime) -> Bool {
 }
 
 ///|
+fn agent_task_operation_equal(
+  left : AgentTaskOperation,
+  right : AgentTaskOperation,
+) -> Bool {
+  left.session_id == right.session_id &&
+  left.run_id == right.run_id &&
+  left.turn_id == right.turn_id
+}
+
+///|
+fn AgentTaskRuntime::record_matches_operation(
+  _self : AgentTaskRuntime,
+  record : AgentTaskRecord,
+  operation : AgentTaskOperation,
+) -> Bool {
+  match record.receipt.mode {
+    @port.TaskMode::Foreground =>
+      match record.operation {
+        Some(owner) => agent_task_operation_equal(owner, operation)
+        None => false
+      }
+    @port.TaskMode::Background => false
+  }
+}
+
+///|
+fn supervised_task_terminal(status : @fuwaroid.SupervisedTaskStatus) -> Bool {
+  match status {
+    @fuwaroid.SupervisedTaskStatus::Completed
+    | @fuwaroid.SupervisedTaskStatus::Cancelled
+    | @fuwaroid.SupervisedTaskStatus::Failed => true
+    @fuwaroid.SupervisedTaskStatus::Running
+    | @fuwaroid.SupervisedTaskStatus::Cancelling => false
+  }
+}
+
+///|
+fn AgentTaskRuntime::refresh_active_operation(self : AgentTaskRuntime) -> Unit {
+  match self.active_operation {
+    None => ()
+    Some(operation) => {
+      let stale : Array[String] = []
+      let mut unresolved = false
+      for record in self.tasks.values() {
+        if self.record_matches_operation(record, operation) {
+          if supervised_task_terminal(record.task.snapshot().status) {
+            stale.push(record.receipt.id)
+          } else {
+            unresolved = true
+          }
+        }
+      }
+      for id in stale {
+        self.reap(id)
+      }
+      if !unresolved {
+        self.active_operation = None
+      }
+    }
+  }
+}
+
+///|
 fn AgentTaskRuntime::begin_operation(
   self : AgentTaskRuntime,
   session_id : String,
   run_id : @kernel.RunId,
   turn_id : @kernel.TurnId,
-) -> Unit {
+) -> Unit raise @error.AgentError {
+  self.refresh_active_operation()
+  if self.active_operation is Some(_) {
+    raise @error.AgentError::Runtime(
+      @error.RuntimeError::InvocationFailed(
+        "foreground task cleanup is still pending",
+      ),
+    )
+  }
   self.active_operation = Some({ session_id, run_id, turn_id, })
-}
-
-///|
-fn AgentTaskRuntime::end_operation(self : AgentTaskRuntime) -> Unit {
-  self.active_operation = None
 }
 
 ///|
@@ -160,6 +228,7 @@ fn AgentTaskRuntime::submit(
   if self.closed {
     return Err(Closed)
   }
+
   let operation = self.active_operation
   match spec.mode {
     @port.TaskMode::Foreground =>
@@ -175,27 +244,49 @@ fn AgentTaskRuntime::submit(
       }
     @port.TaskMode::Background => ()
   }
-  match self.spawn {
+
+  let supervisor = match self.supervisor {
+    Some(value) => value
     None => return Err(Unavailable)
-    Some(spawn) => {
-      let receipt = self.next_receipt(extension_id, spec)
-      let runtime = self
-      let task = spawn(async fn() { runtime.execute(spec, receipt, operation) })
-      self.tasks[receipt.id] = { receipt, task, operation, }
-      let handle_task = task
-      Ok(
-        @port.TaskHandle::from_callbacks(
-          receipt~,
-          wait=async fn(_target) {
-            let outcome = handle_task.wait()
-            runtime.reap(receipt.id)
-            snapshot_task_outcome(outcome)
-          },
-          cancel=fn(_target) { handle_task.cancel() },
-        ),
-      )
-    }
   }
+  let receipt = self.next_receipt(extension_id, spec)
+  let runtime = self
+  let task = match
+    supervisor.spawn(
+      async fn() { runtime.execute(spec, receipt, operation) },
+      label=receipt.label,
+    ) {
+    Ok(value) => value
+    Err(_) => return Err(Closed)
+  }
+  self.tasks[receipt.id] = { receipt, task, operation, }
+  let handle_task = task
+  Ok(
+    @port.TaskHandle::from_callbacks(
+      receipt~,
+      wait=async fn(_target) {
+        let waited : Result[@port.TaskOutcome, Error] = Ok(handle_task.wait()) catch {
+          error => Err(error)
+        }
+        let outcome = match waited {
+          Ok(value) => value
+          Err(error) if error is @async.WaitedTaskAlreadyCancelled =>
+            @port.TaskOutcome::{
+              receipt,
+              status: @port.TaskStatus::Cancelled(reason="task cancelled"),
+            }
+          Err(error) =>
+            @port.TaskOutcome::{
+              receipt,
+              status: @port.TaskStatus::Failed(reason=error.to_string()),
+            }
+        }
+        runtime.reap(receipt.id)
+        snapshot_task_outcome(outcome)
+      },
+      cancel=fn(_target) { handle_task.cancel() },
+    ),
+  )
 }
 
 ///|
@@ -206,13 +297,6 @@ async fn AgentTaskRuntime::execute(
   receipt : @port.TaskReceipt,
   _operation : AgentTaskOperation?,
 ) -> @port.TaskOutcome {
-  // Cancellation-masking guard: since async 0.22 the cancellation signal
-  // cannot be caught, but an adapter may still capture it via
-  // `handle_cancellation` and raise a typed error (or return a value). The
-  // coroutine stays flagged cancelled in that case; pause() re-delivers the
-  // pending signal on both exit paths so the task still terminates as
-  // Cancelled, and is a no-op yield when nothing is pending.
-  // (Q4: see docs/questions.md.)
   let guarded : async () -> @kernel.Message = async fn() {
     let message = (spec.run)() catch {
       error => {
@@ -274,24 +358,13 @@ fn AgentTaskRuntime::cancel_foreground(
   operation : AgentTaskOperation,
 ) -> Unit {
   for record in self.tasks.values() {
-    match record.receipt.mode {
-      @port.TaskMode::Foreground =>
-        match record.operation {
-          Some(owner) if owner.session_id == operation.session_id &&
-            owner.run_id == operation.run_id &&
-            owner.turn_id == operation.turn_id => record.task.cancel()
-          _ => ()
-        }
-      @port.TaskMode::Background => ()
+    if self.record_matches_operation(record, operation) {
+      record.task.cancel()
     }
   }
 }
 
 ///|
-/// Cancel foreground tasks belonging to the run named by an accepted abort.
-/// The mailbox remains the source of run validity; this hook closes the task
-/// side immediately while the Puppet observes the same abort at its safe
-/// point.
 fn AgentTaskRuntime::cancel_foreground_for_run(
   self : AgentTaskRuntime,
   run_id : @kernel.RunId,
@@ -307,62 +380,70 @@ fn AgentTaskRuntime::cancel_foreground_for_run(
 async fn AgentTaskRuntime::finish_active_operation(
   self : AgentTaskRuntime,
 ) -> Unit raise @error.AgentError {
-  match self.active_operation {
-    None => ()
-    Some(operation) => {
-      self.cancel_foreground(operation)
-      let reaped : Array[String] = []
-      let mut first_error : @error.AgentError? = None
-      // Snapshot records before the first await. A handle waiter may reap
-      // its record concurrently while cleanup is joining, and mutating a Map
-      // during `values()` traversal can otherwise skip a foreground task.
-      let records : Array[AgentTaskRecord] = Array::from_iter(
-        self.tasks.values(),
-      ).filter(fn(record) {
-        match record.receipt.mode {
-          @port.TaskMode::Foreground =>
-            match record.operation {
-              Some(owner) if owner.session_id == operation.session_id &&
-                owner.run_id == operation.run_id &&
-                owner.turn_id == operation.turn_id => true
-              _ => false
-            }
-          @port.TaskMode::Background => false
-        }
-      })
+  let operation = match self.active_operation {
+    None => return
+    Some(value) => value
+  }
+  let records = Array::from_iter(self.tasks.values()).filter(fn(record) {
+    self.record_matches_operation(record, operation)
+  })
+  if records.is_empty() {
+    self.active_operation = None
+    return
+  }
+  let supervisor = match self.supervisor {
+    Some(value) => value
+    None =>
+      raise @error.AgentError::Runtime(
+        @error.RuntimeError::InvocationFailed(
+          "task supervisor is unavailable during foreground cleanup",
+        ),
+      )
+  }
+  let tasks = records.map(fn(record) { record.task })
+  let settled : Result[@fuwaroid.SettleOutcome, Error] = Ok(
+    @async.protect_from_cancel(async fn() {
+      supervisor.cancel_and_wait(
+        tasks=tasks.clamped_view(),
+        timeout_ms=self.foreground_settle_timeout_ms,
+      )
+    }),
+  ) catch {
+    error => Err(error)
+  }
+  let outcome = match settled {
+    Ok(value) => value
+    Err(error) =>
+      raise @error.AgentError::Runtime(
+        @error.RuntimeError::InvocationFailed(
+          "foreground task settlement failed: " + error.to_string(),
+        ),
+      )
+  }
+  match outcome {
+    @fuwaroid.Settled => {
       for record in records {
-        let task = record.task
-        let waited : Result[@port.TaskOutcome, Error] = Ok(
-          @async.protect_from_cancel(async fn() { task.wait() }),
-        ) catch {
-          error => Err(error)
-        }
-        match waited {
-          Ok(_) => reaped.push(record.receipt.id)
-          Err(error) if error is @async.WaitedTaskAlreadyCancelled =>
-            reaped.push(record.receipt.id)
-          Err(error) => {
-            reaped.push(record.receipt.id)
-            if first_error is None {
-              first_error = Some(
-                @error.AgentError::Runtime(
-                  @error.RuntimeError::InvocationFailed(
-                    "foreground task wait: " + error.to_string(),
-                  ),
-                ),
-              )
-            }
-          }
-        }
-      }
-      for id in reaped {
-        self.reap(id)
+        self.reap(record.receipt.id)
       }
       self.active_operation = None
-      match first_error {
-        Some(error) => raise error
-        None => ()
-      }
+    }
+    @fuwaroid.DeadlineExceeded(snapshots) => {
+      self.refresh_active_operation()
+      let detail = snapshots
+        .map(fn(snapshot) {
+          let label = if snapshot.label == "" {
+            "<unlabelled>"
+          } else {
+            snapshot.label
+          }
+          "\{label}:\{repr(snapshot.status)}"
+        })
+        .join(", ")
+      raise @error.AgentError::Runtime(
+        @error.RuntimeError::InvocationFailed(
+          "foreground task cleanup deadline exceeded: " + detail,
+        ),
+      )
     }
   }
 }
@@ -561,7 +642,6 @@ async fn AgentTaskRuntime::shutdown(self : AgentTaskRuntime) -> Unit {
   if !self.closed {
     self.closed = true
     self.scope_active = false
-    self.spawn = None
     let records : Array[AgentTaskRecord] = Array::from_iter(self.tasks.values())
     for record in records {
       record.task.cancel()
@@ -577,4 +657,6 @@ async fn AgentTaskRuntime::shutdown(self : AgentTaskRuntime) -> Unit {
   for id in reaped {
     self.reap(id)
   }
+  self.supervisor = None
+  self.active_operation = None
 }

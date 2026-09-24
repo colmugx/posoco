@@ -905,7 +905,6 @@ async fn AgentRuntime::compact_session(
   ) catch {
     error => Err(error)
   }
-  self.task_runtime.end_operation()
   self.turn_active = false
   match result {
     Ok(value) =>

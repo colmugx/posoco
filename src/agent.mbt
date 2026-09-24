@@ -668,9 +668,6 @@ pub async fn[X] Agent::run_scoped(self : Agent, body : async (Agent) -> X) -> X 
   }
   @async.with_task_group(async fn(group) {
     let owns_scope = Ref(false)
-    let spawn : (async () -> @port.TaskOutcome) -> @async.Task[
-      @port.TaskOutcome,
-    ] = fn(task) { group.spawn(task) }
     // A raw cancellation signal bypasses the catch around `body(self)`
     // below, so the scope shutdown must also run on the unwind path
     // (async 0.22). Idempotent: shutdown is a no-op once completed.
@@ -690,7 +687,7 @@ pub async fn[X] Agent::run_scoped(self : Agent, body : async (Agent) -> X) -> X 
     })
     let startup : Result[Unit, Error] = Ok(
       {
-        self.runtime.task_runtime.activate(spawn)
+        self.runtime.task_runtime.activate(group)
         owns_scope.val = true
         self.runtime.notify_start_if_first()
       },
@@ -1072,7 +1069,6 @@ async fn AgentRuntime::run_single_turn(
       ) catch {
         error => Err(error)
       }
-      self.task_runtime.end_operation()
       match cleanup {
         Ok(_) => ()
         Err(error) =>
@@ -1094,7 +1090,6 @@ async fn AgentRuntime::run_single_turn(
   ) catch {
     error => Err(error)
   }
-  self.task_runtime.end_operation()
   match cleanup {
     Ok(_) => {
       self.emit_turn_event(Some(identity.scope()), TurnCompleted)
