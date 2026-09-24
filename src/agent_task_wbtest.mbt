@@ -890,3 +890,80 @@ async test "managed_tasks/plain_completion_unaffected_by_guard" {
     }
   })
 }
+
+///|
+async test "managed_tasks/foreground_settlement_deadline_preserves_operation_owner" {
+  let runtime = AgentTaskRuntime(foreground_settle_timeout_ms=40)
+  @async.with_task_group(async fn(group) {
+    runtime.activate(group)
+    let run_one = @kernel.RunId::unchecked("supervised-run-1")
+    let turn_one = @kernel.TurnId::unchecked("supervised-turn-1")
+    runtime.begin_operation("supervised-session", run_one, turn_one)
+
+    let gate : @aqueue.Queue[Int] = Queue(kind=Unbounded)
+    let handle = match
+      runtime.submit("supervised-test", {
+        session_id: "supervised-session",
+        mode: @port.TaskMode::Foreground,
+        label: "protected-cleanup",
+        timeout_ms: None,
+        run: async fn() {
+          @async.protect_from_cancel(async fn() { ignore(gate.get()) })
+          @kernel.Message::UserMessage(content=[
+            @kernel.Content::Text("released"),
+          ])
+        },
+      }) {
+      Ok(value) => value
+      Err(error) => fail("foreground task admission failed: \{repr(error)}")
+    }
+
+    let cleanup : Result[Unit, @error.AgentError] = Ok(
+      runtime.finish_active_operation(),
+    ) catch {
+      error => Err(error)
+    }
+    match cleanup {
+      Err(
+        @error.AgentError::Runtime(
+          @error.RuntimeError::InvocationFailed(detail)
+        )
+      ) =>
+        assert_true(
+          detail.contains("foreground task cleanup deadline exceeded"),
+        )
+      _ => fail("protected foreground cleanup must hit the settlement deadline")
+    }
+
+    let blocked : Result[Unit, @error.AgentError] = Ok(
+      runtime.begin_operation(
+        "next-session",
+        @kernel.RunId::unchecked("supervised-run-2"),
+        @kernel.TurnId::unchecked("supervised-turn-2"),
+      ),
+    ) catch {
+      error => Err(error)
+    }
+    match blocked {
+      Err(
+        @error.AgentError::Runtime(
+          @error.RuntimeError::InvocationFailed(detail)
+        )
+      ) =>
+        assert_true(detail.contains("foreground task cleanup is still pending"))
+      _ => fail("a stale foreground task must keep operation ownership")
+    }
+
+    gate.put(1)
+    let outcome = handle.wait()
+    assert_true(outcome.status is @port.TaskStatus::Cancelled(_))
+
+    runtime.begin_operation(
+      "next-session",
+      @kernel.RunId::unchecked("supervised-run-3"),
+      @kernel.TurnId::unchecked("supervised-turn-3"),
+    )
+    runtime.finish_active_operation()
+    runtime.shutdown()
+  })
+}
