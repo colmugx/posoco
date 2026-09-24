@@ -967,3 +967,117 @@ async test "managed_tasks/foreground_settlement_deadline_preserves_operation_own
     runtime.shutdown()
   })
 }
+
+///|
+async test "managed_tasks/shutdown_settles_cooperative_background_work" {
+  let runtime = AgentTaskRuntime(shutdown_settle_timeout_ms=200)
+  @async.with_task_group(async fn(group) {
+    runtime.activate(group)
+    let supervisor = match runtime.supervisor {
+      Some(value) => value
+      None => fail("task supervisor was not activated")
+    }
+    let task = match
+      supervisor.spawn(
+        async fn() {
+          @async.pause()
+          @port.TaskOutcome::{
+            receipt: {
+              id: "shutdown-cooperative",
+              session_id: "shutdown-session",
+              mode: @port.TaskMode::Background,
+              label: "cooperative",
+              extension_id: "shutdown-test",
+            },
+            status: @port.TaskStatus::Completed(
+              message=@kernel.Message::UserMessage(content=[
+                @kernel.Content::Text("done"),
+              ]),
+            ),
+          }
+        },
+        label="cooperative",
+      ) {
+      Ok(value) => value
+      Err(_) => fail("supervisor refused cooperative task")
+    }
+    runtime.tasks["shutdown-cooperative"] = {
+      receipt: {
+        id: "shutdown-cooperative",
+        session_id: "shutdown-session",
+        mode: @port.TaskMode::Background,
+        label: "cooperative",
+        extension_id: "shutdown-test",
+      },
+      task,
+      operation: None,
+    }
+    runtime.shutdown()
+    assert_true(runtime.supervisor is None)
+    assert_eq(runtime.tasks.length(), 0)
+  })
+}
+
+///|
+async test "managed_tasks/shutdown_deadline_reports_straggler_and_can_retry" {
+  let runtime = AgentTaskRuntime(shutdown_settle_timeout_ms=40)
+  @async.with_task_group(async fn(group) {
+    runtime.activate(group)
+    let supervisor = match runtime.supervisor {
+      Some(value) => value
+      None => fail("task supervisor was not activated")
+    }
+    let gate : @aqueue.Queue[Unit] = Queue(kind=Unbounded)
+    let started : @aqueue.Queue[Unit] = Queue(kind=Unbounded)
+    let receipt : @port.TaskReceipt = {
+      id: "shutdown-stuck",
+      session_id: "shutdown-session",
+      mode: @port.TaskMode::Background,
+      label: "stuck-worker",
+      extension_id: "shutdown-test",
+    }
+    let task = match
+      supervisor.spawn(
+        async fn() {
+          started.put(())
+          @async.protect_from_cancel(async fn() { ignore(gate.get()) })
+          @port.TaskOutcome::{
+            receipt,
+            status: @port.TaskStatus::Cancelled(reason="released"),
+          }
+        },
+        label="stuck-worker",
+      ) {
+      Ok(value) => value
+      Err(_) => fail("supervisor refused stuck task")
+    }
+    runtime.tasks[receipt.id] = { receipt, task, operation: None, }
+    ignore(started.get())
+
+    let first : Result[Unit, @error.AgentError] = Ok(runtime.shutdown()) catch {
+      error => Err(error)
+    }
+    match first {
+      Err(
+        @error.AgentError::Runtime(
+          @error.RuntimeError::InvocationFailed(detail)
+        )
+      ) => {
+        assert_true(detail.contains("managed task shutdown deadline exceeded"))
+        assert_true(detail.contains("extension=shutdown-test"))
+        assert_true(detail.contains("label=stuck-worker"))
+        assert_true(detail.contains("status=Cancelling"))
+      }
+      _ => fail("stuck background task must exceed shutdown deadline")
+    }
+
+    assert_true(runtime.closed)
+    assert_true(runtime.supervisor is Some(_))
+    assert_eq(runtime.tasks.length(), 1)
+
+    gate.put(())
+    runtime.shutdown()
+    assert_true(runtime.supervisor is None)
+    assert_eq(runtime.tasks.length(), 0)
+  })
+}

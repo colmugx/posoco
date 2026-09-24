@@ -5,6 +5,9 @@ let task_outcomes_applied_metadata_key : String = "posoco.task.applied_ids"
 let foreground_task_settle_timeout_ms : Int = 5_000
 
 ///|
+let managed_task_shutdown_settle_timeout_ms : Int = 5_000
+
+///|
 /// Applied task ids may survive a session-store restart, so a process-local
 /// counter alone cannot identify a new runtime. Use the platform entropy
 /// source and fail activation if it is unavailable.
@@ -53,6 +56,7 @@ priv struct AgentTaskRuntime {
   mut next_id : Int
   mut active_operation : AgentTaskOperation?
   foreground_settle_timeout_ms : Int
+  shutdown_settle_timeout_ms : Int
   tasks : Map[String, AgentTaskRecord]
   outcomes : Map[String, Array[@port.TaskOutcome]]
   inflight : Map[String, Array[String]]
@@ -61,6 +65,7 @@ priv struct AgentTaskRuntime {
 ///|
 fn AgentTaskRuntime::AgentTaskRuntime(
   foreground_settle_timeout_ms? : Int = foreground_task_settle_timeout_ms,
+  shutdown_settle_timeout_ms? : Int = managed_task_shutdown_settle_timeout_ms,
 ) -> AgentTaskRuntime {
   {
     supervisor: None,
@@ -70,6 +75,7 @@ fn AgentTaskRuntime::AgentTaskRuntime(
     next_id: 1,
     active_operation: None,
     foreground_settle_timeout_ms,
+    shutdown_settle_timeout_ms,
     tasks: Map::from_array([]),
     outcomes: Map::from_array([]),
     inflight: Map::from_array([]),
@@ -638,25 +644,84 @@ fn task_outcome_message(outcome : @port.TaskOutcome) -> @kernel.Message {
 }
 
 ///|
-async fn AgentTaskRuntime::shutdown(self : AgentTaskRuntime) -> Unit {
+fn AgentTaskRuntime::shutdown_straggler_detail(
+  self : AgentTaskRuntime,
+) -> String {
+  let details : Array[String] = []
+  for record in self.tasks.values() {
+    let snapshot = record.task.snapshot()
+    if !supervised_task_terminal(snapshot.status) {
+      let label = if record.receipt.label == "" {
+        "<unlabelled>"
+      } else {
+        record.receipt.label
+      }
+      details.push(
+        "extension=\{record.receipt.extension_id} label=\{label} receipt=\{record.receipt.id} status=\{repr(snapshot.status)}",
+      )
+    }
+  }
+  if details.is_empty() {
+    "<unknown managed task>"
+  } else {
+    details.join(", ")
+  }
+}
+
+///|
+/// Close task admission and bounded-settle all live managed work.
+///
+/// The deadline bounds Posoco's settlement observation only. Managed tasks
+/// remain children of the owning async TaskGroup, so a worker that ignores
+/// cooperative cancellation can still keep the structured scope alive after
+/// this method reports the offending task.
+async fn AgentTaskRuntime::shutdown(
+  self : AgentTaskRuntime,
+) -> Unit raise @error.AgentError {
   if !self.closed {
     self.closed = true
     self.scope_active = false
-    let records : Array[AgentTaskRecord] = Array::from_iter(self.tasks.values())
-    for record in records {
-      record.task.cancel()
+  }
+  let supervisor = match self.supervisor {
+    Some(value) => value
+    None => {
+      self.active_operation = None
+      return
     }
   }
-  let reaped : Array[String] = []
-  let records : Array[AgentTaskRecord] = Array::from_iter(self.tasks.values())
-  for record in records {
-    let task = record.task
-    ignore(task.wait())
-    reaped.push(record.receipt.id)
+  let settled : Result[@fuwaroid.SettleOutcome, Error] = Ok(
+    @async.protect_from_cancel(async fn() {
+      supervisor.shutdown(timeout_ms=self.shutdown_settle_timeout_ms)
+    }),
+  ) catch {
+    error => Err(error)
   }
-  for id in reaped {
-    self.reap(id)
+  let outcome = match settled {
+    Ok(value) => value
+    Err(error) =>
+      raise @error.AgentError::Runtime(
+        @error.RuntimeError::InvocationFailed(
+          "managed task shutdown settlement failed: " + error.to_string(),
+        ),
+      )
   }
-  self.supervisor = None
-  self.active_operation = None
+  match outcome {
+    @fuwaroid.Settled => {
+      let records : Array[AgentTaskRecord] = Array::from_iter(
+        self.tasks.values(),
+      )
+      for record in records {
+        self.reap(record.receipt.id)
+      }
+      self.supervisor = None
+      self.active_operation = None
+    }
+    @fuwaroid.DeadlineExceeded(_) =>
+      raise @error.AgentError::Runtime(
+        @error.RuntimeError::InvocationFailed(
+          "managed task shutdown deadline exceeded: " +
+          self.shutdown_straggler_detail(),
+        ),
+      )
+  }
 }
