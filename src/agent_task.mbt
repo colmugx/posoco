@@ -339,7 +339,7 @@ async fn AgentTaskRuntime::finish_active_operation(
         }
         match waited {
           Ok(_) => reaped.push(record.receipt.id)
-          Err(error) if error is @async.TaskCancelled =>
+          Err(error) if error is @async.WaitedTaskAlreadyCancelled =>
             reaped.push(record.receipt.id)
           Err(error) => {
             reaped.push(record.receipt.id)

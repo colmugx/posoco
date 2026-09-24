@@ -450,7 +450,7 @@ async test "managed_tasks/cancelled_waiter_does_not_cancel_background_and_late_w
         error => Err(error)
       }
       match waiter_done {
-        Err(error) if error is @async.TaskCancelled => ()
+        Err(error) if error is @async.WaitedTaskAlreadyCancelled => ()
         _ => fail("cancelled waiter must terminate with cancellation")
       }
       let first_late = group.spawn(async fn() {
@@ -692,7 +692,7 @@ async test "managed_tasks/scope_error_and_ambient_cancel_reap_background_work" {
       error => Err(error)
     }
     match scope_done {
-      Err(error) if error is @async.TaskCancelled => ()
+      Err(error) if error is @async.WaitedTaskAlreadyCancelled => ()
       _ => fail("ambient cancellation must remain observable from run_scoped")
     }
   })
