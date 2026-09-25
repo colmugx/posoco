@@ -964,7 +964,10 @@ fn emit_managed_task_shutdown_failure(
       Map::from_array([
         ("hook_point", Json::string("managed_task_shutdown")),
         ("error", Json::string(safe_error_label(error))),
-        ("stragglers", Json::string(safe_error_label(stragglers))),
+        // This value is core-generated task identity/status metadata, not
+        // arbitrary worker error text. Keep it intact so late fields such
+        // as supervisor status are not lost to the short error-label cap.
+        ("stragglers", Json::string(stragglers)),
       ]),
     ),
   )

@@ -1075,6 +1075,45 @@ async test "managed_tasks/shutdown_deadline_reports_straggler_and_can_retry" {
     assert_true(runtime.supervisor is Some(_))
     assert_eq(runtime.tasks.length(), 1)
 
+    // The observer path is the only Posoco-level diagnostic that can become
+    // visible before the owning TaskGroup eventually exits. Keep the complete
+    // task identity/status detail instead of truncating its tail.
+    let stragglers = runtime.shutdown_straggler_detail()
+    let observer = RecordingObserver()
+    emit_managed_task_shutdown_failure(
+      [observer as &@port.Observer],
+      "managed task shutdown deadline exceeded",
+      stragglers,
+    )
+    let events = observer.events()
+    assert_eq(events.length(), 1)
+    match events[0] {
+      Custom(source~, label~, data~) => {
+        assert_eq(source, "posoco.core")
+        assert_eq(label, "secondary_failure")
+        match data {
+          Object(fields) => {
+            match fields.get("hook_point") {
+              Some(String(value)) =>
+                assert_eq(value, "managed_task_shutdown")
+              _ => fail("shutdown diagnostic missing hook_point")
+            }
+            let observed = match fields.get("stragglers") {
+              Some(String(value)) => value
+              _ => fail("shutdown diagnostic missing stragglers")
+            }
+            assert_eq(observed, stragglers)
+            assert_true(observed.contains("extension=shutdown-test"))
+            assert_true(observed.contains("label=stuck-worker"))
+            assert_true(observed.contains("receipt=shutdown-stuck"))
+            assert_true(observed.contains("status=Cancelling"))
+          }
+          _ => fail("shutdown diagnostic data must be a JSON object")
+        }
+      }
+      _ => fail("expected managed-task secondary_failure diagnostic")
+    }
+
     gate.put(())
     runtime.shutdown()
     assert_true(runtime.supervisor is None)
