@@ -512,6 +512,53 @@ async test "managed_tasks/outcomes_route_to_fixed_session" {
 }
 
 ///|
+async test "managed_tasks/long_horizon_background_outcomes_are_exactly_once" {
+  let capture = TaskCapture::new()
+  let steps : Array[ScriptedModelStep] = []
+  for i = 0; i < 32; i = i + 1 {
+    steps.push(Respond(tk_stop_response("turn-\{i}")))
+  }
+  let model = ScriptedModel(steps)
+  let store = RecordingSessionStore()
+  let agent = task_test_agent(model as &@port.ModelPort, store, capture)
+  let markers : Array[String] = []
+  agent.run_scoped(async fn(agent) {
+    for turn = 0; turn < 32; turn = turn + 1 {
+      for worker = 0; worker < 2; worker = worker + 1 {
+        let handle = task_test_submit(
+          capture,
+          "long_horizon",
+          "turn-\{turn}-worker-\{worker}",
+        )
+        markers.push("[posoco-task-outcome id=\{handle.receipt().id}]")
+        ignore(handle.wait())
+      }
+      ignore(agent.run_turn(tk_user_msg("turn-\{turn}"), "long_horizon"))
+    }
+  })
+
+  assert_eq(model.call_count(), 32)
+  assert_eq(markers.length(), 64)
+  let saved = store.store["long_horizon"]
+  for marker in markers {
+    let mut count = 0
+    for message in saved.messages {
+      if task_test_has_marker(
+          { messages: [message], metadata: Map::from_array([]), },
+          marker,
+        ) {
+        count = count + 1
+      }
+    }
+    assert_eq(count, 1)
+  }
+  match saved.metadata.get(task_outcomes_applied_metadata_key) {
+    Some(Json::Array(ids)) => assert_eq(ids.length(), 64)
+    _ => fail("long-horizon session is missing applied task ids")
+  }
+}
+
+///|
 async test "managed_tasks/save_failure_retains_one_pending_outcome" {
   let capture = TaskCapture::new()
   let model = ScriptedModel([
