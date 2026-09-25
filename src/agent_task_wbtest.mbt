@@ -1094,8 +1094,7 @@ async test "managed_tasks/shutdown_deadline_reports_straggler_and_can_retry" {
         match data {
           Object(fields) => {
             match fields.get("hook_point") {
-              Some(String(value)) =>
-                assert_eq(value, "managed_task_shutdown")
+              Some(String(value)) => assert_eq(value, "managed_task_shutdown")
               _ => fail("shutdown diagnostic missing hook_point")
             }
             let observed = match fields.get("stragglers") {
