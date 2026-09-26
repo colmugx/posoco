@@ -247,15 +247,6 @@ pub(all) struct ProviderConfig {
   compact_threshold : Double?
 } derive(Eq, @debug.Debug)
 
-pub(all) struct SessionCheckpoint {
-  from_index : Int
-  messages : Array[@kernel.Message]
-  metadata : Map[String, Json]?
-} derive(Eq, @debug.Debug)
-pub fn SessionCheckpoint::equal(Self, Self) -> Bool
-pub fn SessionCheckpoint::not_equal(Self, Self) -> Bool
-pub fn SessionCheckpoint::to_repr(Self) -> @debug.Repr
-
 pub fn ProviderConfig::ProviderConfig(reasoning_effort_values~ : Array[String], context_window? : Int?, compact_threshold? : Double?) -> Self
 pub fn ProviderConfig::accepts_reasoning_effort(Self, String) -> Bool
 pub fn ProviderConfig::empty() -> Self
@@ -265,6 +256,15 @@ pub fn ProviderConfig::output(Self, &Logger) -> Unit
 pub fn ProviderConfig::to_repr(Self) -> @debug.Repr
 pub fn ProviderConfig::to_string(Self) -> String
 pub impl Show for ProviderConfig
+
+pub(all) struct SessionCheckpoint {
+  from_index : Int
+  messages : Array[@kernel.Message]
+  metadata : Map[String, Json]?
+} derive(Eq, @debug.Debug)
+pub fn SessionCheckpoint::equal(Self, Self) -> Bool
+pub fn SessionCheckpoint::not_equal(Self, Self) -> Bool
+pub fn SessionCheckpoint::to_repr(Self) -> @debug.Repr
 
 pub struct TaskHandle {
   // private fields
