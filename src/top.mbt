@@ -64,6 +64,7 @@ pub using @port {
   type UiEntry,
   type ExtensionManifest,
   type ProviderConfig,
+  type SessionCheckpoint,
   // Consumption direction: declared capability requirements and the curated
   // composed-capability view delivered at Lifecycle::on_compose.
   type Capability,
