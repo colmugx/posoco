@@ -353,6 +353,7 @@ struct BoundaryMutatingStore {}
 pub extend BoundaryMutatingStore with @port.SessionStore::{
   save,
   append_messages,
+  checkpoint,
   load,
   truncate,
 }
