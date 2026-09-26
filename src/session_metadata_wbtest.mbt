@@ -583,3 +583,43 @@ async test "t05_tool_ports_hooks_and_observers_get_json_snapshots" {
     }
   }
 }
+
+///|
+async test "automatic title comes from admitted human input before memory injection" {
+  let model = ScriptedModel([Respond(tk_stop_response("done"))])
+  let memory = ScriptedMemoryPort(
+    inbounds=[Some("the same injected memory appears in every fresh session")],
+  )
+  let store = RecordingSessionStore()
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="memory", memory=[memory]),
+      tk_ext(id="io", sessions=[store]),
+    ],
+    config=metadata_config(),
+  )
+  ignore(
+    agent.run_turn(
+      tk_user_msg("  investigate   the login\n race condition  "),
+      "title-from-human",
+    ),
+  )
+  let persisted = store.load("title-from-human") catch {
+    error => fail("persisted titled session should load: \{error}")
+  }
+  assert_true(persisted.metadata.contains(@types.SESSION_TITLE_METADATA_KEY))
+  assert_true(
+    persisted.metadata[@types.SESSION_TITLE_METADATA_KEY] ==
+    Json::string("investigate the login race condition"),
+  )
+  assert_eq(persisted.messages.length(), 3)
+  match persisted.messages[0] {
+    UserMessage(content=[Text(text), ..]) =>
+      assert_true(text.has_prefix(MEMORY_INBOUND_LEAD))
+    _ => fail("expected injected memory before the real user input")
+  }
+  assert_true(persisted.messages[1] == tk_user_msg(
+    "  investigate   the login\n race condition  ",
+  ))
+}
