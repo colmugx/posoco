@@ -66,16 +66,16 @@ graph TD
 | 端口 | 数量 | 必需？ | 干什么用的 |
 |------|------|--------|-----------|
 | `ModelPort` | 恰好一个 | ✅ 必需 | 调用 LLM；对话压缩也是它的能力 |
-| `SessionStore` | 至少一个 | ✅ 必需 | 对话记录与元数据的持久化 |
+| `SessionStore` | 任意 | 可选 | 对话记录、metadata 与 checkpoint 的持久化；缺省时 Agent 以 ephemeral 模式运行 |
 | `ToolProvider` | 任意 | 可选 | 声明并执行工具 |
 | `Observer` | 任意 | 可选 | 只读旁观：收到 turn 生命周期事件 |
 | `PipelineHook` | 任意 | 可选 | 插手流程：改写消息、审批工具调用 |
 | `MemoryPort` | 任意 | 可选 | 长期记忆存储与检索：`inbound` 在 session 首轮（transcript 为空时）按首条请求召回记忆，core 注入一次、位于首条用户输入之前，resume 后原样保留；有 provider 时 core 自动注册 `memory_search`/`memory_add` 内置工具 |
 | `Lifecycle` | 任意 | 可选 | Agent 关闭时的资源清理 |
 
-Agent 在构造时汇总所有 manifest，并做一次**快速失败（fail-fast）**校验：缺模型、
-缺存储、工具重名、命令重名，都会立刻抛 `CompositionError`——绝不存在"先凑合跑，
-运行时再报错"的情况。工具重名时错误信息会带上每个 `ToolDef.provenance`
+Agent 在构造时汇总所有 manifest，并对真正必需的能力做一次**快速失败（fail-fast）**校验：缺模型、
+工具重名、命令重名都会立刻抛 `CompositionError`。`SessionStore` 是可选 durability capability；
+未提供时 turn 仍然正常执行，只是不加载或写入跨 turn 的持久化 session。工具重名时错误信息会带上每个 `ToolDef.provenance`
 （来源标签），方便你定位是哪个扩展声明的。
 
 ## 4. run_turn 生命周期
@@ -86,18 +86,20 @@ Posoco 最核心的流程：
 ```mermaid
 flowchart TD
   START(["run_turn(input, session_id)"]) --> OBS_START["observer.on_event(TurnStarted)"]
-  OBS_START --> LOAD["session_store.load(session_id)"]
-  LOAD -->|成功| ADD_INPUT["messages.push(input)"]
-  LOAD -->|失败| FATAL
+  OBS_START --> LOAD["可选 SessionStore.load(session_id)<br/>无 store → 空 session"]
+  LOAD -->|成功 / ephemeral| ADD_INPUT["从真实 input 生成稳定 metadata title<br/>memory injection 后追加真实 input"]
+  LOAD -->|存储失败| FATAL
+  ADD_INPUT --> INPUT_CP["checkpoint: input + metadata delta<br/>无 store → no-op"]
 
-  ADD_INPUT --> COMPACT{"该压缩了吗？<br/>上下文到 90% 或手动触发"}
+  INPUT_CP --> COMPACT{"该压缩了吗？<br/>上下文到 90% 或手动触发"}
   COMPACT -->|是| CALL_COMPACT["model_port.compact(trigger)<br/>→ CompactResult（NewThread / Replace / Append）"]
   COMPACT -->|否| HOOK_BM
   CALL_COMPACT --> HOOK_BM
 
   HOOK_BM["before_model hooks（链式改写）<br/>raise HookAbort 中止 turn"] --> MODEL["model_port.chat(...)"]
 
-  MODEL -->|成功| AFTER_M["observer.on_event(ModelResponseReceived)<br/>on_post_event(ModelCompleted)"]
+  MODEL -->|成功| MODEL_CP["committed model boundary<br/>await SessionStore.checkpoint()"]
+  MODEL_CP --> AFTER_M["observer.on_event(ModelResponseReceived)<br/>on_post_event(ModelCompleted)"]
   MODEL -->|失败| FATAL
 
   AFTER_M --> HAS_TOOLS{"回复里有工具调用？"}
@@ -117,13 +119,14 @@ flowchart TD
   APPROVE --> EXEC["执行这一波工具（可并行）<br/>每个工具后 on_post_event(ToolCompleted / ToolFailed)"]
   TERM_REJECT --> FATAL
   SKIP --> MERGE
-  EXEC --> MERGE["ToolCallResult 事件（is_error 派生自 ToolOutcome）<br/>工具结果追加到 messages"]
+  EXEC --> TOOL_CP["committed tool boundary<br/>await SessionStore.checkpoint()"]
+  TOOL_CP --> MERGE["ToolCallResult 事件（is_error 派生自 ToolOutcome）<br/>工具结果追加到 messages"]
 
   MERGE --> NEXT_MODEL["继续下一轮模型调用（before_model 不重跑）"]
   NEXT_MODEL --> COMPACT
 
-  SAVE_FINAL["session_store.save()"] -->|成功| OBS_DONE["observer.on_event(TurnCompleted)"]
-  SAVE_FINAL -->|失败| FATAL
+  SAVE_FINAL["terminal finalize<br/>纯追加 → checkpoint；rewrite/compact → full save<br/>无 store → no-op"] -->|成功| OBS_DONE["observer.on_event(TurnCompleted)"]
+  SAVE_FINAL -->|存储失败| FATAL
   OBS_DONE --> RETURN(["返回 TurnResult"])
 
   FATAL["主流程失败"] --> OBS_FAIL["observer.on_event(TurnFailed)<br/>只带安全的错误类别"]
@@ -134,8 +137,7 @@ flowchart TD
 
 1. **开始**：turn 启动时先发布一次 `TurnStarted`。在此之前的失败（比如组装出错）
    不会有任何 terminal 事件。
-2. **加载历史**：从 session store 读历史消息，追加新输入。查不到就是空 session，
-   一段新对话。
+2. **加载与 admission**：有 session store 时读取历史；没有 store 时从空 session 开始。自动 title 从调用方传入的真实 user input 生成并写入 metadata，发生在 memory/hook 注入之前，因此 model-facing `UserMessage` 不会被误认为真人输入。输入与 metadata delta 作为同一个 checkpoint 提交。
 3. **压缩决策**：Posoco 决定**何时**压缩（上下文用到 90% 自动触发，或由宿主手动
    触发）；`ModelPort::compact` 决定**怎么做**（`NewThread` 会开一条新会话线程并
    重定向，原来的会话保留）。压缩不是独立端口，它由模型适配器承担。
