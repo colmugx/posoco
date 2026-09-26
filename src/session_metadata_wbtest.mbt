@@ -73,7 +73,7 @@ async test "t05_save_failure_returns_session_error_no_turn_completed" {
     Err(Session(error)) => {
       let message = error.to_string()
       assert_true(message.contains("doomed"))
-      assert_true(message.contains("final_append"))
+      assert_true(message.contains("input_checkpoint"))
       assert_true(message.contains("SessionError::Save"))
       assert_true(!message.contains("hello"))
     }
@@ -213,7 +213,7 @@ async test "t05_session_save_cause_cannot_reexpand_raw_id" {
   match result {
     Err(Session(error)) => {
       let message = error.to_string()
-      assert_true(message.contains("final_append"))
+      assert_true(message.contains("input_checkpoint"))
       assert_true(message.contains("SessionError::Save"))
       assert_true(message.contains("configured save failure"))
       assert_true(!message.contains("\n"))
