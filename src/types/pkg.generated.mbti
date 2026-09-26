@@ -12,6 +12,8 @@ pub const CONTEXT_STATE_METADATA_KEY : String = "posoco.context_state"
 
 pub const PARENT_THREAD_ID_KEY : String = "posoco.parent_thread_id"
 
+pub const SESSION_TITLE_METADATA_KEY : String = "posoco.title"
+
 // Errors
 
 // Types and methods
