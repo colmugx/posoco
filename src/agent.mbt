@@ -293,9 +293,14 @@ priv struct AgentRuntime {
   /// for each turn.
   chunk_dispatcher : Ref[ChunkDispatcher?]
   /// Per-session cursor tracking how many leading messages are already
-  /// persisted. Reset to the loaded session length on load and advanced to
-  /// the final transcript length on every successful save.
+  /// persisted. Shared with the committed-event checkpoint subscriber so
+  /// model/tool boundaries advance the same durability cursor the terminal
+  /// save path uses.
   session_cursors : Map[String, Int]
+  /// Sessions whose canonical transcript was rewritten (compact/hook rewrite)
+  /// during a run. Incremental event projection pauses until the terminal
+  /// full-save re-establishes a canonical prefix.
+  checkpoint_dirty : Map[String, Bool]
   body_recovery : Map[String, @types.Session]
 }
 
@@ -514,6 +519,13 @@ fn AgentRuntime::compose(
   control.set_abort_hook(fn(run_id) {
     task_runtime.cancel_foreground_for_run(run_id)
   })
+  let session_cursors : Map[String, Int] = Map::from_array([])
+  let checkpoint_dirty : Map[String, Bool] = Map::from_array([])
+  let checkpoint_subscriber = SessionCheckpointSubscriber(
+    agg.sessions,
+    session_cursors,
+    checkpoint_dirty,
+  )
   let event_subscriber = AgentEventSubscriber(
     agg.observers,
     chunk_dispatcher_ref,
@@ -528,7 +540,10 @@ fn AgentRuntime::compose(
     catalog,
     journal: journal as &@puppetry.RunJournal,
     contributors: [],
-    subscribers: [event_subscriber as &@puppetry.EventSubscriber],
+    subscribers: [
+      checkpoint_subscriber as &@puppetry.EventSubscriber,
+      event_subscriber as &@puppetry.EventSubscriber,
+    ],
     stream_chunks: create_agent_stream_callback(
       agg.observers,
       chunk_dispatcher_ref,
@@ -548,7 +563,7 @@ fn AgentRuntime::compose(
   }
   // Deliver composed capabilities to lifecycle contributors, in
   // registration order. Every composition gate has passed by this point
-  // (config checks, session presence, collision checks, atomic catalog), so
+  // (config checks, collision checks, atomic catalog), so
   // the view carries the final composed ports. An extension raising here
   // (e.g. CompositionError::ExtensionComposeFailed for an undeclared
   // capability) fails the composition loudly; no partial Agent is produced.
@@ -589,7 +604,8 @@ fn AgentRuntime::compose(
     start_notified: false,
     turn_active: false,
     chunk_dispatcher: chunk_dispatcher_ref,
-    session_cursors: Map::from_array([]),
+    session_cursors,
+    checkpoint_dirty,
     body_recovery: Map::from_array([]),
   }
   builtin_command_port.runtime.val = Some(runtime)
