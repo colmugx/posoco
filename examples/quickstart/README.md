@@ -30,8 +30,9 @@ Hello from the Posoco quickstart.
 ```
 
 The example keeps errors visible. `Agent` composition still raises typed
-`CompositionError` values for invalid manifests (for example, a missing model,
-missing session store, or tool collision), and the fixed model's unsupported
+`CompositionError` values for invalid manifests (for example, a missing model
+or tool collision). `SessionStore` is optional; omitting it produces an
+ephemeral Agent. The fixed model's unsupported
 `compact` operation raises `ModelError::ResponseParse` instead of silently
 falling back.
 
