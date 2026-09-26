@@ -245,15 +245,35 @@ async test "t07_save_error_emits_exactly_one_turnfailed" {
 }
 
 ///|
+///|
+priv struct ArmSessionFailureHook {
+  store : @posoco.RecordingSessionStore
+  id : String
+  mut armed : Bool
+}
+
+///|
+impl @posoco.PipelineHook for ArmSessionFailureHook with fn before_model(
+  self : ArmSessionFailureHook,
+  messages : Array[@kernel.Message],
+) -> Array[@kernel.Message] {
+  if !self.armed {
+    self.armed = true
+    self.store.fail_save(self.id)
+  }
+  messages
+}
+
+///|
 async test "t07_failed_transcript_save_is_secondary_and_preserves_primary" {
   let model = @posoco.ScriptedModel([Fail(Transport("primary network failure"))])
   let store = @posoco.RecordingSessionStore()
-  store.fail_save("failed-save")
+  let hook = ArmSessionFailureHook::{ store, id: "failed-save", armed: false, }
   let obs = @posoco.RecordingObserver()
   let agent = @posoco.Agent(
     exts=[
       @posoco.tk_ext(id="model", model=Some(model)),
-      @posoco.tk_ext(id="io", sessions=[store], observers=[obs]),
+      @posoco.tk_ext(id="io", sessions=[store], observers=[obs], hooks=[hook]),
     ],
     config=err_config(),
   )
