@@ -4,6 +4,12 @@
 // concept name "Canonical*" has been dropped in favour of the unqualified
 // name (`Message`, `Content`, ...) so ext authors never see a "Canonical"
 // prefix — one system, one protocol.
+///|
+/// Stable metadata key for Agent-derived automatic session titles. Product
+/// UIs and SessionStore adapters may read this without inspecting transcript
+/// roles or extension-specific injected messages.
+pub const SESSION_TITLE_METADATA_KEY = @types.SESSION_TITLE_METADATA_KEY
+
 pub using @types {
   type ChatOptions,
   type StreamMode,
