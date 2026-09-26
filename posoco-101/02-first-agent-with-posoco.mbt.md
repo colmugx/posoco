@@ -275,7 +275,7 @@ async test "first_agent_runs_one_turn" {
 
 构造器会做几道 fail-fast 检查（在组装时就 raise，不是等到运行）：
 
-- **至少一个 SessionStore**：没有 store 的 Agent 无法持久化，直接拒绝组装。
+- **SessionStore 是可选的**：没有 store 时 Agent 仍可运行，但不会持久化跨 turn 的 session 状态。
 - **恰好一个 ModelPort**：一个没有（`MissingModel`）或声明了两个
   （`MultipleModels`）都拒绝——多模型路由必须收进一个 meta 扩展里做，
   第 05 篇讲 Routing 时会看到为什么。
