@@ -40,7 +40,6 @@ fn messages_prefix_equal(
   true
 }
 
-
 ///|
 fn session_metadata_equal(
   left : Map[String, Json],
@@ -101,7 +100,11 @@ fn automatic_session_title(input : @kernel.Message) -> String? {
     }
   }
   let title = out.to_string()
-  if title.length() == 0 { None } else { Some(title) }
+  if title.length() == 0 {
+    None
+  } else {
+    Some(title)
+  }
 }
 
 ///|
@@ -231,29 +234,26 @@ async fn AgentRuntime::run_turn_via_puppet(
   // Session display state is admitted from the caller's real input before
   // memory/hooks can inject additional model-facing UserMessages.
   let current_metadata = session_metadata_for_admission(session, input)
-  let admission_metadata : Map[String, Json]? =
-    if session_metadata_equal(current_metadata, session.metadata) {
-      None
-    } else {
-      Some(current_metadata)
-    }
+  let admission_metadata : Map[String, Json]? = if session_metadata_equal(
+      current_metadata,
+      session.metadata,
+    ) {
+    None
+  } else {
+    Some(current_metadata)
+  }
   let cursor = match self.session_cursors.get(session_id) {
     Some(value) => value
     None => 0
   }
-  let admission_tail =
-    if cursor < messages.length() {
-      snapshot_messages(messages[cursor:].to_owned())
-    } else {
-      []
-    }
+  let admission_tail = if cursor < messages.length() {
+    snapshot_messages(messages[cursor:].to_owned())
+  } else {
+    []
+  }
   if !admission_tail.is_empty() || admission_metadata is Some(_) {
     self.checkpoint_sessions_all(
-      session_id,
-      cursor,
-      admission_tail,
-      admission_metadata,
-      "input_checkpoint",
+      session_id, cursor, admission_tail, admission_metadata, "input_checkpoint",
     )
   }
 
@@ -857,37 +857,32 @@ async fn AgentRuntime::save_turn_transcript(
   let metadata = self.task_runtime.metadata_with_applied_outcomes(
     session_id, metadata,
   )
-  let metadata_checkpoint : Map[String, Json]? =
-    if session_metadata_equal(metadata, base_metadata) {
-      None
-    } else {
-      Some(metadata)
-    }
+  let metadata_checkpoint : Map[String, Json]? = if session_metadata_equal(
+      metadata, base_metadata,
+    ) {
+    None
+  } else {
+    Some(metadata)
+  }
   let cursor = match self.session_cursors.get(session_id) {
     Some(n) => n
     None => 0
   }
-  let operation =
-    if self.task_runtime.has_inflight(session_id) ||
-      self.checkpoint_dirty.contains(session_id) {
-      "final_save"
-    } else {
-      transcript_save_operation(transcript, initial_messages, current_turn_start)
-    }
+  let operation = if self.task_runtime.has_inflight(session_id) ||
+    self.checkpoint_dirty.contains(session_id) {
+    "final_save"
+  } else {
+    transcript_save_operation(transcript, initial_messages, current_turn_start)
+  }
   if operation == "final_append" {
-    let tail =
-      if cursor < final_messages.length() {
-        snapshot_messages(final_messages[cursor:].to_owned())
-      } else {
-        []
-      }
+    let tail = if cursor < final_messages.length() {
+      snapshot_messages(final_messages[cursor:].to_owned())
+    } else {
+      []
+    }
     if !tail.is_empty() || metadata_checkpoint is Some(_) {
       self.checkpoint_sessions_all(
-        session_id,
-        cursor,
-        tail,
-        metadata_checkpoint,
-        "final_append",
+        session_id, cursor, tail, metadata_checkpoint, "final_append",
       )
     }
   } else {
