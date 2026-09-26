@@ -63,13 +63,15 @@ fn automatic_session_title(input : @kernel.Message) -> String? {
   let raw = match input {
     UserMessage(content~) => {
       let buf = StringBuilder()
+      let mut has_text = false
       for item in content {
         match item {
           Text(text) => {
-            if buf.length() > 0 {
+            if has_text {
               buf.write_char(' ')
             }
             buf.write_string(text)
+            has_text = true
           }
           Image(..) => ()
         }
