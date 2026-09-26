@@ -66,8 +66,9 @@ pub extend EchoModel with @posoco.Extension::{extension_id, manifest}
 - 两个扩展注册了同名工具时，`Agent` 在构造时立即抛
   `CompositionError::ToolCollision`——不存在"后声明覆盖前声明"。
 
-把扩展直接交给 `Agent` 即可。Agent 恰好需要一个模型和一个 session store；
-工具、observer、hook、memory、UI、command、lifecycle 都是可选的：
+把扩展直接交给 `Agent` 即可。Agent 恰好需要一个模型；`SessionStore`、工具、
+observer、hook、memory、UI、command、lifecycle 都是可选的。没有 store 时 Agent
+以 ephemeral 模式运行，不做跨 turn 的 session 持久化：
 
 ```moonbit
 let model = EchoModel::{  }
