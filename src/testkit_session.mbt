@@ -310,22 +310,16 @@ pub impl @port.SessionStore for RecordingSessionStore with fn checkpoint(
         Some(value) => snapshot_session(value.messages, value.metadata)
         None => { messages: [], metadata: Map::from_array([]), }
       }
-      if checkpoint.from_index != session.messages.length() {
-        Err(Conflict(
-          "checkpoint cursor mismatch: expected \{checkpoint.from_index}, actual \{session.messages.length()}",
-        ))
-      } else {
-        let merged = session.messages.copy()
-        for message in checkpoint.messages {
-          merged.push(snapshot_message(message))
-        }
-        let metadata = match checkpoint.metadata {
-          Some(value) => snapshot_metadata(value)
-          None => session.metadata
-        }
-        self.store[id] = { messages: merged, metadata, }
-        Ok(())
+      let merged = session.messages.copy()
+      for message in checkpoint.messages {
+        merged.push(snapshot_message(message))
       }
+      let metadata = match checkpoint.metadata {
+        Some(value) => snapshot_metadata(value)
+        None => session.metadata
+      }
+      self.store[id] = { messages: merged, metadata, }
+      Ok(())
     }
   }
   self.record(OpCheckpoint(id~, checkpoint=checkpoint_copy, result~), result)
