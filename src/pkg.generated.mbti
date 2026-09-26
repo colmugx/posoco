@@ -11,9 +11,9 @@ import {
 }
 
 // Values
-pub const SESSION_TITLE_METADATA_KEY : String = "posoco.title"
-
 pub const MEMORY_INBOUND_LEAD : String = " ## Memory\n\n The following is memory recalled for this session, for your information. It may be stale or incomplete — verify against the current conversation before relying on it."
+
+pub const SESSION_TITLE_METADATA_KEY : String = "posoco.title"
 
 pub fn agent_config(max_tool_rounds? : Int?, temperature? : Double?, max_output_tokens? : Int?, model_context_window? : Int?, compact_threshold? : Double?, system_prompt? : String?, memory_inbound_timeout_ms? : Int?) -> AgentConfig
 
@@ -531,6 +531,8 @@ pub using @kernel {type RunId}
 pub using @error {type RuntimeError}
 
 pub using @types {type Session}
+
+pub using @port {type SessionCheckpoint}
 
 pub using @error {type SessionError}
 
