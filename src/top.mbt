@@ -8,7 +8,7 @@
 /// Stable metadata key for Agent-derived automatic session titles. Product
 /// UIs and SessionStore adapters may read this without inspecting transcript
 /// roles or extension-specific injected messages.
-pub const SESSION_TITLE_METADATA_KEY = @types.SESSION_TITLE_METADATA_KEY
+pub const SESSION_TITLE_METADATA_KEY : String = @types.SESSION_TITLE_METADATA_KEY
 
 pub using @types {
   type ChatOptions,
