@@ -126,11 +126,6 @@ impl SessionStore with fn checkpoint(
       )
     Some(metadata) => {
       let session = self.load(id)
-      if checkpoint.from_index != session.messages.length() {
-        raise Conflict(
-          "session_id='\{id}', operation='checkpoint', expected_index=\{checkpoint.from_index}, actual_index=\{session.messages.length()}",
-        )
-      }
       let merged = session.messages.copy()
       for msg in checkpoint.messages {
         merged.push(msg)
