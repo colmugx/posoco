@@ -15,9 +15,9 @@ example can be checked and run without fetching Posoco from a registry.
 From the repository root:
 
 ```bash
-rtk moon -C examples/quickstart check --target native --output-json
-rtk moon -C examples/quickstart test --target native --output-json -f 'quickstart_persists*'
-rtk moon -C examples/quickstart run --target native .
+moon -C examples/quickstart check --target native --output-json
+moon -C examples/quickstart test --target native --output-json -f 'quickstart_persists*'
+moon -C examples/quickstart run --target native .
 ```
 
 The focused test also verifies that the saved session contains both the user
