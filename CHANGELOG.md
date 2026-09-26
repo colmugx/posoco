@@ -25,6 +25,26 @@ unchanged: without a pending cancellation the pause is a no-op yield. Pinned by
 
 ## Unreleased
 
+### Improved: coherent session checkpoints and optional persistence
+
+- `SessionStore` is now optional at Agent composition. With no store, Agent
+  runs ephemerally: turns execute normally, while cross-turn session load/save
+  is skipped.
+- Added `SessionCheckpoint` and `SessionStore::checkpoint`, which persist an
+  append-only message delta together with an optional metadata replacement.
+  Existing stores remain compatible through a default implementation.
+- Agent derives the stable `posoco.title` metadata value from the first
+  admitted human input before memory or hook injection. Model-facing
+  `UserMessage` values are therefore no longer treated as proof of human
+  provenance for session naming.
+- The admitted input is checkpointed before model execution, and committed
+  model/tool boundaries synchronously await session checkpoints. Transcript
+  rewrites pause incremental persistence and fall back to a terminal full
+  save.
+- Terminal append persistence now carries metadata changes through the same
+  checkpoint operation instead of silently dropping metadata on
+  `append_messages`.
+
 ### Agent 受管任务能力和结构化生命周期
 
 Core 新增 Capability::Tasks、CompositionView::tasks()、TaskSpec、
