@@ -112,7 +112,7 @@ let result = agent.run_turn(input, "session_1")
 - `MultipleModels`——多个扩展直接贡献 `ModelPort`（多 model 路由应由
   meta-ext 如 `posoco-ext-llm` 在内部解决，而非核心）
 - `ToolCollision`——两个扩展注册了同名工具（没有 last-wins）
-- `EmptyPort("SessionStore")`——没有扩展贡献必需的 port
+- `SessionStore` 是可选的；未提供时 Agent 以 ephemeral 模式运行，不做持久化 session 写入
 
 已发布 `TurnStarted` 的 turn 恰好发布一个 terminal event：成功为
 `TurnCompleted`，任何主路径失败为 `TurnFailed`。
