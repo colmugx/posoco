@@ -145,5 +145,5 @@ async test "committed model and tool steps advance the durable cursor" {
       _ => ()
     }
   }
-  inspect(cursors, content="[0, 1, 2, 3]")
+  debug_inspect(cursors, content="[0, 1, 2, 3]")
 }
