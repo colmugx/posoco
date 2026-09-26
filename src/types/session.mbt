@@ -34,6 +34,13 @@ pub const PARENT_THREAD_ID_KEY = "posoco.parent_thread_id"
 pub const CONTEXT_STATE_METADATA_KEY = "posoco.context_state"
 
 ///|
+/// Stable automatic display title derived by Agent from the first admitted
+/// human input, before memory/hooks can inject model-facing UserMessages.
+/// Explicit product/user naming remains a separate concern; consumers can
+/// prefer their explicit name key and fall back to this title.
+pub const SESSION_TITLE_METADATA_KEY = "posoco.title"
+
+///|
 pub(all) enum ContextReadingSource {
   Measured
   Estimated
