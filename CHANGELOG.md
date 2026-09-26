@@ -1,5 +1,491 @@
 # Changelog
 
+## 0.16.2
+
+### Fixed: task timeout classification survives adapter cancellation masking
+
+`AgentTaskRuntime::execute` now wraps each task's `run` in a
+cancellation-masking guard: `@async.pause()` on both the raise and the return
+path of the runner (the same dual-guard pattern the extension-side background
+runners already carry). An adapter that catches the incoming cancellation and
+raises a typed error can no longer overwrite the task group's recorded
+`TimeoutError` — TimedOut no longer degrades to Failed — and an adapter that
+swallows the cancellation into a returned value no longer records a
+completed-with-garbage task. Genuine business errors and normal completion are
+unchanged: without a pending cancellation the pause is a no-op yield. Pinned by
+`src/agent_task_wbtest.mbt` (`managed_tasks/timeout_survives_masked_raise`,
+`managed_tasks/timeout_survives_masked_return`,
+`managed_tasks/business_error_survives_cancel_guard`,
+`managed_tasks/plain_completion_unaffected_by_guard`).
+
+### Notes
+
+- Removed the unused `colmugx/fuwaroid` dependency declaration from `moon.mod`
+  (0.16.1 consumers pulled it into their dependency graph without linking it).
+
+## Unreleased
+
+### Agent 受管任务能力和结构化生命周期
+
+Core 新增 Capability::Tasks、CompositionView::tasks()、TaskSpec、
+TaskMode、Tasks、TaskHandle、TaskReceipt、TaskOutcome、TaskStatus 和
+TaskSubmitError，并新增泛型 Agent::run_scoped(body : async (Agent) -> X)。
+TaskSpec.run 返回 @kernel.Message；任务由 Agent scope 持有，Foreground 绑定
+当前 operation，Background 绑定 Agent/session scope。Background outcome 在
+同一 session 的下一次普通 run_turn 中投递；没有自动唤醒、自动 model turn
+或 durable execution replay。
+
+这是未发布变更，版本号不变。Capability 是可穷举的 pub(all) enum；新增
+Tasks 变体会使下游对 Capability 的穷举 match 需要增加 Tasks 分支。下游若
+直接构造 CompositionView::resolve，可继续使用其默认的 tasks? 参数；需要
+任务能力的 Lifecycle contributor 必须在 manifest.requires 声明 Tasks，并在
+on_compose 捕获 view.tasks()。旧 kit-actor 的 raw TaskGroup、bind_parent、
+flush 和独立 pending registry 没有兼容保证，迁移说明见
+docs/kit-actor/core-runtime-handoff.md。
+
+**Retroactive note (appended in 0.16.2):** this section shipped as 0.16.0.
+Adding the `Tasks` variant to the exhaustively matchable `pub(all) enum
+Capability` is itself a breaking surface for downstream exhaustive matches (a
+0.x minor-version breakage): every downstream `match` over `Capability` needs
+a `Tasks` arm.
+
+## 0.14.5
+
+### `StreamAccumulator::tool_calls()` read accessor
+
+Add `StreamAccumulator::tool_calls()` returning immutable `ToolCallSnapshot`
+values (`id` / `name` / `arguments_json`; a fresh array per call) — restores
+the read path closed by 0.14.4's field privatization while the write path
+stays closed.
+
+## 0.14.4
+
+### Breaking: the pre_tool hook chain finalizes BEFORE authorization — rewrites are catalog-validated, consent binds to the exact call, and `call_id` is never rewriteable (2026-09-04)
+
+Old order in `AwaitingTools`: parallel waves were scheduled from the model's
+original calls first (owner, execution policy, barriers), then hooks ran
+per-wave and could rewrite the call — so a rewritten tool executed with the
+original tool's owner and wave policy, and a call that had already earned user
+consent could be rewritten afterwards and still execute on that grant.
+
+New order, per pending call: every hook runs first, each over its own deep
+snapshot of the call (a hook that retains or mutates its input can no longer
+reach the reducer's pending effect or an earlier consent snapshot); the whole
+chain finishes; then catalog membership and argument-schema validation run on
+the FINAL call, the owner is re-resolved for the final tool name, and the
+reducer's pending effect payload is replaced with the finalized call — so
+correlation checks, the transcript, and completion events all carry the
+canonical request. Only then are waves scheduled and executed. Hook
+rejections, `UnknownTool`, and `SchemaMismatch` (now checked against the
+rewritten call) fold through the normal reducer path before any side effect
+launches.
+
+- A hook that changes `call_id` rejects the whole run (`HookRejected`:
+  `"pre_tool_hook changed call_id for a pending tool call"`) — the call id is
+  the reducer's correlation identity, never a rewriteable part of the request.
+- `ApproveAfterConsent` authorizes exactly the call it carries. A later
+  consent may intentionally authorize a new call; a later plain `Approve` that
+  changes the call after consent invalidates the grant — the call resolves as
+  `NotExecuted(RejectedByHook("tool call changed after consent; authorization
+  was not reused"))`.
+- `Reject` still does not short-circuit (a later consent outranks it), and
+  `Defer` keeps its frozen terminal-reject wording until M5.
+
+### Observers see the canonical executed call on completion events
+
+`KernelEvent::ToolCompleted` carries the full post-rewrite `ToolCall` instead
+of a bare `call_id`; the agent projection no longer looks the model's original
+pending call back up. Pending/batch-start events still report the model's
+original request, while completion events (`tool_call_result`) report the call
+that actually reached the host — including `NotExecuted` outcomes, which carry
+the finalized name and arguments. Durable diagnostic payloads intentionally
+exclude call arguments, and `NotExecuted(RejectedByHook)` summaries no longer
+expand the full reason text.
+
+### Breaking: provider stream chunks are validated before they reach any sink
+
+- `Usage::validate` (kernel) is the single canonical usage invariant: every
+  field is optional because providers omit different dimensions, but a
+  reported count must be non-negative. `StreamChunk::validate` (types) applies
+  it to `Usage` chunks and rejects negative tool-call indexes.
+- `StreamAccumulator` fields are private (it was `pub(all)` — any package
+  could mutate the live buffers mid-stream), `push` now raises
+  `ModelError::ResponseParse` on invalid chunks and on sparse tool-call
+  indexes (a new index must be exactly the next contiguous 0-based index;
+  existing indexes may be revisited), and `to_completion` validates the
+  accumulated usage even when `total_tokens` is absent (the old projection
+  silently discarded a negative field).
+- The executor wraps the host chunk callback with the same checks: an invalid
+  chunk, and every chunk after it, is never forwarded to the Posoco
+  sink/observer/accumulator/reducer; when the provider call returns, the
+  effect completes as `ModelFailed(Parse("stream chunk validation failed:
+  ..."))`. `HostChunkCallback` is a non-raising ABI, so a malformed chunk
+  cannot interrupt provider-owned work. A host raise (transport error,
+  cancellation) still classifies as an execution error — a malformed callback
+  observed before the raise never reclassifies it.
+- `reduce_model_completed` re-validates usage on its direct-input path, so a
+  caller bypassing the host runtime cannot make `observed_total_tokens` move
+  backwards.
+
+**Migration (breaking):** SSE-style model adapters that call
+`StreamAccumulator::push` directly (posoco-ext-openai, posoco-ext-zai) must
+now handle `ModelError::ResponseParse`; struct-literal construction or field
+access on `StreamAccumulator` no longer compiles.
+
+### Breaking: `Agent::control()` returns the root-package `AgentControl`; `RuntimeControl` is deleted
+
+The old `@runtime.RuntimeControl` exposed a borrowed internal
+`puppetry.Mailbox` in its public shape — an internals leak across the product
+boundary. The handle now lives in the root package with a private constructor:
+hosts obtain it only from `Agent::control()` and see the same surface
+(`active_run_id` / `active_turn_id` / `enqueue_follow_up` / `abort_active` /
+`pending_follow_ups`); `take_follow_up` was framework-only and is now private
+(the Agent drains follow-ups inside `run_turn`). The `runtime` package no
+longer imports `internal/puppetry`.
+
+`EnqueueOutcome` gains `RejectedQueueFailure(reason~ : String)`: a closed or
+failing follow-up queue is no longer misreported as `RejectedQueueFull`; the
+reason carries the sanitized queue error.
+
+**Migration (breaking):** replace `@runtime.RuntimeControl` references with
+`AgentControl` obtained from `Agent::control()`, and add a
+`RejectedQueueFailure` arm to every `EnqueueOutcome` match.
+
+### `run_turn` is re-entrancy guarded; transcript-save failures are observable
+
+A second concurrent `run_turn` on one Agent raises
+`Runtime(InvocationFailed("agent turn busy"))` — the synchronous guard is
+acquired before the first await and covers the initial turn plus every
+follow-up drained by that call, and is released when the call leaves with a
+result or an error. Terminal-transcript save failures are no longer silently
+swallowed on the failed-turn path: the existing `secondary_failure` observer
+event fires (`hook_point="failed_turn_transcript_save"`) with the sanitized
+session label, the operation (`final_append` / `final_save`), and the error
+category; the original raise still propagates unchanged.
+
+## 0.14.3
+
+### Breaking: `MemoryPort` inbound redesign — `briefing` becomes `inbound(session_id, request)`, `MemoryEntry`/`MemoryQuery` deleted, injection gated on an empty transcript, and core auto-registers `memory_search`/`memory_add` (2026-09-01)
+
+The port's inbound slot no longer takes only a session id: `inbound` now also
+receives the user's first request text, so a provider can recall memory that is
+relevant to what the session is actually about instead of returning a static
+brief. The storage surface simplifies accordingly — `MemoryEntry` and
+`MemoryQuery` are gone; `store` takes `content` + `metadata` and returns the
+provider id or ticket, `search` takes a free-text `query` + `top_k` and returns
+the provider-rendered text (`None` = no hits), and `MemoryError` gains an
+`Inbound(String)` variant.
+
+```moonbit
+pub(open) trait MemoryPort {
+  async fn inbound(Self, session_id~ : String, request~ : String) -> String? raise @error.MemoryError
+  async fn store(Self, content~ : String, metadata~ : Map[String, Json]) -> String raise @error.MemoryError
+  async fn search(Self, query~ : String, top_k? : Int) -> String? raise @error.MemoryError
+  async fn delete(Self, id : String) -> Unit raise @error.MemoryError
+}
+```
+
+Injection semantics changed with it. `MEMORY_BRIEFING_LEAD` is replaced by
+`MEMORY_INBOUND_LEAD`, and the old marker-line gate is gone: core calls
+`inbound` at most once per session per process, ONLY when the loaded transcript
+is empty (the session's first turn), passing the session id and the user's
+first request. All providers empty/failed → no message at all; any content →
+ONE user message (`MEMORY_INBOUND_LEAD` + provider bodies joined verbatim in
+registration order) inserted before the real first user input, frozen into the
+persisted transcript — never rewritten, never re-read on resume; an empty or
+failed result still spends the attempt. Provider failures and per-provider
+timeouts surface as `Custom(source="posoco.core", label="secondary_failure")`
+observer events (hook points `memory_inbound` / `memory_search`) and never fail
+the turn. The internal `MemoryBriefingHook` is deleted — injection is an
+Agent-internal pre-pump step, and no marker-string matching remains in core.
+New `AgentConfig.memory_inbound_timeout_ms : Int?` bounds each provider call
+(`None` = no core budget; the provider self-limits).
+
+When any extension contributes a `MemoryPort`, core auto-registers two builtin
+agent tools: `memory_search` (fans out over all providers, results appended in
+registration order, all-empty → "No matching memory.") and `memory_add`
+(`content` + optional `source` = manifest id; omitted source saves to every
+connected provider; receipt lines `<source>: <id|ticket>`). They go through the
+same fail-fast `ToolCollision` as extension tools — an extension that also
+declares a tool named `memory_search` or `memory_add` fails composition, so
+providers should drop their generic memory tools and keep specialized ones.
+There is no `memory_delete` tool; `delete` stays a passive port slot for
+product-side logic.
+
+**Migration (breaking):**
+
+- `MemoryPort` implementors: rename `briefing` → `inbound` (now also receives
+  the first request text), switch `store`/`search` to the new signatures, and
+  render your own `search` output — core no longer formats entries.
+- Extensions that shipped their own generic `memory_search`/`memory_add`
+  tools: drop them (core now provides both) or rename them.
+- Anything matching on `@posoco.MEMORY_BRIEFING_LEAD` has nothing to match
+  anymore — the injected message is never rewritten or re-derived, so no
+  marker is needed.
+
+**Testkit**: `ScriptedMemoryPort` plays `inbounds : Array[String?]` in call
+order (exhausted → `None`) and records `call_count` / `received_sessions` /
+`received_requests` / `received_stores` (content+metadata pairs) /
+`received_searches` ((query, top_k) pairs) / `received_deletes`; store tickets
+are `"scripted-N"` and `search_script` plays search output in order.
+
+### Breaking: `InvocationScope` gains a context-pressure advisory — struct literals must add `pressure`
+
+Posoco already resolves the effective `context_window` / `compact_threshold`
+per turn (host config > provider report > 0.88 default) and tracks the
+latest verified occupancy (`last_context_tokens`). `Puppet::handle_compact`
+now attaches all three to the compact `InvocationScope`, so modelports size
+their compact strategy from real numbers instead of re-estimating from
+characters. The chat effect path attaches `None`.
+
+```moonbit
+pub(all) struct ContextPressure {
+  window_tokens : Int?      // resolved ceiling; None = unknown
+  occupancy_tokens : Int?   // latest model step's verified total; None = no reading
+  compact_threshold : Double
+}
+```
+
+Migration: every `InvocationScope` struct literal must add the field
+(`pressure: None` where no reading applies); `tk_scope` gained an optional
+`pressure?` parameter. The advisory is read-only input —
+`ModelPort::chat` / `ModelPort::compact` signatures are unchanged, and
+modelports that ignore it behave exactly as before.
+
+## 0.14.0
+
+### Breaking: `MemoryPort` is now the long-term-memory storage & retrieval port — original `store`/`search`/`delete` restored, plus one new inbound slot (`briefing`) injected once per session by core
+
+The old `MemoryPort` kept the durable surface (`store`/`search`/`delete`) but
+coupled core to a per-call retrieval model that had no correct consumer: the
+built-in `MemoryRetrievalHook` re-searched on every turn and rewrote the
+injected system message in place — a resumed session got a *different* memory
+section under history that was derived under the old one (dangling
+references), and the rewrite poisoned the provider prefix cache for the whole
+conversation.
+
+The redesigned port keeps the domain intact and adds exactly one slot for
+getting memory INTO the conversation:
+
+```moonbit
+pub(open) trait MemoryPort {
+  async fn briefing(Self, session_id : String) -> String? raise MemoryError
+  async fn store(Self, entry : MemoryEntry) -> String raise MemoryError
+  async fn search(Self, query : MemoryQuery) -> Array[MemoryEntry] raise MemoryError
+  async fn delete(Self, id : String) -> Unit raise MemoryError
+}
+```
+
+`store`/`search`/`delete` are the durable record surface — the provider's own
+tools, products, and future generic tooling all route through them, so the
+operation lands in whichever memory system is plugged in (nowledge-mem today,
+any other scheme tomorrow) without the caller knowing which one. When a write
+becomes durable is the provider's business: a provider may hand back a
+pending ticket and defer.
+
+`briefing` is the inbound slot. The provider owns ALL of its content —
+format, envelope, provenance markup (devkit's `context_envelope` renders
+XML-style envelopes for those who want them); core never touches the returned
+text. Core owns timing, placement, and stability:
+
+- Declaring `memory` in an extension manifest is all a host does. Core's
+  internal `MemoryBriefingHook` (replaces the public `MemoryRetrievalHook`)
+  injects the briefings as ONE **user-role** message directly after the
+  leading system prompt (at the front without one), opened by core's fixed
+  lead line — the one sentence of memory-specific text core ever produces
+  (`pub const MEMORY_BRIEFING_LEAD`,
+  `"The following is memory about the current work:"`). Provider bodies
+  follow verbatim, in registration order: no escaping, no wrapping.
+- **Once per session lifetime, frozen into the transcript.** Later turns,
+  tool rounds, and resumed processes all see the same message
+  byte-for-byte: the lead line in the persisted transcript is the durable
+  half of the gate (and the format-neutral marker extensions can match on),
+  a per-session attempted set the in-process half (empty and failed reads
+  spend the attempt — a resumed process retries once). The Agent hands the
+  hook the running session id each turn, so the gate cannot mis-order
+  against the pump.
+- **Prefix-cache safe**: with the briefing message already present the hook
+  returns the same array instance (no rewrite, no journal noise).
+- `briefing` runs concurrently across providers (`@async.all`); a raise is
+  swallowed into the existing `secondary_failure` observer event
+  (`hook_point="memory_briefing"`), never aborting the turn.
+
+**Migration (breaking):**
+
+- `MemoryPort` implementors: keep your `store`/`search`/`delete`
+  implementations (same signatures as 0.13.x) and add the `briefing` slot
+  returning the complete message body you want the model to see at session
+  open. `source_name` is gone — self-describe inside your briefing body
+  instead.
+- `MemoryQuery` is restored unchanged (`query`/`top_k`/`threshold`/`filter`);
+  `MemoryRetrievalHook` and `NoopMemoryPort` stay removed. The injected
+  memory moved from a `## Any Memory About This Work` system section to the
+  lead-lined user message described above; extensions that need to recognize
+  the injected message match on `@posoco.MEMORY_BRIEFING_LEAD`.
+- Extensions pinned to `colmugx/posoco@0.13.x` keep compiling unchanged.
+
+**posoco-ext-nowledge-mem** now implements the port in full:
+
+- `manifest.memory = [self]` again; `briefing` returns the extension's own
+  `<nmem-context type="memory" trust="false">` envelope around the
+  working-memory snapshot (one 5s read, failures recorded on
+  `mem.last_error`) — core owns position, idempotency, and resume stability.
+- `store`/`delete` are the D8 write-after queue (the public
+  `queue_memory_add`/`queue_memory_delete` methods fold into the slots), and
+  `memory_add`/`memory_delete` route through the port. `delete` of a
+  `pending:` ticket now drops the queued add locally — the old direct-call
+  `memory_delete` tool would have sent the ticket id to the server.
+- `search` is real retrieval against the server's `memory_search` surface
+  (`top_k` → `limit`, `filter` carries `mode`/`labels`), and the
+  `memory_search` tool fronts it: entries render one line each with the
+  parsed array on the `structured` channel.
+
+**Testkit**: `ScriptedMemoryPort(briefings~, search_results? = [])` fake
+(`call_count`/`received_sessions`/`received_stores`/`received_searches`/
+`received_deletes`) for agent-level tests of the whole port contract.
+
+## Unreleased
+
+### Breaking: openai-compatible speaks the standard wire; opencode-zen self-hosts its GLM flavor (2026-09-03)
+
+Vendor-defined request fields now live in the vendor extensions that define
+them. `posoco-ext-openai-compatible` emits only standard OpenAI Chat
+Completions fields (the sole reasoning surface is the top-level
+`reasoning_effort` string); the GLM-flavored `thinking` object and the
+`reasoning_content` assistant echo moved into `posoco-ext-opencode-zen`, whose
+upstream gateway requires them. Zen users' request bytes are unchanged; strict
+standard endpoints (AMD Radeon Cloud 400s on `thinking`) now work through the
+generic adapter.
+
+**posoco-ext-openai-compatible** (0.1.1 → 0.2.0)
+
+- Requests never send `thinking` (not a standard parameter) and assistant
+  messages never echo `reasoning_content` (standard messages carry no
+  reasoning back; this also keeps prompts prefix-cache friendly).
+- `reasoning_effort` is sent verbatim when a level is selected and omitted
+  otherwise; omission means "endpoint default", which is also what "off" and
+  the legacy "on" settings word now map to (the standard has no force-on
+  field).
+- `OpenAICompatibleConfig` drops the `thinking : Bool` field; setups without
+  declared levels no longer advertise an off/on picker — declare
+  `reasoning_effort(s)` levels to expose one.
+- Known limitations (README): servers returning reasoning text under the
+  OpenRouter/Radeon `reasoning` spelling get no reasoning display (vendor
+  spelling, vendor extension's job); gateways that silently drop unknown
+  parameters (Radeon) may not report streaming usage.
+
+**posoco-ext-opencode-zen** (0.1.1 → 0.2.0)
+
+- Self-hosts the full chat wire (encode, decode, HTTP/SSE loop, error
+  classification, wire log) previously reused from
+  `posoco-ext-openai-compatible`; the dependency is replaced by
+  `posoco-kit-chat-completions`.
+- New public types `OpenCodeZenConfig` and `OpenCodeZenModelPort`
+  (`zen_static_catalog`/`zen_model_catalog` now take the local config type).
+- Error-message prefixes changed from `openai-…` to `opencode-zen …`; the
+  retry matcher substrings (`SSE truncated`, `stage=read_stream`,
+  `status=503`) are unchanged.
+
+**Migration (breaking):**
+
+- Pin both packages at `0.2.0` (cetas-core updated in this change).
+- Drop `thinking~` from direct `OpenAICompatibleConfig` constructions; code
+  that needs the GLM thinking object or the reasoning echo must use
+  `posoco-ext-opencode-zen`.
+- Custom providers through the generic adapter lose the off/on reasoning
+  toggle unless they declare effort levels.
+
+### Bounded, pruned file tools: grep output modes + caps, glob limit + mtime sort, shared ignore infrastructure
+
+The file tools (`grep`, `glob`) no longer emit unbounded output and both prune
+hidden entries and common ignore directories, so the worst-case turn cost is
+capped and everyday searches stop pulling in `.git`, `node_modules`, `_build`,
+and build-artifact duplicates.
+
+**posoco-ext-grep**
+
+- New optional arguments: `output_mode` (`content` (default) |
+  `files_with_matches` | `count`), `case_insensitive` (bool), `max_matches`
+  (entry cap, default 100). Content mode now groups matches by file
+  (`Found N matches in M files:` + `  L<n>: <line>` entries) instead of
+  repeating `path:` on every line. Any cut result ends with a
+  `… N more …` footer; the structured payload gains `truncated`.
+- Lines longer than 2000 characters are truncated with a marker (matching
+  read), and the body is additionally capped at 100 KB.
+- Literal matching is now explicit cross-target: native always was
+  `contains`-based; js pins rg with `-F` instead of rg's regex default, so
+  patterns like `foo(` behave the same everywhere. Empty patterns are
+  rejected loudly.
+- Hidden entries and ignore directories are pruned on both engines; binary
+  files (by extension, NUL sniff, or failed decode) and unreadable files are
+  skipped instead of aborting the whole search.
+- js engine ladder: ripgrep first — PATH via `Bun.which` plus the common
+  Homebrew prefixes, each candidate validated via `rg --version` (rejects a
+  grep shim masquerading as `rg`); when no real rg is found, an in-process
+  `node:fs` walker with the same semantics takes over. rg output is parsed
+  NUL-separated (`--null`), safe against `:` in filenames.
+- `GrepTools::GrepTools` gains an optional `ignores` parameter (default
+  `@devkit.default_ignore_patterns()`).
+
+**posoco-ext-glob**
+
+- Returns file paths only (never directories), sorted by modification time
+  newest-first (path ascending breaks mtime ties). Hidden entries and ignore
+  directories are pruned on both engines.
+- New optional `limit` argument (default 100); truncated listings end with a
+  `… N more files` footer and the structured payload gains `truncated`.
+- `GlobTools::GlobTools` gains an optional `ignores` parameter.
+
+**posoco-ext-read**
+
+- A file that is not valid UTF-8 now fails with
+  `read: '<path>' is not valid UTF-8 (binary file); use grep or bash to
+  inspect it` instead of the generic `decode failed` message.
+
+**posoco-devkit**
+
+- New shared traversal helpers used by the file tools:
+  `default_ignore_patterns`, `matches_ignore`, `has_hidden_segment`,
+  `glob_match` (`*` per segment, `**` recursive), `relative_to_base`,
+  `strip_dot_prefix`, `truncate_chars`.
+
+The grep/glob output format changes are model-visible; hosts that snapshot
+tool output or prompt against the old `path:line:content` flat format need to
+re-baseline.
+
+
+## 0.13.0
+
+### Breaking: system prompt assembly is lazy, stable, and short-circuits on empty
+
+`SystemPromptHook` now assembles the system prompt once per Agent lifetime, on
+the first `before_model` of the first turn, and caches the result for reuse. The
+assembled bytes are stable so LLM provider prefix caches remain valid.
+
+When assembly produces an empty result, the hook now returns the original
+messages unchanged instead of injecting an empty `SystemMessage`. Previously an
+empty result would replace any existing system message at index 0, so an idle
+extension could wipe the host's system prompt.
+
+The assembled prompt has the form: the base text from the new
+`AgentConfig.system_prompt` field, followed by contributor sections in
+registration order, each formatted as `{id}:\n{text}`, separated by blank lines
+(`\n\n`), emitted as a single `SystemMessage`. Index-0 handling is now
+self-healing: if the existing message at index 0 is a `SystemMessage` with
+identical text it is kept; if the text differs it is replaced; otherwise the new
+system message is inserted at the front.
+
+`AgentConfig` gains a new field `system_prompt : String?` with no default. Hosts
+that construct `AgentConfig` with struct literals must add `system_prompt: None`
+(or a base prompt string).
+
+`SystemPromptContributor` contracts are tightened: returned text must be
+byte-stable across calls. Dynamic mode indicators (such as plan mode) must now
+be injected per turn as a user message via `PipelineHook.before_model`, not
+through `SystemPromptContributor`. Migrations for external extensions
+(`posoco-ext-plan`, `posoco-ext-goal`, `posoco-ext-permission`, etc.) will
+follow separately; this CHANGELOG entry covers core only.
+
 ## 0.12.0
 
 ### Breaking: streaming protocol and ModelPort message borrowing
