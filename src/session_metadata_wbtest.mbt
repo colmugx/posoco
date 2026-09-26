@@ -588,9 +588,9 @@ async test "t05_tool_ports_hooks_and_observers_get_json_snapshots" {
 ///|
 async test "automatic title comes from admitted human input before memory injection" {
   let model = ScriptedModel([Respond(tk_stop_response("done"))])
-  let memory = ScriptedMemoryPort(
-    inbounds=[Some("the same injected memory appears in every fresh session")],
-  )
+  let memory = ScriptedMemoryPort(inbounds=[
+    Some("the same injected memory appears in every fresh session"),
+  ])
   let store = RecordingSessionStore()
   let agent = Agent(
     exts=[
@@ -620,7 +620,8 @@ async test "automatic title comes from admitted human input before memory inject
       assert_true(text.has_prefix(MEMORY_INBOUND_LEAD))
     _ => fail("expected injected memory before the real user input")
   }
-  assert_true(persisted.messages[1] == tk_user_msg(
-    "  investigate   the login\n race condition  ",
-  ))
+  assert_true(
+    persisted.messages[1] ==
+    tk_user_msg("  investigate   the login\n race condition  "),
+  )
 }
