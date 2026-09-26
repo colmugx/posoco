@@ -5,6 +5,28 @@
 /// returning `Result`. This eliminates the Result-plus-async redundancy and
 /// lets js-target adapters (e.g. JsonlSessionStore) implement the trait
 /// directly instead of going through `load_async`/`save_async` side-paths.
+///|
+/// One append-safe session durability boundary. `from_index` is the number
+/// of messages the caller believes are already persisted. `messages` is the
+/// canonical tail to append. `metadata=None` means metadata is unchanged;
+/// `Some(metadata)` replaces the session metadata at the same checkpoint.
+///
+/// Keeping message and metadata deltas in one operation prevents callers from
+/// committing transcript progress while silently dropping session state such
+/// as an automatic title, context state, or task bookkeeping.
+pub(all) struct SessionCheckpoint {
+  from_index : Int
+  messages : Array[@kernel.Message]
+  metadata : Map[String, Json]?
+} derive(Eq, Debug)
+
+///|
+pub extend SessionCheckpoint with Eq::{not_equal, equal}
+
+///|
+pub extend SessionCheckpoint with Debug::{to_repr}
+
+///|
 pub(open) trait SessionStore {
   async fn load(Self, id : String) -> @types.Session raise @error.SessionError
   async fn save(Self, id : String, session : @types.Session) -> Unit raise @error.SessionError
@@ -16,6 +38,16 @@ pub(open) trait SessionStore {
     id : String,
     from_index : Int,
     messages : ArrayView[@kernel.Message],
+  ) -> Unit raise @error.SessionError = _
+  /// Commit an append-only transcript tail together with an optional metadata
+  /// replacement. Stores with an atomic/native checkpoint primitive should
+  /// override this method. The default preserves compatibility: unchanged
+  /// metadata delegates to `append_messages`; changed metadata performs a
+  /// checked load + full save so the two pieces cannot diverge.
+  async fn checkpoint(
+    Self,
+    id : String,
+    checkpoint : SessionCheckpoint,
   ) -> Unit raise @error.SessionError = _
   /// Drop persisted messages at `from_index` and after, keeping
   /// `[0, from_index)`. `from_index` is clamped to the message bounds, so
@@ -73,4 +105,37 @@ impl SessionStore with fn append_messages(
     merged.push(msg)
   }
   self.save(id, { messages: merged, metadata: session.metadata, })
+}
+
+///|
+/// Default `SessionStore::checkpoint`: keep the legacy fast append path when
+/// metadata is unchanged. When metadata changed, verify the persisted cursor,
+/// merge the tail, and save one coherent Session snapshot. A cursor mismatch is
+/// a conflict rather than a duplicate append.
+impl SessionStore with fn checkpoint(
+  self,
+  id : String,
+  checkpoint : SessionCheckpoint,
+) -> Unit raise @error.SessionError {
+  match checkpoint.metadata {
+    None =>
+      self.append_messages(
+        id,
+        checkpoint.from_index,
+        checkpoint.messages[:],
+      )
+    Some(metadata) => {
+      let session = self.load(id)
+      if checkpoint.from_index != session.messages.length() {
+        raise Conflict(
+          "session_id='\{id}', operation='checkpoint', expected_index=\{checkpoint.from_index}, actual_index=\{session.messages.length()}",
+        )
+      }
+      let merged = session.messages.copy()
+      for msg in checkpoint.messages {
+        merged.push(msg)
+      }
+      self.save(id, { messages: merged, metadata, })
+    }
+  }
 }
