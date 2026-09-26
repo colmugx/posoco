@@ -245,6 +245,7 @@ async test "t07_save_error_emits_exactly_one_turnfailed" {
 }
 
 ///|
+
 ///|
 async test "t07_model_failure_keeps_primary_after_input_checkpoint" {
   let model = @posoco.ScriptedModel([Fail(Transport("primary network failure"))])
@@ -283,8 +284,8 @@ async test "t07_model_failure_keeps_primary_after_input_checkpoint" {
   let mut secondary_count = 0
   for event in events {
     match event {
-      Custom(source~, label~, ..) if source == "posoco.core" && label == "secondary_failure" =>
-        secondary_count = secondary_count + 1
+      Custom(source~, label~, ..) if source == "posoco.core" &&
+        label == "secondary_failure" => secondary_count = secondary_count + 1
       _ => ()
     }
   }
