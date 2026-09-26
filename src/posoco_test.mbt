@@ -271,20 +271,18 @@ async test "b10_agent_reuses_one_puppet_across_turns" {
 }
 
 ///|
-test "b11_agent_requires_session_store_at_composition" {
-  let model = MockModelPort::{ responses: [], index: 0, }
-  let result = Ok(
-    @posoco.Agent(
-      exts=[@posoco.tk_ext(id="model", model=Some(model))],
-      config=make_config(),
-    ),
-  ) catch {
-    error => Err(error)
+async test "b11_agent_runs_ephemerally_without_session_store" {
+  let model = MockModelPort::{
+    responses: [stop_response("ephemeral")],
+    index: 0,
   }
-  match result {
-    Err(EmptyPort("SessionStore")) => ()
-    _ => fail("expected missing SessionStore to fail composition")
-  }
+  let agent = @posoco.Agent(
+    exts=[@posoco.tk_ext(id="model", model=Some(model))],
+    config=make_config(),
+  )
+  let result = agent.run_turn(user_msg("hello"), "ephemeral-session")
+  assert_eq(result.final_session_id, "ephemeral-session")
+  assert_eq(model.index, 1)
 }
 
 // ──────────────────────────────────────────────────────────────────────────
