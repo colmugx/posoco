@@ -109,9 +109,11 @@ impl SessionStore with fn append_messages(
 
 ///|
 /// Default `SessionStore::checkpoint`: keep the legacy fast append path when
-/// metadata is unchanged. When metadata changed, verify the persisted cursor,
-/// merge the tail, and save one coherent Session snapshot. A cursor mismatch is
-/// a conflict rather than a duplicate append.
+/// metadata is unchanged. When metadata changed, load the persisted snapshot,
+/// merge the tail, and save one coherent Session snapshot. `from_index` is a
+/// logical cursor; the compatibility fallback deliberately does not require it
+/// to equal the physical message count because replay fixation can insert
+/// transient messages that are not persisted.
 impl SessionStore with fn checkpoint(
   self,
   id : String,
