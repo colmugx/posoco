@@ -212,6 +212,7 @@ pub(all) struct RecordingSessionStore {
 }
 pub fn RecordingSessionStore::RecordingSessionStore() -> Self
 pub async fn RecordingSessionStore::append_messages(Self, String, Int, ArrayView[@kernel.Message]) -> Unit raise @error.SessionError
+pub async fn RecordingSessionStore::checkpoint(Self, String, @port.SessionCheckpoint) -> Unit raise @error.SessionError
 pub fn RecordingSessionStore::fail_load(Self, String, @error.SessionError) -> Unit
 pub fn RecordingSessionStore::fail_save(Self, String) -> Unit
 pub fn RecordingSessionStore::heal_save(Self, String) -> Unit
@@ -357,6 +358,7 @@ pub(all) enum SessionOp {
   OpLoad(id~ : String, result~ : Result[@types.Session, @error.SessionError])
   OpSave(id~ : String, metadata~ : Map[String, Json], result~ : Result[Unit, @error.SessionError])
   OpAppend(id~ : String, from_index~ : Int, messages~ : Array[@kernel.Message], result~ : Result[Unit, @error.SessionError])
+  OpCheckpoint(id~ : String, checkpoint~ : @port.SessionCheckpoint, result~ : Result[Unit, @error.SessionError])
   OpTruncate(id~ : String, from_index~ : Int, result~ : Result[Unit, @error.SessionError])
 } derive(@debug.Debug)
 pub fn SessionOp::to_repr(Self) -> @debug.Repr
