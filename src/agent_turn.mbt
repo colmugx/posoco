@@ -40,6 +40,85 @@ fn messages_prefix_equal(
   true
 }
 
+
+///|
+fn session_metadata_equal(
+  left : Map[String, Json],
+  right : Map[String, Json],
+) -> Bool {
+  if left.length() != right.length() {
+    return false
+  }
+  for key in left.keys() {
+    match right.get(key) {
+      Some(value) if value == left[key] => ()
+      _ => return false
+    }
+  }
+  true
+}
+
+///|
+fn automatic_session_title(input : @kernel.Message) -> String? {
+  let raw = match input {
+    UserMessage(content~) => {
+      let buf = StringBuilder()
+      for item in content {
+        match item {
+          Text(text) => {
+            if buf.length() > 0 {
+              buf.write_char(' ')
+            }
+            buf.write_string(text)
+          }
+          Image(..) => ()
+        }
+      }
+      buf.to_string()
+    }
+    _ => return None
+  }
+  let out = StringBuilder()
+  let mut pending_space = false
+  let mut written = 0
+  for ch in raw {
+    let code = ch.to_int()
+    if code == 0x20 || code == 0x09 || code == 0x0a || code == 0x0d {
+      pending_space = true
+    } else {
+      if pending_space && written > 0 && written < 50 {
+        out.write_char(' ')
+        written = written + 1
+      }
+      pending_space = false
+      if written >= 50 {
+        break
+      }
+      out.write_char(ch)
+      written = written + 1
+    }
+  }
+  let title = out.to_string()
+  if title.length() == 0 { None } else { Some(title) }
+}
+
+///|
+fn session_metadata_for_admission(
+  session : @types.Session,
+  input : @kernel.Message,
+) -> Map[String, Json] {
+  let metadata = snapshot_metadata(session.metadata)
+  if session.messages.is_empty() &&
+    !metadata.contains(@types.SESSION_TITLE_METADATA_KEY) {
+    match automatic_session_title(input) {
+      Some(title) =>
+        metadata[@types.SESSION_TITLE_METADATA_KEY] = Json::string(title)
+      None => ()
+    }
+  }
+  metadata
+}
+
 ///|
 /// Memory inbound injection: on a session's first turn (empty loaded
 /// transcript) every memory source gets exactly one `inbound` read; the
@@ -147,7 +226,34 @@ async fn AgentRuntime::run_turn_via_puppet(
       (input, current_turn_start)
     }
   }
-  let current_metadata = snapshot_metadata(session.metadata)
+  // Session display state is admitted from the caller's real input before
+  // memory/hooks can inject additional model-facing UserMessages.
+  let current_metadata = session_metadata_for_admission(session, input)
+  let admission_metadata : Map[String, Json]? =
+    if session_metadata_equal(current_metadata, session.metadata) {
+      None
+    } else {
+      Some(current_metadata)
+    }
+  let cursor = match self.session_cursors.get(session_id) {
+    Some(value) => value
+    None => 0
+  }
+  let admission_tail =
+    if cursor < messages.length() {
+      snapshot_messages(messages[cursor:].to_owned())
+    } else {
+      []
+    }
+  if !admission_tail.is_empty() || admission_metadata is Some(_) {
+    self.checkpoint_sessions_all(
+      session_id,
+      cursor,
+      admission_tail,
+      admission_metadata,
+      "input_checkpoint",
+    )
+  }
 
   // Step 3: per-prompt policy on the caller-minted identity. The counter is
   // Agent-owned and monotonic, so two calls on the same Agent never share
@@ -631,6 +737,52 @@ async fn AgentRuntime::complete_compact_turn(
 }
 
 ///|
+/// Commit one append-safe session boundary to every configured store. With no
+/// SessionStore configured this is an intentional no-op: Agent execution is
+/// ephemeral but otherwise fully functional.
+async fn AgentRuntime::checkpoint_sessions_all(
+  self : AgentRuntime,
+  session_id : String,
+  from_index : Int,
+  messages : Array[@kernel.Message],
+  metadata : Map[String, Json]?,
+  operation : String,
+) -> Unit raise @error.AgentError {
+  if self.sessions.is_empty() {
+    self.session_cursors[session_id] = from_index + messages.length()
+    return
+  }
+  let results : Array[Result[Unit, @error.SessionError]] = @async.all(
+    self.sessions.map(fn(store) {
+      () => {
+        let metadata_snapshot = match metadata {
+          Some(value) => Some(snapshot_metadata(value))
+          None => None
+        }
+        let checkpoint : @port.SessionCheckpoint = {
+          from_index,
+          messages: snapshot_messages(messages),
+          metadata: metadata_snapshot,
+        }
+        Ok(store.checkpoint(session_id, checkpoint)) catch {
+          error => Err(error)
+        }
+      }
+    }),
+  ) catch {
+    error => raise save_error_context(error, session_id, operation)
+  }
+  for result in results {
+    match result {
+      Ok(_) => ()
+      Err(error) =>
+        raise contextualize_session_error(error, session_id, operation)
+    }
+  }
+  self.session_cursors[session_id] = from_index + messages.length()
+}
+
+///|
 /// Save one session body to every configured store (write-all). Each store
 /// receives its own deep snapshot so a misbehaving store cannot mutate
 /// another store's payload; `operation` labels both error contexts verbatim.
@@ -698,46 +850,50 @@ async fn AgentRuntime::save_turn_transcript(
   current_turn_start : Int,
 ) -> Unit raise @error.AgentError {
   let final_messages = snapshot_messages(transcript.messages_snapshot())
+  let base_metadata = snapshot_metadata(metadata)
   let metadata = self.metadata_with_context_state(session_id, metadata)
   let metadata = self.task_runtime.metadata_with_applied_outcomes(
     session_id, metadata,
   )
+  let metadata_checkpoint : Map[String, Json]? =
+    if session_metadata_equal(metadata, base_metadata) {
+      None
+    } else {
+      Some(metadata)
+    }
   let cursor = match self.session_cursors.get(session_id) {
     Some(n) => n
     None => 0
   }
-  let operation = if self.task_runtime.has_inflight(session_id) {
-    "final_save"
-  } else {
-    transcript_save_operation(transcript, initial_messages, current_turn_start)
-  }
-  if operation == "final_append" {
-    // Append tail from cursor. Each store receives its own deep snapshot of
-    // the tail so a misbehaving store cannot mutate another store's payload.
-    let save_results : Array[Result[Unit, @error.SessionError]] = @async.all(
-      self.sessions.map(fn(store) {
-        () => {
-          let tail = snapshot_messages(final_messages[cursor:].to_owned())
-          Ok(store.append_messages(session_id, cursor, tail[:])) catch {
-            error => Err(error)
-          }
-        }
-      }),
-    ) catch {
-      error => raise save_error_context(error, session_id, "final_append")
+  let operation =
+    if self.task_runtime.has_inflight(session_id) ||
+      self.checkpoint_dirty.contains(session_id) {
+      "final_save"
+    } else {
+      transcript_save_operation(transcript, initial_messages, current_turn_start)
     }
-    for result in save_results {
-      match result {
-        Err(error) =>
-          raise contextualize_session_error(error, session_id, "final_append")
-        Ok(_) => ()
+  if operation == "final_append" {
+    let tail =
+      if cursor < final_messages.length() {
+        snapshot_messages(final_messages[cursor:].to_owned())
+      } else {
+        []
       }
+    if !tail.is_empty() || metadata_checkpoint is Some(_) {
+      self.checkpoint_sessions_all(
+        session_id,
+        cursor,
+        tail,
+        metadata_checkpoint,
+        "final_append",
+      )
     }
   } else {
     // Rewrite, fork, or compact: rewrite the whole persisted session.
     self.save_sessions_all(session_id, final_messages, metadata, "final_save")
+    self.session_cursors[session_id] = final_messages.length()
   }
-  self.session_cursors[session_id] = final_messages.length()
+  self.checkpoint_dirty.remove(session_id)
 }
 
 ///|
@@ -807,12 +963,10 @@ async fn AgentRuntime::load_session_for_operation(
           ignore(parse_task_applied_ids(loaded.metadata))
           loaded
         }
-        [] =>
-          raise contextualize_session_error(
-            Load("no session store configured"),
-            session_id,
-            "load",
-          )
+        [] => {
+          self.session_cursors[session_id] = 0
+          { messages: [], metadata: Map::from_array([]), }
+        }
       }
   }
 }
