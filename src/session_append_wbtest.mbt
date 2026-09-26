@@ -140,8 +140,7 @@ async test "committed model and tool steps advance the durable cursor" {
   let cursors : Array[Int] = []
   for op in store.ops() {
     match op {
-      OpCheckpoint(id="step-checkpoint", checkpoint~, ..)
-        if !checkpoint.messages.is_empty() =>
+      OpCheckpoint(id="step-checkpoint", checkpoint~, ..) if !checkpoint.messages.is_empty() =>
         cursors.push(checkpoint.from_index)
       _ => ()
     }
