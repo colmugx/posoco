@@ -3,6 +3,125 @@
 /// plus the per-turn stream-chunk callback wiring.
 
 ///|
+/// Correctness-critical persistence projection for committed model/tool facts.
+/// Agent checkpoints the admitted input before Puppet starts; this subscriber
+/// then awaits SessionStore checkpoints after each committed assistant/tool
+/// boundary. A transcript rewrite marks the session dirty and pauses
+/// incremental projection until the terminal full save re-establishes a
+/// canonical prefix.
+priv struct SessionCheckpointSubscriber {
+  stores : Array[&@port.SessionStore]
+  cursors : Map[String, Int]
+  dirty : Map[String, Bool]
+}
+
+///|
+fn SessionCheckpointSubscriber::SessionCheckpointSubscriber(
+  stores : Array[&@port.SessionStore],
+  cursors : Map[String, Int],
+  dirty : Map[String, Bool],
+) -> SessionCheckpointSubscriber {
+  { stores, cursors, dirty, }
+}
+
+///|
+impl @puppetry.EventSubscriber for SessionCheckpointSubscriber with fn subscriber_id(
+  _self : SessionCheckpointSubscriber,
+) -> String {
+  "agent_session_checkpoint"
+}
+
+///|
+impl @puppetry.EventSubscriber for SessionCheckpointSubscriber with fn provenance(
+  _self : SessionCheckpointSubscriber,
+) -> String {
+  "posoco.agent.session"
+}
+
+///|
+async fn SessionCheckpointSubscriber::append_committed_message(
+  self : SessionCheckpointSubscriber,
+  session_id : String,
+  message : @kernel.Message,
+) -> Unit raise @puppetry.SubscriberError {
+  if self.stores.is_empty() {
+    return
+  }
+  let cursor = match self.cursors.get(session_id) {
+    Some(value) => value
+    None => 0
+  }
+  let results : Array[Result[Unit, @error.SessionError]] = @async.all(
+    self.stores.map(fn(store) {
+      () => {
+        let checkpoint : @port.SessionCheckpoint = {
+          from_index: cursor,
+          messages: [snapshot_message(message)],
+          metadata: None,
+        }
+        Ok(store.checkpoint(session_id, checkpoint)) catch {
+          error => Err(error)
+        }
+      }
+    }),
+  ) catch {
+    error =>
+      raise @puppetry.SubscriberError::Internal(
+        subscriber_id="agent_session_checkpoint",
+        detail="checkpoint dispatch failed: " + error.to_string(),
+      )
+  }
+  for result in results {
+    match result {
+      Ok(_) => ()
+      Err(error) =>
+        raise @puppetry.SubscriberError::Internal(
+          subscriber_id="agent_session_checkpoint",
+          detail="session_id=" + safe_error_label(session_id) + "; " + error.to_string(),
+        )
+    }
+  }
+  self.cursors[session_id] = cursor + 1
+}
+
+///|
+impl @puppetry.EventSubscriber for SessionCheckpointSubscriber with fn on_event(
+  self : SessionCheckpointSubscriber,
+  envelope : @puppetry.EventEnvelope,
+) -> Unit raise @puppetry.SubscriberError {
+  let session_id = envelope.session_id().to_string()
+  match envelope.event() {
+    RunStarted(..) => self.dirty.remove(session_id)
+    TranscriptRewritten(..) => self.dirty[session_id] = true
+    ModelStepCompleted(completion~, ..) =>
+      if !self.dirty.contains(session_id) {
+        let payload = completion.message
+        self.append_committed_message(
+          session_id,
+          AssistantMessage(
+            content=payload.content,
+            tool_calls=payload.tool_calls,
+            reasoning=payload.reasoning,
+            finish_reason=payload.finish_reason,
+          ),
+        )
+      }
+    ToolCompleted(call~, outcome~) =>
+      if !self.dirty.contains(session_id) {
+        self.append_committed_message(
+          session_id,
+          ToolMessage(
+            call_id=call.call_id,
+            tool_name=call.name,
+            outcome~,
+          ),
+        )
+      }
+    _ => ()
+  }
+}
+
+///|
 /// Agent-facing projection of committed Puppet envelopes. It never scans a
 /// final transcript. The pending call cache is correlation state populated by
 /// `ToolBatchStarted` and consumed by completion events. A committed
