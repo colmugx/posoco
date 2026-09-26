@@ -499,9 +499,6 @@ fn AgentRuntime::compose(
   catalog_source : &@runtime.CatalogSource?,
 ) -> Agent raise @error.CompositionError {
   validate_agent_config(config)
-  if agg.sessions.is_empty() {
-    raise EmptyPort("SessionStore")
-  }
   let (tool_routing, catalog, initial_catalog_revision, basic_defs, basic_tools) = compose_tool_catalog(
     agg, catalog_source,
   )
