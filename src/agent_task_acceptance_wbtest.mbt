@@ -393,8 +393,8 @@ async test "managed_tasks/background_outcome_survives_failed_save_and_heal" {
 
     let persisted = (store as &@port.SessionStore).load("retry-session")
     assert_eq(acceptance_text_count(persisted.messages, marker), 1)
+    assert_eq(model.received_messages.length(), 1)
     assert_eq(acceptance_text_count(model.received_messages[0], marker), 1)
-    assert_eq(acceptance_text_count(model.received_messages[1], marker), 1)
     assert_eq(
       acceptance_text_count(persisted.messages, "retained-background-value"),
       1,
