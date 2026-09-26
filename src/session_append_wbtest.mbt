@@ -1,9 +1,9 @@
 ///|
-/// M0-T06 regression tests: session append vs full-save boundary.
+/// Session checkpoint regression tests.
 ///
-/// These tests document the persisted-cursor optimisation: sequential pure
-/// appends are sent to stores as `append_messages`, while rewrites (compact,
-/// fork, hook rewrite) fall back to a full save.
+/// Pure append turns are persisted as coherent checkpoints; committed
+/// assistant/tool steps advance the same cursor during the turn. Transcript
+/// rewrites (compact, fork, hook rewrite) fall back to a full save.
 
 ///|
 fn append_config() -> AgentConfig {
@@ -32,16 +32,17 @@ async test "t06_sequential_turns_use_append_not_full_save" {
   let _ = agent.run_turn(tk_user_msg("world"), "s1")
   let ops = store.ops()
   let mut save_count = 0
-  let mut append_count = 0
+  let mut checkpoint_count = 0
   for op in ops {
     match op {
       OpSave(id="s1", ..) => save_count = save_count + 1
-      OpAppend(id="s1", ..) => append_count = append_count + 1
+      OpCheckpoint(id="s1", ..) => checkpoint_count = checkpoint_count + 1
       _ => ()
     }
   }
   assert_eq(save_count, 0)
-  assert_eq(append_count, 2)
+  // At minimum: admitted input + committed assistant for each turn.
+  assert_true(checkpoint_count >= 4)
 }
 
 // ---------------------------------------------------------------------------
@@ -105,14 +106,45 @@ async test "t06_compact_turn_uses_full_save_not_append" {
   let _ = agent.run_turn(tk_user_msg("world"), "s2")
   let ops = store.ops()
   let mut save_count = 0
-  let mut append_count = 0
+  let mut checkpoint_count = 0
   for op in ops {
     match op {
       OpSave(id="s2", ..) => save_count = save_count + 1
-      OpAppend(id="s2", ..) => append_count = append_count + 1
+      OpCheckpoint(id="s2", ..) => checkpoint_count = checkpoint_count + 1
       _ => ()
     }
   }
-  assert_eq(append_count, 1)
+  assert_true(checkpoint_count >= 2)
   assert_eq(save_count, 1)
+}
+
+///|
+async test "committed model and tool steps advance the durable cursor" {
+  let model = ScriptedModel([
+    Respond(tk_tool_call_response("echo", "checkpoint-call", Json::null())),
+    Respond(tk_stop_response("done")),
+  ])
+  let tools = RecordingToolProvider(
+    [tk_tool_def("echo", "echo")],
+    Map::from_array([("echo", OutcomeOk(tk_ok_result("tool-ok")))]),
+  )
+  let store = RecordingSessionStore()
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", tools=[tools], sessions=[store]),
+    ],
+    config=append_config(),
+  )
+  ignore(agent.run_turn(tk_user_msg("run it"), "step-checkpoint"))
+  let cursors : Array[Int] = []
+  for op in store.ops() {
+    match op {
+      OpCheckpoint(id="step-checkpoint", checkpoint~, ..)
+        if !checkpoint.messages.is_empty() =>
+        cursors.push(checkpoint.from_index)
+      _ => ()
+    }
+  }
+  inspect(cursors, content="[0, 1, 2, 3]")
 }
