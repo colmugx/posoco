@@ -176,10 +176,10 @@ let result = agent.run_turn(input, "quickstart-session")
   字段：`max_tool_rounds`（一轮对话里最多几波工具调用，`None` = 不设上限，
   推荐默认）、`temperature`、`max_output_tokens`、`model_context_window`
   （模型上下文窗口，Agent 据此判断何时需要压缩）。
-- **组装是 fail-fast 的**。缺模型、缺存储、工具重名，都会在构造时立刻抛
-  `CompositionError`，绝不带着残缺的配置运行：
+- **组装对真正必需的能力 fail-fast**。缺模型、工具重名会在构造时立刻抛
+  `CompositionError`；会话存储是可选能力：
   - 没有任何扩展提供模型 → `CompositionError::MissingModel`
-  - 没有扩展提供会话存储 → `CompositionError::EmptyPort("SessionStore")`
+  - 没有 `SessionStore` → Agent 仍可运行，但 session 仅存在于当前 turn 的执行上下文，不做跨 turn 持久化
   - 两个扩展注册了同名工具 → `CompositionError::ToolCollision`
     （没有"后声明覆盖前声明"的兜底）
 - **`run_turn` 是 async 的**。调用它的函数或测试也应是 async。第二个参数是
