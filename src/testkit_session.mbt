@@ -18,6 +18,11 @@ pub(all) enum SessionOp {
     messages~ : Array[@kernel.Message],
     result~ : Result[Unit, @error.SessionError]
   )
+  OpCheckpoint(
+    id~ : String,
+    checkpoint~ : @port.SessionCheckpoint,
+    result~ : Result[Unit, @error.SessionError]
+  )
   OpTruncate(
     id~ : String,
     from_index~ : Int,
@@ -120,6 +125,19 @@ pub fn RecordingSessionStore::ops(
           messages=snapshot_messages(messages),
           result~,
         )
+      OpCheckpoint(id~, checkpoint~, result~) =>
+        OpCheckpoint(
+          id~,
+          checkpoint={
+            from_index: checkpoint.from_index,
+            messages: snapshot_messages(checkpoint.messages),
+            metadata: match checkpoint.metadata {
+              Some(value) => Some(snapshot_metadata(value))
+              None => None
+            },
+          },
+          result~,
+        )
       OpTruncate(id~, from_index~, result~) =>
         OpTruncate(id~, from_index~, result~)
     }
@@ -174,6 +192,7 @@ fn[T] RecordingSessionStore::record(
 ///|
 pub extend RecordingSessionStore with @port.SessionStore::{
   append_messages,
+  checkpoint,
   truncate,
 }
 
@@ -268,4 +287,46 @@ pub impl @port.SessionStore for RecordingSessionStore with fn truncate(
     }
   }
   self.record(OpTruncate(id~, from_index~, result~), result)
+}
+
+///|
+pub impl @port.SessionStore for RecordingSessionStore with fn checkpoint(
+  self,
+  id : String,
+  checkpoint : @port.SessionCheckpoint,
+) -> Unit raise @error.SessionError {
+  let checkpoint_copy : @port.SessionCheckpoint = {
+    from_index: checkpoint.from_index,
+    messages: snapshot_messages(checkpoint.messages),
+    metadata: match checkpoint.metadata {
+      Some(value) => Some(snapshot_metadata(value))
+      None => None
+    },
+  }
+  let result : Result[Unit, @error.SessionError] = match self.guard_save(id) {
+    Some(e) => Err(e)
+    None => {
+      let session = match self.store.get(id) {
+        Some(value) => snapshot_session(value.messages, value.metadata)
+        None => { messages: [], metadata: Map::from_array([]), }
+      }
+      if checkpoint.from_index != session.messages.length() {
+        Err(Conflict(
+          "checkpoint cursor mismatch: expected \{checkpoint.from_index}, actual \{session.messages.length()}",
+        ))
+      } else {
+        let merged = session.messages.copy()
+        for message in checkpoint.messages {
+          merged.push(snapshot_message(message))
+        }
+        let metadata = match checkpoint.metadata {
+          Some(value) => snapshot_metadata(value)
+          None => session.metadata
+        }
+        self.store[id] = { messages: merged, metadata, }
+        Ok(())
+      }
+    }
+  }
+  self.record(OpCheckpoint(id~, checkpoint=checkpoint_copy, result~), result)
 }
