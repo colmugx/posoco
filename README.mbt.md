@@ -118,7 +118,7 @@ is async and raises `AgentError`. Composition is fail-fast and raises
   (multi-model routing belongs inside a meta-extension such as
   `posoco-ext-llm`, not in the core)
 - `ToolCollision` — two extensions register the same tool name (no last-wins)
-- `EmptyPort("SessionStore")` — no extension contributes a required port
+- `SessionStore` is optional; without one the Agent runs ephemerally and skips durable session persistence
 
 A turn that has emitted `TurnStarted` emits exactly one terminal event:
 `TurnCompleted` on success, or `TurnFailed` on any primary failure.
