@@ -19,7 +19,7 @@ struct TruncateFallbackStore {
 }
 
 ///|
-pub extend TruncateFallbackStore with @port.SessionStore::{truncate}
+pub extend TruncateFallbackStore with @port.SessionStore::{checkpoint, truncate}
 
 ///|
 fn TruncateFallbackStore::make(
