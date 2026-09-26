@@ -77,7 +77,10 @@ async fn SessionCheckpointSubscriber::append_committed_message(
       Err(error) =>
         raise @puppetry.SubscriberError::Internal(
           subscriber_id="agent_session_checkpoint",
-          detail="session_id=" + safe_error_label(session_id) + "; " + error.to_string(),
+          detail="session_id=" +
+            safe_error_label(session_id) +
+            "; " +
+            error.to_string(),
         )
     }
   }
@@ -110,11 +113,7 @@ impl @puppetry.EventSubscriber for SessionCheckpointSubscriber with fn on_event(
       if !self.dirty.contains(session_id) {
         self.append_committed_message(
           session_id,
-          ToolMessage(
-            call_id=call.call_id,
-            tool_name=call.name,
-            outcome~,
-          ),
+          ToolMessage(call_id=call.call_id, tool_name=call.name, outcome~),
         )
       }
     _ => ()
