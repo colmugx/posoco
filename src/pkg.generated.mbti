@@ -35,6 +35,8 @@ pub fn tk_error_result(String) -> @kernel.ToolOutcome
 
 pub fn tk_ext(id~ : String, model? : &@port.ModelPort?, decision? : &@port.DecisionPort?, log? : &@port.LogPort?, tools? : Array[&@port.ToolProvider], sessions? : Array[&@port.SessionStore], observers? : Array[&@port.Observer], hooks? : Array[&@port.PipelineHook], memory? : Array[&@port.MemoryPort], lifecycle? : Array[&@port.Lifecycle], commands? : Array[&@port.CommandPort], ui? : Array[&@port.UiPort], prompt_contributors? : Array[&@port.SystemPromptContributor], requires? : Array[@port.Capability]) -> ManifestOnly
 
+pub fn tk_ok_attachments_result(String, attachments~ : Array[@kernel.Content]) -> @kernel.ToolOutcome
+
 pub fn tk_ok_result(String) -> @kernel.ToolOutcome
 
 pub fn tk_scope(session_id? : String, run_id? : String, pressure? : @kernel.ContextPressure?) -> @kernel.InvocationScope

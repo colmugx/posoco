@@ -5,6 +5,7 @@ pub fn build_tool_result_message(
 ) -> @kernel.Message {
   let content : String = match result {
     Success(content~, ..) => content
+    SuccessWithAttachments(content~, ..) => content
     ToolReportedError(content~, ..) => content
     RuntimeFailure(message~, ..) => message
     NotExecuted(reason~, ..) => reason.to_string()

@@ -68,11 +68,12 @@ fn testkit_snapshot_event(event : @types.TurnEvent) -> @types.TurnEvent {
     ToolCallApproved(call~, consent_scope~) =>
       ToolCallApproved(call=snapshot_tool_call(call), consent_scope~)
     ToolCallStarted(call~) => ToolCallStarted(call=snapshot_tool_call(call))
-    ToolCallSucceeded(call~, content~, structured~) =>
+    ToolCallSucceeded(call~, content~, structured~, attachments~) =>
       ToolCallSucceeded(
         call=snapshot_tool_call(call),
         content~,
         structured=snapshot_opt_json(structured),
+        attachments=attachments.copy(),
       )
     ToolCallFailed(call~, failure~) =>
       ToolCallFailed(

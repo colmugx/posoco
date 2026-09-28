@@ -288,6 +288,10 @@ pub impl Show for NotExecutedReason with fn to_string(self : NotExecutedReason) 
 ///   session snapshots for observers/UIs; the built-in adapters do not send
 ///   it to the model. Structured objects follow a reserved `summary : String`
 ///   field convention for one-line UI summaries.
+/// - `SuccessWithAttachments`: like `Success`, plus media attachments
+///   (images today) carried as content blocks. Adapters that cannot express
+///   attachments on the wire downgrade them explicitly — never a silent
+///   drop.
 /// - `ToolReportedError`: tool ran and reported a business-level failure. The
 ///   Run continues; the failure is fed back to the model as a normal tool
 ///   message.
@@ -301,6 +305,11 @@ pub impl Show for NotExecutedReason with fn to_string(self : NotExecutedReason) 
 /// the error status.
 pub(all) enum ToolOutcome {
   Success(content~ : String, structured~ : Json?)
+  SuccessWithAttachments(
+    content~ : String,
+    structured~ : Json?,
+    attachments~ : Array[Content]
+  )
   ToolReportedError(content~ : String, structured~ : Json?)
   RuntimeFailure(error_category~ : String, message~ : String)
   NotExecuted(reason~ : NotExecutedReason, original_call_id~ : CallId)
@@ -319,6 +328,7 @@ pub extend ToolOutcome with Debug::{to_repr}
 pub fn ToolOutcome::is_failure(self : ToolOutcome) -> Bool {
   match self {
     Success(..) => false
+    SuccessWithAttachments(..) => false
     _ => true
   }
 }
@@ -330,6 +340,8 @@ pub fn ToolOutcome::summary(self : ToolOutcome) -> String {
   match self {
     Success(content~, structured~) =>
       "Success(\{content.length()} chars, structured=\{structured is Some(_)})"
+    SuccessWithAttachments(content~, structured~, attachments~) =>
+      "SuccessWithAttachments(\{content.length()} chars, attachments=\{attachments.length()}, structured=\{structured is Some(_)})"
     ToolReportedError(content~, ..) =>
       "ToolReportedError(\{content.length()} chars)"
     RuntimeFailure(error_category~, message~) =>

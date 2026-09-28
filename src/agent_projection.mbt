@@ -216,7 +216,9 @@ fn AgentEventSubscriber::emit_tool_result(
   // success, failure and rejection never share an event.
   let event : @types.TurnEvent = match outcome {
     Success(content~, structured~) =>
-      ToolCallSucceeded(call~, content~, structured~)
+      ToolCallSucceeded(call~, content~, structured~, attachments=[])
+    SuccessWithAttachments(content~, structured~, attachments~) =>
+      ToolCallSucceeded(call~, content~, structured~, attachments~)
     ToolReportedError(content~, structured~) =>
       ToolCallFailed(call~, failure=ReportedError(content~, structured~))
     RuntimeFailure(error_category~, message~) =>

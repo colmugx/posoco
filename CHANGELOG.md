@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.20.0
+
+### Added: tool results can carry media attachments (multimodal tool output)
+
+`ToolOutcome::SuccessWithAttachments(content~, structured~, attachments~)`
+joins `Success`: same text channel, plus kernel `Content` blocks (images
+today; `media_type` + opaque data). The kernel keeps attachments losslessly
+in the transcript, session persistence, and the observer event —
+`TurnEvent::ToolCallSucceeded` gained an `attachments~ :
+Array[@kernel.Content]` field.
+
+- `is_failure` treats the variant as success; `summary()` reports only an
+  `attachments=N` count, never payloads. Context projection estimates each
+  image block at the same 1024-char budget as user/system image blocks.
+- Producers keep zero-cost: existing `Success` constructions are unchanged.
+  Consumers matching `ToolOutcome` exhaustively (adapters, serde, observer
+  projections) need one added arm, and `ToolCallSucceeded` construction or
+  pattern sites need the new `attachments~` label (or `..`). Testkit ships
+  `tk_ok_attachments_result(content, attachments~)`.
+- Wire strategy per protocol lives with the adapters (0.20.0 follow-up):
+  chat-completions tool role is text-only on the wire, so attachments fold
+  into one synthetic user message after the tool-message run when the model
+  accepts image input, and downgrade to the explicit
+  `[Attached …, omitted]` placeholder otherwise. No silent drops.
+- MoonBit limitation found en route (see `docs/questions.md` Q-E): enum
+  variants do not support default labeled args, so this ships as a new
+  variant instead of an optional field on `Success`.
+
 ## 0.19.0
 
 ### Breaking: tool-call event surface rebuilt — one observable node per event

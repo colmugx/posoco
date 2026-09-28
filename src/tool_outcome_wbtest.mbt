@@ -34,6 +34,7 @@ fn failure_matches_outcome(
 fn outcome_text(outcome : @kernel.ToolOutcome) -> String {
   match outcome {
     Success(content~, ..) => content
+    SuccessWithAttachments(content~, ..) => content
     ToolReportedError(content~, ..) => content
     RuntimeFailure(message~, ..) => message
     NotExecuted(reason~, ..) => reason.to_string()
@@ -328,5 +329,79 @@ async test "t06b_missing_collision_provenance_is_actionable" {
       assert_eq(model.call_count(), 0)
     }
     _ => fail("expected actionable provenance for collision")
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Tool attachments: a provider returning SuccessWithAttachments keeps the
+// blocks end-to-end (turn result, observer event, transcript) without ever
+// leaking the payload into single-line summaries.
+// ---------------------------------------------------------------------------
+
+///|
+async test "attachments_outcome_flows_to_result_event_and_transcript" {
+  let first_response = tk_tool_call_response("probe", "tc_att", Json::null())
+  let final_response = tk_stop_response("seen")
+  let image : @kernel.Content = @kernel.Content::Image(
+    media_type="image/png",
+    data="aGVsbG8=",
+  )
+  let outcome = tk_ok_attachments_result("captured", attachments=[image])
+  let model = ScriptedModel([Respond(first_response), Respond(final_response)])
+  let outcomes : Map[String, ScriptedToolOutcome] = Map::from_array([
+    ("probe", OutcomeOk(outcome)),
+  ])
+  let provider = RecordingToolProvider([tk_tool_def("probe", "")], outcomes)
+  let obs = RecordingObserver()
+  let store = RecordingSessionStore()
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", tools=[provider], sessions=[store], observers=[obs]),
+    ],
+    config=outcome_config(),
+  )
+  let turn_result = agent.run_turn(tk_user_msg("capture"), "s_att")
+  // Turn result keeps the variant and the block.
+  assert_eq(turn_result.tool_results.length(), 1)
+  match turn_result.tool_results[0] {
+    SuccessWithAttachments(content~, attachments~, structured=None) => {
+      assert_eq(content, "captured")
+      assert_eq(attachments.length(), 1)
+      assert_true(attachments[0] is @kernel.Content::Image(..))
+      assert_false(turn_result.tool_results[0].is_failure())
+    }
+    _ => fail("expected SuccessWithAttachments")
+  }
+  // Summary counts attachments, never payloads.
+  let summary = turn_result.tool_results[0].summary()
+  assert_true(summary.contains("attachments=1"))
+  assert_false(summary.contains("aGVsbG8="))
+  // The observer event carries the same blocks.
+  let mut event_attachments : Array[@kernel.Content] = []
+  for e in obs.events() {
+    match e {
+      ToolCallSucceeded(call~, attachments~, ..) =>
+        if call.call_id.to_string() == "tc_att" {
+          event_attachments = attachments
+        }
+      _ => ()
+    }
+  }
+  assert_eq(event_attachments.length(), 1)
+  // The persisted transcript tool message keeps the outcome intact.
+  try {
+    let saved = store.load("s_att")
+    let mut found = false
+    for msg in saved.messages {
+      match msg {
+        @kernel.ToolMessage(outcome=SuccessWithAttachments(..), ..) =>
+          found = true
+        _ => ()
+      }
+    }
+    assert_true(found)
+  } catch {
+    _ => fail("expected the session to load")
   }
 }

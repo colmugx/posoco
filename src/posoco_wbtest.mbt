@@ -258,6 +258,7 @@ async test "turn_with_single_tool" {
   let outcome = result.tool_results[0]
   let content0 = match outcome {
     Success(content~, ..) => content
+    SuccessWithAttachments(content~, ..) => content
     ToolReportedError(content~, ..) => content
     RuntimeFailure(message~, ..) => message
     NotExecuted(..) => "<not executed>"

@@ -83,6 +83,15 @@ pub fn tk_ok_result(content : String) -> @kernel.ToolOutcome {
 }
 
 ///|
+/// Build a successful ToolOutcome carrying media attachments (images today).
+pub fn tk_ok_attachments_result(
+  content : String,
+  attachments~ : Array[@kernel.Content],
+) -> @kernel.ToolOutcome {
+  SuccessWithAttachments(content~, structured=None, attachments~)
+}
+
+///|
 /// Build a business-error ToolOutcome (provider reports a tool-level failure
 /// the model should see, but the run continues).
 pub fn tk_error_result(content : String) -> @kernel.ToolOutcome {

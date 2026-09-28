@@ -343,6 +343,7 @@ pub fn ToolName::unchecked(String) -> Self
 
 pub(all) enum ToolOutcome {
   Success(content~ : String, structured~ : Json?)
+  SuccessWithAttachments(content~ : String, structured~ : Json?, attachments~ : Array[Content])
   ToolReportedError(content~ : String, structured~ : Json?)
   RuntimeFailure(error_category~ : String, message~ : String)
   NotExecuted(reason~ : NotExecutedReason, original_call_id~ : CallId)

@@ -181,6 +181,16 @@ fn snapshot_tool_outcome(outcome : @kernel.ToolOutcome) -> @kernel.ToolOutcome {
           None => None
         },
       )
+    SuccessWithAttachments(content~, structured~, attachments~) =>
+      // Content blocks are immutable; attachments need no deep copy.
+      SuccessWithAttachments(
+        content~,
+        structured=match structured {
+          Some(j) => Some(snapshot_json(j))
+          None => None
+        },
+        attachments=attachments.copy(),
+      )
     ToolReportedError(content~, structured~) =>
       ToolReportedError(
         content~,
@@ -864,11 +874,12 @@ fn snapshot_turn_event(event : @types.TurnEvent) -> @types.TurnEvent {
     ToolCallApproved(call~, consent_scope~) =>
       ToolCallApproved(call=snapshot_tool_call(call), consent_scope~)
     ToolCallStarted(call~) => ToolCallStarted(call=snapshot_tool_call(call))
-    ToolCallSucceeded(call~, content~, structured~) =>
+    ToolCallSucceeded(call~, content~, structured~, attachments~) =>
       ToolCallSucceeded(
         call=snapshot_tool_call(call),
         content~,
         structured=snapshot_opt_json(structured),
+        attachments=attachments.copy(),
       )
     ToolCallFailed(call~, failure~) =>
       ToolCallFailed(

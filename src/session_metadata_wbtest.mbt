@@ -431,7 +431,7 @@ pub impl @port.Observer for BoundaryMutatingObserver with fn on_event(
       poison_first_message([message], "observer-model-poison")
     ToolCallPending(call) =>
       poison_json(call.arguments, "observer-pending-poison")
-    ToolCallSucceeded(call~, content=_, structured~) => {
+    ToolCallSucceeded(call~, content=_, structured~, ..) => {
       poison_json(call.arguments, "observer-result-poison")
       match structured {
         Some(value) => poison_json(value, "observer-result-poison")
@@ -576,7 +576,7 @@ async test "t05_tool_ports_hooks_and_observers_get_json_snapshots" {
   for event in recording_observer.events() {
     match event {
       ToolCallPending(call) => assert_true(!json_has_poison(call.arguments))
-      ToolCallSucceeded(call~, content=_, structured~) => {
+      ToolCallSucceeded(call~, content=_, structured~, ..) => {
         assert_true(!json_has_poison(call.arguments))
         match structured {
           Some(value) => assert_true(!json_has_poison(value))

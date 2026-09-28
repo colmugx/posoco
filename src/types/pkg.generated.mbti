@@ -139,7 +139,7 @@ pub(all) enum TurnEvent {
   ToolCallPending(@kernel.ToolCall)
   ToolCallApproved(call~ : @kernel.ToolCall, consent_scope~ : String?)
   ToolCallStarted(call~ : @kernel.ToolCall)
-  ToolCallSucceeded(call~ : @kernel.ToolCall, content~ : String, structured~ : Json?)
+  ToolCallSucceeded(call~ : @kernel.ToolCall, content~ : String, structured~ : Json?, attachments~ : Array[@kernel.Content])
   ToolCallFailed(call~ : @kernel.ToolCall, failure~ : @kernel.ToolFailure)
   ToolCallRejected(call~ : @kernel.ToolCall, reason~ : @kernel.NotExecutedReason)
   ToolCallAbandoned(call~ : @kernel.ToolCall, reason~ : String)

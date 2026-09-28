@@ -335,6 +335,16 @@ fn estimate_tokens_of_messages(messages : ArrayView[Message]) -> Int {
       ToolMessage(outcome~, ..) =>
         match outcome {
           Success(content~, ..) => chars = chars + content.length()
+          SuccessWithAttachments(content~, attachments~, ..) => {
+            chars = chars + content.length()
+            // Same block estimate as user/system content above.
+            for block in attachments {
+              match block {
+                Text(t) => chars = chars + t.length()
+                Image(..) => chars = chars + 1024
+              }
+            }
+          }
           ToolReportedError(content~, ..) => chars = chars + content.length()
           RuntimeFailure(message~, ..) => chars = chars + message.length()
           NotExecuted(..) => ()

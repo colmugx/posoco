@@ -275,7 +275,8 @@ pub(all) enum TurnEvent {
   ToolCallSucceeded(
     call~ : @kernel.ToolCall,
     content~ : String,
-    structured~ : Json?
+    structured~ : Json?,
+    attachments~ : Array[@kernel.Content]
   )
   ToolCallFailed(call~ : @kernel.ToolCall, failure~ : @kernel.ToolFailure)
   ToolCallRejected(
