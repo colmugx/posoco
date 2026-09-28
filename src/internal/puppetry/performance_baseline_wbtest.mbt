@@ -36,7 +36,8 @@ async test "puppet/BASELINE-ONE-TOOL-COUNTERS" {
   assert_true(fixture_prompt(puppet, "baseline_one_tool") is Accepted(_))
   assert_eq(host.model_call_count(), 2)
   assert_eq(host.tool_call_count(), 1)
-  assert_eq(journal.append_count(), 4)
+  // input + model + tool + final model + approval boundary + wave-start.
+  assert_eq(journal.append_count(), 6)
 }
 
 ///|
@@ -68,5 +69,6 @@ async test "puppet/BASELINE-FOUR-TOOL-COUNTERS" {
   assert_true(fixture_prompt(puppet, "baseline_four_tools") is Accepted(_))
   assert_eq(host.model_call_count(), 2)
   assert_eq(host.tool_call_count(), 4)
-  assert_eq(journal.append_count(), 7)
+  // input + model + 4 tools + final model + approval boundary + wave-start.
+  assert_eq(journal.append_count(), 9)
 }

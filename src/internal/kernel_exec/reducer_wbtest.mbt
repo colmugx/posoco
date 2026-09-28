@@ -1138,10 +1138,10 @@ test "C-TOOL-WAVE-OUT-OF-ORDER: reverse completions preserve source order" {
 
 ///|
 /// Mixed wave: one valid call + one pre-pass-rejected call. The reducer must
-/// pair the rejected call (ToolBatchStarted → ToolCompleted) BEFORE the
-/// effect-only batch-start, and the wave commit must not duplicate the
-/// already-committed rejected tool message.
-test "C-MODEL-MIXED-WAVE: rejected pair precedes effect batch, no duplicate tool message" {
+/// surface the rejected call as one dedicated `ToolCallsPreRejected` event
+/// BEFORE the effect-only batch-start, and the wave commit must not duplicate
+/// the already-committed rejected tool message.
+test "C-MODEL-MIXED-WAVE: pre-rejected event precedes effect batch, no duplicate tool message" {
   let (st_awaiting, eff_id, step_id) = run_until_awaiting_model()
   let catalog = make_catalog_v1()
   let completion = @kernel.Completion(
@@ -1182,29 +1182,22 @@ test "C-MODEL-MIXED-WAVE: rejected pair precedes effect batch, no duplicate tool
     }
   }
   inspect(kinds.to_string(), content="[U][A(2)][T(c_ghost)]")
-  // Event order: step, batch(rejected), completed(rejected), batch(effects).
-  assert_eq(out.events().length(), 4)
+  // Event order: step, pre-rejected batch, batch(effects).
+  assert_eq(out.events().length(), 3)
   match out.events()[1] {
-    ToolBatchStarted(model_step_id~, calls~) => {
+    ToolCallsPreRejected(model_step_id~, calls~, outcomes~) => {
       assert_eq(model_step_id, step_id)
       assert_eq(calls.length(), 1)
       assert_eq(calls[0].call_id.to_string(), "c_ghost")
-    }
-    _ => fail("expected ToolBatchStarted for the rejected call")
-  }
-  match out.events()[2] {
-    ToolCompleted(call~, outcome~) => {
-      assert_eq(call.call_id.to_string(), "c_ghost")
-      assert_eq(call.name.to_string(), "ghost")
-      assert_eq(call.arguments, Json::null())
-      match outcome {
+      assert_eq(outcomes.length(), 1)
+      match outcomes[0] {
         NotExecuted(reason=UnknownTool, ..) => ()
         _ => fail("expected NotExecuted(UnknownTool) for c_ghost")
       }
     }
-    _ => fail("expected ToolCompleted for the rejected call")
+    _ => fail("expected ToolCallsPreRejected for the rejected call")
   }
-  match out.events()[3] {
+  match out.events()[2] {
     ToolBatchStarted(calls~, ..) => {
       assert_eq(calls.length(), 1)
       assert_eq(calls[0].call_id.to_string(), "c_read")

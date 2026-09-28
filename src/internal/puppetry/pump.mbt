@@ -720,6 +720,10 @@ async fn Puppet::pump_awaiting_tools(
   let executable_effects : Array[Effect] = []
   let normalized_pending : Array[Effect] = []
   let hook_rejected_inputs : Array[RunInput] = []
+  // Approved calls with the consent scope that survived the full chain
+  // (None for plain approval). Collected for the post-normalization
+  // ToolCallApproved boundary.
+  let approved_finalized : Array[(ModelStepId, ToolCall, String?)] = []
   for effect in pending {
     match effect {
       ExecuteTool(effect_id~, payload~) => {
@@ -730,6 +734,7 @@ async fn Puppet::pump_awaiting_tools(
         })
         let mut deferred_reason : String? = None
         let mut consented_call : ToolCall? = None
+        let mut consent_scope : String? = None
         let mut call_id_mutated = false
         let reject_reasons : Array[String] = []
         for hook in self.config.hooks {
@@ -761,8 +766,9 @@ async fn Puppet::pump_awaiting_tools(
               current_call = snapshot_tool_call(call)
               continue
             }
-            ApproveAfterConsent(call~, consent_scope~) => {
-              ignore(consent_scope)
+            ApproveAfterConsent(call~, consent_scope=granted) => {
+              // Record the surviving grant scope for the approval event.
+              consent_scope = Some(granted)
               if call.call_id != payload.call_id {
                 call_id_mutated = true
               }
@@ -895,6 +901,9 @@ async fn Puppet::pump_awaiting_tools(
               catalog_version: payload.catalog_version,
             })
             executable_effects.push(executable_effect)
+            approved_finalized.push(
+              (payload.model_step_id, final_call, consent_scope),
+            )
           }
         }
       }
@@ -947,6 +956,38 @@ async fn Puppet::pump_awaiting_tools(
     Ok(value) => value
   }
 
+  // Publish approvals for every call the chain finalized as executable.
+  // Each event carries the final canonical call and the surviving consent
+  // scope (None for plain approval). One durable boundary per batch keeps
+  // the fact ordered before any wave-start or completion event.
+  if !approved_finalized.is_empty() {
+    let approved_events : Array[KernelEvent] = []
+    for finalized in approved_finalized {
+      let (model_step_id, final_call, scope) = finalized
+      approved_events.push(
+        ToolCallApproved(model_step_id~, call=final_call, consent_scope=scope),
+      )
+    }
+    let approved_cr : Result[Unit, PuppetError] = Ok(
+      self.commit_boundary(
+        state,
+        ToolCommitted,
+        approved_events,
+        dispatcher,
+        run_id,
+        turn_id,
+        session_id,
+        "sp_tool_approved",
+      ),
+    ) catch {
+      error => Err(error)
+    }
+    match approved_cr {
+      Err(error) => return StopWith(self.finalize_rejected(error~))
+      Ok(_) => ()
+    }
+  }
+
   // Resolve explicit hook rejections before launching side effects. This
   // keeps the pending-effect correlation valid while making the rejection
   // durable through the normal reducer path.
@@ -996,6 +1037,61 @@ async fn Puppet::pump_awaiting_tools(
     Ok(value) => value
   }
   for wave_index, wave in waves {
+    // Announce the launch before `@async.all` starts: one durable
+    // boundary per wave, one event per wave, expanded per call by the
+    // projection. Observers therefore see execution begin instead of
+    // inferring it from a later completion.
+    let wave_calls : Array[@kernel.ToolCall] = []
+    let mut wave_model_step : ModelStepId? = None
+    for effect in wave {
+      match effect {
+        ExecuteTool(effect_id=_, payload~) => {
+          wave_calls.push({
+            call_id: payload.call_id,
+            name: payload.tool_name,
+            arguments: payload.arguments,
+          })
+          wave_model_step = Some(payload.model_step_id)
+        }
+        _ =>
+          return StopWith(
+            self.finalize_rejected(
+              error=ReducerInvariantViolation(
+                category=IllegalPhase(
+                  phase="AwaitingTools",
+                  detail="wave effect is not ExecuteTool",
+                ),
+              ),
+            ),
+          )
+      }
+    }
+    if !wave_calls.is_empty() {
+      let wave_events : Array[KernelEvent] = [
+        ToolWaveStarted(
+          model_step_id=wave_model_step.unwrap(),
+          calls=wave_calls,
+        ),
+      ]
+      let wave_cr : Result[Unit, PuppetError] = Ok(
+        self.commit_boundary(
+          state,
+          ToolCommitted,
+          wave_events,
+          dispatcher,
+          run_id,
+          turn_id,
+          session_id,
+          "sp_tool_wave_start_\{wave_index}",
+        ),
+      ) catch {
+        error => Err(error)
+      }
+      match wave_cr {
+        Err(error) => return StopWith(self.finalize_rejected(error~))
+        Ok(_) => ()
+      }
+    }
     // `@async.all` starts every effect in the finalized wave, waits at its
     // barrier, and returns inputs in source order. The reducer remains the
     // sole owner of transcript/result ordering. The await races the mailbox

@@ -439,7 +439,8 @@ async test "puppet/C-PARALLEL-TOOLS" {
       committed = committed + 1
     }
   }
-  assert_eq(committed, 2)
+  // 2 per-tool folds + 1 approval boundary + 1 wave-start boundary.
+  assert_eq(committed, 4)
 }
 
 ///|

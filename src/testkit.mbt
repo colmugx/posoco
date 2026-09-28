@@ -58,27 +58,37 @@ fn testkit_snapshot_model_call_result(
 
 ///|
 /// Testkit-specific event copier. Unlike `snapshot_turn_event` (agent.mbt),
-/// this preserves a recorded `ToolCallResult`'s `is_error` verbatim instead
-/// of recomputing it from `result.is_failure()`: the observer must snapshot
-/// what it actually saw, even if some emitter disagreed with the result.
+/// this is the same deep copy over tool payloads; the split terminal tool
+/// events carry their payloads verbatim, so both copiers agree by
+/// construction.
 fn testkit_snapshot_event(event : @types.TurnEvent) -> @types.TurnEvent {
   match event {
     TurnStarted => TurnStarted
     ToolCallPending(call) => ToolCallPending(snapshot_tool_call(call))
-    ToolCallResult(call~, result~, is_error~) =>
-      ToolCallResult(
+    ToolCallApproved(call~, consent_scope~) =>
+      ToolCallApproved(call=snapshot_tool_call(call), consent_scope~)
+    ToolCallStarted(call~) => ToolCallStarted(call=snapshot_tool_call(call))
+    ToolCallSucceeded(call~, content~, structured~) =>
+      ToolCallSucceeded(
         call=snapshot_tool_call(call),
-        result=snapshot_tool_outcome(result),
-        is_error~,
+        content~,
+        structured=snapshot_opt_json(structured),
       )
+    ToolCallFailed(call~, failure~) =>
+      ToolCallFailed(
+        call=snapshot_tool_call(call),
+        failure=snapshot_tool_failure(failure),
+      )
+    ToolCallRejected(call~, reason~) =>
+      ToolCallRejected(call=snapshot_tool_call(call), reason~)
+    ToolCallAbandoned(call~, reason~) =>
+      ToolCallAbandoned(call=snapshot_tool_call(call), reason~)
     ModelResponseReceived(message~, usage~) =>
       ModelResponseReceived(message=snapshot_message(message), usage~)
     SessionRedirect(from~, to~, messages_before~, messages_after~) =>
       SessionRedirect(from~, to~, messages_before~, messages_after~)
     TurnCompleted => TurnCompleted
     TurnFailed(reason) => TurnFailed(reason)
-    ToolCallDeferred(call~, reason~) =>
-      ToolCallDeferred(call=snapshot_tool_call(call), reason~)
     StreamChunkReceived(chunk~) => StreamChunkReceived(chunk~)
     StreamChunksDropped(count~) => StreamChunksDropped(count~)
     ConfigWarning(field~, value~, reason~) =>

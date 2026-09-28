@@ -56,7 +56,7 @@ fn boundary_kind_for_events(events : Array[KernelEvent]) -> SavepointKind {
     let (rank, kind) : (Int, SavepointKind) = match event {
       RunCompleted(..) | RunFailed(..) | RunCancelled(..) => (4, RunTerminal)
       RunSuspended(..) => (3, RunSuspended)
-      ToolCompleted(..) => (2, ToolCommitted)
+      ToolCompleted(..) | ToolCallsPreRejected(..) => (2, ToolCommitted)
       ModelStepCompleted(..) => (1, AssistantCommitted)
       RunStarted(..) => (0, InputAccepted)
       _ => (-1, AssistantCommitted)
@@ -76,7 +76,8 @@ fn event_to_boundary_kind(event : KernelEvent) -> SavepointKind {
   match event {
     RunStarted(..) => InputAccepted
     ModelStepCompleted(..) => AssistantCommitted
-    ToolCompleted(..) => ToolCommitted
+    ToolCompleted(..) | ToolCallsPreRejected(..) => ToolCommitted
+    ToolCallApproved(..) | ToolWaveStarted(..) => ToolCommitted
     RunSuspended(..) => RunSuspended
     RunCompleted(..) | RunFailed(..) | RunCancelled(..) => RunTerminal
     _ => AssistantCommitted
@@ -202,6 +203,37 @@ fn kernel_event_payload(event : KernelEvent) -> Json {
           ("kind", Json::string("ToolCompleted")),
           ("call_id", Json::string(call.call_id.to_string())),
           ("outcome", Json::string(outcome.summary())),
+        ]),
+      )
+    ToolCallsPreRejected(model_step_id~, calls~, ..) =>
+      Json::object(
+        Map::from_array([
+          ("kind", Json::string("ToolCallsPreRejected")),
+          ("model_step_id", Json::number(model_step_id.to_int().to_double())),
+          ("call_count", Json::number(calls.length().to_double())),
+        ]),
+      )
+    ToolCallApproved(model_step_id~, call~, consent_scope~) =>
+      Json::object(
+        Map::from_array([
+          ("kind", Json::string("ToolCallApproved")),
+          ("model_step_id", Json::number(model_step_id.to_int().to_double())),
+          ("call_id", Json::string(call.call_id.to_string())),
+          (
+            "consent_scope",
+            match consent_scope {
+              Some(scope) => Json::string(safe_label(scope))
+              None => Json::null()
+            },
+          ),
+        ]),
+      )
+    ToolWaveStarted(model_step_id~, calls~) =>
+      Json::object(
+        Map::from_array([
+          ("kind", Json::string("ToolWaveStarted")),
+          ("model_step_id", Json::number(model_step_id.to_int().to_double())),
+          ("call_count", Json::number(calls.length().to_double())),
         ]),
       )
     RunSuspended(requirement~, model_step_id~) =>

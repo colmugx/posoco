@@ -297,6 +297,11 @@ priv struct AgentRuntime {
   /// model/tool boundaries advance the same durability cursor the terminal
   /// save path uses.
   session_cursors : Map[String, Int]
+  /// The committed-event projection subscriber. Retained so the turn-failure
+  /// path can close still-pending tool calls with `ToolCallAbandoned`: the
+  /// Puppet's host-level rejection path (`reject_run`) intentionally emits
+  /// no terminal kernel event, so the Agent synthesizes the closure here.
+  event_subscriber : AgentEventSubscriber
   /// Sessions whose canonical transcript was rewritten (compact/hook rewrite)
   /// during a run. Incremental event projection pauses until the terminal
   /// full-save re-establishes a canonical prefix.
@@ -605,6 +610,7 @@ fn AgentRuntime::compose(
     turn_active: false,
     chunk_dispatcher: chunk_dispatcher_ref,
     session_cursors,
+    event_subscriber,
     checkpoint_dirty,
     body_recovery: Map::from_array([]),
   }
@@ -834,11 +840,20 @@ fn save_error_context(
 }
 
 ///|
-fn @types.TurnEvent::tool_call_result(
-  call : @kernel.ToolCall,
-  result : @kernel.ToolOutcome,
-) -> @types.TurnEvent {
-  ToolCallResult(call~, result~, is_error=result.is_failure())
+fn snapshot_opt_json(value : Json?) -> Json? {
+  match value {
+    Some(j) => Some(snapshot_json(j))
+    None => None
+  }
+}
+
+///|
+fn snapshot_tool_failure(failure : @kernel.ToolFailure) -> @kernel.ToolFailure {
+  match failure {
+    ReportedError(content~, structured~) =>
+      ReportedError(content~, structured=snapshot_opt_json(structured))
+    Runtime(category~, message~) => Runtime(category~, message~)
+  }
 }
 
 ///|
@@ -846,19 +861,30 @@ fn snapshot_turn_event(event : @types.TurnEvent) -> @types.TurnEvent {
   match event {
     TurnStarted => TurnStarted
     ToolCallPending(call) => ToolCallPending(snapshot_tool_call(call))
-    ToolCallResult(call~, result~, ..) =>
-      @types.TurnEvent::tool_call_result(
-        snapshot_tool_call(call),
-        snapshot_tool_outcome(result),
+    ToolCallApproved(call~, consent_scope~) =>
+      ToolCallApproved(call=snapshot_tool_call(call), consent_scope~)
+    ToolCallStarted(call~) => ToolCallStarted(call=snapshot_tool_call(call))
+    ToolCallSucceeded(call~, content~, structured~) =>
+      ToolCallSucceeded(
+        call=snapshot_tool_call(call),
+        content~,
+        structured=snapshot_opt_json(structured),
       )
+    ToolCallFailed(call~, failure~) =>
+      ToolCallFailed(
+        call=snapshot_tool_call(call),
+        failure=snapshot_tool_failure(failure),
+      )
+    ToolCallRejected(call~, reason~) =>
+      ToolCallRejected(call=snapshot_tool_call(call), reason~)
+    ToolCallAbandoned(call~, reason~) =>
+      ToolCallAbandoned(call=snapshot_tool_call(call), reason~)
     ModelResponseReceived(message~, usage~) =>
       ModelResponseReceived(message=snapshot_message(message), usage~)
     SessionRedirect(from~, to~, messages_before~, messages_after~) =>
       SessionRedirect(from~, to~, messages_before~, messages_after~)
     TurnCompleted => TurnCompleted
     TurnFailed(reason) => TurnFailed(reason)
-    ToolCallDeferred(call~, reason~) =>
-      ToolCallDeferred(call=snapshot_tool_call(call), reason~)
     StreamChunkReceived(chunk~) => StreamChunkReceived(chunk~)
     StreamChunksDropped(count~) => StreamChunksDropped(count~)
     ConfigWarning(field~, value~, reason~) =>
@@ -1132,6 +1158,10 @@ async fn AgentRuntime::run_single_turn(
           )
       }
       let safe_reason = "turn failed: " + agent_error_category(primary)
+      // The Puppet's host-level rejection path emits no terminal kernel
+      // event, so the Agent closes still-pending tool calls here — the
+      // abandonment must precede the turn-failure synthesis.
+      self.event_subscriber.drain_pending(Some(identity.scope()), "turn failed")
       self.emit_turn_event(Some(identity.scope()), TurnFailed(safe_reason))
       self.dispatch_on_turn_end()
       raise primary
@@ -1150,6 +1180,7 @@ async fn AgentRuntime::run_single_turn(
       result
     }
     Err(error) => {
+      self.event_subscriber.drain_pending(Some(identity.scope()), "turn failed")
       self.emit_turn_event(
         Some(identity.scope()),
         TurnFailed("turn failed: AgentError::Runtime"),

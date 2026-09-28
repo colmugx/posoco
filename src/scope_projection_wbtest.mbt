@@ -18,7 +18,12 @@ fn scope_projection_event_tag(event : @types.TurnEvent) -> String {
     TurnStarted => "turn_started"
     ModelResponseReceived(..) => "model_response"
     ToolCallPending(_) => "tool_pending"
-    ToolCallResult(..) => "tool_result"
+    ToolCallApproved(..) => "tool_approved"
+    ToolCallStarted(..) => "tool_started"
+    ToolCallSucceeded(..)
+    | ToolCallFailed(..)
+    | ToolCallRejected(..)
+    | ToolCallAbandoned(..) => "tool_result"
     TurnCompleted => "turn_completed"
     TurnFailed(_) => "turn_failed"
     _ => "other"
@@ -160,8 +165,8 @@ async test "scope_projection/tool_loop_events_and_hook_stages_share_run" {
   ignore(agent.run_turn(tk_user_msg("hi"), "s_loop"))
   let tags = observer.records.map(fn(r) { r.0 })
   assert_eq(tags, [
-    "turn_started", "model_response", "tool_pending", "tool_result", "model_response",
-    "turn_completed",
+    "turn_started", "model_response", "tool_pending", "tool_approved", "tool_started",
+    "tool_result", "model_response", "turn_completed",
   ])
   guard observer.records[0].1 is Some(turn_scope) else {
     fail("TurnStarted must carry Some(scope)")

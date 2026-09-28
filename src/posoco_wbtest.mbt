@@ -895,7 +895,11 @@ async test "observer_event_sequence" {
     if event is ToolCallPending(_) {
       has_pending = true
     }
-    if event is ToolCallResult(..) {
+    if event
+      is (ToolCallSucceeded(..)
+      | ToolCallFailed(..)
+      | ToolCallRejected(..)
+      | ToolCallAbandoned(..)) {
       has_result = true
     }
   }
@@ -1755,15 +1759,19 @@ test "catalog: declared execution policy survives composition" {
 }
 
 ///|
-/// Tool-event trace from a recorded observer: "pending:<id>" / "result:<id>"
-/// entries in arrival order, used to assert the pending→result pairing
-/// contract for a call.
+/// Tool-event trace from a recorded observer: "pending:<id>" /
+/// "result:<id>" entries in arrival order, used to assert the
+/// pending→terminal pairing contract for a call. Any of the four terminal
+/// tool events counts as the result side of the pair.
 fn tool_event_trace(events : Array[@types.TurnEvent]) -> Array[String] {
   let trace : Array[String] = []
   for event in events {
     match event {
       ToolCallPending(call) => trace.push("pending:\{call.call_id.to_string()}")
-      ToolCallResult(call~, ..) =>
+      ToolCallSucceeded(call~, ..)
+      | ToolCallFailed(call~, ..)
+      | ToolCallRejected(call~, ..)
+      | ToolCallAbandoned(call~, ..) =>
         trace.push("result:\{call.call_id.to_string()}")
       _ => ()
     }
@@ -1772,8 +1780,8 @@ fn tool_event_trace(events : Array[@types.TurnEvent]) -> Array[String] {
 }
 
 ///|
-/// The call must see ToolCallPending strictly before its ToolCallResult, and
-/// both must be present.
+/// The executed call must see ToolCallPending strictly before its terminal
+/// event, and both must be present.
 fn assert_pending_before_result(
   trace : Array[String],
   call_id : String,
@@ -1784,7 +1792,7 @@ fn assert_pending_before_result(
       seen_pending = true
     } else if entry == "result:\{call_id}" {
       if !seen_pending {
-        fail("ToolCallResult before ToolCallPending for \{call_id}")
+        fail("terminal tool event before ToolCallPending for \{call_id}")
       }
       return
     }
@@ -1793,13 +1801,29 @@ fn assert_pending_before_result(
 }
 
 ///|
+/// Pre-pass rejects never enter the pipeline: the rejection must surface
+/// directly, with no pending marker.
+fn assert_rejected_without_pending(
+  trace : Array[String],
+  call_id : String,
+) -> Unit raise {
+  for entry in trace {
+    if entry == "pending:\{call_id}" {
+      fail("unexpected ToolCallPending for pre-pass-rejected \{call_id}")
+    }
+    if entry == "result:\{call_id}" {
+      return
+    }
+  }
+  fail("missing rejection for \{call_id}")
+}
+
+///|
 /// Regression: a wave whose ONLY call is rejected pre-execution (unknown
-/// tool name) must complete the turn. The reducer used to emit
-/// ToolCompleted without a preceding ToolBatchStarted, which tripped the
-/// subscriber's ContractViolation and killed the turn. Now the rejected
-/// call is "submitted → resolved NotExecuted": observers see
-/// ToolCallPending then ToolCallResult(NotExecuted).
-async test "all_rejected_wave_unknown_tool_completes_with_paired_events" {
+/// tool name) must complete the turn. The rejection surfaces as a dedicated
+/// `ToolCallRejected` event — the call never entered the pipeline, so no
+/// `ToolCallPending` precedes it.
+async test "all_rejected_wave_unknown_tool_completes_with_rejection_event" {
   let model = ScriptedModel([
     Respond(tk_tool_call_response("ghost_tool", "c_rej", Json::null())),
     Respond(tk_stop_response("recovered")),
@@ -1822,12 +1846,12 @@ async test "all_rejected_wave_unknown_tool_completes_with_paired_events" {
     _ => fail("expected NotExecuted(UnknownTool) in turn tool_results")
   }
   assert_eq(tools.exec_records().length(), 0)
-  assert_pending_before_result(tool_event_trace(observer.events()), "c_rej")
+  assert_rejected_without_pending(tool_event_trace(observer.events()), "c_rej")
 }
 
 ///|
-/// Regression: same pairing contract for the schema-mismatch rejection path.
-async test "all_rejected_wave_schema_mismatch_completes_with_paired_events" {
+/// Regression: same rejection-node contract for the schema-mismatch path.
+async test "all_rejected_wave_schema_mismatch_completes_with_rejection_event" {
   let strict_def : @kernel.ToolDef = {
     ..tk_tool_def("strict", "requires an object"),
     input_schema: Json::object(
@@ -1855,14 +1879,17 @@ async test "all_rejected_wave_schema_mismatch_completes_with_paired_events" {
     _ => fail("expected NotExecuted(SchemaMismatch) in turn tool_results")
   }
   assert_eq(tools.exec_records().length(), 0)
-  assert_pending_before_result(tool_event_trace(observer.events()), "c_schema")
+  assert_rejected_without_pending(
+    tool_event_trace(observer.events()),
+    "c_schema",
+  )
 }
 
 ///|
 /// Regression: a MIXED wave (one valid call + one unknown-name call) must
-/// complete, and the observer must see a paired pending/result for BOTH the
-/// executed and the rejected call.
-async test "mixed_wave_executes_and_rejects_with_paired_events" {
+/// complete; the executed call keeps the full pending→terminal pairing while
+/// the unknown-name call surfaces as a rejection without a pending marker.
+async test "mixed_wave_pairs_executed_call_and_rejects_unknown_without_pending" {
   let probe_call = make_tool_call("c_probe", "probe")
   let ghost_call = make_tool_call("c_ghost", "ghost_tool")
   let model = ScriptedModel([
@@ -1900,7 +1927,7 @@ async test "mixed_wave_executes_and_rejects_with_paired_events" {
   assert_true(saw_not_executed)
   let trace = tool_event_trace(observer.events())
   assert_pending_before_result(trace, "c_probe")
-  assert_pending_before_result(trace, "c_ghost")
+  assert_rejected_without_pending(trace, "c_ghost")
 }
 
 ///|

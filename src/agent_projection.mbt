@@ -116,6 +116,21 @@ impl @puppetry.EventSubscriber for SessionCheckpointSubscriber with fn on_event(
           ToolMessage(call_id=call.call_id, tool_name=call.name, outcome~),
         )
       }
+    ToolCallsPreRejected(calls~, outcomes~, ..) =>
+      // Pre-pass rejects are reducer-transcript facts (NotExecuted tool
+      // messages); mirror them exactly like folded completions.
+      if !self.dirty.contains(session_id) {
+        for i in 0..<calls.length() {
+          self.append_committed_message(
+            session_id,
+            ToolMessage(
+              call_id=calls[i].call_id,
+              tool_name=calls[i].name,
+              outcome=outcomes[i],
+            ),
+          )
+        }
+      }
     _ => ()
   }
 }
@@ -197,7 +212,38 @@ fn AgentEventSubscriber::emit_tool_result(
     )
   }
   self.pending_calls.remove(key)
-  self.emit(Some(scope), @types.TurnEvent::tool_call_result(call, outcome))
+  // One outcome shape → one terminal tool event. The variant IS the node:
+  // success, failure and rejection never share an event.
+  let event : @types.TurnEvent = match outcome {
+    Success(content~, structured~) =>
+      ToolCallSucceeded(call~, content~, structured~)
+    ToolReportedError(content~, structured~) =>
+      ToolCallFailed(call~, failure=ReportedError(content~, structured~))
+    RuntimeFailure(error_category~, message~) =>
+      ToolCallFailed(call~, failure=Runtime(category=error_category, message~))
+    NotExecuted(reason~, ..) => ToolCallRejected(call~, reason~)
+  }
+  self.emit(Some(scope), event)
+}
+
+///|
+/// Abandon every still-pending call. Used when a run ends without folding
+/// their completions (cancel, terminal hook failure, suspension) and
+/// defensively when a new run starts over leftovers. With `scope` the drain
+/// attributes to the run that owned the calls; `None` marks out-of-run
+/// cleanup.
+fn AgentEventSubscriber::drain_pending(
+  self : AgentEventSubscriber,
+  scope : @types.EventScope?,
+  reason : String,
+) -> Unit {
+  if self.pending_calls.is_empty() {
+    return
+  }
+  for _key, call in self.pending_calls {
+    self.emit(scope, ToolCallAbandoned(call~, reason~))
+  }
+  self.pending_calls.clear()
 }
 
 ///|
@@ -214,7 +260,34 @@ impl @puppetry.EventSubscriber for AgentEventSubscriber with fn on_event(
     turn_id: envelope.turn_id(),
   }
   match event {
-    RunStarted(..) => self.pending_calls.clear()
+    RunStarted(..) =>
+      self.drain_pending(None, "run restarted before completion")
+    RunSuspended(..) => self.drain_pending(Some(scope), "run suspended")
+    RunCompleted(..) | RunFailed(..) | RunCancelled(..) =>
+      // Terminal-only drain: cancelled tool effects still receive their
+      // closing ToolCompleted events between CancelRequested and the
+      // terminal event, so draining any earlier would break pairing.
+      self.drain_pending(Some(scope), "run terminal")
+    ToolCallsPreRejected(calls~, outcomes~, ..) =>
+      // Pre-pass rejects never entered the pipeline: emit the rejection
+      // directly, no pending marker, nothing to drain.
+      for i in 0..<calls.length() {
+        match outcomes[i] {
+          NotExecuted(reason~, ..) =>
+            self.emit(Some(scope), ToolCallRejected(call=calls[i], reason~))
+          _ =>
+            raise ContractViolation(
+              subscriber_id="agent_committed_event_projection",
+              detail="ToolCallsPreRejected carries a non-NotExecuted outcome",
+            )
+        }
+      }
+    ToolCallApproved(model_step_id=_, call~, consent_scope~) =>
+      self.emit(Some(scope), ToolCallApproved(call~, consent_scope~))
+    ToolWaveStarted(calls~, ..) =>
+      for call in calls {
+        self.emit(Some(scope), ToolCallStarted(call=snapshot_tool_call(call)))
+      }
     ModelStepCompleted(completion~, ..) => {
       let payload = completion.message
       let message : @kernel.Message = AssistantMessage(

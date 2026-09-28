@@ -117,9 +117,10 @@ async test "puppet/boundary_commits_intent_before_each_model_effect" {
   )
   assert_true(fixture_prompt(puppet, "boundary") is Accepted(_))
   // Initial InputAccepted boundary exists before the first model effect. The
-  // final tool outcome and second model intent share the third boundary.
-  assert_eq(host.append_counts_at_model_call(), [1, 3])
-  assert_eq(journal.append_count(), 4)
+  // approval and wave-start boundaries precede the tool commit, so the
+  // second model intent sees count 5.
+  assert_eq(host.append_counts_at_model_call(), [1, 5])
+  assert_eq(journal.append_count(), 6)
 }
 
 // ──────────────────────────────────────────────────────────────────────────

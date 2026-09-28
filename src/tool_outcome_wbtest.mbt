@@ -1,13 +1,31 @@
 ///|
 /// M0-T06 regression tests: tool outcome consistency and collision fail-fast.
 ///
-/// T06-A: the ToolCallResult event's is_error MUST equal the ToolOutcome's
-///        `is_failure` (bug historically: agent hardcoded is_error=false for
-///        Ok(results)). R3 M3.7: ToolResult → ToolOutcome (ADT).
+/// T06-A: the observer's terminal tool event MUST carry the same failure
+/// payload as the ToolOutcome (split events: ToolCallSucceeded /
+/// ToolCallFailed / ToolCallRejected; the variant IS the error status).
 /// T06-B: two providers registering the same tool name MUST fail composition
-///        with CompositionError::ToolCollision, not last-wins.
+/// with CompositionError::ToolCollision, not last-wins.
 fn outcome_config() -> AgentConfig {
   agent_config(max_tool_rounds=Some(10))
+}
+
+///|
+/// Whether the event-side failure payload matches the outcome-side fact.
+/// Encodes the projection mapping so the test asserts it explicitly.
+fn failure_matches_outcome(
+  failure : @kernel.ToolFailure,
+  outcome : @kernel.ToolOutcome,
+) -> Bool {
+  match (outcome, failure) {
+    (
+      ToolReportedError(content~, structured~),
+      ReportedError(content=fc, structured=fs),
+    ) => content == fc && structured == fs
+    (RuntimeFailure(error_category~, message~), Runtime(category=fc, message=fm)
+    ) => error_category == fc && message == fm
+    _ => false
+  }
 }
 
 ///|
@@ -23,14 +41,14 @@ fn outcome_text(outcome : @kernel.ToolOutcome) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// T06-A regression 1: provider returns business-error outcome → event
-// is_error must be true.
+// T06-A regression 1: provider returns business-error outcome → the observer
+// sees ToolCallFailed(ReportedError).
 // ---------------------------------------------------------------------------
 
 ///|
 async test "t06a_business_error_event_matches_result" {
-  // Provider returns Ok(ToolReportedError). The emitted ToolCallResult event
-  // MUST have is_error=true.
+  // Provider returns Ok(ToolReportedError). The emitted terminal event
+  // MUST be ToolCallFailed carrying the same payload.
   let first_response = tk_tool_call_response("probe", "tc_1", Json::null())
   let final_response = tk_stop_response("after")
   let business_result = tk_error_result("denied")
@@ -50,29 +68,27 @@ async test "t06a_business_error_event_matches_result" {
   )
   let turn_result = agent.run_turn(tk_user_msg("run probe"), "s1")
   let events = obs.events()
-  // Find the ToolCallResult event for tc_1.
-  let mut event_is_error : Bool? = None
-  let mut event_result : @kernel.ToolOutcome? = None
+  // Find the ToolCallFailed event for tc_1 (ToolReportedError shape).
+  let mut event_failure : @kernel.ToolFailure? = None
   for e in events {
     match e {
-      ToolCallResult(call~, result~, is_error~) =>
+      ToolCallFailed(call~, failure~) =>
         if call.call_id.to_string() == "tc_1" {
-          assert_true(is_error == result.is_failure())
-          event_is_error = Some(is_error)
-          event_result = Some(result)
+          event_failure = Some(failure)
         }
       _ => ()
     }
   }
-  match event_is_error {
-    Some(v) => assert_true(v) // ToolReportedError → is_failure=true
-    None => fail("expected a ToolCallResult event for tc_1")
+  match event_failure {
+    Some(failure) => {
+      // The event's failure payload must match the outcome that the turn
+      // returned and the transcript persisted.
+      assert_true(failure_matches_outcome(failure, turn_result.tool_results[0]))
+      assert_true(turn_result.tool_results[0].is_failure())
+    }
+    None => fail("expected a ToolCallFailed event for tc_1")
   }
   assert_eq(turn_result.tool_results.length(), 1)
-  match event_result {
-    Some(observed) => assert_true(observed == turn_result.tool_results[0])
-    None => fail("expected event result for tc_1")
-  }
   // The same outcome semantics must be persisted in the tool message
   // that is fed into the next model round.
   try {
@@ -98,7 +114,7 @@ async test "t06a_business_error_event_matches_result" {
 }
 
 // ---------------------------------------------------------------------------
-// T06-A regression 2: success path — event is_error must be false.
+// T06-A regression 2: success path — the observer sees ToolCallSucceeded.
 // ---------------------------------------------------------------------------
 
 ///|
@@ -124,24 +140,26 @@ async test "t06a_success_event_is_not_error" {
   let events = obs.events()
   assert_eq(turn_result.tool_results.length(), 1)
   assert_true(turn_result.tool_results[0] == success_result)
+  let mut saw_success_event = false
   for e in events {
     match e {
-      ToolCallResult(call~, result~, is_error~) =>
+      ToolCallSucceeded(call~, ..) =>
         if call.call_id.to_string() == "tc_2" {
-          assert_true(is_error == result.is_failure())
-          assert_true(!is_error)
+          saw_success_event = true
         }
       _ => ()
     }
   }
+  assert_true(saw_success_event)
 }
 
 // ---------------------------------------------------------------------------
-// T06-A regression 3: runtime raised error → event is_error=true.
+// T06-A regression 3: runtime raised error → the observer sees
+// ToolCallFailed(Runtime).
 // ---------------------------------------------------------------------------
 
 ///|
-async test "t06a_runtime_error_event_is_error_true" {
+async test "t06a_runtime_error_event_is_runtime_failure" {
   let first_response = tk_tool_call_response("boom", "tc_3", Json::null())
   let final_response = tk_stop_response("after")
   let raised_error : @error.RuntimeError = InvocationFailed("crash")
@@ -164,10 +182,9 @@ async test "t06a_runtime_error_event_is_error_true" {
   let mut seen_error_event = false
   for e in events {
     match e {
-      ToolCallResult(call~, result~, is_error~) =>
+      ToolCallFailed(call~, failure~) =>
         if call.call_id.to_string() == "tc_3" {
-          assert_true(is_error)
-          assert_true(result.is_failure())
+          assert_true(failure is Runtime(..))
           seen_error_event = true
         }
       _ => ()

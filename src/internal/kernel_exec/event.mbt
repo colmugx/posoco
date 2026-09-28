@@ -73,6 +73,34 @@ pub(all) enum KernelEvent {
   /// finalization. Arguments are available to in-memory observers, never to
   /// durable diagnostic summaries.
   ToolCompleted(call~ : @kernel.ToolCall, outcome~ : @kernel.ToolOutcome)
+  /// Emitted when the reducer's pre-pass validation rejects calls before
+  /// they become `ExecuteTool` effects (unknown tool, schema mismatch).
+  /// These calls never enter the execution pipeline; the projection emits
+  /// a rejection event directly without a pending marker. One event per
+  /// rejected batch, in source order.
+  ToolCallsPreRejected(
+    model_step_id~ : ModelStepId,
+    calls~ : Array[@kernel.ToolCall],
+    outcomes~ : Array[@kernel.ToolOutcome]
+  )
+  /// Emitted when the pre-tool hook chain finalizes a call as executable
+  /// (plain approval or explicit consent). `consent_scope` names what a
+  /// user agreed to (`None` for plain approval). The call is the final
+  /// canonical call after the complete chain; this is the audit point for
+  /// hook rewrites and consent grants.
+  ToolCallApproved(
+    model_step_id~ : ModelStepId,
+    call~ : @kernel.ToolCall,
+    consent_scope~ : String?
+  )
+  /// Emitted immediately before a scheduled tool wave launches (`@async.all`
+  /// barrier). One event per wave; the projection expands it into per-call
+  /// start markers. Arguments are available to in-memory observers, never
+  /// to durable diagnostic summaries.
+  ToolWaveStarted(
+    model_step_id~ : ModelStepId,
+    calls~ : Array[@kernel.ToolCall]
+  )
   /// Emitted when entering the `Suspended` phase. Non-terminal.
   RunSuspended(
     requirement~ : SuspensionRequirement,
@@ -133,6 +161,12 @@ pub impl Show for KernelEvent with fn to_string(self : KernelEvent) -> String {
       "ToolBatchStarted(step=\{model_step_id.to_int()}, \{calls.length()} calls)"
     ToolCompleted(call~, outcome~) =>
       "ToolCompleted(call=\{call.call_id.to_string()}, \{outcome.summary()})"
+    ToolCallsPreRejected(model_step_id~, calls~, ..) =>
+      "ToolCallsPreRejected(step=\{model_step_id.to_int()}, \{calls.length()} calls)"
+    ToolCallApproved(model_step_id~, call~, consent_scope~) =>
+      "ToolCallApproved(step=\{model_step_id.to_int()}, call=\{call.call_id.to_string()}, consent=\{consent_scope is Some(_)})"
+    ToolWaveStarted(model_step_id~, calls~) =>
+      "ToolWaveStarted(step=\{model_step_id.to_int()}, \{calls.length()} calls)"
     RunSuspended(requirement~, model_step_id~) =>
       "RunSuspended(kind=\{requirement.kind}, step=\{model_step_id.to_int()})"
     RunResumed(model_step_id~) => "RunResumed(step=\{model_step_id.to_int()})"

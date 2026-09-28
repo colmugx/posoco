@@ -249,18 +249,40 @@ pub extend EventScope with Debug::{to_repr}
 
 ///|
 /// Turn lifecycle events observed via `Observer::on_event`. R3 M3.7: payload
-/// types are now canonical kernel types (`ToolCall`, `ToolOutcome`,
-/// `Message`, `Usage`). `is_error` on `ToolCallResult` is preserved for
-/// legacy observer compatibility — it is derived from the `ToolOutcome`
-/// variant (`is_failure`).
+/// types are canonical kernel types (`ToolCall`, `ToolOutcome`, `Message`,
+/// `Usage`). Tool events form an explicit per-call state machine — every
+/// observable node has its own variant, none doubles as another:
+///
+/// ```
+/// ToolCallPending            (entered the pipeline, awaiting hook chain)
+///   ├─ ToolCallApproved      (chain finalized executable; consent audit)
+///   │    └─ ToolCallStarted  (wave launched)
+///   │         ├─ ToolCallSucceeded / ToolCallFailed
+///   ├─ ToolCallRejected      (a decision resolved the call: hook reject,
+///   │                         validation reject; run continues)
+///   └─ ToolCallAbandoned     (no outcome exists: cancelled mid-wave,
+///                             terminal hook failure, run ended)
+/// ```
+///
+/// Pre-pass validation rejects (unknown tool / schema mismatch) surface as
+/// `ToolCallRejected` directly — the call never entered the pipeline, so no
+/// `ToolCallPending` precedes them.
 pub(all) enum TurnEvent {
   TurnStarted
   ToolCallPending(@kernel.ToolCall)
-  ToolCallResult(
+  ToolCallApproved(call~ : @kernel.ToolCall, consent_scope~ : String?)
+  ToolCallStarted(call~ : @kernel.ToolCall)
+  ToolCallSucceeded(
     call~ : @kernel.ToolCall,
-    result~ : @kernel.ToolOutcome,
-    is_error~ : Bool
+    content~ : String,
+    structured~ : Json?
   )
+  ToolCallFailed(call~ : @kernel.ToolCall, failure~ : @kernel.ToolFailure)
+  ToolCallRejected(
+    call~ : @kernel.ToolCall,
+    reason~ : @kernel.NotExecutedReason
+  )
+  ToolCallAbandoned(call~ : @kernel.ToolCall, reason~ : String)
   ModelResponseReceived(message~ : @kernel.Message, usage~ : @kernel.Usage?)
   SessionRedirect(
     from~ : String,
@@ -270,7 +292,6 @@ pub(all) enum TurnEvent {
   )
   TurnCompleted
   TurnFailed(String)
-  ToolCallDeferred(call~ : @kernel.ToolCall, reason~ : String)
   StreamChunkReceived(chunk~ : StreamChunk)
   /// Emitted when the buffered chunk queue overflowed and oldest chunks were
   /// dropped. `count` is the number of dropped `StreamChunkReceived` events.
@@ -327,14 +348,21 @@ pub impl Show for TurnEvent with fn to_string(self : TurnEvent) -> String {
   match self {
     TurnStarted => "TurnStarted"
     ToolCallPending(call) => "ToolCallPending(\{call.call_id.to_string()})"
-    ToolCallResult(call~, is_error~, ..) =>
-      "ToolCallResult(\{call.call_id.to_string()}, is_error=\{is_error})"
+    ToolCallApproved(call~, consent_scope~) =>
+      "ToolCallApproved(\{call.call_id.to_string()}, consent=\{consent_scope is Some(_)})"
+    ToolCallStarted(call~) => "ToolCallStarted(\{call.call_id.to_string()})"
+    ToolCallSucceeded(call~, ..) =>
+      "ToolCallSucceeded(\{call.call_id.to_string()})"
+    ToolCallFailed(call~, failure~) =>
+      "ToolCallFailed(\{call.call_id.to_string()}, \{failure.summary()})"
+    ToolCallRejected(call~, reason~) =>
+      "ToolCallRejected(\{call.call_id.to_string()}, \{reason.to_string()})"
+    ToolCallAbandoned(call~, reason~) =>
+      "ToolCallAbandoned(\{call.call_id.to_string()}, \{reason})"
     ModelResponseReceived(..) => "ModelResponseReceived"
     SessionRedirect(from~, to~, ..) => "SessionRedirect(from:\{from}, to:\{to})"
     TurnCompleted => "TurnCompleted"
     TurnFailed(msg) => "TurnFailed(\{msg})"
-    ToolCallDeferred(call~, reason~) =>
-      "ToolCallDeferred(\{call.call_id.to_string()}, \{reason})"
     StreamChunkReceived(..) => "StreamChunkReceived"
     StreamChunksDropped(count~) => "StreamChunksDropped(count=\{count})"
     ConfigWarning(field~, value~, reason~) =>

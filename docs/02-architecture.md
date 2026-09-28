@@ -120,7 +120,7 @@ flowchart TD
   TERM_REJECT --> FATAL
   SKIP --> MERGE
   EXEC --> TOOL_CP["committed tool boundary<br/>await SessionStore.checkpoint()"]
-  TOOL_CP --> MERGE["ToolCallResult 事件（is_error 派生自 ToolOutcome）<br/>工具结果追加到 messages"]
+  TOOL_CP --> MERGE["工具终态事件（Succeeded / Failed / Rejected / Abandoned）<br/>工具结果追加到 messages"]
 
   MERGE --> NEXT_MODEL["继续下一轮模型调用（before_model 不重跑）"]
   NEXT_MODEL --> COMPACT
@@ -184,7 +184,7 @@ graph LR
     O1["TurnStarted"]
     O2["ModelResponseReceived"]
     O3["ToolCallPending"]
-    O4["ToolCallResult"]
+    O4["工具终态家族<br/>Approved/Started<br/>Succeeded/Failed/Rejected/Abandoned"]
     O5["TurnCompleted"]
     O6["TurnFailed"]
     O7["Custom: 次要失败"]

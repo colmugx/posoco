@@ -284,7 +284,7 @@ pub impl Show for NotExecutedReason with fn to_string(self : NotExecutedReason) 
 /// - `Success`: tool ran and returned structured data. `content` is the
 ///   plain-text result sent to the model by the built-in adapters and used
 ///   for transcripts. `structured` is an optional machine-readable payload
-///   preserved in the kernel transcript, `TurnEvent::ToolCallResult`, and
+///   preserved in the kernel transcript, `TurnEvent::ToolCallSucceeded`, and
 ///   session snapshots for observers/UIs; the built-in adapters do not send
 ///   it to the model. Structured objects follow a reserved `summary : String`
 ///   field convention for one-line UI summaries.
@@ -349,6 +349,43 @@ pub extend ToolOutcome with Show::{to_string, output}
 
 ///|
 pub impl Show for ToolOutcome with fn to_string(self : ToolOutcome) -> String {
+  self.summary()
+}
+
+///|
+/// The failure payload carried by `TurnEvent::ToolCallFailed`. Splits the
+/// two failure shapes that `ToolOutcome` folds into one outcome family:
+/// a business-level error reported by the tool itself (fed back to the
+/// model as a normal tool message) versus an adapter/runtime failure
+/// (the tool did not run to completion).
+pub(all) enum ToolFailure {
+  ReportedError(content~ : String, structured~ : Json?)
+  Runtime(category~ : String, message~ : String)
+} derive(Eq, Debug)
+
+///|
+pub extend ToolFailure with Eq::{not_equal, equal}
+
+///|
+pub extend ToolFailure with Debug::{to_repr}
+
+///|
+/// Single-line summary that excludes raw payloads, mirroring
+/// `ToolOutcome::summary` discipline.
+pub fn ToolFailure::summary(self : ToolFailure) -> String {
+  match self {
+    ReportedError(content~, structured~) =>
+      "ReportedError(\{content.length()} chars, structured=\{structured is Some(_)})"
+    Runtime(category~, message~) =>
+      "Runtime(\{category}, \{safe_outcome_label(message)})"
+  }
+}
+
+///|
+pub extend ToolFailure with Show::{to_string, output}
+
+///|
+pub impl Show for ToolFailure with fn to_string(self : ToolFailure) -> String {
   self.summary()
 }
 

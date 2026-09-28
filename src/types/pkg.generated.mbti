@@ -137,12 +137,16 @@ pub fn ToolCallSnapshot::to_repr(Self) -> @debug.Repr
 pub(all) enum TurnEvent {
   TurnStarted
   ToolCallPending(@kernel.ToolCall)
-  ToolCallResult(call~ : @kernel.ToolCall, result~ : @kernel.ToolOutcome, is_error~ : Bool)
+  ToolCallApproved(call~ : @kernel.ToolCall, consent_scope~ : String?)
+  ToolCallStarted(call~ : @kernel.ToolCall)
+  ToolCallSucceeded(call~ : @kernel.ToolCall, content~ : String, structured~ : Json?)
+  ToolCallFailed(call~ : @kernel.ToolCall, failure~ : @kernel.ToolFailure)
+  ToolCallRejected(call~ : @kernel.ToolCall, reason~ : @kernel.NotExecutedReason)
+  ToolCallAbandoned(call~ : @kernel.ToolCall, reason~ : String)
   ModelResponseReceived(message~ : @kernel.Message, usage~ : @kernel.Usage?)
   SessionRedirect(from~ : String, to~ : String, messages_before~ : Int, messages_after~ : Int)
   TurnCompleted
   TurnFailed(String)
-  ToolCallDeferred(call~ : @kernel.ToolCall, reason~ : String)
   StreamChunkReceived(chunk~ : StreamChunk)
   StreamChunksDropped(count~ : Int)
   ConfigWarning(field~ : String, value~ : String, reason~ : String)

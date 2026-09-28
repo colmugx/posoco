@@ -371,8 +371,7 @@ pub impl @posoco.SessionStore for InMemoryStore with fn save(
 ## 5. Observer：只读旁观者
 
 `Observer::on_event` 只读、同步、带默认空实现。事件载荷用权威的 `Message`、
-`ToolCall`、`ToolOutcome` 值；`ToolCallResult` 上的 `is_error` 直接从 outcome
-派生，不要再从字符串里推第二份状态：
+`ToolCall` 值；工具调用按节点各发一种事件，变体即状态：
 
 ```moonbit
 pub(all) struct ConsoleObserver {}
@@ -385,12 +384,21 @@ pub impl @posoco.Observer for ConsoleObserver with fn on_event(
     @posoco.TurnEvent::TurnStarted => println("turn started")
     @posoco.TurnEvent::ToolCallPending(call) =>
       println("calling " + call.name.to_string())
-    @posoco.TurnEvent::ToolCallResult(call~, result~, is_error~) =>
+    @posoco.TurnEvent::ToolCallApproved(call~, consent_scope~) =>
       println(
-        "tool " + call.name.to_string() +
-        " failed=" + is_error.to_string() +
-        " outcome=" + result.summary(),
+        "approved " + call.name.to_string() +
+        " consent=" + (consent_scope is Some(_)).to_string(),
       )
+    @posoco.TurnEvent::ToolCallStarted(call~) =>
+      println("executing " + call.name.to_string())
+    @posoco.TurnEvent::ToolCallSucceeded(call~, ..) =>
+      println("succeeded " + call.name.to_string())
+    @posoco.TurnEvent::ToolCallFailed(call~, failure~) =>
+      println("failed " + call.name.to_string() + " " + failure.summary())
+    @posoco.TurnEvent::ToolCallRejected(call~, reason~) =>
+      println("rejected " + call.name.to_string() + " " + reason.to_string())
+    @posoco.TurnEvent::ToolCallAbandoned(call~, reason~) =>
+      println("abandoned " + call.call_id.to_string() + " " + reason)
     @posoco.TurnEvent::ModelResponseReceived(..) => ()
     @posoco.TurnEvent::StreamChunkReceived(chunk~) =>
       match chunk {
@@ -406,6 +414,14 @@ pub impl @posoco.Observer for ConsoleObserver with fn on_event(
 }
 ```
 
+工具事件是一个显式状态机：`ToolCallPending`（已过校验、进入管线、待 hook
+链决策）→ `ToolCallApproved`（链终结为可执行，带存续的 consent scope）→
+`ToolCallStarted`（执行波真正启动）→ `ToolCallSucceeded`/`ToolCallFailed`；
+或从 `Pending` 直接走向 `ToolCallRejected`（hook 拒绝/校验拒绝）。凡是没有
+结果事实的出口（中途取消、hook 链故障、run 终局残留）一律 `ToolCallAbandoned`
+收口。管线入口校验（未知工具、schema 不符）直接发 `ToolCallRejected`——调用
+从未进入管线，所以没有 `Pending`。
+
 Observer 的失败不会被静默吞掉：违反 `Unit` 合同的运行时失败保持 loud，让宿主
 能发现。每个 observer 收到的都是事件数据的独立快照，改它不影响别人。
 
@@ -413,7 +429,7 @@ Observer 的失败不会被静默吞掉：违反 `Unit` 合同的运行时失败
 `Observer::on_event_at(scope, event)`：核心只分发这个带 `EventScope?`
 （`session_id`/`run_id`/`turn_id`）的变体，上面这种只覆盖 `on_event` 的写法由
 默认委托继续工作。scope 保证：turn 生命周期事件、envelope 投影事件
-（`ModelResponseReceived`/`ToolCallPending`/`ToolCallResult`/`SessionRedirect`）
+（`ModelResponseReceived`/`ToolCallPending`/工具终态家族/`SessionRedirect`）
 恒为 `Some`；`StreamChunkReceived` 与 `Custom` secondary failure 这类 run 外诊断
 为 `None`。
 

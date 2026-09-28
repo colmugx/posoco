@@ -285,24 +285,19 @@ fn reduce_model_completed_with_tools(
         }
     }
   }
-  // Pre-pass-rejected calls are "submitted → resolved NotExecuted": their
-  // batch-start MUST precede the completions because the event subscriber
-  // registers pending calls on ToolBatchStarted and consumes them on
-  // ToolCompleted. A mixed wave therefore gets two batch-starts for this
-  // step (rejected calls here, effect calls below); the subscriber
-  // registers and drains each batch independently.
+  // Pre-pass-rejected calls are "submitted → resolved NotExecuted" but
+  // never enter the execution pipeline. They surface as one dedicated
+  // event per rejected batch; the projection emits a rejection per call
+  // without a pending marker. Effect calls below keep their paired
+  // batch-start → completion discipline.
   if !rejected_calls.is_empty() {
     events.push(
-      ToolBatchStarted(
+      ToolCallsPreRejected(
         model_step_id=payload.model_step_id,
         calls=rejected_calls,
+        outcomes=rejected_outcomes,
       ),
     )
-    for i in 0..<rejected_calls.length() {
-      events.push(
-        ToolCompleted(call=rejected_calls[i], outcome=rejected_outcomes[i]),
-      )
-    }
   }
   // All calls were NotExecuted? Then no ExecuteTool was declared. Continue
   // back to ReadyForModel so the host/driver can issue the next model step

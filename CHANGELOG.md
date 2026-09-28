@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.19.0
+
+### Breaking: tool-call event surface rebuilt — one observable node per event
+
+The tool lifecycle now has a dedicated `TurnEvent` per node on the Observer
+channel; no variant doubles as another. New state machine:
+
+```
+ToolCallPending            (validated, entered the pipeline, awaiting hooks)
+  ├─ ToolCallApproved      (chain finalized executable; consent_scope audit)
+  │    └─ ToolCallStarted  (wave actually launched)
+  │         ├─ ToolCallSucceeded(call, content, structured)
+  │         └─ ToolCallFailed(call, failure: ReportedError | Runtime)
+  ├─ ToolCallRejected      (hook/validation decision; run continues)
+  └─ ToolCallAbandoned     (no outcome exists: cancel, hook defect, run end)
+```
+
+- **Removed** `TurnEvent::ToolCallResult` (split into the four terminal
+  variants above; the `is_error` boolean is gone — the variant IS the status)
+  and the never-emitted `TurnEvent::ToolCallDeferred` (real suspension stays
+  M5 and will get its own event).
+- **Narrowed** `ToolCallPending` to pipeline-entry only. Pre-pass validation
+  rejects (unknown tool, schema mismatch) now surface as `ToolCallRejected`
+  directly, backed by a dedicated `ToolCallsPreRejected` kernel event that
+  replaces the old synthetic batch-start/completed pair.
+- **New kernel events** (committed envelope stream, replay-visible):
+  `ToolCallsPreRejected`, `ToolCallApproved` (captures the previously ignored
+  `consent_scope`), `ToolWaveStarted`.
+- **Orphan closure**: pending calls that can never fold a completion (turn
+  failure, run terminal/suspension, restart over leftovers) are drained as
+  `ToolCallAbandoned` by the projection; cancelled tool effects still close
+  with their folded failure outcomes.
+- Migration map: `ToolCallResult(is_error=false)` → `ToolCallSucceeded`;
+  `(true)` → `ToolCallFailed` (business/runtime) or `ToolCallRejected`
+  (`NotExecuted`) or `ToolCallAbandoned` (no outcome). Pending-then-terminal
+  pairing still holds for pipeline calls; pre-pass rejects no longer emit a
+  pending marker.
+- Pinned by `src/tool_event_surface_wbtest.mbt` (happy path, hook reject,
+  consent scope, hook-raise abandonment, mid-wave cancel) and the rewritten
+  pairing tests in `src/posoco_wbtest.mbt`.
+
 ## 0.16.2
 
 ### Fixed: task timeout classification survives adapter cancellation masking
