@@ -32,7 +32,7 @@ struct ConsentAllHook {
 }
 
 ///|
-pub impl @port.PipelineHook for ConsentAllHook with fn before_tool(
+impl @port.PipelineHook for ConsentAllHook with fn before_tool(
   self : ConsentAllHook,
   call : @kernel.ToolCall,
 ) -> @port.ToolDecision {
@@ -46,7 +46,7 @@ struct RejectAllHook {
 }
 
 ///|
-pub impl @port.PipelineHook for RejectAllHook with fn before_tool(
+impl @port.PipelineHook for RejectAllHook with fn before_tool(
   self : RejectAllHook,
   _call : @kernel.ToolCall,
 ) -> @port.ToolDecision {
@@ -58,7 +58,7 @@ pub impl @port.PipelineHook for RejectAllHook with fn before_tool(
 struct RaiseAllHook {}
 
 ///|
-pub impl @port.PipelineHook for RaiseAllHook with fn before_tool(
+impl @port.PipelineHook for RaiseAllHook with fn before_tool(
   _self : RaiseAllHook,
   _call : @kernel.ToolCall,
 ) -> @port.ToolDecision raise {
