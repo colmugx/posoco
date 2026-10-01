@@ -64,6 +64,7 @@ async fn Puppet::handle_compact(
     self.config.host.compact(
       scope,
       messages[:],
+      snap.tool_definitions(),
       snap.call_options(),
       compact_cmd.trigger(),
     ),
@@ -523,7 +524,13 @@ pub async fn Puppet::compact_standalone(
     pressure: Some(pressure),
   }
   let attempted : Result[Result[CompactResult, @kernel.ModelFailure], Error] = Ok(
-    self.config.host.compact(scope, messages[:], snap.call_options(), trigger),
+    self.config.host.compact(
+      scope,
+      messages[:],
+      snap.tool_definitions(),
+      snap.call_options(),
+      trigger,
+    ),
   ) catch {
     error => Err(error)
   }

@@ -271,7 +271,7 @@ pub struct ScopeRecordingModel {
 pub fn ScopeRecordingModel::ScopeRecordingModel(Array[ScriptedModelStep], compact_result? : @kernel.CompactResult) -> Self
 pub async fn ScopeRecordingModel::chat(Self, @kernel.InvocationScope, ArrayView[@kernel.Message], Array[@kernel.ToolDef], @types.ChatOptions, @types.StreamMode) -> @kernel.ModelCallResult raise @error.ModelError
 pub fn ScopeRecordingModel::chat_scopes(Self) -> Array[@kernel.InvocationScope]
-pub async fn ScopeRecordingModel::compact(Self, @kernel.InvocationScope, ArrayView[@kernel.Message], @types.ChatOptions, @kernel.CompactTrigger) -> @kernel.CompactResult raise @error.ModelError
+pub async fn ScopeRecordingModel::compact(Self, @kernel.InvocationScope, ArrayView[@kernel.Message], Array[@kernel.ToolDef], @types.ChatOptions, @kernel.CompactTrigger) -> @kernel.CompactResult raise @error.ModelError
 pub fn ScopeRecordingModel::compact_scopes(Self) -> Array[@kernel.InvocationScope]
 pub fn ScopeRecordingModel::provider_config(Self) -> @port.ProviderConfig
 pub impl @port.ModelPort for ScopeRecordingModel
@@ -329,13 +329,14 @@ pub(all) struct ScriptedModel {
   received_chunks : Array[@types.StreamChunk]
   mut compact_calls : Int
   received_compacts : Array[(Array[@kernel.Message], @kernel.CompactTrigger)]
+  received_compact_tools : Array[Array[@kernel.ToolDef]]
   mut parked_calls : Int
 }
 pub fn ScriptedModel::ScriptedModel(Array[ScriptedModelStep]) -> Self
 pub fn ScriptedModel::call_count(Self) -> Int
 pub async fn ScriptedModel::chat(Self, @kernel.InvocationScope, ArrayView[@kernel.Message], Array[@kernel.ToolDef], @types.ChatOptions, @types.StreamMode) -> @kernel.ModelCallResult raise @error.ModelError
 pub async fn ScriptedModel::chat_direct(Self, Array[@kernel.Message], Array[@kernel.ToolDef], @types.ChatOptions) -> @kernel.ModelCallResult raise @error.ModelError
-pub async fn ScriptedModel::compact(Self, @kernel.InvocationScope, ArrayView[@kernel.Message], @types.ChatOptions, @kernel.CompactTrigger) -> @kernel.CompactResult raise @error.ModelError
+pub async fn ScriptedModel::compact(Self, @kernel.InvocationScope, ArrayView[@kernel.Message], Array[@kernel.ToolDef], @types.ChatOptions, @kernel.CompactTrigger) -> @kernel.CompactResult raise @error.ModelError
 pub fn ScriptedModel::compact_call_count(Self) -> Int
 pub fn ScriptedModel::options_received(Self) -> Array[@types.ChatOptions]
 pub fn ScriptedModel::parked_calls(Self) -> Int

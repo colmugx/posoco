@@ -118,6 +118,7 @@ pub impl @kernel_exec.HostRuntime for WaveFixtureHost with fn compact(
   self : WaveFixtureHost,
   _scope : InvocationScope,
   _messages : ArrayView[Message],
+  _tools : Array[ToolDef],
   _call_options : Json,
   _trigger : @kernel.CompactTrigger,
 ) -> Result[CompactResult, ModelFailure] {

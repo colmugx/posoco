@@ -108,10 +108,18 @@ impl @runtime.Runtime for FakeRuntime with fn compact(
   self,
   scope : @kernel.InvocationScope,
   messages : ArrayView[@kernel.Message],
+  tools : Array[@kernel.ToolDef],
   call_options : Json,
   trigger : @kernel.CompactTrigger,
 ) -> Result[@kernel.CompactResult, @kernel.ModelFailure] {
-  @runtime.Runtime::compact(self.inner, scope, messages, call_options, trigger)
+  @runtime.Runtime::compact(
+    self.inner,
+    scope,
+    messages,
+    tools,
+    call_options,
+    trigger,
+  )
 }
 
 ///|

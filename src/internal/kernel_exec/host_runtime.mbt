@@ -58,6 +58,8 @@ pub(open) trait HostRuntime {
   /// Compact the conversation. Forwards to `ModelPort::compact` and returns
   /// the compacted message body plus a `CompactMode`. `trigger` lets the
   /// modelport pick a strategy (Auto = cheap elision, Manual = thorough).
+  /// `tools` comes from the active TurnSnapshot, including standalone
+  /// compact before any chat; runtime proxies forward it unchanged.
   /// `scope.effect_id` is always `None` here: compact is host-driven, not a
   /// reducer-allocated effect. `messages` is an `ArrayView` borrow valid only
   /// for the duration of the call; hosts must not retain it.
@@ -65,6 +67,7 @@ pub(open) trait HostRuntime {
     Self,
     scope : @kernel.InvocationScope,
     messages : ArrayView[@kernel.Message],
+    tools : Array[@kernel.ToolDef],
     call_options : Json,
     trigger : @kernel.CompactTrigger,
   ) -> Result[@kernel.CompactResult, @kernel.ModelFailure]

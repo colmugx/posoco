@@ -186,6 +186,7 @@ pub impl Runtime for PortRuntime with fn compact(
   self,
   scope : @kernel.InvocationScope,
   messages : ArrayView[@kernel.Message],
+  tools : Array[@kernel.ToolDef],
   call_options : Json,
   trigger : @kernel.CompactTrigger,
 ) -> Result[@kernel.CompactResult, @kernel.ModelFailure] {
@@ -193,7 +194,7 @@ pub impl Runtime for PortRuntime with fn compact(
     Ok(options) => options
     Err(failure) => return Err(failure)
   }
-  let result = self.model.compact(scope, messages, options, trigger) catch {
+  let result = self.model.compact(scope, messages, tools, options, trigger) catch {
     error => return Err(model_error_to_failure(error))
   }
   Ok(result)

@@ -167,6 +167,7 @@ pub impl @kernel_exec.HostRuntime for FixtureHost with fn compact(
   self : FixtureHost,
   _scope : InvocationScope,
   _messages : ArrayView[Message],
+  _tools : Array[ToolDef],
   _call_options : Json,
   _trigger : @kernel.CompactTrigger,
 ) -> Result[CompactResult, ModelFailure] {
@@ -902,6 +903,7 @@ pub impl @kernel_exec.HostRuntime for AbortProbeHost with fn compact(
   self : AbortProbeHost,
   _scope : InvocationScope,
   _messages : ArrayView[Message],
+  _tools : Array[ToolDef],
   _call_options : Json,
   _trigger : @kernel.CompactTrigger,
 ) -> Result[CompactResult, ModelFailure] {

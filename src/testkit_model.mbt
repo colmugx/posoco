@@ -72,6 +72,7 @@ pub(all) struct ScriptedModel {
   received_chunks : Array[@types.StreamChunk]
   mut compact_calls : Int
   received_compacts : Array[(Array[@kernel.Message], @kernel.CompactTrigger)]
+  received_compact_tools : Array[Array[@kernel.ToolDef]]
   mut parked_calls : Int
 }
 
@@ -89,6 +90,7 @@ pub fn ScriptedModel::ScriptedModel(
     received_chunks: [],
     compact_calls: 0,
     received_compacts: [],
+    received_compact_tools: [],
     parked_calls: 0,
   }
 }
@@ -271,10 +273,12 @@ pub impl @port.ModelPort for ScriptedModel with fn compact(
   self,
   _scope : @kernel.InvocationScope,
   messages : ArrayView[@kernel.Message],
+  tools : Array[@kernel.ToolDef],
   _options : @types.ChatOptions,
   trigger : @kernel.CompactTrigger,
 ) -> @kernel.CompactResult raise @error.ModelError {
   self.compact_calls = self.compact_calls + 1
+  self.received_compact_tools.push(tools.map(testkit_snapshot_tool_def))
   self.received_compacts.push((snapshot_messages(messages.to_owned()), trigger))
   match self.take_matching_step(testkit_is_compact_step, "compact") {
     Compact(result~) =>
@@ -372,6 +376,7 @@ pub impl @port.ModelPort for ScopeRecordingModel with fn compact(
   self,
   scope : @kernel.InvocationScope,
   _messages : ArrayView[@kernel.Message],
+  _tools : Array[@kernel.ToolDef],
   _options : @types.ChatOptions,
   _trigger : @kernel.CompactTrigger,
 ) -> @kernel.CompactResult raise @error.ModelError {

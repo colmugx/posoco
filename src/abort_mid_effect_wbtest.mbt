@@ -96,10 +96,11 @@ impl @runtime.Runtime for MidEffectAbortRuntime with fn compact(
   self,
   scope,
   messages,
+  tools,
   call_options,
   trigger,
 ) -> Result[@kernel.CompactResult, @kernel.ModelFailure] {
-  self.inner.compact(scope, messages, call_options, trigger)
+  self.inner.compact(scope, messages, tools, call_options, trigger)
 }
 
 ///|

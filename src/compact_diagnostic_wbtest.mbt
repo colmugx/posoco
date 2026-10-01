@@ -202,6 +202,7 @@ impl @port.ModelPort for AutoCompactFailModel with fn compact(
   _self,
   _scope : @kernel.InvocationScope,
   _messages : ArrayView[@kernel.Message],
+  _tools : Array[@kernel.ToolDef],
   _options : @types.ChatOptions,
   _trigger : @kernel.CompactTrigger,
 ) -> @kernel.CompactResult raise @error.ModelError {
@@ -297,10 +298,11 @@ impl @runtime.Runtime for MidRunCompactRuntime with fn compact(
   self,
   scope : @kernel.InvocationScope,
   messages : ArrayView[@kernel.Message],
+  tools : Array[@kernel.ToolDef],
   call_options : Json,
   trigger : @kernel.CompactTrigger,
 ) -> Result[@kernel.CompactResult, @kernel.ModelFailure] {
-  self.inner.compact(scope, messages, call_options, trigger)
+  self.inner.compact(scope, messages, tools, call_options, trigger)
 }
 
 ///|
@@ -577,6 +579,7 @@ impl @runtime.Runtime for CompactParkingRuntime with fn compact(
   self,
   scope : @kernel.InvocationScope,
   messages : ArrayView[@kernel.Message],
+  tools : Array[@kernel.ToolDef],
   call_options : Json,
   trigger : @kernel.CompactTrigger,
 ) -> Result[@kernel.CompactResult, @kernel.ModelFailure] {
@@ -589,7 +592,7 @@ impl @runtime.Runtime for CompactParkingRuntime with fn compact(
       "parked compact resumed without cancellation",
     )
   }
-  self.inner.compact(scope, messages, call_options, trigger)
+  self.inner.compact(scope, messages, tools, call_options, trigger)
 }
 
 ///|

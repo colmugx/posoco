@@ -66,13 +66,16 @@ pub(open) trait Runtime {
 
   /// Compact the conversation. Forwarded to the model side; `trigger` lets
   /// the implementation pick a strategy (Auto = cheap elision, Manual =
-  /// thorough). `scope.effect_id` is always `None` here: compact is
+  /// thorough). `tools` is the active TurnSnapshot's explicit tool context;
+  /// wrappers forward it unchanged, never recover it from a prior chat.
+  /// `scope.effect_id` is always `None` here: compact is
   /// host-driven, not a reducer-allocated effect. `messages` is an `ArrayView`
   /// borrow valid only for the duration of the call; hosts must not retain it.
   async fn compact(
     Self,
     scope : @kernel.InvocationScope,
     messages : ArrayView[@kernel.Message],
+    tools : Array[@kernel.ToolDef],
     call_options : Json,
     trigger : @kernel.CompactTrigger,
   ) -> Result[@kernel.CompactResult, @kernel.ModelFailure]

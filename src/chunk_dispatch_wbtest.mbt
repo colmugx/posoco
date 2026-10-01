@@ -77,6 +77,7 @@ impl @port.ModelPort for YieldingStreamModel with fn compact(
   _self : YieldingStreamModel,
   _scope : @kernel.InvocationScope,
   _messages : ArrayView[@kernel.Message],
+  _tools : Array[@kernel.ToolDef],
   _options : @types.ChatOptions,
   _trigger : @kernel.CompactTrigger,
 ) -> @kernel.CompactResult raise @error.ModelError {

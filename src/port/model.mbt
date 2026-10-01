@@ -23,6 +23,9 @@ pub(open) trait ModelPort {
   /// Compact the conversation. `trigger` (Auto/Manual) is advisory — the
   /// modelport MAY use a cheaper strategy for Auto. Modelports that do not
   /// support compact should raise `ModelError::ResponseParse`.
+  /// `tools` is the current TurnSnapshot's tool context, supplied explicitly
+  /// even before any chat. Adapters may ignore it, but must not substitute
+  /// tools cached from a previous chat.
   /// `scope.effect_id` is always `None` here: compact is host-driven, not a
   /// reducer-allocated effect. `messages` is an `ArrayView` borrow valid only
   /// for the duration of the call; adapters must not retain it.
@@ -30,6 +33,7 @@ pub(open) trait ModelPort {
     Self,
     scope : @kernel.InvocationScope,
     messages : ArrayView[@kernel.Message],
+    tools : Array[@kernel.ToolDef],
     options : @types.ChatOptions,
     trigger : @kernel.CompactTrigger,
   ) -> @kernel.CompactResult raise @error.ModelError

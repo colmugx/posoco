@@ -90,6 +90,7 @@ pub impl @kernel_exec.HostRuntime for BoundaryProbeHost with fn compact(
   self : BoundaryProbeHost,
   _scope : InvocationScope,
   _messages : ArrayView[Message],
+  _tools : Array[ToolDef],
   _call_options : Json,
   _trigger : @kernel.CompactTrigger,
 ) -> Result[CompactResult, ModelFailure] {
@@ -237,6 +238,7 @@ pub impl @kernel_exec.HostRuntime for CompactReplaceHost with fn compact(
   _self,
   _scope : InvocationScope,
   _messages : ArrayView[Message],
+  _tools : Array[ToolDef],
   _call_options : Json,
   _trigger : @kernel.CompactTrigger,
 ) -> Result[CompactResult, ModelFailure] {

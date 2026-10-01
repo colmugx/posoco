@@ -29,10 +29,13 @@ impl @port.ModelPort for PolicyModel with fn compact(
   self,
   scope : @kernel.InvocationScope,
   messages : ArrayView[@kernel.Message],
+  tools : Array[@kernel.ToolDef],
   options : @types.ChatOptions,
   trigger : @kernel.CompactTrigger,
 ) -> @kernel.CompactResult raise @error.ModelError {
-  (self.inner as &@port.ModelPort).compact(scope, messages, options, trigger)
+  (self.inner as &@port.ModelPort).compact(
+    scope, messages, tools, options, trigger,
+  )
 }
 
 ///|
@@ -350,12 +353,14 @@ impl @port.ModelPort for AutoCompactE2EModel with fn compact(
   self,
   scope : @kernel.InvocationScope,
   messages : ArrayView[@kernel.Message],
+  tools : Array[@kernel.ToolDef],
   options : @types.ChatOptions,
   trigger : @kernel.CompactTrigger,
 ) -> @kernel.CompactResult raise @error.ModelError {
   self.compact_calls.val += 1
   ignore(scope)
   ignore(messages)
+  ignore(tools)
   ignore(options)
   ignore(trigger)
   self.compact_result

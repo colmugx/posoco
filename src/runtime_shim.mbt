@@ -62,8 +62,9 @@ impl @kernel_exec.HostRuntime for RuntimeHostShim with fn compact(
   self,
   scope : @kernel.InvocationScope,
   messages : ArrayView[@kernel.Message],
+  tools : Array[@kernel.ToolDef],
   call_options : Json,
   trigger : @kernel.CompactTrigger,
 ) -> Result[@kernel.CompactResult, @kernel.ModelFailure] {
-  self.inner.compact(scope, messages, call_options, trigger)
+  self.inner.compact(scope, messages, tools, call_options, trigger)
 }

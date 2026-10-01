@@ -81,6 +81,7 @@ pub impl @kernel_exec.HostRuntime for ChunkDemandHost with fn compact(
   self : ChunkDemandHost,
   _scope : InvocationScope,
   _messages : ArrayView[Message],
+  _tools : Array[ToolDef],
   _call_options : Json,
   _trigger : @kernel.CompactTrigger,
 ) -> Result[CompactResult, ModelFailure] {

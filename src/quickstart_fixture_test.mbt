@@ -28,6 +28,7 @@ pub impl @port.ModelPort for QuickstartFixedModel with fn compact(
   _self,
   _scope : @kernel.InvocationScope,
   _messages : ArrayView[@kernel.Message],
+  _tools : Array[@kernel.ToolDef],
   _options : @types.ChatOptions,
   _trigger : @kernel.CompactTrigger,
 ) -> @kernel.CompactResult raise @error.ModelError {
