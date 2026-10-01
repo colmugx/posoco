@@ -1,6 +1,1 @@
-import {
-  "colmugx/posoco/kernel",
-  "colmugx/posoco/port",
-  "colmugx/posoco/types",
-  "colmugx/posoco/error",
-}
+package "colmugx/posoco/runtime"
