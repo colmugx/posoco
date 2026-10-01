@@ -82,7 +82,7 @@ async fn Puppet::handle_compact(
       return Failed(
         EffectExecutionFailed(
           phase="compact",
-          cause="modelport compact failed: " + failure.to_string(),
+          cause=compact_failure_cause(failure),
         ),
       )
     Ok(Ok(result)) => result
@@ -391,11 +391,28 @@ fn Puppet::record_context_reading(
 }
 
 ///|
-/// Post-compact context projection: the transcript was rewritten, so the
-/// previous measured occupancy no longer describes the window. Record a
-/// char-based estimate of the compacted transcript (`Estimated`, rendered
-/// with a `~` marker) so the context indicator shows post-compact occupancy
-/// instead of an unknown; the next real usage overwrites it with `Measured`.
+fn has_provider_replay_state(messages : ArrayView[Message]) -> Bool {
+  for message in messages {
+    if message is AssistantMessage(reasoning=Some({ raw: Some(raw), .. }), ..) {
+      let nonempty = match raw {
+        Null => false
+        Array(items) => !items.is_empty()
+        Object(fields) => !fields.is_empty()
+        String(text) => !text.is_empty()
+        _ => true
+      }
+      if nonempty {
+        return true
+      }
+    }
+  }
+  false
+}
+
+///|
+/// Canonical text cannot estimate provider-owned replay state. After a
+/// rewrite, keep its occupancy unknown until genuine model usage arrives;
+/// canonical-only windows retain the char-based estimate.
 fn Puppet::record_context_estimate(
   self : Puppet,
   session_id : SessionId,
@@ -408,15 +425,20 @@ fn Puppet::record_context_estimate(
       (previous.model_id, previous.window_tokens, previous.compact_threshold)
     None => (snap.model_id(), snap.context_window(), snap.compact_threshold())
   }
+  let (tokens, source) = if has_provider_replay_state(messages[:]) {
+    (None, @types.Unknown)
+  } else {
+    (Some(estimate_tokens_of_messages(messages[:])), @types.Estimated)
+  }
   self.context_states[sid] = {
     session_id: sid,
     model_id,
     context_version: self.config.journal.revision(),
-    last_measured_tokens: Some(estimate_tokens_of_messages(messages[:])),
+    last_measured_tokens: tokens,
     estimated_added_tokens: 0,
     window_tokens: window,
     compact_threshold: threshold,
-    source: @types.Estimated,
+    source,
     reading_message_count: messages.length(),
   }
 }
@@ -460,6 +482,13 @@ pub async fn Puppet::compact_standalone(
   }
   self.phase_gate = gate_with_lease
   self.last_completed_transcript = None
+  // Externally cancelled unwinds bypass finalize_run/finalize_rejected below;
+  // release the gate and run binding so the same Agent/session accepts the
+  // next operation.
+  errdefer {
+    self.release_run_binding()
+    self.mailbox.set_quiescent(Idle)
+  }
   let snap : TurnSnapshot = match
     attempt(() => {
       TurnSnapshot::capture({
@@ -513,7 +542,7 @@ pub async fn Puppet::compact_standalone(
       return self.finalize_rejected(
         error=EffectExecutionFailed(
           phase="compact_session",
-          cause="modelport compact failed: " + failure.to_string(),
+          cause=compact_failure_cause(failure),
         ),
       )
     Ok(Ok(result)) =>

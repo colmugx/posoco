@@ -72,11 +72,13 @@ priv struct ToolRouting {
 }
 
 ///|
-fn safe_error_label(value : String) -> String {
+/// Bounded label with an explicit cap; compact failure renderings are already
+/// sanitized per field and only need an outer bound.
+fn bounded_error_label(value : String, cap : Int) -> String {
   let chars : Array[Char] = []
   let mut truncated = false
   for char in value {
-    if chars.length() >= 64 {
+    if chars.length() >= cap {
       truncated = true
       break
     }
@@ -91,6 +93,11 @@ fn safe_error_label(value : String) -> String {
   } else {
     label
   }
+}
+
+///|
+fn safe_error_label(value : String) -> String {
+  bounded_error_label(value, 64)
 }
 
 ///|

@@ -356,7 +356,11 @@ pub impl Show for PuppetError with fn to_string(self : PuppetError) -> String {
     DuplicateOrLateCompletion(effect_id~, detail~) =>
       "DuplicateOrLateCompletion(effect=\{effect_id.to_int()}, \{safe_label(detail)})"
     EffectExecutionFailed(phase~, cause~) =>
-      "EffectExecutionFailed(phase=\{safe_label(phase)}, \{safe_label(cause)})"
+      if is_compact_effect_phase(phase) {
+        "EffectExecutionFailed(phase=\{safe_label(phase)}, cause=\{safe_label_bounded(cause, 512)})"
+      } else {
+        "EffectExecutionFailed(phase=\{safe_label(phase)}, \{safe_label(cause)})"
+      }
     EffectExecutionCancelled(phase~) =>
       "EffectExecutionCancelled(phase=\{safe_label(phase)})"
     ReducerInvariantViolation(category~) =>
@@ -369,10 +373,17 @@ pub impl Show for PuppetError with fn to_string(self : PuppetError) -> String {
 /// Bounded single-line label helper. Mirrors `safe_event_label` so the error
 /// file has no cross-file dependency.
 fn safe_label(value : String) -> String {
+  safe_label_bounded(value, 64)
+}
+
+///|
+/// Bounded label with an explicit cap; only the compact effect-failure arm
+/// uses a cap wider than `safe_label`'s.
+fn safe_label_bounded(value : String, cap : Int) -> String {
   let chars : Array[Char] = []
   let mut truncated = false
   for char in value {
-    if chars.length() >= 64 {
+    if chars.length() >= cap {
       truncated = true
       break
     }

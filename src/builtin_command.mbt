@@ -163,8 +163,10 @@ async fn BuiltinCommandPort::invoke_idle_compact(
       }
       match attempted {
         Err(error) =>
+          // Keep provider status/code/request fields in the command outcome.
           Failure(
-            reason="compact failed: " + safe_error_label(error.to_string()),
+            reason="compact failed: " +
+              bounded_error_label(error.to_string(), 512),
           )
         Ok(outcome) =>
           Success(
@@ -216,7 +218,8 @@ impl @port.CommandPort for BuiltinCommandPort with fn invoke(
             Ok(value) => value
             Err(error) =>
               Failure(
-                reason="compact failed: " + safe_error_label(error.to_string()),
+                reason="compact failed: " +
+                  bounded_error_label(error.to_string(), 512),
               )
           }
           outcome
