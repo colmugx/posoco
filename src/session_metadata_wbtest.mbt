@@ -502,10 +502,13 @@ pub impl @port.ToolProvider for BoundaryRecordingToolProvider with fn list_tools
 ///|
 pub impl @port.ToolProvider for BoundaryRecordingToolProvider with fn execute(
   self,
-  _name,
-  call,
+  ctx,
 ) -> @kernel.ToolOutcome raise @error.RuntimeError {
-  self.calls.push(call)
+  self.calls.push({
+    call_id: ctx.call_id,
+    name: ctx.name,
+    arguments: ctx.arguments,
+  })
   self.result
 }
 

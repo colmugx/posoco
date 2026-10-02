@@ -38,6 +38,7 @@ pub using @port {
   trait CommandPort,
   trait UiPort,
   trait SystemPromptContributor,
+  trait ToolCancellable,
   // Self-reporting manifest protocol.
   trait Extension,
   // Port-related enums.
@@ -58,6 +59,7 @@ pub using @port {
   type UiRequest,
   type UiResponse,
   // Port-related structs.
+  type ToolCallContext,
   type DecisionOption,
   type DecisionRequest,
   type DecisionNamedProbability,

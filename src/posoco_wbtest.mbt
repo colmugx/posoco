@@ -57,9 +57,9 @@ impl @port.ToolProvider for MockToolProvider with fn list_tools(self) {
 ///|
 impl @port.ToolProvider for MockToolProvider with fn execute(
   self,
-  name : String,
-  _call : @kernel.ToolCall,
+  ctx : @port.ToolCallContext,
 ) -> @kernel.ToolOutcome raise @error.RuntimeError {
+  let name = ctx.name.to_string()
   match self.results.get(name) {
     Some(Ok(r)) => r
     Some(Err(e)) => raise e
@@ -527,9 +527,9 @@ impl @port.ToolProvider for RecordingExecProvider with fn list_tools(self) {
 ///|
 impl @port.ToolProvider for RecordingExecProvider with fn execute(
   self,
-  name : String,
-  _call : @kernel.ToolCall,
+  ctx : @port.ToolCallContext,
 ) -> @kernel.ToolOutcome raise @error.RuntimeError {
+  let name = ctx.name.to_string()
   self.executed.push(name)
   match self.results.get(name) {
     Some(Ok(r)) => r

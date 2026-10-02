@@ -346,10 +346,10 @@ async fn MemoryToolProvider::execute_memory_add(
 ///|
 impl @port.ToolProvider for MemoryToolProvider with fn execute(
   self : MemoryToolProvider,
-  name : String,
-  call : @kernel.ToolCall,
+  ctx : @port.ToolCallContext,
 ) -> @kernel.ToolOutcome raise @error.RuntimeError {
-  let args : Map[String, Json] = match call.arguments {
+  let name = ctx.name.to_string()
+  let args : Map[String, Json] = match ctx.arguments {
     Object(fields) => fields
     _ =>
       return ToolReportedError(

@@ -899,9 +899,7 @@ async fn AgentRuntime::save_turn_transcript(
 }
 
 ///|
-/// Effect phases that belong to a compaction. Their failure causes are the
-/// compact diagnostic carrier (provider status/code/param/request id), so
-/// the Agent keeps the sanitized bounded head instead of re-truncating it.
+/// Internal compact phases use the approved wider error-display budget.
 fn is_compact_effect_phase(phase : String) -> Bool {
   phase == "compact" || phase == "compact_session" || phase == "auto_compact"
 }

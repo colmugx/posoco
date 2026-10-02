@@ -1,8 +1,8 @@
 ///|
 /// `PortRuntime` — the default `Runtime`: delegates every effect to the
-/// composed extension ports (`ModelPort` + `ToolProvider`s). This is exactly
-/// the behaviour of the historical internal port adapter; cancellation is
-/// `NotPropagated` because plain `ToolProvider`s receive no cancel signal.
+/// composed extension ports (`ModelPort` + `ToolProvider`s). Cancellation
+/// routes to providers that registered a `ToolCancellable` facet for the
+/// effect; every other id reports `NotPropagated`.
 ///
 /// Host builders wrap this type and override the methods they need instead
 /// of implementing `Runtime` from scratch.
@@ -89,6 +89,10 @@ fn decode_chat_options(
 pub struct PortRuntime {
   priv model : &@port.ModelPort
   priv tools : Map[String, &@port.ToolProvider]
+  /// In-flight cancellable facets keyed by effect id. Populated only by
+  /// providers that called `ToolCallContext.register_cancel` during their
+  /// execute; entry is dropped when the effect settles.
+  priv cancels : Map[Int, &@port.ToolCancellable]
 }
 
 ///|
@@ -96,7 +100,7 @@ pub fn PortRuntime::PortRuntime(
   model~ : &@port.ModelPort,
   tools~ : Map[String, &@port.ToolProvider],
 ) -> PortRuntime {
-  { model, tools, }
+  { model, tools, cancels: Map::from_array([]), }
 }
 
 ///|
@@ -153,31 +157,55 @@ pub impl Runtime for PortRuntime with fn execute_tool(self, ctx : EffectContext)
         message="no tool provider for '" + name + "'",
       )
   }
-  let call : @kernel.ToolCall = {
+  let key = ctx.effect_id.to_int()
+  let runtime = self
+  let call_ctx : @port.ToolCallContext = {
+    effect_id: ctx.effect_id,
     call_id: ctx.call_id,
     name: ctx.tool_name,
     arguments: ctx.arguments,
+    register_cancel: fn(c : &@port.ToolCancellable) { runtime.cancels[key] = c },
   }
-  provider.execute(name, call) catch {
+  let outcome = provider.execute(call_ctx) catch {
     error =>
       RuntimeFailure(
         error_category="ToolProviderError",
         message=error.to_string(),
       )
   }
+  // Effect settled: drop the registration so a later cancel reports
+  // NotPropagated instead of hitting a finished execution. Unwind teardown
+  // of the effect task never reaches this line on purpose — there the
+  // registration survives so a later cancel can still escalate the
+  // orphaned child.
+  self.cancels.remove(key)
+  outcome
 }
 
 ///|
-/// Plain `ToolProvider`s receive no cancel signal, so the default runtime
-/// reports `NotPropagated` for every effect. Runtimes with real cancellation
-/// wrap this method.
+/// Route cancellation to providers that registered a cancellable facet for
+/// the effect. Unregistered ids — plain providers, or effects that already
+/// settled — report `NotPropagated`, preserving the ports-only contract.
+/// A facet that raises despite the `ToolCancellable` contract is contained
+/// here and reported as `NotPropagated`.
 pub impl Runtime for PortRuntime with fn cancel_effects(
   self : PortRuntime,
   effect_ids : Array[@kernel.EffectId],
-  _reason : @kernel.CancelReason,
+  reason : @kernel.CancelReason,
 ) -> Array[(@kernel.EffectId, @kernel.CancelDisposition)] {
-  ignore(self)
-  effect_ids.map(id => (id, NotPropagated))
+  let dispositions : Array[(@kernel.EffectId, @kernel.CancelDisposition)] = []
+  for id in effect_ids {
+    match self.cancels.get(id.to_int()) {
+      Some(handler) => {
+        let disposition = handler.cancel(id, reason) catch {
+          _ => NotPropagated
+        }
+        dispositions.push((id, disposition))
+      }
+      None => dispositions.push((id, NotPropagated))
+    }
+  }
+  dispositions
 }
 
 ///|

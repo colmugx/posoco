@@ -55,11 +55,10 @@ pub impl @port.ToolProvider for CompositeToolProvider with fn list_tools(self) {
 ///|
 pub impl @port.ToolProvider for CompositeToolProvider with fn execute(
   _self,
-  name : String,
-  _call : @kernel.ToolCall,
+  ctx : @port.ToolCallContext,
 ) -> @kernel.ToolOutcome raise @error.RuntimeError {
   raise UnknownTool(
-    "CompositeToolProvider does not route execute(); Agent uses ToolRouting instead. Tool: '\{name}'",
+    "CompositeToolProvider does not route execute(); Agent uses ToolRouting instead. Tool: '\{ctx.name.to_string()}'",
   )
 }
 
@@ -67,7 +66,7 @@ pub impl @port.ToolProvider for CompositeToolProvider with fn execute(
 /// Dynamic runtime tool registration. Implements ToolProvider.
 pub(all) struct ToolRegistry {
   mut tools : Map[String, @kernel.ToolDef]
-  mut executors : Map[String, (@kernel.ToolCall) -> @kernel.ToolOutcome]
+  mut executors : Map[String, (@port.ToolCallContext) -> @kernel.ToolOutcome]
 }
 
 ///|
@@ -84,7 +83,7 @@ pub fn ToolRegistry::ToolRegistry() -> ToolRegistry {
 pub fn ToolRegistry::register(
   self : ToolRegistry,
   tool : @kernel.ToolDef,
-  executor : (@kernel.ToolCall) -> @kernel.ToolOutcome,
+  executor : (@port.ToolCallContext) -> @kernel.ToolOutcome,
 ) -> Unit {
   self.tools[tool.name.to_string()] = tool
   self.executors[tool.name.to_string()] = executor
@@ -97,7 +96,7 @@ pub fn ToolRegistry::register(
 pub fn ToolRegistry::register_strict(
   self : ToolRegistry,
   tool : @kernel.ToolDef,
-  executor : (@kernel.ToolCall) -> @kernel.ToolOutcome,
+  executor : (@port.ToolCallContext) -> @kernel.ToolOutcome,
 ) -> Unit raise @error.RuntimeError {
   let key = tool.name.to_string()
   if self.tools.contains(key) {
@@ -128,11 +127,11 @@ pub impl @port.ToolProvider for ToolRegistry with fn list_tools(self) {
 ///|
 pub impl @port.ToolProvider for ToolRegistry with fn execute(
   self,
-  name : String,
-  call : @kernel.ToolCall,
+  ctx : @port.ToolCallContext,
 ) -> @kernel.ToolOutcome raise @error.RuntimeError {
+  let name = ctx.name.to_string()
   match self.executors.get(name) {
-    Some(exec) => exec(call)
+    Some(exec) => exec(ctx)
     None => raise UnknownTool("No executor registered for tool '\{name}'")
   }
 }

@@ -238,10 +238,11 @@ pub impl @port.ToolProvider for SingleToolProvider with fn list_tools(self) {
 ///|
 pub impl @port.ToolProvider for SingleToolProvider with fn execute(
   _self,
-  name : String,
-  _call : @kernel.ToolCall,
+  ctx : @port.ToolCallContext,
 ) -> @kernel.ToolOutcome raise @error.RuntimeError {
-  raise UnknownTool("SingleToolProvider does not execute '\{name}'")
+  raise UnknownTool(
+    "SingleToolProvider does not execute '\{ctx.name.to_string()}'",
+  )
 }
 
 ///|

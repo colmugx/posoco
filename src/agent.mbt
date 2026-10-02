@@ -72,8 +72,7 @@ priv struct ToolRouting {
 }
 
 ///|
-/// Bounded label with an explicit cap; compact failure renderings are already
-/// sanitized per field and only need an outer bound.
+/// Bound an error label without interpreting its contents.
 fn bounded_error_label(value : String, cap : Int) -> String {
   let chars : Array[Char] = []
   let mut truncated = false
@@ -492,7 +491,11 @@ fn compose_mailbox_and_host(
       if basic_tools.is_empty() {
         h
       } else {
-        BasicFirstHostRuntime::{ inner: h, basic: basic_tools, }
+        BasicFirstHostRuntime::{
+          inner: h,
+          basic: basic_tools,
+          cancels: Map::from_array([]),
+        }
         as &@kernel_exec.HostRuntime
       }
     None => {

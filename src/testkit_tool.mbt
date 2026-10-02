@@ -116,13 +116,36 @@ pub fn RecordingToolProvider::ops(
 }
 
 ///|
-/// Direct (non-trait) execute entry point for testkit self-tests.
+/// Test convenience: a `ToolCallContext` with synthetic identity (effect 1,
+/// call "call_1") and a no-op cancellation registrar.
+pub fn tk_tool_call_ctx(
+  name~ : String,
+  arguments? : Json = Json::null(),
+) -> @port.ToolCallContext {
+  {
+    effect_id: @kernel.EffectId::first(),
+    call_id: @kernel.CallId::unchecked("call_1"),
+    name: @kernel.ToolName::unchecked(name),
+    arguments,
+    register_cancel: fn(_ : &@port.ToolCancellable) { () },
+  }
+}
+
+///|
+/// Direct (non-trait) execute entry point for testkit self-tests. Builds a
+/// synthetic effect context (effect id 1, no-op cancellation registrar).
 pub async fn RecordingToolProvider::execute_direct(
   self : RecordingToolProvider,
-  name : String,
   call : @kernel.ToolCall,
 ) -> @kernel.ToolOutcome raise @error.RuntimeError {
-  (self as &@port.ToolProvider).execute(name, call)
+  let ctx : @port.ToolCallContext = {
+    effect_id: @kernel.EffectId::first(),
+    call_id: call.call_id,
+    name: call.name,
+    arguments: call.arguments,
+    register_cancel: fn(_ : &@port.ToolCancellable) { () },
+  }
+  (self as &@port.ToolProvider).execute(ctx)
 }
 
 ///|
@@ -138,9 +161,14 @@ pub impl @port.ToolProvider for RecordingToolProvider with fn list_tools(self) {
 ///|
 pub impl @port.ToolProvider for RecordingToolProvider with fn execute(
   self,
-  name : String,
-  call : @kernel.ToolCall,
+  ctx : @port.ToolCallContext,
 ) -> @kernel.ToolOutcome raise @error.RuntimeError {
+  let name = ctx.name.to_string()
+  let call : @kernel.ToolCall = {
+    call_id: ctx.call_id,
+    name: ctx.name,
+    arguments: ctx.arguments,
+  }
   let key = call.name.to_string()
   let outcome = match self.outcomes.get(key) {
     Some(o) => o

@@ -334,6 +334,14 @@ pub struct Tasks {
 pub fn Tasks::from_submit(submit~ : (TaskSpec) -> Result[TaskHandle, TaskSubmitError]) -> Self
 pub fn Tasks::submit(Self, TaskSpec) -> Result[TaskHandle, TaskSubmitError]
 
+pub(all) struct ToolCallContext {
+  effect_id : @kernel.EffectId
+  call_id : @kernel.CallId
+  name : @kernel.ToolName
+  arguments : Json
+  register_cancel : (&ToolCancellable) -> Unit
+}
+
 pub(all) enum ToolDecision {
   Approve(call~ : @kernel.ToolCall)
   ApproveAfterConsent(call~ : @kernel.ToolCall, consent_scope~ : String)
@@ -497,9 +505,13 @@ pub(open) trait SystemPromptContributor {
   fn system_prompt(Self) -> String
 }
 
+pub(open) trait ToolCancellable {
+  async fn cancel(Self, @kernel.EffectId, @kernel.CancelReason) -> @kernel.CancelDisposition
+}
+
 pub(open) trait ToolProvider {
   fn list_tools(Self) -> Array[@kernel.ToolDef]
-  async fn execute(Self, String, @kernel.ToolCall) -> @kernel.ToolOutcome raise @error.RuntimeError
+  async fn execute(Self, ToolCallContext) -> @kernel.ToolOutcome raise @error.RuntimeError
 }
 
 pub(open) trait UiPort {

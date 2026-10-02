@@ -225,7 +225,15 @@ async fn exec_memory_tool(
   tool : String,
   args : Array[(String, Json)],
 ) -> @kernel.ToolOutcome {
-  (provider as &@port.ToolProvider).execute(tool, tk_memory_call(tool, args))
+  let call = tk_memory_call(tool, args)
+  let ctx : @port.ToolCallContext = {
+    effect_id: @kernel.EffectId::first(),
+    call_id: call.call_id,
+    name: call.name,
+    arguments: call.arguments,
+    register_cancel: fn(_ : &@port.ToolCancellable) { () },
+  }
+  (provider as &@port.ToolProvider).execute(ctx)
 }
 
 ///|

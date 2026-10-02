@@ -10,6 +10,10 @@
 priv struct BasicFirstHostRuntime {
   inner : &@kernel_exec.HostRuntime
   basic : Map[String, &@port.ToolProvider]
+  /// Same registration semantics as `PortRuntime`: populated only by basic
+  /// providers that call `ToolCallContext.register_cancel`; dropped at
+  /// settle. Memory tools are instantaneous and never register.
+  cancels : Map[Int, &@port.ToolCancellable]
 }
 
 ///|
@@ -38,14 +42,26 @@ impl @kernel_exec.HostRuntime for BasicFirstHostRuntime with fn execute_tool(
   let name = tool_name.to_string()
   match self.basic.get(name) {
     Some(provider) => {
-      let call : @kernel.ToolCall = { call_id, name: tool_name, arguments, }
-      provider.execute(name, call) catch {
+      let key = effect_id.to_int()
+      let runtime = self
+      let call_ctx : @port.ToolCallContext = {
+        effect_id,
+        call_id,
+        name: tool_name,
+        arguments,
+        register_cancel: fn(c : &@port.ToolCancellable) {
+          runtime.cancels[key] = c
+        },
+      }
+      let outcome = provider.execute(call_ctx) catch {
         error =>
           RuntimeFailure(
             error_category="ToolProviderError",
             message=error.to_string(),
           )
       }
+      self.cancels.remove(key)
+      outcome
     }
     None =>
       self.inner.execute_tool(
@@ -60,7 +76,25 @@ impl @kernel_exec.HostRuntime for BasicFirstHostRuntime with fn cancel_effects(
   effect_ids : Array[@kernel.EffectId],
   reason : @kernel.CancelReason,
 ) -> Array[(@kernel.EffectId, @kernel.CancelDisposition)] {
-  self.inner.cancel_effects(effect_ids, reason)
+  let dispositions : Array[(@kernel.EffectId, @kernel.CancelDisposition)] = []
+  let delegated : Array[@kernel.EffectId] = []
+  for id in effect_ids {
+    match self.cancels.get(id.to_int()) {
+      Some(handler) => {
+        let disposition = handler.cancel(id, reason) catch {
+          _ => NotPropagated
+        }
+        dispositions.push((id, disposition))
+      }
+      None => delegated.push(id)
+    }
+  }
+  if !delegated.is_empty() {
+    for pair in self.inner.cancel_effects(delegated, reason) {
+      dispositions.push(pair)
+    }
+  }
+  dispositions
 }
 
 ///|

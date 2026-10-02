@@ -23,8 +23,7 @@ impl @port.ToolProvider for UiAskingTool with fn list_tools(
 ///|
 impl @port.ToolProvider for UiAskingTool with fn execute(
   self : UiAskingTool,
-  _name : String,
-  _call : @kernel.ToolCall,
+  _ctx : @port.ToolCallContext,
 ) -> @kernel.ToolOutcome raise @error.RuntimeError {
   let ui = match self.ui {
     Some(ui) => ui

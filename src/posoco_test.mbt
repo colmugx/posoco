@@ -56,9 +56,9 @@ impl @port.ToolProvider for MockToolProvider with fn list_tools(self) {
 ///|
 impl @port.ToolProvider for MockToolProvider with fn execute(
   self,
-  name : String,
-  _call : @kernel.ToolCall,
+  ctx : @port.ToolCallContext,
 ) -> @kernel.ToolOutcome raise @error.RuntimeError {
+  let name = ctx.name.to_string()
   match self.results.get(name) {
     Some(Ok(r)) => r
     Some(Err(e)) => raise e
@@ -303,7 +303,7 @@ fn registry_test_tool(name : String) -> @kernel.ToolDef {
 }
 
 ///|
-fn registry_test_executor(_call : @kernel.ToolCall) -> @kernel.ToolOutcome {
+fn registry_test_executor(_ctx : @port.ToolCallContext) -> @kernel.ToolOutcome {
   Success(content="ok", structured=None)
 }
 

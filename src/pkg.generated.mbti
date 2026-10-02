@@ -45,6 +45,8 @@ pub fn tk_stop_response(String) -> @kernel.ModelCallResult
 
 pub fn tk_system_msg(String) -> @kernel.Message
 
+pub fn tk_tool_call_ctx(name~ : String, arguments? : Json) -> @port.ToolCallContext
+
 pub fn tk_tool_call_response(String, String, Json) -> @kernel.ModelCallResult
 
 pub fn tk_tool_def(String, String) -> @kernel.ToolDef
@@ -94,7 +96,7 @@ pub fn AgentControl::pending_follow_ups(Self) -> Int
 pub(all) struct CompositeToolProvider {
   providers : Array[&@port.ToolProvider]
 }
-pub async fn CompositeToolProvider::execute(Self, String, @kernel.ToolCall) -> @kernel.ToolOutcome raise @error.RuntimeError
+pub async fn CompositeToolProvider::execute(Self, @port.ToolCallContext) -> @kernel.ToolOutcome raise @error.RuntimeError
 pub fn CompositeToolProvider::list_tools(Self) -> Array[@kernel.ToolDef]
 pub impl @port.ToolProvider for CompositeToolProvider
 
@@ -237,8 +239,8 @@ pub(all) struct RecordingToolProvider {
 }
 pub fn RecordingToolProvider::RecordingToolProvider(Array[@kernel.ToolDef], Map[String, ScriptedToolOutcome]) -> Self
 pub fn RecordingToolProvider::exec_records(Self) -> Array[ToolExecRecord]
-pub async fn RecordingToolProvider::execute(Self, String, @kernel.ToolCall) -> @kernel.ToolOutcome raise @error.RuntimeError
-pub async fn RecordingToolProvider::execute_direct(Self, String, @kernel.ToolCall) -> @kernel.ToolOutcome raise @error.RuntimeError
+pub async fn RecordingToolProvider::execute(Self, @port.ToolCallContext) -> @kernel.ToolOutcome raise @error.RuntimeError
+pub async fn RecordingToolProvider::execute_direct(Self, @kernel.ToolCall) -> @kernel.ToolOutcome raise @error.RuntimeError
 pub fn RecordingToolProvider::list_call_count(Self) -> Int
 pub fn RecordingToolProvider::list_tools(Self) -> Array[@kernel.ToolDef]
 pub fn RecordingToolProvider::ops(Self) -> Array[ToolProviderOp]
@@ -406,13 +408,13 @@ pub fn ToolProviderOp::to_repr(Self) -> @debug.Repr
 
 pub(all) struct ToolRegistry {
   mut tools : Map[String, @kernel.ToolDef]
-  mut executors : Map[String, (@kernel.ToolCall) -> @kernel.ToolOutcome]
+  mut executors : Map[String, (@port.ToolCallContext) -> @kernel.ToolOutcome]
 }
 pub fn ToolRegistry::ToolRegistry() -> Self
-pub async fn ToolRegistry::execute(Self, String, @kernel.ToolCall) -> @kernel.ToolOutcome raise @error.RuntimeError
+pub async fn ToolRegistry::execute(Self, @port.ToolCallContext) -> @kernel.ToolOutcome raise @error.RuntimeError
 pub fn ToolRegistry::list_tools(Self) -> Array[@kernel.ToolDef]
-pub fn ToolRegistry::register(Self, @kernel.ToolDef, (@kernel.ToolCall) -> @kernel.ToolOutcome) -> Unit
-pub fn ToolRegistry::register_strict(Self, @kernel.ToolDef, (@kernel.ToolCall) -> @kernel.ToolOutcome) -> Unit raise @error.RuntimeError
+pub fn ToolRegistry::register(Self, @kernel.ToolDef, (@port.ToolCallContext) -> @kernel.ToolOutcome) -> Unit
+pub fn ToolRegistry::register_strict(Self, @kernel.ToolDef, (@port.ToolCallContext) -> @kernel.ToolOutcome) -> Unit raise @error.RuntimeError
 pub fn ToolRegistry::unregister(Self, String) -> Unit
 pub impl @port.ToolProvider for ToolRegistry
 
@@ -565,6 +567,8 @@ pub using @port {type Tasks}
 
 pub using @kernel {type ToolCall}
 
+pub using @port {type ToolCallContext}
+
 pub using @port {type ToolDecision}
 
 pub using @kernel {type ToolDef}
@@ -622,6 +626,8 @@ pub using @port {trait PipelineHook}
 pub using @port {trait SessionStore}
 
 pub using @port {trait SystemPromptContributor}
+
+pub using @port {trait ToolCancellable}
 
 pub using @port {trait ToolProvider}
 

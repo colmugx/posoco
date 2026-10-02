@@ -131,7 +131,7 @@ async test "tk_tool_records_execute_with_call_id" {
   ])
   let provider = RecordingToolProvider([tk_tool_def("lookup", "")], outcomes)
   let call = tk_call("tc_42", "lookup")
-  let result = provider.execute_direct("lookup", call)
+  let result = provider.execute_direct(call)
   match result {
     Success(content~, ..) => assert_eq(content, "found")
     _ => fail("expected Success outcome")
@@ -149,9 +149,7 @@ async test "tk_tool_records_execute_with_call_id" {
 async test "tk_tool_unknown_raises_typed_error" {
   let provider = RecordingToolProvider([], Map::from_array([]))
   let call = tk_call("tc_1", "missing")
-  let result = Ok(provider.execute_direct("missing", call)) catch {
-    e => Err(e)
-  }
+  let result = Ok(provider.execute_direct(call)) catch { e => Err(e) }
   match result {
     Err(UnknownTool(msg)) => assert_true(msg.contains("missing"))
     _ => fail("expected UnknownTool for unconfigured tool")
@@ -172,7 +170,7 @@ async test "tk_tool_records_raised_runtime_error" {
   ])
   let provider = RecordingToolProvider([tk_tool_def("flaky", "")], outcomes)
   let call = tk_call("tc_9", "flaky")
-  let result = Ok(provider.execute_direct("flaky", call)) catch { e => Err(e) }
+  let result = Ok(provider.execute_direct(call)) catch { e => Err(e) }
   match result {
     Err(InvocationFailed(_)) => ()
     _ => fail("expected InvocationFailed")
@@ -198,7 +196,7 @@ async test "tk_tool_unified_trace_preserves_list_execute_order" {
     name: ToolName::unchecked("lookup"),
     arguments: Json::object(Map::from_array([("query", Json::string("x"))])),
   }
-  let _ = provider.execute_direct("lookup", call)
+  let _ = provider.execute_direct(call)
   let ops = provider.ops()
   assert_eq(ops.length(), 2)
   assert_true(ops[0] is ListTools)
@@ -238,7 +236,7 @@ async test "tk_tool_records_are_recursive_json_snapshots" {
     name: ToolName::unchecked("lookup"),
     arguments: Json::object(argument_map),
   }
-  let result = provider.execute_direct("lookup", call)
+  let result = provider.execute_direct(call)
   argument_map["query"] = Json::string("mutated after execute")
   guard result is Success(content=_, structured=Some(Object(result_map))) else {
     fail("expected structured object result")
