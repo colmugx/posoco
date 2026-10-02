@@ -207,6 +207,24 @@ call id 和合法的 JSON arguments；解析到坏数据时抛 typed `ModelError
 一个统一的端口：`list_tools` 声明（同步），`execute` 执行（async）。执行结果用
 `ToolOutcome` 表达，不需要第二个布尔状态字段。
 
+### 返回媒体（图片等附件）
+
+工具可以随文本一起返回媒体块——用 `SuccessWithAttachments`：
+
+```moonbit
+// 读到一张小图：文本给摘要，像素走 attachments（Content::Image）
+@posoco.ToolOutcome::SuccessWithAttachments(
+  content="image 1234x760 png",
+  structured=None,
+  attachments=[@posoco.Content::Image(media_type="image/png", data=base64)],
+)
+```
+
+内核完整保留附件（transcript、会话持久化、`ToolCallSucceeded` 事件都带
+`attachments~`）；适配器按协议能力下行——chat-completions 族工具角色只收
+文本，附件会被折叠为紧随其后的合成 user 消息；模型不支持图片时显式占位
+降级，绝不静默丢弃。错误变体（`ToolReportedError` 等）不携带附件。
+
 ### 签名与工具定义
 
 ```moonbit
