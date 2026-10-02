@@ -1,54 +1,37 @@
 ///|
-/// Compact-diagnostic preservation (openai-compact-repair W1).
+/// Compact failure reporting (provider-independent).
 ///
-/// A provider compact rejection carries its safe essentials (HTTP status,
-/// provider code/param, request id) in the head of the modelport error
-/// message. These tests pin that those fields survive the nested
-/// PuppetError → AgentError → command-outcome formatting in bounded form,
-/// while quoted excerpt content and malformed structures fall back to the
-/// pre-existing bounded rendering.
+/// A failed modelport compact surfaces the `ModelFailure` category plus the
+/// adapter's opaque safe label through the nested PuppetError → AgentError →
+/// command-outcome formatting. The label is relayed intact up to the
+/// 352-character budget and every outer rendering keeps its cause under the
+/// user-approved 512-character error display. Core never interprets the
+/// label text: quoting, `k=v` lookalikes, and non-ASCII content stay inert
+/// characters in their original order, content beyond the relay budget
+/// cannot resurface, a plain reason falls back to the same rendering,
+/// cancellation stays a distinct structured outcome, and a failed compact
+/// commits nothing.
 
 ///|
-/// The adapter's exact HTTP-error format (posoco_ext_openai.mbt:195), with
-/// the W3-planned provider-error fields appended inside the envelope.
-const COMPACT_PROVIDER_ERROR : String = "OpenAI HTTP error (stage=http_status, status=400, body_bytes=9312, body_category=utf8, body_excerpt=\"This model's maximum context length is 8192 tokens. However, your messages resulted in 9001 tokens. TRANSCRIPT_ECHO user said: secret prompt encrypted_content=AAAA\", code=context_length_exceeded, param=input, request_id=req_diag_0001)"
+/// A generic failure label whose head mixes quoting, parentheses, `k=v`
+/// lookalikes and non-ASCII text, followed by a payload tail pushed beyond
+/// the 352-character relay budget. Nothing in it may be interpreted as
+/// structure, the head must reach every outcome verbatim and in order, and
+/// the far tail must not survive any layer.
+let compact_generic_failure : String = "adapter verdict (\"引文 (含, 逗号)\" , stage=假, status=503)" +
+  " payload " +
+  "m".repeat(300) +
+  "FAR_TAIL_SECRET"
 
 ///|
-/// Hostile variant: the quoted body excerpt carries parentheses and metadata
-/// lookalikes that must never be parsed as diagnostic fields.
-const COMPACT_HOSTILE_EXCERPT_ERROR : String = "OpenAI HTTP error (stage=http_status, status=400, body_bytes=64, body_category=utf8, body_excerpt=\"rejected (see: status=500 code=fake_from_body req=fake_body_id) TRANSCRIPT_ECHO secret prompt\", code=real_code, param=real_param, request_id=real_req_1)"
+/// A label region past the head but within the 352-character relay budget:
+/// it must survive every layer even though it lies beyond the kernel's
+/// 64-character display truncation.
+let compact_generic_kept_region : String = " payload " + "m".repeat(80)
 
 ///|
-/// The adapter's exact compact parse-failure format (convert.mbt).
-const COMPACT_PARSE_FAILURE_ERROR : String = "OpenAI compact parse failure (stage=output, category=missing_output)"
-
-///|
-/// The adapter's exact transport-failure format (posoco_ext_openai.mbt:706),
-/// with the free-text host-error suffix the envelope parser must ignore.
-const COMPACT_TRANSPORT_ERROR : String = "OpenAI transport failure (stage=read_response): IO timeout while reading response body (status=600 code=fake_from_body request_id=fake_id)"
-
-///|
-/// B1: raw quote/backslash injection through the interpolated excerpt; the
-/// escaped quote stays inside the quoted value, so nothing spoofs fields.
-const COMPACT_QUOTE_INJECTION_ERROR : String = "OpenAI HTTP error (stage=http_status, status=400, body_bytes=9, body_category=utf8, body_excerpt=\"broken\\\" , code=fake_from_body, request_id=fake_id\", code=real_code)"
-
-///|
-/// B1: unterminated quoted value (unbalanced structure) — metadata rejected.
-const COMPACT_UNBALANCED_ERROR : String = "OpenAI HTTP error (stage=http_status, status=400, body_excerpt=\"unterminated, request_id=fake_id)"
-
-///|
-/// Every allowlisted field at its 64-character maximum.
-let compact_maxfields_error : String = "OpenAI HTTP error (stage=" +
-  "s".repeat(64) +
-  ", status=" +
-  "4".repeat(64) +
-  ", body_bytes=1, body_category=utf8, body_excerpt=\"excerpt\", code=" +
-  "c".repeat(64) +
-  ", param=" +
-  "p".repeat(64) +
-  ", request_id=" +
-  "r".repeat(64) +
-  ")"
+/// A plain reason with no envelope shape at all — the fallback rendering.
+const COMPACT_PLAIN_FAILURE : String = "compact endpoint unavailable"
 
 ///|
 fn compact_diag_failure_agent(
@@ -84,10 +67,10 @@ fn compact_diag_builtin_compact(agent : Agent) -> &@port.CommandPort raise {
 }
 
 ///|
-async test "compact_diag/idle_compact_command_failure_keeps_provider_fields" {
+async test "compact_diag/idle_compact_command_failure_forwards_bounded_label" {
   let observer = RecordingObserver()
   let agent = compact_diag_failure_agent(
-    [CompactFail(error=Transport(COMPACT_PROVIDER_ERROR))],
+    [CompactFail(error=Transport(compact_generic_failure))],
     observer~,
     session_id="diag-cmd",
   )
@@ -102,27 +85,46 @@ async test "compact_diag/idle_compact_command_failure_keeps_provider_fields" {
     )
   }
   assert_true(reason.contains("compact failed"))
-  // Allowlisted essentials survive the nested formatting.
   assert_true(reason.contains("compact_session"))
-  assert_true(reason.contains("stage=http_status"))
-  assert_true(reason.contains("status=400"))
-  assert_true(reason.contains("failure=Transport"))
-  assert_true(reason.contains("code=context_length_exceeded"))
-  assert_true(reason.contains("param=input"))
-  assert_true(reason.contains("request_id=req_diag_0001"))
-  // Bounded: excerpt tail and transcript-shaped content stay out.
-  assert_false(reason.contains("TRANSCRIPT_ECHO"))
-  assert_false(reason.contains("secret prompt"))
-  assert_false(reason.contains("encrypted_content"))
+  // Category plus the opaque label survive the nested formatting: the head
+  // verbatim and in order, the within-budget label region intact.
+  assert_true(reason.contains("ModelFailure::Transport"))
+  assert_true(
+    reason.contains(
+      "adapter verdict (\"引文 (含, 逗号)\" , stage=假, status=503)",
+    ),
+  )
+  assert_true(reason.contains(compact_generic_kept_region))
+  // The head is inert label text, not an interpreted schema, and the tail
+  // beyond the relay budget is capped out.
+  assert_false(reason.contains("FAR_TAIL_SECRET"))
+  assert_true(reason.contains("...(truncated)"))
+  // Bounded by the user-approved 512-character outer display plus the fixed
+  // command prefix and the truncation marker.
+  assert_true(
+    reason.length() <=
+    512 + "compact failed: ".length() + "...(truncated)".length(),
+  )
 }
 
 ///|
-async test "compact_diag/standalone_compact_failure_detail_keeps_provider_fields" {
+async test "compact_diag/standalone_compact_failure_detail_and_no_commit" {
+  let model = ScriptedModel([
+    CompactFail(error=Transport(compact_generic_failure)),
+  ])
+  let store = RecordingSessionStore()
+  store.seed("diag-detail", {
+    messages: [tk_user_msg("seeded")],
+    metadata: Map::from_array([]),
+  })
   let observer = RecordingObserver()
-  let agent = compact_diag_failure_agent(
-    [CompactFail(error=Transport(COMPACT_PROVIDER_ERROR))],
-    observer~,
-    session_id="diag-detail",
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model), sessions=[store], observers=[
+        observer,
+      ]),
+    ],
+    config=tk_config(),
   )
   let outcome : Result[@types.CompactOutcome, @error.AgentError] = Ok(
     agent.compact_session("diag-detail"),
@@ -138,14 +140,13 @@ async test "compact_diag/standalone_compact_failure_detail_keeps_provider_fields
   }
   assert_true(detail.contains("puppet rejected the compact"))
   assert_true(detail.contains("compact_session"))
-  assert_true(detail.contains("stage=http_status"))
-  assert_true(detail.contains("status=400"))
-  assert_true(detail.contains("failure=Transport"))
-  assert_true(detail.contains("code=context_length_exceeded"))
-  assert_true(detail.contains("param=input"))
-  assert_true(detail.contains("request_id=req_diag_0001"))
-  assert_false(detail.contains("TRANSCRIPT_ECHO"))
-  assert_false(detail.contains("secret prompt"))
+  assert_true(detail.contains("ModelFailure::Transport"))
+  assert_true(detail.contains("stage=假"))
+  assert_true(detail.contains("m".repeat(80)))
+  assert_false(detail.contains("FAR_TAIL_SECRET"))
+  // Bounded by the user-approved 512-character outer display plus its fixed
+  // prefix.
+  assert_true(detail.length() <= 512 + "puppet rejected the compact: ".length())
   let mut failed_detail = ""
   for event in observer.events() {
     match event {
@@ -156,15 +157,43 @@ async test "compact_diag/standalone_compact_failure_detail_keeps_provider_fields
       _ => ()
     }
   }
-  assert_true(failed_detail.contains("status=400"))
-  assert_true(failed_detail.contains("request_id=req_diag_0001"))
-  assert_false(failed_detail.contains("TRANSCRIPT_ECHO"))
+  assert_true(failed_detail.contains("ModelFailure::Transport"))
+  assert_true(failed_detail.contains(compact_generic_kept_region))
+  assert_false(failed_detail.contains("FAR_TAIL_SECRET"))
+  // A failed compact commits nothing: the stored window is untouched.
+  assert_eq(store.store["diag-detail"].messages.length(), 1)
+  assert_true(store.store["diag-detail"].messages[0] == tk_user_msg("seeded"))
+}
+
+///|
+async test "compact_diag/plain_failure_fallback_renders_verbatim" {
+  let observer = RecordingObserver()
+  let agent = compact_diag_failure_agent(
+    [CompactFail(error=Transport(COMPACT_PLAIN_FAILURE))],
+    observer~,
+    session_id="diag-fallback",
+  )
+  let port = compact_diag_builtin_compact(agent)
+  let outcome = port.invoke(
+    "compact",
+    Json::object(
+      Map::from_array([("session_id", Json::string("diag-fallback"))]),
+    ),
+  )
+  guard outcome is Failure(reason~) else {
+    fail("expected the failed compact to report a failure")
+  }
+  // A short plain reason passes every layer without truncation or
+  // restructuring: the fallback rendering is the display rendering.
+  assert_true(
+    reason.contains("ModelFailure::Transport(compact endpoint unavailable)"),
+  )
+  assert_false(reason.contains("...(truncated)"))
 }
 
 ///|
 /// Model fake that reports a fixed context window (so auto-compact fires on
-/// the usage reading) and fails every compaction with the provider-shaped
-/// transport error.
+/// the usage reading) and fails every compaction with a generic failure.
 struct AutoCompactFailModel {
   scripted : ScriptedModel
   reported : @port.ProviderConfig
@@ -206,7 +235,7 @@ impl @port.ModelPort for AutoCompactFailModel with fn compact(
   _options : @types.ChatOptions,
   _trigger : @kernel.CompactTrigger,
 ) -> @kernel.CompactResult raise @error.ModelError {
-  raise Transport(COMPACT_PROVIDER_ERROR)
+  raise Transport(compact_generic_failure)
 }
 
 ///|
@@ -215,7 +244,7 @@ impl @port.ModelPort for AutoCompactFailModel with fn provider_config(self) -> @
 }
 
 ///|
-async test "compact_diag/auto_compact_failure_keeps_provider_fields" {
+async test "compact_diag/auto_compact_failure_forwards_bounded_label" {
   let model = AutoCompactFailModel::make([
     Respond(scope_test_tool_call_with_usage(95)),
   ])
@@ -241,12 +270,10 @@ async test "compact_diag/auto_compact_failure_keeps_provider_fields" {
     fail("expected a typed AutoCompactFailed outcome, got \{why}")
   }
   assert_true(cause.contains("phase=compact"))
-  assert_true(cause.contains("stage=http_status"))
-  assert_true(cause.contains("status=400"))
-  assert_true(cause.contains("code=context_length_exceeded"))
-  assert_true(cause.contains("request_id=req_diag_0001"))
-  assert_false(cause.contains("TRANSCRIPT_ECHO"))
-  assert_false(cause.contains("secret prompt"))
+  assert_true(cause.contains("ModelFailure::Transport"))
+  assert_true(cause.contains("stage=假"))
+  assert_true(cause.contains(compact_generic_kept_region))
+  assert_false(cause.contains("FAR_TAIL_SECRET"))
 }
 
 ///|
@@ -306,10 +333,10 @@ impl @runtime.Runtime for MidRunCompactRuntime with fn compact(
 }
 
 ///|
-async test "compact_diag/midrun_manual_compact_failure_keeps_provider_fields" {
+async test "compact_diag/midrun_manual_compact_failure_forwards_bounded_label" {
   let model = ScriptedModel([
     Respond(tk_tool_call_response("echo", "call_1", Json::null())),
-    CompactFail(error=Transport(COMPACT_PROVIDER_ERROR)),
+    CompactFail(error=Transport(compact_generic_failure)),
     Respond(tk_stop_response("done")),
   ])
   let tools = policy_tools()
@@ -363,176 +390,10 @@ async test "compact_diag/midrun_manual_compact_failure_keeps_provider_fields" {
     fail("expected the failed in-run compact to fail the turn, got \{why}")
   }
   assert_true(msg.contains("compact"))
-  assert_true(msg.contains("stage=http_status"))
-  assert_true(msg.contains("status=400"))
-  assert_true(msg.contains("code=context_length_exceeded"))
-  assert_true(msg.contains("request_id=req_diag_0001"))
-  assert_false(msg.contains("TRANSCRIPT_ECHO"))
-}
-
-///|
-async test "compact_diag/parse_failure_category_and_stage_survive" {
-  let observer = RecordingObserver()
-  let agent = compact_diag_failure_agent(
-    [CompactFail(error=ResponseParse(COMPACT_PARSE_FAILURE_ERROR))],
-    observer~,
-    session_id="diag-parse",
-  )
-  let port = compact_diag_builtin_compact(agent)
-  let outcome = port.invoke(
-    "compact",
-    Json::object(Map::from_array([("session_id", Json::string("diag-parse"))])),
-  )
-  guard outcome is Failure(reason~) else {
-    fail("expected the failed compact to report a failure")
-  }
-  assert_true(reason.contains("compact failed"))
-  assert_true(reason.contains("compact_session"))
-  assert_true(reason.contains("stage=output"))
-  assert_true(reason.contains("category=missing_output"))
-  assert_true(reason.contains("failure=Parse"))
-  assert_false(reason.contains("OpenAI compact parse failure"))
-}
-
-///|
-async test "compact_diag/quote_injection_never_yields_metadata" {
-  let observer = RecordingObserver()
-  let agent = compact_diag_failure_agent(
-    [CompactFail(error=Transport(COMPACT_QUOTE_INJECTION_ERROR))],
-    observer~,
-    session_id="diag-inject",
-  )
-  let port = compact_diag_builtin_compact(agent)
-  let outcome = port.invoke(
-    "compact",
-    Json::object(Map::from_array([("session_id", Json::string("diag-inject"))])),
-  )
-  guard outcome is Failure(reason~) else {
-    fail("expected the failed compact to report a failure")
-  }
-  assert_true(reason.contains("status=400"))
-  assert_true(reason.contains("code=real_code"))
-  assert_false(reason.contains("fake_from_body"))
-  assert_false(reason.contains("fake_id"))
-}
-
-///|
-async test "compact_diag/unbalanced_quote_rejects_metadata" {
-  let observer = RecordingObserver()
-  let agent = compact_diag_failure_agent(
-    [CompactFail(error=Transport(COMPACT_UNBALANCED_ERROR))],
-    observer~,
-    session_id="diag-unbalanced",
-  )
-  let port = compact_diag_builtin_compact(agent)
-  let outcome = port.invoke(
-    "compact",
-    Json::object(
-      Map::from_array([("session_id", Json::string("diag-unbalanced"))]),
-    ),
-  )
-  guard outcome is Failure(reason~) else {
-    fail("expected the failed compact to report a failure")
-  }
-  assert_true(reason.contains("compact failed"))
-  assert_false(reason.contains("request_id=fake_id"))
-  assert_false(reason.contains("request_id="))
-}
-
-///|
-async test "compact_diag/host_suffix_after_envelope_is_ignored" {
-  let observer = RecordingObserver()
-  let agent = compact_diag_failure_agent(
-    [CompactFail(error=Transport(COMPACT_TRANSPORT_ERROR))],
-    observer~,
-    session_id="diag-suffix",
-  )
-  let port = compact_diag_builtin_compact(agent)
-  let outcome = port.invoke(
-    "compact",
-    Json::object(Map::from_array([("session_id", Json::string("diag-suffix"))])),
-  )
-  guard outcome is Failure(reason~) else {
-    fail("expected the failed compact to report a failure")
-  }
-  assert_true(reason.contains("stage=read_response"))
-  assert_true(reason.contains("failure=Transport"))
-  assert_false(reason.contains("status=600"))
-  assert_false(reason.contains("fake_from_body"))
-  assert_false(reason.contains("fake_id"))
-}
-
-///|
-async test "compact_diag/all_fields_max_length_still_reach_command" {
-  let observer = RecordingObserver()
-  let agent = compact_diag_failure_agent(
-    [CompactFail(error=Transport(compact_maxfields_error))],
-    observer~,
-    session_id="diag-max",
-  )
-  let port = compact_diag_builtin_compact(agent)
-  let outcome = port.invoke(
-    "compact",
-    Json::object(Map::from_array([("session_id", Json::string("diag-max"))])),
-  )
-  guard outcome is Failure(reason~) else {
-    fail("expected the failed compact to report a failure")
-  }
-  assert_true(reason.contains("request_id=" + "r".repeat(64)))
-  assert_true(reason.contains("code=" + "c".repeat(64)))
-  assert_true(reason.contains("status=" + "4".repeat(64)))
-  assert_true(reason.contains("stage=" + "s".repeat(64)))
-  assert_false(reason.contains("...(truncated)"))
-}
-
-///|
-async test "compact_diag/transport_stage_survives" {
-  let observer = RecordingObserver()
-  let agent = compact_diag_failure_agent(
-    [CompactFail(error=Transport(COMPACT_TRANSPORT_ERROR))],
-    observer~,
-    session_id="diag-transport",
-  )
-  let port = compact_diag_builtin_compact(agent)
-  let outcome = port.invoke(
-    "compact",
-    Json::object(
-      Map::from_array([("session_id", Json::string("diag-transport"))]),
-    ),
-  )
-  guard outcome is Failure(reason~) else {
-    fail("expected the failed compact to report a failure")
-  }
-  assert_true(reason.contains("stage=read_response"))
-  assert_true(reason.contains("failure=Transport"))
-  assert_false(reason.contains("OpenAI transport failure"))
-}
-
-///|
-async test "compact_diag/quoted_body_excerpt_is_never_parsed_as_metadata" {
-  let observer = RecordingObserver()
-  let agent = compact_diag_failure_agent(
-    [CompactFail(error=Transport(COMPACT_HOSTILE_EXCERPT_ERROR))],
-    observer~,
-    session_id="diag-hostile",
-  )
-  let outcome : Result[@types.CompactOutcome, @error.AgentError] = Ok(
-    agent.compact_session("diag-hostile"),
-  ) catch {
-    e => Err(e)
-  }
-  guard outcome is Err(Runtime(InvocationFailed(detail))) else {
-    fail("expected a typed Runtime failure")
-  }
-  // Real trailing provider fields are extracted; nothing inside the quoted
-  // excerpt is.
-  assert_true(detail.contains("code=real_code"))
-  assert_true(detail.contains("param=real_param"))
-  assert_true(detail.contains("request_id=real_req_1"))
-  assert_false(detail.contains("fake_from_body"))
-  assert_false(detail.contains("fake_body_id"))
-  assert_false(detail.contains("status=500"))
-  assert_false(detail.contains("secret prompt"))
+  assert_true(msg.contains("ModelFailure::Transport"))
+  assert_true(msg.contains("stage=假"))
+  assert_true(msg.contains(compact_generic_kept_region))
+  assert_false(msg.contains("FAR_TAIL_SECRET"))
 }
 
 ///|

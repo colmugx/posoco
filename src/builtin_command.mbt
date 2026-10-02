@@ -163,7 +163,7 @@ async fn BuiltinCommandPort::invoke_idle_compact(
       }
       match attempted {
         Err(error) =>
-          // Keep provider status/code/request fields in the command outcome.
+          // Keep the category and safe bounded label in the command outcome.
           Failure(
             reason="compact failed: " +
               bounded_error_label(error.to_string(), 512),

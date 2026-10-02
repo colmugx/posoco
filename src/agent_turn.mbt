@@ -442,7 +442,7 @@ async fn AgentRuntime::run_puppet_turn_body(
         "effect execution cancelled in \{phase}",
       )
     Rejected(error=EffectExecutionFailed(cause~, phase~)) => {
-      // Compact causes front-load the allowlisted provider fields; keep them.
+      // Compact causes are the adapter's safe bounded label;
       let cause_label = if is_compact_effect_phase(phase) {
         bounded_error_label(cause, 512)
       } else {
@@ -902,8 +902,6 @@ async fn AgentRuntime::save_turn_transcript(
 /// Effect phases that belong to a compaction. Their failure causes are the
 /// compact diagnostic carrier (provider status/code/param/request id), so
 /// the Agent keeps the sanitized bounded head instead of re-truncating it.
-/// Mirrors the puppetry twin in `compact_diagnostic.mbt` — extend both
-/// together.
 fn is_compact_effect_phase(phase : String) -> Bool {
   phase == "compact" || phase == "compact_session" || phase == "auto_compact"
 }
@@ -1199,8 +1197,8 @@ async fn AgentRuntime::run_compact_operation(
       raise @error.AgentError::Cancelled("compact cancelled")
     }
     Rejected(error~) => {
-      // Keep the per-field-sanitized rendering; stage and provider fields
-      // must survive to the observer event and the raised error.
+      // Keep the sanitized bounded rendering; the ModelFailure category and
+      // its safe label must survive to the observer event and the error.
       let detail = bounded_error_label(error.to_string(), 512)
       self.emit_turn_event(
         Some(scope),

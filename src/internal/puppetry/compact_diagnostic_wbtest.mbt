@@ -1,248 +1,155 @@
 ///|
-/// White-box tests for the compact diagnostic extractor (W1): allowlisted
-/// fields parsed from the raw `ModelFailure` reason before its display
-/// truncation; quoted excerpt content never becomes metadata; non-compact
-/// effect failures keep their exact previous rendering.
+/// White-box tests for the compact failure cause relay. Core does not parse
+/// the `ModelFailure` reason: it forwards the adapter's opaque safe label —
+/// bounded at the 352-character relay budget, newlines flattened — next to
+/// the structural `ModelFailure` category, and the whole cause stays under
+/// the user-approved 512-character outer error display. These tests pin the
+/// generic contract: arbitrary failure formats (Unicode, quoting, `k=v`
+/// lookalikes) are never interpreted into fields, labels stay bounded,
+/// cancellation stays a distinct outcome, and non-compact phases keep the
+/// old 64-character rendering.
 
 ///|
-const DIAG_ADAPTER_HTTP_ERROR : String = "OpenAI HTTP error (stage=http_status, status=400, body_bytes=9312, body_category=utf8, body_excerpt=\"This model's maximum context length is 8192 tokens. However, your messages resulted in 9001 tokens.\", code=context_length_exceeded, param=input, request_id=req_diag_0001)"
-
-///|
-const DIAG_ADAPTER_PARSE_FAILURE : String = "OpenAI compact parse failure (stage=output, category=missing_output)"
-
-///|
-const DIAG_ADAPTER_TRANSPORT : String = "OpenAI transport failure (stage=read_response)"
-
-///|
-const DIAG_HOSTILE_EXCERPT : String = "OpenAI HTTP error (stage=http_status, status=400, body_bytes=64, body_category=utf8, body_excerpt=\"rejected (see: status=500 code=fake_from_body req=fake_body_id, then encrypted_content=AAAA)\", code=real_code, param=real_param, request_id=real_req_1)"
-
-///|
-test "compact_diag_parse/adapter_http_error_extracts_allowlisted_fields" {
-  let diag = compact_diagnostic_of(
-    @kernel.ModelFailure::Transport(reason=DIAG_ADAPTER_HTTP_ERROR),
+test "compact_diag_cause/generic_failure_forwards_category_and_label" {
+  let cause = compact_failure_cause(
+    @kernel.ModelFailure::Transport(reason="upstream dropped the connection"),
   )
-  guard diag is Some(parsed) else {
-    fail("expected allowlisted fields to parse from the adapter verdict")
-  }
-  let rendered = parsed.render()
-  assert_true(rendered.contains("stage=http_status"))
-  assert_true(rendered.contains("status=400"))
-  assert_true(rendered.contains("failure=Transport"))
-  assert_true(rendered.contains("code=context_length_exceeded"))
-  assert_true(rendered.contains("param=input"))
-  assert_true(rendered.contains("request_id=req_diag_0001"))
-  // Envelope keys and the quoted excerpt stay out entirely.
-  assert_false(rendered.contains("body_bytes"))
-  assert_false(rendered.contains("utf8"))
-  assert_false(rendered.contains("body_excerpt"))
-  assert_false(rendered.contains("maximum context length"))
+  assert_eq(
+    cause, "modelport compact failed: ModelFailure::Transport(upstream dropped the connection)",
+  )
 }
 
 ///|
-test "compact_diag_parse/parse_failure_stage_and_provider_category" {
-  let diag = compact_diagnostic_of(
-    @kernel.ModelFailure::Parse(reason=DIAG_ADAPTER_PARSE_FAILURE),
-  )
-  guard diag is Some(parsed) else {
-    fail("expected the parse-failure verdict fields to parse")
-  }
-  let rendered = parsed.render()
-  assert_true(rendered.contains("stage=output"))
-  assert_true(rendered.contains("category=missing_output"))
-  assert_true(rendered.contains("failure=Parse"))
-  assert_false(rendered.contains("OpenAI compact parse failure"))
-}
-
-///|
-test "compact_diag_parse/transport_stage" {
-  let diag = compact_diagnostic_of(
-    @kernel.ModelFailure::Transport(reason=DIAG_ADAPTER_TRANSPORT),
-  )
-  guard diag is Some(parsed) else {
-    fail("expected the transport stage to parse")
-  }
-  let rendered = parsed.render()
-  assert_true(rendered.contains("stage=read_response"))
-  assert_true(rendered.contains("failure=Transport"))
-  assert_false(rendered.contains("OpenAI transport failure"))
-}
-
-///|
-test "compact_diag_parse/quoted_excerpt_is_never_metadata" {
-  let diag = compact_diagnostic_of(
-    @kernel.ModelFailure::Transport(reason=DIAG_HOSTILE_EXCERPT),
-  )
-  guard diag is Some(parsed) else {
-    fail("expected the real trailing fields to parse")
-  }
-  let rendered = parsed.render()
-  assert_true(rendered.contains("code=real_code"))
-  assert_true(rendered.contains("param=real_param"))
-  assert_true(rendered.contains("request_id=real_req_1"))
-  assert_false(rendered.contains("fake_from_body"))
-  assert_false(rendered.contains("fake_body_id"))
-  assert_false(rendered.contains("status=500"))
-  assert_false(rendered.contains("encrypted_content"))
-}
-
-///|
-test "compact_diag_parse/aliases_and_bounded_values" {
-  let diag = compact_diagnostic_of(
-    @kernel.ModelFailure::Transport(
-      reason="code=ok_code,http_status=429,error_code=dup_code,req=short",
+/// Every `ModelFailure` variant reaches the same path — the category name
+/// plus its bounded label — with no variant-specific text schema.
+test "compact_diag_cause/all_categories_take_the_same_path" {
+  let cases = [
+    (
+      @kernel.ModelFailure::RequestBuild(reason="build broke"),
+      "ModelFailure::RequestBuild",
     ),
-  )
-  guard diag is Some(parsed) else { fail("expected aliased fields to parse") }
-  let rendered = parsed.render()
-  assert_true(rendered.contains("status=429"))
-  assert_true(rendered.contains("code=ok_code"))
-  assert_true(rendered.contains("request_id=short"))
-  // First occurrence wins; aliases do not overwrite.
-  assert_false(rendered.contains("dup_code"))
-  // Values are bounded like every other error label.
-  let long_req = "req=" + "x".repeat(100)
-  let bounded = compact_diagnostic_of(
-    @kernel.ModelFailure::Transport(reason=long_req),
-  )
-  guard bounded is Some(parsed_long) else {
-    fail("expected the long request id to parse")
+    (
+      @kernel.ModelFailure::Transport(reason="transport broke"),
+      "ModelFailure::Transport",
+    ),
+    (
+      @kernel.ModelFailure::Runtime(reason="runtime broke"),
+      "ModelFailure::Runtime",
+    ),
+    (@kernel.ModelFailure::Parse(reason="parse broke"), "ModelFailure::Parse"),
+    (
+      @kernel.ModelFailure::HostRejected(reason="host said no"),
+      "ModelFailure::HostRejected",
+    ),
+    (
+      @kernel.ModelFailure::RateLimited(
+        reason="quota broke",
+        reset_at_ms=None,
+        provider_code=None,
+      ),
+      "ModelFailure::RateLimited",
+    ),
+  ]
+  for entry in cases {
+    let (failure, category) = entry
+    let cause = compact_failure_cause(failure)
+    assert_true(cause.contains("modelport compact failed: "))
+    assert_true(cause.contains(category))
   }
-  let long_rendered = parsed_long.render()
-  assert_true(long_rendered.contains("...(truncated)"))
 }
 
 ///|
-test "compact_diag_parse/no_fields_falls_back_to_none" {
-  assert_true(
-    compact_diagnostic_of(
-      @kernel.ModelFailure::Parse(reason="no compact endpoint"),
-    )
-    is None,
-  )
-  assert_true(
-    compact_diagnostic_of(@kernel.ModelFailure::Transport(reason="timeout"))
-    is None,
+/// Quotes, parentheses, commas, `k=v` lookalikes and non-ASCII text are just
+/// characters in the label: nothing is rejected, extracted, or reordered.
+test "compact_diag_cause/quoting_and_key_lookalikes_are_not_interpreted" {
+  let reason = "adapter verdict (\"引文 (含, 逗号)\" , stage=假, status=503)"
+  let cause = compact_failure_cause(@kernel.ModelFailure::Parse(reason~))
+  assert_eq(
+    cause,
+    "modelport compact failed: ModelFailure::Parse(" + reason + ")",
   )
 }
 
 ///|
-test "compact_diag_parse/rate_limited_uses_structured_provider_code" {
-  let diag = compact_diagnostic_of(
+/// A label at the adapter's aggregate bound is relayed intact: the kernel's
+/// 64-character display truncation does not apply on the compact cause path.
+test "compact_diag_cause/labels_within_the_relay_budget_are_forwarded_intact" {
+  let label = "p" + "q".repeat(351)
+  let cause = compact_failure_cause(
+    @kernel.ModelFailure::Transport(reason=label),
+  )
+  assert_true(cause.contains("ModelFailure::Transport(" + label + ")"))
+  assert_false(cause.contains("...(truncated)"))
+  // The relayed cause fits the user-approved 512-character outer display.
+  assert_true(cause.length() <= 512)
+}
+
+///|
+/// Content beyond the relay budget is capped: the far tail cannot resurface
+/// and the truncation is marked.
+test "compact_diag_cause/labels_beyond_the_relay_budget_are_capped" {
+  let cause = compact_failure_cause(
+    @kernel.ModelFailure::Transport(reason="p" + "q".repeat(400) + "FAR_TAIL"),
+  )
+  assert_true(cause.contains("...(truncated)"))
+  assert_false(cause.contains("FAR_TAIL"))
+  assert_true(cause.length() <= 512)
+}
+
+///|
+test "compact_diag_cause/newlines_are_flattened_in_the_label" {
+  let cause = compact_failure_cause(
+    @kernel.ModelFailure::Runtime(reason="line one\nline two\rline three"),
+  )
+  assert_false(cause.contains("\n"))
+  assert_false(cause.contains("\r"))
+  assert_true(cause.contains("line one line two line three"))
+}
+
+///|
+/// Structured quota fields stay structured: the compact cause carries only
+/// the category and the safe bounded reason.
+test "compact_diag_cause/rate_limited_keeps_category_and_reason_only" {
+  let cause = compact_failure_cause(
     @kernel.ModelFailure::RateLimited(
-      reason="quota exhausted",
+      reason="quota window exhausted",
       reset_at_ms=Some(1234L),
-      provider_code=Some("usage_limit_reached"),
+      provider_code=Some("stays_structured"),
     ),
   )
-  guard diag is Some(parsed) else {
-    fail("expected the structured provider code to surface")
-  }
-  let rendered = parsed.render()
-  assert_true(rendered.contains("failure=RateLimited"))
-  assert_true(rendered.contains("code=usage_limit_reached"))
-}
-
-///|
-test "compact_diag_parse/escaped_chars_inside_quotes_never_scanned" {
-  // An escaped quote keeps the scanner inside the value; a backslashed
-  // metadata lookalike is dropped with the rest of the quoted content.
-  let diag = compact_diagnostic_of(
-    @kernel.ModelFailure::Transport(
-      reason="OpenAI HTTP error (stage=http_status, status=400, body_excerpt=\"a\\\" \\status=600 \\code=fake\", code=real_code)",
-    ),
-  )
-  guard diag is Some(parsed) else {
-    fail("expected the balanced escaped-quote structure to parse")
-  }
-  let rendered = parsed.render()
-  assert_true(rendered.contains("code=real_code"))
-  assert_false(rendered.contains("status=600"))
-  assert_false(rendered.contains("fake"))
-}
-
-///|
-test "compact_diag_parse/malformed_quote_structures_rejected" {
-  // Unterminated quoted value.
-  assert_true(
-    compact_diagnostic_of(
-      @kernel.ModelFailure::Transport(
-        reason="OpenAI HTTP error (stage=http_status, body_excerpt=\"unterminated",
-      ),
-    )
-    is None,
-  )
-  // Quote inside a key position.
-  assert_true(
-    compact_diagnostic_of(
-      @kernel.ModelFailure::Transport(
-        reason="OpenAI HTTP error (\"stage\"=x, code=ok)",
-      ),
-    )
-    is None,
-  )
-  // Quote opening after a non-empty value (mixed/early-closed structure).
-  assert_true(
-    compact_diagnostic_of(
-      @kernel.ModelFailure::Transport(
-        reason="OpenAI HTTP error (body_excerpt=oops\" , code=fake_from_body)",
-      ),
-    )
-    is None,
-  )
-  // Two quoted values in one segment.
-  assert_true(
-    compact_diagnostic_of(
-      @kernel.ModelFailure::Transport(
-        reason="OpenAI HTTP error (body_excerpt=\"a\"\", code=fake)",
-      ),
-    )
-    is None,
+  assert_eq(
+    cause, "modelport compact failed: ModelFailure::RateLimited(quota window exhausted)",
   )
 }
 
 ///|
-test "compact_diag_parse/envelope_suffix_ignored" {
-  let diag = compact_diagnostic_of(
-    @kernel.ModelFailure::Transport(
-      reason="OpenAI transport failure (stage=read_response): IO timeout (status=600 code=fake request_id=fake_id)",
-    ),
+/// Fallback: a reason with no envelope shape at all renders identically —
+/// there is no separate extraction path to fall back from, and within the
+/// relay budget the relay rendering coincides with the kernel display.
+test "compact_diag_cause/plain_reason_matches_display_rendering" {
+  let failure = @kernel.ModelFailure::Parse(reason="no compact endpoint")
+  assert_eq(
+    compact_failure_cause(failure),
+    "modelport compact failed: " + failure.to_string(),
   )
-  guard diag is Some(parsed) else {
-    fail("expected the envelope stage to parse")
-  }
-  let rendered = parsed.render()
-  assert_true(rendered.contains("stage=read_response"))
-  assert_false(rendered.contains("status=600"))
-  assert_false(rendered.contains("fake"))
 }
 
 ///|
-test "compact_diag_render/bounded_aggregate_prioritises_identifiers" {
-  let diag = compact_diagnostic_of(
-    @kernel.ModelFailure::Transport(
-      reason="OpenAI HTTP error (stage=" +
-        "s".repeat(64) +
-        ", status=" +
-        "4".repeat(64) +
-        ", body_bytes=1, body_category=utf8, code=" +
-        "c".repeat(64) +
-        ", param=" +
-        "p".repeat(64) +
-        ", request_id=" +
-        "r".repeat(64) +
-        ")",
-    ),
-  )
-  guard diag is Some(parsed) else {
-    fail("expected the max-length fields to parse")
-  }
-  let rendered = parsed.render()
-  assert_true(rendered.length() <= 352)
-  assert_true(rendered.contains("request_id=" + "r".repeat(64)))
-  assert_true(rendered.contains("code=" + "c".repeat(64)))
-  assert_true(rendered.contains("status=" + "4".repeat(64)))
-  // The lowest-priority fields yield first under the aggregate budget.
-  assert_false(rendered.contains("param="))
+/// Compact-phase failure display carries the cause under the user-approved
+/// 512-character bound: 43 wrapper characters + 512 kept + 14 marker + 1
+/// closing parenthesis.
+test "compact_diag_show/compact_phase_display_bounded_at_512" {
+  let long_cause = "modelport compact failed: ModelFailure::Transport(" +
+    "z".repeat(600) +
+    "ENDOFTAIL)"
+  let rendered = EffectExecutionFailed(phase="compact", cause=long_cause).to_string()
+  assert_true(rendered.contains("phase=compact"))
+  assert_true(rendered.contains("cause=modelport compact failed: "))
+  assert_true(rendered.contains("...(truncated)"))
+  assert_eq(rendered.length(), 570)
+  // The kept head retains the category; the tail beyond the bound is gone.
+  assert_true(rendered.contains("z".repeat(462)))
+  assert_false(rendered.contains("ENDOFTAIL"))
 }
 
 ///|
@@ -261,30 +168,20 @@ test "compact_diag_show/noncompact_effect_failure_keeps_exact_old_rendering" {
 }
 
 ///|
-test "compact_diag_cause/fields_replace_excerpt_fallback_keeps_display" {
-  let with_fields = compact_failure_cause(
-    @kernel.ModelFailure::Transport(reason=DIAG_ADAPTER_HTTP_ERROR),
+/// Cancellation is a distinct outcome: it carries no cause label in any
+/// phase, so a cancelled compact can never render as a failed one.
+test "compact_diag_cancel/cancellation_is_distinct_from_failure" {
+  let cancelled = EffectExecutionCancelled(phase="compact_session").to_string()
+  assert_eq(cancelled, "EffectExecutionCancelled(phase=compact_session)")
+  assert_false(cancelled.contains("cause="))
+  assert_false(cancelled.contains("...(truncated)"))
+  assert_eq(
+    EffectExecutionCancelled(phase="ExecuteTool").to_string(),
+    "EffectExecutionCancelled(phase=ExecuteTool)",
   )
-  assert_true(with_fields.contains("modelport compact failed: "))
-  assert_true(with_fields.contains("code=context_length_exceeded"))
-  assert_false(with_fields.contains("maximum context length"))
-  let without_fields = compact_failure_cause(
-    @kernel.ModelFailure::Parse(reason="no compact endpoint"),
-  )
-  let expected = "modelport compact failed: ModelFailure::Parse(no compact endpoint)"
-  assert_true(without_fields == expected)
-}
-
-///|
-test "compact_diag_parse/junk_after_closed_quote_rejects_all" {
-  assert_true(compact_parse_fields("x (code=\"v\"junk)") is None)
-  assert_true(compact_parse_fields("x (code=\"v\"=1)") is None)
-  // Well-formed quoted value: the quoted content itself never reaches the
-  // scanner (the key stores no value), while later plain fields still parse.
-  let ok = compact_parse_fields("x (code=\"v\", status=400)")
-  guard ok is Some(fields) else {
-    fail("well-formed quoted value must still parse")
-  }
-  assert_true(fields.code is None)
-  assert_eq(fields.status, Some("400"))
+  // Only failure display consults the compact-phase gate.
+  assert_true(is_compact_effect_phase("compact"))
+  assert_true(is_compact_effect_phase("compact_session"))
+  assert_true(is_compact_effect_phase("auto_compact"))
+  assert_false(is_compact_effect_phase("ExecuteTool"))
 }
