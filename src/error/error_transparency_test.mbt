@@ -245,8 +245,6 @@ async test "t07_save_error_emits_exactly_one_turnfailed" {
 }
 
 ///|
-
-///|
 async test "t07_model_failure_keeps_primary_after_input_checkpoint" {
   let model = @posoco.ScriptedModel([Fail(Transport("primary network failure"))])
   let store = @posoco.RecordingSessionStore()

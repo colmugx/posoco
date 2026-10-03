@@ -142,8 +142,6 @@ async test "rewind_truncate_default_impl_labels_load_and_save_failures" {
 // ---------------------------------------------------------------------------
 
 ///|
-
-///|
 async test "rewind_recording_store_truncate_slices_and_records_op" {
   let store = RecordingSessionStore()
   store.seed("s1", truncate_test_session())
