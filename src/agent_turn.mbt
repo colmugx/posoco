@@ -214,7 +214,18 @@ async fn AgentRuntime::run_turn_via_puppet(
   let raw = snapshot_messages(session.messages)
   let messages = fixate_pending_tool_calls(raw)
   self.session_cursors[session_id] = fixated_persisted_boundary(raw, messages)
+  // Uncommitted arms die on every exit of this turn: the keyed disarm is a
+  // no-op once the run's committed RunStarted consumed the arm, and can
+  // never remove a later turn's arm.
+  let wakeup_cutoff_key = identity.run_id.to_string()
+  defer self.wakeup.disarm_cutoff(wakeup_cutoff_key)
   if !resume_persisted_user {
+    // Wakeup cutoff arm (port §4), keyed by this turn's unique run id so
+    // commit and cleanup can never touch another turn's arm. Armed
+    // immediately before the outcome peek and the async memory injection:
+    // requests arriving during the snapshot land on a later generation
+    // than the cutoff and survive. Replay-resume (every shape) never arms.
+    self.wakeup.arm_cutoff(wakeup_cutoff_key, session_id, operation_id)
     let pending = self.task_runtime.peek_outcomes(session_id)
     for outcome in pending {
       if !task_outcome_is_applied(applied_task_ids, outcome) {
@@ -229,10 +240,6 @@ async fn AgentRuntime::run_turn_via_puppet(
       (snapshot_message(last), messages.length() - 1)
     _ => {
       self.inject_memory_inbound(session, session_id, input, messages)
-      // Plan step 3: this ordinary input is about to enter the model input
-      // snapshot. Every wakeup still pending for the session is covered by
-      // this input opportunity; requests after this point survive.
-      self.wakeup.satisfy_covered(session_id, operation_id)
       let current_turn_start = messages.length()
       messages.push(snapshot_message(input))
       (input, current_turn_start)
@@ -1061,7 +1068,17 @@ async fn AgentRuntime::compact_session(
   // not wedge the Agent busy, and the operation must settle cancelled.
   errdefer self.release_operation(admission, Cancelled)
   let result : Result[@types.CompactOutcome, @error.AgentError] = Ok(
-    self.run_compact_operation(admission),
+    self.execute_operation(admission, async fn() -> Result[
+      @types.CompactOutcome,
+      @error.AgentError,
+    ] {
+      let typed : Result[@types.CompactOutcome, @error.AgentError] = Ok(
+        self.run_compact_operation(admission),
+      ) catch {
+        error => Err(error)
+      }
+      typed
+    }),
   ) catch {
     error => Err(error)
   }

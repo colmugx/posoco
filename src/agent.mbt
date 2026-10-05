@@ -584,6 +584,11 @@ fn AgentRuntime::compose(
     chunk_dispatcher_ref,
     context_state_of~,
   )
+  // Wakeup input cutoff: commits the armed cutoff on the arming run's
+  // committed RunStarted. Registered before any turn can arm, after the
+  // checkpoint subscriber and before the observer projection, so externally
+  // notified RunStarted events see the coverage already updated.
+  let wakeup_cutoff_subscriber = WakeupCutoffSubscriber(wakeup)
   let session_store : &@port.SessionStore? = match agg.sessions {
     [first, ..] => Some(first)
     [] => None
@@ -595,6 +600,7 @@ fn AgentRuntime::compose(
     contributors: [],
     subscribers: [
       checkpoint_subscriber as &@puppetry.EventSubscriber,
+      wakeup_cutoff_subscriber as &@puppetry.EventSubscriber,
       event_subscriber as &@puppetry.EventSubscriber,
     ],
     stream_chunks: create_agent_stream_callback(
@@ -813,6 +819,13 @@ async fn AgentRuntime::shutdown(self : AgentRuntime) -> Unit {
   // (dropped after managed work settles). A ticket already executing
   // settles through its own ordinary turn lifecycle.
   self.wakeup.begin_shutdown()
+  self.wakeup.drop_pending()
+  // The Puppet rejects every phase-gated step once shutdown begins, so an
+  // operation already in flight must settle through its ordinary turn
+  // lifecycle before the phase transition; the pump stopped taking tickets
+  // and pending requests were dropped above.
+  self.settle_operation_for_shutdown()
+
   let task_shutdown : Result[Unit, @error.AgentError] = Ok(
     self.task_runtime.shutdown(),
   ) catch {
@@ -830,12 +843,6 @@ async fn AgentRuntime::shutdown(self : AgentRuntime) -> Unit {
       raise error
     }
   }
-  self.wakeup.drop_pending()
-  // The Puppet rejects every phase-gated step once shutdown begins, so an
-  // operation already in flight must settle through its ordinary turn
-  // lifecycle before the phase transition; the pump stopped taking tickets
-  // and pending requests were dropped above.
-  self.wakeup.wait_operation_settled(self)
   self.puppet.shutdown() catch {
     error =>
       raise @error.AgentError::Runtime(
@@ -1126,36 +1133,54 @@ async fn AgentRuntime::run_turn_with_mode(
   resume_persisted_user : Bool,
   origin? : OperationOrigin = Turn,
   operation_label? : String? = None,
+  on_admitted? : ((OperationAdmission) -> Unit)? = None,
 ) -> @types.TurnResult raise @error.AgentError {
   let admission = self.admit_operation(session_id, origin, operation_label~)
+  // Synchronous post-admission hook: the wakeup display envelope fires only
+  // after the operation actually holds the guard — never before and never
+  // for a Busy rejection.
+  match on_admitted {
+    Some(hook) => hook(admission)
+    None => ()
+  }
   // A host hard-cancel delivers a raw cancellation signal that bypasses the
   // catch below (a re-raising with_task_group can surface it raw), so the
   // guard and the operation must also release on unwind or the Agent stays
   // wedged busy.
   errdefer self.release_operation(admission, Cancelled)
   let result : Result[@types.TurnResult, @error.AgentError] = Ok(
-    {
-      let mut result = self.run_single_turn(
-        input, session_id, resume_persisted_user, admission,
-      )
-      let mut drained = 0
-      while drained < follow_up_drain_limit {
-        match self.control.take_follow_up() {
-          Some(message) => {
-            drained = drained + 1
-            let follow_up = self.mint_turn_identity(session_id)
-            result = self.run_single_turn(
-              message,
-              session_id,
-              false,
-              admission_for_follow_up(follow_up),
-            )
+    self.execute_operation(admission, async fn() -> Result[
+      @types.TurnResult,
+      @error.AgentError,
+    ] {
+      let typed : Result[@types.TurnResult, @error.AgentError] = Ok(
+        {
+          let mut result = self.run_single_turn(
+            input, session_id, resume_persisted_user, admission,
+          )
+          let mut drained = 0
+          while drained < follow_up_drain_limit {
+            match self.control.take_follow_up() {
+              Some(message) => {
+                drained = drained + 1
+                let follow_up = self.mint_turn_identity(session_id)
+                result = self.run_single_turn(
+                  message,
+                  session_id,
+                  false,
+                  admission_for_follow_up(admission, follow_up),
+                )
+              }
+              None => break
+            }
           }
-          None => break
-        }
+          result
+        },
+      ) catch {
+        error => Err(error)
       }
-      result
-    },
+      typed
+    }),
   ) catch {
     error => Err(error)
   }
@@ -1173,12 +1198,17 @@ async fn AgentRuntime::run_turn_with_mode(
 
 ///|
 /// Wrap a follow-up turn's freshly minted identity as the continuation of
-/// the admitted operation: same session, own per-turn identity, ordinary
-/// turn label — the operation-level projection stays the single
-/// started/settled pair from admission.
-fn admission_for_follow_up(identity : TurnIdentity) -> OperationAdmission {
+/// the admitted operation: same root operation id and session, own
+/// per-turn identity. The operation-level projection stays the single
+/// started/settled pair from admission, and a follow-up's wakeup cutoff
+/// commits correlated to the root operation — never a fabricated
+/// per-drain label.
+fn admission_for_follow_up(
+  parent : OperationAdmission,
+  identity : TurnIdentity,
+) -> OperationAdmission {
   {
-    operation_id: "agent_run_turn_\{identity.seq}",
+    operation_id: parent.operation_id,
     origin: Turn,
     identity,
     session_id: identity.session_id.to_string(),

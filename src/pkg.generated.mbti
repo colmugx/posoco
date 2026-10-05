@@ -287,6 +287,7 @@ pub fn ScriptedDecisionPort::ScriptedDecisionPort(Array[ScriptedDecisionStep]) -
 pub fn ScriptedDecisionPort::call_count(Self) -> Int
 pub async fn ScriptedDecisionPort::evaluate(Self, @port.DecisionRequest) -> @port.DecisionResult raise @error.DecisionError
 pub async fn ScriptedDecisionPort::evaluate_direct(Self, @port.DecisionRequest) -> @port.DecisionResult raise @error.DecisionError
+pub async fn ScriptedDecisionPort::evaluate_with_context(Self, @port.DecisionRequest, context~ : @port.DecisionCallContext) -> @port.DecisionResult raise @error.DecisionError
 pub fn ScriptedDecisionPort::received_requests(Self) -> Array[@port.DecisionRequest]
 pub impl @port.DecisionPort for ScriptedDecisionPort
 
@@ -473,7 +474,11 @@ pub using @kernel {type ContextPressure}
 
 pub using @port {type DecisionAnswer}
 
+pub using @port {type DecisionCallContext}
+
 pub using @error {type DecisionError}
+
+pub using @port {type DecisionFailureMode}
 
 pub using @port {type DecisionNamedProbability}
 
@@ -484,6 +489,8 @@ pub using @port {type DecisionQuestion}
 pub using @port {type DecisionRequest}
 
 pub using @port {type DecisionResult}
+
+pub using @port {type DecisionScope}
 
 pub using @port {type DecisionUsage}
 

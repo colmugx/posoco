@@ -128,6 +128,82 @@ pub extend DecisionResult with Debug::{to_repr}
 /// deterministic policy and authority flow.
 pub(open) trait DecisionPort {
   async fn evaluate(Self, request : DecisionRequest) -> DecisionResult raise @error.DecisionError
+  /// Backwards-compatible contextual call. Adapters may override
+  /// `evaluate_with_context`; types implementing only `evaluate` receive
+  /// the blanket default below, which ignores the context.
+  async fn evaluate_with_context(
+    Self,
+    request : DecisionRequest,
+    context~ : DecisionCallContext,
+  ) -> DecisionResult raise @error.DecisionError = _
+}
+
+///|
+/// Default `evaluate_with_context` for every `DecisionPort`: delegates to
+/// `evaluate` and ignores the context, so adapters implemented before the
+/// context API keep working unchanged.
+impl DecisionPort with fn evaluate_with_context(self, request, context~) {
+  let _ = context
+  self.evaluate(request)
+}
+
+///|
+/// Consumer-declared failure handling for a contextual call. Diagnostics and
+/// attribution only: the actual policy (which fallback, whether to close) is
+/// executed by the consuming extension, never by this port.
+pub(all) enum DecisionFailureMode {
+  Fallback
+  FailClosed
+  Propagate
+} derive(Eq, Debug)
+
+///|
+pub extend DecisionFailureMode with Eq::{not_equal, equal}
+
+///|
+pub extend DecisionFailureMode with Debug::{to_repr}
+
+///|
+/// Explicit scope fact known at the call site (e.g. the session a background
+/// task belongs to when the caller actually knows it). Unknown scope is
+/// expressed as `None` by the caller; this port never infers scope from the
+/// active run or background-task ownership.
+pub(all) struct DecisionScope {
+  session : String
+} derive(Eq, Debug)
+
+///|
+pub extend DecisionScope with Eq::{not_equal, equal}
+
+///|
+pub extend DecisionScope with Debug::{to_repr}
+
+///|
+/// Per-call context for `DecisionPort::evaluate_with_context`. Build with
+/// `DecisionCallContext::make`; every field except `purpose` is optional.
+pub(all) struct DecisionCallContext {
+  purpose : String
+  scope : DecisionScope?
+  timeout_ms : Int?
+  failure_mode : DecisionFailureMode
+} derive(Eq, Debug)
+
+///|
+pub extend DecisionCallContext with Eq::{not_equal, equal}
+
+///|
+pub extend DecisionCallContext with Debug::{to_repr}
+
+///|
+/// Construct a `DecisionCallContext`. `scope` and `timeout_ms` default to
+/// `None` ("no explicit fact"); `failure_mode` defaults to `Propagate`.
+pub fn DecisionCallContext::make(
+  purpose~ : String,
+  scope? : DecisionScope,
+  timeout_ms? : Int,
+  failure_mode? : DecisionFailureMode = Propagate,
+) -> DecisionCallContext {
+  { purpose, scope, timeout_ms, failure_mode, }
 }
 
 ///|

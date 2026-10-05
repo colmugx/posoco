@@ -56,6 +56,7 @@ pub(all) suberror DecisionError {
   Transport(String)
   ResponseParse(String)
   RateLimited(RateLimitInfo)
+  TimedOut(timeout_ms~ : Int)
 } derive(@debug.Debug)
 pub fn DecisionError::output(Self, &Logger) -> Unit
 pub fn DecisionError::to_repr(Self) -> @debug.Repr

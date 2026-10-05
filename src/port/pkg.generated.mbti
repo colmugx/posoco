@@ -117,6 +117,26 @@ pub fn DecisionAnswer::equal(Self, Self) -> Bool
 pub fn DecisionAnswer::not_equal(Self, Self) -> Bool
 pub fn DecisionAnswer::to_repr(Self) -> @debug.Repr
 
+pub(all) struct DecisionCallContext {
+  purpose : String
+  scope : DecisionScope?
+  timeout_ms : Int?
+  failure_mode : DecisionFailureMode
+} derive(Eq, @debug.Debug)
+pub fn DecisionCallContext::equal(Self, Self) -> Bool
+pub fn DecisionCallContext::make(purpose~ : String, scope? : DecisionScope, timeout_ms? : Int, failure_mode? : DecisionFailureMode) -> Self
+pub fn DecisionCallContext::not_equal(Self, Self) -> Bool
+pub fn DecisionCallContext::to_repr(Self) -> @debug.Repr
+
+pub(all) enum DecisionFailureMode {
+  Fallback
+  FailClosed
+  Propagate
+} derive(Eq, @debug.Debug)
+pub fn DecisionFailureMode::equal(Self, Self) -> Bool
+pub fn DecisionFailureMode::not_equal(Self, Self) -> Bool
+pub fn DecisionFailureMode::to_repr(Self) -> @debug.Repr
+
 pub(all) struct DecisionNamedProbability {
   id : String
   probability : Double
@@ -160,6 +180,13 @@ pub fn DecisionResult::equal(Self, Self) -> Bool
 pub fn DecisionResult::not_equal(Self, Self) -> Bool
 pub fn DecisionResult::to_repr(Self) -> @debug.Repr
 pub fn DecisionResult::validate_for(Self, DecisionRequest) -> Unit raise @error.DecisionError
+
+pub(all) struct DecisionScope {
+  session : String
+} derive(Eq, @debug.Debug)
+pub fn DecisionScope::equal(Self, Self) -> Bool
+pub fn DecisionScope::not_equal(Self, Self) -> Bool
+pub fn DecisionScope::to_repr(Self) -> @debug.Repr
 
 pub(all) struct DecisionUsage {
   input_tokens : Int?
@@ -475,6 +502,7 @@ pub(open) trait CommandPort {
 
 pub(open) trait DecisionPort {
   async fn evaluate(Self, DecisionRequest) -> DecisionResult raise @error.DecisionError
+  async fn evaluate_with_context(Self, DecisionRequest, context~ : DecisionCallContext) -> DecisionResult raise @error.DecisionError = _
 }
 
 pub(open) trait Extension {

@@ -6,48 +6,15 @@
 /// failure, and hard-cancel paths.
 
 ///|
-/// Queue every core Custom projection as "source|label|session|tag" so async
-/// tests await lifecycle points instead of polling. The full event list is
-/// retained for data assertions.
+/// Records every projected core event so tests can assert on the full
+/// event list and its custom data.
 pub(all) struct SignalObserver {
-  signals : @aqueue.Queue[String]
   events : Array[@types.TurnEvent]
 }
 
 ///|
 pub fn SignalObserver::SignalObserver() -> SignalObserver {
-  { signals: Queue(kind=Unbounded), events: [], }
-}
-
-///|
-pub async fn SignalObserver::wait(
-  self : SignalObserver,
-  prefix : String,
-) -> String {
-  for ;; {
-    let signal = self.signals.get()
-    if signal.has_prefix(prefix) {
-      return signal
-    }
-  }
-}
-
-///|
-fn signal_suffix(data : Json) -> String {
-  match data {
-    Object(fields) => {
-      let session = match fields.get("session") {
-        Some(String(value)) => value
-        _ => ""
-      }
-      let tag = match fields.get("tag") {
-        Some(String(value)) => value
-        _ => ""
-      }
-      "|".to_string() + session + "|" + tag
-    }
-    _ => "||"
-  }
+  { events: [], }
 }
 
 ///|
@@ -56,13 +23,6 @@ impl @port.Observer for SignalObserver with fn on_event(
   event : @types.TurnEvent,
 ) -> Unit {
   self.events.push(event)
-  match event {
-    Custom(source~, label~, data~) => {
-      let payload = "\{source}|\{label}\{signal_suffix(data)}"
-      let _ = self.signals.try_put(payload) catch { _ => false }
-    }
-    _ => ()
-  }
 }
 
 ///|
@@ -74,20 +34,6 @@ fn operation_events(
     match event {
       Custom(source~, label~, ..) =>
         source == "posoco.operation" && label == wanted
-      _ => false
-    }
-  })
-}
-
-///|
-fn wakeup_events(
-  observer : SignalObserver,
-  wanted : String,
-) -> Array[@types.TurnEvent] {
-  observer.events.filter(fn(event) {
-    match event {
-      Custom(source~, label~, ..) =>
-        source == "posoco.wakeup" && label == wanted
       _ => false
     }
   })
@@ -161,12 +107,6 @@ impl @port.ModelPort for GatedModel with fn chat(
     self.responses[(self.calls - 1) % self.responses.length()]
   }
   tk_stop_response(text)
-}
-
-///|
-/// Number of chat calls observed so far (including cancelled ones).
-fn GatedModel::call_count(self : GatedModel) -> Int {
-  self.calls
 }
 
 ///|

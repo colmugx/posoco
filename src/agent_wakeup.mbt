@@ -19,6 +19,10 @@ priv struct WakeupPending {
   ticket : @port.WakeupTicket
   extension_id : String
   mut note : String
+  /// Latest requirement generation seen for this key (port §4): refreshed
+  /// by every request, so a snapshot taken before the latest request can
+  /// never satisfy the entry.
+  mut latest_requirement : Int
 }
 
 ///|
@@ -41,6 +45,11 @@ priv struct AgentWakeupRuntime {
   by_key : Map[String, Map[String, WakeupPending]]
   /// Per-session latest requirement generation, bumped on every request.
   generations : Map[String, Int]
+  /// Armed input cutoff of the one ordinary turn currently between its
+  /// input snapshot and its committed run start. Keyed by that run's id;
+  /// commit and unwind both match the key, so cleanup can never remove
+  /// another turn's arm.
+  mut cutoff_arm : WakeupCutoffArm?
 }
 
 ///|
@@ -57,6 +66,7 @@ fn AgentWakeupRuntime::AgentWakeupRuntime(
     order: [],
     by_key: Map::from_array([]),
     generations: Map::from_array([]),
+    cutoff_arm: None,
   }
 }
 
@@ -123,7 +133,7 @@ fn AgentWakeupRuntime::emit_wakeup_event(
 /// (session, tag); every request records the latest requirement generation.
 /// A pending entry returns the same ticket (the `wakeup_requested` event
 /// fired once, at creation); during execution the key is free again, so a
-/// same-key request forms the next pending ticket.
+/// same-key request forms the next pending ticket at a new generation.
 fn AgentWakeupRuntime::request(
   self : AgentWakeupRuntime,
   extension_id : String,
@@ -163,9 +173,11 @@ fn AgentWakeupRuntime::request(
   match session_map.get(tag) {
     Some(entry) => {
       // Late requirement on the same key: keep the ticket (requested fired
-      // once) and move the session's demand to the latest generation, so a
-      // stale snapshot cannot satisfy it.
+      // once), refresh its note, and move the entry to the latest
+      // generation, so a snapshot taken before this request can never
+      // satisfy it.
       entry.note = note
+      entry.latest_requirement = generation
       Ok(entry.ticket)
     }
     None => {
@@ -176,7 +188,12 @@ fn AgentWakeupRuntime::request(
         tag,
         enqueued_at: @async.now(),
       }
-      let entry : WakeupPending = { ticket, extension_id, note, }
+      let entry : WakeupPending = {
+        ticket,
+        extension_id,
+        note,
+        latest_requirement: generation,
+      }
       session_map[tag] = entry
       self.order.push(entry)
       self.emit_wakeup_event("wakeup_requested", entry)
@@ -187,22 +204,23 @@ fn AgentWakeupRuntime::request(
 }
 
 ///|
-/// The ordinary input for `session_id` entered the model-input preparation
-/// stage (the snapshot that appends the caller's input). Every wakeup that
-/// was still pending for that session is now covered by this input
-/// opportunity: satisfied means "the scheduling demand was met", not that
-/// extension knowledge was understood. Requests arriving after this point
-/// survive to a later ordinary turn.
+/// Commit the armed input cutoff for `session_id`: every still-pending
+/// entry whose latest requirement generation is at or before `cutoff` is
+/// covered by the qualifying ordinary input that took the snapshot (the
+/// satisfaction means the scheduling demand was met by that input
+/// opportunity — nothing about outcomes). Entries created or refreshed
+/// after the snapshot survive to a later ordinary turn.
 fn AgentWakeupRuntime::satisfy_covered(
   self : AgentWakeupRuntime,
   session_id : String,
+  cutoff : Int,
   operation_id : String,
 ) -> Unit {
   let covered : Array[WakeupPending] = []
   let mut index = 0
   while index < self.order.length() {
     let entry = self.order[index]
-    if entry.ticket.session == session_id {
+    if entry.ticket.session == session_id && entry.latest_requirement <= cutoff {
       covered.push(entry)
       ignore(self.order.remove(index))
     } else {
@@ -211,6 +229,8 @@ fn AgentWakeupRuntime::satisfy_covered(
   }
   for entry in covered {
     self.forget(entry)
+  }
+  for entry in covered {
     self.emit_wakeup_event(
       "wakeup_satisfied",
       entry,
@@ -276,7 +296,11 @@ async fn AgentWakeupRuntime::pump_loop(
   for ;; {
     match self.take_next(agent) {
       Some(entry) => {
-        self.execute_ticket(agent, entry)
+        if self.execute_ticket(agent, entry) {
+          // Re-queued behind a live incumbent: wait on the real state-change
+          // notification (its settled broadcast) — never a no-await hotloop.
+          self.wake.wait()
+        }
         continue
       }
       None => ()
@@ -317,7 +341,7 @@ async fn AgentWakeupRuntime::execute_ticket(
   self : AgentWakeupRuntime,
   agent : AgentRuntime,
   entry : WakeupPending,
-) -> Unit {
+) -> Bool {
   let ticket = entry.ticket
   self.next_operation_seq = self.next_operation_seq + 1
   let operation_id = "agent_wakeup_\{self.next_operation_seq}"
@@ -326,12 +350,20 @@ async fn AgentWakeupRuntime::execute_ticket(
   } else {
     "[posoco-wakeup tag=\{wakeup_envelope_field(ticket.tag, wakeup_tag_max_length)}] \{entry.note}"
   }
-  self.emit_wakeup_event(
-    "wakeup_executing",
-    entry,
-    operation_id=Some(operation_id),
-    envelope=Some(envelope_text),
-  )
+  // Exactly one terminal per ticket. A raw pump cancellation bypasses the
+  // catch below, so this unwind emitter still fires once — after the
+  // operation settled cancelled on its own unwind — and the cancellation
+  // keeps propagating raw, never translated into an ordinary fallback.
+  let terminal : Ref[String?] = Ref(None)
+  errdefer (match terminal.val {
+    Some(_) => ()
+    None =>
+      self.emit_wakeup_event(
+        "wakeup_cancelled",
+        entry,
+        operation_id=Some(operation_id),
+      )
+  })
   let result : Result[@types.TurnResult, @error.AgentError] = Ok(
     agent.run_turn_with_mode(
       wakeup_envelope_message(ticket.tag, entry.note),
@@ -339,6 +371,15 @@ async fn AgentWakeupRuntime::execute_ticket(
       false,
       origin=Wakeup,
       operation_label=Some(operation_id),
+      on_admitted=Some(fn(admission) {
+        ignore(admission)
+        self.emit_wakeup_event(
+          "wakeup_executing",
+          entry,
+          operation_id=Some(operation_id),
+          envelope=Some(envelope_text),
+        )
+      }),
     ),
   ) catch {
     error => Err(error)
@@ -347,15 +388,18 @@ async fn AgentWakeupRuntime::execute_ticket(
     Ok(_) => "wakeup_completed"
     // Defensive: admission raced a host operation. Re-queue at the head and
     // wait for its settled notification instead of failing the ticket —
-    // busy is a queueing signal, not a terminal state.
+    // busy is a queueing signal, not a terminal state; neither a terminal
+    // nor an executing event fired.
     Err(@error.AgentError::Busy(..)) => {
       self.requeue_front(entry)
-      return
+      return true
     }
     Err(@error.AgentError::Cancelled(_)) => "wakeup_cancelled"
     Err(_) => "wakeup_failed"
   }
+  terminal.val = Some(label)
   self.emit_wakeup_event(label, entry, operation_id=Some(operation_id))
+  false
 }
 
 ///|
@@ -380,20 +424,6 @@ fn AgentWakeupRuntime::notify_operation_settled(
   self : AgentWakeupRuntime,
 ) -> Unit {
   self.wake.broadcast()
-}
-
-///|
-/// Block until the in-flight operation releases the guard. Every settlement
-/// broadcasts on the pump condvar (`release_operation`), and the cooperative
-/// scheduler cannot interleave the guard check with the wait registration, so
-/// this wakes exactly when the current operation settles.
-async fn AgentWakeupRuntime::wait_operation_settled(
-  self : AgentWakeupRuntime,
-  agent : AgentRuntime,
-) -> Unit {
-  while agent.operations.current is Some(_) {
-    self.wake.wait()
-  }
 }
 
 ///|

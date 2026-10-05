@@ -92,6 +92,7 @@ pub(all) suberror DecisionError {
   Transport(String)
   ResponseParse(String)
   RateLimited(RateLimitInfo)
+  TimedOut(timeout_ms~ : Int)
 } derive(Debug)
 
 ///|
@@ -118,6 +119,7 @@ pub impl Show for DecisionError with fn to_string(self) -> String {
       }
       "DecisionError::RateLimited(code=\{code_label}, reset_at_ms=\{reset_label}, message=\{bounded_rate_limit_message(info.message)})"
     }
+    TimedOut(timeout_ms~) => "DecisionError::TimedOut(timeout_ms=\{timeout_ms})"
   }
 }
 

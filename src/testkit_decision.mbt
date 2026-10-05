@@ -138,6 +138,9 @@ pub async fn ScriptedDecisionPort::evaluate_direct(
 pub extend ScriptedDecisionPort with @port.DecisionPort::{evaluate}
 
 ///|
+pub extend ScriptedDecisionPort with @port.DecisionPort::{evaluate_with_context}
+
+///|
 pub impl @port.DecisionPort for ScriptedDecisionPort with fn evaluate(
   self,
   request,
