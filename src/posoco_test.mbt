@@ -208,14 +208,32 @@ async test "b8_turn_event_lifecycle" {
 
   let events = observer.events
   assert_true(events.length() >= 2)
+  // The core operation projection brackets the turn stream.
   match events[0] {
-    TurnStarted => ()
-    _ => fail("first event should be TurnStarted")
+    Custom(source~, label~, ..) =>
+      if source != "posoco.operation" || label != "operation_started" {
+        fail("first event should be operation_started")
+      }
+    _ => fail("first event should be operation_started")
   }
   match events[events.length() - 1] {
-    TurnCompleted => ()
-    _ => fail("last event should be TurnCompleted")
+    Custom(source~, label~, ..) =>
+      if source != "posoco.operation" || label != "operation_settled" {
+        fail("last event should be operation_settled")
+      }
+    _ => fail("last event should be operation_settled")
   }
+  let mut saw_turn_started = false
+  let mut saw_turn_completed = false
+  for event in events {
+    match event {
+      TurnStarted => saw_turn_started = true
+      TurnCompleted => saw_turn_completed = true
+      _ => ()
+    }
+  }
+  assert_true(saw_turn_started)
+  assert_true(saw_turn_completed)
 }
 
 ///|

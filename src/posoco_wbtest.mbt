@@ -881,14 +881,20 @@ async test "observer_event_sequence" {
   let events = observer.events
   assert_true(events.length() >= 4)
 
+  // The core operation projection brackets the turn stream.
   match events[0] {
-    TurnStarted => ()
-    _ => fail("first event should be TurnStarted")
+    Custom(source~, label~, ..) =>
+      if source != "posoco.operation" || label != "operation_started" {
+        fail("first event should be operation_started")
+      }
+    _ => fail("first event should be operation_started")
   }
-
   match events[events.length() - 1] {
-    TurnCompleted => ()
-    _ => fail("last event should be TurnCompleted")
+    Custom(source~, label~, ..) =>
+      if source != "posoco.operation" || label != "operation_settled" {
+        fail("last event should be operation_settled")
+      }
+    _ => fail("last event should be operation_settled")
   }
 
   let mut has_pending = false

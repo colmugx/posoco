@@ -187,6 +187,7 @@ async fn AgentRuntime::run_turn_via_puppet(
   session_id : String,
   identity : TurnIdentity,
   resume_persisted_user : Bool,
+  operation_id : String,
 ) -> @types.TurnResult raise @error.AgentError {
   // Step 0: catalog refresh at the prompt boundary. No run is active yet,
   // so a swap cannot disturb an in-flight run; a failed rebuild keeps the
@@ -222,10 +223,16 @@ async fn AgentRuntime::run_turn_via_puppet(
     }
   }
   let (input, current_turn_start) = match messages.last() {
+    // Replay-resume carries no new information, so it never covers wakeup
+    // demand; compact does not reach this function at all.
     Some(last) if resume_persisted_user && last is UserMessage(..) =>
       (snapshot_message(last), messages.length() - 1)
     _ => {
       self.inject_memory_inbound(session, session_id, input, messages)
+      // Plan step 3: this ordinary input is about to enter the model input
+      // snapshot. Every wakeup still pending for the session is covered by
+      // this input opportunity; requests after this point survive.
+      self.wakeup.satisfy_covered(session_id, operation_id)
       let current_turn_start = messages.length()
       messages.push(snapshot_message(input))
       (input, current_turn_start)
@@ -294,7 +301,7 @@ async fn AgentRuntime::run_turn_via_puppet(
     turn_id: identity.turn_id,
     session_id: identity.session_id,
     initial_messages: messages,
-    operation_id: "agent_run_turn_\{identity.seq}",
+    operation_id,
     policy,
   }
 
@@ -911,6 +918,7 @@ fn failed_save_cause_label(error : @error.AgentError) -> String {
     Model(_) => "AgentError::Model"
     Runtime(_) => "AgentError::Runtime"
     ToolLoopExceeded(..) => "AgentError::ToolLoopExceeded"
+    Busy(..) => "AgentError::Busy"
     PipelineAborted(_) => "AgentError::PipelineAborted"
     Cancelled(_) => "AgentError::Cancelled"
     AutoCompactFailed(_) => "AgentError::AutoCompactFailed"
@@ -1048,17 +1056,12 @@ async fn AgentRuntime::compact_session(
   self : AgentRuntime,
   session_id : String,
 ) -> @types.CompactOutcome raise @error.AgentError {
-  if self.turn_active {
-    raise Runtime(InvocationFailed("agent turn busy"))
-  }
-  self.turn_active = true
+  let admission = self.admit_operation(session_id, Compact)
   // Same unwind guard as run_turn_with_mode: a hard-cancelled compact must
-  // not wedge the Agent busy.
-  errdefer {
-    self.turn_active = false
-  }
+  // not wedge the Agent busy, and the operation must settle cancelled.
+  errdefer self.release_operation(admission, Cancelled)
   let result : Result[@types.CompactOutcome, @error.AgentError] = Ok(
-    self.run_compact_operation(session_id),
+    self.run_compact_operation(admission),
   ) catch {
     error => Err(error)
   }
@@ -1067,7 +1070,11 @@ async fn AgentRuntime::compact_session(
   ) catch {
     error => Err(error)
   }
-  self.turn_active = false
+  let outcome = match result {
+    Ok(_) => Completed
+    Err(error) => error.operation_outcome()
+  }
+  self.release_operation(admission, outcome)
   match result {
     Ok(value) =>
       match cleanup {
@@ -1100,11 +1107,12 @@ async fn AgentRuntime::compact_session(
 #warnings("-fragile_catch_all")
 async fn AgentRuntime::run_compact_operation(
   self : AgentRuntime,
-  session_id : String,
+  admission : OperationAdmission,
 ) -> @types.CompactOutcome raise @error.AgentError {
+  let session_id = admission.session_id
   self.ensure_agent_running()
   self.notify_start_if_first()
-  let identity = self.mint_turn_identity(session_id)
+  let identity = admission.identity
   self.task_runtime.begin_operation(
     session_id,
     identity.run_id,
@@ -1156,7 +1164,7 @@ async fn AgentRuntime::run_compact_operation(
           identity.session_id,
           messages,
           policy,
-          "agent_compact_session_\{identity.seq}",
+          admission.operation_id,
           Manual,
         )
       }),

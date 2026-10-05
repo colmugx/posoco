@@ -12,6 +12,20 @@ struct ScopedObserver {
 }
 
 ///|
+/// The core operation projection brackets every turn stream; the scope
+/// assertions below describe run-bound turn events.
+fn scope_projection_turn_events(
+  events : Array[@types.TurnEvent],
+) -> Array[@types.TurnEvent] {
+  events.filter(fn(event) {
+    match event {
+      Custom(source~, ..) => source != "posoco.operation"
+      _ => true
+    }
+  })
+}
+
+///|
 /// Tag just the variants these tests drive; everything else is "other".
 fn scope_projection_event_tag(event : @types.TurnEvent) -> String {
   match event {
@@ -90,12 +104,15 @@ async test "scope_projection/turn_events_carry_one_run_identity" {
     config=tk_config(),
   )
   ignore(agent.run_turn(tk_user_msg("hello"), "s_scope"))
-  let tags = observer.records.map(fn(r) { r.0 })
+  // The operation projection is deliberately out-of-run (scope None, session
+  // in the payload); the run-bound invariants below cover the TURN events.
+  let turn_records = observer.records.filter(fn(r) { r.0 != "other" })
+  let tags = turn_records.map(fn(r) { r.0 })
   assert_eq(tags, ["turn_started", "model_response", "turn_completed"])
-  guard observer.records[0].1 is Some(first) else {
+  guard turn_records[0].1 is Some(first) else {
     fail("TurnStarted must carry Some(scope)")
   }
-  for record in observer.records {
+  for record in turn_records {
     guard record.1 is Some(scope) else {
       fail("run-bound event must carry Some(scope): " + record.0)
     }
@@ -163,15 +180,18 @@ async test "scope_projection/tool_loop_events_and_hook_stages_share_run" {
     config=tk_config(),
   )
   ignore(agent.run_turn(tk_user_msg("hi"), "s_loop"))
-  let tags = observer.records.map(fn(r) { r.0 })
+  let tags = observer.records
+    .filter(fn(r) { r.0 != "other" })
+    .map(fn(r) { r.0 })
   assert_eq(tags, [
     "turn_started", "model_response", "tool_pending", "tool_approved", "tool_started",
     "tool_result", "model_response", "turn_completed",
   ])
-  guard observer.records[0].1 is Some(turn_scope) else {
+  let turn_records = observer.records.filter(fn(r) { r.0 != "other" })
+  guard turn_records[0].1 is Some(turn_scope) else {
     fail("TurnStarted must carry Some(scope)")
   }
-  for record in observer.records {
+  for record in turn_records {
     guard record.1 is Some(scope) else {
       fail("envelope-projected event must carry Some(scope): " + record.0)
     }
@@ -212,7 +232,7 @@ async test "scope_projection/legacy_observer_and_hook_unchanged" {
     config=tk_config(),
   )
   ignore(agent.run_turn(tk_user_msg("hello"), "s_legacy"))
-  let events = observer.events()
+  let events = scope_projection_turn_events(observer.events())
   assert_eq(events.length(), 3)
   guard events[0] is TurnStarted else {
     fail("first event must be TurnStarted")

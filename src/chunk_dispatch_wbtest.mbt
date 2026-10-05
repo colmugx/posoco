@@ -4,6 +4,20 @@
 /// the model read loop.
 
 ///|
+/// The operation projection (started/settled) brackets every turn stream;
+/// position assertions below are about the TURN event sequence.
+fn without_operation_events(
+  events : Array[@types.TurnEvent],
+) -> Array[@types.TurnEvent] {
+  events.filter(fn(event) {
+    match event {
+      Custom(source~, ..) => source != "posoco.operation"
+      _ => true
+    }
+  })
+}
+
+///|
 /// Gate the first model hook after the Puppet has accepted the turn. The
 /// queue rendezvous makes the concurrent-turn regression deterministic while
 /// keeping the first turn inside the pump.
@@ -127,8 +141,10 @@ async test "p2 concurrent run_turn rejects before side effects and preserves fir
       error => Err(error)
     }
     match second_result {
-      Err(Runtime(InvocationFailed(reason))) =>
-        assert_true(reason.contains("agent turn busy"))
+      Err(Busy(operation_id~, session~)) => {
+        assert_eq(session, "p2-session")
+        assert_true(operation_id.contains("agent_run_turn_"))
+      }
       _ => fail("concurrent run_turn must fail with the typed busy error")
     }
 
@@ -268,7 +284,7 @@ async test "chunk dispatch: streaming turn delivers chunks in order before TurnC
     config=tk_config(),
   )
   let _ = agent.run_turn(tk_user_msg("hello"), "s1")
-  let events = observer.events()
+  let events = without_operation_events(observer.events())
   guard events[0] is TurnStarted else {
     fail("first event must be TurnStarted")
   }
@@ -330,7 +346,7 @@ async test "chunk dispatch: overflow drops oldest and emits StreamChunksDropped"
     config=tk_config(),
   )
   let _ = agent.run_turn(tk_user_msg("hello"), "s1")
-  let events = observer.events()
+  let events = without_operation_events(observer.events())
   // Terminal event is last.
   guard events[events.length() - 1] is TurnCompleted else {
     fail("last event must be TurnCompleted")

@@ -278,6 +278,10 @@ priv struct AgentRuntime {
   builtin_command_port : BuiltinCommandPort
   control : AgentControl
   task_runtime : AgentTaskRuntime
+  /// Centralized single-operation admission/settlement state (plan step 2).
+  operations : AgentOperations
+  /// Agent-owned wakeup ledger and pump (plan step 3).
+  wakeup : AgentWakeupRuntime
   config : AgentConfig
   /// Host-owned versioned catalog (experimental runtime seam). `None` keeps
   /// the static composition-time snapshot for the Agent's lifetime.
@@ -540,6 +544,30 @@ fn AgentRuntime::compose(
   let chunk_dispatcher_ref : Ref[ChunkDispatcher?] = Ref(None)
   let context_state_of : Ref[((String) -> @types.ContextState?)?] = Ref(None)
   let task_runtime = AgentTaskRuntime::AgentTaskRuntime()
+  // Plan step 4: core-owned ready projection after a background outcome is
+  // successfully enqueued into its session inbox. No outcome payload —
+  // receipt identity, attribution, and authoritative status only.
+  task_runtime.ready_notifier = Some(fn(outcome) {
+    emit_custom_event(
+      agg.observers,
+      None,
+      "posoco.tasks",
+      "background_outcome_ready",
+      [
+        ("task_id", Json::string(outcome.receipt.id)),
+        ("session", Json::string(outcome.receipt.session_id)),
+        ("extension_id", Json::string(outcome.receipt.extension_id)),
+        ("label", Json::string(outcome.receipt.label)),
+        ("status", Json::string(task_outcome_status_label(outcome.status))),
+      ],
+    )
+  })
+  // Plan step 3: the wakeup ledger is built before the on_compose loop so
+  // extensions receive a fully constructed capability; the pump joins at
+  // run_scoped startup. No runtime backfill is needed — the ledger owns its
+  // admission state, and execution goes through the completed Agent.
+  let wakeup = AgentWakeupRuntime::AgentWakeupRuntime(observers=agg.observers)
+  let operations = AgentOperations::AgentOperations()
   let control = AgentControl(mailbox_ref)
   control.set_abort_hook(fn(run_id) {
     task_runtime.cancel_foreground_for_run(run_id)
@@ -594,6 +622,7 @@ fn AgentRuntime::compose(
   // capability) fails the composition loudly; no partial Agent is produced.
   for entry in agg.lifecycle {
     let task_capability = task_runtime.capability(entry.id)
+    let wakeup_capability = wakeup.capability(entry.id)
     let view = @port.CompositionView::resolve(
       requires=entry.requires,
       model=agg.model,
@@ -601,6 +630,7 @@ fn AgentRuntime::compose(
       log=agg.log,
       ui=agg.ui,
       tasks=Some(task_capability),
+      wakeup=Some(wakeup_capability),
     )
     entry.port.on_compose(view)
   }
@@ -617,6 +647,8 @@ fn AgentRuntime::compose(
     builtin_command_port,
     control,
     task_runtime,
+    operations,
+    wakeup,
     config,
     catalog_source,
     last_catalog_revision: initial_catalog_revision,
@@ -728,7 +760,11 @@ pub async fn[X] Agent::run_scoped(self : Agent, body : async (Agent) -> X) -> X 
       {
         self.runtime.task_runtime.activate(group)
         owns_scope.val = true
+        self.runtime.wakeup.activate()
         self.runtime.notify_start_if_first()
+        // Startup lifecycle completed: only now may the pump drive turns,
+        // so a lifecycle `on_start` never races a wakeup turn.
+        self.runtime.wakeup.start_pump(group, self.runtime)
       },
     ) catch {
       error => Err(error)
@@ -772,6 +808,11 @@ async fn AgentRuntime::shutdown(self : AgentRuntime) -> Unit {
     return
   }
   self.shutdown_started = true
+  // Wakeup closes first: no new admission can succeed, the pump stops
+  // taking tickets, and pending scheduling requests die with the scope
+  // (dropped after managed work settles). A ticket already executing
+  // settles through its own ordinary turn lifecycle.
+  self.wakeup.begin_shutdown()
   let task_shutdown : Result[Unit, @error.AgentError] = Ok(
     self.task_runtime.shutdown(),
   ) catch {
@@ -780,6 +821,7 @@ async fn AgentRuntime::shutdown(self : AgentRuntime) -> Unit {
   match task_shutdown {
     Ok(_) => ()
     Err(error) => {
+      self.wakeup.drop_pending()
       emit_managed_task_shutdown_failure(
         self.observers,
         error.to_string(),
@@ -788,6 +830,12 @@ async fn AgentRuntime::shutdown(self : AgentRuntime) -> Unit {
       raise error
     }
   }
+  self.wakeup.drop_pending()
+  // The Puppet rejects every phase-gated step once shutdown begins, so an
+  // operation already in flight must settle through its ordinary turn
+  // lifecycle before the phase transition; the pump stopped taking tickets
+  // and pending requests were dropped above.
+  self.wakeup.wait_operation_settled(self)
   self.puppet.shutdown() catch {
     error =>
       raise @error.AgentError::Runtime(
@@ -813,6 +861,7 @@ fn agent_error_category(error : Error) -> String {
     @error.AgentError::Session(_) => "AgentError::Session"
     @error.AgentError::Runtime(_) => "AgentError::Runtime"
     @error.AgentError::ToolLoopExceeded(..) => "AgentError::ToolLoopExceeded"
+    @error.AgentError::Busy(..) => "AgentError::Busy"
     @error.AgentError::PipelineAborted(_) => "AgentError::PipelineAborted"
     @error.AgentError::Cancelled(_) => "AgentError::Cancelled"
     @error.AgentError::AutoCompactFailed(_) => "AgentError::AutoCompactFailed"
@@ -1065,39 +1114,42 @@ async fn AgentRuntime::run_turn(
 }
 
 ///|
-/// Run a turn under the Agent's single-turn guard. Recovery may replay a
+/// Run a turn under the Agent's single-operation guard. Recovery may replay a
 /// persisted trailing user message; ordinary turns and drained follow-ups
-/// always append their input.
+/// always append their input. `origin` labels the admitted operation
+/// (turn/resume/wakeup) for the started/settled projection; `operation_label`
+/// overrides the minted operation id (the wakeup pump's `agent_wakeup_N`).
 async fn AgentRuntime::run_turn_with_mode(
   self : AgentRuntime,
   input : @kernel.Message,
   session_id : String,
   resume_persisted_user : Bool,
+  origin? : OperationOrigin = Turn,
+  operation_label? : String? = None,
 ) -> @types.TurnResult raise @error.AgentError {
-  if self.turn_active {
-    raise Runtime(InvocationFailed("agent turn busy"))
-  }
-  // Acquire before the first async call. The guard covers the initial turn
-  // and every follow-up drained below, so no loser can touch lifecycle,
-  // identity, session, memory, catalog, or dispatcher state.
-  self.turn_active = true
+  let admission = self.admit_operation(session_id, origin, operation_label~)
   // A host hard-cancel delivers a raw cancellation signal that bypasses the
   // catch below (a re-raising with_task_group can surface it raw), so the
-  // guard must also release on unwind or the Agent stays wedged busy.
-  errdefer {
-    self.turn_active = false
-  }
+  // guard and the operation must also release on unwind or the Agent stays
+  // wedged busy.
+  errdefer self.release_operation(admission, Cancelled)
   let result : Result[@types.TurnResult, @error.AgentError] = Ok(
     {
       let mut result = self.run_single_turn(
-        input, session_id, resume_persisted_user,
+        input, session_id, resume_persisted_user, admission,
       )
       let mut drained = 0
       while drained < follow_up_drain_limit {
         match self.control.take_follow_up() {
           Some(message) => {
             drained = drained + 1
-            result = self.run_single_turn(message, session_id, false)
+            let follow_up = self.mint_turn_identity(session_id)
+            result = self.run_single_turn(
+              message,
+              session_id,
+              false,
+              admission_for_follow_up(follow_up),
+            )
           }
           None => break
         }
@@ -1107,10 +1159,29 @@ async fn AgentRuntime::run_turn_with_mode(
   ) catch {
     error => Err(error)
   }
-  self.turn_active = false
+  let outcome = match result {
+    Ok(_) => Completed
+    Err(error) => error.operation_outcome()
+  }
+  // Settled fires only after the guard release inside release_operation.
+  self.release_operation(admission, outcome)
   match result {
     Ok(value) => value
     Err(error) => raise error
+  }
+}
+
+///|
+/// Wrap a follow-up turn's freshly minted identity as the continuation of
+/// the admitted operation: same session, own per-turn identity, ordinary
+/// turn label — the operation-level projection stays the single
+/// started/settled pair from admission.
+fn admission_for_follow_up(identity : TurnIdentity) -> OperationAdmission {
+  {
+    operation_id: "agent_run_turn_\{identity.seq}",
+    origin: Turn,
+    identity,
+    session_id: identity.session_id.to_string(),
   }
 }
 
@@ -1136,19 +1207,19 @@ async fn AgentRuntime::notify_start_if_first(
 
 ///|
 /// Run exactly one turn: delegate to Puppet; emit start/end events for
-/// observers.
+/// observers. `admission` carries the per-turn identity minted at operation
+/// admission (initial turns) or at drain time (follow-ups).
 #warnings("-fragile_catch_all")
 async fn AgentRuntime::run_single_turn(
   self : AgentRuntime,
   input : @kernel.Message,
   session_id : String,
   resume_persisted_user : Bool,
+  admission : OperationAdmission,
 ) -> @types.TurnResult raise @error.AgentError {
   self.ensure_agent_running()
   self.notify_start_if_first()
-  // Mint run/turn identity up front so even TurnStarted carries attribution
-  // scope; the same identity drives the Puppet request below.
-  let identity = self.mint_turn_identity(session_id)
+  let identity = admission.identity
   self.task_runtime.begin_operation(
     session_id,
     identity.run_id,
@@ -1161,7 +1232,11 @@ async fn AgentRuntime::run_single_turn(
   self.dispatch_on_turn_begin()
 
   let result = self.run_turn_via_puppet(
-    input, session_id, identity, resume_persisted_user,
+    input,
+    session_id,
+    identity,
+    resume_persisted_user,
+    admission.operation_id,
   ) catch {
     primary => {
       let cleanup : Result[Unit, @error.AgentError] = Ok(
@@ -1235,6 +1310,7 @@ pub async fn Agent::resume_turn(
     @kernel.Message::UserMessage(content=[@kernel.Content::Text(continuation)]),
     session_id,
     true,
+    origin=Resume,
   )
 }
 

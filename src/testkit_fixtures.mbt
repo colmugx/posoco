@@ -379,6 +379,7 @@ pub fn tk_view(
   decision? : &@port.DecisionPort? = None,
   log? : &@port.LogPort? = None,
   ui~ : &@port.UiPort,
+  wakeup? : @port.WakeupPort? = None,
 ) -> @port.CompositionView {
   let tasks = @port.Tasks::from_submit(submit=fn(_) {
     Err(@port.TaskSubmitError::Unavailable)
@@ -390,6 +391,7 @@ pub fn tk_view(
     log~,
     ui~,
     tasks=Some(tasks),
+    wakeup~,
   )
 }
 

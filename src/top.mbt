@@ -87,6 +87,9 @@ pub using @port {
   type TaskSubmitError,
   type TaskHandle,
   type Tasks,
+  type WakeupPort,
+  type WakeupTicket,
+  type WakeupError,
 }
 
 ///|

@@ -77,9 +77,14 @@ async test "turn_begin/dispatched_after_turn_started_before_first_model" {
   )
   ignore(agent.run_turn(tk_user_msg("hello"), "s1"))
   assert_eq(log.filter(fn(e) { e == "hook:begin" }).length(), 1)
-  assert_eq(log[0], "obs:TurnStarted")
-  assert_eq(log[1], "hook:begin")
-  assert_eq(log[2], "hook:before_model")
+  // The operation projection lands at admission, before TurnStarted.
+  assert_eq(
+    log[0],
+    "obs:Custom(source:posoco.operation, label:operation_started)",
+  )
+  assert_eq(log[1], "obs:TurnStarted")
+  assert_eq(log[2], "hook:begin")
+  assert_eq(log[3], "hook:before_model")
 }
 
 ///|
@@ -130,11 +135,15 @@ async test "turn_begin/raised_hook_is_secondary_failure_turn_proceeds" {
   let result = agent.run_turn(tk_user_msg("hello"), "s1")
   // The raise never fails the turn; the model still answered.
   assert_eq(result.final_session_id, "s1")
-  assert_eq(log[0], "obs:TurnStarted")
-  assert_eq(log[1], "hook:begin-raising")
-  assert_eq(log[2], "obs:Custom(source:posoco.core, label:secondary_failure)")
+  assert_eq(
+    log[0],
+    "obs:Custom(source:posoco.operation, label:operation_started)",
+  )
+  assert_eq(log[1], "obs:TurnStarted")
+  assert_eq(log[2], "hook:begin-raising")
+  assert_eq(log[3], "obs:Custom(source:posoco.core, label:secondary_failure)")
   // The later hook still runs, and the pump proceeds to the model.
-  assert_eq(log[3], "hook:begin")
+  assert_eq(log[4], "hook:begin")
   // Only `after` logs before_model (`bad` uses the default pass-through),
   // and the model is called once for this single-step turn.
   assert_eq(log.filter(fn(e) { e == "hook:before_model" }).length(), 1)
@@ -169,8 +178,13 @@ async test "turn_end/completed_dispatched_once_after_turn_completed" {
   let result = agent.run_turn(tk_user_msg("hello"), "s1")
   assert_eq(result.final_session_id, "s1")
   assert_eq(log.filter(fn(e) { e == "hook:only" }).length(), 1)
-  assert_eq(log[log.length() - 2], "obs:TurnCompleted")
-  assert_eq(log[log.length() - 1], "hook:only")
+  assert_eq(log[log.length() - 3], "obs:TurnCompleted")
+  assert_eq(log[log.length() - 2], "hook:only")
+  // Settled is projected after the guard release, following the turn end.
+  assert_eq(
+    log[log.length() - 1],
+    "obs:Custom(source:posoco.operation, label:operation_settled)",
+  )
 }
 
 ///|
@@ -196,10 +210,14 @@ async test "turn_end/failed_path_also_dispatches_after_turn_failed" {
   }
   assert_eq(log.filter(fn(e) { e == "hook:only" }).length(), 1)
   assert_eq(
-    log[log.length() - 2],
+    log[log.length() - 3],
     "obs:TurnFailed(turn failed: AgentError::Model)",
   )
-  assert_eq(log[log.length() - 1], "hook:only")
+  assert_eq(log[log.length() - 2], "hook:only")
+  assert_eq(
+    log[log.length() - 1],
+    "obs:Custom(source:posoco.operation, label:operation_settled)",
+  )
 }
 
 ///|
@@ -252,11 +270,16 @@ async test "turn_end/raised_hook_is_secondary_failure_not_turn_failure" {
   // The turn still completes; the raise never replaces the primary outcome.
   assert_eq(result.final_session_id, "s1")
   assert_eq(log.filter(fn(e) { e == "obs:TurnCompleted" }).length(), 1)
-  // The raise is reported to observers, then the later hook still runs.
-  assert_eq(log[log.length() - 3], "hook:raising")
+  // The raise is reported to observers, then the later hook still runs, and
+  // the operation settles after the guard release.
+  assert_eq(log[log.length() - 4], "hook:raising")
   assert_eq(
-    log[log.length() - 2],
+    log[log.length() - 3],
     "obs:Custom(source:posoco.core, label:secondary_failure)",
   )
-  assert_eq(log[log.length() - 1], "hook:good")
+  assert_eq(log[log.length() - 2], "hook:good")
+  assert_eq(
+    log[log.length() - 1],
+    "obs:Custom(source:posoco.operation, label:operation_settled)",
+  )
 }

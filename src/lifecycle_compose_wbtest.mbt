@@ -143,10 +143,15 @@ async test "compose/start_once_before_first_turn_started" {
   ignore(agent.run_turn(tk_user_msg("two"), "s1"))
   ignore(agent.run_turn(tk_user_msg("three"), "s1"))
   // Compose delivery happened at construction; on_start fired exactly once,
-  // before the first TurnStarted; legacy defaults logged nothing.
+  // after the first operation_started and before the first TurnStarted;
+  // legacy defaults logged nothing.
   assert_eq(log[0], "lc:compose(model=false,ui=false)")
-  assert_eq(log[1], "lc:start")
-  assert_eq(log[2], "obs:TurnStarted")
+  assert_eq(
+    log[1],
+    "obs:Custom(source:posoco.operation, label:operation_started)",
+  )
+  assert_eq(log[2], "lc:start")
+  assert_eq(log[3], "obs:TurnStarted")
   assert_eq(log.filter(fn(e) { e == "lc:start" }).length(), 1)
   assert_eq(log.filter(fn(e) { e == "obs:TurnStarted" }).length(), 3)
   assert_eq(log.filter(fn(e) { e == "obs:TurnCompleted" }).length(), 3)

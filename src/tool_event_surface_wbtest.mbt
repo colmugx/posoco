@@ -8,6 +8,22 @@
 ///   Pending → Rejected (hook decision)
 ///   Pending → Abandoned (terminal hook failure, cancel)
 ///   (pre-pass rejects: Rejected without Pending — covered in posoco_wbtest)
+
+///|
+/// The core operation projection brackets every turn stream; the surface
+/// assertions below describe the turn/tool event sequence.
+fn turn_surface_events(
+  events : Array[@types.TurnEvent],
+) -> Array[@types.TurnEvent] {
+  events.filter(fn(event) {
+    match event {
+      Custom(source~, ..) => source != "posoco.operation"
+      _ => true
+    }
+  })
+}
+
+///|
 fn event_surface_tag(event : @types.TurnEvent) -> String {
   match event {
     TurnStarted => "TurnStarted"
@@ -86,7 +102,7 @@ async test "tool_event_surface/happy_path_pending_approved_started_succeeded" {
     config=tk_config(),
   )
   ignore(agent.run_turn(tk_user_msg("hi"), "s_surface_happy"))
-  assert_eq(observer.events().map(event_surface_tag), [
+  assert_eq(turn_surface_events(observer.events()).map(event_surface_tag), [
     "TurnStarted", "ModelResponseReceived", "ToolCallPending", "ToolCallApproved",
     "ToolCallStarted", "ToolCallSucceeded", "ModelResponseReceived", "TurnCompleted",
   ])
@@ -129,7 +145,7 @@ async test "tool_event_surface/hook_reject_surfaces_as_rejected_run_continues" {
     NotExecuted(reason=RejectedByHook(..), ..) => ()
     _ => fail("expected NotExecuted(RejectedByHook)")
   }
-  let tags = observer.events().map(event_surface_tag)
+  let tags = turn_surface_events(observer.events()).map(event_surface_tag)
   assert_eq(tags, [
     "TurnStarted", "ModelResponseReceived", "ToolCallPending", "ToolCallRejected",
     "ModelResponseReceived", "TurnCompleted",
@@ -208,7 +224,7 @@ async test "tool_event_surface/hook_raise_abandons_pending_calls" {
   }
   // The run died after the pending declaration: the terminal drain must
   // close the orphan with ToolCallAbandoned, then the turn fails.
-  let tags = observer.events().map(event_surface_tag)
+  let tags = turn_surface_events(observer.events()).map(event_surface_tag)
   assert_eq(tags, [
     "TurnStarted", "ModelResponseReceived", "ToolCallPending", "ToolCallAbandoned",
     "TurnFailed",
@@ -283,7 +299,7 @@ async test "tool_event_surface/mid_wave_cancel_abandons_pending_calls" {
   // The runtime's cancel disposition folds the parked effect as a failure
   // outcome (never a fabricated success), so the pending slot is consumed
   // by ToolCallFailed; the turn then fails. No orphan remains.
-  let tags = observer.events().map(event_surface_tag)
+  let tags = turn_surface_events(observer.events()).map(event_surface_tag)
   assert_eq(tags, [
     "TurnStarted", "ModelResponseReceived", "ToolCallPending", "ToolCallApproved",
     "ToolCallStarted", "ToolCallFailed", "TurnFailed",

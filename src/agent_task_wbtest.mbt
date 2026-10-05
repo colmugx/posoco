@@ -758,14 +758,12 @@ async test "managed_tasks/compact_keeps_busy_guard_through_blocked_operation" {
       ) catch {
         error => Err(error)
       }
-      guard turn_result
-        is Err(
-          @error.AgentError::Runtime(
-            @error.RuntimeError::InvocationFailed(detail)
-          )
-        ) &&
-        detail.contains("agent turn busy") else {
-        fail("a turn must be rejected while compact cleanup is joining")
+      guard turn_result is Err(@error.AgentError::Busy(operation_id~, session~)) &&
+        session == "compact-busy" &&
+        operation_id.contains("agent_compact_session_") else {
+        fail(
+          "a turn must be rejected with the structured busy error while compact cleanup is joining, got \{repr(turn_result)}",
+        )
       }
       model.cleanup_release.put(1)
       ignore(compact.wait())

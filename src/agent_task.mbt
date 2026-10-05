@@ -55,6 +55,10 @@ priv struct AgentTaskRuntime {
   mut runtime_id : String?
   mut next_id : Int
   mut active_operation : AgentTaskOperation?
+  /// Core-owned `background_outcome_ready` projection, installed at
+  /// composition. Called only after a background outcome is successfully
+  /// enqueued into its session inbox; carries no outcome payload.
+  mut ready_notifier : ((@port.TaskOutcome) -> Unit)?
   foreground_settle_timeout_ms : Int
   shutdown_settle_timeout_ms : Int
   tasks : Map[String, AgentTaskRecord]
@@ -74,6 +78,7 @@ fn AgentTaskRuntime::AgentTaskRuntime(
     runtime_id: None,
     next_id: 1,
     active_operation: None,
+    ready_notifier: None,
     foreground_settle_timeout_ms,
     shutdown_settle_timeout_ms,
     tasks: Map::from_array([]),
@@ -296,6 +301,34 @@ fn AgentTaskRuntime::submit(
 }
 
 ///|
+/// Authoritative status word for the ready projection: completed / failed /
+/// timed_out / cancelled. Observers schedule work from it; the outcome body
+/// stays in the session inbox only.
+fn task_outcome_status_label(status : @port.TaskStatus) -> String {
+  match status {
+    @port.TaskStatus::Completed(..) => "completed"
+    @port.TaskStatus::Failed(..) => "failed"
+    @port.TaskStatus::TimedOut => "timed_out"
+    @port.TaskStatus::Cancelled(..) => "cancelled"
+  }
+}
+
+///|
+/// Fire the core-owned ready projection after a background outcome was
+/// successfully enqueued. The notification precedes any wakeup turn's input
+/// read for the session (the outcome is already in the inbox); core does not
+/// auto-request from it — deciding to request stays with the extension.
+fn AgentTaskRuntime::notify_background_outcome_ready(
+  self : AgentTaskRuntime,
+  outcome : @port.TaskOutcome,
+) -> Unit {
+  match self.ready_notifier {
+    Some(emit) => emit(outcome)
+    None => ()
+  }
+}
+
+///|
 #warnings("-fragile_catch_all")
 async fn AgentTaskRuntime::execute(
   self : AgentTaskRuntime,
@@ -346,8 +379,13 @@ async fn AgentTaskRuntime::execute(
   }
   let outcome : @port.TaskOutcome = { receipt, status, }
   match receipt.mode {
-    @port.TaskMode::Background =>
-      self.enqueue_outcome(snapshot_task_outcome(outcome))
+    @port.TaskMode::Background => {
+      let stored = snapshot_task_outcome(outcome)
+      self.enqueue_outcome(stored)
+      // Inbox write succeeded first: the ready projection is never ahead of
+      // the delivery it announces.
+      self.notify_background_outcome_ready(stored)
+    }
     @port.TaskMode::Foreground => ()
   }
   outcome

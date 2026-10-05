@@ -202,6 +202,12 @@ pub(all) suberror AgentError {
   /// The kernel tool-round budget rejected a batch. `consumed` is the round
   /// count at rejection (`limit + 1`); `limit` is the configured bound.
   ToolLoopExceeded(consumed~ : Int, limit~ : Int)
+  /// The Agent already holds one admitted operation (turn, resume, compact,
+  /// or wakeup). `operation_id` and `session` identify the incumbent so the
+  /// loser can schedule around it; consumers must match on this variant and
+  /// never on error text. A rejected admission mutates no session, identity,
+  /// catalog, or lifecycle state.
+  Busy(operation_id~ : String, session~ : String)
   PipelineAborted(String)
   Cancelled(String)
   AutoCompactFailed(String)
@@ -221,6 +227,8 @@ pub impl Show for AgentError with fn to_string(self : AgentError) -> String {
     Runtime(err) => "AgentError::Runtime(\{err.to_string()})"
     ToolLoopExceeded(consumed~, limit~) =>
       "AgentError::ToolLoopExceeded(consumed=\{consumed}, limit=\{limit}; raise AgentConfig.max_tool_rounds or set None for unbounded)"
+    Busy(operation_id~, session~) =>
+      "AgentError::Busy(operation_id=\{operation_id}, session=\{session})"
     PipelineAborted(msg) => "AgentError::PipelineAborted(\{msg})"
     Cancelled(msg) => "AgentError::Cancelled(\{msg})"
     AutoCompactFailed(msg) => "AgentError::AutoCompactFailed(\{msg})"

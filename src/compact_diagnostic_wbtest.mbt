@@ -572,14 +572,15 @@ async test "compact_diag/busy_agent_rejects_compact_and_stays_usable" {
     ) catch {
       e => Err(e)
     }
-    guard attempted is Err(Runtime(InvocationFailed(reason))) else {
+    guard attempted is Err(Busy(operation_id~, session~)) else {
       let why = match attempted {
         Err(e) => e.to_string()
         Ok(_) => "compact succeeded"
       }
       fail("expected the busy compact to be rejected, got \{why}")
     }
-    assert_true(reason.contains("agent turn busy"))
+    assert_eq(session, "diag-busy")
+    assert_true(operation_id.contains("agent_run_turn_"))
     probe.release = true
     ignore(task.wait())
   })

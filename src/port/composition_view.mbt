@@ -18,6 +18,7 @@ pub struct CompositionView {
   priv log_ : &LogPort?
   priv ui_ : &UiPort?
   priv tasks_ : Tasks?
+  priv wakeup_ : WakeupPort?
 }
 
 ///|
@@ -65,6 +66,15 @@ pub fn CompositionView::tasks(self : CompositionView) -> Tasks? {
 }
 
 ///|
+/// The Agent-owned session wakeup capability, present only when the
+/// extension declares `Capability::Wakeup`. `request` queues one ordinary
+/// turn for a session; execution stays inside the Agent's
+/// single-operation lifecycle.
+pub fn CompositionView::wakeup(self : CompositionView) -> WakeupPort? {
+  self.wakeup_
+}
+
+///|
 /// Gate a view on a manifest's declared `requires`: a declared capability is
 /// populated from the composed ports, an undeclared one reads `None`.
 /// Called by the composition after every gate has passed, so `model` and
@@ -76,6 +86,7 @@ pub fn CompositionView::resolve(
   log? : &LogPort? = None,
   ui~ : &UiPort,
   tasks? : Tasks? = None,
+  wakeup? : WakeupPort? = None,
 ) -> CompositionView {
   {
     model_: if requires.contains(Model) {
@@ -100,6 +111,11 @@ pub fn CompositionView::resolve(
     },
     tasks_: if requires.contains(Tasks) {
       tasks
+    } else {
+      None
+    },
+    wakeup_: if requires.contains(Wakeup) {
+      wakeup
     } else {
       None
     },

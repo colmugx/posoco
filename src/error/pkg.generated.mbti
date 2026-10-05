@@ -13,6 +13,7 @@ pub(all) suberror AgentError {
   Session(SessionError)
   Runtime(RuntimeError)
   ToolLoopExceeded(consumed~ : Int, limit~ : Int)
+  Busy(operation_id~ : String, session~ : String)
   PipelineAborted(String)
   Cancelled(String)
   AutoCompactFailed(String)

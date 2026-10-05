@@ -40,6 +40,7 @@ pub(all) enum Capability {
   Log
   Ui
   Tasks
+  Wakeup
 } derive(Eq, @debug.Debug)
 pub fn Capability::equal(Self, Self) -> Bool
 pub fn Capability::not_equal(Self, Self) -> Bool
@@ -102,9 +103,10 @@ pub struct CompositionView {
 pub fn CompositionView::decision(Self) -> &DecisionPort?
 pub fn CompositionView::log(Self) -> &LogPort?
 pub fn CompositionView::model(Self) -> &ModelPort?
-pub fn CompositionView::resolve(requires~ : Array[Capability], model~ : &ModelPort, decision? : &DecisionPort?, log? : &LogPort?, ui~ : &UiPort, tasks? : Tasks?) -> Self
+pub fn CompositionView::resolve(requires~ : Array[Capability], model~ : &ModelPort, decision? : &DecisionPort?, log? : &LogPort?, ui~ : &UiPort, tasks? : Tasks?, wakeup? : WakeupPort?) -> Self
 pub fn CompositionView::tasks(Self) -> Tasks?
 pub fn CompositionView::ui(Self) -> &UiPort?
+pub fn CompositionView::wakeup(Self) -> WakeupPort?
 
 pub(all) enum DecisionAnswer {
   BooleanAnswer(id~ : String, probability_true~ : Double)
@@ -437,6 +439,31 @@ pub fn UiSlot::output(Self, &Logger) -> Unit
 pub fn UiSlot::to_repr(Self) -> @debug.Repr
 pub fn UiSlot::to_string(Self) -> String
 pub impl Show for UiSlot
+
+pub(all) enum WakeupError {
+  ScopeInactive
+  TagInvalid(reason~ : String)
+  InvalidSession(reason~ : String)
+} derive(Eq, @debug.Debug)
+pub fn WakeupError::equal(Self, Self) -> Bool
+pub fn WakeupError::not_equal(Self, Self) -> Bool
+pub fn WakeupError::to_repr(Self) -> @debug.Repr
+
+pub struct WakeupPort {
+  // private fields
+}
+pub fn WakeupPort::from_request(request~ : (String, String, String) -> Result[WakeupTicket, WakeupError]) -> Self
+pub fn WakeupPort::request(Self, session~ : String, tag~ : String, note? : String) -> Result[WakeupTicket, WakeupError]
+
+pub(all) struct WakeupTicket {
+  id : String
+  session : String
+  tag : String
+  enqueued_at : Int64
+} derive(Eq, @debug.Debug)
+pub fn WakeupTicket::equal(Self, Self) -> Bool
+pub fn WakeupTicket::not_equal(Self, Self) -> Bool
+pub fn WakeupTicket::to_repr(Self) -> @debug.Repr
 
 // Type aliases
 

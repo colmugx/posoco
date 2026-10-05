@@ -22,6 +22,9 @@ pub(all) enum Capability {
   Ui
   /// The Agent-owned structured task capability.
   Tasks
+  /// The Agent-owned session wakeup capability (extension-requested
+  /// ordinary turns executed through the single-operation lifecycle).
+  Wakeup
 } derive(Eq, Debug)
 
 ///|

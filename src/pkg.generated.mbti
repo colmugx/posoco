@@ -53,7 +53,7 @@ pub fn tk_tool_def(String, String) -> @kernel.ToolDef
 
 pub fn tk_user_msg(String) -> @kernel.Message
 
-pub fn tk_view(requires~ : Array[@port.Capability], model~ : &@port.ModelPort, decision? : &@port.DecisionPort?, log? : &@port.LogPort?, ui~ : &@port.UiPort) -> @port.CompositionView
+pub fn tk_view(requires~ : Array[@port.Capability], model~ : &@port.ModelPort, decision? : &@port.DecisionPort?, log? : &@port.LogPort?, ui~ : &@port.UiPort, wakeup? : @port.WakeupPort?) -> @port.CompositionView
 
 pub fn validate_args(@port.CommandDef, Json) -> Result[Json, String]
 
@@ -604,6 +604,12 @@ pub using @port {type UiResponse}
 pub using @port {type UiSlot}
 
 pub using @kernel {type Usage}
+
+pub using @port {type WakeupError}
+
+pub using @port {type WakeupPort}
+
+pub using @port {type WakeupTicket}
 
 pub using @port {trait CommandPort}
 
