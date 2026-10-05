@@ -23,6 +23,10 @@ priv struct WakeupPending {
   /// by every request, so a snapshot taken before the latest request can
   /// never satisfy the entry.
   mut latest_requirement : Int
+  /// Activation generation this ticket was admitted under: the binding
+  /// generation of the window that owned it. A later binding change makes
+  /// the ticket stale forever, even if the same session is bound again.
+  activation : Int
 }
 
 ///|
@@ -31,6 +35,13 @@ priv struct AgentWakeupRuntime {
   /// shutdown begins; once closed it never reopens.
   mut scope_active : Bool
   mut closed : Bool
+  /// The host-bound active window session. `None` until the host binds one
+  /// and cleared again at shutdown; requests may only target it.
+  mut active_session : String?
+  /// Bumped on every binding change. Pending tickets carry the generation
+  /// they were admitted under; the pump rejects mismatched ones, so a
+  /// dropped window's tickets can never execute after a switch back.
+  mut active_generation : Int
   mut next_ticket_seq : Int
   mut next_operation_seq : Int
   /// Pump notification primitive. Signalled on: new request, operation
@@ -63,6 +74,8 @@ fn AgentWakeupRuntime::AgentWakeupRuntime(
   {
     scope_active: false,
     closed: false,
+    active_session: None,
+    active_generation: 0,
     next_ticket_seq: 0,
     next_operation_seq: 0,
     epoch: 0,
@@ -104,6 +117,63 @@ fn AgentWakeupRuntime::activate(
     )
   }
   self.scope_active = true
+}
+
+///|
+/// Host-driven active-window binding (synchronous, usable while idle).
+/// `Some(id)` binds, `None` clears. Reaffirming the bound id is a no-op:
+/// valid tickets keep their place. A real change retires the previous
+/// window — its pending tickets get exactly one `dropped` terminal and are
+/// never revived by binding the same session again. An already admitted
+/// operation is untouched: it settles through its own lifecycle.
+fn AgentWakeupRuntime::set_active_session(
+  self : AgentWakeupRuntime,
+  session : String?,
+) -> Unit {
+  if self.closed {
+    return
+  }
+  match (self.active_session, session) {
+    (Some(current), Some(next)) if current == next => return
+    _ => ()
+  }
+  self.active_session = session
+  self.active_generation = self.active_generation + 1
+  let stale : Array[WakeupPending] = []
+  let mut index = 0
+  while index < self.order.length() {
+    let entry = self.order[index]
+    match session {
+      Some(active) if entry.ticket.session == active => index = index + 1
+      _ => {
+        stale.push(entry)
+        ignore(self.order.remove(index))
+      }
+    }
+  }
+  for entry in stale {
+    self.forget(entry)
+  }
+  for entry in stale {
+    self.emit_wakeup_event("wakeup_dropped", entry)
+  }
+}
+
+///|
+/// A taken-but-not-yet-admitted ticket is stale once its window is gone:
+/// its admission generation no longer matches the binding, or its session
+/// is no longer the bound one.
+fn AgentWakeupRuntime::pending_stale(
+  self : AgentWakeupRuntime,
+  entry : WakeupPending,
+) -> Bool {
+  match self.active_session {
+    Some(active) => {
+      let stale_generation = entry.activation != self.active_generation
+      stale_generation || entry.ticket.session != active
+    }
+    None => true
+  }
 }
 
 ///|
@@ -162,6 +232,16 @@ fn AgentWakeupRuntime::request(
       ),
     )
   }
+  // A request never binds the active session itself; only the currently
+  // bound window session may be targeted, and only while one is bound.
+  match self.active_session {
+    Some(active) if active == session => ()
+    Some(_) =>
+      return Err(
+        InvalidSession(reason="session does not match the active session"),
+      )
+    None => return Err(InvalidSession(reason="no active session is bound"))
+  }
   let generation = match self.generations.get(session) {
     Some(value) => value + 1
     None => 1
@@ -198,6 +278,7 @@ fn AgentWakeupRuntime::request(
         extension_id,
         note,
         latest_requirement: generation,
+        activation: self.active_generation,
       }
       session_map[tag] = entry
       self.order.push(entry)
@@ -268,16 +349,24 @@ fn AgentWakeupRuntime::take_next(
   self : AgentWakeupRuntime,
   agent : AgentRuntime,
 ) -> WakeupPending? {
-  if self.closed || agent.turn_active {
-    return None
-  }
-  match self.order.get(0) {
-    Some(entry) => {
-      ignore(self.order.remove(0))
-      self.forget(entry)
-      Some(entry)
+  for ;; {
+    if self.closed || agent.turn_active {
+      return None
     }
-    None => None
+    match self.order.get(0) {
+      Some(entry) => {
+        ignore(self.order.remove(0))
+        self.forget(entry)
+        if self.pending_stale(entry) {
+          // The window that owned this ticket is gone: its terminal fired
+          // at the switch (this is the defensive second layer). Skip it and
+          // keep scanning so a fresher ticket behind it stays reachable.
+          continue
+        }
+        return Some(entry)
+      }
+      None => return None
+    }
   }
 }
 
@@ -388,6 +477,12 @@ async fn AgentWakeupRuntime::execute_ticket(
   agent : AgentRuntime,
   entry : WakeupPending,
 ) -> Bool {
+  if self.pending_stale(entry) {
+    // Taken before a binding change, never admitted: no operation exists,
+    // so rejecting here cannot disturb any in-flight user turn or guard.
+    self.emit_wakeup_event("wakeup_dropped", entry)
+    return false
+  }
   let ticket = entry.ticket
   self.next_operation_seq = self.next_operation_seq + 1
   let operation_id = "agent_wakeup_\{self.next_operation_seq}"
@@ -481,6 +576,10 @@ fn AgentWakeupRuntime::begin_shutdown(self : AgentWakeupRuntime) -> Unit {
   if !self.closed {
     self.closed = true
     self.scope_active = false
+    // The window is gone: clear the binding. Pending tickets still receive
+    // their `dropped` terminal in the later shutdown step, so the clear here
+    // must not emit them a second time.
+    self.active_session = None
     self.notify_state_change()
   }
 }

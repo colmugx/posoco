@@ -39,7 +39,9 @@ pub(all) enum WakeupError {
   ScopeInactive
   /// Empty tag, a tag over the length limit, or an otherwise unusable key.
   TagInvalid(reason~ : String)
-  /// Empty session id.
+  /// Empty session id, no active session bound, or a session that is not
+  /// the currently bound active window session. A request never binds the
+  /// active session itself.
   InvalidSession(reason~ : String)
 } derive(Eq, Debug)
 
@@ -52,10 +54,14 @@ pub extend WakeupError with Debug::{to_repr}
 ///|
 /// Queue one ordinary turn for the session. Synchronous by contract:
 /// callable from task bodies, observer callbacks, and hook tails — never
-/// awaits. Coalescing key is `(session, tag)`: a pending entry returns the
-/// same ticket (the requested event fires once), while every request updates
-/// the entry's latest requirement generation. A request that lands after an
-/// input snapshot is never satisfied by that snapshot.
+/// awaits. The session must be the Agent's currently bound active window
+/// session (set by the host through `Agent::set_active_session`); pending
+/// tickets die when that binding changes or the process exits, and are not
+/// revived by binding the same session again. Coalescing key is
+/// `(session, tag)`: a pending entry returns the same ticket (the requested
+/// event fires once), while every request updates the entry's latest
+/// requirement generation. A request that lands after an input snapshot is
+/// never satisfied by that snapshot.
 pub struct WakeupPort {
   priv request_ : (String, String, String) -> Result[WakeupTicket, WakeupError]
 }

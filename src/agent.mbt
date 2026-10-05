@@ -819,11 +819,11 @@ async fn AgentRuntime::shutdown(self : AgentRuntime) -> Unit {
   // (dropped after managed work settles). A ticket already executing
   // settles through its own ordinary turn lifecycle.
   self.wakeup.begin_shutdown()
-  self.wakeup.drop_pending()
   // The Puppet rejects every phase-gated step once shutdown begins, so an
   // operation already in flight must settle through its ordinary turn
   // lifecycle before the phase transition; the pump stopped taking tickets
-  // and pending requests were dropped above.
+  // above. Pending requests are not dropped until execution and managed
+  // work have settled (spec shutdown order).
   self.settle_operation_for_shutdown()
 
   let task_shutdown : Result[Unit, @error.AgentError] = Ok(
@@ -843,6 +843,11 @@ async fn AgentRuntime::shutdown(self : AgentRuntime) -> Unit {
       raise error
     }
   }
+  // Pending scheduling requests die with the scope only after the admitted
+  // execution and managed work have settled (spec shutdown order). The
+  // failure branch above drops them as a fallback; drop_pending is
+  // idempotent, so this is the single drop in the success path.
+  self.wakeup.drop_pending()
   self.puppet.shutdown() catch {
     error =>
       raise @error.AgentError::Runtime(
@@ -1380,6 +1385,23 @@ pub async fn Agent::context_state(
 ///|
 pub async fn Agent::shutdown(self : Agent) -> Unit {
   self.runtime.shutdown()
+}
+
+///|
+/// Bind the host's currently active window session (`None` clears the
+/// binding; the initial state is `None`). Synchronous and usable while the
+/// host is idle; it never raises, never releases the operation guard, and
+/// never cancels a running user turn — an already admitted operation settles
+/// through its own lifecycle.
+///
+/// Wakeup admission only accepts this session: `request` for any other
+/// session, or while no session is bound, fails with `InvalidSession`, and
+/// a request never binds on its own. Changing the binding drops the
+/// previous window's pending tickets with one `wakeup_dropped` terminal
+/// each; binding the same session again does not drop valid tickets, and
+/// binding a previously bound session does not revive its dropped tickets.
+pub fn Agent::set_active_session(self : Agent, session_id : String?) -> Unit {
+  self.runtime.wakeup.set_active_session(session_id)
 }
 
 ///|
