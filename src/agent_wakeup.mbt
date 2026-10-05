@@ -33,9 +33,13 @@ priv struct AgentWakeupRuntime {
   mut closed : Bool
   mut next_ticket_seq : Int
   mut next_operation_seq : Int
-  /// Pump notification primitive. Broadcast on: new request, operation
+  /// Pump notification primitive. Signalled on: new request, operation
   /// settled, shutdown.
   wake : @async.CondVar
+  /// Monotonic count of those state changes. Waiters compare epochs instead
+  /// of trusting broadcast timing, so a notification landing between a
+  /// condition check and `wait` can never be lost.
+  mut epoch : Int
   /// Composed observers for the wakeup lifecycle projection. Available at
   /// composition, before `on_compose` delivers the capability.
   observers : Array[&@port.Observer]
@@ -61,6 +65,7 @@ fn AgentWakeupRuntime::AgentWakeupRuntime(
     closed: false,
     next_ticket_seq: 0,
     next_operation_seq: 0,
+    epoch: 0,
     wake: @async.CondVar::Cond(),
     observers,
     order: [],
@@ -197,7 +202,7 @@ fn AgentWakeupRuntime::request(
       session_map[tag] = entry
       self.order.push(entry)
       self.emit_wakeup_event("wakeup_requested", entry)
-      self.wake.broadcast()
+      self.notify_state_change()
       Ok(ticket)
     }
   }
@@ -288,18 +293,47 @@ fn[G] AgentWakeupRuntime::start_pump(
 }
 
 ///|
+/// Record one pump-relevant state change: advance the epoch, then broadcast.
+/// The epoch makes the notification durable for a waiter whose condition
+/// check already ran — it re-checks the epoch, not the broadcast timing.
+fn AgentWakeupRuntime::notify_state_change(self : AgentWakeupRuntime) -> Unit {
+  self.epoch = self.epoch + 1
+  self.wake.broadcast()
+}
+
+///|
+/// Wait for a pump-relevant state change at or after `seen`. Returns
+/// immediately when the epoch already moved past `seen`: the notification
+/// raced the caller's condition check (e.g. the incumbent operation settled
+/// between the Busy rejection and this wait) and must not be slept through.
+async fn AgentWakeupRuntime::wait_for_change(
+  self : AgentWakeupRuntime,
+  seen : Int,
+) -> Unit {
+  if self.epoch == seen {
+    self.wake.wait()
+  }
+}
+
+///|
 /// Wake only on notifications: new request, operation settled, shutdown.
+/// `seen` is captured before the condition is read, so every state change
+/// that could invalidate the decision to sleep is observable as an epoch
+/// advance — the waits never spin and never miss a notification.
 async fn AgentWakeupRuntime::pump_loop(
   self : AgentWakeupRuntime,
   agent : AgentRuntime,
 ) -> Unit {
   for ;; {
+    let seen = self.epoch
     match self.take_next(agent) {
       Some(entry) => {
         if self.execute_ticket(agent, entry) {
-          // Re-queued behind a live incumbent: wait on the real state-change
-          // notification (its settled broadcast) — never a no-await hotloop.
-          self.wake.wait()
+          // Re-queued behind a live incumbent: wait on the state-change
+          // notification (its settled broadcast) — never a no-await
+          // hotloop. A settle that already raced the Busy return advanced
+          // the epoch past `seen`, so this returns instead of sleeping.
+          self.wait_for_change(seen)
         }
         continue
       }
@@ -308,16 +342,28 @@ async fn AgentWakeupRuntime::pump_loop(
     if self.closed {
       return
     }
-    self.wake.wait()
+    self.wait_for_change(seen)
   }
 }
 
 ///|
-/// Bounded, newline-free envelope header field: the tag is a coalescing key,
-/// not free-form envelope content, so control characters are flattened
-/// before the value joins the transcript.
+/// Bounded, injection-safe envelope header field: the tag is untrusted
+/// extension input, so it is length-capped and newline-flattened, then
+/// JSON string-escaped via `Json::stringify` — the envelope's `"` / `[` /
+/// `]` delimiters can no longer appear unescaped inside the value, so the
+/// header closes exactly once no matter what the tag contains.
 fn wakeup_envelope_field(value : String, cap : Int) -> String {
-  bounded_error_label(value, cap)
+  Json::string(bounded_error_label(value, cap))
+  .stringify()
+  .replace(old="[", new="\\u005b")
+  .replace(old="]", new="\\u005d")
+}
+
+///|
+/// The envelope head all wakeup shapes share (transcript input and the
+/// `wakeup_executing` display envelope).
+fn wakeup_envelope_head(tag : String) -> String {
+  "[posoco-wakeup tag=\{wakeup_envelope_field(tag, wakeup_tag_max_length)}]"
 }
 
 ///|
@@ -326,7 +372,7 @@ fn wakeup_envelope_field(value : String, cap : Int) -> String {
 /// omitted when empty. The envelope belongs to the session record; the
 /// wakeup turn is audited exactly like a host turn.
 fn wakeup_envelope_message(tag : String, note : String) -> @kernel.Message {
-  let head = "[posoco-wakeup tag=\{wakeup_envelope_field(tag, wakeup_tag_max_length)}]"
+  let head = wakeup_envelope_head(tag)
   if note == "" {
     @kernel.Message::UserMessage(content=[@kernel.Content::Text(head)])
   } else {
@@ -345,10 +391,11 @@ async fn AgentWakeupRuntime::execute_ticket(
   let ticket = entry.ticket
   self.next_operation_seq = self.next_operation_seq + 1
   let operation_id = "agent_wakeup_\{self.next_operation_seq}"
+  let head = wakeup_envelope_head(ticket.tag)
   let envelope_text = if entry.note == "" {
-    "[posoco-wakeup tag=\{wakeup_envelope_field(ticket.tag, wakeup_tag_max_length)}]"
+    head
   } else {
-    "[posoco-wakeup tag=\{wakeup_envelope_field(ticket.tag, wakeup_tag_max_length)}] \{entry.note}"
+    "\{head} \{entry.note}"
   }
   // Exactly one terminal per ticket. A raw pump cancellation bypasses the
   // catch below, so this unwind emitter still fires once — after the
@@ -423,7 +470,7 @@ fn AgentWakeupRuntime::requeue_front(
 fn AgentWakeupRuntime::notify_operation_settled(
   self : AgentWakeupRuntime,
 ) -> Unit {
-  self.wake.broadcast()
+  self.notify_state_change()
 }
 
 ///|
@@ -434,7 +481,7 @@ fn AgentWakeupRuntime::begin_shutdown(self : AgentWakeupRuntime) -> Unit {
   if !self.closed {
     self.closed = true
     self.scope_active = false
-    self.wake.broadcast()
+    self.notify_state_change()
   }
 }
 
