@@ -139,9 +139,8 @@ pub(open) trait DecisionPort {
 }
 
 ///|
-/// Default `evaluate_with_context` for every `DecisionPort`: delegates to
-/// `evaluate` and ignores the context, so adapters implemented before the
-/// context API keep working unchanged.
+/// Blanket default: delegates to `evaluate` and ignores the context, so
+/// adapters implemented before the context API keep working unchanged.
 impl DecisionPort with fn evaluate_with_context(self, request, context~) {
   let _ = context
   self.evaluate(request)

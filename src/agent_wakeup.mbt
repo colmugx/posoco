@@ -1,5 +1,5 @@
 ///|
-/// Agent-owned wakeup capability, ledger, and pump (plan step 3).
+/// Agent-owned wakeup capability, ledger, and pump.
 ///
 /// The ledger is synchronous and self-contained (safe to touch from task
 /// bodies, observers, and hooks): per-(session, tag) pending tickets with
@@ -51,8 +51,7 @@ priv struct AgentWakeupRuntime {
   /// of trusting broadcast timing, so a notification landing between a
   /// condition check and `wait` can never be lost.
   mut epoch : Int
-  /// Composed observers for the wakeup lifecycle projection. Available at
-  /// composition, before `on_compose` delivers the capability.
+  /// Composed observers for the wakeup lifecycle projection.
   observers : Array[&@port.Observer]
   /// Pending tickets in FIFO execution order.
   order : Array[WakeupPending]
@@ -90,8 +89,7 @@ fn AgentWakeupRuntime::AgentWakeupRuntime(
 
 ///|
 /// Bind one extension's capability view: requests carry the extension id for
-/// event attribution. The runtime is fully built before `on_compose`, so the
-/// capability never exposes an uninitialized object.
+/// event attribution.
 fn AgentWakeupRuntime::capability(
   self : AgentWakeupRuntime,
   extension_id : String,
@@ -160,9 +158,7 @@ fn AgentWakeupRuntime::set_active_session(
 }
 
 ///|
-/// A taken-but-not-yet-admitted ticket is stale once its window is gone:
-/// its admission generation no longer matches the binding, or its session
-/// is no longer the bound one.
+/// A taken-but-not-yet-admitted ticket is stale once its window is gone.
 fn AgentWakeupRuntime::pending_stale(
   self : AgentWakeupRuntime,
   entry : WakeupPending,
@@ -232,8 +228,8 @@ fn AgentWakeupRuntime::request(
       ),
     )
   }
-  // A request never binds the active session itself; only the currently
-  // bound window session may be targeted, and only while one is bound.
+  // A request never binds the active session itself: only the currently
+  // bound window session may be targeted.
   match self.active_session {
     Some(active) if active == session => ()
     Some(_) =>
@@ -382,9 +378,6 @@ fn[G] AgentWakeupRuntime::start_pump(
 }
 
 ///|
-/// Record one pump-relevant state change: advance the epoch, then broadcast.
-/// The epoch makes the notification durable for a waiter whose condition
-/// check already ran — it re-checks the epoch, not the broadcast timing.
 fn AgentWakeupRuntime::notify_state_change(self : AgentWakeupRuntime) -> Unit {
   self.epoch = self.epoch + 1
   self.wake.broadcast()
@@ -405,7 +398,6 @@ async fn AgentWakeupRuntime::wait_for_change(
 }
 
 ///|
-/// Wake only on notifications: new request, operation settled, shutdown.
 /// `seen` is captured before the condition is read, so every state change
 /// that could invalidate the decision to sleep is observable as an epoch
 /// advance — the waits never spin and never miss a notification.

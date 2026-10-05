@@ -278,9 +278,9 @@ priv struct AgentRuntime {
   builtin_command_port : BuiltinCommandPort
   control : AgentControl
   task_runtime : AgentTaskRuntime
-  /// Centralized single-operation admission/settlement state (plan step 2).
+  /// Centralized single-operation admission/settlement state.
   operations : AgentOperations
-  /// Agent-owned wakeup ledger and pump (plan step 3).
+  /// Agent-owned wakeup ledger and pump.
   wakeup : AgentWakeupRuntime
   config : AgentConfig
   /// Host-owned versioned catalog (experimental runtime seam). `None` keeps
@@ -544,7 +544,7 @@ fn AgentRuntime::compose(
   let chunk_dispatcher_ref : Ref[ChunkDispatcher?] = Ref(None)
   let context_state_of : Ref[((String) -> @types.ContextState?)?] = Ref(None)
   let task_runtime = AgentTaskRuntime::AgentTaskRuntime()
-  // Plan step 4: core-owned ready projection after a background outcome is
+  // Core-owned ready projection after a background outcome is
   // successfully enqueued into its session inbox. No outcome payload —
   // receipt identity, attribution, and authoritative status only.
   task_runtime.ready_notifier = Some(fn(outcome) {
@@ -562,7 +562,7 @@ fn AgentRuntime::compose(
       ],
     )
   })
-  // Plan step 3: the wakeup ledger is built before the on_compose loop so
+  // The wakeup ledger is built before the on_compose loop so
   // extensions receive a fully constructed capability; the pump joins at
   // run_scoped startup. No runtime backfill is needed — the ledger owns its
   // admission state, and execution goes through the completed Agent.
@@ -1193,7 +1193,6 @@ async fn AgentRuntime::run_turn_with_mode(
     Ok(_) => Completed
     Err(error) => error.operation_outcome()
   }
-  // Settled fires only after the guard release inside release_operation.
   self.release_operation(admission, outcome)
   match result {
     Ok(value) => value

@@ -1,12 +1,12 @@
 ///|
-/// Agent operation lifecycle (plan step 2): one centralized admission point
+/// Agent operation lifecycle: one centralized admission point
 /// for the existing single-operation guard, one release point that projects
 /// `operation_started` / `operation_settled` exactly once per admission.
 ///
 /// The lifecycle sits above the per-turn identity layer: one admitted
 /// operation covers the initial turn plus every follow-up drained inside the
 /// same call (ordinary operations drain all follow-ups before settling). The
-/// projection is deliberately independent of `TurnCompleted` and the internal
+/// projection is independent of `TurnCompleted` and the internal
 /// `OperationFinalized` phase event — settled is emitted only after the
 /// single-operation guard has been released, on the normal, failure, soft-,
 /// and hard-cancel paths alike.
@@ -242,8 +242,7 @@ async fn[X] AgentRuntime::execute_operation(
       // The outer boundary was cancelled and has fully joined. If the worker
       // body completed before that, its captured typed error is raised
       // unchanged; a captured success or non-cancellation failure is never
-      // rewritten into cancellation detail — the boundary names the
-      // cancellation itself, per origin (compact names its own).
+      // rewritten into cancellation detail.
       match body_outcome.val {
         Some(Err(error)) => raise error
         _ =>
@@ -277,7 +276,7 @@ fn AgentRuntime::cancel_operation_execution(self : AgentRuntime) -> Unit {
 
 ///|
 /// Bounded graceful window before shutdown actively cancels an in-flight
-/// operation, matching the managed-task settle budget style.
+/// operation.
 let operation_shutdown_grace_ms : Int = 5_000
 
 ///|
@@ -312,7 +311,7 @@ async fn OperationExecution::wait_settled(
 }
 
 ///|
-/// Honest straggler detail for the bounded-shutdown diagnostic: names the
+/// Straggler detail for the bounded-shutdown diagnostic: names the
 /// operation that outlived its cancellation budget.
 fn AgentRuntime::operation_straggler_detail(self : AgentRuntime) -> String {
   match self.operations.current {
@@ -326,10 +325,10 @@ fn AgentRuntime::operation_straggler_detail(self : AgentRuntime) -> String {
 /// Settle the in-flight operation during shutdown: a finite graceful window
 /// lets an admitted operation finish its ordinary lifecycle; if it is still
 /// alive, the tracked execution is actively cancelled and its unwind must
-/// finish within the bounded budget. Nothing is faked — a worker that
-/// outlives cancellation (a noncooperative shielded child cannot be
-/// force-joined) fails shutdown loudly with the straggler detail, and the
-/// Puppet is never closed under live work.
+/// finish within the bounded budget. A worker that outlives cancellation
+/// (a noncooperative shielded child cannot be force-joined) fails shutdown
+/// loudly with the straggler detail, and the Puppet is never closed under
+/// live work.
 async fn AgentRuntime::settle_operation_for_shutdown(
   self : AgentRuntime,
 ) -> Unit raise @error.AgentError {

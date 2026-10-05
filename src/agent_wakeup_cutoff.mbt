@@ -12,7 +12,6 @@
 
 ///|
 priv struct WakeupCutoffArm {
-  /// Arming run's unique Puppet run id string.
   key : String
   session : String
   /// Latest requirement generation captured for `session` at arm time.
