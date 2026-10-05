@@ -1,5 +1,47 @@
 # Changelog
 
+## 0.21.0
+
+### Breaking + Added: tool cancellation moved into the ToolProvider port
+
+`ToolProvider::execute` now receives an effect-scoped context, and a
+provider that owns interruptible work (subprocess, long request) can make
+it cancellable without touching the host-side `Runtime` seam:
+
+```moonbit
+pub(all) struct ToolCallContext {
+  effect_id : @kernel.EffectId
+  call_id : @kernel.CallId
+  name : @kernel.ToolName
+  arguments : Json
+  register_cancel : (&ToolCancellable) -> Unit
+}
+
+pub(open) trait ToolCancellable {
+  async fn cancel(
+    Self, effect_id : @kernel.EffectId, reason : @kernel.CancelReason,
+  ) -> @kernel.CancelDisposition
+}
+```
+
+The default `PortRuntime` (and the internal basic-tools dispatcher)
+constructs the context, keys registrations by `effect_id`, drops them when
+the effect settles, and routes `cancel_effects` to registered facets.
+Unregistered ids keep reporting `NotPropagated`. Hosts no longer need a
+`Runtime` decorator just to make one tool killable.
+
+Migration map:
+
+| Before (0.20.x) | After (0.21.0) |
+|---|---|
+| `execute(self, name : String, call : @kernel.ToolCall)` | `execute(self, ctx : @posoco.ToolCallContext)`; `name = ctx.name.to_string()`, `call.arguments` → `ctx.arguments` |
+| cancellable tool = host wraps `PortRuntime` in a `Runtime` decorator keyed by `EffectId` | provider implements `@posoco.ToolCancellable` and calls `ctx.register_cancel(self as &@posoco.ToolCancellable)` before starting interruptible work |
+| `ToolRegistry::register(tool, executor : (@kernel.ToolCall) -> ToolOutcome)` | executor takes `@posoco.ToolCallContext` |
+| testkit `RecordingToolProvider::execute_direct(name, call)` | `execute_direct(call)` (name derived from the call) |
+
+New testkit helper: `tk_tool_call_ctx(name~, arguments?)` builds a context
+with synthetic identity and a no-op registrar.
+
 ## 0.20.0
 
 ### Added: tool results can carry media attachments (multimodal tool output)

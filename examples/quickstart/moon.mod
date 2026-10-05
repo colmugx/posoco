@@ -3,7 +3,7 @@ name = "colmugx/posoco-quickstart"
 version = "0.1.0"
 
 import {
-  "colmugx/posoco@0.21.0",
+  "colmugx/posoco@0.21.1",
   "moonbitlang/async@0.22.4",
 }
 
