@@ -941,6 +941,7 @@ fn snapshot_tool_failure(failure : @kernel.ToolFailure) -> @kernel.ToolFailure {
 fn snapshot_turn_event(event : @types.TurnEvent) -> @types.TurnEvent {
   match event {
     TurnStarted => TurnStarted
+    ModelRequestStarted => ModelRequestStarted
     ToolCallPending(call) => ToolCallPending(snapshot_tool_call(call))
     ToolCallApproved(call~, consent_scope~) =>
       ToolCallApproved(call=snapshot_tool_call(call), consent_scope~)

@@ -884,6 +884,53 @@ async test "m38_memory/search_failure_skips_source_and_names_it" {
 }
 
 ///|
+/// No hit anywhere and every source raised → the failures themselves are
+/// the result: a ToolReportedError with one receipt line per source, never
+/// a false "No matching memory.".
+async test "m38_memory/search_all_failed_reports_failures_not_miss" {
+  let bad : &@port.MemoryPort = FailingInboundPort::{ _dummy: (), }
+  let reasons : Array[String] = []
+  let provider = MemoryToolProvider(sources=[("bad", bad)], on_failure=fn(
+    reason,
+  ) {
+    reasons.push(reason)
+  })
+  let outcome = exec_memory_tool(provider, "memory_search", [
+    ("query", Json::string("prefs")),
+  ])
+  match outcome {
+    ToolReportedError(content~, structured=None) => {
+      assert_true(content.contains("bad: failed"))
+      assert_true(content.contains("MemoryError::Search"))
+    }
+    _ => fail("expected ToolReportedError when every source failed")
+  }
+  assert_eq(reasons.length(), 1)
+}
+
+///|
+/// A raising source plus a cleanly-missed sibling is still not a clean
+/// miss: with no hits to show, the failure line renders (decision ①).
+async test "m38_memory/search_failure_with_clean_miss_reports_failure" {
+  let bad : &@port.MemoryPort = FailingInboundPort::{ _dummy: (), }
+  let miss = ScriptedMemoryPort(inbounds=[], search_script=[None])
+  let provider = MemoryToolProvider(
+    sources=[("bad", bad), ("miss", miss as &@port.MemoryPort)],
+    on_failure=fn(_reason) { () },
+  )
+  let outcome = exec_memory_tool(provider, "memory_search", [
+    ("query", Json::string("prefs")),
+  ])
+  match outcome {
+    ToolReportedError(content~, structured=None) => {
+      assert_true(content.contains("bad: failed"))
+      assert_false(content.contains("miss"))
+    }
+    _ => fail("expected ToolReportedError for failure + clean miss")
+  }
+}
+
+///|
 /// memory_add without a source writes to EVERY source; receipt lines carry
 /// each source's ticket in registration order, and every store records the
 /// content with empty provider-convention metadata.

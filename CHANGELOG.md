@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.22.0
+
+### Added: `ModelRequestStarted` observer event — per-step request anchor
+
+`TurnEvent` gains a payloadless `ModelRequestStarted`, projected from the
+kernel's `ModelStepStarted` when the next model-step effect is declared:
+after pre-model hooks run, before the model port executes the call, once
+per model response — including every step of a tool loop. Observers that
+measure per-step timing (TTFT) can now anchor at the true request start
+instead of inferring it from the previous response's commit boundary or
+the last tool effect.
+
+Migration for observers: exhaustive `match` over `TurnEvent` needs one new
+arm (or falls through an existing `_`); event-sequence assertions gain one
+`ModelRequestStarted` immediately after `TurnStarted` and before each
+`ModelResponseReceived`. The kernel boundary machinery, journal payloads,
+and all other events are unchanged.
+
+### Changed: `memory_search` no longer renders provider failures as a clean miss
+
+The built-in `memory_search` fan-out used to swallow every provider error
+into the `secondary_failure` observer event and render the same
+"No matching memory." text as a clean miss — a broken memory backend was
+indistinguishable from an empty index. Search now mirrors the `memory_add`
+receipt contract: hits still outrank failures (usable results stay free of
+error noise, failures go to the observer channel only), but when no source
+produced a hit and at least one failed, the tool returns a
+`ToolReportedError` with one `<source>: failed (<reason>)` line per
+failure. The per-source `secondary_failure` events (hook point
+`memory_search`) are unchanged, and the calling turn still never aborts.
+
 ## 0.21.0
 
 ### Breaking + Added: tool cancellation moved into the ToolProvider port

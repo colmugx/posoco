@@ -164,7 +164,9 @@ fn memory_required_string_arg(
 /// `memory_search` / `memory_add` to the model and fans each call out to
 /// every matching provider. Provider failures are reported via `on_failure`
 /// (the Agent wires it to the `secondary_failure` observer event) and never
-/// abort the calling turn.
+/// abort the calling turn. A search where every source missed AND at least
+/// one failed renders the failures as a model-visible `ToolReportedError`
+/// instead of a false clean miss (the add path mirrors this with receipts).
 priv struct MemoryToolProvider {
   sources : Array[(String, &@port.MemoryPort)]
   on_failure : (String) -> Unit
@@ -225,17 +227,18 @@ async fn MemoryToolProvider::execute_memory_search(
       )
     None => None
   }
-  let searched : Array[(String, String?)] = @async.all(
+  let searched : Array[(String, Result[String?, String])] = @async.all(
     self.sources.map(fn(pair) {
       let (source, port) = pair
       () => {
-        let text : String? = port.search(query~, top_k?) catch {
+        let outcome : Result[String?, String] = Ok(port.search(query~, top_k?)) catch {
           err => {
-            (self.on_failure)("memory_search \{source}: \{err.to_string()}")
-            None
+            let reason = err.to_string()
+            (self.on_failure)("memory_search \{source}: \{reason}")
+            Err(reason)
           }
         }
-        (source, text)
+        (source, outcome)
       }
     }),
   ) catch {
@@ -244,17 +247,24 @@ async fn MemoryToolProvider::execute_memory_search(
     _ => []
   }
   let hits : Array[String] = []
+  let failures : Array[String] = []
   for pair in searched {
-    let (_, text) = pair
-    match text {
-      Some(body) if body.trim() != "" => hits.push(body)
-      _ => ()
+    let (source, outcome) = pair
+    match outcome {
+      Err(reason) => failures.push("\{source}: failed (\{reason})")
+      Ok(Some(body)) if body.trim() != "" => hits.push(body)
+      Ok(_) => ()
     }
   }
-  if hits.is_empty() {
-    Success(content="No matching memory.", structured=None)
-  } else {
+  if !hits.is_empty() {
     Success(content=hits.join("\n\n"), structured=None)
+  } else if !failures.is_empty() {
+    // No source produced a hit, so a "clean miss" would be a lie: report
+    // the failures (hits outrank failures above, keeping usable results
+    // free of error noise).
+    ToolReportedError(content=failures.join("\n"), structured=None)
+  } else {
+    Success(content="No matching memory.", structured=None)
   }
 }
 

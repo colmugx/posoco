@@ -269,6 +269,13 @@ pub extend EventScope with Debug::{to_repr}
 /// `ToolCallPending` precedes them.
 pub(all) enum TurnEvent {
   TurnStarted
+  /// The kernel declared the next model-step effect: the request is about
+  /// to be dispatched to the model port. Emitted once per model response —
+  /// including every step of a tool loop — after pre-model hooks run and
+  /// before any stream chunk can arrive, so observers can anchor per-step
+  /// timing (TTFT) at the true request start instead of the previous
+  /// response's commit boundary.
+  ModelRequestStarted
   ToolCallPending(@kernel.ToolCall)
   ToolCallApproved(call~ : @kernel.ToolCall, consent_scope~ : String?)
   ToolCallStarted(call~ : @kernel.ToolCall)
@@ -348,6 +355,7 @@ pub extend TurnEvent with Debug::{to_repr}
 pub impl Show for TurnEvent with fn to_string(self : TurnEvent) -> String {
   match self {
     TurnStarted => "TurnStarted"
+    ModelRequestStarted => "ModelRequestStarted"
     ToolCallPending(call) => "ToolCallPending(\{call.call_id.to_string()})"
     ToolCallApproved(call~, consent_scope~) =>
       "ToolCallApproved(\{call.call_id.to_string()}, consent=\{consent_scope is Some(_)})"

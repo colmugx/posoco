@@ -64,6 +64,7 @@ fn testkit_snapshot_model_call_result(
 fn testkit_snapshot_event(event : @types.TurnEvent) -> @types.TurnEvent {
   match event {
     TurnStarted => TurnStarted
+    ModelRequestStarted => ModelRequestStarted
     ToolCallPending(call) => ToolCallPending(snapshot_tool_call(call))
     ToolCallApproved(call~, consent_scope~) =>
       ToolCallApproved(call=snapshot_tool_call(call), consent_scope~)

@@ -27,6 +27,7 @@ fn turn_surface_events(
 fn event_surface_tag(event : @types.TurnEvent) -> String {
   match event {
     TurnStarted => "TurnStarted"
+    ModelRequestStarted => "ModelRequestStarted"
     ModelResponseReceived(..) => "ModelResponseReceived"
     ToolCallPending(_) => "ToolCallPending"
     ToolCallApproved(..) => "ToolCallApproved"
@@ -103,8 +104,9 @@ async test "tool_event_surface/happy_path_pending_approved_started_succeeded" {
   )
   ignore(agent.run_turn(tk_user_msg("hi"), "s_surface_happy"))
   assert_eq(turn_surface_events(observer.events()).map(event_surface_tag), [
-    "TurnStarted", "ModelResponseReceived", "ToolCallPending", "ToolCallApproved",
-    "ToolCallStarted", "ToolCallSucceeded", "ModelResponseReceived", "TurnCompleted",
+    "TurnStarted", "ModelRequestStarted", "ModelResponseReceived", "ToolCallPending",
+    "ToolCallApproved", "ToolCallStarted", "ToolCallSucceeded", "ModelRequestStarted",
+    "ModelResponseReceived", "TurnCompleted",
   ])
   // Plain approval chain: the approval event carries no consent scope.
   for event in observer.events() {
@@ -147,8 +149,8 @@ async test "tool_event_surface/hook_reject_surfaces_as_rejected_run_continues" {
   }
   let tags = turn_surface_events(observer.events()).map(event_surface_tag)
   assert_eq(tags, [
-    "TurnStarted", "ModelResponseReceived", "ToolCallPending", "ToolCallRejected",
-    "ModelResponseReceived", "TurnCompleted",
+    "TurnStarted", "ModelRequestStarted", "ModelResponseReceived", "ToolCallPending",
+    "ToolCallRejected", "ModelRequestStarted", "ModelResponseReceived", "TurnCompleted",
   ])
   for event in observer.events() {
     if event is ToolCallRejected(call=_, reason=RejectedByHook(reason~)) {
@@ -226,8 +228,8 @@ async test "tool_event_surface/hook_raise_abandons_pending_calls" {
   // close the orphan with ToolCallAbandoned, then the turn fails.
   let tags = turn_surface_events(observer.events()).map(event_surface_tag)
   assert_eq(tags, [
-    "TurnStarted", "ModelResponseReceived", "ToolCallPending", "ToolCallAbandoned",
-    "TurnFailed",
+    "TurnStarted", "ModelRequestStarted", "ModelResponseReceived", "ToolCallPending",
+    "ToolCallAbandoned", "TurnFailed",
   ])
   for event in observer.events() {
     if event is ToolCallAbandoned(call=_, reason~) {
@@ -301,7 +303,7 @@ async test "tool_event_surface/mid_wave_cancel_abandons_pending_calls" {
   // by ToolCallFailed; the turn then fails. No orphan remains.
   let tags = turn_surface_events(observer.events()).map(event_surface_tag)
   assert_eq(tags, [
-    "TurnStarted", "ModelResponseReceived", "ToolCallPending", "ToolCallApproved",
-    "ToolCallStarted", "ToolCallFailed", "TurnFailed",
+    "TurnStarted", "ModelRequestStarted", "ModelResponseReceived", "ToolCallPending",
+    "ToolCallApproved", "ToolCallStarted", "ToolCallFailed", "TurnFailed",
   ])
 }

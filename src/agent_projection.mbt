@@ -290,6 +290,7 @@ impl @puppetry.EventSubscriber for AgentEventSubscriber with fn on_event(
       for call in calls {
         self.emit(Some(scope), ToolCallStarted(call=snapshot_tool_call(call)))
       }
+    ModelStepStarted(..) => self.emit(Some(scope), ModelRequestStarted)
     ModelStepCompleted(completion~, ..) => {
       let payload = completion.message
       let message : @kernel.Message = AssistantMessage(

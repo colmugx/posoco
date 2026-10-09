@@ -233,11 +233,11 @@ async test "scope_projection/legacy_observer_and_hook_unchanged" {
   )
   ignore(agent.run_turn(tk_user_msg("hello"), "s_legacy"))
   let events = scope_projection_turn_events(observer.events())
-  assert_eq(events.length(), 3)
+  assert_eq(events.length(), 4)
   guard events[0] is TurnStarted else {
     fail("first event must be TurnStarted")
   }
-  guard events[2] is TurnCompleted else {
+  guard events[3] is TurnCompleted else {
     fail("last event must be TurnCompleted")
   }
   let labels = hook.records().map(fn(r) { r.label })

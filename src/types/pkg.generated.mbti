@@ -136,6 +136,7 @@ pub fn ToolCallSnapshot::to_repr(Self) -> @debug.Repr
 
 pub(all) enum TurnEvent {
   TurnStarted
+  ModelRequestStarted
   ToolCallPending(@kernel.ToolCall)
   ToolCallApproved(call~ : @kernel.ToolCall, consent_scope~ : String?)
   ToolCallStarted(call~ : @kernel.ToolCall)
