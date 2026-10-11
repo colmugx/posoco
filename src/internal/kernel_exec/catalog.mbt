@@ -21,9 +21,11 @@ pub(all) suberror CatalogCompositionError {
   /// (Reserved for future policy extensions; current code never produces
   /// this because `ExecutionPolicy` is a closed enum.)
   InvalidExecutionPolicy(visible_name~ : String, detail~ : String)
-  /// No tools at all. Allowed when the caller explicitly opts in; otherwise
-  /// a composition failure because the catalog version would have no
-  /// model-visible content.
+  /// No tools at all. The builder currently seals an empty catalog
+  /// unconditionally (pinned by "empty finish produces empty snapshot");
+  /// there is no opt-in flag at this layer. Hosts that want a fail-fast
+  /// empty check must enforce it before composing. Kept so a future
+  /// opt-in/fail-fast policy can raise it without an API break.
   Empty
 }
 

@@ -21,7 +21,15 @@ async test "rate-limit resume replays persisted user without duplicating transcr
   let first = Ok(agent.run_turn(tk_user_msg("original task"), "resume-user")) catch {
     error => Err(error)
   }
-  assert_true(first is Err(_))
+  match first {
+    Err(Model(msg)) => {
+      assert_true(msg.contains("model quota exhausted"))
+      assert_true(msg.contains("code=429"))
+      assert_true(msg.contains("reset_at_ms=1000"))
+      assert_true(msg.contains("message=quota exhausted"))
+    }
+    _ => fail("expected AgentError::Model carrying the rate-limit verdict")
+  }
   ignore(agent.resume_turn("resume-user"))
   assert_eq(model.received_messages.length(), 2)
   let retried = model.received_messages[1]
@@ -100,7 +108,13 @@ async test "rate-limit resume after tool progress appends continue" {
   let first = Ok(agent.run_turn(tk_user_msg("do work"), "resume-progress-real")) catch {
     error => Err(error)
   }
-  assert_true(first is Err(_))
+  match first {
+    Err(Model(msg)) => {
+      assert_true(msg.contains("model quota exhausted"))
+      assert_true(msg.contains("message=quota after tool progress"))
+    }
+    _ => fail("expected AgentError::Model carrying the rate-limit verdict")
+  }
   let failed = store.store["resume-progress-real"]
   assert_eq(failed.messages.length(), 3)
   assert_true(failed.messages[2] is ToolMessage(..))

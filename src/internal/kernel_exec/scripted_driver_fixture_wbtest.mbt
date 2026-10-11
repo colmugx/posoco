@@ -273,3 +273,165 @@ fn input_for_effect(
   steps.push({ effect_id: eff.effect_id(), effect_kind, input_kind, })
   input
 }
+
+// ──────────────────────────────────────────────────────────────────────────
+// Dead-branch coverage. input_for_effect has two arms that no golden test
+// reaches: the CancelOutstanding ack arm and the (effect, outcome) kind-
+// mismatch arms. The tests below drive all three.
+// ──────────────────────────────────────────────────────────────────────────
+
+///|
+fn fixture_catalog() -> ToolCatalogSnapshot raise CatalogCompositionError {
+  let builder = ToolCatalogBuilder()
+  let _ = builder.add(
+    ToolDef(
+      name=@kernel.ToolName::unchecked("read"),
+      description="read file",
+      input_schema=Json::object(
+        Map::from_array([("type", Json::string("object"))]),
+      ),
+      owner=@kernel.OwnerId::unchecked("fs"),
+      policy=Sequential,
+      provenance=Some("fixture"),
+    ),
+  )
+  builder.finish(version=CatalogVersion(1))
+}
+
+///|
+fn fixture_initial_state() -> RunState raise KernelError {
+  RunState::initial(
+    run_id=RunId::unchecked("fixture_run"),
+    session_id=SessionId::unchecked("fixture_sess"),
+    budget=Budget::default_run(),
+  )
+}
+
+///|
+fn fixture_start() -> StartPayload {
+  { initial_messages: [], catalog_version: CatalogVersion(1), }
+}
+
+///|
+test "FIXTURE-MISMATCH-CALL-MODEL: CallModel effect scripted with a tool outcome → ModelFailed(mismatch) terminal" {
+  let catalog = fixture_catalog()
+  let st0 = fixture_initial_state()
+  // The run's first effect is a CallModel; scripting a TOOL outcome for it
+  // makes input_for_effect fall into the CallModel mismatch arm.
+  let scripted = ScriptedExecutor().on(
+    EffectId::first(),
+    ScriptedToolCompleted(Success(content="irrelevant", structured=None)),
+  )
+  let trace = scripted_driver_run(st0, catalog, scripted, fixture_start(), 20)
+  // The driver step log records the mismatch arm verbatim.
+  let steps = trace.steps()
+  assert_eq(steps.length(), 1)
+  assert_eq(steps[0].effect_kind, "CallModel")
+  assert_eq(steps[0].input_kind, "ModelFailed(mismatch)")
+  // The mismatch input is a Runtime ModelFailure → Terminal(Failed).
+  let final_st = trace.final_state()
+  assert_eq(final_st.phase(), Terminal)
+  match final_st.outcome() {
+    Some(Failed(reason=ModelRuntime(detail~))) =>
+      assert_eq(detail, "scripted outcome mismatch for CallModel")
+    _ => fail("expected Failed(ModelRuntime) from the mismatch branch")
+  }
+}
+
+///|
+test "FIXTURE-MISMATCH-EXECUTE-TOOL: ExecuteTool effect scripted with a model outcome → StaleCorrelation terminal" {
+  let catalog = fixture_catalog()
+  let st0 = fixture_initial_state()
+  let scripted = ScriptedExecutor()
+    .on(
+      EffectId::first(),
+      ScriptedModelCompleted(completion_with_tool_call_read("/x")),
+    )
+    .on(
+      // The resulting ExecuteTool effect (id 2) is scripted with a MODEL
+      // outcome — kind mismatch → ToolFailed(invariant=StaleCorrelation).
+      EffectId::first().next(),
+      ScriptedModelCompleted(
+        Completion(
+          content=[Text("wrong kind")],
+          tool_calls=[],
+          reasoning=None,
+          finish_reason=Stop,
+          usage=None,
+        ),
+      ),
+    )
+  let trace = scripted_driver_run(st0, catalog, scripted, fixture_start(), 30)
+  let steps = trace.steps()
+  assert_eq(steps.length(), 2)
+  assert_eq(steps[0].effect_kind, "CallModel")
+  assert_eq(steps[0].input_kind, "ModelCompleted")
+  assert_eq(steps[1].effect_kind, "ExecuteTool")
+  assert_eq(steps[1].input_kind, "ToolFailed(mismatch)")
+  let final_st = trace.final_state()
+  assert_eq(final_st.phase(), Terminal)
+  match final_st.outcome() {
+    Some(Failed(reason=InvariantViolation(category~))) =>
+      match category {
+        StaleCorrelation(effect_id~) =>
+          assert_eq(effect_id, EffectId::first().next())
+        _ => fail("expected StaleCorrelation, got \{category.to_string()}")
+      }
+    _ => fail("expected Failed(InvariantViolation(StaleCorrelation))")
+  }
+}
+
+///|
+fn completion_with_tool_call_read(path : String) -> @kernel.Completion {
+  Completion(
+    content=[Text("calling")],
+    tool_calls=[
+      {
+        call_id: @kernel.CallId::unchecked("c1"),
+        name: @kernel.ToolName::unchecked("read"),
+        arguments: Json::object(Map::from_array([("path", Json::string(path))])),
+      },
+    ],
+    reasoning=None,
+    finish_reason=ToolCalls,
+    usage=None,
+  )
+}
+
+///|
+test "FIXTURE-CANCEL-ACK: CancelOutstanding effect maps to the fire-and-forget cancel-ack ToolCompleted" {
+  // scripted_driver_run can never reach the CancelOutstanding arm: the
+  // driver never issues CancelRequested (cancel is a host-driven input, not
+  // something the scripted loop produces), and when a host-driven cancel
+  // terminalises the Run the driver's `while phase != Terminal` loop exits
+  // before any declared CancelOutstanding effect would be consumed. The arm
+  // is therefore driven directly through input_for_effect.
+  let steps : Array[DriverStep] = []
+  let cancel_effect : Effect = CancelOutstanding(effect_id=EffectId::first(), payload={
+    effect_ids: FixedArray::from_array([]),
+    reason: HostRequested(detail=None),
+  })
+  let input = input_for_effect(ScriptedExecutor(), cancel_effect, steps)
+  // The step log pins the arm's labels.
+  assert_eq(steps.length(), 1)
+  assert_eq(steps[0].effect_kind, "CancelOutstanding")
+  assert_eq(steps[0].input_kind, "ToolCompleted(cancel-ack)")
+  // The fire-and-forget ack input: a synthetic ToolCompleted that the
+  // reducer never folds (the Run is already Terminal by then).
+  match input {
+    ToolCompleted(payload~) => {
+      assert_eq(payload.effect_id, EffectId::first())
+      assert_eq(payload.call_id.to_string(), "__cancel_ack__")
+      assert_eq(payload.tool_name.to_string(), "__cancel__")
+      assert_true(payload.arguments is Json::Null)
+      match payload.outcome {
+        RuntimeFailure(error_category~, message~) => {
+          assert_eq(error_category, "CancelAck")
+          assert_eq(message, "cancel recorded")
+        }
+        _ => fail("expected RuntimeFailure cancel ack outcome")
+      }
+    }
+    _ => fail("expected a ToolCompleted cancel-ack input")
+  }
+}

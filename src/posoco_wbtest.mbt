@@ -1,100 +1,8 @@
 ///|
-/// Whitebox tests with mock implementations. R3 M3.7: all fixtures use
-/// canonical kernel types directly.
-struct MockModelPort {
-  responses : Array[@kernel.ModelCallResult]
-  mut index : Int
-}
-
-///|
-impl @port.ModelPort for MockModelPort with fn chat(
-  self,
-  _scope : @kernel.InvocationScope,
-  _messages : ArrayView[@kernel.Message],
-  _tools : Array[@kernel.ToolDef],
-  _options : @types.ChatOptions,
-  _stream : @types.StreamMode,
-) -> @kernel.ModelCallResult raise @error.ModelError {
-  if self.index < self.responses.length() {
-    let resp = self.responses[self.index]
-    self.index = self.index + 1
-    resp
-  } else {
-    raise Transport("no more responses")
-  }
-}
-
-///|
-impl @port.ModelPort for MockModelPort with fn compact(
-  _self,
-  _scope : @kernel.InvocationScope,
-  _messages : ArrayView[@kernel.Message],
-  _tools : Array[@kernel.ToolDef],
-  _options : @types.ChatOptions,
-  _trigger : @kernel.CompactTrigger,
-) -> @kernel.CompactResult raise @error.ModelError {
-  raise ResponseParse("MockModelPort does not implement compact")
-}
-
-///|
-impl @port.ModelPort for MockModelPort with fn provider_config(_self) -> @port.ProviderConfig {
-  @port.ProviderConfig::empty()
-}
-
-///|
-/// MockToolProvider — implements the unified ToolProvider trait.
-/// Lists tools and executes them from a results map.
-struct MockToolProvider {
-  tools : Array[@kernel.ToolDef]
-  results : Map[String, Result[@kernel.ToolOutcome, @error.RuntimeError]]
-}
-
-///|
-impl @port.ToolProvider for MockToolProvider with fn list_tools(self) {
-  self.tools
-}
-
-///|
-impl @port.ToolProvider for MockToolProvider with fn execute(
-  self,
-  ctx : @port.ToolCallContext,
-) -> @kernel.ToolOutcome raise @error.RuntimeError {
-  let name = ctx.name.to_string()
-  match self.results.get(name) {
-    Some(Ok(r)) => r
-    Some(Err(e)) => raise e
-    None => raise InvocationFailed("tool not found: \{name}")
-  }
-}
-
-///|
-struct MockSessionStore {
-  store : Map[String, @types.Session]
-}
-
-///|
-impl @port.SessionStore for MockSessionStore with fn load(self, id) -> @types.Session {
-  if self.store.contains(id) {
-    self.store[id]
-  } else {
-    { messages: [], metadata: Map::from_array([]), }
-  }
-}
-
-///|
-impl @port.SessionStore for MockSessionStore with fn save(self, id, session) -> Unit {
-  self.store[id] = session
-}
-
-///|
-struct MockObserver {
-  events : Array[@types.TurnEvent]
-}
-
-///|
-impl @port.Observer for MockObserver with fn on_event(self, event) {
-  self.events.push(event)
-}
+/// Whitebox tests for the root package. R3 M3.7: all fixtures use canonical
+/// kernel types directly; the scripted/recording fakes come from the
+/// in-package testkit (ScriptedModel, RecordingToolProvider,
+/// RecordingSessionStore, RecordingObserver).
 
 ///|
 struct PolicyRejectHook {}
@@ -145,16 +53,6 @@ fn user_msg(text : String) -> @kernel.Message {
 }
 
 ///|
-fn _assistant_msg(text : String) -> @kernel.Message {
-  AssistantMessage(
-    content=[Text(text)],
-    tool_calls=[],
-    reasoning=None,
-    finish_reason=Stop,
-  )
-}
-
-///|
 fn stop_response(text : String) -> @kernel.ModelCallResult {
   {
     completion: Completion(
@@ -193,18 +91,15 @@ fn make_tool_call(id : String, name : String) -> @kernel.ToolCall {
 
 ///|
 /// Helper: empty tool provider (no tools, no execution)
-fn empty_tools() -> MockToolProvider {
-  { tools: [], results: Map::from_array([]), }
+fn empty_tools() -> RecordingToolProvider {
+  RecordingToolProvider([], Map::from_array([]))
 }
 
 ///|
 async test "simple_turn_no_tools" {
-  let model = MockModelPort::{
-    responses: [stop_response("hi there")],
-    index: 0,
-  }
-  let store = MockSessionStore::{ store: Map::from_array([]), }
-  let observer = MockObserver::{ events: [], }
+  let model = ScriptedModel([Respond(stop_response("hi there"))])
+  let store = RecordingSessionStore()
+  let observer = RecordingObserver()
   let config = make_config()
 
   let agent = Agent(
@@ -224,12 +119,12 @@ async test "simple_turn_no_tools" {
 ///|
 async test "turn_with_single_tool" {
   let tc = make_tool_call("call_1", "bash")
-  let model = MockModelPort::{
-    responses: [tool_response([tc]), stop_response("done")],
-    index: 0,
-  }
-  let tools = MockToolProvider::{
-    tools: [
+  let model = ScriptedModel([
+    Respond(tool_response([tc])),
+    Respond(stop_response("done")),
+  ])
+  let tools = RecordingToolProvider(
+    [
       ToolDef(
         name=@kernel.ToolName::unchecked("bash"),
         description="run a cmd",
@@ -239,12 +134,12 @@ async test "turn_with_single_tool" {
         provenance=None,
       ),
     ],
-    results: Map::from_array([
-      ("bash", Ok(Success(content="ok", structured=None))),
+    Map::from_array([
+      ("bash", OutcomeOk(Success(content="ok", structured=None))),
     ]),
-  }
-  let store = MockSessionStore::{ store: Map::from_array([]), }
-  let observer = MockObserver::{ events: [], }
+  )
+  let store = RecordingSessionStore()
+  let observer = RecordingObserver()
   let config = make_config()
 
   let agent = Agent(
@@ -270,12 +165,12 @@ async test "turn_with_single_tool" {
 ///|
 async test "tool_failure_non_fatal" {
   let tc = make_tool_call("call_1", "bash")
-  let model = MockModelPort::{
-    responses: [tool_response([tc]), stop_response("error handled")],
-    index: 0,
-  }
-  let tools = MockToolProvider::{
-    tools: [
+  let model = ScriptedModel([
+    Respond(tool_response([tc])),
+    Respond(stop_response("error handled")),
+  ])
+  let tools = RecordingToolProvider(
+    [
       ToolDef(
         name=@kernel.ToolName::unchecked("bash"),
         description="",
@@ -285,10 +180,10 @@ async test "tool_failure_non_fatal" {
         provenance=None,
       ),
     ],
-    results: Map::from_array([("bash", Err(InvocationFailed("boom")))]),
-  }
-  let store = MockSessionStore::{ store: Map::from_array([]), }
-  let observer = MockObserver::{ events: [], }
+    Map::from_array([("bash", OutcomeErr(InvocationFailed("boom")))]),
+  )
+  let store = RecordingSessionStore()
+  let observer = RecordingObserver()
   let config = make_config()
 
   let agent = Agent(
@@ -305,9 +200,9 @@ async test "tool_failure_non_fatal" {
 
 ///|
 async test "model_error_aborts_turn" {
-  let model = MockModelPort::{ responses: [], index: 0, }
-  let store = MockSessionStore::{ store: Map::from_array([]), }
-  let observer = MockObserver::{ events: [], }
+  let model = ScriptedModel([])
+  let store = RecordingSessionStore()
+  let observer = RecordingObserver()
   let config = make_config()
 
   let agent = Agent(
@@ -329,10 +224,10 @@ async test "model_error_aborts_turn" {
 ///|
 async test "hook_reject_skips_tool_and_feeds_back" {
   let tc = make_tool_call("call_1", "bash")
-  let model = MockModelPort::{
-    responses: [tool_response([tc]), stop_response("adjusted")],
-    index: 0,
-  }
+  let model = ScriptedModel([
+    Respond(tool_response([tc])),
+    Respond(stop_response("adjusted")),
+  ])
   let tools = RecordingExecProvider::{
     tools: [
       ToolDef(
@@ -349,8 +244,8 @@ async test "hook_reject_skips_tool_and_feeds_back" {
     ]),
     executed: [],
   }
-  let store = MockSessionStore::{ store: Map::from_array([]), }
-  let observer = MockObserver::{ events: [], }
+  let store = RecordingSessionStore()
+  let observer = RecordingObserver()
   let config = make_config()
   let reject_hook = PolicyRejectHook::{ }
 
@@ -398,14 +293,11 @@ impl @port.PipelineHook for GateByNameHook with fn before_tool(
 async test "hook_reject_steers_model_to_allowed_tool" {
   let bash_call = make_tool_call("call_1", "bash")
   let read_call = make_tool_call("call_2", "read")
-  let model = MockModelPort::{
-    responses: [
-      tool_response([bash_call]),
-      tool_response([read_call]),
-      stop_response("done"),
-    ],
-    index: 0,
-  }
+  let model = ScriptedModel([
+    Respond(tool_response([bash_call])),
+    Respond(tool_response([read_call])),
+    Respond(stop_response("done")),
+  ])
   let tools = RecordingExecProvider::{
     tools: [tk_tool_def("bash", "shell"), tk_tool_def("read", "read files")],
     results: Map::from_array([
@@ -413,8 +305,8 @@ async test "hook_reject_steers_model_to_allowed_tool" {
     ]),
     executed: [],
   }
-  let store = MockSessionStore::{ store: Map::from_array([]), }
-  let observer = MockObserver::{ events: [], }
+  let store = RecordingSessionStore()
+  let observer = RecordingObserver()
 
   let agent = Agent(
     exts=[
@@ -448,10 +340,10 @@ async fn run_bash_with_hooks(
   hooks : Array[&@port.PipelineHook],
 ) -> (RecordingExecProvider, TurnResult) {
   let tc = make_tool_call("call_1", "bash")
-  let model = MockModelPort::{
-    responses: [tool_response([tc]), stop_response("done")],
-    index: 0,
-  }
+  let model = ScriptedModel([
+    Respond(tool_response([tc])),
+    Respond(stop_response("done")),
+  ])
   let tools = RecordingExecProvider::{
     tools: [tk_tool_def("bash", "shell")],
     results: Map::from_array([
@@ -459,7 +351,7 @@ async fn run_bash_with_hooks(
     ]),
     executed: [],
   }
-  let store = MockSessionStore::{ store: Map::from_array([]), }
+  let store = RecordingSessionStore()
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
@@ -561,10 +453,10 @@ impl @port.PipelineHook for GateHook with fn before_tool(
 ///|
 async test "async_before_tool_gates_tool_wave" {
   let tc = make_tool_call("call_1", "echo")
-  let model = MockModelPort::{
-    responses: [tool_response([tc]), stop_response("done")],
-    index: 0,
-  }
+  let model = ScriptedModel([
+    Respond(tool_response([tc])),
+    Respond(stop_response("done")),
+  ])
   let tools = RecordingExecProvider::{
     tools: [
       ToolDef(
@@ -581,7 +473,7 @@ async test "async_before_tool_gates_tool_wave" {
     ]),
     executed: [],
   }
-  let store = MockSessionStore::{ store: Map::from_array([]), }
+  let store = RecordingSessionStore()
   let entered : @aqueue.Queue[Int] = Queue(kind=Unbounded)
   let release : @aqueue.Queue[Int] = Queue(kind=Unbounded)
   let gate_hook = GateHook::{ entered, release, }
@@ -630,12 +522,12 @@ impl @port.PipelineHook for RaisingToolHook with fn before_tool(
 ///|
 async test "hook_before_tool_raise_aborts_run" {
   let tc = make_tool_call("call_1", "bash")
-  let model = MockModelPort::{
-    responses: [tool_response([tc]), stop_response("should not reach")],
-    index: 0,
-  }
-  let tools = MockToolProvider::{
-    tools: [
+  let model = ScriptedModel([
+    Respond(tool_response([tc])),
+    Respond(stop_response("should not reach")),
+  ])
+  let tools = RecordingToolProvider(
+    [
       ToolDef(
         name=@kernel.ToolName::unchecked("bash"),
         description="",
@@ -645,11 +537,11 @@ async test "hook_before_tool_raise_aborts_run" {
         provenance=None,
       ),
     ],
-    results: Map::from_array([
-      ("bash", Ok(Success(content="ok", structured=None))),
+    Map::from_array([
+      ("bash", OutcomeOk(Success(content="ok", structured=None))),
     ]),
-  }
-  let store = MockSessionStore::{ store: Map::from_array([]), }
+  )
+  let store = RecordingSessionStore()
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
@@ -681,22 +573,19 @@ async test "reasoning_raw_replayed_verbatim_into_saved_session" {
       ]),
     ),
   ])
-  let model = MockModelPort::{
-    responses: [
-      {
-        completion: Completion(
-          content=[Text("done")],
-          tool_calls=[],
-          reasoning=Some({ content: "thinking", raw: Some(raw_items), }),
-          finish_reason=Stop,
-          usage=None,
-        ),
-        processed_messages: [],
-      },
-    ],
-    index: 0,
-  }
-  let store = MockSessionStore::{ store: Map::from_array([]), }
+  let model = ScriptedModel([
+    Respond({
+      completion: Completion(
+        content=[Text("done")],
+        tool_calls=[],
+        reasoning=Some({ content: "thinking", raw: Some(raw_items), }),
+        finish_reason=Stop,
+        usage=None,
+      ),
+      processed_messages: [],
+    }),
+  ])
+  let store = RecordingSessionStore()
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
@@ -718,47 +607,6 @@ async test "reasoning_raw_replayed_verbatim_into_saved_session" {
     }
   }
   assert_true(found)
-}
-
-///|
-async test "tool_loop_exceeded" {
-  let tc = make_tool_call("call_1", "bash")
-  let tool_resp = tool_response([tc])
-  let model = MockModelPort::{
-    responses: [tool_resp, tool_resp, tool_resp],
-    index: 0,
-  }
-  let tools = MockToolProvider::{
-    tools: [
-      ToolDef(
-        name=@kernel.ToolName::unchecked("bash"),
-        description="",
-        input_schema=Json::null(),
-        owner=@kernel.OwnerId::unchecked("legacy_provider"),
-        policy=Parallel,
-        provenance=None,
-      ),
-    ],
-    results: Map::from_array([
-      ("bash", Ok(Success(content="ok", structured=None))),
-    ]),
-  }
-  let store = MockSessionStore::{ store: Map::from_array([]), }
-  let observer = MockObserver::{ events: [], }
-  let config = agent_config(max_tool_rounds=Some(2))
-
-  let agent = Agent(
-    exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", tools=[tools], sessions=[store], observers=[observer]),
-    ],
-    config~,
-  )
-  match
-    (Ok(agent.run_turn(user_msg("loop"), "session_1")) catch { e => Err(e) }) {
-    Err(ToolLoopExceeded(..)) => ()
-    _ => fail("expected ToolLoopExceeded")
-  }
 }
 
 ///|
@@ -846,12 +694,12 @@ async test "bounded_tool_rounds_allows_exactly_n_rounds" {
 ///|
 async test "observer_event_sequence" {
   let tc = make_tool_call("call_1", "bash")
-  let model = MockModelPort::{
-    responses: [tool_response([tc]), stop_response("sequence done")],
-    index: 0,
-  }
-  let tools = MockToolProvider::{
-    tools: [
+  let model = ScriptedModel([
+    Respond(tool_response([tc])),
+    Respond(stop_response("sequence done")),
+  ])
+  let tools = RecordingToolProvider(
+    [
       ToolDef(
         name=@kernel.ToolName::unchecked("bash"),
         description="",
@@ -861,12 +709,12 @@ async test "observer_event_sequence" {
         provenance=None,
       ),
     ],
-    results: Map::from_array([
-      ("bash", Ok(Success(content="seq", structured=None))),
+    Map::from_array([
+      ("bash", OutcomeOk(Success(content="seq", structured=None))),
     ]),
-  }
-  let store = MockSessionStore::{ store: Map::from_array([]), }
-  let observer = MockObserver::{ events: [], }
+  )
+  let store = RecordingSessionStore()
+  let observer = RecordingObserver()
   let config = make_config()
 
   let agent = Agent(
@@ -878,7 +726,7 @@ async test "observer_event_sequence" {
   )
   let _ = agent.run_turn(user_msg("sequence"), "session_1")
 
-  let events = observer.events
+  let events = observer.events()
   assert_true(events.length() >= 4)
 
   // The core operation projection brackets the turn stream.
@@ -917,9 +765,9 @@ async test "observer_event_sequence" {
 
 ///|
 async test "session_persistence" {
-  let model = MockModelPort::{ responses: [stop_response("saved")], index: 0, }
-  let store = MockSessionStore::{ store: Map::from_array([]), }
-  let observer = MockObserver::{ events: [], }
+  let model = ScriptedModel([Respond(stop_response("saved"))])
+  let store = RecordingSessionStore()
+  let observer = RecordingObserver()
   let config = make_config()
 
   let agent = Agent(
@@ -965,12 +813,9 @@ impl @port.PipelineHook for RewriteModelHook with fn before_model(
 ///|
 /// Test: BeforeModel hook can modify messages
 async test "hook_rewrites_before_model_messages" {
-  let model = MockModelPort::{
-    responses: [stop_response("response after rewrite")],
-    index: 0,
-  }
-  let store = MockSessionStore::{ store: Map::from_array([]), }
-  let observer = MockObserver::{ events: [], }
+  let model = ScriptedModel([Respond(stop_response("response after rewrite"))])
+  let store = RecordingSessionStore()
+  let observer = RecordingObserver()
   let rewriter = RewriteModelHook::{ }
   let config = make_config()
   let agent = Agent(
@@ -1016,12 +861,12 @@ async test "hook_deferred_skips_execution" {
   // HookRejected when a PreToolHook returns Defer. This test verifies that
   // the rejection surfaces as AgentError::PipelineAborted.
   let tc = make_tool_call("call_1", "restricted")
-  let model = MockModelPort::{
-    responses: [tool_response([tc]), stop_response("approved")],
-    index: 0,
-  }
-  let tools = MockToolProvider::{
-    tools: [
+  let model = ScriptedModel([
+    Respond(tool_response([tc])),
+    Respond(stop_response("approved")),
+  ])
+  let tools = RecordingToolProvider(
+    [
       ToolDef(
         name=@kernel.ToolName::unchecked("restricted"),
         description="",
@@ -1031,12 +876,12 @@ async test "hook_deferred_skips_execution" {
         provenance=None,
       ),
     ],
-    results: Map::from_array([
-      ("restricted", Ok(Success(content="executed", structured=None))),
+    Map::from_array([
+      ("restricted", OutcomeOk(Success(content="executed", structured=None))),
     ]),
-  }
-  let store = MockSessionStore::{ store: Map::from_array([]), }
-  let observer = MockObserver::{ events: [], }
+  )
+  let store = RecordingSessionStore()
+  let observer = RecordingObserver()
   let hook = DeferToolHook::{ }
   let config = make_config()
   let agent = Agent(
@@ -1078,12 +923,12 @@ impl @port.PipelineHook for ApproveAllToolHook with fn before_tool(
 /// unchanged and the turn completes normally.
 async test "hook_default_methods_pass_through" {
   let tc = make_tool_call("call_1", "echo")
-  let model = MockModelPort::{
-    responses: [tool_response([tc]), stop_response("done")],
-    index: 0,
-  }
-  let tools = MockToolProvider::{
-    tools: [
+  let model = ScriptedModel([
+    Respond(tool_response([tc])),
+    Respond(stop_response("done")),
+  ])
+  let tools = RecordingToolProvider(
+    [
       ToolDef(
         name=@kernel.ToolName::unchecked("echo"),
         description="",
@@ -1093,11 +938,11 @@ async test "hook_default_methods_pass_through" {
         provenance=None,
       ),
     ],
-    results: Map::from_array([
-      ("echo", Ok(Success(content="echoed", structured=None))),
+    Map::from_array([
+      ("echo", OutcomeOk(Success(content="echoed", structured=None))),
     ]),
-  }
-  let store = MockSessionStore::{ store: Map::from_array([]), }
+  )
+  let store = RecordingSessionStore()
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
@@ -1134,12 +979,12 @@ async test "hook_default_methods_pass_through" {
 /// on the same RecordingHook instance in one turn.
 async test "hook_single_impl_receives_all_points" {
   let tc = make_tool_call("call_1", "echo")
-  let model = MockModelPort::{
-    responses: [tool_response([tc]), stop_response("done")],
-    index: 0,
-  }
-  let tools = MockToolProvider::{
-    tools: [
+  let model = ScriptedModel([
+    Respond(tool_response([tc])),
+    Respond(stop_response("done")),
+  ])
+  let tools = RecordingToolProvider(
+    [
       ToolDef(
         name=@kernel.ToolName::unchecked("echo"),
         description="",
@@ -1149,16 +994,16 @@ async test "hook_single_impl_receives_all_points" {
         provenance=None,
       ),
     ],
-    results: Map::from_array([
-      ("echo", Ok(Success(content="echoed", structured=None))),
+    Map::from_array([
+      ("echo", OutcomeOk(Success(content="echoed", structured=None))),
     ]),
-  }
+  )
   let hook = RecordingHook()
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
       tk_ext(id="io", tools=[tools], hooks=[hook], sessions=[
-        MockSessionStore::{ store: Map::from_array([]), },
+        RecordingSessionStore(),
       ]),
     ],
     config=make_config(),
@@ -1177,12 +1022,12 @@ async test "hook_single_impl_receives_all_points" {
 async test "agent_routes_tools_to_correct_provider" {
   let tc_bash = make_tool_call("c1", "bash")
   let tc_mcp = make_tool_call("c2", "mcp__read")
-  let model = MockModelPort::{
-    responses: [tool_response([tc_bash, tc_mcp]), stop_response("both done")],
-    index: 0,
-  }
-  let shell_tools = MockToolProvider::{
-    tools: [
+  let model = ScriptedModel([
+    Respond(tool_response([tc_bash, tc_mcp])),
+    Respond(stop_response("both done")),
+  ])
+  let shell_tools = RecordingToolProvider(
+    [
       ToolDef(
         name=@kernel.ToolName::unchecked("bash"),
         description="run cmd",
@@ -1192,12 +1037,12 @@ async test "agent_routes_tools_to_correct_provider" {
         provenance=Some("host"),
       ),
     ],
-    results: Map::from_array([
-      ("bash", Ok(Success(content="shell ok", structured=None))),
+    Map::from_array([
+      ("bash", OutcomeOk(Success(content="shell ok", structured=None))),
     ]),
-  }
-  let mcp_tools = MockToolProvider::{
-    tools: [
+  )
+  let mcp_tools = RecordingToolProvider(
+    [
       ToolDef(
         name=@kernel.ToolName::unchecked("mcp__read"),
         description="read file",
@@ -1207,12 +1052,12 @@ async test "agent_routes_tools_to_correct_provider" {
         provenance=Some("mcp"),
       ),
     ],
-    results: Map::from_array([
-      ("mcp__read", Ok(Success(content="mcp ok", structured=None))),
+    Map::from_array([
+      ("mcp__read", OutcomeOk(Success(content="mcp ok", structured=None))),
     ]),
-  }
-  let store = MockSessionStore::{ store: Map::from_array([]), }
-  let observer = MockObserver::{ events: [], }
+  )
+  let store = RecordingSessionStore()
+  let observer = RecordingObserver()
   let config = make_config()
 
   let agent = Agent(
@@ -1241,8 +1086,8 @@ async test "agent_routes_tools_to_correct_provider" {
 ///|
 /// Test: Agent detects tool name collisions across providers
 async test "agent_tool_collision_detection" {
-  let provider1 = MockToolProvider::{
-    tools: [
+  let provider1 = RecordingToolProvider(
+    [
       ToolDef(
         name=@kernel.ToolName::unchecked("bash"),
         description="v1",
@@ -1252,10 +1097,10 @@ async test "agent_tool_collision_detection" {
         provenance=None,
       ),
     ],
-    results: Map::from_array([]),
-  }
-  let provider2 = MockToolProvider::{
-    tools: [
+    Map::from_array([]),
+  )
+  let provider2 = RecordingToolProvider(
+    [
       ToolDef(
         name=@kernel.ToolName::unchecked("bash"),
         description="v2",
@@ -1265,13 +1110,13 @@ async test "agent_tool_collision_detection" {
         provenance=None,
       ),
     ],
-    results: Map::from_array([
-      ("bash", Ok(Success(content="v2 wins", structured=None))),
+    Map::from_array([
+      ("bash", OutcomeOk(Success(content="v2 wins", structured=None))),
     ]),
-  }
-  let model = MockModelPort::{ responses: [stop_response("ok")], index: 0, }
-  let store = MockSessionStore::{ store: Map::from_array([]), }
-  let observer = MockObserver::{ events: [], }
+  )
+  let model = ScriptedModel([Respond(stop_response("ok"))])
+  let store = RecordingSessionStore()
+  let observer = RecordingObserver()
   let config = make_config()
 
   // T06-B: collision now fails composition (raise) rather than last-wins.
@@ -1295,51 +1140,6 @@ async test "agent_tool_collision_detection" {
 }
 
 ///|
-/// Mock ModelPort that emits StreamChunks then returns a final completion.
-/// R3 M3.7: chat now takes StreamMode; when stream is Stream(cb), the mock
-/// replays its chunks via cb as canonical StreamChunk values.
-struct MockStreamingModelPort {
-  chunks : Array[@types.StreamChunk]
-  final_response : @kernel.ModelCallResult
-}
-
-///|
-impl @port.ModelPort for MockStreamingModelPort with fn chat(
-  self,
-  _scope : @kernel.InvocationScope,
-  _messages : ArrayView[@kernel.Message],
-  _tools : Array[@kernel.ToolDef],
-  _options : @types.ChatOptions,
-  stream : @types.StreamMode,
-) -> @kernel.ModelCallResult raise @error.ModelError {
-  match stream {
-    Stream(cb) =>
-      for chunk in self.chunks {
-        cb(chunk)
-      }
-    NoStream => ()
-  }
-  self.final_response
-}
-
-///|
-impl @port.ModelPort for MockStreamingModelPort with fn compact(
-  _self,
-  _scope : @kernel.InvocationScope,
-  _messages : ArrayView[@kernel.Message],
-  _tools : Array[@kernel.ToolDef],
-  _options : @types.ChatOptions,
-  _trigger : @kernel.CompactTrigger,
-) -> @kernel.CompactResult raise @error.ModelError {
-  raise ResponseParse("MockStreamingModelPort does not implement compact")
-}
-
-///|
-impl @port.ModelPort for MockStreamingModelPort with fn provider_config(_self) -> @port.ProviderConfig {
-  @port.ProviderConfig::empty()
-}
-
-///|
 async test "streaming_events_emitted_during_chat" {
   let chunks : Array[@types.StreamChunk] = [
     TextDelta(token="Hello"),
@@ -1354,9 +1154,9 @@ async test "streaming_events_emitted_during_chat" {
     Finish(reason="stop"),
   ]
   let final_response = stop_response("Hello world")
-  let model = MockStreamingModelPort::{ chunks, final_response, }
-  let store = MockSessionStore::{ store: Map::from_array([]), }
-  let observer = MockObserver::{ events: [], }
+  let model = ScriptedModel([Stream(chunks~, response=final_response)])
+  let store = RecordingSessionStore()
+  let observer = RecordingObserver()
   let config = make_config()
 
   let agent = Agent(
@@ -1373,7 +1173,7 @@ async test "streaming_events_emitted_during_chat" {
   let observed_chunks : Array[@types.StreamChunk] = []
   let mut model_response_index = -1
   let mut turn_completed_index = -1
-  for i, e in observer.events {
+  for i, e in observer.events() {
     match e {
       StreamChunkReceived(chunk~) => {
         observed_chunks.push(chunk)
@@ -1439,13 +1239,10 @@ async test "stream_accumulator_assembles_completion" {
 ///|
 /// Test: Multiple observers all receive events (fan-out)
 async test "multiple_observers_fan_out" {
-  let model = MockModelPort::{
-    responses: [stop_response("fan-out")],
-    index: 0,
-  }
-  let store = MockSessionStore::{ store: Map::from_array([]), }
-  let obs1 = MockObserver::{ events: [], }
-  let obs2 = MockObserver::{ events: [], }
+  let model = ScriptedModel([Respond(stop_response("fan-out"))])
+  let store = RecordingSessionStore()
+  let obs1 = RecordingObserver()
+  let obs2 = RecordingObserver()
   let config = make_config()
 
   let agent = Agent(
@@ -1459,10 +1256,10 @@ async test "multiple_observers_fan_out" {
   )
   let _ = agent.run_turn(user_msg("broadcast"), "session_1")
 
-  assert_true(obs1.events.length() >= 2)
-  assert_true(obs2.events.length() >= 2)
-  assert_eq(obs1.events.length(), obs2.events.length())
-  assert_eq(obs1.events, obs2.events)
+  assert_true(obs1.events().length() >= 2)
+  assert_true(obs2.events().length() >= 2)
+  assert_eq(obs1.events().length(), obs2.events().length())
+  assert_eq(obs1.events(), obs2.events())
 }
 
 ///|
@@ -1470,12 +1267,9 @@ async test "multiple_observers_fan_out" {
 async test "multiple_hooks_chained_in_order" {
   let hook1 = LogHook::{ seen: [], }
   let hook2 = LogHook::{ seen: [], }
-  let model = MockModelPort::{
-    responses: [stop_response("chained")],
-    index: 0,
-  }
-  let store = MockSessionStore::{ store: Map::from_array([]), }
-  let observer = MockObserver::{ events: [], }
+  let model = ScriptedModel([Respond(stop_response("chained"))])
+  let store = RecordingSessionStore()
+  let observer = RecordingObserver()
   let config = make_config()
 
   let agent = Agent(
@@ -1501,13 +1295,10 @@ async test "multiple_hooks_chained_in_order" {
 ///|
 /// Test: Multiple session stores all receive writes
 async test "multiple_session_stores_write_all" {
-  let model = MockModelPort::{
-    responses: [stop_response("multi-store")],
-    index: 0,
-  }
-  let store1 = MockSessionStore::{ store: Map::from_array([]), }
-  let store2 = MockSessionStore::{ store: Map::from_array([]), }
-  let observer = MockObserver::{ events: [], }
+  let model = ScriptedModel([Respond(stop_response("multi-store"))])
+  let store1 = RecordingSessionStore()
+  let store2 = RecordingSessionStore()
+  let observer = RecordingObserver()
   let config = make_config()
 
   let agent = Agent(
@@ -1667,9 +1458,9 @@ async test "noop_command_port_returns_empty_and_raises_notfound" {
 ///|
 /// After stages run hooks in reverse order: hooks[1] runs before hooks[0].
 async test "hook_turn_error_fires_on_model_error" {
-  let model = MockModelPort::{ responses: [], index: 0, }
-  let store = MockSessionStore::{ store: Map::from_array([]), }
-  let observer = MockObserver::{ events: [], }
+  let model = ScriptedModel([])
+  let store = RecordingSessionStore()
+  let observer = RecordingObserver()
   let log_hook = LogHook::{ seen: [], }
   let config = make_config()
 
@@ -1700,9 +1491,9 @@ async test "hook_turn_error_fires_on_model_error" {
 /// TurnError hook still fires before the error propagates.
 async test "hook_turn_error_fires_on_before_tool_abort" {
   let tc = make_tool_call("call_1", "bash")
-  let model = MockModelPort::{ responses: [tool_response([tc])], index: 0, }
-  let tools = MockToolProvider::{
-    tools: [
+  let model = ScriptedModel([Respond(tool_response([tc]))])
+  let tools = RecordingToolProvider(
+    [
       ToolDef(
         name=@kernel.ToolName::unchecked("bash"),
         description="",
@@ -1712,10 +1503,10 @@ async test "hook_turn_error_fires_on_before_tool_abort" {
         provenance=None,
       ),
     ],
-    results: Map::from_array([]),
-  }
-  let store = MockSessionStore::{ store: Map::from_array([]), }
-  let observer = MockObserver::{ events: [], }
+    Map::from_array([]),
+  )
+  let store = RecordingSessionStore()
+  let observer = RecordingObserver()
   // RaisingToolHook aborts the run from BeforeTool (raise, not Reject);
   // LogHook records post-stage events.
   let log_hook = LogHook::{ seen: [], }

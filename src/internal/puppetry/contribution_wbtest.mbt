@@ -200,7 +200,7 @@ test "puppet_contribution/prepare_batch_contributor_raise_surfaces_as_savepoint_
   ) catch {
     e => Err(e)
   }
-  assert_true(result is Err(_))
+  assert_true(result is Err(SavepointFailed(..)))
   match result {
     Err(SavepointFailed(kind~, cause~)) => {
       assert_true(kind == "InputAccepted")
@@ -224,7 +224,7 @@ test "puppet_contribution/prepare_batch_rejects_wrong_kind" {
   let result : Result[FrozenBatch, PuppetError] = Ok(prepare_batch(ctx, [])) catch {
     e => Err(e)
   }
-  assert_true(result is Err(_))
+  assert_true(result is Err(SavepointFailed(..)))
   match result {
     Err(SavepointFailed(cause=ValidationFailed(detail~), ..)) =>
       assert_true(detail.contains("does not match savepoint kind"))
@@ -239,7 +239,17 @@ test "puppet_contribution/prepare_batch_rejects_wrong_savepoint_id" {
   let result : Result[FrozenBatch, PuppetError] = Ok(prepare_batch(ctx, [])) catch {
     e => Err(e)
   }
-  assert_true(result is Err(_))
+  assert_true(result is Err(SavepointFailed(..)))
+  match result {
+    Err(SavepointFailed(kind~, cause=ValidationFailed(detail~))) => {
+      assert_true(kind == "InputAccepted")
+      // The cause names both the offending and the expected savepoint id.
+      assert_true(detail.contains("sp_other"))
+      assert_true(detail.contains("sp1"))
+    }
+    _ =>
+      fail("expected SavepointFailed(ValidationFailed) for wrong savepoint id")
+  }
 }
 
 ///|
@@ -267,7 +277,7 @@ test "puppet_contribution/prepare_batch_rejects_wrong_run_id_in_contributor" {
   ) catch {
     e => Err(e)
   }
-  assert_true(result is Err(_))
+  assert_true(result is Err(SavepointFailed(..)))
   match result {
     Err(SavepointFailed(cause=ValidationFailed(detail~), ..)) =>
       assert_true(detail.contains("mismatch"))
@@ -288,7 +298,7 @@ test "puppet_contribution/prepare_batch_rejects_duplicate_entry_id" {
   ) catch {
     e => Err(e)
   }
-  assert_true(result is Err(_))
+  assert_true(result is Err(SavepointFailed(..)))
   match result {
     Err(SavepointFailed(cause=ValidationFailed(detail~), ..)) =>
       assert_true(detail.contains("duplicate"))
@@ -322,7 +332,7 @@ test "puppet_contribution/commit_batch_via_fail_on_nth" {
   let result : Result[Int, PuppetError] = Ok(commit_batch(failing, batch)) catch {
     e => Err(e)
   }
-  assert_true(result is Err(_))
+  assert_true(result is Err(SavepointFailed(..)))
   match result {
     Err(SavepointFailed(cause=BarrierFailed(detail~), ..)) =>
       assert_true(detail.contains("injected failure"))
@@ -353,7 +363,7 @@ test "puppet_contribution/commit_batch_detects_post_freeze_count_change" {
   let result : Result[Int, PuppetError] = Ok(commit_batch(journal, batch)) catch {
     e => Err(e)
   }
-  assert_true(result is Err(_))
+  assert_true(result is Err(SavepointFailed(..)))
   match result {
     Err(SavepointFailed(cause=BarrierFailed(detail~), ..)) =>
       assert_true(detail.contains("post-freeze"))

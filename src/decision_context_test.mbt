@@ -84,18 +84,6 @@ test "decision/call_context_make_keeps_explicit_fields" {
 }
 
 ///|
-test "decision/failure_mode_is_diagnostics_only_enums" {
-  // The declared failure mode is data the consumer interprets; the port
-  // defines the three approved values and nothing else.
-  let modes = [
-    @port.DecisionFailureMode::Fallback,
-    @port.DecisionFailureMode::FailClosed,
-    @port.DecisionFailureMode::Propagate,
-  ]
-  assert_eq(modes.length(), 3)
-}
-
-///|
 test "decision/timed_out_show" {
   let error : @error.DecisionError = @error.DecisionError::TimedOut(
     timeout_ms=1500,

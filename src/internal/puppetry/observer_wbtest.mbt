@@ -120,21 +120,24 @@ async test "hook_post_event/tool_turn_fires_model_then_tool" {
   }
   // Two model calls (one requesting tool, one final stop) + one tool
   // execution = 3 stages: ModelCompleted, ToolCompleted, ModelCompleted.
-  assert_true(recorder.stages.length() >= 2)
+  assert_eq(recorder.stages.length(), 3)
   // First stage must be ModelCompleted (the model requested the tool).
   match recorder.stages[0] {
     ModelCompleted(..) => ()
     other =>
       fail("first stage should be ModelCompleted, got " + other.to_string())
   }
-  // A ToolCompleted stage must appear somewhere in the sequence — proof
-  // the default before_tool approved the call.
-  let mut saw_tool = false
-  for s in recorder.stages {
-    match s {
-      ToolCompleted(..) => saw_tool = true
-      _ => ()
-    }
+  // Second stage must be ToolCompleted — proof the default before_tool
+  // approved the call and the tool executed.
+  match recorder.stages[1] {
+    ToolCompleted(..) => ()
+    other =>
+      fail("second stage should be ToolCompleted, got " + other.to_string())
   }
-  assert_true(saw_tool)
+  // Third stage must be the final ModelCompleted (the stop turn).
+  match recorder.stages[2] {
+    ModelCompleted(..) => ()
+    other =>
+      fail("third stage should be ModelCompleted, got " + other.to_string())
+  }
 }

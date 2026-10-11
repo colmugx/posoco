@@ -43,8 +43,6 @@ pub fn tk_scope(session_id? : String, run_id? : String, pressure? : @kernel.Cont
 
 pub fn tk_stop_response(String) -> @kernel.ModelCallResult
 
-pub fn tk_system_msg(String) -> @kernel.Message
-
 pub fn tk_tool_call_ctx(name~ : String, arguments? : Json) -> @port.ToolCallContext
 
 pub fn tk_tool_call_response(String, String, Json) -> @kernel.ModelCallResult

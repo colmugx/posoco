@@ -114,7 +114,9 @@ test "puppet_journal/duplicate_entry_id_rejected" {
     Err(SavepointFailed(kind~, cause~)) => {
       assert_true(kind == "InputAccepted")
       let _ = match cause {
-        BarrierFailed(_) => ()
+        BarrierFailed(detail~) =>
+          // The duplicate is reported with the offending dedup key.
+          assert_true(detail.contains("duplicate entry id: run_j1|sp1|0"))
         _ => fail("expected BarrierFailed")
       }
     }
@@ -154,10 +156,20 @@ test "puppet_journal/suspended_does_not_close_journal" {
   // Commit a RunSuspended entry.
   let suspended = make_entry(RunSuspended, "sp_susp", 0)
   let _ = j.append([suspended])
+  assert_true(j.revision() == 1)
   // Resume should be able to append more entries under the same run.
   let after_resume = make_entry(AssistantCommitted, "sp_after", 0)
   let r = j.append([after_resume])
   assert_true(r == 2)
+  assert_true(j.revision() == 2)
+  // Both savepoints remain queryable: Suspended did not close the journal.
+  let susp_entries = j.entries_for_savepoint(j_run_id(), "sp_susp")
+  assert_true(susp_entries.length() == 1)
+  assert_true(susp_entries[0].identity.kind == RunSuspended)
+  let after_entries = j.entries_for_savepoint(j_run_id(), "sp_after")
+  assert_true(after_entries.length() == 1)
+  assert_true(after_entries[0].identity.kind == AssistantCommitted)
+  assert_true(j.entries_for_run(j_run_id()).length() == 2)
 }
 
 // ──────────────────────────────────────────────────────────────────────────

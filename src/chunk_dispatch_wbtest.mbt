@@ -460,8 +460,9 @@ async test "chunk dispatch: flush drains chunks before TurnFailed" {
   let result = Ok(agent.run_turn(tk_user_msg("hello"), "s1")) catch {
     e => Err(e)
   }
-  // The turn should fail.
-  guard result is Err(_) else { fail("expected turn to fail") }
+  // The turn should fail with the model transport error, not a swallowed one.
+  guard result is Err(Model(msg)) else { fail("expected turn to fail") }
+  assert_true(msg.contains("boom"))
   let events = observer.events()
   // Find TurnFailed.
   let failed_idx = events.search_by(fn(e) { e is TurnFailed(_) })

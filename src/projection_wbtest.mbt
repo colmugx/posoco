@@ -1023,33 +1023,6 @@ async test "m38_memory/add_rejects_unknown_source_and_empty_content" {
 }
 
 ///|
-/// Storage and retrieval side of the port contract, through the testkit fake
-/// every memory test composes: writes route through `store` (ticketed),
-/// queries through `search`, removals through `delete` — all recorded in
-/// call order with their arguments.
-async test "m38_memory/port_store_search_delete_contract" {
-  let mem = ScriptedMemoryPort(inbounds=[Some("fact")], search_script=[
-    Some("hit"),
-  ])
-  let port = mem as &@port.MemoryPort
-  let ticket = port.store(content="entry", metadata=Map::from_array([]))
-  assert_eq(ticket, "scripted-0")
-  let second = port.store(content="another", metadata=Map::from_array([]))
-  assert_eq(second, "scripted-1")
-  let found = port.search(query="entry")
-  assert_eq(found, Some("hit"))
-  port.delete(ticket)
-  assert_eq(mem.received_stores().length(), 2)
-  let (content, metadata) = mem.received_stores()[0]
-  assert_eq(content, "entry")
-  assert_eq(metadata.length(), 0)
-  assert_eq(mem.received_deletes(), ["scripted-0"])
-  assert_eq(mem.received_searches(), [("entry", None)])
-  // Past the script, search degrades to a clean no-hit.
-  assert_eq(port.search(query="anything"), None)
-}
-
-///|
 /// End-to-end: a scripted model step that calls `memory_search` runs the
 /// built-in provider through the real tool routing and the outcome lands in
 /// the turn's tool results — while the fresh-session inbound message is

@@ -181,20 +181,33 @@ test "Scheduler: stale snapshot version raises" {
 ///|
 test "Scheduler: trace excludes arguments" {
   let catalog = make_catalog([("a", Parallel), ("b", Exclusive)])
+  // Inject a unique marker into each call's arguments. If the trace format
+  // ever starts serialising argument payloads, the marker leaks into the
+  // trace string and the assertion fails.
+  let marker = "LEAK_MARKER_7f3a"
+  fn mk_call(id : String, name : String) -> @kernel.ToolCall {
+    {
+      call_id: @kernel.CallId::unchecked(id),
+      name: @kernel.ToolName::unchecked(name),
+      arguments: Json::object(
+        Map::from_array([("payload", Json::string(marker))]),
+      ),
+    }
+  }
+
   let plan = schedule(catalog, CatalogVersion(1), [
-    make_call("c1", "a"),
-    make_call("c2", "b"),
+    mk_call("c1", "a"),
+    mk_call("c2", "b"),
   ])
   let trace = plan.trace()
   assert_true(trace.contains("c1"))
   assert_true(trace.contains("c2"))
   assert_true(trace.contains("Parallel"))
   assert_true(trace.contains("Exclusive"))
-  // Arguments must NOT appear in trace
-  // (the call has no arguments in this test, but the trace format itself
-  // must be just id:name:policy — assert no JSON braces inside wave elements)
-  // The wave delimiters `{` `}` are OK; what we forbid is the JSON arguments
-  // payload that might leak from a poorly-written trace.
+  // Arguments must NOT appear in trace: the format is id:name:policy per
+  // call (wave delimiters `{` `}` are fine; the JSON arguments payload is
+  // what must never leak — ADR §2.7).
+  assert_false(trace.contains(marker))
   assert_false(trace.contains("arguments"))
   assert_false(trace.contains("schema"))
 }

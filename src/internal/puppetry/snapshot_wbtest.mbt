@@ -169,7 +169,7 @@ test "puppet_snapshot/empty_model_id_rejected" {
   ) catch {
     e => Err(e)
   }
-  assert_true(result is Err(_))
+  assert_true(result is Err(SnapshotInvalid(..)))
   match result {
     Err(SnapshotInvalid(detail~)) => assert_true(detail.contains("model_id"))
     _ => fail("expected SnapshotInvalid")
@@ -205,7 +205,7 @@ test "puppet_snapshot/negative_budget_rejected" {
   ) catch {
     e => Err(e)
   }
-  assert_true(result is Err(_))
+  assert_true(result is Err(SnapshotInvalid(..)))
   match result {
     Err(SnapshotInvalid(detail~)) =>
       assert_true(detail.contains("max_model_steps"))
@@ -238,7 +238,7 @@ test "puppet_snapshot/negative_deadline_rejected" {
   ) catch {
     e => Err(e)
   }
-  assert_true(result is Err(_))
+  assert_true(result is Err(SnapshotInvalid(..)))
   match result {
     Err(SnapshotInvalid(detail~)) => assert_true(detail.contains("deadline"))
     _ => fail("expected SnapshotInvalid")

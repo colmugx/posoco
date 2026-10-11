@@ -111,7 +111,9 @@ test "puppet_control/steer_enqueue_stale_run_rejected" {
   let result = mb.enqueue_steer(
     make_steer("s1", RunId::unchecked("run_OTHER"), mb_turn_id()),
   )
-  assert_true(result is RejectedStale(_))
+  assert_true(
+    result is RejectedStale(reason="steer targets stale run/turn", ..),
+  )
   assert_true(mb.steer_depth() == 0)
 }
 
@@ -119,7 +121,7 @@ test "puppet_control/steer_enqueue_stale_run_rejected" {
 test "puppet_control/steer_enqueue_no_active_run_rejected" {
   let mb = ControlMailbox()
   let result = mb.enqueue_steer(make_steer("s1", mb_run_id(), mb_turn_id()))
-  assert_true(result is RejectedStale(_))
+  assert_true(result is RejectedStale(reason="no active run", ..))
 }
 
 ///|
@@ -199,7 +201,10 @@ test "puppet_control/resume_duplicate_suspension_rejected" {
   let mb = bound_mailbox()
   let _ = mb.enqueue_resume(make_resume("r1", mb_run_id(), "susp_1"))
   let result = mb.enqueue_resume(make_resume("r2", mb_run_id(), "susp_1"))
-  assert_true(result is RejectedStale(_))
+  assert_true(
+    result
+    is RejectedStale(reason="resume already pending for this suspension_id", ..),
+  )
 }
 
 ///|
@@ -208,7 +213,7 @@ test "puppet_control/resume_wrong_run_rejected" {
   let result = mb.enqueue_resume(
     make_resume("r1", RunId::unchecked("run_OTHER"), "susp_1"),
   )
-  assert_true(result is RejectedStale(_))
+  assert_true(result is RejectedStale(reason="resume targets stale run", ..))
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -229,14 +234,14 @@ test "puppet_control/abort_first_accepted_second_already_requested" {
 test "puppet_control/abort_no_active_run_rejected" {
   let mb = ControlMailbox()
   let r = mb.enqueue_abort(make_abort("a1", mb_run_id()))
-  assert_true(r is RejectedStale(_))
+  assert_true(r is RejectedStale(reason="no active run to abort", ..))
 }
 
 ///|
 test "puppet_control/abort_stale_run_rejected" {
   let mb = bound_mailbox()
   let r = mb.enqueue_abort(make_abort("a1", RunId::unchecked("run_OTHER")))
-  assert_true(r is RejectedStale(_))
+  assert_true(r is RejectedStale(reason="abort targets stale run", ..))
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -255,7 +260,7 @@ test "puppet_control/clear_run_drops_queued_commands" {
   // After clear, a late command targeting the old run is rejected.
   mb.bind_run(RunId::unchecked("run_new"), TurnId::unchecked("turn_new"))
   let late = mb.enqueue_steer(make_steer("s_late", mb_run_id(), mb_turn_id()))
-  assert_true(late is RejectedStale(_))
+  assert_true(late is RejectedStale(reason="steer targets stale run/turn", ..))
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -355,7 +360,7 @@ test "puppet_control/fork_enqueue_accepted" {
 test "puppet_control/fork_enqueue_no_active_run_rejected" {
   let mb = ControlMailbox()
   let result = mb.enqueue_fork(make_fork("fk1", mb_run_id(), mb_turn_id(), 3))
-  assert_true(result is RejectedStale(_))
+  assert_true(result is RejectedStale(reason="no active run", ..))
 }
 
 ///|
@@ -364,7 +369,7 @@ test "puppet_control/fork_enqueue_stale_run_rejected" {
   let result = mb.enqueue_fork(
     make_fork("fk1", RunId::unchecked("run_OTHER"), mb_turn_id(), 0),
   )
-  assert_true(result is RejectedStale(_))
+  assert_true(result is RejectedStale(reason="fork targets stale run/turn", ..))
   assert_true(mb.fork_depth() == 0)
 }
 
@@ -446,7 +451,9 @@ test "puppet_control/compact_enqueue_stale_rejected" {
   let result = mb.enqueue_compact(
     make_compact("cm1", RunId::unchecked("run_OTHER"), mb_turn_id(), Manual),
   )
-  assert_true(result is RejectedStale(_))
+  assert_true(
+    result is RejectedStale(reason="compact targets stale run/turn", ..),
+  )
   assert_true(mb.compact_depth() == 0)
 }
 

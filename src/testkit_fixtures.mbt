@@ -55,12 +55,6 @@ pub fn tk_user_msg(text : String) -> @kernel.Message {
 }
 
 ///|
-/// Build a system message.
-pub fn tk_system_msg(text : String) -> @kernel.Message {
-  SystemMessage(content=[Text(text)])
-}
-
-///|
 /// Build a ToolDef with an empty object schema. Owner is a placeholder —
 /// `Agent::build_catalog` derives the catalog owner at composition time.
 /// Policy is `Parallel` (the declared default; composition honors it

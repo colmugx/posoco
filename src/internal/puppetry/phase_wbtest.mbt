@@ -112,11 +112,12 @@ test "puppet_phase/idle_accepts_prompt_and_structural" {
   assert_true(g.authorise(Structural) is Ok(_))
   // InFlight in Idle is illegal: no active run.
   let err = g.authorise(InFlight)
-  assert_true(err is Err(_))
+  assert_true(err is Err(OperationNotAllowedInPhase(..)))
   match err {
-    Err(OperationNotAllowedInPhase(phase~, operation~, ..)) => {
+    Err(OperationNotAllowedInPhase(phase~, operation~, detail~)) => {
       assert_true(phase == Idle)
       assert_true(operation == InFlight)
+      assert_true(detail.contains("no active run"))
     }
     _ => fail("expected OperationNotAllowedInPhase")
   }
@@ -126,8 +127,20 @@ test "puppet_phase/idle_accepts_prompt_and_structural" {
 test "puppet_phase/active_rejects_prompt_and_structural" {
   let active = active_gate("op1")
   assert_true(active.authorise(InFlight) is Ok(_))
-  assert_true(active.authorise(Prompt) is Err(_))
-  assert_true(active.authorise(Structural) is Err(_))
+  let prompt_err = active.authorise(Prompt)
+  assert_true(prompt_err is Err(OperationNotAllowedInPhase(..)))
+  match prompt_err {
+    Err(OperationNotAllowedInPhase(phase=Active, detail~, ..)) =>
+      assert_true(detail.contains("already active"))
+    _ => fail("expected OperationNotAllowedInPhase for Prompt")
+  }
+  let structural_err = active.authorise(Structural)
+  assert_true(structural_err is Err(OperationNotAllowedInPhase(..)))
+  match structural_err {
+    Err(OperationNotAllowedInPhase(phase=Active, detail~, ..)) =>
+      assert_true(detail.contains("structural operations require Idle"))
+    _ => fail("expected OperationNotAllowedInPhase for Structural")
+  }
 }
 
 ///|
@@ -135,13 +148,21 @@ test "puppet_phase/shutdown_rejects_all" {
   let g = PhaseGate::idle()
   let g = g.transition(ShuttingDown)
   let g = g.transition(Shutdown)
-  assert_true(g.authorise(Prompt) is Err(_))
-  assert_true(g.authorise(InFlight) is Err(_))
-  assert_true(g.authorise(Structural) is Err(_))
-  // All commands surface as AfterShutdown.
+  assert_true(g.authorise(Prompt) is Err(AfterShutdown(..)))
+  assert_true(g.authorise(InFlight) is Err(AfterShutdown(..)))
+  assert_true(g.authorise(Structural) is Err(AfterShutdown(..)))
+  // All commands surface as AfterShutdown carrying the command name.
   match g.authorise(Prompt) {
     Err(AfterShutdown(command~)) => assert_true(command == "Prompt")
     _ => fail("expected AfterShutdown")
+  }
+  match g.authorise(InFlight) {
+    Err(AfterShutdown(command~)) => assert_true(command == "InFlight")
+    _ => fail("expected AfterShutdown for InFlight")
+  }
+  match g.authorise(Structural) {
+    Err(AfterShutdown(command~)) => assert_true(command == "Structural")
+    _ => fail("expected AfterShutdown for Structural")
   }
 }
 
@@ -211,11 +232,12 @@ test "puppet_phase/legal_shutdown_path" {
 test "puppet_phase/illegal_idle_to_suspended" {
   let g = PhaseGate::idle()
   let result = try_gate_transition(g, Suspended)
-  assert_true(result is Err(_))
+  assert_true(result is Err(IllegalPhaseTransition(..)))
   match result {
-    Err(IllegalPhaseTransition(from~, to~, ..)) => {
+    Err(IllegalPhaseTransition(from~, to~, detail~, ..)) => {
       assert_true(from == Idle)
       assert_true(to == Suspended)
+      assert_true(detail.contains("no legal edge"))
     }
     _ => fail("expected IllegalPhaseTransition")
   }
@@ -226,7 +248,12 @@ test "puppet_phase/illegal_active_to_idle_directly" {
   let active = active_gate("op1")
   // Active→Idle is NOT legal (must go through Terminalizing).
   let result = try_gate_transition(active, Idle)
-  assert_true(result is Err(_))
+  assert_true(result is Err(IllegalPhaseTransition(..)))
+  match result {
+    Err(IllegalPhaseTransition(from=Active, to=Idle, detail~, ..)) =>
+      assert_true(detail.contains("no legal edge"))
+    _ => fail("expected IllegalPhaseTransition(Active→Idle)")
+  }
 }
 
 ///|
@@ -244,7 +271,12 @@ test "puppet_phase/shutdown_is_sink" {
   ]
   for target in targets {
     let result = try_gate_transition(g, target)
-    assert_true(result is Err(_))
+    assert_true(result is Err(IllegalPhaseTransition(from=Shutdown, ..)))
+    match result {
+      Err(IllegalPhaseTransition(detail~, ..)) =>
+        assert_true(detail.contains("no legal edge"))
+      _ => fail("expected IllegalPhaseTransition out of Shutdown")
+    }
   }
 }
 
@@ -263,7 +295,7 @@ test "puppet_phase/lease_held_rejects_second_prompt" {
     RunId::unchecked("run_other"),
     gate_turn_id(),
   )
-  assert_true(result is Err(_))
+  assert_true(result is Err(LeaseHeld(..)))
   match result {
     Err(LeaseHeld(operation_id~, held_by~)) => {
       assert_true(operation_id == "op2")
@@ -279,10 +311,12 @@ test "puppet_phase/release_validates_owner" {
   let (g, _lease) = idle.acquire_prompt("op1", gate_run_id(), gate_turn_id())
   // Releasing with the wrong owner is a typed error.
   let result = try_release(g, "op_other")
-  assert_true(result is Err(_))
+  assert_true(result is Err(LeaseNotHeld(..)))
   match result {
-    Err(LeaseNotHeld(operation_id~, ..)) =>
+    Err(LeaseNotHeld(operation_id~, detail~)) => {
       assert_true(operation_id == "op_other")
+      assert_true(detail.contains("lease held by 'op1'"))
+    }
     _ => fail("expected LeaseNotHeld")
   }
 }
@@ -291,7 +325,7 @@ test "puppet_phase/release_validates_owner" {
 test "puppet_phase/release_when_no_lease" {
   let g = PhaseGate::idle()
   let result = try_release(g, "op1")
-  assert_true(result is Err(_))
+  assert_true(result is Err(LeaseNotHeld(detail="no lease currently held", ..)))
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -303,7 +337,7 @@ test "puppet_phase/resume_wrong_suspension_id" {
   let active = active_gate("op1")
   let g = active.enter_suspended("susp_actual")
   let result = try_acquire_resume(g, "op2", "susp_wrong")
-  assert_true(result is Err(_))
+  assert_true(result is Err(SuspensionIdMismatch(..)))
   match result {
     Err(SuspensionIdMismatch(target_run_id~, expected~, actual~)) => {
       assert_true(target_run_id == gate_run_id())
@@ -319,7 +353,18 @@ test "puppet_phase/resume_when_not_suspended" {
   let g = PhaseGate::idle()
   // Idle gate cannot accept resume.
   let result = try_acquire_resume(g, "op1", "susp_1")
-  assert_true(result is Err(_))
+  assert_true(
+    result
+    // authorise(InFlight) rejects before the resume phase check: an
+    // Idle gate has no active run for InFlight operations.
+    is Err(
+      OperationNotAllowedInPhase(
+        phase=Idle,
+        operation=InFlight,
+        detail="no active run; InFlight operations require Active or Suspended"
+      )
+    ),
+  )
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -339,7 +384,17 @@ test "puppet_phase/rotate_turn_in_active" {
 test "puppet_phase/rotate_turn_rejected_in_idle" {
   let g = PhaseGate::idle()
   let result = try_rotate_turn(g, TurnId::unchecked("turn_2"))
-  assert_true(result is Err(_))
+  assert_true(
+    result
+    is Err(
+      IllegalPhaseTransition(
+        from=Idle,
+        to=Idle,
+        detail="rotate_turn requires Active phase with a bound run",
+        ..
+      )
+    ),
+  )
 }
 
 // ──────────────────────────────────────────────────────────────────────────

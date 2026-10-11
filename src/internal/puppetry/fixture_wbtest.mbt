@@ -382,6 +382,9 @@ async test "puppet/C-HAPPY-NO-TOOLS" {
     }
   }
   assert_true(has_terminal_payload)
+  // Structural operation baseline (merged from BASELINE-NO-TOOLS-COUNTERS):
+  // one append for the input boundary, one for the model effect + terminal.
+  assert_eq(journal.append_count(), 2)
 }
 
 ///|
@@ -401,6 +404,9 @@ async test "puppet/C-SINGLE-TOOL" {
   assert_eq(host.tool_call_count(), 1)
   assert_eq(host.model_call_count(), 2)
   assert_eq(host.observed_definition_count(), 1)
+  // Structural operation baseline (merged from BASELINE-ONE-TOOL-COUNTERS):
+  // input + model + tool fold + final model + approval boundary + wave-start.
+  assert_eq(journal.append_count(), 6)
   assert_true(
     first_revision_matching(
       journal.entries_for_run(RunId::unchecked("run_single")),
@@ -442,6 +448,10 @@ async test "puppet/C-PARALLEL-TOOLS" {
   }
   // 2 per-tool folds + 1 approval boundary + 1 wave-start boundary.
   assert_eq(committed, 4)
+  // Structural operation baseline (merged from BASELINE-FOUR-TOOL-COUNTERS,
+  // scaled to this test's two-tool wave): input + model + 2 per-tool folds +
+  // final model + approval boundary + wave-start.
+  assert_eq(journal.append_count(), 7)
 }
 
 ///|
@@ -488,7 +498,10 @@ async test "puppet/C-MODEL-FAILURE" {
   )
   assert_true(fixture_prompt(puppet, "model_failure") is Accepted(_))
   match puppet.wait_idle() {
-    Terminal(outcome=Failed(reason=ModelTransport(..))) => ()
+    // The host's `Transport("offline")` reason must survive verbatim to the
+    // terminal outcome's detail.
+    Terminal(outcome=Failed(reason=ModelTransport(detail~))) =>
+      assert_eq(detail, "offline")
     status =>
       fail(
         "expected terminal model transport failure, got " + status.to_string(),
@@ -817,6 +830,16 @@ struct AbortProbeHost {
   started_calls : Array[String]
   tool_started_signal : @aqueue.Queue[String]
   model_started_signal : @aqueue.Queue[Unit]
+  /// Per-model-call release gates. When a gate exists for the call at
+  /// index i, `call_model` parks on it (cancellably) until the test
+  /// releases it. This replaces fixed sleep margins: an unreleased gate
+  /// proves the abort landed mid-call.
+  model_gates : Array[@aqueue.Queue[Unit]]
+  /// Per-call-id release gates for `execute_tool`. When a gate exists for
+  /// a call id, the tool parks on it instead of sleeping `tool_delays_ms`.
+  tool_gates : Map[String, @aqueue.Queue[Unit]]
+  /// Every `cancel_effects` delivery as (effect_ids, reason), in order.
+  cancel_log : Array[(Array[EffectId], CancelReason)]
 }
 
 ///|
@@ -824,6 +847,8 @@ fn AbortProbeHost::AbortProbeHost(
   model_results : Array[Result[@kernel.Completion, ModelFailure]],
   tool_delays_ms : Map[String, Int],
   tool_started_signal : @aqueue.Queue[String],
+  model_gates? : Array[@aqueue.Queue[Unit]] = [],
+  tool_gates? : Map[String, @aqueue.Queue[Unit]] = Map::from_array([]),
 ) -> AbortProbeHost {
   {
     model_results: model_results.copy(),
@@ -832,6 +857,9 @@ fn AbortProbeHost::AbortProbeHost(
     started_calls: [],
     tool_started_signal,
     model_started_signal: Queue(kind=Unbounded),
+    model_gates,
+    tool_gates,
+    cancel_log: [],
   }
 }
 
@@ -853,9 +881,15 @@ pub impl @kernel_exec.HostRuntime for AbortProbeHost with fn call_model(
   _on_chunk : HostChunkCallback?,
 ) -> Result[ModelCallResult, ModelFailure] {
   self.model_started_signal.put(())
-  @async.sleep(200)
   let index = self.model_index
   self.model_index = index + 1
+  // Queue gate: a call with a configured gate parks here until the test
+  // releases it or the pump cancels the effect task on abort. `Queue::get`
+  // is a cancellation point, so a parked call can never "win" the race.
+  match self.model_gates.get(index) {
+    Some(gate) => gate.get()
+    None => ()
+  }
   if index >= self.model_results.length() {
     Err(Runtime(reason="abort probe exhausted model results"))
   } else {
@@ -879,11 +913,19 @@ pub impl @kernel_exec.HostRuntime for AbortProbeHost with fn execute_tool(
   let id = call_id.to_string()
   self.started_calls.push(id)
   self.tool_started_signal.put(id)
-  let delay = match self.tool_delays_ms.get(id) {
-    Some(d) => d
-    None => 10
+  // Queue gate first: a configured gate parks the tool (cancellably) so the
+  // abort provably lands mid-wave. Only ungated calls fall back to the
+  // fixed delay.
+  match self.tool_gates.get(id) {
+    Some(gate) => gate.get()
+    None => {
+      let delay = match self.tool_delays_ms.get(id) {
+        Some(d) => d
+        None => 10
+      }
+      @async.sleep(delay)
+    }
   }
-  @async.sleep(delay)
   Success(content=id + "-done", structured=None)
 }
 
@@ -891,9 +933,12 @@ pub impl @kernel_exec.HostRuntime for AbortProbeHost with fn execute_tool(
 pub impl @kernel_exec.HostRuntime for AbortProbeHost with fn cancel_effects(
   self : AbortProbeHost,
   effect_ids : Array[EffectId],
-  _reason : CancelReason,
+  reason : CancelReason,
 ) -> Array[(EffectId, CancelDisposition)] {
-  ignore(self)
+  // Record-only seam: the disposition contract stays NotPropagated (this
+  // fixture does not propagate), but every delivery is logged so the abort
+  // tests can assert which in-flight ids reached the host and why.
+  self.cancel_log.push((effect_ids.copy(), reason))
   effect_ids.map(id => (id, NotPropagated))
 }
 
@@ -913,6 +958,12 @@ pub impl @kernel_exec.HostRuntime for AbortProbeHost with fn compact(
 
 ///|
 async test "puppet/C-ABORT-DURING-MODEL" {
+  // Gate choreography replaces fixed sleeps: call 1 is released up front,
+  // call 2 parks on an unreleased gate, so the abort provably lands
+  // mid-call (the parked task is cancelled, it can never complete first).
+  let released : @aqueue.Queue[Unit] = Queue(kind=Unbounded)
+  released.put(())
+  let held : @aqueue.Queue[Unit] = Queue(kind=Unbounded)
   let host = AbortProbeHost(
     [
       Ok(fixture_tool_calls([fixture_call("parallel_one", "call_1")])),
@@ -920,6 +971,7 @@ async test "puppet/C-ABORT-DURING-MODEL" {
     ],
     Map::from_array([("call_1", 10), ("call_2", 400)]),
     Queue(kind=Unbounded),
+    model_gates=[released, held],
   )
   let catalog = fixture_tool_catalog("parallel_one")
   let journal = InMemoryJournal()
@@ -950,7 +1002,8 @@ async test "puppet/C-ABORT-DURING-MODEL" {
     group.spawn_bg(async fn() {
       ignore(host.model_started_signal.get())
       ignore(host.model_started_signal.get())
-      @async.sleep(20)
+      // The second model call is parked on its gate, so the abort lands
+      // mid-flight deterministically — no sleep margin needed.
       let first = mailbox.enqueue_abort({
         command_id: CommandId::unchecked("abort_1"),
         target_run_id: run,
@@ -998,12 +1051,26 @@ async test "puppet/C-ABORT-DURING-MODEL" {
     _ => fail("expected tool message for call_1")
   }
   assert_eq(host.started_calls, ["call_1"])
+  // The cancel seam must fire exactly once, with precisely the in-flight
+  // effect (the second model call, effect id 3) and the reducer's
+  // host-requested reason. The abort command's detail is not threaded
+  // through `pump_abort`, so the host observes `HostRequested(None)`.
+  assert_eq(host.cancel_log.length(), 1)
+  let (cancel_ids, cancel_reason) = host.cancel_log[0]
+  assert_eq(cancel_ids.map(id => id.to_int()), [3])
+  assert_true(cancel_reason is HostRequested(detail=None))
   assert_true(fixture_prompt(puppet, "after_abort_model") is Accepted(_))
 }
 
 ///|
 async test "puppet/C-ABORT-DURING-TOOLS" {
   let entered : @aqueue.Queue[String] = Queue(kind=Unbounded)
+  // Both wave calls park on unreleased gates, so the abort provably lands
+  // mid-wave (the parked tasks are cancelled, they can never complete).
+  let parked : Map[String, @aqueue.Queue[Unit]] = Map::from_array([
+    ("call_1", Queue(kind=Unbounded)),
+    ("call_2", Queue(kind=Unbounded)),
+  ])
   let host = AbortProbeHost(
     [
       Ok(
@@ -1015,6 +1082,7 @@ async test "puppet/C-ABORT-DURING-TOOLS" {
     ],
     Map::from_array([("call_1", 150), ("call_2", 400)]),
     entered,
+    tool_gates=parked,
   )
   let catalog = wave_catalog()
   let journal = InMemoryJournal()
@@ -1045,6 +1113,8 @@ async test "puppet/C-ABORT-DURING-TOOLS" {
     group.spawn_bg(async fn() {
       let started = entered.get()
       assert_eq(started, "call_1")
+      // The wave call is parked on its gate, so the abort lands mid-wave
+      // deterministically — no sleep margin needed.
       let first = mailbox.enqueue_abort({
         command_id: CommandId::unchecked("abort_tools_1"),
         target_run_id: run,
@@ -1097,6 +1167,13 @@ async test "puppet/C-ABORT-DURING-TOOLS" {
     _ => fail("expected tool message for call_2")
   }
   assert_eq(host.started_calls, ["call_1"])
+  // The cancel seam must fire exactly once, with precisely the in-flight
+  // wave ids (call_1 = effect 2, call_2 = effect 3, source order) and the
+  // reducer's host-requested reason (`pump_abort` carries no detail).
+  assert_eq(host.cancel_log.length(), 1)
+  let (cancel_ids, cancel_reason) = host.cancel_log[0]
+  assert_eq(cancel_ids.map(id => id.to_int()), [2, 3])
+  assert_true(cancel_reason is HostRequested(detail=None))
 }
 
 ///|
@@ -1108,7 +1185,10 @@ async test "puppet/C-CONTRIBUTION-VALIDATION-FAIL" {
     fixture_config(host, fixture_empty_catalog(), journal, [], [bad]),
   )
   match fixture_prompt(puppet, "contribution") {
-    Rejected(error=SavepointFailed(..)) => ()
+    // The raising contributor's id must survive into the typed cause.
+    Rejected(
+      error=SavepointFailed(cause=ContributorRaised(contributor_id~, ..), ..)
+    ) => assert_eq(contributor_id, "bad")
     other =>
       fail("expected typed savepoint rejection, got " + other.to_string())
   }
@@ -1123,7 +1203,10 @@ async test "puppet/C-JOURNAL-APPEND-FAIL" {
     fixture_config(host, fixture_empty_catalog(), failing, [], []),
   )
   match fixture_prompt(puppet, "journal") {
-    Rejected(error=SavepointFailed(cause=BarrierFailed(..), ..)) => ()
+    // The journal adapter's injected barrier failure detail must survive
+    // into the typed cause verbatim.
+    Rejected(error=SavepointFailed(cause=BarrierFailed(detail~), ..)) =>
+      assert_true(detail.contains("injected failure on append #1"))
     other => fail("expected barrier rejection, got " + other.to_string())
   }
   assert_eq(inner.revision(), 0)
@@ -1138,7 +1221,9 @@ async test "puppet/C-SUBSCRIBER-FAIL" {
     fixture_config(host, fixture_empty_catalog(), journal, [subscriber], []),
   )
   match fixture_prompt(puppet, "subscriber") {
-    Rejected(error=SubscriberFailed(..)) => ()
+    // The failing subscriber's id must be attributed in the rejection.
+    Rejected(error=SubscriberFailed(subscriber_id~, ..)) =>
+      assert_eq(subscriber_id, "bad")
     other => fail("expected subscriber rejection, got " + other.to_string())
   }
   assert_true(
@@ -1205,15 +1290,8 @@ test "puppet/C-LATE-COMPLETION" {
 }
 
 ///|
-test "puppet/C-DOUBLE-TERMINAL-REJECTION" {
-  let mailbox = ControlMailbox()
-  let result = mailbox.enqueue_abort({
-    command_id: CommandId::unchecked("late_abort"),
-    target_run_id: RunId::unchecked("completed"),
-    detail: None,
-  })
-  assert_true(result is RejectedStale(_))
-}
+// C-DOUBLE-TERMINAL-REJECTION removed: stale abort on an unbound mailbox is
+// covered by `puppet_control/abort_no_active_run_rejected` (control_wbtest).
 
 ///|
 test "puppet/C-SEQ-MONOTONIC-ACROSS-SUSPEND" {
@@ -1252,103 +1330,24 @@ test "puppet/C-SEQ-MONOTONIC-ACROSS-SUSPEND" {
 }
 
 ///|
-test "puppet/C-LEASE-EXCLUSIVE" {
-  let gate = PhaseGate::idle()
-  let run = RunId::unchecked("run_lease")
-  let (gate, _) = gate.acquire_prompt(
-    "first",
-    run,
-    TurnId::unchecked("turn_lease"),
-  )
-  let result : Result[(PhaseGate, OperationLease), PuppetError] = Ok(
-    gate.acquire_prompt("second", run, TurnId::unchecked("turn_other")),
-  ) catch {
-    error => Err(error)
-  }
-  match result {
-    Err(LeaseHeld(operation_id="second", held_by="first")) => ()
-    _ => fail("expected lease held")
-  }
-}
+// C-LEASE-EXCLUSIVE removed: lease exclusivity is covered by
+// `puppet_phase/lease_held_rejects_second_prompt` (phase_wbtest).
 
 ///|
-test "puppet/C-SNAPSHOT-IMMUTABLE" {
-  let catalog = fixture_empty_catalog()
-  let snapshot = TurnSnapshot::capture({
-    run_id: RunId::unchecked("run_snapshot"),
-    turn_id: TurnId::unchecked("turn_snapshot"),
-    session_id: SessionId::unchecked("session_snapshot"),
-    catalog,
-    policy: fixture_run_policy("model", Json::null()),
-    deadline: None,
-    hook_provenance: [],
-    lifecycle_provenance: [],
-    subscriber_provenance: [],
-  })
-  let definitions = snapshot.tool_definitions()
-  definitions.push(
-    ToolDef(
-      name=ToolName::unchecked("mutated"),
-      description="",
-      input_schema=Json::null(),
-      owner=OwnerId::unchecked("fixture"),
-      policy=Sequential,
-      provenance=None,
-    ),
-  )
-  assert_eq(snapshot.tool_definitions().length(), 0)
-}
+// C-SNAPSHOT-IMMUTABLE removed: snapshot copy semantics are covered by
+// `puppet_snapshot/mutation_of_original_array_does_not_affect_snapshot`
+// (snapshot_wbtest).
 
 ///|
-test "puppet/C-FOLLOW-UP-SAME-RUN" {
-  let mailbox = ControlMailbox()
-  let run = RunId::unchecked("run_follow")
-  let turn = TurnId::unchecked("turn_follow")
-  mailbox.bind_run(run, turn)
-  let queued = mailbox.enqueue_follow_up({
-    command_id: CommandId::unchecked("follow_1"),
-    target_run_id: run,
-    source_turn_id: turn,
-    payload: Json::null(),
-  })
-  assert_true(queued is Accepted(_))
-  match mailbox.consume_one_follow_up() {
-    Some(command) => assert_eq(command.target_run_id, run)
-    None => fail("accepted follow-up must be consumable")
-  }
-}
+// C-FOLLOW-UP-SAME-RUN removed: follow-up enqueue/consume is covered by
+// `puppet_control/follow_up_enqueue_accepted` +
+// `puppet_control/follow_up_consume_one_at_a_time` (control_wbtest).
 
 ///|
-test "puppet/C-STEER-SAFE-POINT" {
-  let mailbox = ControlMailbox()
-  let run = RunId::unchecked("run_steer")
-  let turn = TurnId::unchecked("turn_steer")
-  mailbox.bind_run(run, turn)
-  let queued = mailbox.enqueue_steer({
-    command_id: CommandId::unchecked("steer_1"),
-    target_run_id: run,
-    target_turn_id: turn,
-    observed_tool_batch_id: "batch",
-    observed_model_step_id: ModelStepId::first(),
-    payload: Json::null(),
-  })
-  assert_true(queued is Accepted(_))
-  assert_eq(mailbox.consume_steers().length(), 1)
-}
+// C-STEER-SAFE-POINT removed: steer enqueue/consume is covered by
+// `puppet_control/steer_enqueue_accepted` +
+// `puppet_control/steer_consume_drains_queue` (control_wbtest).
 
 ///|
-test "puppet/C-RESUME-WRONG-SUSPENSION" {
-  let gate = PhaseGate::idle()
-  let (gate, _) = gate.acquire_prompt(
-    "prompt",
-    RunId::unchecked("run_resume"),
-    TurnId::unchecked("turn_resume"),
-  )
-  let suspended = gate.transition(Active).enter_suspended("expected")
-  let result : Result[(PhaseGate, OperationLease), PuppetError] = Ok(
-    suspended.acquire_resume("resume", "wrong"),
-  ) catch {
-    error => Err(error)
-  }
-  assert_true(result is Err(SuspensionIdMismatch(..)))
-}
+// C-RESUME-WRONG-SUSPENSION removed: resume with a mismatched suspension id
+// is covered by `puppet_phase/resume_wrong_suspension_id` (phase_wbtest).

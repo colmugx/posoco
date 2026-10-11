@@ -6,19 +6,6 @@
 /// an extension author would see them.
 
 ///|
-test "noop_ui_port_render_is_silent" {
-  let ui = NoopUiPort()
-  ui.render({
-    slot: Status,
-    key: "x",
-    title: None,
-    body: Text("anything"),
-    ttl_ms: None,
-  })
-  // No assertion needed — silent return is the contract.
-}
-
-///|
 test "noop_ui_port_descriptor_is_empty" {
   let ui = NoopUiPort()
   let d = ui.ui_descriptor()

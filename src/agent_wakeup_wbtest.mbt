@@ -122,8 +122,13 @@ async test "tasks/ready notification covers all four terminals without payloads"
       Some(value) => value
       None => fail("task capability was not composed")
     }
+    // Cancellation-aware park: `pause` is a cancellation point, so a
+    // timed-out or cancelled task unwinds here instead of holding a
+    // long-lived timer (no wall-clock hang if cancellation semantics change).
     let park_forever : async () -> @kernel.Message = async fn() {
-      @async.sleep(60000)
+      while @async.is_being_cancelled() == false {
+        @async.pause()
+      }
       tk_user_msg("never")
     }
     let completed = match
@@ -215,13 +220,39 @@ async test "tasks/ready notification covers all four terminals without payloads"
     assert_true(seen_failed)
     assert_true(seen_timed_out)
     assert_true(seen_cancelled)
+    // Outcomes are asserted in submit order with their concrete terminal
+    // status, not just "some terminal status".
+    assert_eq(outcomes[0].receipt.label, "completed")
+    guard outcomes[0].status is @port.TaskStatus::Completed(message~) else {
+      fail("expected Completed, got \{outcomes[0].status.to_repr()}")
+    }
+    assert_eq(message, tk_user_msg("done"))
+    assert_eq(outcomes[1].receipt.label, "failed")
+    guard outcomes[1].status is @port.TaskStatus::Failed(reason~) else {
+      fail("expected Failed, got \{outcomes[1].status.to_repr()}")
+    }
+    assert_true(reason.contains("worker boom"))
+    assert_eq(outcomes[2].receipt.label, "timed_out")
+    assert_eq(outcomes[2].status, @port.TaskStatus::TimedOut)
+    assert_eq(outcomes[3].receipt.label, "cancelled")
+    guard outcomes[3].status is @port.TaskStatus::Cancelled(reason~) else {
+      fail("expected Cancelled, got \{outcomes[3].status.to_repr()}")
+    }
+    assert_eq(reason, "task cancelled")
+    // Event/outcome consistency: the ready event carrying a task's label
+    // announces exactly the status word of that task's outcome.
     for outcome in outcomes {
-      match outcome.status {
-        @port.TaskStatus::Completed(..) => ()
-        @port.TaskStatus::Failed(..) => ()
-        @port.TaskStatus::TimedOut => ()
-        @port.TaskStatus::Cancelled(..) => ()
+      let label = outcome.receipt.label
+      let mut event_status : String? = None
+      for event in ready {
+        if custom_data_text(event, "label") == Some(label) {
+          event_status = custom_data_text(event, "status")
+        }
       }
+      guard event_status is Some(word) else {
+        fail("no ready event status for label \{label}")
+      }
+      assert_eq(word, task_outcome_status_label(outcome.status))
     }
   })
 }

@@ -440,12 +440,17 @@ test "Catalog: validate_arguments against unknown tool" {
 }
 
 ///|
-test "Catalog: same version always yields same definitions" {
+test "Catalog: definitions align with entries in source order" {
   let snapshot = make_snapshot([
     make_def("alpha", "owner1", empty_object_schema(), Parallel),
+    make_def("beta", "owner2", empty_object_schema(), Sequential),
   ])
-  let d1 = snapshot.definitions()
-  let d2 = snapshot.definitions()
-  assert_eq(d1.length(), d2.length())
-  assert_eq(d1[0].name.to_string(), d2[0].name.to_string())
+  let defs = snapshot.definitions()
+  let entries = snapshot.entries()
+  assert_eq(defs.length(), entries.length())
+  for i in 0..<entries.length() {
+    // The model-facing accessor must project the same definitions the
+    // entries carry, in the same source order.
+    assert_eq(defs[i].name.to_string(), entries[i].definition.name.to_string())
+  }
 }

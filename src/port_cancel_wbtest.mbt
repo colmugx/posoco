@@ -76,8 +76,12 @@ async test "port cancel/registered facet routes while effect in flight" {
   )
   @async.with_task_group(group => {
     group.spawn_bg(() => ignore(port_runtime.execute_tool(probe_effect(7))))
-    // Let the task register its facet and suspend on the release queue.
-    @async.sleep(5)
+    // Ready-poll until the spawned task has registered its facet (the
+    // registration site records the effect id) and suspended on the release
+    // queue — no fixed sleep.
+    while probe.registered_effects.length() == 0 {
+      @async.pause()
+    }
     let dispositions = @runtime.Runtime::cancel_effects(
       port_runtime,
       [{ value: 7, }, { value: 9, }],

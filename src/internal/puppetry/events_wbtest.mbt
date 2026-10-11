@@ -61,6 +61,49 @@ pub impl EventSubscriber for RecordingSubscriber with fn on_event(
 }
 
 ///|
+/// Subscriber that pushes its id into a SHARED sentinel array on every
+/// event. Unlike `RecordingSubscriber` (each instance keeps a private
+/// log), several sentinel subscribers can share one array, so the dispatch
+/// order across subscribers is directly observable.
+pub(all) struct SentinelSubscriber {
+  id_value : String
+  order : Array[String]
+}
+
+///|
+pub fn SentinelSubscriber::SentinelSubscriber(
+  id : String,
+  order : Array[String],
+) -> SentinelSubscriber {
+  { id_value: id, order, }
+}
+
+///|
+pub extend SentinelSubscriber with EventSubscriber::{
+  on_event,
+  provenance,
+  subscriber_id,
+}
+
+///|
+pub impl EventSubscriber for SentinelSubscriber with fn subscriber_id(self) -> String {
+  self.id_value
+}
+
+///|
+pub impl EventSubscriber for SentinelSubscriber with fn provenance(_self) -> String {
+  "sentinel"
+}
+
+///|
+pub impl EventSubscriber for SentinelSubscriber with fn on_event(
+  self,
+  _envelope : EventEnvelope,
+) -> Unit raise SubscriberError {
+  self.order.push(self.id_value)
+}
+
+///|
 /// Subscriber that raises on every event.
 pub(all) struct FailingSubscriber {
   id_value : String
@@ -177,20 +220,22 @@ async test "puppet_events/dispatcher_assigns_monotonic_seq" {
 ///|
 async test "puppet_events/subscribers_invoked_in_registration_order" {
   let d = ev_dispatcher()
-  // Two recording subscribers; verify both get the event but in the order
-  // they were registered (we infer this via the order of pushes to a
-  // shared sentinel subscriber_id list).
-  let rec_a = RecordingSubscriber("a")
-  let rec_b = RecordingSubscriber("b")
-  d.register(rec_a)
-  d.register(rec_b)
+  // Two sentinel subscribers share one array; every dispatch appends the
+  // receiving subscriber's id, so the array records the exact dispatch
+  // order.
+  let order : Array[String] = []
+  let sub_a = SentinelSubscriber("a", order)
+  let sub_b = SentinelSubscriber("b", order)
+  d.register(sub_a)
+  d.register(sub_b)
   d.dispatch(started_event(), 1)
-  // Both received the event.
-  assert_true(rec_a.received().length() == 1)
-  assert_true(rec_b.received().length() == 1)
-  // Both got the same seq.
-  assert_true(rec_a.received()[0].seq == 1)
-  assert_true(rec_b.received()[0].seq == 1)
+  // Exactly one append per subscriber, and registration order holds: a
+  // was invoked before b.
+  assert_eq(order.length(), 2)
+  assert_true(order[0] == "a")
+  assert_true(order[1] == "b")
+  // One dispatch consumed exactly one seq.
+  assert_true(d.next_seq() == 2)
 }
 
 // ──────────────────────────────────────────────────────────────────────────

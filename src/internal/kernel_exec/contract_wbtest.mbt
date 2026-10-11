@@ -76,7 +76,7 @@ test "CallId: accepts non-empty string" {
 test "ToolName: rejects empty string" {
   let result = @kernel.ToolName::checked("")
   match result {
-    Err(_) => ()
+    Err(msg) => assert_true(msg.contains("non-empty"))
     Ok(_) => fail("ToolName(\"\") should reject")
   }
 }
@@ -85,7 +85,7 @@ test "ToolName: rejects empty string" {
 test "RunId: rejects empty string" {
   let result = RunId::checked("")
   match result {
-    Err(_) => ()
+    Err(msg) => assert_true(msg.contains("non-empty"))
     Ok(_) => fail("RunId(\"\") should reject")
   }
 }
@@ -94,7 +94,7 @@ test "RunId: rejects empty string" {
 test "OwnerId: rejects empty string" {
   let result = @kernel.OwnerId::checked("")
   match result {
-    Err(_) => ()
+    Err(msg) => assert_true(msg.contains("non-empty"))
     Ok(_) => fail("OwnerId(\"\") should reject")
   }
 }

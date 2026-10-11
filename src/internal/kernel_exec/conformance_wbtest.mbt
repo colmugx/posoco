@@ -112,12 +112,27 @@ test "GOLDEN C-HAPPY-NO-TOOLS: Start → Model → Completed" {
   )
   let trace = scripted_driver_run(st0, catalog, scripted, golden_start(), 20)
   let final_st = trace.final_state()
-  assert_eq(final_st.phase(), Terminal)
+  // The final message survives the whole driver loop intact.
   match final_st.outcome() {
-    Some(Completed(..)) => ()
+    Some(Completed(final_message~, ..)) =>
+      match final_message {
+        AssistantMessage(content~, ..) =>
+          match content {
+            [Text(text)] => assert_eq(text, "hi")
+            _ => fail("unexpected final message content")
+          }
+        _ => fail("expected an AssistantMessage final message")
+      }
     _ => fail("expected Completed")
   }
-  // Exactly one terminal event.
+  // Driver loop: exactly one CallModel step fed one ModelCompleted input.
+  let steps = trace.steps()
+  assert_eq(steps.length(), 1)
+  assert_eq(steps[0].effect_kind, "CallModel")
+  assert_eq(steps[0].input_kind, "ModelCompleted")
+  // Exactly one terminal event, and it is RunCompleted. (Merged from
+  // C-TERMINAL-EXACTLY-ONCE; the per-transition state coverage lives in
+  // reducer_wbtest.mbt C-HAPPY-NO-TOOLS.)
   let terminals = trace.events().filter(fn(e) { e.is_terminal() })
   assert_eq(terminals.length(), 1)
   match terminals[0] {
@@ -153,21 +168,27 @@ test "GOLDEN C-HAPPY-ONE-TOOL: Model → Tool → Model → Completed" {
       ScriptedModelCompleted(completion_no_tools("done")),
     )
   let trace = scripted_driver_run(st0, catalog, scripted, golden_start(), 30)
-  let final_st = trace.final_state()
-  assert_eq(final_st.phase(), Terminal)
-  match final_st.outcome() {
-    Some(Completed(final_message~, tool_results~)) => {
-      ignore(final_message)
-      assert_eq(tool_results.length(), 1)
-      match tool_results[0] {
-        Success(content~, structured=None) => assert_eq(content, "data")
-        _ => fail("expected one successful tool result")
-      }
-    }
-    _ => fail("expected Completed after one tool round")
+  // Driver loop: CallModel → ExecuteTool → CallModel, in that order. The
+  // terminal state itself is pinned by reducer_wbtest.mbt (C-HAPPY-ONE-TOOL,
+  // C-TOOL-WAVE-OUT-OF-ORDER), so only the driver mechanics are asserted
+  // here.
+  let steps = trace.steps()
+  assert_eq(steps.length(), 3)
+  assert_eq(
+    steps.map(fn(s) { s.effect_kind }).join(","),
+    "CallModel,ExecuteTool,CallModel",
+  )
+  assert_eq(
+    steps.map(fn(s) { s.input_kind }).join(","),
+    "ModelCompleted,ToolCompleted,ModelCompleted",
+  )
+  // Exactly one terminal event closes the Run.
+  let terminals = trace.events().filter(fn(e) { e.is_terminal() })
+  assert_eq(terminals.length(), 1)
+  match terminals[0] {
+    RunCompleted(..) => ()
+    _ => fail("expected RunCompleted terminal event")
   }
-  // 3 driver steps: 1 CallModel + 1 ExecuteTool + 1 CallModel.
-  assert_eq(trace.steps().length(), 3)
 }
 
 ///|
@@ -191,39 +212,22 @@ test "GOLDEN C-MODEL-UNKNOWN-TOOL: NotExecuted, zero ExecuteTool, then re-prompt
       ScriptedModelCompleted(completion_no_tools("ok")),
     )
   let trace = scripted_driver_run(st0, catalog, scripted, golden_start(), 30)
-  let final_st = trace.final_state()
-  assert_eq(final_st.phase(), Terminal)
-  match final_st.outcome() {
-    Some(Completed(final_message~, tool_results~)) => {
-      ignore(final_message)
-      assert_eq(tool_results.length(), 1)
-      match tool_results[0] {
-        NotExecuted(reason=UnknownTool, original_call_id=call_id) =>
-          assert_eq(call_id.to_string(), "c1")
-        _ => fail("expected NotExecuted(UnknownTool) terminal result")
-      }
-    }
-    _ => fail("expected Completed with NotExecuted result")
-  }
-  // Only TWO CallModel steps were executed; no ExecuteTool.
-  let kinds = trace.steps().map(fn(s) { s.effect_kind }).join(",")
-  assert_eq(kinds, "CallModel,CallModel")
-}
-
-///|
-test "GOLDEN C-MODEL-TRANSPORT-FAILURE: ModelFailed → Terminal(Failed)" {
-  let catalog = golden_catalog()
-  let st0 = golden_initial_state()
-  let scripted = ScriptedExecutor().on(
-    EffectId::first(),
-    ScriptedModelFailed(Transport(reason="HTTP 503")),
+  // Driver loop: the rejected call never becomes an ExecuteTool step — the
+  // run goes straight back to a second CallModel.
+  let steps = trace.steps()
+  assert_eq(steps.length(), 2)
+  assert_eq(steps.map(fn(s) { s.effect_kind }).join(","), "CallModel,CallModel")
+  assert_eq(
+    steps.map(fn(s) { s.input_kind }).join(","),
+    "ModelCompleted,ModelCompleted",
   )
-  let trace = scripted_driver_run(st0, catalog, scripted, golden_start(), 20)
-  let final_st = trace.final_state()
-  assert_eq(final_st.phase(), Terminal)
-  match final_st.outcome() {
-    Some(Failed(reason=ModelTransport(..))) => ()
-    _ => fail("expected Failed(ModelTransport)")
+  // The NotExecuted outcome and its correlation are pinned by
+  // reducer_wbtest.mbt C-MODEL-UNKNOWN-TOOL; here only the driver mechanics.
+  let terminals = trace.events().filter(fn(e) { e.is_terminal() })
+  assert_eq(terminals.length(), 1)
+  match terminals[0] {
+    RunCompleted(..) => ()
+    _ => fail("expected RunCompleted terminal event")
   }
 }
 
@@ -251,36 +255,28 @@ test "GOLDEN C-TOOL-RUNTIME-FAILURE: tool runtime error → Run continues" {
       ScriptedModelCompleted(completion_no_tools("ok")),
     )
   let trace = scripted_driver_run(st0, catalog, scripted, golden_start(), 30)
-  let final_st = trace.final_state()
-  // Run continued despite tool failure.
-  assert_eq(final_st.phase(), Terminal)
-  match final_st.outcome() {
-    Some(Completed(final_message~, tool_results~)) => {
-      ignore(final_message)
-      assert_eq(tool_results.length(), 1)
-      match tool_results[0] {
-        RuntimeFailure(error_category~, message~) => {
-          assert_eq(error_category, "Transport")
-          assert_eq(message, "reset")
-        }
-        _ => fail("expected RuntimeFailure terminal result")
-      }
-    }
-    _ => fail("expected Completed despite tool runtime failure")
-  }
-}
-
-///|
-test "GOLDEN C-TERMINAL-EXACTLY-ONCE: every Run ends with exactly 1 terminal event" {
-  let catalog = golden_catalog()
-  let st0 = golden_initial_state()
-  let scripted = ScriptedExecutor().on(
-    EffectId::first(),
-    ScriptedModelCompleted(completion_no_tools("ok")),
+  // Driver loop: the failed tool still completes its wave (as a
+  // ToolFailed(runtime) input), and the loop continues with a second
+  // CallModel step.
+  let steps = trace.steps()
+  assert_eq(steps.length(), 3)
+  assert_eq(
+    steps.map(fn(s) { s.effect_kind }).join(","),
+    "CallModel,ExecuteTool,CallModel",
   )
-  let trace = scripted_driver_run(st0, catalog, scripted, golden_start(), 20)
+  assert_eq(
+    steps.map(fn(s) { s.input_kind }).join(","),
+    "ModelCompleted,ToolFailed(runtime),ModelCompleted",
+  )
+  // RuntimeFailure content and the ReadyForModel continuation are pinned by
+  // reducer_wbtest.mbt C-TOOL-RUNTIME-FAILURE; here only the driver
+  // mechanics plus exactly-one-terminal-event.
   let terminals = trace.events().filter(fn(e) { e.is_terminal() })
   assert_eq(terminals.length(), 1)
+  match terminals[0] {
+    RunCompleted(..) => ()
+    _ => fail("expected RunCompleted terminal event")
+  }
 }
 
 ///|
@@ -427,7 +423,10 @@ test "GOLDEN C-HAPPY-REVERSE-TOOL-COMPLETION: terminal results preserve call ord
   )
   let tools_state = tools_out.next_state()
   let effects = tools_out.effects()
-  assert_eq(effects.length(), 2)
+  // Wave size / effect-shape coverage is pinned by reducer_wbtest.mbt
+  // C-TOOL-WAVE-OUT-OF-ORDER; the unique value asserted here is the
+  // TERMINAL RunOutcome ordering (Completed.tool_results) after a further
+  // model step.
   let (first_effect_id, first_call_id) = match effects[0] {
     ExecuteTool(effect_id~, payload~) => (effect_id, payload.call_id)
     _ => fail("expected first ExecuteTool effect")
@@ -519,8 +518,17 @@ test "GOLDEN C-UNSCRIPTED-EFFECT: missing script raises fixture error" {
   )
   let result = scripted_driver_run(st0, catalog, scripted, golden_start(), 30)
   assert_eq(result.final_state().phase(), Terminal)
+  // Pinned fixture-documentation behaviour: an effect with no configured
+  // script defaults to ScriptedToolInvariant(StaleCorrelation(effect_id))
+  // (see ScriptedExecutor::lookup), which the reducer turns into a terminal
+  // Failed(InvariantViolation(StaleCorrelation)).
   match result.final_state().outcome() {
-    Some(Failed(..)) => ()
-    _ => fail("expected Failed outcome, got outcome")
+    Some(Failed(reason=InvariantViolation(category~))) =>
+      match category {
+        StaleCorrelation(effect_id~) =>
+          assert_eq(effect_id, EffectId::first().next())
+        _ => fail("expected StaleCorrelation, got \{category.to_string()}")
+      }
+    _ => fail("expected Failed(InvariantViolation(StaleCorrelation))")
   }
 }

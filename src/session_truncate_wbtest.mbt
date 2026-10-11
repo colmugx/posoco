@@ -135,6 +135,8 @@ async test "rewind_truncate_default_impl_labels_load_and_save_failures" {
     Err(Save(msg)) => assert_true(msg.contains("operation='truncate'"))
     _ => fail("expected SessionError::Save from truncate")
   }
+  // A failed truncate must not partially commit: nothing was saved.
+  assert_eq(store.saved.length(), 0)
 }
 
 // ---------------------------------------------------------------------------

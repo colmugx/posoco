@@ -179,7 +179,14 @@ async test "m35_builtin/idle_compact_reports_modelport_failure_not_locked_sessio
       Map::from_array([("session_id", Json::string("fail-session"))]),
     ),
   )
-  assert_true(retry is Failure(_))
+  match retry {
+    Failure(reason~) =>
+      assert_true(
+        reason.contains("compact failed"),
+        msg="retry must fail with the same model-port failure class",
+      )
+    _ => fail("expected the retried compact to fail the same way")
+  }
 }
 
 ///|

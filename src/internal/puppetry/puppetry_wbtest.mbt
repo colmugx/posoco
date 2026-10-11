@@ -1,16 +1,9 @@
 ///|
 /// Focused Puppet-pump regression tests using the canonical FixtureHost.
 
-///|
-async test "puppet/pump_forwards_catalog_definitions_to_host" {
-  let host = FixtureHost([Ok(fixture_stop("done"))], Map::from_array([]))
-  let journal = InMemoryJournal()
-  let puppet = Puppet(
-    fixture_config(host, fixture_tool_catalog("visible"), journal, [], []),
-  )
-  assert_true(fixture_prompt(puppet, "forward_catalog") is Accepted(_))
-  assert_eq(host.observed_definition_count(), 1)
-}
+// "puppet/pump_forwards_catalog_definitions_to_host" removed: the catalog
+// definition count it asserted is already pinned by "puppet/C-SINGLE-TOOL"
+// (`host.observed_definition_count() == 1`) in fixture_wbtest.
 
 ///|
 async test "puppet/pump_executes_only_reducer_declared_effects" {

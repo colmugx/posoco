@@ -120,6 +120,67 @@ async test "tk_model_fail_step_raises_typed_model_error" {
   }
 }
 
+///|
+async test "tk_model_records_deep_snapshot_on_failure" {
+  let model = ScriptedModel([CompactFail(error=Transport("rejected"))])
+  let tool = tk_tool_def("echo", "snapshot schema")
+  let tools = [tool]
+  let result : Result[@kernel.CompactResult, @error.ModelError] = Ok(
+    (model as &@port.ModelPort).compact(
+      tk_scope(),
+      [],
+      tools,
+      @types.ChatOptions::{ temperature: None, max_output_tokens: None, },
+      Manual,
+    ),
+  ) catch {
+    e => Err(e)
+  }
+  match result {
+    Err(Transport(msg)) => assert_true(msg.contains("rejected"))
+    _ => fail("expected Transport from CompactFail step")
+  }
+  tools.clear()
+  assert_eq(model.received_compact_tools[0].length(), 1)
+  assert_true(model.received_compact_tools[0][0] == tool)
+  guard tool.input_schema is Object(fields) else {
+    fail("expected object schema")
+  }
+  fields["later"] = Json::string("mutation")
+  assert_false(model.received_compact_tools[0][0] == tool)
+}
+
+// ---------------------------------------------------------------------------
+// ScriptedMemoryPort: store / search / delete recording contract
+// ---------------------------------------------------------------------------
+
+///|
+/// Storage and retrieval side of the port contract, through the testkit fake
+/// every memory test composes: writes route through `store` (ticketed),
+/// queries through `search`, removals through `delete` — all recorded in
+/// call order with their arguments.
+async test "tk_memory_port_store_search_delete_contract" {
+  let mem = ScriptedMemoryPort(inbounds=[Some("fact")], search_script=[
+    Some("hit"),
+  ])
+  let port = mem as &@port.MemoryPort
+  let ticket = port.store(content="entry", metadata=Map::from_array([]))
+  assert_eq(ticket, "scripted-0")
+  let second = port.store(content="another", metadata=Map::from_array([]))
+  assert_eq(second, "scripted-1")
+  let found = port.search(query="entry")
+  assert_eq(found, Some("hit"))
+  port.delete(ticket)
+  assert_eq(mem.received_stores().length(), 2)
+  let (content, metadata) = mem.received_stores()[0]
+  assert_eq(content, "entry")
+  assert_eq(metadata.length(), 0)
+  assert_eq(mem.received_deletes(), ["scripted-0"])
+  assert_eq(mem.received_searches(), [("entry", None)])
+  // Past the script, search degrades to a clean no-hit.
+  assert_eq(port.search(query="anything"), None)
+}
+
 // ---------------------------------------------------------------------------
 // RecordingToolProvider: routing + recording
 // ---------------------------------------------------------------------------

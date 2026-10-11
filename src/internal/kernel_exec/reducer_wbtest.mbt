@@ -464,6 +464,107 @@ test "C-MODEL-TRANSPORT-FAILURE: ModelFailed(Transport) → Terminal(Failed)" {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
+// C-MODEL-FAILURE-MAPPING — every ModelFailure variant must land on its
+// documented FailureReason (reducer_model.mbt reduce_model_failed). Transport
+// is covered above; the remaining five variants are classified here.
+// ──────────────────────────────────────────────────────────────────────────
+
+///|
+/// Drive one AwaitingModel state through `ModelFailed` with the given
+/// failure and return the terminal `FailureReason` the reducer classified.
+fn model_failure_reason(failure : @kernel.ModelFailure) -> FailureReason raise {
+  let (st_awaiting, eff_id, step_id) = run_until_awaiting_model()
+  let catalog = make_catalog_v1()
+  let out = reduce(
+    st_awaiting,
+    catalog,
+    ModelFailed(payload={ effect_id: eff_id, model_step_id: step_id, failure, }),
+  )
+  let st = out.next_state()
+  assert_eq(st.phase(), Terminal)
+  match st.outcome() {
+    Some(Failed(reason~)) => reason
+    _ => fail("expected Failed outcome for ModelFailed input")
+  }
+}
+
+///|
+test "C-MODEL-FAILURE-MAPPING: RequestBuild → ModelParseFailure" {
+  let reason = model_failure_reason(RequestBuild(reason="cannot build request"))
+  match reason {
+    ModelParseFailure(detail~) => assert_eq(detail, "cannot build request")
+    _ => fail("expected ModelParseFailure, got \{reason.to_string()}")
+  }
+}
+
+///|
+test "C-MODEL-FAILURE-MAPPING: Runtime → ModelRuntime" {
+  let reason = model_failure_reason(Runtime(reason="kernel panic"))
+  match reason {
+    ModelRuntime(detail~) => assert_eq(detail, "kernel panic")
+    _ => fail("expected ModelRuntime, got \{reason.to_string()}")
+  }
+}
+
+///|
+test "C-MODEL-FAILURE-MAPPING: Parse → ModelParseFailure" {
+  let reason = model_failure_reason(Parse(reason="malformed stream chunk"))
+  match reason {
+    ModelParseFailure(detail~) => assert_eq(detail, "malformed stream chunk")
+    _ => fail("expected ModelParseFailure, got \{reason.to_string()}")
+  }
+}
+
+///|
+test "C-MODEL-FAILURE-MAPPING: HostRejected → HostRejected" {
+  let reason = model_failure_reason(HostRejected(reason="policy gate"))
+  match reason {
+    HostRejected(detail~) => assert_eq(detail, "policy gate")
+    _ => fail("expected HostRejected, got \{reason.to_string()}")
+  }
+}
+
+///|
+test "C-MODEL-FAILURE-MAPPING: RateLimited → ModelQuotaExhausted keeping reset_at_ms and provider_code" {
+  let reason = model_failure_reason(
+    RateLimited(
+      reason="quota exceeded",
+      reset_at_ms=Some(1712345678901L),
+      provider_code=Some("rate_limit_exceeded"),
+    ),
+  )
+  // error.mbt requires reset_at_ms and provider_code to survive to the
+  // FailureReason so schedulers can retry at the stated reset time.
+  match reason {
+    ModelQuotaExhausted(detail~, reset_at_ms~, provider_code~) => {
+      assert_eq(detail, "quota exceeded")
+      assert_eq(reset_at_ms, Some(1712345678901L))
+      assert_eq(provider_code, Some("rate_limit_exceeded"))
+    }
+    _ => fail("expected ModelQuotaExhausted, got \{reason.to_string()}")
+  }
+  // The Show form keeps the scheduling data readable at the boundary.
+  let rendered = reason.to_string()
+  assert_true(rendered.contains("rate_limit_exceeded"))
+  assert_true(rendered.contains("1712345678901"))
+}
+
+///|
+test "C-MODEL-FAILURE-MAPPING: RateLimited with None scheduling data still classifies" {
+  let reason = model_failure_reason(
+    RateLimited(reason="429", reset_at_ms=None, provider_code=None),
+  )
+  match reason {
+    ModelQuotaExhausted(detail~, reset_at_ms~, provider_code~) => {
+      assert_eq(detail, "429")
+      assert_true(reset_at_ms is None)
+      assert_true(provider_code is None)
+    }
+    _ => fail("expected ModelQuotaExhausted, got \{reason.to_string()}")
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // C-INVARIANT-DUPLICATE-CALL-ID (within model completion)
 // ──────────────────────────────────────────────────────────────────────────
 

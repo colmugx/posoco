@@ -123,7 +123,14 @@ async fn compact_tools_idle(fail_compact : Bool, refresh : Bool) -> Unit {
     e => Err(e)
   }
   if fail_compact {
-    assert_true(result is Err(_))
+    guard result is Err(Runtime(@error.RuntimeError::InvocationFailed(detail))) else {
+      fail(
+        "expected the failed manual compact to surface a runtime invocation failure",
+      )
+    }
+    assert_true(detail.contains("phase=compact_session"))
+    assert_true(detail.contains("ModelFailure::Transport"))
+    assert_true(detail.contains("compact rejected"))
     assert_true(store.store[id].messages == before)
     assert_true(model.committed_at_compact[0] == before)
   } else {
@@ -261,7 +268,13 @@ async fn compact_tools_midturn(fail_compact : Bool) -> Unit {
     ignore(task.wait())
   })
   if fail_compact {
-    assert_true(outcome.val is Err(_))
+    guard outcome.val
+      is Err(Runtime(@error.RuntimeError::InvocationFailed(detail))) else {
+      fail("expected the turn to fail with the compact transport error")
+    }
+    assert_true(detail.contains("modelport compact failed"))
+    assert_true(detail.contains("ModelFailure::Transport"))
+    assert_true(detail.contains("compact rejected"))
     // The final tool-wave facts may commit after the failed attempt. No
     // compact rewrite is committed: the result is the un-compacted input,
     // retaining every message already committed before the attempt.
@@ -427,31 +440,4 @@ async test "compact_tools/default Agent idle manual forwards composed definition
   ignore(agent.compact_session("tools-composed"))
   assert_eq(model.call_count(), 0)
   assert_true(model.received_compact_tools == [expected])
-}
-
-///|
-async test "compact_tools/testkit records a deep snapshot even on failure" {
-  let model = ScriptedModel([CompactFail(error=Transport("rejected"))])
-  let tool = tk_tool_def("echo", "snapshot schema")
-  let tools = [tool]
-  let result : Result[@kernel.CompactResult, @error.ModelError] = Ok(
-    (model as &@port.ModelPort).compact(
-      tk_scope(),
-      [],
-      tools,
-      @types.ChatOptions::{ temperature: None, max_output_tokens: None, },
-      Manual,
-    ),
-  ) catch {
-    e => Err(e)
-  }
-  assert_true(result is Err(_))
-  tools.clear()
-  assert_eq(model.received_compact_tools[0].length(), 1)
-  assert_true(model.received_compact_tools[0][0] == tool)
-  guard tool.input_schema is Object(fields) else {
-    fail("expected object schema")
-  }
-  fields["later"] = Json::string("mutation")
-  assert_false(model.received_compact_tools[0][0] == tool)
 }
