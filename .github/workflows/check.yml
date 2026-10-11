@@ -84,7 +84,7 @@ jobs:
       - name: moon test (release)
         run: moon test --release
 
-  native-test:
+  test:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -106,38 +106,10 @@ jobs:
 
       # target-gated test files (e.g. error_transparency_shutdown_native_test.mbt)
       # run only when the target is requested explicitly
-      - name: moon check/test (native, full suite)
+      - name: moon check/test
         run: |
-          moon check --target native
-          moon test --target native
-
-  js-test:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: install
-        run: |
-          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
-          echo "$HOME/.moon/bin" >> $GITHUB_PATH
-
-      - name: moon version
-        run: |
-          moon version --all
-          moonrun --version
-
-      - name: moon update
-        run: |
-          moon update
-
-      - name: moon check
-        run: |
-          moon check --target js
-
-      - name: moon test
-        run: |
-          moon test --target js
+          moon check
+          moon test
 
   moon-format:
     runs-on: ubuntu-latest
