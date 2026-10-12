@@ -18,7 +18,7 @@ priv struct BuiltinCommandPort {
   runtime : Ref[AgentRuntime?]
   /// Monotonic counter for command ids. Lives on the port so successive
   /// invokes produce distinct ids without needing wall-clock time.
-  mut seq : Int
+  mut seq : Int32
   mut compact_enabled : Bool
   mut fork_enabled : Bool
 }
@@ -266,7 +266,7 @@ extend BuiltinCommandPort with @port.CommandPort::{commands, invoke}
 /// by passing a positive index). A future iteration can return the
 /// current transcript length when omitted, but that requires the
 /// transcript reference the BuiltinCommandPort does not hold today.
-fn parse_fork_index(args : Json) -> Int {
+fn parse_fork_index(args : Json) -> Int32 {
   match args {
     Object(map) =>
       if map.contains("index") {

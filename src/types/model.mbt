@@ -9,17 +9,17 @@ pub(all) enum StreamChunk {
   TextDelta(token~ : String)
   ReasoningDelta(token~ : String)
   ToolCallDelta(
-    index~ : Int,
+    index~ : Int32,
     id~ : String?,
     name~ : String?,
     arguments_delta~ : String?
   )
   Usage(
-    input_tokens~ : Int,
-    output_tokens~ : Int,
-    total_tokens~ : Int,
-    cached_input_tokens~ : Int?,
-    uncached_input_tokens~ : Int?
+    input_tokens~ : Int32,
+    output_tokens~ : Int32,
+    total_tokens~ : Int32,
+    cached_input_tokens~ : Int32?,
+    uncached_input_tokens~ : Int32?
   )
   Finish(reason~ : String)
 } derive(Eq, Debug)
@@ -121,11 +121,11 @@ pub struct StreamAccumulator {
   priv reasoning_buf : StringBuilder
   priv tool_calls : Array[ToolCallBuilder]
   priv mut finish_reason : String
-  priv mut usage_input : Int?
-  priv mut usage_cached : Int?
-  priv mut usage_uncached : Int?
-  priv mut usage_output : Int?
-  priv mut usage_total : Int?
+  priv mut usage_input : Int32?
+  priv mut usage_cached : Int32?
+  priv mut usage_uncached : Int32?
+  priv mut usage_output : Int32?
+  priv mut usage_total : Int32?
 } derive(Debug)
 
 ///|

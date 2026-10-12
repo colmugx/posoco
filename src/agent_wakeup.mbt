@@ -12,7 +12,7 @@
 
 ///|
 /// Envelope key cap: tags beyond this length are rejected at admission.
-let wakeup_tag_max_length : Int = 80
+let wakeup_tag_max_length : Int32 = 80
 
 ///|
 priv struct WakeupPending {
@@ -22,11 +22,11 @@ priv struct WakeupPending {
   /// Latest requirement generation seen for this key (port §4): refreshed
   /// by every request, so a snapshot taken before the latest request can
   /// never satisfy the entry.
-  mut latest_requirement : Int
+  mut latest_requirement : Int32
   /// Activation generation this ticket was admitted under: the binding
   /// generation of the window that owned it. A later binding change makes
   /// the ticket stale forever, even if the same session is bound again.
-  activation : Int
+  activation : Int32
 }
 
 ///|
@@ -41,16 +41,16 @@ priv struct AgentWakeupRuntime {
   /// Bumped on every binding change. Pending tickets carry the generation
   /// they were admitted under; the pump rejects mismatched ones, so a
   /// dropped window's tickets can never execute after a switch back.
-  mut active_generation : Int
-  mut next_ticket_seq : Int
-  mut next_operation_seq : Int
+  mut active_generation : Int32
+  mut next_ticket_seq : Int32
+  mut next_operation_seq : Int32
   /// Pump notification primitive. Signalled on: new request, operation
   /// settled, shutdown.
   wake : @async.CondVar
   /// Monotonic count of those state changes. Waiters compare epochs instead
   /// of trusting broadcast timing, so a notification landing between a
   /// condition check and `wait` can never be lost.
-  mut epoch : Int
+  mut epoch : Int32
   /// Composed observers for the wakeup lifecycle projection.
   observers : Array[&@port.Observer]
   /// Pending tickets in FIFO execution order.
@@ -58,7 +58,7 @@ priv struct AgentWakeupRuntime {
   /// session → tag → pending entry (coalescing lookup).
   by_key : Map[String, Map[String, WakeupPending]]
   /// Per-session latest requirement generation, bumped on every request.
-  generations : Map[String, Int]
+  generations : Map[String, Int32]
   /// Armed input cutoff of the one ordinary turn currently between its
   /// input snapshot and its committed run start. Keyed by that run's id;
   /// commit and unwind both match the key, so cleanup can never remove
@@ -177,8 +177,8 @@ fn AgentWakeupRuntime::emit_wakeup_event(
   self : AgentWakeupRuntime,
   label : String,
   entry : WakeupPending,
-  operation_id? : String? = None,
-  envelope? : String? = None,
+  operation_id~ : String? = None,
+  envelope~ : String? = None,
 ) -> Unit {
   let ticket = entry.ticket
   let fields : Array[(String, Json)] = [
@@ -295,7 +295,7 @@ fn AgentWakeupRuntime::request(
 fn AgentWakeupRuntime::satisfy_covered(
   self : AgentWakeupRuntime,
   session_id : String,
-  cutoff : Int,
+  cutoff : Int32,
   operation_id : String,
 ) -> Unit {
   let covered : Array[WakeupPending] = []
@@ -390,7 +390,7 @@ fn AgentWakeupRuntime::notify_state_change(self : AgentWakeupRuntime) -> Unit {
 /// between the Busy rejection and this wait) and must not be slept through.
 async fn AgentWakeupRuntime::wait_for_change(
   self : AgentWakeupRuntime,
-  seen : Int,
+  seen : Int32,
 ) -> Unit {
   if self.epoch == seen {
     self.wake.wait()
@@ -433,7 +433,7 @@ async fn AgentWakeupRuntime::pump_loop(
 /// JSON string-escaped via `Json::stringify` — the envelope's `"` / `[` /
 /// `]` delimiters can no longer appear unescaped inside the value, so the
 /// header closes exactly once no matter what the tag contains.
-fn wakeup_envelope_field(value : String, cap : Int) -> String {
+fn wakeup_envelope_field(value : String, cap : Int32) -> String {
   Json::string(bounded_error_label(value, cap))
   .stringify()
   .replace(old="[", new="\\u005b")

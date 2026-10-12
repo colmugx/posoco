@@ -92,7 +92,7 @@ pub(all) suberror DecisionError {
   Transport(String)
   ResponseParse(String)
   RateLimited(RateLimitInfo)
-  TimedOut(timeout_ms~ : Int)
+  TimedOut(timeout_ms~ : Int32)
 } derive(Debug)
 
 ///|
@@ -203,7 +203,7 @@ pub(all) suberror AgentError {
   Runtime(RuntimeError)
   /// The kernel tool-round budget rejected a batch. `consumed` is the round
   /// count at rejection (`limit + 1`); `limit` is the configured bound.
-  ToolLoopExceeded(consumed~ : Int, limit~ : Int)
+  ToolLoopExceeded(consumed~ : Int32, limit~ : Int32)
   /// The Agent already holds one admitted operation (turn, resume, compact,
   /// or wakeup). `operation_id` and `session` identify the incumbent so the
   /// loser can schedule around it; consumers must match on this variant and

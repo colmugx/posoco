@@ -114,7 +114,7 @@ pub fn scripted_driver_run(
   catalog : ToolCatalogSnapshot,
   scripted : ScriptedExecutor,
   start : StartPayload,
-  max_iterations : Int,
+  max_iterations : Int32,
 ) -> DriverTrace raise KernelError {
   let start_input : RunInput = Start(payload=start)
   let out0 = reduce(initial_state, catalog, start_input)

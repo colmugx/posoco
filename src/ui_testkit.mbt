@@ -30,7 +30,7 @@ pub(all) struct RecordingUiPort {
 /// Construct with a list of scripted responses. They will be returned in
 /// order, one per `request` call.
 pub fn RecordingUiPort::RecordingUiPort(
-  responses? : Array[@port.UiResponse] = [],
+  responses~ : Array[@port.UiResponse] = [],
 ) -> RecordingUiPort {
   {
     rendered: [],
@@ -59,7 +59,7 @@ pub fn RecordingUiPort::rendered_intents(
 
 ///|
 /// Number of render calls received.
-pub fn RecordingUiPort::render_count(self : RecordingUiPort) -> Int {
+pub fn RecordingUiPort::render_count(self : RecordingUiPort) -> Int32 {
   self.rendered.length()
 }
 
@@ -84,7 +84,7 @@ pub fn RecordingUiPort::rendered_in_slot(
 /// a scripted response). Useful to assert that no extra requests happened.
 pub fn RecordingUiPort::unconsumed_response_count(
   self : RecordingUiPort,
-) -> Int {
+) -> Int32 {
   self.scripted_responses.length()
 }
 

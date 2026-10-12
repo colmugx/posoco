@@ -11,14 +11,14 @@
 /// canonical prefix.
 priv struct SessionCheckpointSubscriber {
   stores : Array[&@port.SessionStore]
-  cursors : Map[String, Int]
+  cursors : Map[String, Int32]
   dirty : Map[String, Bool]
 }
 
 ///|
 fn SessionCheckpointSubscriber::SessionCheckpointSubscriber(
   stores : Array[&@port.SessionStore],
-  cursors : Map[String, Int],
+  cursors : Map[String, Int32],
   dirty : Map[String, Bool],
 ) -> SessionCheckpointSubscriber {
   { stores, cursors, dirty, }
@@ -155,7 +155,7 @@ priv struct AgentEventSubscriber {
 fn AgentEventSubscriber::AgentEventSubscriber(
   observers : Array[&@port.Observer],
   chunk_dispatcher : Ref[ChunkDispatcher?],
-  context_state_of? : Ref[((String) -> @types.ContextState?)?] = Ref(None),
+  context_state_of~ : Ref[((String) -> @types.ContextState?)?] = Ref(None),
 ) -> AgentEventSubscriber {
   {
     observers,

@@ -46,7 +46,7 @@ pub struct TurnSnapshot {
   policy : RunPolicy
   /// Optional deadline wall-clock timestamp. Carried verbatim from the
   /// host; the Kernel sees it via RunInput::DeadlineReached.
-  deadline : Int?
+  deadline : Int32?
   /// Provenance summaries for hooks/lifecycle/subscribers. Strings only —
   /// the snapshot never holds trait references.
   hook_provenance : Array[String]
@@ -77,7 +77,7 @@ pub(all) struct RunPolicy {
   call_options : Json
   budget : Budget
   /// Token budget ceiling for auto-compact. `None` disables auto-compact.
-  context_window : Int?
+  context_window : Int32?
   /// Fraction of `context_window` at which auto-compact fires.
   compact_threshold : Double
 } derive(Eq, Debug)
@@ -98,7 +98,7 @@ pub(all) struct TurnSnapshotInput {
   session_id : SessionId
   catalog : ToolCatalogSnapshot
   policy : RunPolicy
-  deadline : Int?
+  deadline : Int32?
   hook_provenance : Array[String]
   lifecycle_provenance : Array[String]
   subscriber_provenance : Array[String]
@@ -288,7 +288,7 @@ fn compute_fingerprint(input : TurnSnapshotInput, policy : RunPolicy) -> String 
 }
 
 ///|
-fn compare_strings(a : String, b : String) -> Int {
+fn compare_strings(a : String, b : String) -> Int32 {
   if a < b {
     -1
   } else if a > b {
@@ -299,7 +299,7 @@ fn compare_strings(a : String, b : String) -> Int {
 }
 
 ///|
-fn opt_to_str(n : Int?) -> String {
+fn opt_to_str(n : Int32?) -> String {
   match n {
     Some(v) => v.to_string()
     None => "_"
@@ -354,7 +354,7 @@ pub fn TurnSnapshot::budget(self : TurnSnapshot) -> Budget {
 }
 
 ///|
-pub fn TurnSnapshot::context_window(self : TurnSnapshot) -> Int? {
+pub fn TurnSnapshot::context_window(self : TurnSnapshot) -> Int32? {
   self.policy.context_window
 }
 
@@ -364,7 +364,7 @@ pub fn TurnSnapshot::compact_threshold(self : TurnSnapshot) -> Double {
 }
 
 ///|
-pub fn TurnSnapshot::deadline(self : TurnSnapshot) -> Int? {
+pub fn TurnSnapshot::deadline(self : TurnSnapshot) -> Int32? {
   self.deadline
 }
 

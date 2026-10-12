@@ -1,5 +1,5 @@
 ///|
-fn qc_letters(seed : Int) -> String {
+fn qc_letters(seed : Int32) -> String {
   let n = seed % 8 + 1
   let buf = StringBuilder()
   for i in 0..<n {
@@ -21,10 +21,10 @@ struct QcSlot {
 pub extend QcSlot with Debug::{to_repr}
 
 ///|
-fn qc_slot(idx : Int, kind : Int, val : Int, flag : Int) -> QcSlot {
+fn qc_slot(idx : Int32, kind : Int32, val : Int32, flag : Int32) -> QcSlot {
   // 缩水可能产生负种子；归一化到文档声明的非负值域。
   // Int::MIN 取反回绕仍为负，需单独映射。
-  let norm = fn(i : Int) -> Int {
+  let norm = fn(i : Int32) -> Int32 {
     if i == -2147483648 {
       2147483647
     } else if i < 0 {
@@ -92,7 +92,7 @@ fn qc_slot(idx : Int, kind : Int, val : Int, flag : Int) -> QcSlot {
 }
 
 ///|
-fn qc_render_case(seeds : Array[(Int, Int, Int)]) -> String {
+fn qc_render_case(seeds : Array[(Int32, Int32, Int32)]) -> String {
   let tokens : Array[String] = []
   for i, seed in seeds {
     let (kind, val, flag) = seed
@@ -107,7 +107,7 @@ fn qc_render_case(seeds : Array[(Int, Int, Int)]) -> String {
 ///|
 test "qc parse_slash_args round trip and default fill" {
   @qc.check(
-    (seeds : Array[(Int, Int, Int)]) => {
+    (seeds : Array[(Int32, Int32, Int32)]) => {
       let slots = seeds.mapi(fn(i, seed) {
         let (kind, val, flag) = seed
         qc_slot(i, kind, val, flag)

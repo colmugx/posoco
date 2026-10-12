@@ -3,7 +3,7 @@
 /// R3 M3.7: all fixtures use canonical kernel types directly.
 struct MockModelPort {
   responses : Array[@kernel.ModelCallResult]
-  mut index : Int
+  mut index : Int32
 }
 
 ///|

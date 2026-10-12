@@ -15,7 +15,7 @@ priv struct WakeupCutoffArm {
   key : String
   session : String
   /// Latest requirement generation captured for `session` at arm time.
-  cutoff : Int
+  cutoff : Int32
   /// Actual root operation id of the arming turn, captured at arm time.
   operation_id : String
 }

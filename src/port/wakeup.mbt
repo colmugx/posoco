@@ -71,7 +71,7 @@ pub fn WakeupPort::request(
   self : WakeupPort,
   session~ : String,
   tag~ : String,
-  note? : String = "",
+  note~ : String = "",
 ) -> Result[WakeupTicket, WakeupError] {
   (self.request_)(session, tag, note)
 }

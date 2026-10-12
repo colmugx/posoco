@@ -269,9 +269,9 @@ fn remove_execute_tool_effect(
 fn tool_call_position(
   transcript : @kernel.Transcript,
   call_id : @kernel.CallId,
-) -> Int? {
+) -> Int32? {
   let mut position = 0
-  let mut found : Int? = None
+  let mut found : Int32? = None
   for message in transcript.messages_snapshot() {
     match message {
       AssistantMessage(tool_calls~, ..) =>
@@ -303,7 +303,7 @@ fn insert_tool_message_in_source_order(
     None =>
       return transcript.append(ToolMessage(call_id~, tool_name~, outcome~))
   }
-  let mut assistant_index : Int? = None
+  let mut assistant_index : Int32? = None
   for i, message in messages {
     match message {
       AssistantMessage(tool_calls~, ..) =>
@@ -386,14 +386,16 @@ fn insert_tool_result_in_source_order(
 /// Fallback source position for call ids no longer present in the transcript
 /// (e.g. after a rewrite that removed the owning assistant message). Sorts
 /// to the end, matching the previous append-at-end behavior.
-let missing_tool_position : Int = 2147483647
+let missing_tool_position : Int32 = 2147483647
 
 ///|
 /// Insertion-sort an array of staged tool records by source position. Used
 /// instead of `Array::sort` because the tuple contains `CallId`, which does
 /// not implement `Compare`.
 fn sort_tool_records_by_position(
-  records : Array[(@kernel.CallId, @kernel.ToolName, @kernel.ToolOutcome, Int)],
+  records : Array[
+    (@kernel.CallId, @kernel.ToolName, @kernel.ToolOutcome, Int32),
+  ],
 ) -> Unit {
   for i = 1; i < records.length(); i = i + 1 {
     let key = records[i]
@@ -409,7 +411,7 @@ fn sort_tool_records_by_position(
 ///|
 /// Insertion-sort an array of tool-result records by source position.
 fn sort_result_records_by_position(
-  records : Array[(@kernel.CallId, @kernel.ToolOutcome, Int)],
+  records : Array[(@kernel.CallId, @kernel.ToolOutcome, Int32)],
 ) -> Unit {
   for i = 1; i < records.length(); i = i + 1 {
     let key = records[i]
@@ -426,7 +428,9 @@ fn sort_result_records_by_position(
 /// Build an incremental ledger mapping each call id in the transcript to its
 /// stable source position among all assistant messages. Scans the transcript
 /// once per wave declaration / rewrite, not once per result.
-fn build_tool_call_ledger(transcript : @kernel.Transcript) -> Map[String, Int] {
+fn build_tool_call_ledger(
+  transcript : @kernel.Transcript,
+) -> Map[String, Int32] {
   let ledger = Map::from_array([])
   let mut position = 0
   for message in transcript.messages_snapshot() {
@@ -447,8 +451,8 @@ fn build_tool_call_ledger(transcript : @kernel.Transcript) -> Map[String, Int] {
 /// ids. All staged results in one wave belong to the same assistant message.
 fn find_owning_assistant_index(
   messages : Array[@kernel.Message],
-  staged : Map[String, (@kernel.ToolName, @kernel.ToolOutcome, Int)],
-) -> Int? {
+  staged : Map[String, (@kernel.ToolName, @kernel.ToolOutcome, Int32)],
+) -> Int32? {
   for i, message in messages {
     match message {
       AssistantMessage(tool_calls~, ..) => {
@@ -475,13 +479,13 @@ fn find_owning_assistant_index(
 /// tool-result array. This is O(N) once per wave instead of O(K·N) per result.
 fn commit_tool_wave(
   transcript : @kernel.Transcript,
-  ledger : Map[String, Int],
-  staged : Map[String, (@kernel.ToolName, @kernel.ToolOutcome, Int)],
+  ledger : Map[String, Int32],
+  staged : Map[String, (@kernel.ToolName, @kernel.ToolOutcome, Int32)],
   existing_tool_results : Array[(@kernel.CallId, @kernel.ToolOutcome)],
 ) -> (@kernel.Transcript, Array[(@kernel.CallId, @kernel.ToolOutcome)]) {
   // Sort staged results by source position; missing positions sort to the end.
   let staged_records : Array[
-    (@kernel.CallId, @kernel.ToolName, @kernel.ToolOutcome, Int),
+    (@kernel.CallId, @kernel.ToolName, @kernel.ToolOutcome, Int32),
   ] = []
   for id_str, entry in staged {
     let (tool_name, outcome, position) = entry
@@ -502,7 +506,7 @@ fn commit_tool_wave(
       }
       // Collect existing ToolMessages immediately after the assistant.
       let existing_tool_records : Array[
-        (@kernel.CallId, @kernel.ToolName, @kernel.ToolOutcome, Int),
+        (@kernel.CallId, @kernel.ToolName, @kernel.ToolOutcome, Int32),
       ] = []
       let mut remaining_start = idx + 1
       for i in (idx + 1)..<messages.length() {
@@ -552,7 +556,7 @@ fn commit_tool_wave(
 
   // Build new tool-result ledger by merging existing results with staged ones
   // in global source order.
-  let combined_results : Array[(@kernel.CallId, @kernel.ToolOutcome, Int)] = []
+  let combined_results : Array[(@kernel.CallId, @kernel.ToolOutcome, Int32)] = []
   for record in existing_tool_results {
     let (call_id, outcome) = record
     let pos = match ledger.get(call_id.to_string()) {

@@ -20,7 +20,7 @@
 /// reducer allocates these (the reducer is allowed to do arithmetic, just not
 /// IO/time). Each `CallModel` effect carries the model-step id it belongs to.
 pub(all) struct ModelStepId {
-  value : Int
+  value : Int32
 } derive(Eq, Debug)
 
 ///|
@@ -56,7 +56,7 @@ pub fn ModelStepId::next(
 /// over `first`/`next`, not for arbitrary externally constructed values.)
 pub fn ModelStepId::to_int(
   self : ModelStepId,
-) -> Int where {
+) -> Int32 where {
   proof_ensure: result => result == self.value,
 } {
   self.value
@@ -73,7 +73,7 @@ pub impl Show for ModelStepId with fn to_string(self : ModelStepId) -> String {
 ///|
 /// Monotonic sequence counter for KernelEvents. Allocated by the reducer.
 pub(all) struct EventSequence {
-  value : Int
+  value : Int32
 } derive(Eq, Debug)
 
 ///|
@@ -108,7 +108,7 @@ pub fn EventSequence::next(
 /// unchanged.
 pub fn EventSequence::to_int(
   self : EventSequence,
-) -> Int where {
+) -> Int32 where {
   proof_ensure: result => result == self.value,
 } {
   self.value
@@ -119,13 +119,13 @@ pub fn EventSequence::to_int(
 /// The reducer increments consumed counters as it declares effects.
 pub(all) struct Budget {
   /// Limit. `None` = unbounded.
-  max_model_steps : Int?
+  max_model_steps : Int32?
   /// Limit. `None` = unbounded.
-  max_tool_rounds : Int?
+  max_tool_rounds : Int32?
   /// Limit. `None` = unbounded.
-  max_tool_calls : Int?
+  max_tool_calls : Int32?
   /// Limit. `None` = unbounded.
-  max_total_tokens : Int?
+  max_total_tokens : Int32?
 } derive(Eq, Debug)
 
 ///|
@@ -150,10 +150,10 @@ pub fn Budget::default_run() -> Budget {
 ///|
 /// Build a fully-bounded budget.
 pub fn Budget::bounded(
-  max_model_steps~ : Int,
-  max_tool_rounds~ : Int,
-  max_tool_calls~ : Int,
-  max_total_tokens~ : Int,
+  max_model_steps~ : Int32,
+  max_tool_rounds~ : Int32,
+  max_tool_calls~ : Int32,
+  max_total_tokens~ : Int32,
 ) -> Budget {
   {
     max_model_steps: Some(max_model_steps),
@@ -167,14 +167,14 @@ pub fn Budget::bounded(
 /// Per-Run consumed counters. Incremented by the reducer as it declares effects.
 pub(all) struct BudgetConsumed {
   /// `CallModel` effects declared so far.
-  model_steps : Int
+  model_steps : Int32
   /// Tool batches completed (model completion with N tool calls = 1 round).
-  tool_rounds : Int
+  tool_rounds : Int32
   /// `ExecuteTool` effects declared so far.
-  tool_calls : Int
+  tool_calls : Int32
   /// Observed `Usage.total_tokens`. 0 while unknown; reducer must not terminate
   /// on a token budget with unverified consumption.
-  observed_total_tokens : Int
+  observed_total_tokens : Int32
   /// Whether any model step reported verified token usage.
   any_usage_verified : Bool
   /// Context occupancy reported by the LATEST model step: its `total_tokens`,
@@ -183,7 +183,7 @@ pub(all) struct BudgetConsumed {
   /// Run-wide `max_total_tokens` keeps using the cumulative total above;
   /// auto-compact compares only this latest occupancy against the window, so
   /// several large-but-far-from-full calls cannot sum into a false trigger.
-  last_context_tokens : Int?
+  last_context_tokens : Int32?
 } derive(Eq, Debug)
 
 ///|

@@ -91,7 +91,7 @@ pub(all) struct UiRender {
   title : String?
   body : UiBody
   /// Visibility hint in milliseconds. `None` = persistent; hosts may ignore.
-  ttl_ms : Int?
+  ttl_ms : Int32?
 } derive(Debug)
 
 ///|
@@ -169,7 +169,7 @@ pub(all) enum UiRequest {
   /// Yes/no confirmation.
   Confirm(prompt~ : String)
   /// Choose one option. `default` is the pre-select index.
-  Select(prompt~ : String, options~ : Array[String], default~ : Int?)
+  Select(prompt~ : String, options~ : Array[String], default~ : Int32?)
 } derive(Debug)
 
 ///|
@@ -208,7 +208,7 @@ fn str_default_label(d : String?) -> String {
 }
 
 ///|
-fn int_default_label(d : Int?) -> String {
+fn int_default_label(d : Int32?) -> String {
   match d {
     Some(i) => "Some(" + i.to_string() + ")"
     None => "None"
@@ -221,7 +221,7 @@ pub(all) enum UiResponse {
   Text(String)
   Yes
   No
-  Selected(Int)
+  Selected(Int32)
   Cancelled
 } derive(Eq, Debug)
 

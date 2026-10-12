@@ -194,7 +194,7 @@ pub(all) struct ForkCommand {
   command_id : CommandId
   target_run_id : RunId
   target_turn_id : TurnId
-  fork_index : Int
+  fork_index : Int32
 } derive(Eq, Debug)
 
 ///|
@@ -209,7 +209,7 @@ pub fn ForkCommand::command_id(self : ForkCommand) -> CommandId {
 }
 
 ///|
-pub fn ForkCommand::fork_index(self : ForkCommand) -> Int {
+pub fn ForkCommand::fork_index(self : ForkCommand) -> Int32 {
   self.fork_index
 }
 
@@ -253,7 +253,7 @@ pub(all) enum EnqueueResult {
   /// does not match any active run).
   RejectedStale(command_id~ : CommandId, reason~ : String)
   /// Command rejected because the queue is full.
-  RejectedQueueFull(command_id~ : CommandId, depth~ : Int)
+  RejectedQueueFull(command_id~ : CommandId, depth~ : Int32)
   /// Abort command that arrived after the run was already terminal OR
   /// after a previous abort already fired.
   AbortAlreadyRequested(command_id~ : CommandId)
@@ -304,10 +304,10 @@ pub(open) trait Mailbox {
   fn abort_requested(Self) -> Bool
 
   // ── Queue depth accessors (read-only diagnostics for tests / hosts) ──
-  fn steer_depth(Self) -> Int
-  fn follow_up_depth(Self) -> Int
-  fn fork_depth(Self) -> Int
-  fn compact_depth(Self) -> Int
+  fn steer_depth(Self) -> Int32
+  fn follow_up_depth(Self) -> Int32
+  fn fork_depth(Self) -> Int32
+  fn compact_depth(Self) -> Int32
 
   // ── Enqueue (product / sibling-task side; non-blocking) ──
   fn enqueue_steer(Self, cmd : SteerCommand) -> EnqueueResult

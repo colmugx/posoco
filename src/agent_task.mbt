@@ -2,10 +2,10 @@
 let task_outcomes_applied_metadata_key : String = "posoco.task.applied_ids"
 
 ///|
-let foreground_task_settle_timeout_ms : Int = 5_000
+let foreground_task_settle_timeout_ms : Int32 = 5_000
 
 ///|
-let managed_task_shutdown_settle_timeout_ms : Int = 5_000
+let managed_task_shutdown_settle_timeout_ms : Int32 = 5_000
 
 ///|
 /// Applied task ids may survive a session-store restart, so a process-local
@@ -53,14 +53,14 @@ priv struct AgentTaskRuntime {
   mut scope_active : Bool
   mut closed : Bool
   mut runtime_id : String?
-  mut next_id : Int
+  mut next_id : Int32
   mut active_operation : AgentTaskOperation?
   /// Core-owned `background_outcome_ready` projection, installed at
   /// composition. Called only after a background outcome is successfully
   /// enqueued into its session inbox; carries no outcome payload.
   mut ready_notifier : ((@port.TaskOutcome) -> Unit)?
-  foreground_settle_timeout_ms : Int
-  shutdown_settle_timeout_ms : Int
+  foreground_settle_timeout_ms : Int32
+  shutdown_settle_timeout_ms : Int32
   tasks : Map[String, AgentTaskRecord]
   outcomes : Map[String, Array[@port.TaskOutcome]]
   inflight : Map[String, Array[String]]
@@ -68,8 +68,8 @@ priv struct AgentTaskRuntime {
 
 ///|
 fn AgentTaskRuntime::AgentTaskRuntime(
-  foreground_settle_timeout_ms? : Int = foreground_task_settle_timeout_ms,
-  shutdown_settle_timeout_ms? : Int = managed_task_shutdown_settle_timeout_ms,
+  foreground_settle_timeout_ms~ : Int32 = foreground_task_settle_timeout_ms,
+  shutdown_settle_timeout_ms~ : Int32 = managed_task_shutdown_settle_timeout_ms,
 ) -> AgentTaskRuntime {
   {
     supervisor: None,

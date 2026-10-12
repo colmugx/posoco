@@ -8,7 +8,7 @@
 /// Fixture standing in for an "older" adapter written before the context
 /// API: it implements only `evaluate`.
 struct LegacyOnlyDecisionPort {
-  mut evaluate_calls : Int
+  mut evaluate_calls : Int32
 }
 
 ///|

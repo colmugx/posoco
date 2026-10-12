@@ -14,7 +14,7 @@ pub(all) enum SessionOp {
   )
   OpAppend(
     id~ : String,
-    from_index~ : Int,
+    from_index~ : Int32,
     messages~ : Array[@kernel.Message],
     result~ : Result[Unit, @error.SessionError]
   )
@@ -25,7 +25,7 @@ pub(all) enum SessionOp {
   )
   OpTruncate(
     id~ : String,
-    from_index~ : Int,
+    from_index~ : Int32,
     result~ : Result[Unit, @error.SessionError]
   )
 } derive(Debug)
@@ -238,7 +238,7 @@ pub impl @port.SessionStore for RecordingSessionStore with fn save(
 pub impl @port.SessionStore for RecordingSessionStore with fn append_messages(
   self,
   id : String,
-  from_index : Int,
+  from_index : Int32,
   messages : ArrayView[@kernel.Message],
 ) -> Unit raise @error.SessionError {
   let msg_copy = snapshot_messages(messages.to_owned())
@@ -264,7 +264,7 @@ pub impl @port.SessionStore for RecordingSessionStore with fn append_messages(
 pub impl @port.SessionStore for RecordingSessionStore with fn truncate(
   self,
   id : String,
-  from_index : Int,
+  from_index : Int32,
 ) -> Unit raise @error.SessionError {
   let result : Result[Unit, @error.SessionError] = match self.guard_save(id) {
     Some(e) => Err(e)

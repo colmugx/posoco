@@ -5,7 +5,7 @@
 ///|
 /// Default max queue depth per mailbox. Beyond this, enqueue returns
 /// `RejectedQueueFull`. M2 picks a conservative bound; M4/M5 may tune.
-let default_max_queue_depth : Int = 64
+let default_max_queue_depth : Int32 = 64
 
 ///|
 /// The control mailbox bundle. One instance per Puppet; tracks the
@@ -24,18 +24,18 @@ pub struct ControlMailbox {
   /// Manual depth counters (`@aqueue.Queue` exposes no `length()`). The
   /// enqueue path increments; the consume path decrements. Tests assert
   /// on these to verify drain behaviour.
-  mut steer_depth : Int
-  mut follow_up_depth : Int
+  mut steer_depth : Int32
+  mut follow_up_depth : Int32
   /// M3.5: fork command queue. OneAtATime policy — the pump consumes one
   /// fork per safe point (a fork creates a new session and returns
   /// PromptResult::ForkCompleted; batching makes no sense).
   mut fork_queue : @aqueue.Queue[ForkCommand]
-  mut fork_depth : Int
+  mut fork_depth : Int32
   /// M3.5: compact command queue. OneAtATime policy — compact is expensive
   /// (LLM call or structural rewrite); batching multiple compacts back-to-
   /// back on the same transcript is a no-op.
   mut compact_queue : @aqueue.Queue[CompactCommand]
-  mut compact_depth : Int
+  mut compact_depth : Int32
   /// Resume commands keyed by suspension_id. At most one per suspension.
   resume_pending : Map[String, ResumeCommand]
   /// Set if abort has been issued for the active run. Subsequent aborts
@@ -51,7 +51,7 @@ pub struct ControlMailbox {
   /// Current quiescent status — set by the Puppet when it reaches Idle /
   /// Suspended / Shutdown. `wait_idle` reads this upon wake.
   mut quiescent_status : QuiescentStatus
-  max_depth : Int
+  max_depth : Int32
 }
 
 ///|
@@ -176,24 +176,24 @@ pub impl Mailbox for ControlMailbox with fn abort_requested(
 }
 
 ///|
-pub impl Mailbox for ControlMailbox with fn steer_depth(self : ControlMailbox) -> Int {
+pub impl Mailbox for ControlMailbox with fn steer_depth(self : ControlMailbox) -> Int32 {
   self.steer_depth
 }
 
 ///|
 pub impl Mailbox for ControlMailbox with fn follow_up_depth(
   self : ControlMailbox,
-) -> Int {
+) -> Int32 {
   self.follow_up_depth
 }
 
 ///|
-pub impl Mailbox for ControlMailbox with fn fork_depth(self : ControlMailbox) -> Int {
+pub impl Mailbox for ControlMailbox with fn fork_depth(self : ControlMailbox) -> Int32 {
   self.fork_depth
 }
 
 ///|
-pub impl Mailbox for ControlMailbox with fn compact_depth(self : ControlMailbox) -> Int {
+pub impl Mailbox for ControlMailbox with fn compact_depth(self : ControlMailbox) -> Int32 {
   self.compact_depth
 }
 

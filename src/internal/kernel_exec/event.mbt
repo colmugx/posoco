@@ -111,7 +111,11 @@ pub(all) enum KernelEvent {
   /// Emitted when a `CancelOutstanding` effect is declared.
   CancelRequested(effect_ids~ : Array[EffectId], reason~ : CancelReason)
   /// Emitted when budget consumption crosses a configured limit.
-  BudgetExhausted(dimension~ : BudgetDimension, consumed~ : Int, limit~ : Int)
+  BudgetExhausted(
+    dimension~ : BudgetDimension,
+    consumed~ : Int32,
+    limit~ : Int32
+  )
   /// Emitted when an input is rejected (post-terminal, illegal-for-phase).
   /// Always non-terminal: rejections never change state.
   InputRejected(input_kind~ : String, reason~ : String)
@@ -120,16 +124,16 @@ pub(all) enum KernelEvent {
   /// the producer reason — message bodies never enter durable diagnostic
   /// summaries, same rule as `ToolBatchStarted`.
   TranscriptRewritten(
-    messages_before~ : Int,
-    messages_after~ : Int,
+    messages_before~ : Int32,
+    messages_after~ : Int32,
     reason~ : String
   )
   // ── Terminal events (exactly one per Run) ──
   /// Successful termination. Exactly once per Run.
   RunCompleted(
     final_message_summary~ : String,
-    model_steps~ : Int,
-    tool_calls~ : Int
+    model_steps~ : Int32,
+    tool_calls~ : Int32
   )
   /// Failed termination. Exactly once per Run.
   RunFailed(reason~ : FailureReason)

@@ -68,7 +68,7 @@ async test "scope/tool_loop_shares_run_effect_ids_increase" {
 ///|
 /// Build a tool-call result whose completion reports `total` observed tokens,
 /// so the auto-compact pump fires against a small context window.
-fn scope_test_tool_call_with_usage(total : Int) -> @kernel.ModelCallResult {
+fn scope_test_tool_call_with_usage(total : Int32) -> @kernel.ModelCallResult {
   let base = tk_tool_call_response("echo", "call_1", Json::null())
   let completion : @kernel.Completion = Completion(
     content=[],

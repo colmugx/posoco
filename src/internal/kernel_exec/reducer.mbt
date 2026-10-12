@@ -92,7 +92,7 @@ fn next_seq(state : RunState) -> EventSequence {
 }
 
 ///|
-fn advance_seq_by(state : RunState, n : Int) -> EventSequence {
+fn advance_seq_by(state : RunState, n : Int32) -> EventSequence {
   let mut s = state.next_event_sequence()
   for i = 0; i < n; i = i + 1 {
     s = s.next()
@@ -101,7 +101,7 @@ fn advance_seq_by(state : RunState, n : Int) -> EventSequence {
 }
 
 ///|
-fn EffectId::add(self : EffectId, n : Int) -> EffectId {
+fn EffectId::add(self : EffectId, n : Int32) -> EffectId {
   let mut id = self
   for i = 0; i < n; i = i + 1 {
     id = id.next()

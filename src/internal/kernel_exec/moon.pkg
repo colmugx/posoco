@@ -5,6 +5,4 @@ import {
 
 warnings = "-missing_pattern_payload"
 
-options(
-  "proof-enabled": true,
-)
+proof_enabled = true

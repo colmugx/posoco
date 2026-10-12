@@ -477,7 +477,7 @@ pub fn Transcript::append_all(
 
 ///|
 /// Returns the number of messages.
-pub fn Transcript::length(self : Transcript) -> Int {
+pub fn Transcript::length(self : Transcript) -> Int32 {
   self.messages.length()
 }
 

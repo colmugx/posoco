@@ -103,7 +103,7 @@ fn snapshot_decision_step(step : ScriptedDecisionStep) -> ScriptedDecisionStep {
 /// records a deep snapshot of every request. Exhaustion is loud.
 pub(all) struct ScriptedDecisionPort {
   steps : Array[ScriptedDecisionStep]
-  mut index : Int
+  mut index : Int32
   received : Array[@port.DecisionRequest]
 }
 
@@ -115,7 +115,7 @@ pub fn ScriptedDecisionPort::ScriptedDecisionPort(
 }
 
 ///|
-pub fn ScriptedDecisionPort::call_count(self : ScriptedDecisionPort) -> Int {
+pub fn ScriptedDecisionPort::call_count(self : ScriptedDecisionPort) -> Int32 {
   self.received.length()
 }
 

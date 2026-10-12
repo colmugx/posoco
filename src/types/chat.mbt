@@ -6,7 +6,7 @@
 /// never bloats the common type.
 pub(all) struct ChatOptions {
   temperature : Double?
-  max_output_tokens : Int?
+  max_output_tokens : Int32?
 } derive(Eq, Debug)
 
 ///|

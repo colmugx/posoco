@@ -71,10 +71,10 @@ fn fail_unless_custom(
 /// Model gate: each chat call parks until a token arrives, so tests hold an
 /// admitted operation open and race other callers against the guard.
 priv struct GatedModel {
-  entered : @aqueue.Queue[Int]
-  gate : @aqueue.Queue[Int]
+  entered : @aqueue.Queue[Int32]
+  gate : @aqueue.Queue[Int32]
   responses : Array[String]
-  mut calls : Int
+  mut calls : Int32
 }
 
 ///|

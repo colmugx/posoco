@@ -5,7 +5,7 @@
 ///|
 struct ChunkDemandHost {
   mut saw_no_sink : Bool
-  mut delivered_chunks : Int
+  mut delivered_chunks : Int32
 }
 
 ///|
@@ -19,7 +19,7 @@ fn ChunkDemandHost::saw_no_sink(self : ChunkDemandHost) -> Bool {
 }
 
 ///|
-fn ChunkDemandHost::delivered_chunks(self : ChunkDemandHost) -> Int {
+fn ChunkDemandHost::delivered_chunks(self : ChunkDemandHost) -> Int32 {
   self.delivered_chunks
 }
 

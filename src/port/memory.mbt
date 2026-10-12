@@ -23,7 +23,7 @@ pub(open) trait MemoryPort {
 
   /// Query the store; returns provider-rendered text (`None` = no hits).
   /// Omitting `top_k` leaves the hit count to the provider.
-  async fn search(Self, query~ : String, top_k? : Int) -> String? raise @error.MemoryError
+  async fn search(Self, query~ : String, top_k? : Int32) -> String? raise @error.MemoryError
 
   /// Remove the memory stored under `id` — a passive interface for
   /// product-side logic (e.g. an observer detecting stale memory). Whether

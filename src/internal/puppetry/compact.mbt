@@ -304,7 +304,7 @@ fn Puppet::check_auto_compact_pre_request(
 }
 
 ///|
-fn estimate_tokens_of_messages(messages : ArrayView[Message]) -> Int {
+fn estimate_tokens_of_messages(messages : ArrayView[Message]) -> Int32 {
   let mut chars = 0
   for message in messages {
     match message {
@@ -671,6 +671,6 @@ pub async fn Puppet::compact_standalone(
 }
 
 ///|
-pub fn Puppet::context_version(self : Puppet) -> Int {
+pub fn Puppet::context_version(self : Puppet) -> Int32 {
   self.config.journal.revision()
 }

@@ -118,7 +118,7 @@ pub impl @port.MemoryPort for FailingInboundPort with fn store(
 pub impl @port.MemoryPort for FailingInboundPort with fn search(
   _self : FailingInboundPort,
   query~ : String,
-  top_k? : Int,
+  top_k? : Int32,
 ) -> String? raise @error.MemoryError {
   ignore(top_k)
   raise Search("always fails: \{query}")
@@ -172,7 +172,7 @@ pub impl @port.MemoryPort for SlowInboundPort with fn store(
 pub impl @port.MemoryPort for SlowInboundPort with fn search(
   _self : SlowInboundPort,
   query~ : String,
-  top_k? : Int,
+  top_k? : Int32,
 ) -> String? raise @error.MemoryError {
   ignore((query, top_k))
   None
@@ -277,7 +277,7 @@ fn build_memory_agent(
   store : RecordingSessionStore,
   observer : RecordingObserver,
   system_prompt : String?,
-  timeout_ms : Int?,
+  timeout_ms : Int32?,
 ) -> Agent raise @error.CompositionError {
   let config : AgentConfig = agent_config(
     max_tool_rounds=Some(10),

@@ -338,7 +338,7 @@ fn make_fork(
   cmd_id : String,
   run : RunId,
   turn : TurnId,
-  fork_index : Int,
+  fork_index : Int32,
 ) -> ForkCommand {
   {
     command_id: CommandId::unchecked(cmd_id),

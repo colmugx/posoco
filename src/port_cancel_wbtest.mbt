@@ -9,9 +9,9 @@
 /// Cancellable fake: registers its facet at execute start, then suspends on
 /// a release queue so the effect stays in flight until the test lets it go.
 priv struct CancellableProbe {
-  release : @aqueue.Queue[Int]
-  registered_effects : Array[Int]
-  cancelled_effects : Array[Int]
+  release : @aqueue.Queue[Int32]
+  registered_effects : Array[Int32]
+  cancelled_effects : Array[Int32]
   seen_reasons : Array[@kernel.CancelReason]
 }
 
@@ -54,8 +54,8 @@ impl @port.ToolCancellable for CancellableProbe with fn cancel(
 
 ///|
 fn probe_effect(
-  effect_id : Int,
-  tool_name? : String = "probe",
+  effect_id : Int32,
+  tool_name~ : String = "probe",
 ) -> @runtime.EffectContext {
   {
     effect_id: { value: effect_id, },

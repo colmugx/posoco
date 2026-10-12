@@ -14,7 +14,7 @@ suberror AcceptanceScopeBodyFailed {
 
 ///|
 priv struct AcceptanceShutdownProbe {
-  mut shutdowns : Int
+  mut shutdowns : Int32
 }
 
 ///|
@@ -59,8 +59,8 @@ impl @port.Lifecycle for AcceptanceTaskCapture with fn on_shutdown(
 
 ///|
 priv struct AcceptanceTurnGate {
-  entered : @aqueue.Queue[Int]
-  release : @aqueue.Queue[Int]
+  entered : @aqueue.Queue[Int32]
+  release : @aqueue.Queue[Int32]
 }
 
 ///|
@@ -145,7 +145,7 @@ fn acceptance_message_text(message : @kernel.Message) -> String {
 fn acceptance_text_count(
   messages : Array[@kernel.Message],
   needle : String,
-) -> Int {
+) -> Int32 {
   let mut count = 0
   for message in messages {
     if acceptance_message_text(message).contains(needle) {
@@ -229,7 +229,7 @@ fn acceptance_task_handle(
   session_id : String,
   mode : @port.TaskMode,
   label : String,
-  timeout_ms : Int?,
+  timeout_ms : Int32?,
   run : async () -> @kernel.Message,
 ) -> @port.TaskHandle {
   match tasks.submit({ session_id, mode, label, timeout_ms, run, }) {
@@ -275,7 +275,7 @@ async test "managed_tasks/background_routes_by_session_and_normalizes_result" {
     entered: Queue(kind=Unbounded),
     release: Queue(kind=Unbounded),
   }
-  let a_release : @aqueue.Queue[Int] = Queue(kind=Unbounded)
+  let a_release : @aqueue.Queue[Int32] = Queue(kind=Unbounded)
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
@@ -407,8 +407,8 @@ async test "managed_tasks/cancelled_waiter_does_not_cancel_background_and_late_w
   let capture = AcceptanceTaskCapture::new()
   let model = ScriptedModel([Respond(tk_stop_response("unused"))])
   let store = RecordingSessionStore()
-  let waiter_started : @aqueue.Queue[Int] = Queue(kind=Unbounded)
-  let release : @aqueue.Queue[Int] = Queue(kind=Unbounded)
+  let waiter_started : @aqueue.Queue[Int32] = Queue(kind=Unbounded)
+  let release : @aqueue.Queue[Int32] = Queue(kind=Unbounded)
   let late_one : Ref[@port.TaskOutcome?] = Ref(None)
   let late_two : Ref[@port.TaskOutcome?] = Ref(None)
   let agent = Agent(
@@ -601,8 +601,8 @@ async test "managed_tasks/scope_error_and_ambient_cancel_reap_background_work" {
     config=tk_config(),
   )
   let error_tasks = acceptance_tasks(error_capture)
-  let error_started : @aqueue.Queue[Int] = Queue(kind=Unbounded)
-  let error_worker_gate : @aqueue.Queue[Int] = Queue(kind=Unbounded)
+  let error_started : @aqueue.Queue[Int32] = Queue(kind=Unbounded)
+  let error_worker_gate : @aqueue.Queue[Int32] = Queue(kind=Unbounded)
   let error_cleanup : Array[String] = []
   let error_handle : Ref[@port.TaskHandle?] = Ref(None)
   let error_result : Result[Unit, Error] = Ok(
@@ -656,10 +656,10 @@ async test "managed_tasks/scope_error_and_ambient_cancel_reap_background_work" {
     config=tk_config(),
   )
   let cancel_tasks = acceptance_tasks(cancel_capture)
-  let cancel_worker_started : @aqueue.Queue[Int] = Queue(kind=Unbounded)
-  let cancel_body_entered : @aqueue.Queue[Int] = Queue(kind=Unbounded)
-  let cancel_worker_gate : @aqueue.Queue[Int] = Queue(kind=Unbounded)
-  let cancel_body_gate : @aqueue.Queue[Int] = Queue(kind=Unbounded)
+  let cancel_worker_started : @aqueue.Queue[Int32] = Queue(kind=Unbounded)
+  let cancel_body_entered : @aqueue.Queue[Int32] = Queue(kind=Unbounded)
+  let cancel_worker_gate : @aqueue.Queue[Int32] = Queue(kind=Unbounded)
+  let cancel_body_gate : @aqueue.Queue[Int32] = Queue(kind=Unbounded)
   let cancel_cleanup : Array[String] = []
   let cancel_handle : Ref[@port.TaskHandle?] = Ref(None)
   @async.with_task_group(async fn(group) {
@@ -926,7 +926,7 @@ async test "managed_tasks/background_failure_timeout_and_immediate_cancel_are_st
         raise AcceptanceScopeBodyFailed::AcceptanceScopeBodyFailed
       },
     )
-    let timeout_gate : @aqueue.Queue[Int] = Queue(kind=Unbounded)
+    let timeout_gate : @aqueue.Queue[Int32] = Queue(kind=Unbounded)
     let timed_out = acceptance_task_handle(
       tasks,
       "terminal-timeout",
@@ -940,7 +940,7 @@ async test "managed_tasks/background_failure_timeout_and_immediate_cancel_are_st
         ])
       },
     )
-    let cancel_gate : @aqueue.Queue[Int] = Queue(kind=Unbounded)
+    let cancel_gate : @aqueue.Queue[Int32] = Queue(kind=Unbounded)
     let cancelled = acceptance_task_handle(
       tasks,
       "terminal-cancelled",

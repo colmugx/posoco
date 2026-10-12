@@ -59,7 +59,7 @@ pub impl Show for CatalogCompositionError with fn to_string(
 pub(all) struct CatalogEntry {
   /// Stable 0-based position in declaration order. Used by the scheduler
   /// (T06) to preserve source order across execution waves.
-  position : Int
+  position : Int32
   definition : @kernel.ToolDef
 } derive(Eq, Debug)
 
@@ -226,7 +226,7 @@ pub fn ToolCatalogSnapshot::definitions(
 
 ///|
 /// Number of tools in the catalog.
-pub fn ToolCatalogSnapshot::size(self : ToolCatalogSnapshot) -> Int {
+pub fn ToolCatalogSnapshot::size(self : ToolCatalogSnapshot) -> Int32 {
   self.entries.length()
 }
 

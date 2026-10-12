@@ -1,7 +1,7 @@
 ///|
 /// Leave room for structural error wrappers under the 512-character display
 /// bound. ModelFailure reasons must already be safe labels, not raw payloads.
-let compact_cause_label_budget : Int = 352
+let compact_cause_label_budget : Int32 = 352
 
 ///|
 /// Cause label for a failed modelport compact: the structural `ModelFailure`

@@ -281,7 +281,7 @@ async test "compact_diag/auto_compact_failure_forwards_bounded_label" {
 /// test can enqueue a manual compact while the run is active.
 struct MidRunCompactRuntime {
   inner : &@runtime.Runtime
-  mut model_calls : Int
+  mut model_calls : Int32
   mut release : Bool
 }
 
@@ -401,7 +401,7 @@ async test "compact_diag/midrun_manual_compact_failure_forwards_bounded_label" {
 /// cancelled, mirroring a hung provider compact connection.
 struct CompactParkingRuntime {
   inner : &@runtime.Runtime
-  mut compact_calls : Int
+  mut compact_calls : Int32
 }
 
 ///|

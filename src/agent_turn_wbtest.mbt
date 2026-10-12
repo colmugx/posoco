@@ -31,7 +31,7 @@ fn turn_fixate_dangling_assistant(
 fn count_tool_outputs(
   messages : Array[@kernel.Message],
   call_id : String,
-) -> Int {
+) -> Int32 {
   let mut count = 0
   for message in messages {
     match message {
@@ -46,7 +46,7 @@ fn count_tool_outputs(
 }
 
 ///|
-fn count_user_messages(messages : Array[@kernel.Message]) -> Int {
+fn count_user_messages(messages : Array[@kernel.Message]) -> Int32 {
   let mut count = 0
   for message in messages {
     match message {

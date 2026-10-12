@@ -117,8 +117,8 @@ pub extend DeadlineReachedPayload with Debug::{to_repr}
 /// External observation that a budget dimension was crossed.
 pub(all) struct BudgetExhaustedPayload {
   dimension : BudgetDimension
-  consumed : Int
-  limit : Int
+  consumed : Int32
+  limit : Int32
 } derive(Eq, Debug)
 
 ///|

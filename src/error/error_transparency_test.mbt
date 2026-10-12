@@ -208,7 +208,7 @@ async test "t07_rate_limited_model_surfaces_quota_scheduling_data" {
 }
 
 ///|
-fn count_terminal_events(events : Array[TurnEvent]) -> Int {
+fn count_terminal_events(events : Array[TurnEvent]) -> Int32 {
   let mut count = 0
   for event in events {
     match event {

@@ -83,13 +83,13 @@ pub fn ExecutionPlan::waves(self : ExecutionPlan) -> Array[ExecutionWave] {
 }
 
 ///|
-pub fn ExecutionPlan::wave_count(self : ExecutionPlan) -> Int {
+pub fn ExecutionPlan::wave_count(self : ExecutionPlan) -> Int32 {
   self.waves.length()
 }
 
 ///|
 /// Total number of calls across all waves.
-pub fn ExecutionPlan::total_calls(self : ExecutionPlan) -> Int {
+pub fn ExecutionPlan::total_calls(self : ExecutionPlan) -> Int32 {
   let mut n = 0
   for w in self.waves {
     n = n + w.calls.length()

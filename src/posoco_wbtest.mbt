@@ -436,8 +436,8 @@ impl @port.ToolProvider for RecordingExecProvider with fn execute(
 /// must not start while the hook is still blocked (e.g. a permission prompt
 /// waiting on user input over UiPort).
 struct GateHook {
-  entered : @aqueue.Queue[Int]
-  release : @aqueue.Queue[Int]
+  entered : @aqueue.Queue[Int32]
+  release : @aqueue.Queue[Int32]
 }
 
 ///|
@@ -474,8 +474,8 @@ async test "async_before_tool_gates_tool_wave" {
     executed: [],
   }
   let store = RecordingSessionStore()
-  let entered : @aqueue.Queue[Int] = Queue(kind=Unbounded)
-  let release : @aqueue.Queue[Int] = Queue(kind=Unbounded)
+  let entered : @aqueue.Queue[Int32] = Queue(kind=Unbounded)
+  let release : @aqueue.Queue[Int32] = Queue(kind=Unbounded)
   let gate_hook = GateHook::{ entered, release, }
   let agent = Agent(
     exts=[
@@ -1320,11 +1320,11 @@ async test "multiple_session_stores_write_all" {
 /// Helper: build a minimal CommandParam for tests.
 fn make_param(
   name : String,
-  ptype? : @port.ParamType = Str,
-  required? : Bool = false,
-  positional? : Bool = false,
-  default? : Json? = None,
-  choices? : Array[String]? = None,
+  ptype~ : @port.ParamType = Str,
+  required~ : Bool = false,
+  positional~ : Bool = false,
+  default~ : Json? = None,
+  choices~ : Array[String]? = None,
 ) -> @port.CommandParam {
   {
     name,
@@ -1342,8 +1342,8 @@ fn make_param(
 /// Helper: build a minimal CommandDef for tests.
 fn make_command(
   id : String,
-  params? : Array[@port.CommandParam] = [],
-  ctype? : @port.CommandType = Action,
+  params~ : Array[@port.CommandParam] = [],
+  ctype~ : @port.CommandType = Action,
 ) -> @port.CommandDef {
   {
     id,
@@ -1731,7 +1731,10 @@ async test "mixed_wave_pairs_executed_call_and_rejects_unknown_without_pending" 
 }
 
 ///|
-fn wave3_stop_with_usage(text : String, total : Int) -> @kernel.ModelCallResult {
+fn wave3_stop_with_usage(
+  text : String,
+  total : Int32,
+) -> @kernel.ModelCallResult {
   let completion : @kernel.Completion = Completion(
     content=[Text(text)],
     tool_calls=[],
@@ -1955,8 +1958,8 @@ async test "wave3/compact_session/journal committed + body save failure recovers
 ///|
 struct Wave3ParkingRuntime {
   inner : &@runtime.Runtime
-  mut model_calls : Int
-  mut park_seen : Int
+  mut model_calls : Int32
+  mut park_seen : Int32
 }
 
 ///|

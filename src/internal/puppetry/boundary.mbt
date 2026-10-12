@@ -53,7 +53,7 @@ fn boundary_kind_for_events(events : Array[KernelEvent]) -> SavepointKind {
   let mut best_rank = -1
   let mut best_kind = AssistantCommitted
   for event in events {
-    let (rank, kind) : (Int, SavepointKind) = match event {
+    let (rank, kind) : (Int32, SavepointKind) = match event {
       RunCompleted(..) | RunFailed(..) | RunCancelled(..) => (4, RunTerminal)
       RunSuspended(..) => (3, RunSuspended)
       ToolCompleted(..) | ToolCallsPreRejected(..) => (2, ToolCommitted)

@@ -92,7 +92,7 @@ pub struct PortRuntime {
   /// In-flight cancellable facets keyed by effect id. Populated only by
   /// providers that called `ToolCallContext.register_cancel` during their
   /// execute; entry is dropped when the effect settles.
-  priv cancels : Map[Int, &@port.ToolCancellable]
+  priv cancels : Map[Int32, &@port.ToolCancellable]
 }
 
 ///|

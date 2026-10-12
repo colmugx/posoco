@@ -7,7 +7,7 @@
 
 ///|
 /// Build a JSON schema nesting `properties.p` `depth` levels deep.
-fn deep_schema(depth : Int) -> Json {
+fn deep_schema(depth : Int32) -> Json {
   let mut schema : Json = Json::object(
     Map::from_array([("type", Json::string("string"))]),
   )
@@ -26,7 +26,7 @@ fn deep_schema(depth : Int) -> Json {
 
 ///|
 /// Build a matching instance nesting `p` `depth` levels around `leaf`.
-fn deep_instance(depth : Int, leaf : Json) -> Json {
+fn deep_instance(depth : Int32, leaf : Json) -> Json {
   let mut value : Json = leaf
   let mut i = 0
   while i < depth {

@@ -2,7 +2,7 @@
 /// Abort watcher cadence. Mirrors the SSE reader's 16ms yield interval: fine
 /// enough that an ESC abort feels immediate while an effect is in flight,
 /// coarse enough to add no measurable overhead to the awaited effect.
-let effect_abort_poll_ms : Int = 16
+let effect_abort_poll_ms : Int32 = 16
 
 ///|
 /// Block until the control mailbox records an abort for the active run. Runs

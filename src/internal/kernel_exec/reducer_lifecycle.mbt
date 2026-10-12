@@ -328,11 +328,11 @@ fn reduce_terminal_fail_with(
   budget_consumed : BudgetConsumed,
   reason : FailureReason,
   pre_events : Array[KernelEvent],
-  completed_tool_results? : Map[
+  completed_tool_results~ : Map[
     String,
-    (@kernel.ToolName, @kernel.ToolOutcome, Int),
+    (@kernel.ToolName, @kernel.ToolOutcome, Int32),
   ] = Map::from_array([]),
-  tool_call_positions? : Map[String, Int] = Map::from_array([]),
+  tool_call_positions~ : Map[String, Int32] = Map::from_array([]),
 ) -> ReduceOutput raise KernelError {
   let events : Array[KernelEvent] = []
   for e in pre_events {

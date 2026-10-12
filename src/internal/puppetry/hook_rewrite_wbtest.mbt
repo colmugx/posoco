@@ -5,12 +5,12 @@
 ///|
 struct HookRewriteHost {
   model_results : Array[Result[@kernel.Completion, ModelFailure]]
-  mut model_index : Int
+  mut model_index : Int32
   executions : Array[(String, String, String, Json)]
   mut mutate_arguments : Bool
   mutated_arguments : Array[Json]
-  mut in_flight : Int
-  mut max_in_flight : Int
+  mut in_flight : Int32
+  mut max_in_flight : Int32
 }
 
 ///|
@@ -36,7 +36,7 @@ fn HookRewriteHost::executions(
 }
 
 ///|
-fn HookRewriteHost::max_in_flight(self : HookRewriteHost) -> Int {
+fn HookRewriteHost::max_in_flight(self : HookRewriteHost) -> Int32 {
   self.max_in_flight
 }
 

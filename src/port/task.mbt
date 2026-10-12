@@ -18,7 +18,7 @@ pub(all) struct TaskSpec {
   session_id : String
   mode : TaskMode
   label : String
-  timeout_ms : Int?
+  timeout_ms : Int32?
   run : async () -> @kernel.Message
 }
 

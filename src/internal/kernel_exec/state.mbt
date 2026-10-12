@@ -101,12 +101,12 @@ pub struct RunState {
   /// boundary and phase change that leaves `AwaitingTools`.
   completed_tool_results : Map[
     String,
-    (@kernel.ToolName, @kernel.ToolOutcome, Int),
+    (@kernel.ToolName, @kernel.ToolOutcome, Int32),
   ]
   /// Incremental ledger mapping call id to its stable source position among
   /// all assistant messages in the transcript. Built when a tool batch is
   /// declared and rebuilt if a rewrite happens while awaiting tools.
-  tool_call_positions : Map[String, Int]
+  tool_call_positions : Map[String, Int32]
   /// Suspension requirement. `None` outside `Suspended`.
   suspension_requirement : SuspensionRequirement?
 } derive(Eq, Debug)
@@ -194,9 +194,9 @@ fn RunState::mk_core(
   tool_results : FixedArray[(@kernel.CallId, @kernel.ToolOutcome)],
   completed_tool_results : Map[
     String,
-    (@kernel.ToolName, @kernel.ToolOutcome, Int),
+    (@kernel.ToolName, @kernel.ToolOutcome, Int32),
   ],
-  tool_call_positions : Map[String, Int],
+  tool_call_positions : Map[String, Int32],
   suspension_requirement : SuspensionRequirement?,
 ) -> RunState where {
   proof_require: phase_fields_ok(
@@ -326,7 +326,7 @@ fn constructor_illegal_phase(phase : String, detail : String) -> KernelError {
 /// contracted function bodies.)
 fn count_call_model(
   effects : FixedArray[Effect],
-) -> Int where {
+) -> Int32 where {
   proof_ensure: result => {
     result == count_call_model_upto(effects, effects.length())
   },
@@ -353,7 +353,7 @@ fn count_call_model(
 /// `count_execute_tool_upto` over the full array.
 fn count_execute_tool(
   effects : FixedArray[Effect],
-) -> Int where {
+) -> Int32 where {
   proof_ensure: result => {
     result == count_execute_tool_upto(effects, effects.length())
   },
@@ -492,11 +492,11 @@ pub fn RunState::transition(
   catalog_version~ : CatalogVersion?,
   budget_consumed~ : BudgetConsumed,
   outcome~ : RunOutcome?,
-  completed_tool_results? : Map[
+  completed_tool_results~ : Map[
     String,
-    (@kernel.ToolName, @kernel.ToolOutcome, Int),
+    (@kernel.ToolName, @kernel.ToolOutcome, Int32),
   ] = self.completed_tool_results.copy(),
-  tool_call_positions? : Map[String, Int] = self.tool_call_positions.copy(),
+  tool_call_positions~ : Map[String, Int32] = self.tool_call_positions.copy(),
   suspension_requirement~ : SuspensionRequirement?,
 ) -> RunState raise KernelError {
   RunState::transition_core(
@@ -539,9 +539,9 @@ fn RunState::transition_core(
   outcome~ : RunOutcome?,
   completed_tool_results~ : Map[
     String,
-    (@kernel.ToolName, @kernel.ToolOutcome, Int),
+    (@kernel.ToolName, @kernel.ToolOutcome, Int32),
   ],
-  tool_call_positions~ : Map[String, Int],
+  tool_call_positions~ : Map[String, Int32],
   suspension_requirement~ : SuspensionRequirement?,
 ) -> RunState where {
   proof_require: phase_inv(self) &&
@@ -581,11 +581,11 @@ fn RunState::transition_core(
 fn RunState::with_tool_results(
   self : RunState,
   tool_results : Array[(@kernel.CallId, @kernel.ToolOutcome)],
-  completed_tool_results? : Map[
+  completed_tool_results~ : Map[
     String,
-    (@kernel.ToolName, @kernel.ToolOutcome, Int),
+    (@kernel.ToolName, @kernel.ToolOutcome, Int32),
   ] = self.completed_tool_results.copy(),
-  tool_call_positions? : Map[String, Int] = self.tool_call_positions.copy(),
+  tool_call_positions~ : Map[String, Int32] = self.tool_call_positions.copy(),
 ) -> RunState raise KernelError {
   RunState::with_tool_results_core(
     self,
@@ -604,9 +604,9 @@ fn RunState::with_tool_results_core(
   tool_results : FixedArray[(@kernel.CallId, @kernel.ToolOutcome)],
   completed_tool_results~ : Map[
     String,
-    (@kernel.ToolName, @kernel.ToolOutcome, Int),
+    (@kernel.ToolName, @kernel.ToolOutcome, Int32),
   ],
-  tool_call_positions~ : Map[String, Int],
+  tool_call_positions~ : Map[String, Int32],
 ) -> RunState where {
   proof_require: phase_inv(self),
   proof_ensure: result => phase_inv(result),

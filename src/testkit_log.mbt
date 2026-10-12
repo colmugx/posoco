@@ -17,7 +17,7 @@ pub extend RecordedLogWrite with Debug::{to_repr}
 ///|
 pub(all) struct RecordingLogPort {
   writes_ : Array[RecordedLogWrite]
-  mut flush_count_ : Int
+  mut flush_count_ : Int32
 }
 
 ///|
@@ -48,7 +48,7 @@ pub fn RecordingLogPort::writes(
 }
 
 ///|
-pub fn RecordingLogPort::flush_count(self : RecordingLogPort) -> Int {
+pub fn RecordingLogPort::flush_count(self : RecordingLogPort) -> Int32 {
   self.flush_count_
 }
 

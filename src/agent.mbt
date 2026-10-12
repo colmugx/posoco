@@ -6,10 +6,10 @@
 /// the human abort and compaction govern loop length, matching peer coding
 /// agents).
 pub struct AgentConfig {
-  max_tool_rounds : Int?
+  max_tool_rounds : Int32?
   temperature : Double?
-  max_output_tokens : Int?
-  model_context_window : Int?
+  max_output_tokens : Int32?
+  model_context_window : Int32?
   /// Host override for the auto-compact trigger point as a fraction of the
   /// context window, in (0, 1]. `None` defers to the active modelport's
   /// reported `compact_threshold`, falling back to the core default (0.88).
@@ -20,7 +20,7 @@ pub struct AgentConfig {
   system_prompt : String?
   /// Optional per-provider cap for the session-opening `MemoryPort::inbound`
   /// read, in milliseconds. `None` means no timeout.
-  memory_inbound_timeout_ms : Int?
+  memory_inbound_timeout_ms : Int32?
 }
 
 ///|
@@ -28,13 +28,13 @@ pub struct AgentConfig {
 /// knob is `None`. Prefer this over record literals so new optional fields
 /// never break construction sites.
 pub fn agent_config(
-  max_tool_rounds? : Int? = None,
-  temperature? : Double? = None,
-  max_output_tokens? : Int? = None,
-  model_context_window? : Int? = None,
-  compact_threshold? : Double? = None,
-  system_prompt? : String? = None,
-  memory_inbound_timeout_ms? : Int? = None,
+  max_tool_rounds~ : Int32? = None,
+  temperature~ : Double? = None,
+  max_output_tokens~ : Int32? = None,
+  model_context_window~ : Int32? = None,
+  compact_threshold~ : Double? = None,
+  system_prompt~ : String? = None,
+  memory_inbound_timeout_ms~ : Int32? = None,
 ) -> AgentConfig {
   {
     max_tool_rounds,
@@ -73,7 +73,7 @@ priv struct ToolRouting {
 
 ///|
 /// Bound an error label without interpreting its contents.
-fn bounded_error_label(value : String, cap : Int) -> String {
+fn bounded_error_label(value : String, cap : Int32) -> String {
   let chars : Array[Char] = []
   let mut truncated = false
   for char in value {
@@ -287,17 +287,17 @@ priv struct AgentRuntime {
   /// the static composition-time snapshot for the Agent's lifetime.
   catalog_source : &@runtime.CatalogSource?
   /// The source revision last read (0 = no source / not yet read).
-  mut last_catalog_revision : Int
+  mut last_catalog_revision : Int32
   /// Next monotonic catalog version to assign on a successful refresh.
   /// Composition builds version 1; refreshes hand out 2, 3, ...
-  mut next_catalog_version : Int
+  mut next_catalog_version : Int32
   /// Core basic tool definitions (the built-in memory surface), merged
   /// ahead of every `CatalogSource` read. Empty when no basic tools exist.
   basic_tool_defs : Array[@kernel.ToolDef]
-  mut next_run_seq : Int
+  mut next_run_seq : Int32
   mut shutdown_started : Bool
   mut shutdown_complete : Bool
-  mut next_lifecycle_shutdown : Int
+  mut next_lifecycle_shutdown : Int32
   /// Whether lifecycle contributors have received their once-per-Agent
   /// `on_start` notification. Fired inside the first `run_single_turn`,
   /// after the shutdown guard and before the first `TurnStarted`.
@@ -316,7 +316,7 @@ priv struct AgentRuntime {
   /// persisted. Shared with the committed-event checkpoint subscriber so
   /// model/tool boundaries advance the same durability cursor the terminal
   /// save path uses.
-  session_cursors : Map[String, Int]
+  session_cursors : Map[String, Int32]
   /// The committed-event projection subscriber. Retained so the turn-failure
   /// path can close still-pending tool calls with `ToolCallAbandoned`: the
   /// Puppet's host-level rejection path (`reject_run`) intentionally emits
@@ -393,7 +393,7 @@ fn compose_tool_catalog(
 ) -> (
   ToolRouting,
   @kernel_exec.ToolCatalogSnapshot,
-  Int,
+  Int32,
   Array[@kernel.ToolDef],
   Map[String, &@port.ToolProvider],
 ) raise @error.CompositionError {
@@ -572,7 +572,7 @@ fn AgentRuntime::compose(
   control.set_abort_hook(fn(run_id) {
     task_runtime.cancel_foreground_for_run(run_id)
   })
-  let session_cursors : Map[String, Int] = Map::from_array([])
+  let session_cursors : Map[String, Int32] = Map::from_array([])
   let checkpoint_dirty : Map[String, Bool] = Map::from_array([])
   let checkpoint_subscriber = SessionCheckpointSubscriber(
     agg.sessions,
@@ -691,7 +691,7 @@ fn AgentRuntime::compose(
 pub fn Agent::Agent(
   exts~ : Array[&@port.Extension],
   config~ : AgentConfig,
-  ui_projection? : Bool = false,
+  ui_projection~ : Bool = false,
 ) -> Agent raise @error.CompositionError {
   let agg = aggregate_extensions(exts)
   AgentRuntime::compose(agg, config, ui_projection, None, None)
@@ -717,7 +717,7 @@ pub fn Agent::with_runtime(
   exts~ : Array[&@port.Extension],
   config~ : AgentConfig,
   runtime~ : &@runtime.Runtime,
-  ui_projection? : Bool = false,
+  ui_projection~ : Bool = false,
   catalog_source? : &@runtime.CatalogSource,
 ) -> Agent raise @error.CompositionError {
   let agg = aggregate_extensions(exts)
@@ -1111,7 +1111,7 @@ fn AgentRuntime::ensure_agent_running(
 /// Cap on follow-up turns drained within a single `run_turn` call, aligned
 /// with the control queue bound. Prevents an unbounded follow-up chain from
 /// monopolising one call; leftovers stay queued for the next call.
-let follow_up_drain_limit : Int = 64
+let follow_up_drain_limit : Int32 = 64
 
 ///|
 /// Run one agent turn, then drain any follow-ups submitted while it (or a
@@ -1137,9 +1137,9 @@ async fn AgentRuntime::run_turn_with_mode(
   input : @kernel.Message,
   session_id : String,
   resume_persisted_user : Bool,
-  origin? : OperationOrigin = Turn,
-  operation_label? : String? = None,
-  on_admitted? : ((OperationAdmission) -> Unit)? = None,
+  origin~ : OperationOrigin = Turn,
+  operation_label~ : String? = None,
+  on_admitted~ : ((OperationAdmission) -> Unit)? = None,
 ) -> @types.TurnResult raise @error.AgentError {
   let admission = self.admit_operation(session_id, origin, operation_label~)
   // Synchronous post-admission hook: the wakeup display envelope fires only
@@ -1339,7 +1339,7 @@ pub async fn Agent::run_turn(
 pub async fn Agent::resume_turn(
   self : Agent,
   session_id : String,
-  continuation? : String = "continue",
+  continuation~ : String = "continue",
 ) -> @types.TurnResult raise @error.AgentError {
   self.runtime.run_turn_with_mode(
     @kernel.Message::UserMessage(content=[@kernel.Content::Text(continuation)]),

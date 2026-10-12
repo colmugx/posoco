@@ -30,7 +30,7 @@ pub(all) struct PuppetConfig {
   /// the sole semantic limit; when a budget is configured this is derived
   /// generously from it (2 iterations per round + terminal iteration) so the
   /// budget always fires first.
-  max_iterations : Int?
+  max_iterations : Int32?
   /// Slash command processors. The pump does NOT invoke these —
   /// `BuiltinCommandPort` is registered here so product code can reach it
   /// through `puppet.commands()`. The BuiltinCommandPort holds a reference
@@ -82,7 +82,7 @@ pub struct Puppet {
   /// Last terminal outcome captured by the Puppet. `None` means no run has
   /// completed or the current run is suspended.
   mut last_outcome : RunOutcome?
-  mut auto_compact_attempt_version : Int?
+  mut auto_compact_attempt_version : Int32?
   context_states : Map[String, @types.ContextState]
 }
 

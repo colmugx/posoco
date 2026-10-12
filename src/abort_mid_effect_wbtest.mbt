@@ -17,16 +17,16 @@ struct MidEffectAbortRuntime {
   inner : &@runtime.Runtime
   park_model : Bool
   park_tool_names : Array[String]
-  mut model_parks : Int
-  mut tool_parks : Int
+  mut model_parks : Int32
+  mut tool_parks : Int32
   cancelled_effect_ids : Array[@kernel.EffectId]
 }
 
 ///|
 fn MidEffectAbortRuntime::MidEffectAbortRuntime(
   inner~ : &@runtime.Runtime,
-  park_model? : Bool = false,
-  park_tool_names? : Array[String] = [],
+  park_model~ : Bool = false,
+  park_tool_names~ : Array[String] = [],
 ) -> MidEffectAbortRuntime {
   {
     inner,

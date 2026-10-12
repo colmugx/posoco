@@ -71,7 +71,7 @@ pub(all) struct JournalEntryIdentity {
   savepoint_id : String
   /// Monotonic within the savepoint. The Puppet assigns this when freezing
   /// the pending batch.
-  entry_seq : Int
+  entry_seq : Int32
   kind : SavepointKind
 } derive(Eq, Debug)
 
@@ -105,7 +105,7 @@ pub impl Show for JournalEntryIdentity with fn to_string(
 pub(all) struct JournalEntry {
   identity : JournalEntryIdentity
   /// Revision assigned at commit time. Monotonic across the whole journal.
-  revision : Int
+  revision : Int32
   /// Single-line redacted summary for diagnostics. Excludes secrets,
   /// prompts, tool arguments.
   summary : String
@@ -148,10 +148,10 @@ pub(open) trait RunJournal {
   /// - `PuppetError::SavepointFailed(_, BarrierFailed(_))` if the append
   ///   itself fails (e.g. I/O error in M5).
   /// - Identity mismatch / post-terminal append also raise SavepointFailed.
-  fn append(Self, Array[JournalEntry]) -> Int raise PuppetError
+  fn append(Self, Array[JournalEntry]) -> Int32 raise PuppetError
 
   /// Current committed revision. 0 means "no entries yet".
-  fn revision(Self) -> Int
+  fn revision(Self) -> Int32
 
   /// Read all entries for a given run id, ordered by revision. Used by
   /// projection / replay.
@@ -186,7 +186,7 @@ pub struct InMemoryJournal {
   /// Successful non-empty append calls. This is deliberately distinct from
   /// `revision`: one boundary may contain multiple entries/contributions but
   /// must still cross the durability barrier exactly once.
-  mut append_count : Int
+  mut append_count : Int32
 }
 
 ///|
@@ -202,7 +202,7 @@ pub fn InMemoryJournal::InMemoryJournal() -> InMemoryJournal {
 ///|
 /// Number of successful non-empty append barriers. Exposed for deterministic
 /// performance-gate fixtures; production code relies on journal revisions.
-pub fn InMemoryJournal::append_count(self : InMemoryJournal) -> Int {
+pub fn InMemoryJournal::append_count(self : InMemoryJournal) -> Int32 {
   self.append_count
 }
 
@@ -216,12 +216,12 @@ fn entry_dedup_key(id : JournalEntryIdentity) -> String {
 pub impl RunJournal for InMemoryJournal with fn append(
   self,
   batch : Array[JournalEntry],
-) -> Int raise PuppetError {
+) -> Int32 raise PuppetError {
   InMemoryJournal::append_impl(self, batch)
 }
 
 ///|
-pub impl RunJournal for InMemoryJournal with fn revision(self) -> Int {
+pub impl RunJournal for InMemoryJournal with fn revision(self) -> Int32 {
   InMemoryJournal::revision_impl(self)
 }
 
@@ -249,7 +249,7 @@ pub impl RunJournal for InMemoryJournal with fn entries_for_savepoint(
 fn InMemoryJournal::append_impl(
   self : InMemoryJournal,
   batch : Array[JournalEntry],
-) -> Int raise PuppetError {
+) -> Int32 raise PuppetError {
   if batch.is_empty() {
     return self.revision_impl()
   }
@@ -295,7 +295,7 @@ fn InMemoryJournal::append_impl(
 }
 
 ///|
-fn InMemoryJournal::revision_impl(self : InMemoryJournal) -> Int {
+fn InMemoryJournal::revision_impl(self : InMemoryJournal) -> Int32 {
   self.entries.length()
 }
 
@@ -341,14 +341,14 @@ fn InMemoryJournal::entries_for_savepoint_impl(
 /// adapter raises before delegating).
 pub struct FailOnNthJournal {
   inner : InMemoryJournal
-  fail_on : Int
-  mut call_count : Int
+  fail_on : Int32
+  mut call_count : Int32
 }
 
 ///|
 pub fn FailOnNthJournal::FailOnNthJournal(
   inner : InMemoryJournal,
-  fail_on : Int,
+  fail_on : Int32,
 ) -> FailOnNthJournal {
   { inner, fail_on, call_count: 0, }
 }
@@ -365,7 +365,7 @@ pub extend FailOnNthJournal with RunJournal::{
 pub impl RunJournal for FailOnNthJournal with fn append(
   self,
   batch : Array[JournalEntry],
-) -> Int raise PuppetError {
+) -> Int32 raise PuppetError {
   self.call_count = self.call_count + 1
   if self.call_count == self.fail_on {
     raise SavepointFailed(
@@ -377,7 +377,7 @@ pub impl RunJournal for FailOnNthJournal with fn append(
 }
 
 ///|
-pub impl RunJournal for FailOnNthJournal with fn revision(self) -> Int {
+pub impl RunJournal for FailOnNthJournal with fn revision(self) -> Int32 {
   self.inner.revision_impl()
 }
 

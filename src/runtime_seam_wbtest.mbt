@@ -11,7 +11,7 @@ priv struct FakeRuntime {
   inner : @runtime.PortRuntime
   seen_contexts : Array[@runtime.EffectContext]
   seen_scopes : Array[@kernel.InvocationScope]
-  mut cancel_calls : Int
+  mut cancel_calls : Int32
   cancel_seen : Array[Array[@kernel.EffectId]]
   mut control : AgentControl?
   mut abort_on_tool : Bool
@@ -299,7 +299,7 @@ async test "runtime seam/follow-up during turn drives a subsequent turn" {
 /// Versioned catalog fake: the test bumps `revision` and replaces `defs`
 /// wholesale to simulate dynamic tool registration.
 priv struct FakeCatalogSource {
-  mut revision : Int
+  mut revision : Int32
   mut defs : Array[@kernel.ToolDef]
 }
 
@@ -311,7 +311,7 @@ fn FakeCatalogSource::FakeCatalogSource(
 }
 
 ///|
-impl @runtime.CatalogSource for FakeCatalogSource with fn revision(self) -> Int {
+impl @runtime.CatalogSource for FakeCatalogSource with fn revision(self) -> Int32 {
   self.revision
 }
 
@@ -324,7 +324,7 @@ impl @runtime.CatalogSource for FakeCatalogSource with fn tools(self) -> Array[
 
 ///|
 /// Names of the tool definitions the scripted model saw at its n-th call.
-fn tool_names_seen(model : ScriptedModel, call : Int) -> Array[String] {
+fn tool_names_seen(model : ScriptedModel, call : Int32) -> Array[String] {
   model.received_tools[call].map(fn(def) { def.name.to_string() })
 }
 

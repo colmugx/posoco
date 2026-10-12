@@ -82,11 +82,11 @@ pub fn CompositionView::wakeup(self : CompositionView) -> WakeupPort? {
 pub fn CompositionView::resolve(
   requires~ : Array[Capability],
   model~ : &ModelPort,
-  decision? : &DecisionPort? = None,
-  log? : &LogPort? = None,
+  decision~ : &DecisionPort? = None,
+  log~ : &LogPort? = None,
   ui~ : &UiPort,
-  tasks? : Tasks? = None,
-  wakeup? : WakeupPort? = None,
+  tasks~ : Tasks? = None,
+  wakeup~ : WakeupPort? = None,
 ) -> CompositionView {
   {
     model_: if requires.contains(Model) {

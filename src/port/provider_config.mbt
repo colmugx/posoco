@@ -7,7 +7,7 @@ pub(all) struct ProviderConfig {
   reasoning_effort_values : Array[String]
   /// Provider-reported context capacity of the active model, in tokens.
   /// `None` = unknown; auto-compact stays disabled rather than guessing.
-  context_window : Int?
+  context_window : Int32?
   /// Provider-reported fraction of the context window at which auto-compact
   /// fires, in (0, 1]. `None` = the host/default threshold applies.
   compact_threshold : Double?
@@ -22,8 +22,8 @@ pub extend ProviderConfig with Debug::{to_repr}
 ///|
 pub fn ProviderConfig::ProviderConfig(
   reasoning_effort_values~ : Array[String],
-  context_window? : Int? = None,
-  compact_threshold? : Double? = None,
+  context_window~ : Int32? = None,
+  compact_threshold~ : Double? = None,
 ) -> ProviderConfig {
   { reasoning_effort_values, context_window, compact_threshold, }
 }

@@ -121,7 +121,7 @@ fn c_session_id() -> SessionId {
 fn make_c_entry(
   kind : SavepointKind,
   savepoint_id : String,
-  entry_seq : Int,
+  entry_seq : Int32,
 ) -> JournalEntry {
   let identity : JournalEntryIdentity = {
     run_id: c_run_id(),
@@ -329,7 +329,7 @@ test "puppet_contribution/commit_batch_via_fail_on_nth" {
   let base = [make_c_entry(InputAccepted, "sp1", 0)]
   let ctx = make_c_ctx("sp1", InputAccepted, base)
   let batch = prepare_batch(ctx, [])
-  let result : Result[Int, PuppetError] = Ok(commit_batch(failing, batch)) catch {
+  let result : Result[Int32, PuppetError] = Ok(commit_batch(failing, batch)) catch {
     e => Err(e)
   }
   assert_true(result is Err(SavepointFailed(..)))
@@ -360,7 +360,7 @@ test "puppet_contribution/commit_batch_detects_post_freeze_count_change" {
   // Inject an extra entry into batch.entries post-freeze.
   batch.entries.push(make_c_entry(InputAccepted, "sp1", 1))
   let journal = InMemoryJournal()
-  let result : Result[Int, PuppetError] = Ok(commit_batch(journal, batch)) catch {
+  let result : Result[Int32, PuppetError] = Ok(commit_batch(journal, batch)) catch {
     e => Err(e)
   }
   assert_true(result is Err(SavepointFailed(..)))

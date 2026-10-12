@@ -6,7 +6,7 @@ pub(all) enum EnqueueOutcome {
   /// Rejected because there is no active run, or the target went stale.
   RejectedStale(reason~ : String)
   /// Rejected because the follow-up queue is full.
-  RejectedQueueFull(depth~ : Int)
+  RejectedQueueFull(depth~ : Int32)
   /// Abort arrived after a previous abort already fired for the active run.
   AbortAlreadyRequested
   /// A queue operation failed for a reason other than queue capacity.

@@ -13,7 +13,7 @@ priv struct BasicFirstHostRuntime {
   /// Same registration semantics as `PortRuntime`: populated only by basic
   /// providers that call `ToolCallContext.register_cancel`; dropped at
   /// settle. Memory tools are instantaneous and never register.
-  cancels : Map[Int, &@port.ToolCancellable]
+  cancels : Map[Int32, &@port.ToolCancellable]
 }
 
 ///|

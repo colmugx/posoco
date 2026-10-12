@@ -25,7 +25,7 @@ async fn memory_inbound_one(
   port : &@port.MemoryPort,
   session_id : String,
   request : String,
-  timeout_ms : Int?,
+  timeout_ms : Int32?,
   on_failure : (String) -> Unit,
 ) -> String? {
   let call = async fn() -> String? {
@@ -61,7 +61,7 @@ async fn collect_memory_inbound(
   sources : Array[(String, &@port.MemoryPort)],
   session_id : String,
   request : String,
-  timeout_ms : Int?,
+  timeout_ms : Int32?,
   on_failure : (String) -> Unit,
 ) -> Array[String] noraise {
   let attempted : Result[Array[String?], Error] = Ok(
@@ -218,7 +218,7 @@ async fn MemoryToolProvider::execute_memory_search(
     Ok(q) => q
     Err(msg) => return ToolReportedError(content=msg, structured=None)
   }
-  let top_k : Int? = match args.get("top_k") {
+  let top_k : Int32? = match args.get("top_k") {
     Some(Number(n, ..)) => Some(n.to_int())
     Some(_) =>
       return ToolReportedError(

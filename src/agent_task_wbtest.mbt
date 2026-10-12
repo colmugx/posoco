@@ -25,7 +25,7 @@ impl @port.Lifecycle for TaskCapture with fn on_shutdown(_self : TaskCapture) {
 /// Model gate used to keep one Agent operation active while its task hook
 /// admits overlapping foreground and background work.
 priv struct ForegroundAbortModel {
-  release : @aqueue.Queue[Int]
+  release : @aqueue.Queue[Int32]
   response : @kernel.ModelCallResult
 }
 
@@ -79,12 +79,12 @@ impl @port.ModelPort for ForegroundAbortModel with fn provider_config(_self) -> 
 priv struct CompactBusyModel {
   mut tasks : @port.Tasks?
   mut first_compact : Bool
-  foreground_started : @aqueue.Queue[Int]
-  cleanup_started : @aqueue.Queue[Int]
-  cleanup_release : @aqueue.Queue[Int]
-  foreground_hold : @aqueue.Queue[Int]
-  started : @aqueue.Queue[Int]
-  release : @aqueue.Queue[Int]
+  foreground_started : @aqueue.Queue[Int32]
+  cleanup_started : @aqueue.Queue[Int32]
+  cleanup_release : @aqueue.Queue[Int32]
+  foreground_hold : @aqueue.Queue[Int32]
+  started : @aqueue.Queue[Int32]
+  release : @aqueue.Queue[Int32]
 }
 
 ///|
@@ -242,9 +242,9 @@ priv struct ForegroundAbortProbe {
   mut foreground_one : @port.TaskHandle?
   mut foreground_two : @port.TaskHandle?
   mut background : @port.TaskHandle?
-  started : @aqueue.Queue[Int]
-  foreground_gate : @aqueue.Queue[Int]
-  background_gate : @aqueue.Queue[Int]
+  started : @aqueue.Queue[Int32]
+  foreground_gate : @aqueue.Queue[Int32]
+  background_gate : @aqueue.Queue[Int32]
 }
 
 ///|
@@ -947,7 +947,7 @@ async test "managed_tasks/foreground_settlement_deadline_preserves_operation_own
     let turn_one = @kernel.TurnId::unchecked("supervised-turn-1")
     runtime.begin_operation("supervised-session", run_one, turn_one)
 
-    let gate : @aqueue.Queue[Int] = Queue(kind=Unbounded)
+    let gate : @aqueue.Queue[Int32] = Queue(kind=Unbounded)
     let handle = match
       runtime.submit("supervised-test", {
         session_id: "supervised-session",

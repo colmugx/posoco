@@ -29,10 +29,10 @@ pub(all) struct EventEnvelope {
   turn_id : TurnId
   session_id : SessionId
   /// Monotonic per-run sequence. Strictly increasing; no duplicates.
-  seq : Int
+  seq : Int32
   /// Journal revision at the moment the underlying savepoint committed.
   /// Subscribers can correlate events to journal entries via this.
-  committed_revision : Int
+  committed_revision : Int32
   event : KernelEvent
 } derive(Eq, Debug)
 
@@ -76,8 +76,8 @@ pub fn EventEnvelope::EventEnvelope(
   run_id~ : RunId,
   turn_id~ : TurnId,
   session_id~ : SessionId,
-  seq~ : Int,
-  committed_revision~ : Int,
+  seq~ : Int32,
+  committed_revision~ : Int32,
   event~ : KernelEvent,
 ) -> EventEnvelope {
   { run_id, turn_id, session_id, seq, committed_revision, event, }
@@ -200,10 +200,10 @@ pub impl EventSubscriber for NoopSubscriber with fn on_event(
 pub struct EventDispatcher {
   subscribers : Array[&EventSubscriber]
   /// Per-run seq counter. Incremented before each dispatch.
-  mut next_seq : Int
+  mut next_seq : Int32
   /// Last committed revision the dispatcher has observed. Used to build
   /// envelopes.
-  mut last_committed_revision : Int
+  mut last_committed_revision : Int32
   /// Run identity this dispatcher is bound to. Set once.
   run_id : RunId
   turn_id : TurnId
@@ -238,13 +238,13 @@ pub fn EventDispatcher::register(
 }
 
 ///|
-pub fn EventDispatcher::subscriber_count(self : EventDispatcher) -> Int {
+pub fn EventDispatcher::subscriber_count(self : EventDispatcher) -> Int32 {
   self.subscribers.length()
 }
 
 ///|
 /// Current seq counter value (next envelope gets this seq).
-pub fn EventDispatcher::next_seq(self : EventDispatcher) -> Int {
+pub fn EventDispatcher::next_seq(self : EventDispatcher) -> Int32 {
   self.next_seq
 }
 
@@ -257,7 +257,7 @@ pub fn EventDispatcher::next_seq(self : EventDispatcher) -> Int {
 pub async fn EventDispatcher::dispatch(
   self : EventDispatcher,
   event : KernelEvent,
-  committed_revision : Int,
+  committed_revision : Int32,
 ) -> Unit raise PuppetError {
   let seq = self.next_seq
   self.next_seq = self.next_seq + 1

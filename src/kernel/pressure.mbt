@@ -8,10 +8,10 @@
 /// and must not be guessed.
 pub(all) struct ContextPressure {
   /// Resolved token budget ceiling for the active model. None = unknown.
-  window_tokens : Int?
+  window_tokens : Int32?
   /// Context occupancy reported by the LATEST model step (that call's total
   /// tokens). None = no verified reading yet.
-  occupancy_tokens : Int?
+  occupancy_tokens : Int32?
   /// Resolved auto-compact trigger point as a fraction of the window.
   compact_threshold : Double
 } derive(Eq, Debug)

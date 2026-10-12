@@ -41,7 +41,7 @@ fn bump_model_step(
 /// reported, else `input_tokens + output_tokens` when both are. Partial
 /// readings (only one of input/output) are not a reliable size — stay
 /// unknown rather than guessing low.
-fn usage_context_occupancy(u : @kernel.Usage) -> Int? {
+fn usage_context_occupancy(u : @kernel.Usage) -> Int32? {
   match u.total_tokens {
     Some(total) => Some(total)
     None =>
@@ -55,7 +55,7 @@ fn usage_context_occupancy(u : @kernel.Usage) -> Int? {
 ///|
 fn bump_tool_batch(
   consumed : BudgetConsumed,
-  executable_calls : Int,
+  executable_calls : Int32,
 ) -> BudgetConsumed {
   // This helper is only called after validation established a non-empty
   // ExecuteTool batch. Count when effects are declared, never as individual
@@ -72,7 +72,7 @@ fn bump_tool_batch(
 }
 
 ///|
-fn consumed_for_dim(consumed : BudgetConsumed, dim : BudgetDimension) -> Int {
+fn consumed_for_dim(consumed : BudgetConsumed, dim : BudgetDimension) -> Int32 {
   match dim {
     ModelSteps => consumed.model_steps
     ToolRounds => consumed.tool_rounds
@@ -82,7 +82,7 @@ fn consumed_for_dim(consumed : BudgetConsumed, dim : BudgetDimension) -> Int {
 }
 
 ///|
-fn limit_for_dim(budget : Budget, dim : BudgetDimension) -> Int {
+fn limit_for_dim(budget : Budget, dim : BudgetDimension) -> Int32 {
   match dim {
     ModelSteps =>
       match budget.max_model_steps {

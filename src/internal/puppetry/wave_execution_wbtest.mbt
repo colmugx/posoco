@@ -9,11 +9,11 @@
 ///|
 struct WaveFixtureHost {
   model_results : Array[Result[@kernel.Completion, ModelFailure]]
-  mut model_index : Int
+  mut model_index : Int32
   started : Array[String]
   finished : Array[String]
-  mut in_flight : Int
-  mut max_in_flight : Int
+  mut in_flight : Int32
+  mut max_in_flight : Int32
 }
 
 ///|
@@ -31,7 +31,7 @@ fn WaveFixtureHost::WaveFixtureHost(
 }
 
 ///|
-fn WaveFixtureHost::max_in_flight(self : WaveFixtureHost) -> Int {
+fn WaveFixtureHost::max_in_flight(self : WaveFixtureHost) -> Int32 {
   self.max_in_flight
 }
 

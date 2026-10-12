@@ -34,7 +34,7 @@ async test "model_request_started/brackets_every_step_before_chunks" {
   // One anchor per model step: before the turn's first chunk, and again
   // after the tool wave — never from the response boundary itself.
   let request_indices = []
-  let chunk_indices_after_first_request : Array[Int] = []
+  let chunk_indices_after_first_request : Array[Int32] = []
   let mut saw_first_request = false
   for i, event in events {
     match event {

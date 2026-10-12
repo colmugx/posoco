@@ -71,13 +71,13 @@ pub impl Show for ContextReadingSource with fn to_string(
 pub(all) struct ContextState {
   session_id : String
   model_id : String
-  context_version : Int
-  last_measured_tokens : Int?
-  estimated_added_tokens : Int
-  window_tokens : Int?
+  context_version : Int32
+  last_measured_tokens : Int32?
+  estimated_added_tokens : Int32
+  window_tokens : Int32?
   compact_threshold : Double
   source : ContextReadingSource
-  reading_message_count : Int
+  reading_message_count : Int32
 } derive(Eq, Debug)
 
 ///|
@@ -151,7 +151,7 @@ pub fn ContextState::from_metadata(
         Some(Number(n, ..)) => n.to_int()
         _ => return None
       }
-      let last_measured : Int? = match fields.get("last_measured_tokens") {
+      let last_measured : Int32? = match fields.get("last_measured_tokens") {
         Some(Number(n, ..)) => Some(n.to_int())
         _ => None
       }
@@ -159,7 +159,7 @@ pub fn ContextState::from_metadata(
         Some(Number(n, ..)) => n.to_int()
         _ => 0
       }
-      let window : Int? = match fields.get("window_tokens") {
+      let window : Int32? = match fields.get("window_tokens") {
         Some(Number(n, ..)) => Some(n.to_int())
         _ => None
       }
@@ -200,7 +200,7 @@ pub fn ContextState::from_metadata(
 pub(all) struct CompactOutcome {
   final_session_id : String
   mode : @kernel.CompactMode
-  messages_after : Int
+  messages_after : Int32
 } derive(Eq)
 
 ///|
@@ -295,8 +295,8 @@ pub(all) enum TurnEvent {
   SessionRedirect(
     from~ : String,
     to~ : String,
-    messages_before~ : Int,
-    messages_after~ : Int
+    messages_before~ : Int32,
+    messages_after~ : Int32
   )
   TurnCompleted
   TurnFailed(String)
@@ -305,7 +305,7 @@ pub(all) enum TurnEvent {
   /// dropped. `count` is the number of dropped `StreamChunkReceived` events.
   /// This event is synthesized by the chunk dispatcher and inserted before
   /// the next delivered chunk or terminal event so observers can detect loss.
-  StreamChunksDropped(count~ : Int)
+  StreamChunksDropped(count~ : Int32)
   /// Configuration warning emitted by an extension or product configuration
   /// flow when a requested setting cannot be applied. This event lets
   /// subscribers surface the warning without coupling to the configuration
@@ -327,7 +327,7 @@ pub(all) enum TurnEvent {
     trigger~ : String,
     mode~ : String,
     final_session_id~ : String,
-    messages_after~ : Int
+    messages_after~ : Int32
   )
   OperationFinalized(operation~ : String, outcome~ : String, detail~ : String)
   Custom(source~ : String, label~ : String, data~ : Json)

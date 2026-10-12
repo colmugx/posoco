@@ -40,7 +40,7 @@ pub(all) struct PreCommitContext {
   /// Read-only; contributors must NOT mutate this array.
   base_entries : Array[JournalEntry]
   /// Current committed revision (before this savepoint commits).
-  current_revision : Int
+  current_revision : Int32
   /// Catalog version active for this run. Read-only.
   catalog_version : CatalogVersion
 } derive(Eq, Debug)
@@ -209,7 +209,7 @@ pub impl JournalContributor for NoopContributor with fn contribute(
 pub(all) struct FrozenBatch {
   savepoint_id : String
   savepoint_kind : SavepointKind
-  expected_revision : Int
+  expected_revision : Int32
   entries : Array[JournalEntry]
   /// Set of entry dedup keys, captured at freeze time. Used to detect
   /// post-freeze mutation of the underlying arrays.
@@ -387,7 +387,7 @@ fn validate_entry(
 fn commit_batch(
   journal : &RunJournal,
   batch : FrozenBatch,
-) -> Int raise PuppetError {
+) -> Int32 raise PuppetError {
   // Post-freeze integrity check: verify entry keys still match.
   let current_keys : Array[String] = []
   for entry in batch.entries {

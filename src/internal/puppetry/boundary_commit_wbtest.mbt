@@ -7,8 +7,8 @@
 struct BoundaryProbeHost {
   journal : InMemoryJournal
   model_results : Array[Result[@kernel.Completion, ModelFailure]]
-  mut model_index : Int
-  append_counts_at_model_call : Array[Int]
+  mut model_index : Int32
+  append_counts_at_model_call : Array[Int32]
 }
 
 ///|
@@ -27,7 +27,7 @@ fn BoundaryProbeHost::BoundaryProbeHost(
 ///|
 fn BoundaryProbeHost::append_counts_at_model_call(
   self : BoundaryProbeHost,
-) -> Array[Int] {
+) -> Array[Int32] {
   self.append_counts_at_model_call.copy()
 }
 
@@ -165,7 +165,7 @@ pub impl EventSubscriber for RewriteProbeSubscriber with fn on_event(
 /// Host whose compact returns a Replace result with a one-message summary.
 struct CompactReplaceHost {
   model_results : Array[Result[@kernel.Completion, ModelFailure]]
-  mut model_index : Int
+  mut model_index : Int32
   messages_at_model_call : Array[Array[Message]]
 }
 
@@ -251,7 +251,7 @@ pub impl @kernel_exec.HostRuntime for CompactReplaceHost with fn compact(
 ///|
 fn fixture_tool_calls_with_usage(
   calls : Array[ToolCall],
-  total : Int,
+  total : Int32,
 ) -> @kernel.Completion {
   Completion(
     content=[],
@@ -324,7 +324,7 @@ async test "puppet/boundary_journals_auto_compact_replace_rewrite" {
   // the run to ReadyForModel, before the second declared model intent.
   let mut tool_idx = -1
   let mut rewrite_idx = -1
-  let step_starts : Array[Int] = []
+  let step_starts : Array[Int32] = []
   for i, event in subscriber.events {
     match event {
       ToolCompleted(..) => tool_idx = i

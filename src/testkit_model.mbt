@@ -64,16 +64,16 @@ fn testkit_is_compact_step(step : ScriptedModelStep) -> Bool {
 /// silently repeats the last response.
 pub(all) struct ScriptedModel {
   steps : Array[ScriptedModelStep]
-  mut index : Int
-  mut calls : Int
+  mut index : Int32
+  mut calls : Int32
   received_messages : Array[Array[@kernel.Message]]
   received_tools : Array[Array[@kernel.ToolDef]]
   received_options : Array[@types.ChatOptions]
   received_chunks : Array[@types.StreamChunk]
-  mut compact_calls : Int
+  mut compact_calls : Int32
   received_compacts : Array[(Array[@kernel.Message], @kernel.CompactTrigger)]
   received_compact_tools : Array[Array[@kernel.ToolDef]]
-  mut parked_calls : Int
+  mut parked_calls : Int32
 }
 
 ///|
@@ -97,12 +97,12 @@ pub fn ScriptedModel::ScriptedModel(
 
 ///|
 /// Number of chat calls observed so far.
-pub fn ScriptedModel::call_count(self : ScriptedModel) -> Int {
+pub fn ScriptedModel::call_count(self : ScriptedModel) -> Int32 {
   self.calls
 }
 
 ///|
-pub fn ScriptedModel::compact_call_count(self : ScriptedModel) -> Int {
+pub fn ScriptedModel::compact_call_count(self : ScriptedModel) -> Int32 {
   self.compact_calls
 }
 
@@ -117,7 +117,7 @@ pub fn ScriptedModel::received_compacts(
 }
 
 ///|
-pub fn ScriptedModel::parked_calls(self : ScriptedModel) -> Int {
+pub fn ScriptedModel::parked_calls(self : ScriptedModel) -> Int32 {
   self.parked_calls
 }
 
@@ -125,9 +125,9 @@ pub fn ScriptedModel::parked_calls(self : ScriptedModel) -> Int {
 /// Fabricated `InvocationScope` for tests that drive a `ModelPort` directly
 /// (no reducer in play, so `effect_id` is `None`).
 pub fn tk_scope(
-  session_id? : String = "tk_session",
-  run_id? : String = "tk_run",
-  pressure? : @kernel.ContextPressure? = None,
+  session_id~ : String = "tk_session",
+  run_id~ : String = "tk_run",
+  pressure~ : @kernel.ContextPressure? = None,
 ) -> @kernel.InvocationScope {
   {
     session_id: @kernel.SessionId::unchecked(session_id),

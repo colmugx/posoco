@@ -25,7 +25,7 @@ pub(open) trait CatalogSource {
   /// Opaque change signal. Any change since the last read triggers one
   /// catalog rebuild at the next prompt boundary. Values are compared for
   /// inequality only — they do not need to be monotonic.
-  fn revision(Self) -> Int
+  fn revision(Self) -> Int32
 
   /// The current canonical tool definitions. Unlike `ToolProvider`
   /// declarations, these are taken verbatim: each definition's `owner` and

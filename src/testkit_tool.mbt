@@ -54,7 +54,7 @@ fn testkit_snapshot_tool_outcome(
 pub(all) struct RecordingToolProvider {
   tool_defs : Array[@kernel.ToolDef]
   outcomes : Map[String, ScriptedToolOutcome]
-  mut list_calls : Int
+  mut list_calls : Int32
   mut exec_records : Array[ToolExecRecord]
   mut ops : Array[ToolProviderOp]
 }
@@ -81,7 +81,7 @@ pub fn RecordingToolProvider::RecordingToolProvider(
 /// Number of times list_tools was called.
 pub fn RecordingToolProvider::list_call_count(
   self : RecordingToolProvider,
-) -> Int {
+) -> Int32 {
   self.list_calls
 }
 
@@ -120,7 +120,7 @@ pub fn RecordingToolProvider::ops(
 /// call "call_1") and a no-op cancellation registrar.
 pub fn tk_tool_call_ctx(
   name~ : String,
-  arguments? : Json = Json::null(),
+  arguments~ : Json = Json::null(),
 ) -> @port.ToolCallContext {
   {
     effect_id: @kernel.EffectId::first(),

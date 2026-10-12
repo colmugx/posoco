@@ -9,10 +9,10 @@ pub(all) struct FixtureHost {
   model_results : Array[Result[@kernel.Completion, ModelFailure]]
   tool_results : Map[String, @kernel.ToolOutcome]
   mut definitions : Array[ToolDef]
-  mut model_index : Int
-  mut model_call_count : Int
-  mut tool_call_count : Int
-  mut observed_definition_count : Int
+  mut model_index : Int32
+  mut model_call_count : Int32
+  mut tool_call_count : Int32
+  mut observed_definition_count : Int32
   observed_call_options : Array[Json]
   /// Effect ids received via `execute_tool`, in execution order. Used to
   /// verify the host receives the reducer-allocated effect identity.
@@ -63,17 +63,17 @@ fn FixtureHost::with_model_transport_failure(self : FixtureHost) -> FixtureHost 
 }
 
 ///|
-pub fn FixtureHost::model_call_count(self : FixtureHost) -> Int {
+pub fn FixtureHost::model_call_count(self : FixtureHost) -> Int32 {
   self.model_call_count
 }
 
 ///|
-pub fn FixtureHost::tool_call_count(self : FixtureHost) -> Int {
+pub fn FixtureHost::tool_call_count(self : FixtureHost) -> Int32 {
   self.tool_call_count
 }
 
 ///|
-pub fn FixtureHost::observed_definition_count(self : FixtureHost) -> Int {
+pub fn FixtureHost::observed_definition_count(self : FixtureHost) -> Int32 {
   self.observed_definition_count
 }
 
@@ -337,7 +337,7 @@ async fn fixture_prompt(
 fn first_revision_matching(
   entries : Array[JournalEntry],
   kind : SavepointKind,
-) -> Int {
+) -> Int32 {
   for entry in entries {
     if entry.identity.kind == kind {
       return entry.revision
@@ -825,8 +825,8 @@ test "puppet/C-SUSPEND-RESUME-IN-PROCESS" {
 ///|
 struct AbortProbeHost {
   model_results : Array[Result[@kernel.Completion, ModelFailure]]
-  mut model_index : Int
-  tool_delays_ms : Map[String, Int]
+  mut model_index : Int32
+  tool_delays_ms : Map[String, Int32]
   started_calls : Array[String]
   tool_started_signal : @aqueue.Queue[String]
   model_started_signal : @aqueue.Queue[Unit]
@@ -845,10 +845,10 @@ struct AbortProbeHost {
 ///|
 fn AbortProbeHost::AbortProbeHost(
   model_results : Array[Result[@kernel.Completion, ModelFailure]],
-  tool_delays_ms : Map[String, Int],
+  tool_delays_ms : Map[String, Int32],
   tool_started_signal : @aqueue.Queue[String],
-  model_gates? : Array[@aqueue.Queue[Unit]] = [],
-  tool_gates? : Map[String, @aqueue.Queue[Unit]] = Map::from_array([]),
+  model_gates~ : Array[@aqueue.Queue[Unit]] = [],
+  tool_gates~ : Map[String, @aqueue.Queue[Unit]] = Map::from_array([]),
 ) -> AbortProbeHost {
   {
     model_results: model_results.copy(),

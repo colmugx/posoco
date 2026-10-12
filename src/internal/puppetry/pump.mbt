@@ -445,7 +445,7 @@ async fn Puppet::pump_compact(
   session_id : SessionId,
   dispatcher : EventDispatcher,
   snap : TurnSnapshot,
-  iter : Int,
+  iter : Int32,
 ) -> PumpStep raise PuppetError {
   let compact_outcome = self.handle_compact(
     state, compact_cmd, run_id, turn_id, session_id, dispatcher, snap,
@@ -497,7 +497,7 @@ async fn Puppet::pump_ready_for_model(
   turn_id : TurnId,
   session_id : SessionId,
   snap : TurnSnapshot,
-  iter : Int,
+  iter : Int32,
 ) -> PumpStep noraise {
   let mut state = state
   // Run before_model hooks — they can rewrite the transcript messages
@@ -630,7 +630,7 @@ async fn Puppet::pump_awaiting_model(
   turn_id : TurnId,
   session_id : SessionId,
   snap : TurnSnapshot,
-  iter : Int,
+  iter : Int32,
   hook_scope : @types.EventScope,
 ) -> PumpStep noraise {
   let pending = state.pending_effects()

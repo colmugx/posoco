@@ -89,8 +89,8 @@ fn user_request_event_labels(events : Array[@types.TurnEvent]) -> Array[String] 
 fn build_uireq_agent(
   tool : UiAskingTool,
   observer : RecordingObserver,
-  ui? : Array[&@port.UiPort] = [],
-  requires? : Array[@port.Capability] = [],
+  ui~ : Array[&@port.UiPort] = [],
+  requires~ : Array[@port.Capability] = [],
 ) -> Agent raise @error.CompositionError {
   Agent(
     exts=[

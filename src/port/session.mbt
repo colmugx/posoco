@@ -16,7 +16,7 @@
 /// committing transcript progress while silently dropping session state such
 /// as an automatic title, context state, or task bookkeeping.
 pub(all) struct SessionCheckpoint {
-  from_index : Int
+  from_index : Int32
   messages : Array[@kernel.Message]
   metadata : Map[String, Json]?
 } derive(Eq, Debug)
@@ -37,7 +37,7 @@ pub(open) trait SessionStore {
   async fn append_messages(
     Self,
     id : String,
-    from_index : Int,
+    from_index : Int32,
     messages : ArrayView[@kernel.Message],
   ) -> Unit raise @error.SessionError = _
   /// Commit an append-only transcript tail together with an optional metadata
@@ -51,7 +51,7 @@ pub(open) trait SessionStore {
   /// out-of-range values do not raise. Default implementation loads the
   /// session, slices the messages, and performs a full save (the same legal
   /// whole-session path compact uses), preserving metadata.
-  async fn truncate(Self, id : String, from_index : Int) -> Unit raise @error.SessionError = _
+  async fn truncate(Self, id : String, from_index : Int32) -> Unit raise @error.SessionError = _
 }
 
 ///|
@@ -59,7 +59,7 @@ pub(open) trait SessionStore {
 /// not implement native truncation. Failures from the underlying load/save are
 /// re-raised with their variant preserved and an `operation='truncate'` context
 /// label, mirroring the agent-boundary error contextualization style.
-impl SessionStore with fn truncate(self, id : String, from_index : Int) -> Unit raise @error.SessionError {
+impl SessionStore with fn truncate(self, id : String, from_index : Int32) -> Unit raise @error.SessionError {
   let session = self.load(id) catch {
     error =>
       raise Load(
@@ -92,7 +92,7 @@ impl SessionStore with fn truncate(self, id : String, from_index : Int) -> Unit 
 impl SessionStore with fn append_messages(
   self,
   id : String,
-  from_index : Int,
+  from_index : Int32,
   messages : ArrayView[@kernel.Message],
 ) -> Unit raise @error.SessionError {
   let _ = from_index

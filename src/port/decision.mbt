@@ -96,8 +96,8 @@ pub extend DecisionAnswer with Debug::{to_repr}
 ///|
 /// Optional token accounting supplied by decision providers.
 pub(all) struct DecisionUsage {
-  input_tokens : Int?
-  output_tokens : Int?
+  input_tokens : Int32?
+  output_tokens : Int32?
 } derive(Eq, Debug)
 
 ///|
@@ -183,7 +183,7 @@ pub extend DecisionScope with Debug::{to_repr}
 pub(all) struct DecisionCallContext {
   purpose : String
   scope : DecisionScope?
-  timeout_ms : Int?
+  timeout_ms : Int32?
   failure_mode : DecisionFailureMode
 } derive(Eq, Debug)
 
@@ -199,8 +199,8 @@ pub extend DecisionCallContext with Debug::{to_repr}
 pub fn DecisionCallContext::make(
   purpose~ : String,
   scope? : DecisionScope,
-  timeout_ms? : Int,
-  failure_mode? : DecisionFailureMode = Propagate,
+  timeout_ms? : Int32,
+  failure_mode~ : DecisionFailureMode = Propagate,
 ) -> DecisionCallContext {
   { purpose, scope, timeout_ms, failure_mode, }
 }

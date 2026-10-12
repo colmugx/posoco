@@ -6,15 +6,15 @@
 /// submit or observe control state without taking ownership of Agent's loop.
 
 ///|
-let default_max_follow_up_depth : Int = 64
+let default_max_follow_up_depth : Int32 = 64
 
 ///|
 pub struct AgentControl {
   priv mailbox : &@puppetry.Mailbox
   priv follow_ups : @aqueue.Queue[@kernel.Message]
-  priv mut follow_up_depth : Int
-  priv mut seq : Int
-  priv max_depth : Int
+  priv mut follow_up_depth : Int32
+  priv mut seq : Int32
+  priv max_depth : Int32
   priv mut abort_hook : ((@kernel.RunId) -> Unit)?
 }
 
@@ -122,7 +122,7 @@ fn AgentControl::take_follow_up(
 
 ///|
 /// Number of follow-ups waiting for the Agent's next turn boundary.
-pub fn AgentControl::pending_follow_ups(self : AgentControl) -> Int {
+pub fn AgentControl::pending_follow_ups(self : AgentControl) -> Int32 {
   self.follow_up_depth
 }
 

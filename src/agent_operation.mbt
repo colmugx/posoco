@@ -277,13 +277,13 @@ fn AgentRuntime::cancel_operation_execution(self : AgentRuntime) -> Unit {
 ///|
 /// Bounded graceful window before shutdown actively cancels an in-flight
 /// operation.
-let operation_shutdown_grace_ms : Int = 5_000
+let operation_shutdown_grace_ms : Int32 = 5_000
 
 ///|
 /// Bounded settle budget after an active cancellation: the unwind (catch
 /// paths, foreground task cleanup, guard release) must finish here or
 /// shutdown fails loudly instead of closing the Puppet under live work.
-let operation_cancel_settle_ms : Int = 5_000
+let operation_cancel_settle_ms : Int32 = 5_000
 
 ///|
 /// Wait bounded for the operation to settle; False when the deadline
@@ -291,7 +291,7 @@ let operation_cancel_settle_ms : Int = 5_000
 /// real settlement.
 async fn OperationExecution::wait_settled(
   self : OperationExecution,
-  timeout_ms : Int,
+  timeout_ms : Int32,
 ) -> Bool raise @error.AgentError {
   let waited = @async.with_timeout_opt(timeout_ms, async fn() {
     while !self.settled {
@@ -385,7 +385,7 @@ fn AgentRuntime::admit_operation(
   self : AgentRuntime,
   session_id : String,
   origin : OperationOrigin,
-  operation_label? : String? = None,
+  operation_label~ : String? = None,
 ) -> OperationAdmission raise @error.AgentError {
   match self.operations.current {
     Some(active) =>

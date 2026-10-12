@@ -27,7 +27,7 @@ fn quota_error_detail(
 fn messages_prefix_equal(
   left : Array[@kernel.Message],
   right : Array[@kernel.Message],
-  len : Int,
+  len : Int32,
 ) -> Bool {
   if left.length() < len || right.length() < len {
     return false
@@ -393,7 +393,7 @@ async fn AgentRuntime::run_puppet_turn_body(
   identity : TurnIdentity,
   session_id : String,
   input : @kernel.Message,
-  current_turn_start : Int,
+  current_turn_start : Int32,
   current_metadata : Map[String, Json],
 ) -> @types.TurnResult raise @error.AgentError {
   // Step 4: drive the already-started, Agent-owned Puppet.
@@ -764,7 +764,7 @@ async fn AgentRuntime::complete_compact_turn(
 async fn AgentRuntime::checkpoint_sessions_all(
   self : AgentRuntime,
   session_id : String,
-  from_index : Int,
+  from_index : Int32,
   messages : Array[@kernel.Message],
   metadata : Map[String, Json]?,
   operation : String,
@@ -841,7 +841,7 @@ async fn AgentRuntime::save_sessions_all(
 fn transcript_save_operation(
   transcript : @kernel.Transcript,
   initial_messages : Array[@kernel.Message],
-  current_turn_start : Int,
+  current_turn_start : Int32,
 ) -> String {
   let final_messages = transcript.messages_snapshot()
   let initial_len = current_turn_start + 1
@@ -868,7 +868,7 @@ async fn AgentRuntime::save_turn_transcript(
   transcript : @kernel.Transcript,
   metadata : Map[String, Json],
   initial_messages : Array[@kernel.Message],
-  current_turn_start : Int,
+  current_turn_start : Int32,
 ) -> Unit raise @error.AgentError {
   let final_messages = snapshot_messages(transcript.messages_snapshot())
   let base_metadata = snapshot_metadata(metadata)
@@ -1046,7 +1046,7 @@ fn fixate_pending_tool_calls(
 fn fixated_persisted_boundary(
   raw : Array[@kernel.Message],
   fixated : Array[@kernel.Message],
-) -> Int {
+) -> Int32 {
   let mut i = 0
   let mut matched = 0
   while matched < raw.length() && i < fixated.length() {

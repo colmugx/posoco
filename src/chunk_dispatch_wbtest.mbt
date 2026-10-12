@@ -22,8 +22,8 @@ fn without_operation_events(
 /// queue rendezvous makes the concurrent-turn regression deterministic while
 /// keeping the first turn inside the pump.
 struct TurnLoopGate {
-  entered : @aqueue.Queue[Int]
-  release : @aqueue.Queue[Int]
+  entered : @aqueue.Queue[Int32]
+  release : @aqueue.Queue[Int32]
 }
 
 ///|
@@ -49,7 +49,7 @@ impl @port.PipelineHook for TurnLoopGate with fn before_model(
 struct YieldingStreamModel {
   chunks : Array[@types.StreamChunk]
   response : @kernel.ModelCallResult
-  mut calls : Int
+  mut calls : Int32
 }
 
 ///|
@@ -61,7 +61,7 @@ fn YieldingStreamModel::YieldingStreamModel(
 }
 
 ///|
-fn YieldingStreamModel::call_count(self : YieldingStreamModel) -> Int {
+fn YieldingStreamModel::call_count(self : YieldingStreamModel) -> Int32 {
   self.calls
 }
 
@@ -115,8 +115,8 @@ async test "p2 concurrent run_turn rejects before side effects and preserves fir
   let model = YieldingStreamModel(chunks, tk_stop_response("done"))
   let store = RecordingSessionStore()
   let observer = RecordingObserver()
-  let entered : @aqueue.Queue[Int] = Queue(kind=Unbounded)
-  let release : @aqueue.Queue[Int] = Queue(kind=Unbounded)
+  let entered : @aqueue.Queue[Int32] = Queue(kind=Unbounded)
+  let release : @aqueue.Queue[Int32] = Queue(kind=Unbounded)
   let gate = TurnLoopGate::{ entered, release, }
   let agent = Agent(
     exts=[
@@ -217,8 +217,8 @@ async test "p2 concurrent run_turn rejects before side effects and preserves fir
 async test "p2 cancelled turn releases Agent guard for the next turn" {
   let model = ScriptedModel([Respond(tk_stop_response("after-cancel"))])
   let store = RecordingSessionStore()
-  let entered : @aqueue.Queue[Int] = Queue(kind=Unbounded)
-  let release : @aqueue.Queue[Int] = Queue(kind=Unbounded)
+  let entered : @aqueue.Queue[Int32] = Queue(kind=Unbounded)
+  let release : @aqueue.Queue[Int32] = Queue(kind=Unbounded)
   let gate = TurnLoopGate::{ entered, release, }
   let agent = Agent(
     exts=[

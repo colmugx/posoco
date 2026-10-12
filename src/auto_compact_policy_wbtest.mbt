@@ -45,8 +45,8 @@ impl @port.ModelPort for PolicyModel with fn provider_config(self) -> @port.Prov
 
 ///|
 fn policy_reported(
-  context_window? : Int? = None,
-  compact_threshold? : Double? = None,
+  context_window~ : Int32? = None,
+  compact_threshold~ : Double? = None,
 ) -> @port.ProviderConfig {
   ProviderConfig(
     reasoning_effort_values=[],
@@ -306,7 +306,7 @@ struct AutoCompactE2EModel {
   compact_result : @kernel.CompactResult
   reported : @port.ProviderConfig
   seen : Array[Array[@kernel.Message]]
-  compact_calls : Ref[Int]
+  compact_calls : Ref[Int32]
 }
 
 ///|
@@ -441,9 +441,9 @@ async test "policy/e2e compacted transcript is what the next model call sees" {
 ///|
 fn policy_context_metadata(
   session_id~ : String,
-  measured~ : Int,
-  window~ : Int,
-  reading_count~ : Int,
+  measured~ : Int32,
+  window~ : Int32,
+  reading_count~ : Int32,
 ) -> Map[String, Json] {
   let state : @types.ContextState = {
     session_id,

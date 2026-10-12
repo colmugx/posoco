@@ -37,7 +37,7 @@ fn j_session_id() -> SessionId {
 fn make_entry(
   kind : SavepointKind,
   savepoint_id : String,
-  entry_seq : Int,
+  entry_seq : Int32,
 ) -> JournalEntry {
   let identity : JournalEntryIdentity = {
     run_id: j_run_id(),
@@ -106,7 +106,7 @@ test "puppet_journal/duplicate_entry_id_rejected" {
   let e1 = make_entry(InputAccepted, "sp1", 0)
   let _ = j.append([e1])
   // Re-append the same entry (same dedup key) — must fail.
-  let result : Result[Int, PuppetError] = Ok(j.append([e1])) catch {
+  let result : Result[Int32, PuppetError] = Ok(j.append([e1])) catch {
     e => Err(e)
   }
   assert_true(result is Err(_))
@@ -139,7 +139,7 @@ test "puppet_journal/post_terminal_append_rejected" {
   assert_true(j.revision() == 1)
   // Now try to append more for the same run.
   let later = make_entry(ToolCommitted, "sp_late", 0)
-  let result : Result[Int, PuppetError] = Ok(j.append([later])) catch {
+  let result : Result[Int32, PuppetError] = Ok(j.append([later])) catch {
     e => Err(e)
   }
   assert_true(result is Err(_))

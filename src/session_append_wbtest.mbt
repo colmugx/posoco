@@ -50,7 +50,7 @@ async test "t06_sequential_turns_use_append_not_full_save" {
 // ---------------------------------------------------------------------------
 
 ///|
-fn compact_trigger_response(total_tokens : Int) -> @kernel.ModelCallResult {
+fn compact_trigger_response(total_tokens : Int32) -> @kernel.ModelCallResult {
   // Tool-calls response keeps the pump in ReadyForModel so the auto-compact
   // safe-point is reached; the tool outcome is ignored by the test.
   let base = tk_tool_call_response("echo", "call_1", Json::null())
@@ -137,7 +137,7 @@ async test "committed model and tool steps advance the durable cursor" {
     config=append_config(),
   )
   ignore(agent.run_turn(tk_user_msg("run it"), "step-checkpoint"))
-  let cursors : Array[Int] = []
+  let cursors : Array[Int32] = []
   for op in store.ops() {
     match op {
       OpCheckpoint(id="step-checkpoint", checkpoint~, ..) if !checkpoint.messages.is_empty() =>

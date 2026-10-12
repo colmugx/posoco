@@ -223,7 +223,7 @@ pub(all) suberror PuppetError {
   /// Steer/follow-up/resume target id does not match the active run/turn.
   StaleIdentity(kind~ : String, expected~ : String, actual~ : String)
   /// Queue is full; enqueue rejected.
-  QueueFull(kind~ : String, depth~ : Int)
+  QueueFull(kind~ : String, depth~ : Int32)
   /// Resume payload does not satisfy the suspension requirement.
   SuspensionPayloadMismatch(suspension_id~ : String, expected_kind~ : String)
   /// Resume targeted a suspension that does not exist or was already resumed.
@@ -262,11 +262,11 @@ pub(all) suberror PuppetError {
   SubscriberFailed(
     subscriber_id~ : String,
     cause~ : String,
-    committed_revision~ : Int
+    committed_revision~ : Int32
   )
   // ── Pump / orchestration (T06) ──
   /// Driver exceeded its iteration safety bound.
-  PumpLoopExceeded(iterations~ : Int)
+  PumpLoopExceeded(iterations~ : Int32)
   /// Effect completion arrived for an unknown or already-terminal effect.
   DuplicateOrLateCompletion(effect_id~ : EffectId, detail~ : String)
   /// A host/executor task raised instead of returning its typed canonical
@@ -379,7 +379,7 @@ fn safe_label(value : String) -> String {
 ///|
 /// Bounded label with an explicit cap; only the compact effect-failure arm
 /// uses a cap wider than `safe_label`'s.
-fn safe_label_bounded(value : String, cap : Int) -> String {
+fn safe_label_bounded(value : String, cap : Int32) -> String {
   let chars : Array[Char] = []
   let mut truncated = false
   for char in value {

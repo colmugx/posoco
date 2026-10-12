@@ -11,7 +11,7 @@
 /// so every turn event — including the first — carries attribution scope.
 /// The same identity drives the Puppet prompt request.
 priv struct TurnIdentity {
-  seq : Int
+  seq : Int32
   run_id : @kernel.RunId
   turn_id : @kernel.TurnId
   session_id : @kernel.SessionId

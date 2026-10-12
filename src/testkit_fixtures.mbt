@@ -156,22 +156,22 @@ pub extend ManifestOnly with @port.Extension::{extension_id, manifest}
 /// `received_searches` are the write/read assertion surfaces.
 pub(all) struct ScriptedMemoryPort {
   inbounds : Array[String?]
-  mut index : Int
-  mut calls : Int
+  mut index : Int32
+  mut calls : Int32
   mut sessions : Array[String]
   mut requests : Array[String]
   mut stored : Array[(String, Map[String, Json])]
   mut deleted : Array[String]
   search_script : Array[String?]
-  mut search_index : Int
-  mut searches : Array[(String, Int?)]
-  mut next_ticket : Int
+  mut search_index : Int32
+  mut searches : Array[(String, Int32?)]
+  mut next_ticket : Int32
 }
 
 ///|
 pub fn ScriptedMemoryPort::ScriptedMemoryPort(
   inbounds~ : Array[String?],
-  search_script? : Array[String?] = [],
+  search_script~ : Array[String?] = [],
 ) -> ScriptedMemoryPort {
   {
     inbounds,
@@ -190,7 +190,7 @@ pub fn ScriptedMemoryPort::ScriptedMemoryPort(
 
 ///|
 /// Number of `inbound` calls observed so far.
-pub fn ScriptedMemoryPort::call_count(self : ScriptedMemoryPort) -> Int {
+pub fn ScriptedMemoryPort::call_count(self : ScriptedMemoryPort) -> Int32 {
   self.calls
 }
 
@@ -230,7 +230,7 @@ pub fn ScriptedMemoryPort::received_deletes(
 /// (query, top_k) pairs `search` was called with, in call order.
 pub fn ScriptedMemoryPort::received_searches(
   self : ScriptedMemoryPort,
-) -> Array[(String, Int?)] {
+) -> Array[(String, Int32?)] {
   self.searches.copy()
 }
 
@@ -271,7 +271,7 @@ pub impl @port.MemoryPort for ScriptedMemoryPort with fn store(
 pub impl @port.MemoryPort for ScriptedMemoryPort with fn search(
   self : ScriptedMemoryPort,
   query~ : String,
-  top_k? : Int,
+  top_k? : Int32,
 ) -> String? raise @error.MemoryError {
   self.searches.push((query, top_k))
   if self.search_index < self.search_script.length() {
@@ -316,19 +316,19 @@ pub impl @port.MemoryPort for ScriptedMemoryPort with fn delete(
 /// ```
 pub fn tk_ext(
   id~ : String,
-  model? : &@port.ModelPort? = None,
-  decision? : &@port.DecisionPort? = None,
-  log? : &@port.LogPort? = None,
-  tools? : Array[&@port.ToolProvider] = [],
-  sessions? : Array[&@port.SessionStore] = [],
-  observers? : Array[&@port.Observer] = [],
-  hooks? : Array[&@port.PipelineHook] = [],
-  memory? : Array[&@port.MemoryPort] = [],
-  lifecycle? : Array[&@port.Lifecycle] = [],
-  commands? : Array[&@port.CommandPort] = [],
-  ui? : Array[&@port.UiPort] = [],
-  prompt_contributors? : Array[&@port.SystemPromptContributor] = [],
-  requires? : Array[@port.Capability] = [],
+  model~ : &@port.ModelPort? = None,
+  decision~ : &@port.DecisionPort? = None,
+  log~ : &@port.LogPort? = None,
+  tools~ : Array[&@port.ToolProvider] = [],
+  sessions~ : Array[&@port.SessionStore] = [],
+  observers~ : Array[&@port.Observer] = [],
+  hooks~ : Array[&@port.PipelineHook] = [],
+  memory~ : Array[&@port.MemoryPort] = [],
+  lifecycle~ : Array[&@port.Lifecycle] = [],
+  commands~ : Array[&@port.CommandPort] = [],
+  ui~ : Array[&@port.UiPort] = [],
+  prompt_contributors~ : Array[&@port.SystemPromptContributor] = [],
+  requires~ : Array[@port.Capability] = [],
 ) -> ManifestOnly {
   let models : Array[&@port.ModelPort] = match model {
     Some(m) => [m]
@@ -370,10 +370,10 @@ pub fn tk_ext(
 pub fn tk_view(
   requires~ : Array[@port.Capability],
   model~ : &@port.ModelPort,
-  decision? : &@port.DecisionPort? = None,
-  log? : &@port.LogPort? = None,
+  decision~ : &@port.DecisionPort? = None,
+  log~ : &@port.LogPort? = None,
   ui~ : &@port.UiPort,
-  wakeup? : @port.WakeupPort? = None,
+  wakeup~ : @port.WakeupPort? = None,
 ) -> @port.CompositionView {
   let tasks = @port.Tasks::from_submit(submit=fn(_) {
     Err(@port.TaskSubmitError::Unavailable)

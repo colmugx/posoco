@@ -11,7 +11,7 @@
 /// dropped chunk.
 
 ///|
-let chunk_queue_capacity : Int = 1024
+let chunk_queue_capacity : Int32 = 1024
 
 ///|
 /// Per-turn chunk dispatcher. Created by `run_turn_via_puppet` and wired into
@@ -20,9 +20,9 @@ priv struct ChunkDispatcher {
   queue : @aqueue.Queue[@types.TurnEvent]
   /// Manual depth counter: `@aqueue.Queue` exposes no length accessor and we
   /// need to know when the buffer transitions from full to non-full.
-  mut depth : Int
+  mut depth : Int32
   /// Number of chunks dropped since the last `StreamChunksDropped` emission.
-  mut dropped : Int
+  mut dropped : Int32
   observers : Array[&@port.Observer]
 }
 

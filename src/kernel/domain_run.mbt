@@ -137,7 +137,7 @@ pub fn SessionId::to_string(self : SessionId) -> String {
 /// input must correlate to a pending effect with this id; a mismatch is
 /// `InvariantViolation::StaleCorrelation`.
 pub(all) struct EffectId {
-  value : Int
+  value : Int32
 } derive(Eq, Hash, Debug)
 
 ///|
@@ -173,7 +173,7 @@ pub fn EffectId::next(
 /// unchanged.
 pub fn EffectId::to_int(
   self : EffectId,
-) -> Int where {
+) -> Int32 where {
   proof_ensure: result => effect_id_to_int_ok(self, result),
 } {
   self.value
@@ -193,7 +193,7 @@ pub impl Show for EffectId with fn to_string(self : EffectId) -> String {
 /// snapshot version the model was prompted against; a mismatch is a kernel
 /// invariant failure (`InvariantViolation::StaleSnapshot`).
 pub(all) struct CatalogVersion {
-  value : Int
+  value : Int32
 } derive(Eq, Debug)
 
 ///|
@@ -205,7 +205,7 @@ pub extend CatalogVersion with Debug::{to_repr}
 ///|
 /// Contract: the canonical constructor wraps its argument unchanged.
 pub fn CatalogVersion::CatalogVersion(
-  value : Int,
+  value : Int32,
 ) -> CatalogVersion where {
   proof_ensure: result => catalog_version_mk_ok(result, value),
 } {
@@ -217,7 +217,7 @@ pub fn CatalogVersion::CatalogVersion(
 /// unchanged.
 pub fn CatalogVersion::to_int(
   self : CatalogVersion,
-) -> Int where {
+) -> Int32 where {
   proof_ensure: result => catalog_version_to_int_ok(self, result),
 } {
   self.value

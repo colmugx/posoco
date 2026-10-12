@@ -10,20 +10,20 @@
 /// what is actually reported; absent dimensions are `None`, **never** silently
 /// coerced to 0 (ADR §2.9 — unknown usage is never reported as 0).
 pub(all) struct Usage {
-  input_tokens : Int?
-  output_tokens : Int?
-  total_tokens : Int?
+  input_tokens : Int32?
+  output_tokens : Int32?
+  total_tokens : Int32?
   /// Cached (reused) portion of the input prompt when the provider reports
   /// it — OpenAI `prompt_tokens_details.cached_tokens`, DeepSeek
   /// `prompt_cache_hit_tokens`, Moonshot `cached_tokens`. `input_tokens`
   /// stays the provider-reported prompt total; the cache hit rate is
   /// `cached_input_tokens / input_tokens`.
-  cached_input_tokens : Int?
+  cached_input_tokens : Int32?
   /// The uncached (miss) portion of the input prompt when the provider
   /// reports it natively — DeepSeek `prompt_cache_miss_tokens`. Providers
   /// that report hit and miss as a pair spare consumers the subtraction
   /// (`uncached = input - cached`); this field is never synthesized.
-  uncached_input_tokens : Int?
+  uncached_input_tokens : Int32?
 } derive(Eq, Debug)
 
 ///|
@@ -40,7 +40,7 @@ pub extend Usage with Debug::{to_repr}
 /// this check here as the single canonical usage invariant so every host
 /// adapter applies exactly the same rule.
 pub fn Usage::validate(self : Usage) -> Result[Unit, String] {
-  let fields : Array[(String, Int?)] = [
+  let fields : Array[(String, Int32?)] = [
     ("input_tokens", self.input_tokens),
     ("output_tokens", self.output_tokens),
     ("total_tokens", self.total_tokens),
@@ -62,7 +62,7 @@ pub extend Usage with Show::{to_string, output}
 
 ///|
 pub impl Show for Usage with fn to_string(self : Usage) -> String {
-  let fmt = fn(opt : Int?) -> String {
+  let fmt = fn(opt : Int32?) -> String {
     match opt {
       Some(n) => n.to_string()
       None => "?"
