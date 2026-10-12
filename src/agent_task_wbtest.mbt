@@ -591,7 +591,7 @@ async test "managed_tasks/save_failure_retains_one_pending_outcome" {
           marker,
         )
       })
-    assert_eq(markers.length(), 1)
+    assert_eq(markers.count(), 1)
   })
 }
 
