@@ -232,11 +232,15 @@ pub(open) trait ToolProvider {
   fn list_tools(Self) -> Array[ToolDef]
   async fn execute(
     Self,
-    name : String,
-    call : ToolCall,
+    ctx : ToolCallContext,
   ) -> ToolOutcome raise RuntimeError
 }
 ```
+
+`ctx` 携带 `effect_id` / `call_id` / `name` / `arguments` 与一个
+`register_cancel` 注册器：拥有可中断工作（子进程、长请求）的 provider 在启动
+前 `ctx.register_cancel(self as &ToolCancellable)`，运行时随后就能按同一
+`effect_id` 把取消路由回来；不注册则保持 `NotPropagated`，简单工具零成本。
 
 `ToolDef` 携带名字、描述、JSON 输入 schema 和归属身份。路由归属由 Agent 在
 组装期构建，保证每个调用都精确送到声明该工具的 provider：
@@ -275,13 +279,13 @@ pub impl @posoco.ToolProvider for EchoTools with fn list_tools(
 
 pub impl @posoco.ToolProvider for EchoTools with fn execute(
   _self,
-  name : String,
-  call : @posoco.ToolCall,
+  ctx : @posoco.ToolCallContext,
 ) -> @posoco.ToolOutcome raise @posoco.RuntimeError {
+  let name = ctx.name.to_string()
   if name != "echo" {
     raise @posoco.RuntimeError::UnknownTool("unknown tool: " + name)
   }
-  match call.arguments {
+  match ctx.arguments {
     Json::Object(fields) if fields.contains("text") =>
       match fields["text"] {
         Json::String(text) => @posoco.ToolOutcome::Success(
@@ -589,8 +593,10 @@ provider 自限）。旧的 `MemoryBriefingHook` 已删除——注入是 Agent 
 
 **内置工具**：只要有扩展贡献了 `MemoryPort`，core 自动注册两个内置
 agent 工具——`memory_search`（对全部 provider 扇出检索，结果按注册序
-拼接、不加标注；全部为空返回 "No matching memory."；失败静默跳过 +
-`secondary_failure`）和 `memory_add`（参数 `content` + 可选 `source` =
+拼接、不加标注；任一 provider 命中即返回命中正文，失败只走
+`secondary_failure`；全部未命中且无失败返回 "No matching memory."；
+全部未命中但有失败则逐源 `<source>: failed (…)` 行作为工具错误返回，
+不伪装成干净 miss）和 `memory_add`（参数 `content` + 可选 `source` =
 manifest id；省略 `source` 写入所有已连接 provider；未知 `source` 报
 工具错误并列出合法来源；回执为 `<source>: <id|票据>` 行，失败行
 `<source>: failed (…)`）。它们与扩展工具走同一套 `ToolCollision`
