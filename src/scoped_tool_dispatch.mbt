@@ -19,7 +19,7 @@ pub fn ScopedToolDispatch::ScopedToolDispatch(
 ) -> ScopedToolDispatch raise @error.CompositionError {
   let routing = build_tool_routing(tools)
   let catalog = build_agent_catalog(tools)
-  { catalog, routes: routing.tool_map, hooks: hooks.copy(), next_call: 0 }
+  { catalog, routes: routing.tool_map, hooks: hooks.copy(), next_call: 0, }
 }
 
 ///|
@@ -51,7 +51,9 @@ pub async fn ScopedToolDispatch::call(
     let decision = hook.before_tool({
       call_id: call.call_id,
       name: call.name,
-      arguments: @json.parse(call.arguments.stringify()) catch { _ => Json::null() },
+      arguments: @json.parse(call.arguments.stringify()) catch {
+        _ => Json::null()
+      },
     }) catch {
       error =>
         return @kernel.ToolReportedError(
@@ -69,10 +71,7 @@ pub async fn ScopedToolDispatch::call(
         }
         call = rewritten
       }
-      @port.ToolDecision::ApproveAfterConsent(
-        call=approved,
-        consent_scope=_
-      ) => {
+      @port.ToolDecision::ApproveAfterConsent(call=approved, consent_scope=_) => {
         if approved.call_id != call_id {
           return @kernel.ToolReportedError(
             content="nested hook attempted to change call identity",

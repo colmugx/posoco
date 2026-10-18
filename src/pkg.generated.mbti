@@ -277,6 +277,12 @@ pub fn ScopeRecordingModel::compact_scopes(Self) -> Array[@kernel.InvocationScop
 pub fn ScopeRecordingModel::provider_config(Self) -> @port.ProviderConfig
 pub impl @port.ModelPort for ScopeRecordingModel
 
+pub struct ScopedToolDispatch {
+  // private fields
+}
+pub fn ScopedToolDispatch::ScopedToolDispatch(Array[&@port.ToolProvider], hooks? : Array[&@port.PipelineHook]) -> Self raise @error.CompositionError
+pub async fn ScopedToolDispatch::call(Self, String, Json) -> @kernel.ToolOutcome
+
 pub(all) struct ScriptedDecisionPort {
   steps : Array[ScriptedDecisionStep]
   mut index : Int
