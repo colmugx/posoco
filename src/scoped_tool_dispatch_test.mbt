@@ -10,7 +10,7 @@ impl @port.PipelineHook for ScopedDenyHook with fn before_tool(
 }
 
 ///|
-test "scoped calls enforce canonical schemas and never execute denied tools" {
+async test "scoped calls enforce canonical schemas and never execute denied tools" {
   let defs : Array[@kernel.ToolDef] = [{
     name: @kernel.ToolName::unchecked("inspect"),
     description: "Inspect",
@@ -23,15 +23,15 @@ test "scoped calls enforce canonical schemas and never execute denied tools" {
     policy: @kernel.ExecutionPolicy::Parallel,
     provenance: None,
   }]
-  let recording = RecordingToolProvider(
+  let recording = @posoco.RecordingToolProvider(
     defs,
-    {"inspect": OutcomeOk(@kernel.ToolOutcome::Success(
+    {"inspect": @posoco.ScriptedToolOutcome::OutcomeOk(@kernel.ToolOutcome::Success(
       content="ok", structured=Some({"data": true}),
     ))},
   )
-  let dispatcher = ScopedToolDispatch(
+  let dispatcher = @posoco.ScopedToolDispatch(
     [recording as &@port.ToolProvider],
-    hooks=[ScopedDenyHook() as &@port.PipelineHook],
+    hooks=[ScopedDenyHook::{} as &@port.PipelineHook],
   )
   let denied = dispatcher.call("inspect", {"path": "a"})
   assert_true(denied is @kernel.ToolOutcome::ToolReportedError(..))
@@ -42,8 +42,8 @@ test "scoped calls enforce canonical schemas and never execute denied tools" {
 }
 
 ///|
-test "scoped dispatch refuses recursive execution without touching providers" {
-  let dispatcher = ScopedToolDispatch([])
+async test "scoped dispatch refuses recursive execution without touching providers" {
+  let dispatcher = @posoco.ScopedToolDispatch([])
   let result = dispatcher.call("run_code", {})
   assert_true(result is @kernel.ToolOutcome::ToolReportedError(..))
 }
