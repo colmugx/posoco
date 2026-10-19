@@ -1,6 +1,6 @@
 name = "colmugx/posoco"
 
-version = "0.22.1"
+version = "0.22.2"
 
 import {
   "colmugx/fuwaroid@0.3.1",
