@@ -15,7 +15,7 @@ core never dictates shape.
 ## Installation
 
 ```bash
-moon add colmugx/posoco@0.22.2
+moon add colmugx/posoco@0.22.3
 ```
 
 ## Ports
