@@ -1,6 +1,8 @@
 import {
   "colmugx/posoco/kernel",
   "colmugx/posoco/types",
+  "colmugx/json-schema",
+  "moonbitlang/core/debug",
 }
 
 warnings = "-missing_pattern_payload"

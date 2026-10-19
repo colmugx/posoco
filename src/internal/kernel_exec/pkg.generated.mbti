@@ -2,6 +2,7 @@
 package "colmugx/posoco/internal/kernel_exec"
 
 import {
+  "colmugx/json-schema",
   "colmugx/posoco/kernel",
   "colmugx/posoco/types",
   "moonbitlang/core/debug",
@@ -445,6 +446,7 @@ pub fn SuspensionRequirement::to_repr(Self) -> @debug.Repr
 pub struct ToolCatalogBuilder {
   entries : Array[CatalogEntry]
   by_name : Map[String, CatalogEntry]
+  compiled : Map[String, @json-schema.Schema]
   mut finished : Bool
 }
 pub fn ToolCatalogBuilder::ToolCatalogBuilder() -> Self
@@ -455,7 +457,8 @@ pub struct ToolCatalogSnapshot {
   version : @kernel.CatalogVersion
   entries : Array[CatalogEntry]
   by_name : Map[String, CatalogEntry]
-} derive(Eq, @debug.Debug)
+  compiled : Map[String, @json-schema.Schema]
+}
 pub fn ToolCatalogSnapshot::contains(Self, @kernel.ToolName) -> Bool
 pub fn ToolCatalogSnapshot::definitions(Self) -> Array[@kernel.ToolDef]
 pub fn ToolCatalogSnapshot::entries(Self) -> Array[CatalogEntry]
@@ -466,6 +469,8 @@ pub fn ToolCatalogSnapshot::size(Self) -> Int
 pub fn ToolCatalogSnapshot::to_repr(Self) -> @debug.Repr
 pub fn ToolCatalogSnapshot::validate_arguments(Self, @kernel.ToolName, Json) -> Result[Unit, @kernel.SchemaDiagnostic]
 pub fn ToolCatalogSnapshot::version(Self) -> @kernel.CatalogVersion
+pub impl Eq for ToolCatalogSnapshot
+pub impl @debug.Debug for ToolCatalogSnapshot
 
 pub(all) struct ToolCompletedPayload {
   effect_id : @kernel.EffectId

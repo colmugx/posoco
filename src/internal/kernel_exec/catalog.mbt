@@ -76,7 +76,44 @@ pub struct ToolCatalogSnapshot {
   version : CatalogVersion
   entries : Array[CatalogEntry]
   by_name : Map[String, CatalogEntry]
-} derive(Eq, Debug)
+  /// Compiled JSON Schema plan per visible name, transferred from the
+  /// builder. Derived data: `compiled` is a pure function of `entries`, so
+  /// it stays out of equality and debug output (`@json-schema.Schema` is
+  /// opaque — no Eq/Debug).
+  compiled : Map[String, @json-schema.Schema]
+}
+
+///|
+/// Equality is structural on the declared catalog only (version, entries,
+/// name index); compiled plans never affect identity.
+pub impl Eq for ToolCatalogSnapshot with fn equal(
+  self : ToolCatalogSnapshot,
+  other : ToolCatalogSnapshot,
+) -> Bool {
+  self.version == other.version &&
+  self.entries == other.entries &&
+  self.by_name == other.by_name
+}
+
+///|
+/// Debug projection: the declared catalog only. Rendered through a plain
+/// derivable record because `@json-schema.Schema` plans are opaque.
+priv struct SnapshotRepr {
+  version : CatalogVersion
+  entries : Array[CatalogEntry]
+  by_name : Map[String, CatalogEntry]
+} derive(Debug)
+
+///|
+pub impl Debug for ToolCatalogSnapshot with fn to_repr(
+  self : ToolCatalogSnapshot,
+) -> @debug.Repr {
+  Repr(SnapshotRepr::{
+    version: self.version,
+    entries: self.entries,
+    by_name: self.by_name,
+  })
+}
 
 ///|
 pub extend ToolCatalogSnapshot with Eq::{not_equal, equal}
@@ -99,12 +136,21 @@ pub extend ToolCatalogSnapshot with Debug::{to_repr}
 pub struct ToolCatalogBuilder {
   entries : Array[CatalogEntry]
   by_name : Map[String, CatalogEntry]
+  /// Compiled JSON Schema plan per visible name, built in `add`. Compilation
+  /// is the composition gate (ADR §2.7): a schema that does not compile is a
+  /// hard failure, and the finished snapshot validates calls from these plans.
+  compiled : Map[String, @json-schema.Schema]
   mut finished : Bool
 }
 
 ///|
 pub fn ToolCatalogBuilder::ToolCatalogBuilder() -> ToolCatalogBuilder {
-  { entries: [], by_name: Map::from_array([]), finished: false, }
+  {
+    entries: [],
+    by_name: Map::from_array([]),
+    compiled: Map::from_array([]),
+    finished: false,
+  }
 }
 
 ///|
@@ -144,22 +190,21 @@ pub fn ToolCatalogBuilder::add(
       conflicting_provenance=curr_prov,
     )
   }
-  // Schema validation: must be object or boolean at top level, and only
-  // use supported keywords (recursively).
+  // Schema validation: must be object or boolean at top level, and must
+  // compile under the JSON Schema validator (ADR §2.7). The compiled plan is
+  // cached here and transferred to the snapshot for call-time validation.
   match check_schema_top_level(def.input_schema) {
     Err(detail) => raise MalformedSchema(visible_name~, detail~)
     Ok(_) => ()
   }
-  match check_schema_supported(def.input_schema) {
-    Err(keyword) => raise UnsupportedSchemaKeyword(visible_name~, keyword~)
-    Ok(_) => ()
-  }
+  let compiled = compile_tool_schema(visible_name, def.input_schema)
   let entry : CatalogEntry = {
     position: self.entries.length(),
     definition: def,
   }
   self.entries.push(entry)
   self.by_name[visible_name] = entry
+  self.compiled[visible_name] = compiled
   self
 }
 
@@ -174,7 +219,12 @@ pub fn ToolCatalogBuilder::finish(
     raise InvalidToolName(detail="builder already finished")
   }
   self.finished = true
-  { version, entries: self.entries.copy(), by_name: self.by_name.copy(), }
+  {
+    version,
+    entries: self.entries.copy(),
+    by_name: self.by_name.copy(),
+    compiled: self.compiled.copy(),
+  }
 }
 
 ///|
@@ -244,8 +294,8 @@ pub fn ToolCatalogSnapshot::validate_arguments(
   name : @kernel.ToolName,
   arguments : Json,
 ) -> Result[Unit, @kernel.SchemaDiagnostic] {
-  match self.find(name) {
-    Some(entry) => validate_arguments(entry.definition.input_schema, arguments)
+  match self.compiled.get(name.to_string()) {
+    Some(schema) => validate_compiled(schema, arguments)
     None =>
       Err({
         json_path: "$",

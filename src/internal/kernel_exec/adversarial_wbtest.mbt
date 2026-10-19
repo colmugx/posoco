@@ -37,26 +37,42 @@ fn deep_instance(depth : Int32, leaf : Json) -> Json {
 }
 
 ///|
-/// D4: deep-but-bounded nesting must validate precisely. Probing found the
-/// recursive validator (`validate_at` / `find_unsupported_keyword`) traps
-/// the wasm stack between depth 400 (ok) and 600 (crash) — a model-controlled
-/// deep schema can kill the kernel. Until a depth cap exists, this test pins
-/// the safe-depth behavior only; do NOT raise the depth toward the crash
-/// threshold. Flagged for core: add a depth limit and turn the crash into a
-/// typed diagnostic.
+/// D4: deep-but-bounded nesting must validate precisely. The pre-json-schema
+/// recursive walker trapped the wasm stack between depth 400 (ok) and 600
+/// (crash); the compiled validator pins both compile and evaluation at an
+/// explicit depth limit (default 128 structural levels, two per `properties`
+/// nesting level). Depth 50 composes and validates with precise diagnostics;
+/// deeper schemas now fail composition with a typed depth diagnostic. Do NOT
+/// raise the depth toward the old crash threshold in these tests.
 test "ADVERSARIAL-D4: deep nesting validates precisely at bounded depth" {
-  let schema = deep_schema(100)
+  let schema = deep_schema(50)
   // Conforming instance passes; mismatched leaf gives a precise diagnostic.
-  let ok = validate_arguments(schema, deep_instance(100, Json::string("leaf")))
-  guard ok is Ok(_) else { fail("depth-100 conforming instance must pass") }
-  let bad = validate_arguments(schema, deep_instance(100, Json::number(1.5)))
+  let ok = validate_arguments(schema, deep_instance(50, Json::string("leaf")))
+  guard ok is Ok(_) else { fail("depth-50 conforming instance must pass") }
+  let bad = validate_arguments(schema, deep_instance(50, Json::number(1.5)))
   guard bad is Err(diag) else { fail("mismatched leaf must be rejected") }
-  assert_true(diag.expected.contains("string"))
-  assert_true(diag.actual.contains("number"))
-  // The builder accepts deep schemas and finds no unsupported keywords.
+  assert_true(diag.json_path.has_prefix("$.p"))
+  assert_true(diag.expected.contains("type"))
+  // The builder accepts bounded deep schemas: compilation is the depth gate.
   let builder = ToolCatalogBuilder()
-  let _ = builder.add(make_def("deep100", "o", schema, Parallel))
-  assert_true(find_unsupported_keyword(schema) is None)
+  let _ = builder.add(make_def("deep50", "o", schema, Parallel))
+}
+
+///|
+test "ADVERSARIAL-D4: depth overrun is a typed composition failure" {
+  // Two structural levels per conceptual nesting: 100 levels exceed the
+  // compile depth limit of 128. The old validator accepted this silently and
+  // crashed later on the wasm stack; now it is a typed MalformedSchema.
+  let result : Result[ToolCatalogSnapshot, CatalogCompositionError] = Ok(
+    make_snapshot([make_def("deep100", "o", deep_schema(100), Parallel)]),
+  ) catch {
+    e => Err(e)
+  }
+  guard result is Err(MalformedSchema(visible_name~, detail~)) else {
+    fail("expected typed MalformedSchema for depth overrun")
+  }
+  assert_eq(visible_name, "deep100")
+  assert_true(detail.contains("depth"))
 }
 
 ///|

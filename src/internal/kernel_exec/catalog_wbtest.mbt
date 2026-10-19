@@ -4,10 +4,10 @@
 /// Coverage:
 /// - Builder happy path
 /// - Composition hard failures: name collision, duplicate provenance,
-///   unsupported schema keyword, malformed schema
+///   malformed/uncompilable schema
 /// - Snapshot accessors: find, contains, definitions, size
-/// - Schema validation: type check, required, additionalProperties, enum,
-///   const, items, nested properties, unsupported keyword detection
+/// - Schema validation against compiled plans: type check, required,
+///   additionalProperties, enum, const, items, nested properties, $ref/$defs
 /// - Unknown-tool handling
 fn make_def(
   name : String,
@@ -39,6 +39,17 @@ fn make_snapshot(
     let _ = builder.add(d)
   }
   builder.finish(version=CatalogVersion(1))
+}
+
+///|
+/// Test shim mirroring the production path (compile once, validate against
+/// the compiled plan) for direct schema/instance checks. A fixture that does
+/// not compile is a test bug and aborts loudly.
+fn validate_arguments(
+  schema : Json,
+  instance : Json,
+) -> Result[Unit, @kernel.SchemaDiagnostic] {
+  validate_compiled(try! @json-schema.Schema::compile(schema), instance)
 }
 
 ///|
@@ -77,30 +88,32 @@ test "ToolCatalogBuilder: name collision fails" {
 }
 
 ///|
-test "ToolCatalogBuilder: unsupported schema keyword fails" {
-  let bad_schema = Json::object(
-    Map::from_array([
-      ("type", Json::string("object")),
-      ("pattern", Json::string(".*")),
-    ]),
-  )
-  let d = make_def("bad", "owner1", bad_schema, Parallel)
-  let result : Result[ToolCatalogSnapshot, CatalogCompositionError] = Ok(
-    make_snapshot([d]),
-  ) catch {
-    e => Err(e)
-  }
-  match result {
-    Err(UnsupportedSchemaKeyword(visible_name~, keyword~)) => {
-      assert_eq(visible_name, "bad")
-      assert_eq(keyword, "pattern")
+test "ToolCatalogBuilder: composition-time rejection of malformed schemas" {
+  // The compiler rejects malformed keyword values; pattern/keyword
+  // rejections keep the dedicated UnsupportedSchemaKeyword variant, so a
+  // plain well-formed keyword set now composes (see the validation tests).
+  let cases : Array[(String, Json)] = [
+    ("required-not-array", { "required": "path" }),
+    ("type-unknown", { "type": "octet" }),
+    ("properties-not-object", { "properties": 7 }),
+  ]
+  for case in cases {
+    let (label, schema) = case
+    let result : Result[ToolCatalogSnapshot, CatalogCompositionError] = Ok(
+      make_snapshot([make_def(label, "owner1", schema, Parallel)]),
+    ) catch {
+      e => Err(e)
     }
-    _ => fail("expected UnsupportedSchemaKeyword")
+    guard result is Err(MalformedSchema(visible_name~, detail~)) else {
+      fail("expected MalformedSchema for \{label}")
+    }
+    assert_eq(visible_name, label)
+    assert_false(detail == "")
   }
 }
 
 ///|
-test "ToolCatalogBuilder: nested unsupported keyword fails" {
+test "ToolCatalogBuilder: nested malformed keyword fails" {
   let bad_schema = Json::object(
     Map::from_array([
       ("type", Json::string("object")),
@@ -113,7 +126,7 @@ test "ToolCatalogBuilder: nested unsupported keyword fails" {
               Json::object(
                 Map::from_array([
                   ("type", Json::string("string")),
-                  ("minLength", Json::number(1.0)),
+                  ("minLength", Json::string("many")),
                 ]),
               ),
             ),
@@ -129,11 +142,11 @@ test "ToolCatalogBuilder: nested unsupported keyword fails" {
     e => Err(e)
   }
   match result {
-    Err(UnsupportedSchemaKeyword(visible_name~, keyword~)) => {
+    Err(MalformedSchema(visible_name~, detail~)) => {
       assert_eq(visible_name, "nested_bad")
-      assert_eq(keyword, "minLength")
+      assert_true(detail.contains("minLength"))
     }
-    _ => fail("expected UnsupportedSchemaKeyword for nested minLength")
+    _ => fail("expected MalformedSchema for nested malformed minLength")
   }
 }
 
@@ -210,7 +223,10 @@ test "Schema: string type rejects number" {
   let instance = Json::number(42.0)
   let result = validate_arguments(schema, instance)
   match result {
-    Err(d) => assert_true(d.expected.contains("string"))
+    Err(d) => {
+      assert_true(d.expected.contains("type"))
+      assert_true(d.json_path == "$")
+    }
     Ok(_) => fail("expected Err for number against string schema")
   }
 }
@@ -264,8 +280,10 @@ test "Schema: required missing fails with path" {
   let result = validate_arguments(schema, instance)
   match result {
     Err(d) => {
-      assert_true(d.json_path.contains("name"))
-      assert_true(d.actual.contains("missing"))
+      // Required faults report at the owning object; the missing property
+      // name is schema-declared and appears in the message.
+      assert_true(d.json_path == "$")
+      assert_true(d.actual.contains("missing required property: name"))
     }
     Ok(_) => fail("required missing should fail")
   }
@@ -369,18 +387,45 @@ test "Schema: items validates each array element" {
 }
 
 ///|
-test "Schema: unsupported keyword produces diagnostic even at validate time" {
-  // Schema with $ref should be rejected by the validator even if it slipped
-  // past composition (defensive).
+test "Schema: unresolvable $ref is rejected at composition, not validate time" {
+  // The compiled validator cannot hold a broken plan: reference resolution
+  // happens once, at composition. The old validate-time defensive rejection
+  // is subsumed by the composition gate.
   let schema = Json::object(
     Map::from_array([("$ref", Json::string("#/defs/X"))]),
   )
-  let instance = Json::object(Map::from_array([]))
-  let result = validate_arguments(schema, instance)
-  match result {
-    Err(d) =>
-      assert_true(d.actual.contains("$ref") || d.expected.contains("supported"))
-    Ok(_) => fail("validator should reject unsupported keyword")
+  let result : Result[ToolCatalogSnapshot, CatalogCompositionError] = Ok(
+    make_snapshot([make_def("broken_ref", "owner1", schema, Parallel)]),
+  ) catch {
+    e => Err(e)
+  }
+  guard result is Err(MalformedSchema(visible_name~, detail~)) else {
+    fail("expected MalformedSchema for unresolvable $ref")
+  }
+  assert_eq(visible_name, "broken_ref")
+  assert_false(detail == "")
+}
+
+///|
+test "Schema: $ref with $defs composes and validates" {
+  let schema = Json::object(
+    Map::from_array([
+      ("$ref", Json::string("#/$defs/leaf")),
+      (
+        "$defs",
+        Json::object(
+          Map::from_array([("leaf", { "type": Json::string("string") })]),
+        ),
+      ),
+    ]),
+  )
+  match validate_arguments(schema, Json::string("ok")) {
+    Ok(_) => ()
+    Err(d) => fail("expected Ok for $ref-resolved string, got \{d.to_string()}")
+  }
+  match validate_arguments(schema, Json::number(1.0)) {
+    Err(_) => ()
+    Ok(_) => fail("$ref-resolved string type should reject number")
   }
 }
 
