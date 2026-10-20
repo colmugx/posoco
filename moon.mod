@@ -1,11 +1,11 @@
 name = "colmugx/posoco"
 
-version = "0.22.3"
+version = "0.22.4"
 
 import {
   "colmugx/fuwaroid@0.3.1",
   "moonbitlang/async@0.22.4",
-  "colmugx/json-schema@0.1.3",
+  "colmugx/json-schema@0.1.4",
 }
 
 readme = "README.mbt.md"
