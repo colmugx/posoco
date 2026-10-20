@@ -19,7 +19,7 @@ pub const SESSION_TITLE_METADATA_KEY : String = "posoco.title"
 // Types and methods
 pub(all) struct ChatOptions {
   temperature : Double?
-  max_output_tokens : Int?
+  max_output_tokens : Int32?
 } derive(Eq, @debug.Debug)
 pub fn ChatOptions::equal(Self, Self) -> Bool
 pub fn ChatOptions::not_equal(Self, Self) -> Bool
@@ -28,7 +28,7 @@ pub fn ChatOptions::to_repr(Self) -> @debug.Repr
 pub(all) struct CompactOutcome {
   final_session_id : String
   mode : @kernel.CompactMode
-  messages_after : Int
+  messages_after : Int32
 } derive(Eq)
 pub fn CompactOutcome::equal(Self, Self) -> Bool
 pub fn CompactOutcome::not_equal(Self, Self) -> Bool
@@ -48,13 +48,13 @@ pub impl Show for ContextReadingSource
 pub(all) struct ContextState {
   session_id : String
   model_id : String
-  context_version : Int
-  last_measured_tokens : Int?
-  estimated_added_tokens : Int
-  window_tokens : Int?
+  context_version : Int32
+  last_measured_tokens : Int32?
+  estimated_added_tokens : Int32
+  window_tokens : Int32?
   compact_threshold : Double
   source : ContextReadingSource
-  reading_message_count : Int
+  reading_message_count : Int32
 } derive(Eq, @debug.Debug)
 pub fn ContextState::equal(Self, Self) -> Bool
 pub fn ContextState::from_metadata(Map[String, Json]) -> Self?
@@ -98,8 +98,8 @@ pub fn StreamAccumulator::tool_calls(Self) -> Array[ToolCallSnapshot]
 pub(all) enum StreamChunk {
   TextDelta(token~ : String)
   ReasoningDelta(token~ : String)
-  ToolCallDelta(index~ : Int, id~ : String?, name~ : String?, arguments_delta~ : String?)
-  Usage(input_tokens~ : Int, output_tokens~ : Int, total_tokens~ : Int, cached_input_tokens~ : Int?, uncached_input_tokens~ : Int?)
+  ToolCallDelta(index~ : Int32, id~ : String?, name~ : String?, arguments_delta~ : String?)
+  Usage(input_tokens~ : Int32, output_tokens~ : Int32, total_tokens~ : Int32, cached_input_tokens~ : Int32?, uncached_input_tokens~ : Int32?)
   Finish(reason~ : String)
 } derive(Eq, @debug.Debug)
 pub fn StreamChunk::equal(Self, Self) -> Bool
@@ -145,16 +145,16 @@ pub(all) enum TurnEvent {
   ToolCallRejected(call~ : @kernel.ToolCall, reason~ : @kernel.NotExecutedReason)
   ToolCallAbandoned(call~ : @kernel.ToolCall, reason~ : String)
   ModelResponseReceived(message~ : @kernel.Message, usage~ : @kernel.Usage?)
-  SessionRedirect(from~ : String, to~ : String, messages_before~ : Int, messages_after~ : Int)
+  SessionRedirect(from~ : String, to~ : String, messages_before~ : Int32, messages_after~ : Int32)
   TurnCompleted
   TurnFailed(String)
   StreamChunkReceived(chunk~ : StreamChunk)
-  StreamChunksDropped(count~ : Int)
+  StreamChunksDropped(count~ : Int32)
   ConfigWarning(field~ : String, value~ : String, reason~ : String)
   ConfigChanged(field~ : String, old_value~ : String, new_value~ : String)
   ContextStateUpdated(state~ : ContextState)
   CompactStarted(trigger~ : String)
-  CompactFinished(trigger~ : String, mode~ : String, final_session_id~ : String, messages_after~ : Int)
+  CompactFinished(trigger~ : String, mode~ : String, final_session_id~ : String, messages_after~ : Int32)
   OperationFinalized(operation~ : String, outcome~ : String, detail~ : String)
   Custom(source~ : String, label~ : String, data~ : Json)
   UserRequestStarted(kind~ : String, prompt~ : String)

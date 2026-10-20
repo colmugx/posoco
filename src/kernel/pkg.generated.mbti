@@ -15,7 +15,7 @@ pub(all) struct CallId {
 } derive(Eq, Hash, @debug.Debug)
 pub fn CallId::checked(String) -> Result[Self, String]
 pub fn CallId::equal(Self, Self) -> Bool
-pub fn CallId::hash(Self) -> Int
+pub fn CallId::hash(Self) -> Int32
 pub fn CallId::hash_combine(Self, Hasher) -> Unit
 pub fn CallId::not_equal(Self, Self) -> Bool
 pub fn CallId::to_repr(Self) -> @debug.Repr
@@ -46,13 +46,13 @@ pub fn CancelReason::to_string(Self) -> String
 pub impl Show for CancelReason
 
 pub(all) struct CatalogVersion {
-  value : Int
+  value : Int32
 } derive(Eq, @debug.Debug)
-pub fn CatalogVersion::CatalogVersion(Int) -> Self
+pub fn CatalogVersion::CatalogVersion(Int32) -> Self
 pub fn CatalogVersion::equal(Self, Self) -> Bool
 pub fn CatalogVersion::not_equal(Self, Self) -> Bool
 pub fn CatalogVersion::output(Self, &Logger) -> Unit
-pub fn CatalogVersion::to_int(Self) -> Int
+pub fn CatalogVersion::to_int(Self) -> Int32
 pub fn CatalogVersion::to_repr(Self) -> @debug.Repr
 pub fn CatalogVersion::to_string(Self) -> String
 pub impl Show for CatalogVersion
@@ -123,8 +123,8 @@ pub fn Content::to_string(Self) -> String
 pub impl Show for Content
 
 pub(all) struct ContextPressure {
-  window_tokens : Int?
-  occupancy_tokens : Int?
+  window_tokens : Int32?
+  occupancy_tokens : Int32?
   compact_threshold : Double
 } derive(Eq, @debug.Debug)
 pub fn ContextPressure::equal(Self, Self) -> Bool
@@ -132,16 +132,16 @@ pub fn ContextPressure::not_equal(Self, Self) -> Bool
 pub fn ContextPressure::to_repr(Self) -> @debug.Repr
 
 pub(all) struct EffectId {
-  value : Int
+  value : Int32
 } derive(Eq, Hash, @debug.Debug)
 pub fn EffectId::equal(Self, Self) -> Bool
 pub fn EffectId::first() -> Self
-pub fn EffectId::hash(Self) -> Int
+pub fn EffectId::hash(Self) -> Int32
 pub fn EffectId::hash_combine(Self, Hasher) -> Unit
 pub fn EffectId::next(Self) -> Self
 pub fn EffectId::not_equal(Self, Self) -> Bool
 pub fn EffectId::output(Self, &Logger) -> Unit
-pub fn EffectId::to_int(Self) -> Int
+pub fn EffectId::to_int(Self) -> Int32
 pub fn EffectId::to_repr(Self) -> @debug.Repr
 pub fn EffectId::to_string(Self) -> String
 pub impl Show for EffectId
@@ -233,7 +233,7 @@ pub(all) struct OwnerId {
 } derive(Eq, Hash, @debug.Debug)
 pub fn OwnerId::checked(String) -> Result[Self, String]
 pub fn OwnerId::equal(Self, Self) -> Bool
-pub fn OwnerId::hash(Self) -> Int
+pub fn OwnerId::hash(Self) -> Int32
 pub fn OwnerId::hash_combine(Self, Hasher) -> Unit
 pub fn OwnerId::not_equal(Self, Self) -> Bool
 pub fn OwnerId::to_repr(Self) -> @debug.Repr
@@ -256,7 +256,7 @@ pub(all) struct RunId {
 } derive(Eq, Hash, @debug.Debug)
 pub fn RunId::checked(String) -> Result[Self, String]
 pub fn RunId::equal(Self, Self) -> Bool
-pub fn RunId::hash(Self) -> Int
+pub fn RunId::hash(Self) -> Int32
 pub fn RunId::hash_combine(Self, Hasher) -> Unit
 pub fn RunId::not_equal(Self, Self) -> Bool
 pub fn RunId::output(Self, &Logger) -> Unit
@@ -282,7 +282,7 @@ pub(all) struct SessionId {
 } derive(Eq, Hash, @debug.Debug)
 pub fn SessionId::checked(String) -> Result[Self, String]
 pub fn SessionId::equal(Self, Self) -> Bool
-pub fn SessionId::hash(Self) -> Int
+pub fn SessionId::hash(Self) -> Int32
 pub fn SessionId::hash_combine(Self, Hasher) -> Unit
 pub fn SessionId::not_equal(Self, Self) -> Bool
 pub fn SessionId::to_repr(Self) -> @debug.Repr
@@ -334,7 +334,7 @@ pub(all) struct ToolName {
 } derive(Eq, Hash, @debug.Debug)
 pub fn ToolName::checked(String) -> Result[Self, String]
 pub fn ToolName::equal(Self, Self) -> Bool
-pub fn ToolName::hash(Self) -> Int
+pub fn ToolName::hash(Self) -> Int32
 pub fn ToolName::hash_combine(Self, Hasher) -> Unit
 pub fn ToolName::not_equal(Self, Self) -> Bool
 pub fn ToolName::to_repr(Self) -> @debug.Repr
@@ -365,7 +365,7 @@ pub fn Transcript::append_all(Self, Array[Message]) -> Self
 pub fn Transcript::empty() -> Self
 pub fn Transcript::equal(Self, Self) -> Bool
 pub fn Transcript::from_array(Array[Message]) -> Self
-pub fn Transcript::length(Self) -> Int
+pub fn Transcript::length(Self) -> Int32
 pub fn Transcript::messages_snapshot(Self) -> Array[Message]
 pub fn Transcript::not_equal(Self, Self) -> Bool
 pub fn Transcript::to_repr(Self) -> @debug.Repr
@@ -375,7 +375,7 @@ pub(all) struct TurnId {
 } derive(Eq, Hash, @debug.Debug)
 pub fn TurnId::checked(String) -> Result[Self, String]
 pub fn TurnId::equal(Self, Self) -> Bool
-pub fn TurnId::hash(Self) -> Int
+pub fn TurnId::hash(Self) -> Int32
 pub fn TurnId::hash_combine(Self, Hasher) -> Unit
 pub fn TurnId::not_equal(Self, Self) -> Bool
 pub fn TurnId::output(Self, &Logger) -> Unit
@@ -385,11 +385,11 @@ pub fn TurnId::unchecked(String) -> Self
 pub impl Show for TurnId
 
 pub(all) struct Usage {
-  input_tokens : Int?
-  output_tokens : Int?
-  total_tokens : Int?
-  cached_input_tokens : Int?
-  uncached_input_tokens : Int?
+  input_tokens : Int32?
+  output_tokens : Int32?
+  total_tokens : Int32?
+  cached_input_tokens : Int32?
+  uncached_input_tokens : Int32?
 } derive(Eq, @debug.Debug)
 pub fn Usage::equal(Self, Self) -> Bool
 pub fn Usage::not_equal(Self, Self) -> Bool

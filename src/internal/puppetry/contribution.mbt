@@ -258,10 +258,7 @@ fn prepare_batch(
       )
     }
     seen_keys[key] = true
-    match validate_entry(entry, ctx) {
-      Err(e) => raise e
-      Ok(_) => ()
-    }
+    validate_entry(entry, ctx)
   }
   // Call each contributor.
   for contributor in contributors {
@@ -287,10 +284,7 @@ fn prepare_batch(
         )
       }
       seen_keys[key] = true
-      match validate_entry(entry, ctx) {
-        Err(e) => raise e
-        Ok(_) => ()
-      }
+      validate_entry(entry, ctx)
       // Contributor provenance must match the registered contributor.
       if entry.identity.run_id != ctx.run_id {
         raise SavepointFailed(
@@ -323,36 +317,30 @@ fn prepare_batch(
 fn validate_entry(
   entry : JournalEntry,
   ctx : PreCommitContext,
-) -> Result[Unit, PuppetError] {
+) -> Unit raise PuppetError {
   // Entry savepoint kind must match the context's savepoint kind.
   if !(entry.identity.kind == ctx.savepoint_kind) {
-    return Err(
-      SavepointFailed(
-        kind=ctx.savepoint_kind.to_string(),
-        cause=ValidationFailed(
-          detail="entry kind '\{entry.identity.kind.to_string()}' does not match savepoint kind '\{ctx.savepoint_kind.to_string()}'",
-        ),
+    raise SavepointFailed(
+      kind=ctx.savepoint_kind.to_string(),
+      cause=ValidationFailed(
+        detail="entry kind '\{entry.identity.kind.to_string()}' does not match savepoint kind '\{ctx.savepoint_kind.to_string()}'",
       ),
     )
   }
   // Entry savepoint id must match.
   if entry.identity.savepoint_id != ctx.savepoint_id {
-    return Err(
-      SavepointFailed(
-        kind=ctx.savepoint_kind.to_string(),
-        cause=ValidationFailed(
-          detail="entry savepoint id '\{entry.identity.savepoint_id}' does not match '\{ctx.savepoint_id}'",
-        ),
+    raise SavepointFailed(
+      kind=ctx.savepoint_kind.to_string(),
+      cause=ValidationFailed(
+        detail="entry savepoint id '\{entry.identity.savepoint_id}' does not match '\{ctx.savepoint_id}'",
       ),
     )
   }
   // Entry run id must match.
   if entry.identity.run_id != ctx.run_id {
-    return Err(
-      SavepointFailed(
-        kind=ctx.savepoint_kind.to_string(),
-        cause=ValidationFailed(detail="entry run id mismatch"),
-      ),
+    raise SavepointFailed(
+      kind=ctx.savepoint_kind.to_string(),
+      cause=ValidationFailed(detail="entry run id mismatch"),
     )
   }
   // Entry turn id must match (unless savepoint is RunTerminal which may
@@ -361,15 +349,12 @@ fn validate_entry(
     RunTerminal => ()
     _ =>
       if entry.identity.turn_id != ctx.turn_id {
-        return Err(
-          SavepointFailed(
-            kind=ctx.savepoint_kind.to_string(),
-            cause=ValidationFailed(detail="entry turn id mismatch"),
-          ),
+        raise SavepointFailed(
+          kind=ctx.savepoint_kind.to_string(),
+          cause=ValidationFailed(detail="entry turn id mismatch"),
         )
       }
   }
-  Ok(())
 }
 
 // ──────────────────────────────────────────────────────────────────────────

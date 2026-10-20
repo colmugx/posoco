@@ -12,19 +12,22 @@
 /// - enter_suspended sets suspension_id
 
 // ──────────────────────────────────────────────────────────────────────────
-// Helpers — wrap raise-resulting calls into Result for assertion
+// Helpers — run raise-resulting calls and capture the typed error
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-/// Run a raise-resulting closure and capture the result or error.
+/// Run a raise-resulting call and capture its typed error, if any.
 fn try_acquire_prompt(
   gate : PhaseGate,
   op_id : String,
   run_id : RunId,
   turn_id : TurnId,
-) -> Result[(PhaseGate, OperationLease), PuppetError] {
-  Ok(gate.acquire_prompt(op_id, run_id, turn_id)) catch {
-    e => Err(e)
+) -> PuppetError? {
+  try {
+    ignore(gate.acquire_prompt(op_id, run_id, turn_id))
+    None
+  } catch {
+    e => Some(e)
   }
 }
 
@@ -33,39 +36,52 @@ fn try_acquire_resume(
   gate : PhaseGate,
   op_id : String,
   susp_id : String,
-) -> Result[(PhaseGate, OperationLease), PuppetError] {
-  Ok(gate.acquire_resume(op_id, susp_id)) catch {
-    e => Err(e)
+) -> PuppetError? {
+  try {
+    ignore(gate.acquire_resume(op_id, susp_id))
+    None
+  } catch {
+    e => Some(e)
   }
 }
 
 ///|
-fn try_release(gate : PhaseGate, op_id : String) -> Result[Unit, PuppetError] {
+fn try_release(gate : PhaseGate, op_id : String) -> PuppetError? {
   try {
     gate.release(op_id)
-    Ok(())
+    None
   } catch {
-    e => Err(e)
+    e => Some(e)
   }
 }
 
 ///|
-fn try_gate_transition(
-  gate : PhaseGate,
-  to : PuppetPhase,
-) -> Result[PhaseGate, PuppetError] {
-  Ok(gate.transition(to)) catch {
-    e => Err(e)
+fn try_gate_transition(gate : PhaseGate, to : PuppetPhase) -> PuppetError? {
+  try {
+    ignore(gate.transition(to))
+    None
+  } catch {
+    e => Some(e)
   }
 }
 
 ///|
-fn try_rotate_turn(
-  gate : PhaseGate,
-  new_turn_id : TurnId,
-) -> Result[PhaseGate, PuppetError] {
-  Ok(gate.rotate_turn(new_turn_id)) catch {
-    e => Err(e)
+fn try_rotate_turn(gate : PhaseGate, new_turn_id : TurnId) -> PuppetError? {
+  try {
+    ignore(gate.rotate_turn(new_turn_id))
+    None
+  } catch {
+    e => Some(e)
+  }
+}
+
+///|
+fn try_authorise(gate : PhaseGate, op : OperationClass) -> PuppetError? {
+  try {
+    gate.authorise(op)
+    None
+  } catch {
+    e => Some(e)
   }
 }
 
@@ -108,13 +124,13 @@ test "puppet_phase/initial_is_idle" {
 ///|
 test "puppet_phase/idle_accepts_prompt_and_structural" {
   let g = PhaseGate::idle()
-  assert_true(g.authorise(Prompt) is Ok(_))
-  assert_true(g.authorise(Structural) is Ok(_))
+  assert_true(try_authorise(g, Prompt) is None)
+  assert_true(try_authorise(g, Structural) is None)
   // InFlight in Idle is illegal: no active run.
-  let err = g.authorise(InFlight)
-  assert_true(err is Err(OperationNotAllowedInPhase(..)))
+  let err = try_authorise(g, InFlight)
+  assert_true(err is Some(OperationNotAllowedInPhase(..)))
   match err {
-    Err(OperationNotAllowedInPhase(phase~, operation~, detail~)) => {
+    Some(OperationNotAllowedInPhase(phase~, operation~, detail~)) => {
       assert_true(phase == Idle)
       assert_true(operation == InFlight)
       assert_true(detail.contains("no active run"))
@@ -126,18 +142,18 @@ test "puppet_phase/idle_accepts_prompt_and_structural" {
 ///|
 test "puppet_phase/active_rejects_prompt_and_structural" {
   let active = active_gate("op1")
-  assert_true(active.authorise(InFlight) is Ok(_))
-  let prompt_err = active.authorise(Prompt)
-  assert_true(prompt_err is Err(OperationNotAllowedInPhase(..)))
+  assert_true(try_authorise(active, InFlight) is None)
+  let prompt_err = try_authorise(active, Prompt)
+  assert_true(prompt_err is Some(OperationNotAllowedInPhase(..)))
   match prompt_err {
-    Err(OperationNotAllowedInPhase(phase=Active, detail~, ..)) =>
+    Some(OperationNotAllowedInPhase(phase=Active, detail~, ..)) =>
       assert_true(detail.contains("already active"))
     _ => fail("expected OperationNotAllowedInPhase for Prompt")
   }
-  let structural_err = active.authorise(Structural)
-  assert_true(structural_err is Err(OperationNotAllowedInPhase(..)))
+  let structural_err = try_authorise(active, Structural)
+  assert_true(structural_err is Some(OperationNotAllowedInPhase(..)))
   match structural_err {
-    Err(OperationNotAllowedInPhase(phase=Active, detail~, ..)) =>
+    Some(OperationNotAllowedInPhase(phase=Active, detail~, ..)) =>
       assert_true(detail.contains("structural operations require Idle"))
     _ => fail("expected OperationNotAllowedInPhase for Structural")
   }
@@ -148,20 +164,20 @@ test "puppet_phase/shutdown_rejects_all" {
   let g = PhaseGate::idle()
   let g = g.transition(ShuttingDown)
   let g = g.transition(Shutdown)
-  assert_true(g.authorise(Prompt) is Err(AfterShutdown(..)))
-  assert_true(g.authorise(InFlight) is Err(AfterShutdown(..)))
-  assert_true(g.authorise(Structural) is Err(AfterShutdown(..)))
+  assert_true(try_authorise(g, Prompt) is Some(AfterShutdown(..)))
+  assert_true(try_authorise(g, InFlight) is Some(AfterShutdown(..)))
+  assert_true(try_authorise(g, Structural) is Some(AfterShutdown(..)))
   // All commands surface as AfterShutdown carrying the command name.
-  match g.authorise(Prompt) {
-    Err(AfterShutdown(command~)) => assert_true(command == "Prompt")
+  match try_authorise(g, Prompt) {
+    Some(AfterShutdown(command~)) => assert_true(command == "Prompt")
     _ => fail("expected AfterShutdown")
   }
-  match g.authorise(InFlight) {
-    Err(AfterShutdown(command~)) => assert_true(command == "InFlight")
+  match try_authorise(g, InFlight) {
+    Some(AfterShutdown(command~)) => assert_true(command == "InFlight")
     _ => fail("expected AfterShutdown for InFlight")
   }
-  match g.authorise(Structural) {
-    Err(AfterShutdown(command~)) => assert_true(command == "Structural")
+  match try_authorise(g, Structural) {
+    Some(AfterShutdown(command~)) => assert_true(command == "Structural")
     _ => fail("expected AfterShutdown for Structural")
   }
 }
@@ -232,9 +248,9 @@ test "puppet_phase/legal_shutdown_path" {
 test "puppet_phase/illegal_idle_to_suspended" {
   let g = PhaseGate::idle()
   let result = try_gate_transition(g, Suspended)
-  assert_true(result is Err(IllegalPhaseTransition(..)))
+  assert_true(result is Some(IllegalPhaseTransition(..)))
   match result {
-    Err(IllegalPhaseTransition(from~, to~, detail~, ..)) => {
+    Some(IllegalPhaseTransition(from~, to~, detail~, ..)) => {
       assert_true(from == Idle)
       assert_true(to == Suspended)
       assert_true(detail.contains("no legal edge"))
@@ -248,9 +264,9 @@ test "puppet_phase/illegal_active_to_idle_directly" {
   let active = active_gate("op1")
   // Active→Idle is NOT legal (must go through Terminalizing).
   let result = try_gate_transition(active, Idle)
-  assert_true(result is Err(IllegalPhaseTransition(..)))
+  assert_true(result is Some(IllegalPhaseTransition(..)))
   match result {
-    Err(IllegalPhaseTransition(from=Active, to=Idle, detail~, ..)) =>
+    Some(IllegalPhaseTransition(from=Active, to=Idle, detail~, ..)) =>
       assert_true(detail.contains("no legal edge"))
     _ => fail("expected IllegalPhaseTransition(Active→Idle)")
   }
@@ -271,9 +287,9 @@ test "puppet_phase/shutdown_is_sink" {
   ]
   for target in targets {
     let result = try_gate_transition(g, target)
-    assert_true(result is Err(IllegalPhaseTransition(from=Shutdown, ..)))
+    assert_true(result is Some(IllegalPhaseTransition(from=Shutdown, ..)))
     match result {
-      Err(IllegalPhaseTransition(detail~, ..)) =>
+      Some(IllegalPhaseTransition(detail~, ..)) =>
         assert_true(detail.contains("no legal edge"))
       _ => fail("expected IllegalPhaseTransition out of Shutdown")
     }
@@ -295,9 +311,9 @@ test "puppet_phase/lease_held_rejects_second_prompt" {
     RunId::unchecked("run_other"),
     gate_turn_id(),
   )
-  assert_true(result is Err(LeaseHeld(..)))
+  assert_true(result is Some(LeaseHeld(..)))
   match result {
-    Err(LeaseHeld(operation_id~, held_by~)) => {
+    Some(LeaseHeld(operation_id~, held_by~)) => {
       assert_true(operation_id == "op2")
       assert_true(held_by == "op1")
     }
@@ -311,9 +327,9 @@ test "puppet_phase/release_validates_owner" {
   let (g, _lease) = idle.acquire_prompt("op1", gate_run_id(), gate_turn_id())
   // Releasing with the wrong owner is a typed error.
   let result = try_release(g, "op_other")
-  assert_true(result is Err(LeaseNotHeld(..)))
+  assert_true(result is Some(LeaseNotHeld(..)))
   match result {
-    Err(LeaseNotHeld(operation_id~, detail~)) => {
+    Some(LeaseNotHeld(operation_id~, detail~)) => {
       assert_true(operation_id == "op_other")
       assert_true(detail.contains("lease held by 'op1'"))
     }
@@ -325,7 +341,9 @@ test "puppet_phase/release_validates_owner" {
 test "puppet_phase/release_when_no_lease" {
   let g = PhaseGate::idle()
   let result = try_release(g, "op1")
-  assert_true(result is Err(LeaseNotHeld(detail="no lease currently held", ..)))
+  assert_true(
+    result is Some(LeaseNotHeld(detail="no lease currently held", ..)),
+  )
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -337,9 +355,9 @@ test "puppet_phase/resume_wrong_suspension_id" {
   let active = active_gate("op1")
   let g = active.enter_suspended("susp_actual")
   let result = try_acquire_resume(g, "op2", "susp_wrong")
-  assert_true(result is Err(SuspensionIdMismatch(..)))
+  assert_true(result is Some(SuspensionIdMismatch(..)))
   match result {
-    Err(SuspensionIdMismatch(target_run_id~, expected~, actual~)) => {
+    Some(SuspensionIdMismatch(target_run_id~, expected~, actual~)) => {
       assert_true(target_run_id == gate_run_id())
       assert_true(expected == "susp_wrong")
       assert_true(actual == "susp_actual")
@@ -357,7 +375,7 @@ test "puppet_phase/resume_when_not_suspended" {
     result
     // authorise(InFlight) rejects before the resume phase check: an
     // Idle gate has no active run for InFlight operations.
-    is Err(
+    is Some(
       OperationNotAllowedInPhase(
         phase=Idle,
         operation=InFlight,
@@ -386,7 +404,7 @@ test "puppet_phase/rotate_turn_rejected_in_idle" {
   let result = try_rotate_turn(g, TurnId::unchecked("turn_2"))
   assert_true(
     result
-    is Err(
+    is Some(
       IllegalPhaseTransition(
         from=Idle,
         to=Idle,

@@ -474,12 +474,10 @@ pub async fn Puppet::compact_standalone(
   operation_id : String,
   trigger : @kernel.CompactTrigger,
 ) -> PromptResult raise PuppetError {
-  let acquire : Result[(PhaseGate, OperationLease), PuppetError] = attempt(() => {
-    self.phase_gate.acquire_prompt(operation_id, run_id, turn_id)
-  })
-  let gate_with_lease = match acquire {
-    Err(e) => return Rejected(error=e)
-    Ok(pair) => pair.0
+  let (gate_with_lease, _) = self.phase_gate.acquire_prompt(
+    operation_id, run_id, turn_id,
+  ) catch {
+    e => return Rejected(error=e)
   }
   self.phase_gate = gate_with_lease
   self.last_completed_transcript = None
@@ -490,22 +488,18 @@ pub async fn Puppet::compact_standalone(
     self.release_run_binding()
     self.mailbox.set_quiescent(Idle)
   }
-  let snap : TurnSnapshot = match
-    attempt(() => {
-      TurnSnapshot::capture({
-        run_id,
-        turn_id,
-        session_id,
-        catalog: self.config.catalog,
-        policy,
-        deadline: None,
-        hook_provenance: [],
-        lifecycle_provenance: [],
-        subscriber_provenance: [],
-      })
-    }) {
-    Err(e) => return self.finalize_rejected(error=e)
-    Ok(value) => value
+  let snap : TurnSnapshot = TurnSnapshot::capture({
+    run_id,
+    turn_id,
+    session_id,
+    catalog: self.config.catalog,
+    policy,
+    deadline: None,
+    hook_provenance: [],
+    lifecycle_provenance: [],
+    subscriber_provenance: [],
+  }) catch {
+    e => return self.finalize_rejected(error=e)
   }
   self.mailbox.bind_run(run_id, turn_id)
   self.phase_gate = self.phase_gate.transition(Active)
@@ -604,15 +598,17 @@ pub async fn Puppet::compact_standalone(
     Append => messages + compact_result.compacted_messages
     _ => compact_result.compacted_messages.copy()
   }
-  let initial_state : RunState = match
-    attempt(() => RunState::initial(run_id~, session_id~, budget=snap.budget())) {
-    Err(e) =>
+  let initial_state : RunState = RunState::initial(
+    run_id~,
+    session_id~,
+    budget=snap.budget(),
+  ) catch {
+    e =>
       return self.finalize_rejected(
         error=ReducerInvariantViolation(
           category=IllegalPhase(phase="compact_session", detail=e.to_string()),
         ),
       )
-    Ok(value) => value
   }
   let reduced : Result[ReduceOutput, KernelError] = Ok(
     reduce(

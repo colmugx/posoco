@@ -143,13 +143,12 @@ pub async fn Puppet::prompt(
   let turn_id = request.turn_id
   let session_id = request.session_id
   // Step 1: acquire lease.
-  let acquire_result : Result[(PhaseGate, OperationLease), PuppetError] = attempt(() => {
-      self.phase_gate.acquire_prompt(request.operation_id, run_id, turn_id)
-    },
-  )
-  let (gate_with_lease, _lease) = match acquire_result {
-    Err(e) => return Rejected(error=e)
-    Ok(pair) => pair
+  let (gate_with_lease, _lease) = self.phase_gate.acquire_prompt(
+    request.operation_id,
+    run_id,
+    turn_id,
+  ) catch {
+    e => return Rejected(error=e)
   }
   self.phase_gate = gate_with_lease
   self.last_completed_transcript = None
@@ -165,14 +164,9 @@ pub async fn Puppet::prompt(
     lifecycle_provenance: [],
     subscriber_provenance: [],
   }
-  let snap_result : Result[TurnSnapshot, PuppetError] = attempt(() => {
-    TurnSnapshot::capture(snap_input)
-  })
-  let snap = match snap_result {
-    Err(e) =>
-      // Roll back the lease on snapshot failure.
-      return self.finalize_rejected(error=e)
-    Ok(s) => s
+  let snap = TurnSnapshot::capture(snap_input) catch {
+    // Roll back the lease on snapshot failure.
+    e => return self.finalize_rejected(error=e)
   }
   // Step 3: bind mailbox.
   self.mailbox.bind_run(run_id, turn_id)

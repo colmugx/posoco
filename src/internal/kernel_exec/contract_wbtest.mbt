@@ -27,14 +27,15 @@ fn make_initial_state() -> RunState raise KernelError {
 }
 
 ///|
-/// Try a transition; return Ok(state) or Err(error).
+/// Try a transition; the pair carries the next state or the typed error —
+/// exactly one side is meaningful.
 fn try_transition(
   st : RunState,
   phase : Phase,
   pending : Array[Effect],
   outcome : RunOutcome?,
   suspension : SuspensionRequirement?,
-) -> Result[RunState, KernelError] {
+) -> (RunState, KernelError?) {
   try {
     let next = st.transition(
       phase~,
@@ -48,9 +49,9 @@ fn try_transition(
       outcome~,
       suspension_requirement=suspension,
     )
-    Ok(next)
+    (next, None)
   } catch {
-    e => Err(e)
+    e => (st, Some(e))
   }
 }
 
@@ -115,19 +116,19 @@ test "RunState::initial: produces Initializing state with zero pending" {
 test "RunState: AwaitingModel accepts exactly 1 CallModel effect" {
   let st = make_initial_state()
   let eff = make_call_model_effect(EffectId::first())
-  let result = try_transition(st, AwaitingModel, [eff], None, None)
-  match result {
-    Ok(ok) => assert_eq(ok.phase(), AwaitingModel)
-    Err(_) => fail("AwaitingModel with 1 CallModel should be legal")
+  let (ok, err) = try_transition(st, AwaitingModel, [eff], None, None)
+  match err {
+    None => assert_eq(ok.phase(), AwaitingModel)
+    Some(_) => fail("AwaitingModel with 1 CallModel should be legal")
   }
 }
 
 ///|
 test "RunState: AwaitingModel rejects zero pending effects" {
   let st = make_initial_state()
-  let result = try_transition(st, AwaitingModel, [], None, None)
-  match result {
-    Err(ConstructorInvariant(category~)) =>
+  let (_, err) = try_transition(st, AwaitingModel, [], None, None)
+  match err {
+    Some(ConstructorInvariant(category~)) =>
       assert_true(category.to_string().contains("AwaitingModel"))
     _ => fail("expected ConstructorInvariant for AwaitingModel with 0 pending")
   }
@@ -137,9 +138,9 @@ test "RunState: AwaitingModel rejects zero pending effects" {
 test "RunState: ReadyForModel rejects any pending effect" {
   let st = make_initial_state()
   let eff = make_call_model_effect(EffectId::first())
-  let result = try_transition(st, ReadyForModel, [eff], None, None)
-  match result {
-    Err(ConstructorInvariant(category~)) =>
+  let (_, err) = try_transition(st, ReadyForModel, [eff], None, None)
+  match err {
+    Some(ConstructorInvariant(category~)) =>
       assert_true(category.to_string().contains("ReadyForModel"))
     _ => fail("expected ConstructorInvariant for ReadyForModel with pending")
   }
@@ -149,10 +150,10 @@ test "RunState: ReadyForModel rejects any pending effect" {
 test "RunState: Suspended legal with zero pending + Some requirement" {
   let st = make_initial_state()
   let req : SuspensionRequirement = { kind: "approval", payload: Json::null(), }
-  let result = try_transition(st, Suspended, [], None, Some(req))
-  match result {
-    Ok(ok) => assert_eq(ok.phase(), Suspended)
-    Err(_) => fail("Suspended with zero pending + Some(req) should be legal")
+  let (ok, err) = try_transition(st, Suspended, [], None, Some(req))
+  match err {
+    None => assert_eq(ok.phase(), Suspended)
+    Some(_) => fail("Suspended with zero pending + Some(req) should be legal")
   }
 }
 
@@ -160,15 +161,15 @@ test "RunState: Suspended legal with zero pending + Some requirement" {
 test "RunState: Suspended rejects Some outcome" {
   let st = make_initial_state()
   let req : SuspensionRequirement = { kind: "approval", payload: Json::null(), }
-  let result = try_transition(
+  let (_, err) = try_transition(
     st,
     Suspended,
     [],
     Some(Failed(reason=DeadlineReached)),
     Some(req),
   )
-  match result {
-    Err(ConstructorInvariant(category~)) =>
+  match err {
+    Some(ConstructorInvariant(category~)) =>
       assert_true(category.to_string().contains("Suspended"))
     _ => fail("expected ConstructorInvariant: Suspended with outcome")
   }
@@ -177,9 +178,9 @@ test "RunState: Suspended rejects Some outcome" {
 ///|
 test "RunState: Terminal rejects None outcome" {
   let st = make_initial_state()
-  let result = try_transition(st, Terminal, [], None, None)
-  match result {
-    Err(ConstructorInvariant(category~)) =>
+  let (_, err) = try_transition(st, Terminal, [], None, None)
+  match err {
+    Some(ConstructorInvariant(category~)) =>
       assert_true(category.to_string().contains("Terminal"))
     _ => fail("expected ConstructorInvariant: Terminal without outcome")
   }
@@ -194,22 +195,22 @@ test "RunState: Terminal legal with Completed" {
     reasoning=None,
     finish_reason=Stop,
   )
-  let result = try_transition(
+  let (ok, err) = try_transition(
     st,
     Terminal,
     [],
     Some(Completed(final_message=final_msg, tool_results=[])),
     None,
   )
-  match result {
-    Ok(ok) => {
+  match err {
+    None => {
       assert_eq(ok.phase(), Terminal)
       match ok.outcome() {
         Some(Completed(..)) => ()
         _ => fail("expected Completed outcome")
       }
     }
-    Err(_) => fail("Terminal with Completed should be legal")
+    Some(_) => fail("Terminal with Completed should be legal")
   }
 }
 

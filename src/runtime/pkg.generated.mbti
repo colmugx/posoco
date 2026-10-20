@@ -24,7 +24,7 @@ pub(all) struct EffectContext {
 pub(all) enum EnqueueOutcome {
   Accepted(command_id~ : String)
   RejectedStale(reason~ : String)
-  RejectedQueueFull(depth~ : Int)
+  RejectedQueueFull(depth~ : Int32)
   AbortAlreadyRequested
   RejectedQueueFailure(reason~ : String)
 } derive(Eq, @debug.Debug)
@@ -49,7 +49,7 @@ pub impl Runtime for PortRuntime
 
 // Traits
 pub(open) trait CatalogSource {
-  fn revision(Self) -> Int
+  fn revision(Self) -> Int32
   fn tools(Self) -> Array[@kernel.ToolDef]
 }
 

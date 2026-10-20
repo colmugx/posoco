@@ -81,78 +81,66 @@ pub fn PhaseGate::is_quiescent(self : PhaseGate) -> Bool {
 pub fn PhaseGate::authorise(
   self : PhaseGate,
   operation : OperationClass,
-) -> Result[Unit, PuppetError] {
+) -> Unit raise PuppetError {
   match (self.phase, operation) {
     // Idle accepts Prompt (prompt/continue/resume is a new Run start in this
     // state) and Structural (M5 reservation). It rejects InFlight (no active
     // Run to modify).
-    (Idle, Prompt) => Ok(())
-    (Idle, Structural) => Ok(())
+    (Idle, Prompt) => ()
+    (Idle, Structural) => ()
     (Idle, InFlight) =>
-      Err(
-        OperationNotAllowedInPhase(
-          phase=Idle,
-          operation~,
-          detail="no active run; InFlight operations require Active or Suspended",
-        ),
+      raise OperationNotAllowedInPhase(
+        phase=Idle,
+        operation~,
+        detail="no active run; InFlight operations require Active or Suspended",
       )
+
     // Active accepts InFlight (steer/follow_up/abort). It rejects Prompt
     // (one Run at a time) and Structural (compaction during a Run corrupts).
-    (Active, InFlight) => Ok(())
+    (Active, InFlight) => ()
     (Active, Prompt) =>
-      Err(
-        OperationNotAllowedInPhase(
-          phase=Active,
-          operation~,
-          detail="a run is already active; second prompt rejected",
-        ),
+      raise OperationNotAllowedInPhase(
+        phase=Active,
+        operation~,
+        detail="a run is already active; second prompt rejected",
       )
     (Active, Structural) =>
-      Err(
-        OperationNotAllowedInPhase(
-          phase=Active,
-          operation~,
-          detail="structural operations require Idle phase",
-        ),
+      raise OperationNotAllowedInPhase(
+        phase=Active,
+        operation~,
+        detail="structural operations require Idle phase",
       )
+
     // Suspended accepts resume (InFlight, since it operates on the suspended
     // Run) and abort. It rejects Prompt (no new Run while suspended) and
     // Structural.
-    (Suspended, InFlight) => Ok(())
+    (Suspended, InFlight) => ()
     (Suspended, Prompt) =>
-      Err(
-        OperationNotAllowedInPhase(
-          phase=Suspended,
-          operation~,
-          detail="a run is suspended; resume or abort it first",
-        ),
+      raise OperationNotAllowedInPhase(
+        phase=Suspended,
+        operation~,
+        detail="a run is suspended; resume or abort it first",
       )
     (Suspended, Structural) =>
-      Err(
-        OperationNotAllowedInPhase(
-          phase=Suspended,
-          operation~,
-          detail="structural operations require Idle phase",
-        ),
+      raise OperationNotAllowedInPhase(
+        phase=Suspended,
+        operation~,
+        detail="structural operations require Idle phase",
       )
     // Terminalizing / ShuttingDown / Shutdown reject everything.
     (Terminalizing, _) =>
-      Err(
-        OperationNotAllowedInPhase(
-          phase=Terminalizing,
-          operation~,
-          detail="terminalization in progress",
-        ),
+      raise OperationNotAllowedInPhase(
+        phase=Terminalizing,
+        operation~,
+        detail="terminalization in progress",
       )
     (ShuttingDown, _) =>
-      Err(
-        OperationNotAllowedInPhase(
-          phase=ShuttingDown,
-          operation~,
-          detail="shutdown in progress",
-        ),
+      raise OperationNotAllowedInPhase(
+        phase=ShuttingDown,
+        operation~,
+        detail="shutdown in progress",
       )
-    (Shutdown, _) => Err(AfterShutdown(command=operation.to_string()))
+    (Shutdown, _) => raise AfterShutdown(command=operation.to_string())
   }
 }
 
@@ -175,10 +163,7 @@ pub fn PhaseGate::acquire_prompt(
   run_id : RunId,
   turn_id : TurnId,
 ) -> (PhaseGate, OperationLease) raise PuppetError {
-  match self.authorise(Prompt) {
-    Err(e) => raise e
-    Ok(_) => ()
-  }
+  self.authorise(Prompt)
   match self.lease {
     Some(existing) =>
       raise LeaseHeld(operation_id~, held_by=existing.operation_id)
@@ -214,10 +199,7 @@ pub fn PhaseGate::acquire_resume(
   operation_id : String,
   expected_suspension_id : String,
 ) -> (PhaseGate, OperationLease) raise PuppetError {
-  match self.authorise(InFlight) {
-    Err(e) => raise e
-    Ok(_) => ()
-  }
+  self.authorise(InFlight)
   match (self.phase, self.active_suspension_id, self.active_run_id) {
     (Suspended, Some(actual), Some(run)) => {
       if actual != expected_suspension_id {

@@ -184,14 +184,3 @@ fn execution_error(phase : String, error : Error) -> PuppetError {
     other => EffectExecutionFailed(phase~, cause=other.to_string())
   }
 }
-
-///|
-/// Run `f` to completion, turning its typed error into a `Result`. Removes
-/// the `Ok(expr) catch { e => Err(e) }` wrapping boilerplate at call sites.
-/// Sync only: wrapping an async closure in the `async () -> T raise E` slot
-/// generalizes its precise raise type to `Error`.
-fn[T, E : Error] attempt(f : () -> T raise E) -> Result[T, E] {
-  Ok(f()) catch {
-    e => Err(e)
-  }
-}

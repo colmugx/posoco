@@ -12,7 +12,7 @@ pub(all) suberror AgentError {
   Model(String)
   Session(SessionError)
   Runtime(RuntimeError)
-  ToolLoopExceeded(consumed~ : Int, limit~ : Int)
+  ToolLoopExceeded(consumed~ : Int32, limit~ : Int32)
   Busy(operation_id~ : String, session~ : String)
   PipelineAborted(String)
   Cancelled(String)
@@ -56,7 +56,7 @@ pub(all) suberror DecisionError {
   Transport(String)
   ResponseParse(String)
   RateLimited(RateLimitInfo)
-  TimedOut(timeout_ms~ : Int)
+  TimedOut(timeout_ms~ : Int32)
 } derive(@debug.Debug)
 pub fn DecisionError::output(Self, &Logger) -> Unit
 pub fn DecisionError::to_repr(Self) -> @debug.Repr

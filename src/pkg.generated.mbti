@@ -15,7 +15,7 @@ pub const MEMORY_INBOUND_LEAD : String = " ## Memory\n\n The following is memory
 
 pub const SESSION_TITLE_METADATA_KEY : String = "posoco.title"
 
-pub fn agent_config(max_tool_rounds? : Int?, temperature? : Double?, max_output_tokens? : Int?, model_context_window? : Int?, compact_threshold? : Double?, system_prompt? : String?, memory_inbound_timeout_ms? : Int?) -> AgentConfig
+pub fn agent_config(max_tool_rounds? : Int32?, temperature? : Double?, max_output_tokens? : Int32?, model_context_window? : Int32?, compact_threshold? : Double?, system_prompt? : String?, memory_inbound_timeout_ms? : Int32?) -> AgentConfig
 
 pub fn assert_events_contain(Array[@types.TurnEvent], Array[@types.TurnEvent]) -> Unit
 
@@ -74,13 +74,13 @@ pub async fn Agent::shutdown(Self) -> Unit
 pub fn Agent::with_runtime(exts~ : Array[&@port.Extension], config~ : AgentConfig, runtime~ : &@runtime.Runtime, ui_projection? : Bool, catalog_source? : &@runtime.CatalogSource) -> Self raise @error.CompositionError
 
 pub struct AgentConfig {
-  max_tool_rounds : Int?
+  max_tool_rounds : Int32?
   temperature : Double?
-  max_output_tokens : Int?
-  model_context_window : Int?
+  max_output_tokens : Int32?
+  model_context_window : Int32?
   compact_threshold : Double?
   system_prompt : String?
-  memory_inbound_timeout_ms : Int?
+  memory_inbound_timeout_ms : Int32?
 }
 
 pub struct AgentControl {
@@ -90,7 +90,7 @@ pub fn AgentControl::abort_active(Self, String?) -> @runtime.EnqueueOutcome
 pub fn AgentControl::active_run_id(Self) -> @kernel.RunId?
 pub fn AgentControl::active_turn_id(Self) -> @kernel.TurnId?
 pub fn AgentControl::enqueue_follow_up(Self, @kernel.Message) -> @runtime.EnqueueOutcome
-pub fn AgentControl::pending_follow_ups(Self) -> Int
+pub fn AgentControl::pending_follow_ups(Self) -> Int32
 
 pub(all) struct CompositeToolProvider {
   providers : Array[&@port.ToolProvider]
@@ -190,11 +190,11 @@ pub impl @port.Lifecycle for RecordingLifecycle
 
 pub(all) struct RecordingLogPort {
   writes_ : Array[RecordedLogWrite]
-  mut flush_count_ : Int
+  mut flush_count_ : Int32
 }
 pub fn RecordingLogPort::RecordingLogPort() -> Self
 pub async fn RecordingLogPort::flush(Self) -> Unit raise @error.LogError
-pub fn RecordingLogPort::flush_count(Self) -> Int
+pub fn RecordingLogPort::flush_count(Self) -> Int32
 pub async fn RecordingLogPort::write(Self, @port.LogRecord, @port.LogDurability) -> Unit raise @error.LogError
 pub async fn RecordingLogPort::write_direct(Self, @port.LogRecord, @port.LogDurability) -> Unit raise @error.LogError
 pub fn RecordingLogPort::writes(Self) -> Array[RecordedLogWrite]
@@ -216,7 +216,7 @@ pub(all) struct RecordingSessionStore {
   mut ops : Array[SessionOp]
 }
 pub fn RecordingSessionStore::RecordingSessionStore() -> Self
-pub async fn RecordingSessionStore::append_messages(Self, String, Int, ArrayView[@kernel.Message]) -> Unit raise @error.SessionError
+pub async fn RecordingSessionStore::append_messages(Self, String, Int32, ArrayView[@kernel.Message]) -> Unit raise @error.SessionError
 pub async fn RecordingSessionStore::checkpoint(Self, String, @port.SessionCheckpoint) -> Unit raise @error.SessionError
 pub fn RecordingSessionStore::fail_load(Self, String, @error.SessionError) -> Unit
 pub fn RecordingSessionStore::fail_save(Self, String) -> Unit
@@ -226,13 +226,13 @@ pub fn RecordingSessionStore::ops(Self) -> Array[SessionOp]
 pub async fn RecordingSessionStore::save(Self, String, @types.Session) -> Unit raise @error.SessionError
 pub fn RecordingSessionStore::save_snapshots(Self) -> Array[(String, Map[String, Json])]
 pub fn RecordingSessionStore::seed(Self, String, @types.Session) -> Unit
-pub async fn RecordingSessionStore::truncate(Self, String, Int) -> Unit raise @error.SessionError
+pub async fn RecordingSessionStore::truncate(Self, String, Int32) -> Unit raise @error.SessionError
 pub impl @port.SessionStore for RecordingSessionStore
 
 pub(all) struct RecordingToolProvider {
   tool_defs : Array[@kernel.ToolDef]
   outcomes : Map[String, ScriptedToolOutcome]
-  mut list_calls : Int
+  mut list_calls : Int32
   mut exec_records : Array[ToolExecRecord]
   mut ops : Array[ToolProviderOp]
 }
@@ -240,7 +240,7 @@ pub fn RecordingToolProvider::RecordingToolProvider(Array[@kernel.ToolDef], Map[
 pub fn RecordingToolProvider::exec_records(Self) -> Array[ToolExecRecord]
 pub async fn RecordingToolProvider::execute(Self, @port.ToolCallContext) -> @kernel.ToolOutcome raise @error.RuntimeError
 pub async fn RecordingToolProvider::execute_direct(Self, @kernel.ToolCall) -> @kernel.ToolOutcome raise @error.RuntimeError
-pub fn RecordingToolProvider::list_call_count(Self) -> Int
+pub fn RecordingToolProvider::list_call_count(Self) -> Int32
 pub fn RecordingToolProvider::list_tools(Self) -> Array[@kernel.ToolDef]
 pub fn RecordingToolProvider::ops(Self) -> Array[ToolProviderOp]
 pub impl @port.ToolProvider for RecordingToolProvider
@@ -254,13 +254,13 @@ pub(all) struct RecordingUiPort {
 pub fn RecordingUiPort::RecordingUiPort(responses? : Array[@port.UiResponse]) -> Self
 pub fn RecordingUiPort::new_unsupported() -> Self
 pub fn RecordingUiPort::render(Self, @port.UiRender) -> Unit
-pub fn RecordingUiPort::render_count(Self) -> Int
+pub fn RecordingUiPort::render_count(Self) -> Int32
 pub fn RecordingUiPort::rendered_in_slot(Self, @port.UiSlot) -> Array[@port.UiRender]
 pub fn RecordingUiPort::rendered_intents(Self) -> Array[@port.UiRender]
 pub async fn RecordingUiPort::request(Self, @port.UiRequest) -> @port.UiResponse raise @error.UiError
 pub fn RecordingUiPort::set_descriptor(Self, @port.UiDescriptor) -> Unit
 pub fn RecordingUiPort::ui_descriptor(Self) -> @port.UiDescriptor
-pub fn RecordingUiPort::unconsumed_response_count(Self) -> Int
+pub fn RecordingUiPort::unconsumed_response_count(Self) -> Int32
 pub impl @port.UiPort for RecordingUiPort
 
 pub struct ScopeRecordingModel {
@@ -285,11 +285,11 @@ pub async fn ScopedToolDispatch::call(Self, String, Json) -> @kernel.ToolOutcome
 
 pub(all) struct ScriptedDecisionPort {
   steps : Array[ScriptedDecisionStep]
-  mut index : Int
+  mut index : Int32
   received : Array[@port.DecisionRequest]
 }
 pub fn ScriptedDecisionPort::ScriptedDecisionPort(Array[ScriptedDecisionStep]) -> Self
-pub fn ScriptedDecisionPort::call_count(Self) -> Int
+pub fn ScriptedDecisionPort::call_count(Self) -> Int32
 pub async fn ScriptedDecisionPort::evaluate(Self, @port.DecisionRequest) -> @port.DecisionResult raise @error.DecisionError
 pub async fn ScriptedDecisionPort::evaluate_direct(Self, @port.DecisionRequest) -> @port.DecisionResult raise @error.DecisionError
 pub async fn ScriptedDecisionPort::evaluate_with_context(Self, @port.DecisionRequest, context~ : @port.DecisionCallContext) -> @port.DecisionResult raise @error.DecisionError
@@ -303,51 +303,51 @@ pub(all) enum ScriptedDecisionStep {
 
 pub(all) struct ScriptedMemoryPort {
   inbounds : Array[String?]
-  mut index : Int
-  mut calls : Int
+  mut index : Int32
+  mut calls : Int32
   mut sessions : Array[String]
   mut requests : Array[String]
   mut stored : Array[(String, Map[String, Json])]
   mut deleted : Array[String]
   search_script : Array[String?]
-  mut search_index : Int
-  mut searches : Array[(String, Int?)]
-  mut next_ticket : Int
+  mut search_index : Int32
+  mut searches : Array[(String, Int32?)]
+  mut next_ticket : Int32
 }
 pub fn ScriptedMemoryPort::ScriptedMemoryPort(inbounds~ : Array[String?], search_script? : Array[String?]) -> Self
-pub fn ScriptedMemoryPort::call_count(Self) -> Int
+pub fn ScriptedMemoryPort::call_count(Self) -> Int32
 pub async fn ScriptedMemoryPort::delete(Self, String) -> Unit raise @error.MemoryError
 pub async fn ScriptedMemoryPort::inbound(Self, session_id~ : String, request~ : String) -> String? raise @error.MemoryError
 pub fn ScriptedMemoryPort::received_deletes(Self) -> Array[String]
 pub fn ScriptedMemoryPort::received_requests(Self) -> Array[String]
-pub fn ScriptedMemoryPort::received_searches(Self) -> Array[(String, Int?)]
+pub fn ScriptedMemoryPort::received_searches(Self) -> Array[(String, Int32?)]
 pub fn ScriptedMemoryPort::received_sessions(Self) -> Array[String]
 pub fn ScriptedMemoryPort::received_stores(Self) -> Array[(String, Map[String, Json])]
-pub async fn ScriptedMemoryPort::search(Self, query~ : String, top_k? : Int) -> String? raise @error.MemoryError
+pub async fn ScriptedMemoryPort::search(Self, query~ : String, top_k? : Int32) -> String? raise @error.MemoryError
 pub async fn ScriptedMemoryPort::store(Self, content~ : String, metadata~ : Map[String, Json]) -> String raise @error.MemoryError
 pub impl @port.MemoryPort for ScriptedMemoryPort
 
 pub(all) struct ScriptedModel {
   steps : Array[ScriptedModelStep]
-  mut index : Int
-  mut calls : Int
+  mut index : Int32
+  mut calls : Int32
   received_messages : Array[Array[@kernel.Message]]
   received_tools : Array[Array[@kernel.ToolDef]]
   received_options : Array[@types.ChatOptions]
   received_chunks : Array[@types.StreamChunk]
-  mut compact_calls : Int
+  mut compact_calls : Int32
   received_compacts : Array[(Array[@kernel.Message], @kernel.CompactTrigger)]
   received_compact_tools : Array[Array[@kernel.ToolDef]]
-  mut parked_calls : Int
+  mut parked_calls : Int32
 }
 pub fn ScriptedModel::ScriptedModel(Array[ScriptedModelStep]) -> Self
-pub fn ScriptedModel::call_count(Self) -> Int
+pub fn ScriptedModel::call_count(Self) -> Int32
 pub async fn ScriptedModel::chat(Self, @kernel.InvocationScope, ArrayView[@kernel.Message], Array[@kernel.ToolDef], @types.ChatOptions, @types.StreamMode) -> @kernel.ModelCallResult raise @error.ModelError
 pub async fn ScriptedModel::chat_direct(Self, Array[@kernel.Message], Array[@kernel.ToolDef], @types.ChatOptions) -> @kernel.ModelCallResult raise @error.ModelError
 pub async fn ScriptedModel::compact(Self, @kernel.InvocationScope, ArrayView[@kernel.Message], Array[@kernel.ToolDef], @types.ChatOptions, @kernel.CompactTrigger) -> @kernel.CompactResult raise @error.ModelError
-pub fn ScriptedModel::compact_call_count(Self) -> Int
+pub fn ScriptedModel::compact_call_count(Self) -> Int32
 pub fn ScriptedModel::options_received(Self) -> Array[@types.ChatOptions]
-pub fn ScriptedModel::parked_calls(Self) -> Int
+pub fn ScriptedModel::parked_calls(Self) -> Int32
 pub fn ScriptedModel::provider_config(Self) -> @port.ProviderConfig
 pub fn ScriptedModel::received_compacts(Self) -> Array[(Array[@kernel.Message], @kernel.CompactTrigger)]
 pub impl @port.ModelPort for ScriptedModel
@@ -370,9 +370,9 @@ pub fn ScriptedToolOutcome::to_repr(Self) -> @debug.Repr
 pub(all) enum SessionOp {
   OpLoad(id~ : String, result~ : Result[@types.Session, @error.SessionError])
   OpSave(id~ : String, metadata~ : Map[String, Json], result~ : Result[Unit, @error.SessionError])
-  OpAppend(id~ : String, from_index~ : Int, messages~ : Array[@kernel.Message], result~ : Result[Unit, @error.SessionError])
+  OpAppend(id~ : String, from_index~ : Int32, messages~ : Array[@kernel.Message], result~ : Result[Unit, @error.SessionError])
   OpCheckpoint(id~ : String, checkpoint~ : @port.SessionCheckpoint, result~ : Result[Unit, @error.SessionError])
-  OpTruncate(id~ : String, from_index~ : Int, result~ : Result[Unit, @error.SessionError])
+  OpTruncate(id~ : String, from_index~ : Int32, result~ : Result[Unit, @error.SessionError])
 } derive(@debug.Debug)
 pub fn SessionOp::to_repr(Self) -> @debug.Repr
 

@@ -30,7 +30,7 @@ pub(all) suberror PuppetError {
   AfterShutdown(command~ : String)
   SnapshotInvalid(detail~ : String)
   StaleIdentity(kind~ : String, expected~ : String, actual~ : String)
-  QueueFull(kind~ : String, depth~ : Int)
+  QueueFull(kind~ : String, depth~ : Int32)
   SuspensionPayloadMismatch(suspension_id~ : String, expected_kind~ : String)
   SuspensionIdMismatch(target_run_id~ : @kernel.RunId, expected~ : String, actual~ : String)
   AbortNoActiveRun(run_id~ : @kernel.RunId)
@@ -40,8 +40,8 @@ pub(all) suberror PuppetError {
   LifecycleStartupFailed(node_id~ : String, cause~ : String, rollback_failures~ : Array[(String, String)])
   LifecycleShutdownFailed(node_id~ : String, cause~ : String, other_failures~ : Array[(String, String)])
   LifecycleDuplicate(node_id~ : String)
-  SubscriberFailed(subscriber_id~ : String, cause~ : String, committed_revision~ : Int)
-  PumpLoopExceeded(iterations~ : Int)
+  SubscriberFailed(subscriber_id~ : String, cause~ : String, committed_revision~ : Int32)
+  PumpLoopExceeded(iterations~ : Int32)
   DuplicateOrLateCompletion(effect_id~ : @kernel.EffectId, detail~ : String)
   EffectExecutionFailed(phase~ : String, cause~ : String)
   EffectExecutionCancelled(phase~ : String)
@@ -75,7 +75,7 @@ pub(all) struct CommandId {
 } derive(Eq, Hash, @debug.Debug)
 pub fn CommandId::checked(String) -> Result[Self, String]
 pub fn CommandId::equal(Self, Self) -> Bool
-pub fn CommandId::hash(Self) -> Int
+pub fn CommandId::hash(Self) -> Int32
 pub fn CommandId::hash_combine(Self, Hasher) -> Unit
 pub fn CommandId::not_equal(Self, Self) -> Bool
 pub fn CommandId::output(Self, &Logger) -> Unit
@@ -99,19 +99,19 @@ pub fn CompactCommand::trigger(Self) -> @kernel.CompactTrigger
 pub struct ControlMailbox {
   mut steer_queue : @aqueue.Queue[SteerCommand]
   mut follow_up_queue : @aqueue.Queue[FollowUpCommand]
-  mut steer_depth : Int
-  mut follow_up_depth : Int
+  mut steer_depth : Int32
+  mut follow_up_depth : Int32
   mut fork_queue : @aqueue.Queue[ForkCommand]
-  mut fork_depth : Int
+  mut fork_depth : Int32
   mut compact_queue : @aqueue.Queue[CompactCommand]
-  mut compact_depth : Int
+  mut compact_depth : Int32
   resume_pending : Map[String, ResumeCommand]
   mut abort_requested : Bool
   mut active_run_id : @kernel.RunId?
   mut active_turn_id : @kernel.TurnId?
   idle_cond : @cond_var.Cond
   mut quiescent_status : QuiescentStatus
-  max_depth : Int
+  max_depth : Int32
 }
 pub fn ControlMailbox::ControlMailbox() -> Self
 pub fn ControlMailbox::abort_requested(Self) -> Bool
@@ -119,7 +119,7 @@ pub fn ControlMailbox::active_run_id(Self) -> @kernel.RunId?
 pub fn ControlMailbox::active_turn_id(Self) -> @kernel.TurnId?
 pub fn ControlMailbox::bind_run(Self, @kernel.RunId, @kernel.TurnId) -> Unit
 pub fn ControlMailbox::clear_run(Self) -> Unit
-pub fn ControlMailbox::compact_depth(Self) -> Int
+pub fn ControlMailbox::compact_depth(Self) -> Int32
 pub fn ControlMailbox::consume_one_compact(Self) -> CompactCommand?
 pub fn ControlMailbox::consume_one_follow_up(Self) -> FollowUpCommand?
 pub fn ControlMailbox::consume_one_fork(Self) -> ForkCommand?
@@ -130,11 +130,11 @@ pub fn ControlMailbox::enqueue_follow_up(Self, FollowUpCommand) -> EnqueueResult
 pub fn ControlMailbox::enqueue_fork(Self, ForkCommand) -> EnqueueResult
 pub fn ControlMailbox::enqueue_resume(Self, ResumeCommand) -> EnqueueResult
 pub fn ControlMailbox::enqueue_steer(Self, SteerCommand) -> EnqueueResult
-pub fn ControlMailbox::follow_up_depth(Self) -> Int
-pub fn ControlMailbox::fork_depth(Self) -> Int
+pub fn ControlMailbox::follow_up_depth(Self) -> Int32
+pub fn ControlMailbox::fork_depth(Self) -> Int32
 pub fn ControlMailbox::quiescent_status(Self) -> QuiescentStatus
 pub fn ControlMailbox::set_quiescent(Self, QuiescentStatus) -> Unit
-pub fn ControlMailbox::steer_depth(Self) -> Int
+pub fn ControlMailbox::steer_depth(Self) -> Int32
 pub fn ControlMailbox::take_resume(Self, String) -> ResumeCommand?
 pub async fn ControlMailbox::wait_idle(Self) -> QuiescentStatus
 pub impl Mailbox for ControlMailbox
@@ -142,7 +142,7 @@ pub impl Mailbox for ControlMailbox
 pub(all) enum EnqueueResult {
   Accepted(command_id~ : CommandId)
   RejectedStale(command_id~ : CommandId, reason~ : String)
-  RejectedQueueFull(command_id~ : CommandId, depth~ : Int)
+  RejectedQueueFull(command_id~ : CommandId, depth~ : Int32)
   AbortAlreadyRequested(command_id~ : CommandId)
 } derive(Eq, @debug.Debug)
 pub fn EnqueueResult::equal(Self, Self) -> Bool
@@ -154,27 +154,27 @@ pub impl Show for EnqueueResult
 
 pub struct EventDispatcher {
   subscribers : Array[&EventSubscriber]
-  mut next_seq : Int
-  mut last_committed_revision : Int
+  mut next_seq : Int32
+  mut last_committed_revision : Int32
   run_id : @kernel.RunId
   turn_id : @kernel.TurnId
   session_id : @kernel.SessionId
 }
 pub fn EventDispatcher::EventDispatcher(@kernel.RunId, @kernel.TurnId, @kernel.SessionId) -> Self
-pub async fn EventDispatcher::dispatch(Self, @kernel_exec.KernelEvent, Int) -> Unit raise PuppetError
-pub fn EventDispatcher::next_seq(Self) -> Int
+pub async fn EventDispatcher::dispatch(Self, @kernel_exec.KernelEvent, Int32) -> Unit raise PuppetError
+pub fn EventDispatcher::next_seq(Self) -> Int32
 pub fn EventDispatcher::register(Self, &EventSubscriber) -> Unit
-pub fn EventDispatcher::subscriber_count(Self) -> Int
+pub fn EventDispatcher::subscriber_count(Self) -> Int32
 
 pub(all) struct EventEnvelope {
   run_id : @kernel.RunId
   turn_id : @kernel.TurnId
   session_id : @kernel.SessionId
-  seq : Int
-  committed_revision : Int
+  seq : Int32
+  committed_revision : Int32
   event : @kernel_exec.KernelEvent
 } derive(Eq, @debug.Debug)
-pub fn EventEnvelope::EventEnvelope(run_id~ : @kernel.RunId, turn_id~ : @kernel.TurnId, session_id~ : @kernel.SessionId, seq~ : Int, committed_revision~ : Int, event~ : @kernel_exec.KernelEvent) -> Self
+pub fn EventEnvelope::EventEnvelope(run_id~ : @kernel.RunId, turn_id~ : @kernel.TurnId, session_id~ : @kernel.SessionId, seq~ : Int32, committed_revision~ : Int32, event~ : @kernel_exec.KernelEvent) -> Self
 pub fn EventEnvelope::equal(Self, Self) -> Bool
 pub fn EventEnvelope::event(Self) -> @kernel_exec.KernelEvent
 pub fn EventEnvelope::is_terminal(Self) -> Bool
@@ -189,14 +189,14 @@ pub impl Show for EventEnvelope
 
 pub struct FailOnNthJournal {
   inner : InMemoryJournal
-  fail_on : Int
-  mut call_count : Int
+  fail_on : Int32
+  mut call_count : Int32
 }
-pub fn FailOnNthJournal::FailOnNthJournal(InMemoryJournal, Int) -> Self
-pub fn FailOnNthJournal::append(Self, Array[JournalEntry]) -> Int raise PuppetError
+pub fn FailOnNthJournal::FailOnNthJournal(InMemoryJournal, Int32) -> Self
+pub fn FailOnNthJournal::append(Self, Array[JournalEntry]) -> Int32 raise PuppetError
 pub fn FailOnNthJournal::entries_for_run(Self, @kernel.RunId) -> Array[JournalEntry]
 pub fn FailOnNthJournal::entries_for_savepoint(Self, @kernel.RunId, String) -> Array[JournalEntry]
-pub fn FailOnNthJournal::revision(Self) -> Int
+pub fn FailOnNthJournal::revision(Self) -> Int32
 pub impl RunJournal for FailOnNthJournal
 
 pub(all) struct FollowUpCommand {
@@ -213,18 +213,18 @@ pub(all) struct ForkCommand {
   command_id : CommandId
   target_run_id : @kernel.RunId
   target_turn_id : @kernel.TurnId
-  fork_index : Int
+  fork_index : Int32
 } derive(Eq, @debug.Debug)
 pub fn ForkCommand::command_id(Self) -> CommandId
 pub fn ForkCommand::equal(Self, Self) -> Bool
-pub fn ForkCommand::fork_index(Self) -> Int
+pub fn ForkCommand::fork_index(Self) -> Int32
 pub fn ForkCommand::not_equal(Self, Self) -> Bool
 pub fn ForkCommand::to_repr(Self) -> @debug.Repr
 
 pub(all) struct FrozenBatch {
   savepoint_id : String
   savepoint_kind : SavepointKind
-  expected_revision : Int
+  expected_revision : Int32
   entries : Array[JournalEntry]
   frozen_entry_keys : Array[String]
 } derive(Eq, @debug.Debug)
@@ -236,14 +236,14 @@ pub struct InMemoryJournal {
   entries : Array[JournalEntry]
   seen_ids : Map[String, Bool]
   terminal_runs : Map[String, Bool]
-  mut append_count : Int
+  mut append_count : Int32
 }
 pub fn InMemoryJournal::InMemoryJournal() -> Self
-pub fn InMemoryJournal::append(Self, Array[JournalEntry]) -> Int raise PuppetError
-pub fn InMemoryJournal::append_count(Self) -> Int
+pub fn InMemoryJournal::append(Self, Array[JournalEntry]) -> Int32 raise PuppetError
+pub fn InMemoryJournal::append_count(Self) -> Int32
 pub fn InMemoryJournal::entries_for_run(Self, @kernel.RunId) -> Array[JournalEntry]
 pub fn InMemoryJournal::entries_for_savepoint(Self, @kernel.RunId, String) -> Array[JournalEntry]
-pub fn InMemoryJournal::revision(Self) -> Int
+pub fn InMemoryJournal::revision(Self) -> Int32
 pub impl RunJournal for InMemoryJournal
 
 pub(all) struct JournalContribution {
@@ -259,7 +259,7 @@ pub fn JournalContribution::with_entries(String, String, Array[JournalEntry]) ->
 
 pub(all) struct JournalEntry {
   identity : JournalEntryIdentity
-  revision : Int
+  revision : Int32
   summary : String
   payload : Json
 } derive(Eq, @debug.Debug)
@@ -272,7 +272,7 @@ pub(all) struct JournalEntryIdentity {
   turn_id : @kernel.TurnId
   session_id : @kernel.SessionId
   savepoint_id : String
-  entry_seq : Int
+  entry_seq : Int32
   kind : SavepointKind
 } derive(Eq, @debug.Debug)
 pub fn JournalEntryIdentity::equal(Self, Self) -> Bool
@@ -287,7 +287,7 @@ pub(all) struct ModelId {
 } derive(Eq, Hash, @debug.Debug)
 pub fn ModelId::checked(String) -> Result[Self, String]
 pub fn ModelId::equal(Self, Self) -> Bool
-pub fn ModelId::hash(Self) -> Int
+pub fn ModelId::hash(Self) -> Int32
 pub fn ModelId::hash_combine(Self, Hasher) -> Unit
 pub fn ModelId::not_equal(Self, Self) -> Bool
 pub fn ModelId::to_repr(Self) -> @debug.Repr
@@ -355,7 +355,7 @@ pub fn PhaseGate::acquire_resume(Self, String, String) -> (Self, OperationLease)
 pub fn PhaseGate::active_run_id(Self) -> @kernel.RunId?
 pub fn PhaseGate::active_suspension_id(Self) -> String?
 pub fn PhaseGate::active_turn_id(Self) -> @kernel.TurnId?
-pub fn PhaseGate::authorise(Self, OperationClass) -> Result[Unit, PuppetError]
+pub fn PhaseGate::authorise(Self, OperationClass) -> Unit raise PuppetError
 pub fn PhaseGate::enter_suspended(Self, String) -> Self raise PuppetError
 pub fn PhaseGate::idle() -> Self
 pub fn PhaseGate::is_quiescent(Self) -> Bool
@@ -372,7 +372,7 @@ pub(all) struct PreCommitContext {
   savepoint_id : String
   savepoint_kind : SavepointKind
   base_entries : Array[JournalEntry]
-  current_revision : Int
+  current_revision : Int32
   catalog_version : @kernel.CatalogVersion
 } derive(Eq, @debug.Debug)
 pub fn PreCommitContext::equal(Self, Self) -> Bool
@@ -408,13 +408,13 @@ pub struct Puppet {
   mailbox : &Mailbox
   mut last_completed_transcript : @kernel.Transcript?
   mut last_outcome : @kernel_exec.RunOutcome?
-  mut auto_compact_attempt_version : Int?
+  mut auto_compact_attempt_version : Int32?
   context_states : Map[String, @types.ContextState]
 }
 pub fn Puppet::Puppet(PuppetConfig) -> Self
 pub fn Puppet::adopt_context_state(Self, String, @types.ContextState) -> Unit
 pub async fn Puppet::compact_standalone(Self, @kernel.RunId, @kernel.TurnId, @kernel.SessionId, Array[@kernel.Message], RunPolicy, String, @kernel.CompactTrigger) -> PromptResult raise PuppetError
-pub fn Puppet::context_version(Self) -> Int
+pub fn Puppet::context_version(Self) -> Int32
 pub fn Puppet::is_quiescent(Self) -> Bool
 pub fn Puppet::last_completed_transcript(Self) -> @kernel.Transcript?
 pub fn Puppet::last_terminal_outcome(Self) -> @kernel_exec.RunOutcome?
@@ -434,7 +434,7 @@ pub(all) struct PuppetConfig {
   subscribers : Array[&EventSubscriber]
   stream_chunks : ((@types.StreamChunk) -> Unit)?
   hooks : Array[&@port.PipelineHook]
-  max_iterations : Int?
+  max_iterations : Int32?
   commands : Array[&@port.CommandPort]
   session_store : &@port.SessionStore?
   mailbox : &Mailbox
@@ -495,7 +495,7 @@ pub(all) struct RunPolicy {
   model_id : String
   call_options : Json
   budget : @kernel_exec.Budget
-  context_window : Int?
+  context_window : Int32?
   compact_threshold : Double
 } derive(Eq, @debug.Debug)
 pub fn RunPolicy::equal(Self, Self) -> Bool
@@ -547,7 +547,7 @@ pub struct TurnSnapshot {
   catalog_version : @kernel.CatalogVersion
   tool_definitions : Array[@kernel.ToolDef]
   policy : RunPolicy
-  deadline : Int?
+  deadline : Int32?
   hook_provenance : Array[String]
   lifecycle_provenance : Array[String]
   subscriber_provenance : Array[String]
@@ -558,8 +558,8 @@ pub fn TurnSnapshot::call_options(Self) -> Json
 pub fn TurnSnapshot::capture(TurnSnapshotInput) -> Self raise PuppetError
 pub fn TurnSnapshot::catalog_version(Self) -> @kernel.CatalogVersion
 pub fn TurnSnapshot::compact_threshold(Self) -> Double
-pub fn TurnSnapshot::context_window(Self) -> Int?
-pub fn TurnSnapshot::deadline(Self) -> Int?
+pub fn TurnSnapshot::context_window(Self) -> Int32?
+pub fn TurnSnapshot::deadline(Self) -> Int32?
 pub fn TurnSnapshot::equal(Self, Self) -> Bool
 pub fn TurnSnapshot::fingerprint(Self) -> String
 pub fn TurnSnapshot::hook_provenance(Self) -> Array[String]
@@ -583,7 +583,7 @@ pub(all) struct TurnSnapshotInput {
   session_id : @kernel.SessionId
   catalog : @kernel_exec.ToolCatalogSnapshot
   policy : RunPolicy
-  deadline : Int?
+  deadline : Int32?
   hook_provenance : Array[String]
   lifecycle_provenance : Array[String]
   subscriber_provenance : Array[String]
@@ -613,10 +613,10 @@ pub(open) trait Mailbox {
   fn active_run_id(Self) -> @kernel.RunId?
   fn active_turn_id(Self) -> @kernel.TurnId?
   fn abort_requested(Self) -> Bool
-  fn steer_depth(Self) -> Int
-  fn follow_up_depth(Self) -> Int
-  fn fork_depth(Self) -> Int
-  fn compact_depth(Self) -> Int
+  fn steer_depth(Self) -> Int32
+  fn follow_up_depth(Self) -> Int32
+  fn fork_depth(Self) -> Int32
+  fn compact_depth(Self) -> Int32
   fn enqueue_steer(Self, SteerCommand) -> EnqueueResult
   fn enqueue_follow_up(Self, FollowUpCommand) -> EnqueueResult
   fn enqueue_resume(Self, ResumeCommand) -> EnqueueResult
@@ -634,8 +634,8 @@ pub(open) trait Mailbox {
 }
 
 pub(open) trait RunJournal {
-  fn append(Self, Array[JournalEntry]) -> Int raise PuppetError
-  fn revision(Self) -> Int
+  fn append(Self, Array[JournalEntry]) -> Int32 raise PuppetError
+  fn revision(Self) -> Int32
   fn entries_for_run(Self, @kernel.RunId) -> Array[JournalEntry]
   fn entries_for_savepoint(Self, @kernel.RunId, String) -> Array[JournalEntry]
 }

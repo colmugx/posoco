@@ -35,17 +35,17 @@ async fn Puppet::drive_run(
     self.mailbox.set_quiescent(Idle)
   }
   // Build the initial RunState.
-  let initial_result : Result[RunState, KernelError] = attempt(() => {
-    RunState::initial(run_id~, session_id~, budget=snap.budget())
-  })
-  let initial_state = match initial_result {
-    Err(e) =>
+  let initial_state = RunState::initial(
+    run_id~,
+    session_id~,
+    budget=snap.budget(),
+  ) catch {
+    e =>
       return self.finalize_rejected(
         error=ReducerInvariantViolation(
           category=IllegalPhase(phase="initial", detail=e.to_string()),
         ),
       )
-    Ok(s) => s
   }
   // Build the execution context from the host runtime + catalog snapshot.
   // Puppetry forwards canonical values without product-specific conversion.
@@ -81,17 +81,13 @@ async fn Puppet::drive_run(
     catalog_version: snap.catalog_version(),
   })
   let mut state = initial_state
-  let out0_result : Result[ReduceOutput, KernelError] = attempt(() => {
-    reduce(state, self.config.catalog, start_input)
-  })
-  let out0 = match out0_result {
-    Err(e) =>
+  let out0 = reduce(state, self.config.catalog, start_input) catch {
+    e =>
       return self.finalize_rejected(
         error=ReducerInvariantViolation(
           category=IllegalPhase(phase="Start", detail=e.to_string()),
         ),
       )
-    Ok(o) => o
   }
   let initial_events : Array[KernelEvent] = out0.events()
   let mut pre_compact_fired = false
@@ -127,18 +123,13 @@ async fn Puppet::drive_run(
     }
     None => out0.next_state()
   }
-  let initial_boundary : Result[(RunState, Array[KernelEvent]), PuppetError] = attempt(() => {
-      declare_model_effect_if_ready(
-        pre_compact_state,
-        initial_events,
-        self.config.catalog,
-        snap.call_options(),
-      )
-    },
-  )
-  let (initial_state, initial_boundary_events) = match initial_boundary {
-    Err(error) => return self.finalize_rejected(error~)
-    Ok(value) => value
+  let (initial_state, initial_boundary_events) = declare_model_effect_if_ready(
+    pre_compact_state,
+    initial_events,
+    self.config.catalog,
+    snap.call_options(),
+  ) catch {
+    error => return self.finalize_rejected(error~)
   }
   // The initial boundary durably accepts input, starts the run, and declares
   // the first model intent in one append before the effect can execute.

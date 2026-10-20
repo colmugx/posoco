@@ -136,10 +136,7 @@ pub fn TurnSnapshot::capture(
   // snapshot records zero definitions; the reducer's unknown-tool path
   // handles any tool calls emitted despite the empty catalog.
   // Validate budget dimensions are non-negative where Some.
-  match check_budget(input.policy.budget) {
-    Err(e) => raise e
-    Ok(_) => ()
-  }
+  check_budget(input.policy.budget)
   match input.policy.context_window {
     Some(value) if value <= 0 =>
       raise SnapshotInvalid(detail="context_window must be positive")
@@ -211,52 +208,35 @@ fn snapshot_json(value : Json) -> Json {
 }
 
 ///|
-fn check_budget(budget : Budget) -> Result[Unit, PuppetError] {
+fn check_budget(budget : Budget) -> Unit raise PuppetError {
   match budget.max_model_steps {
-    Some(n) => {
+    Some(n) =>
       if n < 0 {
-        return Err(
-          SnapshotInvalid(detail="max_model_steps must be non-negative"),
-        )
+        raise SnapshotInvalid(detail="max_model_steps must be non-negative")
       }
-      ()
-    }
     None => ()
   }
   match budget.max_tool_rounds {
-    Some(n) => {
+    Some(n) =>
       if n < 0 {
-        return Err(
-          SnapshotInvalid(detail="max_tool_rounds must be non-negative"),
-        )
+        raise SnapshotInvalid(detail="max_tool_rounds must be non-negative")
       }
-      ()
-    }
     None => ()
   }
   match budget.max_tool_calls {
-    Some(n) => {
+    Some(n) =>
       if n < 0 {
-        return Err(
-          SnapshotInvalid(detail="max_tool_calls must be non-negative"),
-        )
+        raise SnapshotInvalid(detail="max_tool_calls must be non-negative")
       }
-      ()
-    }
     None => ()
   }
   match budget.max_total_tokens {
-    Some(n) => {
+    Some(n) =>
       if n < 0 {
-        return Err(
-          SnapshotInvalid(detail="max_total_tokens must be non-negative"),
-        )
+        raise SnapshotInvalid(detail="max_total_tokens must be non-negative")
       }
-      ()
-    }
     None => ()
   }
-  Ok(())
 }
 
 // ──────────────────────────────────────────────────────────────────────────
