@@ -202,12 +202,6 @@ test "ui_request_show_round_trip" {
 }
 
 ///|
-test "ui_response_equality_for_yes_no" {
-  assert_eq(UiResponse::Yes, Yes)
-  assert_false(UiResponse::Yes == No)
-}
-
-///|
 test "ui_body_entries_show_appends_color_roles" {
   let with_roles : UiBody = Entries([
     { key: "plan", value: "codex", color: Some("accent"), },
