@@ -1,0 +1,23 @@
+///|
+/// The batching pattern — the reason run_code exists: fan out several
+/// calls, fold the results into one small summary. Intermediate values
+/// stay in the guest; the model transcript only sees the summary.
+import {
+  "moonbitlang/async",
+  "posoco/ears@0.1.0" @ears,
+}
+
+///|
+async fn main {
+  @ears.serve(
+    wire=@ears.stdio(),
+    run=(ears, input) => {
+      let readme = ears.call("read", { "path": "README.md" })
+      let manifest = ears.call("read", { "path": "moon.mod" })
+      {
+        "readme_ok": readme is @ears.Success(..),
+        "manifest_ok": manifest is @ears.Success(..),
+      }
+    },
+  )
+}

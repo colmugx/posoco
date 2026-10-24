@@ -1,0 +1,15 @@
+///|
+/// The smallest guest program: serve one handler and echo the input back.
+/// The host wires the connection; the program only talks to @ears.
+import {
+  "moonbitlang/async",
+  "posoco/ears@0.1.0" @ears,
+}
+
+///|
+async fn main {
+  @ears.serve(
+    wire=@ears.stdio(),
+    run=(ears, input) => { "hello": input },
+  )
+}

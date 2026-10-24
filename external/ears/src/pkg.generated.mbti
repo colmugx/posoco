@@ -1,0 +1,45 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "posoco/ears"
+
+import {
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub async fn serve(wire~ : &Wire, run~ : async (Ears, Json) -> Json) -> Unit
+
+pub fn stdio() -> &Wire
+
+// Errors
+
+// Types and methods
+pub struct Ears {
+  // private fields
+}
+pub fn Ears::Ears(wire~ : &Wire, allowed~ : Array[String]) -> Self
+pub async fn Ears::call(Self, String, Json) -> Outcome
+pub fn Ears::close(Self) -> Unit
+pub async fn Ears::log(Self, level? : String, String) -> Unit
+
+pub(all) enum Outcome {
+  Success(content~ : String, structured~ : Json?)
+  Failure(code~ : String, content~ : String, structured~ : Json?)
+} derive(Eq, @debug.Debug)
+pub fn Outcome::equal(Self, Self) -> Bool
+pub fn Outcome::from_json(Json) -> Self raise
+pub fn Outcome::is_error(Self) -> Bool
+pub fn Outcome::not_equal(Self, Self) -> Bool
+pub fn Outcome::to_json(Self) -> Json
+pub fn Outcome::to_repr(Self) -> @debug.Repr
+
+pub struct StdioWire {
+}
+pub fn StdioWire::StdioWire() -> Self
+
+// Type aliases
+
+// Traits
+pub(open) trait Wire {
+  async fn send(Self, String) -> Unit
+  async fn receive(Self) -> String?
+}

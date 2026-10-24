@@ -1,0 +1,22 @@
+///|
+/// Tool failures are values: branch on the Outcome instead of assuming
+/// success. Only a lost connection raises; `fail` turns a refusal into
+/// the program's failure result.
+import {
+  "moonbitlang/async",
+  "posoco/ears@0.1.0" @ears,
+}
+
+///|
+async fn main {
+  @ears.serve(
+    wire=@ears.stdio(),
+    run=(ears, input) => {
+      let found = ears.call("glob", { "pattern": "src/**/*.mbt" })
+      guard found is @ears.Success(structured=Some(files), ..) else {
+        fail("ears: glob did not succeed")
+      }
+      files
+    },
+  )
+}
