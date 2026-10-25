@@ -172,6 +172,10 @@ pub impl Show for HookStage with fn to_string(self : HookStage) -> String {
 /// each hook is awaited before the next runs — and never opens a thread or
 /// worker, so registration order is preserved at every point.
 pub(open) trait PipelineHook {
+  /// Synchronous operation-boundary projection. The result is intersected
+  /// with the provider declaration and every other hook; it cannot widen.
+  fn tool_exposure(Self, definition : @kernel.ToolDef) -> @kernel.ToolExposure = _
+
   /// `before_model` is `async` so hooks whose rewrite needs IO can await.
   /// Synchronous implementations write a plain `fn` body — a sync body
   /// satisfies an `async` trait slot under MoonBit's colorless-coroutine
@@ -202,6 +206,11 @@ pub(open) trait PipelineHook {
   /// satisfies an `async` trait slot under MoonBit's colorless-coroutine
   /// model.
   async fn on_turn_end(Self) -> Unit = _
+}
+
+///|
+impl PipelineHook with fn tool_exposure(_self, _definition : @kernel.ToolDef) -> @kernel.ToolExposure {
+  Direct
 }
 
 ///|

@@ -276,6 +276,15 @@ pub(all) enum TurnEvent {
   /// timing (TTFT) at the true request start instead of the previous
   /// response's commit boundary.
   ModelRequestStarted
+  /// Correlates a child node with its parent and root before its lifecycle
+  /// events. Its result returns to the parent, not to the model transcript.
+  ToolChildDeclared(
+    call_id~ : @kernel.CallId,
+    effect_id~ : @kernel.EffectId,
+    parent_effect_id~ : @kernel.EffectId,
+    root_effect_id~ : @kernel.EffectId,
+    depth~ : Int32
+  )
   ToolCallPending(@kernel.ToolCall)
   ToolCallApproved(call~ : @kernel.ToolCall, consent_scope~ : String?)
   ToolCallStarted(call~ : @kernel.ToolCall)
@@ -356,6 +365,14 @@ pub impl Show for TurnEvent with fn to_string(self : TurnEvent) -> String {
   match self {
     TurnStarted => "TurnStarted"
     ModelRequestStarted => "ModelRequestStarted"
+    ToolChildDeclared(
+      call_id~,
+      effect_id~,
+      parent_effect_id~,
+      root_effect_id~,
+      depth~
+    ) =>
+      "ToolChildDeclared(\{call_id.to_string()}, effect=\{effect_id.to_int()}, parent=\{parent_effect_id.to_int()}, root=\{root_effect_id.to_int()}, depth=\{depth})"
     ToolCallPending(call) => "ToolCallPending(\{call.call_id.to_string()})"
     ToolCallApproved(call~, consent_scope~) =>
       "ToolCallApproved(\{call.call_id.to_string()}, consent=\{consent_scope is Some(_)})"

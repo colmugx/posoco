@@ -1,4 +1,7 @@
 ///|
+using @support {policy_replace_result}
+
+///|
 /// Auto-compact policy tests: latest-occupancy trigger (not run-wide
 /// cumulative), host-vs-provider window precedence with the 0.88 core
 /// default, the one-fire-per-run latch, and the best-effort failure path
@@ -61,11 +64,6 @@ fn policy_tools() -> RecordingToolProvider {
     [tk_tool_def("echo", "echo tool")],
     Map::from_array([("echo", OutcomeOk(tk_ok_result("echoed")))]),
   )
-}
-
-///|
-fn policy_replace_result() -> @kernel.CompactResult {
-  { compacted_messages: [tk_user_msg("summary")], mode: Replace, }
 }
 
 ///|

@@ -22,7 +22,8 @@ priv struct AggregatedPorts {
   model : &@port.ModelPort
   decision : &@port.DecisionPort?
   log : &@port.LogPort?
-  tools : Array[&@port.ToolProvider]
+  tools : Array[ToolEntry]
+  tool_call_owners : Map[String, Array[String]]
   sessions : Array[&@port.SessionStore]
   observers : Array[&@port.Observer]
   hooks : Array[&@port.PipelineHook]
@@ -35,56 +36,6 @@ priv struct AggregatedPorts {
   /// Contributor paired with its manifest id (used as the prompt section
   /// header so the assembled prompt names its source).
   prompt_contributors : Array[(String, &@port.SystemPromptContributor)]
-}
-
-///|
-/// Shared tool-name collision scan for the two composition passes that walk
-/// provider tool lists (`aggregate_extensions` and `build_tool_routing`).
-/// Each pass labels a ToolDef with its own source wording but delegates
-/// duplicate detection and the message skeleton here.
-priv struct ToolNameIndex {
-  /// Tool name → source labels in declaration order; `labels[0]` is the
-  /// first declaration.
-  labels : Map[String, Array[String]]
-}
-
-///|
-fn ToolNameIndex::new() -> ToolNameIndex {
-  { labels: Map::from_array([]), }
-}
-
-///|
-/// Record one declared tool. Returns None for a new name; on the first
-/// duplicate returns the labels recorded so far, untouched — callers raise
-/// from this arm, so no further bookkeeping happens.
-fn ToolNameIndex::record(
-  self : ToolNameIndex,
-  name : String,
-  source_label : String,
-) -> Array[String]? {
-  if self.labels.contains(name) {
-    Some(self.labels[name])
-  } else {
-    self.labels[name] = [source_label]
-    None
-  }
-}
-
-///|
-/// The shared collision message skeleton; each pass supplies its own
-/// source labels.
-fn tool_collision_message(first : String, conflicting : String) -> String {
-  "tool collision; first declaration: \{first}; conflicting declaration: \{conflicting}"
-}
-
-///|
-/// A ToolDef's provenance when present and non-empty; None marks an
-/// unlabeled definition and each pass words its own actionable fallback.
-fn nonempty_provenance(tool : @kernel.ToolDef) -> String? {
-  match tool.provenance {
-    Some(s) if s != "" => Some(s)
-    _ => None
-  }
 }
 
 ///|
@@ -103,7 +54,8 @@ fn aggregate_extensions(
   let decision_manifests : Array[String] = []
   let logs : Array[&@port.LogPort] = []
   let log_manifests : Array[String] = []
-  let tools : Array[&@port.ToolProvider] = []
+  let tools : Array[ToolEntry] = []
+  let tool_call_owners : Map[String, Array[String]] = Map::from_array([])
   let tool_index = ToolNameIndex::new()
   let sessions : Array[&@port.SessionStore] = []
   let observers : Array[&@port.Observer] = []
@@ -123,6 +75,14 @@ fn aggregate_extensions(
         detail="extension returned a manifest with empty id",
       )
     }
+    if tool_call_owners.get(mid) is Some(existing) &&
+      existing != manifest.tool_call_owners {
+      raise ManifestSchemaError(
+        manifest_id=mid,
+        detail="conflicting tool_call_owners declarations for the same owner",
+      )
+    }
+    tool_call_owners[mid] = manifest.tool_call_owners.copy()
     // models: collect for later cardinality check
     for m in manifest.models {
       models.push(m)
@@ -163,8 +123,8 @@ fn aggregate_extensions(
           }
           None => ()
         }
+        tools.push(ToolEntry::bound(tool_def, mid, provider))
       }
-      tools.push(provider)
     }
     // commands: collect + collision check by command id
     for cmd in manifest.commands {
@@ -244,6 +204,7 @@ fn aggregate_extensions(
     decision,
     log,
     tools,
+    tool_call_owners,
     sessions,
     observers,
     hooks,

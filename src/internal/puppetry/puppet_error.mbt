@@ -272,6 +272,8 @@ pub(all) suberror PuppetError {
   /// A host/executor task raised instead of returning its typed canonical
   /// completion. This is never converted into a normal tool outcome.
   EffectExecutionFailed(phase~ : String, cause~ : String)
+  /// Preserve the primary failure when executor cleanup also fails.
+  ExecutionCleanupFailed(primary~ : PuppetError, detail~ : String)
   /// The async runtime cancelled a model or tool wave. Kept distinct from a
   /// host failure so callers can diagnose interruption without guessing from
   /// a generic error string.
@@ -361,6 +363,8 @@ pub impl Show for PuppetError with fn to_string(self : PuppetError) -> String {
       } else {
         "EffectExecutionFailed(phase=\{safe_label(phase)}, \{safe_label(cause)})"
       }
+    ExecutionCleanupFailed(primary~, detail~) =>
+      "ExecutionCleanupFailed(primary=\{primary.to_string()}, cleanup=\{safe_label_bounded(detail, 128)})"
     EffectExecutionCancelled(phase~) =>
       "EffectExecutionCancelled(phase=\{safe_label(phase)})"
     ReducerInvariantViolation(category~) =>

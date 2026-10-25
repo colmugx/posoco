@@ -25,6 +25,7 @@ fn ChunkDemandHost::delivered_chunks(self : ChunkDemandHost) -> Int32 {
 
 ///|
 pub extend ChunkDemandHost with @kernel_exec.HostRuntime::{
+  execute_tool_scoped,
   cancel_effects,
   execute_tool,
   call_model,

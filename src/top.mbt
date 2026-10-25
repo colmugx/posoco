@@ -93,6 +93,9 @@ pub using @port {
   type WakeupPort,
   type WakeupTicket,
   type WakeupError,
+  type ToolContributions,
+  type ToolContributionCommit,
+  type ToolContributionError,
 }
 
 ///|
@@ -122,7 +125,9 @@ pub using @kernel {
   type Message,
   type ToolCall,
   type ToolDef,
+  type ToolExposure,
   type ToolOutcome,
+  type InvocationResult,
   type NotExecutedReason,
   type ModelFailure,
   type ExecutionPolicy,

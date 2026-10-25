@@ -1,4 +1,7 @@
 ///|
+using @bridge {type RuntimeHostShim}
+
+///|
 /// Agent-level runtime config: provider-agnostic tuning and run budget.
 /// `max_tool_rounds` bounds the tool rounds of one turn: `Some(n)` allows n
 /// full rounds and rejects the (n+1)-th batch atomically; `Some(0)` forbids
@@ -7,6 +10,8 @@
 /// agents).
 pub struct AgentConfig {
   max_tool_rounds : Int32?
+  max_tool_calls : Int32?
+  max_tool_depth : Int32?
   temperature : Double?
   max_output_tokens : Int32?
   model_context_window : Int32?
@@ -29,6 +34,8 @@ pub struct AgentConfig {
 /// never break construction sites.
 pub fn agent_config(
   max_tool_rounds~ : Int32? = None,
+  max_tool_calls~ : Int32? = None,
+  max_tool_depth~ : Int32? = None,
   temperature~ : Double? = None,
   max_output_tokens~ : Int32? = None,
   model_context_window~ : Int32? = None,
@@ -38,6 +45,8 @@ pub fn agent_config(
 ) -> AgentConfig {
   {
     max_tool_rounds,
+    max_tool_calls,
+    max_tool_depth,
     temperature,
     max_output_tokens,
     model_context_window,
@@ -68,7 +77,6 @@ fn AgentConfig::to_call_options_json(self : AgentConfig) -> Json {
 /// Internal routing table: tool name → owning provider. Built during Agent::new.
 priv struct ToolRouting {
   tool_map : Map[String, &@port.ToolProvider]
-  providers : Array[&@port.ToolProvider]
 }
 
 ///|
@@ -213,47 +221,6 @@ fn snapshot_tool_outcome(outcome : @kernel.ToolOutcome) -> @kernel.ToolOutcome {
 }
 
 ///|
-fn tool_provenance(tool : @kernel.ToolDef) -> String {
-  match nonempty_provenance(tool) {
-    Some(source) => "ToolDef.provenance='\{safe_error_label(source)}'"
-    None =>
-      "unlabeled provider declaring '\{safe_error_label(tool.name.to_string())}' (set ToolDef.provenance to a stable provider id)"
-  }
-}
-
-///|
-/// Build the tool routing table. Raises CompositionError::ToolCollision on
-/// the FIRST name collision (fail-fast), rather than last-wins. The
-/// collision message identifies the tool name and a provenance hint for each
-/// conflicting provider (ToolDef.provenance if present, else an actionable marker).
-fn build_tool_routing(
-  tools : Array[&@port.ToolProvider],
-) -> ToolRouting raise @error.CompositionError {
-  let tool_map : Map[String, &@port.ToolProvider] = Map::from_array([])
-  let seen_names = ToolNameIndex::new()
-  for provider in tools {
-    let tool_defs = provider.list_tools()
-    for tool in tool_defs {
-      let name = tool.name.to_string()
-      let provenance = tool_provenance(tool)
-      match seen_names.record(name, provenance) {
-        Some(labels) =>
-          // T06-B: fail-fast on collision. The error names the tool and both
-          // sources so the caller can locate the conflict without guessing.
-          raise ToolCollision(
-            safe_error_label(name),
-            tool_collision_message(labels[0], provenance),
-            manifests=[],
-          )
-        None => ()
-      }
-      tool_map[name] = provider
-    }
-  }
-  { tool_map, providers: tools, }
-}
-
-///|
 /// Private mutable implementation owned by the Agent facade.
 priv struct AgentRuntime {
   puppet : @puppetry.Puppet
@@ -294,6 +261,14 @@ priv struct AgentRuntime {
   /// Core basic tool definitions (the built-in memory surface), merged
   /// ahead of every `CatalogSource` read. Empty when no basic tools exist.
   basic_tool_defs : Array[@kernel.ToolDef]
+  /// Agent-owned dynamic tool contributions (one owner-bound group per
+  /// declaring manifest). Empty and inert unless an extension declares
+  /// `Capability::ToolContribution`.
+  tool_contributions : ToolContributionRegistry
+  /// Only replaced at operation admission. Each effect receives its captured
+  /// provider in a private Runtime context, not a mutable host name route.
+  tool_bindings : Ref[Map[String, &@port.ToolProvider]]
+  tool_runtime : RuntimeHostShim
   mut next_run_seq : Int32
   mut shutdown_started : Bool
   mut shutdown_complete : Bool
@@ -349,6 +324,18 @@ fn validate_agent_config(
       )
     _ => ()
   }
+  for
+    (name, limit) in [
+      ("max_tool_calls", config.max_tool_calls),
+      ("max_tool_depth", config.max_tool_depth),
+    ] {
+    if limit is Some(value) && value < 0 {
+      raise ManifestSchemaError(
+        manifest_id="agent.config",
+        detail=name + " must be non-negative",
+      )
+    }
+  }
   match config.model_context_window {
     Some(value) if value <= 0 =>
       raise ManifestSchemaError(
@@ -396,8 +383,9 @@ fn compose_tool_catalog(
   Int32,
   Array[@kernel.ToolDef],
   Map[String, &@port.ToolProvider],
+  Array[ToolEntry],
 ) raise @error.CompositionError {
-  let providers = agg.tools.copy()
+  let entries = agg.tools.copy()
   let basic_defs : Array[@kernel.ToolDef] = []
   let basic_tools : Map[String, &@port.ToolProvider] = Map::from_array([])
   if !agg.memory.is_empty() {
@@ -408,13 +396,17 @@ fn compose_tool_catalog(
         emit_secondary_failure(observers, "memory_search", reason)
       },
     )
-    providers.push(mem_provider)
-    for def in provider_tool_defs([mem_provider]) {
+    for raw in mem_provider.list_tools() {
+      let entry = ToolEntry::bound(raw, "posoco.core", mem_provider)
+      let def = entry.definition
+      entries.push(entry)
       basic_tools[def.name.to_string()] = mem_provider
       basic_defs.push(def)
     }
   }
-  let tool_routing = build_tool_routing(providers)
+  let tool_routing : ToolRouting = {
+    tool_map: @directory.entry_routing(entries),
+  }
   let (catalog, initial_catalog_revision) = match catalog_source {
     Some(source) =>
       (
@@ -424,9 +416,25 @@ fn compose_tool_catalog(
         ),
         source.revision(),
       )
-    None => (build_agent_catalog(tool_routing.providers), 0)
+    None =>
+      (
+        build_catalog_from_defs(
+          entries.map(e => e.definition),
+          CatalogVersion(1),
+        ),
+        0,
+      )
   }
-  (tool_routing, catalog, initial_catalog_revision, basic_defs, basic_tools)
+  let admitted_entries = match catalog_source {
+    None => entries
+    Some(_) =>
+      catalog
+      .definitions()
+      .map(def => ToolEntry::legacy(def, basic_tools.get(def.name.to_string())))
+  }
+  (
+    tool_routing, catalog, initial_catalog_revision, basic_defs, basic_tools, admitted_entries,
+  )
 }
 
 ///|
@@ -479,39 +487,43 @@ fn compose_mailbox_and_host(
   agg : AggregatedPorts,
   tool_routing : ToolRouting,
   basic_tools : Map[String, &@port.ToolProvider],
-  host_override : &@kernel_exec.HostRuntime?,
+  host_override : &@runtime.Runtime?,
+  bindings : Ref[Map[String, &@port.ToolProvider]],
 ) -> (
   &@puppetry.Mailbox,
   BuiltinCommandPort,
   Array[&@port.CommandPort],
   &@kernel_exec.HostRuntime,
+  RuntimeHostShim,
 ) {
   let mailbox = @puppetry.ControlMailbox()
   let mailbox_ref : &@puppetry.Mailbox = mailbox as &@puppetry.Mailbox
   let builtin_command_port = BuiltinCommandPort(mailbox_ref)
   let command_ports = compose_agent_commands(agg.commands, builtin_command_port)
-  let host : &@kernel_exec.HostRuntime = match host_override {
-    Some(h) =>
-      if basic_tools.is_empty() {
-        h
-      } else {
-        BasicFirstHostRuntime::{
-          inner: h,
-          basic: basic_tools,
-          cancels: Map::from_array([]),
-        }
-        as &@kernel_exec.HostRuntime
-      }
-    None => {
-      let port_runtime = @runtime.PortRuntime(
-        model=agg.model,
-        tools=tool_routing.tool_map.copy(),
-      )
-      RuntimeHostShim(port_runtime as &@runtime.Runtime)
-      as &@kernel_exec.HostRuntime
+  let runtime : &@runtime.Runtime = match host_override {
+    Some(value) => value
+    None =>
+      @runtime.PortRuntime(model=agg.model, tools=tool_routing.tool_map.copy())
+  }
+  let shim = RuntimeHostShim(
+    runtime,
+    bindings,
+    cancel_settle_ms=operation_cancel_settle_ms,
+    on_cleanup_failure=reason => {
+      emit_secondary_failure(agg.observers, "tool_cleanup", reason)
+    },
+  )
+  let host : &@kernel_exec.HostRuntime = if basic_tools.is_empty() ||
+    runtime.supports_bound_tools() {
+    shim as &@kernel_exec.HostRuntime
+  } else {
+    BasicFirstHostRuntime::{
+      inner: shim,
+      basic: basic_tools,
+      cancels: Map::from_array([]),
     }
   }
-  (mailbox_ref, builtin_command_port, command_ports, host)
+  (mailbox_ref, builtin_command_port, command_ports, host, shim)
 }
 
 ///|
@@ -522,23 +534,58 @@ fn compose_mailbox_and_host(
 ///
 /// `catalog_source` (experimental runtime seam): when `Some`, the tool
 /// catalog is owned by the source — built from its definitions at
-/// composition and rebuilt at prompt boundaries when its revision changes.
+/// composition and merged at operation admission when its revision changes.
 /// When `None`, the catalog is the static snapshot of the aggregated
 /// `ToolProvider` declarations.
 fn AgentRuntime::compose(
   agg : AggregatedPorts,
   config : AgentConfig,
   ui_projection : Bool,
-  host_override : &@kernel_exec.HostRuntime?,
+  host_override : &@runtime.Runtime?,
   catalog_source : &@runtime.CatalogSource?,
 ) -> Agent raise @error.CompositionError {
   validate_agent_config(config)
-  let (tool_routing, catalog, initial_catalog_revision, basic_defs, basic_tools) = compose_tool_catalog(
-    agg, catalog_source,
+  // Dynamic groups must never silently fall back to a host's live name route.
+  let contribution_owners : Array[String] = []
+  for entry in agg.lifecycle {
+    if entry.requires.contains(@port.ToolContribution) {
+      contribution_owners.push(entry.id)
+    }
+  }
+  if !contribution_owners.is_empty() {
+    if host_override is Some(runtime) && !runtime.supports_bound_tools() {
+      raise ManifestSchemaError(
+        manifest_id=contribution_owners[0],
+        detail="Capability::ToolContribution requires Runtime::supports_bound_tools()",
+      )
+    }
+  }
+  if host_override is Some(runtime) && !runtime.supports_bound_tools() {
+    for owner, targets in agg.tool_call_owners {
+      if !targets.is_empty() {
+        raise ManifestSchemaError(
+          manifest_id=owner,
+          detail="tool_call_owners requires Runtime::supports_bound_tools()",
+        )
+      }
+    }
+  }
+  let (
+    tool_routing,
+    catalog,
+    initial_catalog_revision,
+    basic_defs,
+    basic_tools,
+    entries,
+  ) = compose_tool_catalog(agg, catalog_source)
+  let tool_contributions = ToolContributionRegistry::ToolContributionRegistry(
+    entries,
   )
+  let static_tools = tool_contributions.captured_tools()
   let composed_hooks = compose_hook_chain(agg, config, ui_projection)
-  let (mailbox_ref, builtin_command_port, command_ports, host) = compose_mailbox_and_host(
-    agg, tool_routing, basic_tools, host_override,
+  let tool_bindings = Ref(static_tools.copy())
+  let (mailbox_ref, builtin_command_port, command_ports, host, tool_runtime) = compose_mailbox_and_host(
+    agg, tool_routing, basic_tools, host_override, tool_bindings,
   )
   let journal = @puppetry.InMemoryJournal()
   let chunk_dispatcher_ref : Ref[ChunkDispatcher?] = Ref(None)
@@ -608,6 +655,9 @@ fn AgentRuntime::compose(
       chunk_dispatcher_ref,
     ),
     hooks: composed_hooks,
+    tool_call_owners: agg.tool_call_owners,
+    max_tool_depth: config.max_tool_depth,
+    bound_tool_names: fn() { tool_bindings.val.keys().to_array() },
     max_iterations: match config.max_tool_rounds {
       // The pump burns 2 iterations per tool round (AwaitingModel +
       // AwaitingTools) plus one terminal iteration. Size the backstop so
@@ -629,6 +679,7 @@ fn AgentRuntime::compose(
   for entry in agg.lifecycle {
     let task_capability = task_runtime.capability(entry.id)
     let wakeup_capability = wakeup.capability(entry.id)
+    let contribution_capability = tool_contributions.capability(entry.id)
     let view = @port.CompositionView::resolve(
       requires=entry.requires,
       model=agg.model,
@@ -637,6 +688,7 @@ fn AgentRuntime::compose(
       ui=agg.ui,
       tasks=Some(task_capability),
       wakeup=Some(wakeup_capability),
+      tool_contributions=Some(contribution_capability),
     )
     entry.port.on_compose(view)
   }
@@ -660,6 +712,9 @@ fn AgentRuntime::compose(
     last_catalog_revision: initial_catalog_revision,
     next_catalog_version: 2,
     basic_tool_defs: basic_defs,
+    tool_contributions,
+    tool_bindings,
+    tool_runtime,
     next_run_seq: 1,
     shutdown_started: false,
     shutdown_complete: false,
@@ -708,9 +763,9 @@ pub fn Agent::Agent(
 /// `catalog_source` (optional): when supplied, the source owns the
 /// extension portion of the tool catalog — Posoco merges the core basic
 /// tools (the built-in memory surface) ahead of the source's definitions,
-/// reads the source at construction, and re-reads it at each prompt
-/// boundary whose `revision()` changed, swapping the refreshed snapshot in
-/// for subsequent runs while in-flight runs keep their version. Definitions
+/// reads the source at construction, and re-reads it at each operation
+/// admission whose `revision()` changed. Follow-ups retain their operation's
+/// catalog and bindings. A standalone compact also captures changes. Definitions
 /// are taken verbatim (owner/policy respected). Without it, the catalog is
 /// the static snapshot of the aggregated `ToolProvider` declarations.
 pub fn Agent::with_runtime(
@@ -725,7 +780,7 @@ pub fn Agent::with_runtime(
     agg,
     config,
     ui_projection,
-    Some(RuntimeHostShim(runtime) as &@kernel_exec.HostRuntime),
+    Some(runtime),
     catalog_source,
   )
 }
@@ -814,6 +869,10 @@ async fn AgentRuntime::shutdown(self : AgentRuntime) -> Unit {
     return
   }
   self.shutdown_started = true
+  // Contribution handles close with the Agent: an extension holding the
+  // owner-bound capability can no longer publish or withdraw, and no later
+  // operation is admitted to capture a new directory.
+  self.tool_contributions.close()
   // Wakeup closes first: no new admission can succeed, the pump stops
   // taking tickets, and pending scheduling requests die with the scope
   // (dropped after managed work settles). A ticket already executing
@@ -825,6 +884,7 @@ async fn AgentRuntime::shutdown(self : AgentRuntime) -> Unit {
   // above. Pending requests are not dropped until execution and managed
   // work have settled (spec shutdown order).
   self.settle_operation_for_shutdown()
+  self.tool_runtime.cleanup_unconfirmed()
 
   let task_shutdown : Result[Unit, @error.AgentError] = Ok(
     self.task_runtime.shutdown(),
@@ -942,6 +1002,7 @@ fn snapshot_turn_event(event : @types.TurnEvent) -> @types.TurnEvent {
   match event {
     TurnStarted => TurnStarted
     ModelRequestStarted => ModelRequestStarted
+    ToolChildDeclared(..) => event
     ToolCallPending(call) => ToolCallPending(snapshot_tool_call(call))
     ToolCallApproved(call~, consent_scope~) =>
       ToolCallApproved(call=snapshot_tool_call(call), consent_scope~)

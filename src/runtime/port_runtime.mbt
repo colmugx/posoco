@@ -85,14 +85,20 @@ fn decode_chat_options(
 }
 
 ///|
+priv struct ToolCancellationRegistration {
+  mut handler : &@port.ToolCancellable?
+  mut active : Bool
+}
+
+///|
 /// The default runtime, built from the composed extension ports.
 pub struct PortRuntime {
   priv model : &@port.ModelPort
+  /// Legacy unbound route. Bound effects never consult this table.
   priv tools : Map[String, &@port.ToolProvider]
-  /// In-flight cancellable facets keyed by effect id. Populated only by
-  /// providers that called `ToolCallContext.register_cancel` during their
-  /// execute; entry is dropped when the effect settles.
-  priv cancels : Map[Int32, &@port.ToolCancellable]
+  /// Retain unsettled executions by run and effect. Legacy cancellation
+  /// requests contain only effect ids, so ambiguous requests must fail closed.
+  priv cancels : Map[(String, Int32), ToolCancellationRegistration]
 }
 
 ///|
@@ -104,7 +110,13 @@ pub fn PortRuntime::PortRuntime(
 }
 
 ///|
+pub impl Runtime for PortRuntime with fn supports_bound_tools(_self) -> Bool {
+  true
+}
+
+///|
 pub extend PortRuntime with Runtime::{
+  supports_bound_tools,
   cancel_effects,
   execute_tool,
   call_model,
@@ -149,7 +161,11 @@ pub impl Runtime for PortRuntime with fn call_model(
 ///|
 pub impl Runtime for PortRuntime with fn execute_tool(self, ctx : EffectContext) -> @kernel.ToolOutcome {
   let name = ctx.tool_name.to_string()
-  let provider = match self.tools.get(name) {
+  let selected = match ctx.bound_tool {
+    Some(provider) => Some(provider)
+    None => self.tools.get(name)
+  }
+  let provider = match selected {
     Some(p) => p
     None =>
       return RuntimeFailure(
@@ -157,15 +173,40 @@ pub impl Runtime for PortRuntime with fn execute_tool(self, ctx : EffectContext)
         message="no tool provider for '" + name + "'",
       )
   }
-  let key = ctx.effect_id.to_int()
-  let runtime = self
-  let call_ctx : @port.ToolCallContext = {
-    effect_id: ctx.effect_id,
-    call_id: ctx.call_id,
-    name: ctx.tool_name,
-    arguments: ctx.arguments,
-    register_cancel: fn(c : &@port.ToolCancellable) { runtime.cancels[key] = c },
+  let registration : ToolCancellationRegistration = {
+    handler: None,
+    active: true,
   }
+  defer {
+    registration.active = false
+  }
+  let register_cancel = fn(c : &@port.ToolCancellable) {
+    if registration.active {
+      registration.handler = Some(c)
+    }
+  }
+  let call_ctx = match ctx.tool_context {
+    Some(factory) => factory(register_cancel)
+    None =>
+      @port.ToolCallContext(
+        effect_id=ctx.effect_id,
+        call_id=ctx.call_id,
+        name=ctx.tool_name,
+        arguments=ctx.arguments,
+        register_cancel~,
+      )
+  }
+  let run_id = match call_ctx.scope {
+    Some(scope) => scope.run_id.to_string()
+    None => ""
+  }
+  let key = (run_id, ctx.effect_id.to_int())
+  if self.cancels.contains(key) {
+    raise @error.RuntimeError::InvocationFailed(
+      "duplicate live tool effect: \{run_id}/\{ctx.effect_id.to_int()}",
+    )
+  }
+  self.cancels[key] = registration
   let outcome = provider.execute(call_ctx) catch {
     error =>
       RuntimeFailure(
@@ -186,8 +227,8 @@ pub impl Runtime for PortRuntime with fn execute_tool(self, ctx : EffectContext)
 /// Route cancellation to providers that registered a cancellable facet for
 /// the effect. Unregistered ids — plain providers, or effects that already
 /// settled — report `NotPropagated`, preserving the ports-only contract.
-/// A facet that raises despite the `ToolCancellable` contract is contained
-/// here and reported as `NotPropagated`.
+/// A facet failure propagates to core cleanup; its registration is retained
+/// for shutdown retry rather than silently reported as a normal disposition.
 pub impl Runtime for PortRuntime with fn cancel_effects(
   self : PortRuntime,
   effect_ids : Array[@kernel.EffectId],
@@ -195,10 +236,21 @@ pub impl Runtime for PortRuntime with fn cancel_effects(
 ) -> Array[(@kernel.EffectId, @kernel.CancelDisposition)] {
   let dispositions : Array[(@kernel.EffectId, @kernel.CancelDisposition)] = []
   for id in effect_ids {
-    match self.cancels.get(id.to_int()) {
-      Some(handler) => {
-        let disposition = handler.cancel(id, reason) catch {
-          _ => NotPropagated
+    let keys = self.cancels.keys().filter(key => key.1 == id.to_int()).collect()
+    if keys.length() > 1 {
+      raise @error.RuntimeError::InvocationFailed(
+        "ambiguous tool cancellation across runs: effect \{id.to_int()}",
+      )
+    }
+    match keys.get(0) {
+      Some(key) => {
+        let registration = self.cancels[key]
+        let disposition = match registration.handler {
+          Some(handler) => handler.cancel(id, reason)
+          None => NotPropagated
+        }
+        if disposition is (Stopped | AlreadySettled) {
+          self.cancels.remove(key)
         }
         dispositions.push((id, disposition))
       }

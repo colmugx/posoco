@@ -226,13 +226,13 @@ async fn exec_memory_tool(
   args : Array[(String, Json)],
 ) -> @kernel.ToolOutcome {
   let call = tk_memory_call(tool, args)
-  let ctx : @port.ToolCallContext = {
-    effect_id: @kernel.EffectId::first(),
-    call_id: call.call_id,
-    name: call.name,
-    arguments: call.arguments,
-    register_cancel: fn(_ : &@port.ToolCancellable) { () },
-  }
+  let ctx = @port.ToolCallContext(
+    effect_id=@kernel.EffectId::first(),
+    call_id=call.call_id,
+    name=call.name,
+    arguments=call.arguments,
+    register_cancel=fn(_ : &@port.ToolCancellable) { () },
+  )
   (provider as &@port.ToolProvider).execute(ctx)
 }
 
@@ -1103,6 +1103,7 @@ struct SameLengthAgentHook {}
 
 ///|
 pub extend SameLengthAgentHook with @port.PipelineHook::{
+  tool_exposure,
   on_post_event,
   on_turn_begin,
   on_post_event_at,

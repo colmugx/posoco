@@ -237,12 +237,18 @@ pub impl Show for FinishReason with fn to_string(self : FinishReason) -> String 
 }
 
 ///|
-/// Discriminator for the reason a tool call was NOT executed even though the
-/// model requested it (ADR §2.7).
+/// Discriminator for a rejected model or child tool call. No provider started
+/// for this outcome (ADR §2.7).
 ///
 /// - `UnknownTool`: the requested tool name is not present in the catalog
-///   snapshot that was handed to the `CallModel` effect.
-/// - `SchemaMismatch`: the model's arguments parsed successfully but failed
+///   operation snapshot.
+/// - `NotOffered`: the name exists, but its captured exposure does not allow
+///   this entry point. No provider was called, including after hook rewrites.
+/// - `OwnerNotAllowed`: the caller manifest did not declare the target owner.
+/// - `InvocationLimit`: a child would exceed the shared call budget or depth.
+/// - `PolicyConflict`: a child needs stronger isolation than its parent's slot.
+/// - `UnsupportedInvocation`: a legacy host route has no captured executor.
+/// - `SchemaMismatch`: the arguments parsed successfully but failed
 ///   validation against the tool's input schema. The diagnostic carries a safe
 ///   JSON path and type expectation; it never includes the raw argument
 ///   payload.
@@ -254,6 +260,11 @@ pub impl Show for FinishReason with fn to_string(self : FinishReason) -> String 
 /// `ModelParseFailure` at the reducer boundary (ADR §2.4).
 pub(all) enum NotExecutedReason {
   UnknownTool
+  NotOffered
+  OwnerNotAllowed
+  InvocationLimit
+  PolicyConflict
+  UnsupportedInvocation
   SchemaMismatch(json_path~ : String, expected~ : String, actual~ : String)
   RejectedByHook(reason~ : String)
 } derive(Eq, Debug)
@@ -271,6 +282,11 @@ pub extend NotExecutedReason with Show::{output}
 pub impl Show for NotExecutedReason with fn to_string(self : NotExecutedReason) -> String {
   match self {
     UnknownTool => "UnknownTool"
+    NotOffered => "NotOffered"
+    OwnerNotAllowed => "OwnerNotAllowed"
+    InvocationLimit => "InvocationLimit"
+    PolicyConflict => "PolicyConflict"
+    UnsupportedInvocation => "UnsupportedInvocation"
     SchemaMismatch(json_path~, expected~, actual~) =>
       "SchemaMismatch(path=\{json_path}, expected=\{expected}, actual=\{actual})"
     RejectedByHook(reason~) => "RejectedByHook(\{reason})"

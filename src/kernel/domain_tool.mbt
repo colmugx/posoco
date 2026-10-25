@@ -78,6 +78,32 @@ pub fn OwnerId::to_string(self : OwnerId) -> String {
 }
 
 ///|
+/// Exposure is captured once per operation. Hooks may only narrow it.
+pub(all) enum ToolExposure {
+  Direct
+  Deferred
+  Disabled
+} derive(Eq, Debug)
+
+///|
+pub extend ToolExposure with Eq::{equal, not_equal}
+
+///|
+pub extend ToolExposure with Debug::{to_repr}
+
+///|
+pub fn ToolExposure::narrow(
+  self : ToolExposure,
+  other : ToolExposure,
+) -> ToolExposure {
+  match (self, other) {
+    (Disabled, _) | (_, Disabled) => Disabled
+    (Deferred, _) | (_, Deferred) => Deferred
+    _ => Direct
+  }
+}
+
+///|
 /// A single tool's definition as the model and the executor see it. Owned by
 /// the catalog snapshot (T05), not by individual providers.
 pub(all) struct ToolDef {
@@ -86,6 +112,7 @@ pub(all) struct ToolDef {
   input_schema : Json
   owner : OwnerId
   policy : ExecutionPolicy
+  exposure : ToolExposure
   /// Optional provenance label (e.g. provider name, MCP server id). Included
   /// in collision diagnostics; never used for routing decisions.
   provenance : String?
@@ -109,8 +136,9 @@ pub fn ToolDef::ToolDef(
   owner~ : OwnerId,
   policy~ : ExecutionPolicy,
   provenance~ : String?,
+  exposure~ : ToolExposure = Direct,
 ) -> ToolDef {
-  { name, description, input_schema, owner, policy, provenance, }
+  { name, description, input_schema, owner, policy, provenance, exposure, }
 }
 
 ///|

@@ -189,11 +189,6 @@ async fn AgentRuntime::run_turn_via_puppet(
   resume_persisted_user : Bool,
   operation_id : String,
 ) -> @types.TurnResult raise @error.AgentError {
-  // Step 0: catalog refresh at the prompt boundary. No run is active yet,
-  // so a swap cannot disturb an in-flight run; a failed rebuild keeps the
-  // previous snapshot and is surfaced as a secondary failure.
-  self.refresh_catalog_if_changed()
-
   let session = self.load_session_for_operation(session_id)
   let applied_task_ids = parse_task_applied_ids(session.metadata)
   match @types.ContextState::from_metadata(session.metadata) {
@@ -277,7 +272,7 @@ async fn AgentRuntime::run_turn_via_puppet(
   let budget : @kernel_exec.Budget = {
     max_model_steps: None,
     max_tool_rounds: self.config.max_tool_rounds,
-    max_tool_calls: None,
+    max_tool_calls: self.config.max_tool_calls,
     max_total_tokens: None,
   }
   // Live capability read: the modelport self-reports the active model's
@@ -1155,7 +1150,7 @@ async fn AgentRuntime::run_compact_operation(
     budget: {
       max_model_steps: None,
       max_tool_rounds: self.config.max_tool_rounds,
-      max_tool_calls: None,
+      max_tool_calls: self.config.max_tool_calls,
       max_total_tokens: None,
     },
     context_window: match self.config.model_context_window {

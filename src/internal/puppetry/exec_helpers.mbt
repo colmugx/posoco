@@ -51,44 +51,6 @@ async fn execute_model_effect(
 }
 
 ///|
-/// Execute one already-scheduled tool wave, racing the await against the
-/// mailbox abort flag. `@async.all` supplies the actual parallelism and
-/// cancels peers if one task raises. Its result array remains in source
-/// order, which the caller feeds to the reducer deterministically.
-///
-/// Returns `None` when abort was requested while the wave was in flight: the
-/// wave's effect tasks are cancelled, their partial results discarded
-/// (cancellation has no reducer completion input), and the pump falls back to
-/// its loop top where `pump_abort` feeds `CancelRequested` to the reducer,
-/// which then declares `CancelOutstanding` for the still-pending effects.
-async fn execute_tool_wave(
-  effects : Array[Effect],
-  context : ExecutionContext,
-) -> Array[RunInput]? raise PuppetError {
-  let raced : Result[Array[RunInput]?, Error] = Ok(
-    @async.any([
-      () => {
-        Some(
-          @async.all(
-            effects.map(fn(effect) { () => execute_one(effect, context, None) }),
-          ),
-        )
-      },
-      () => {
-        await_abort_requested(context.mailbox)
-        None
-      },
-    ]),
-  ) catch {
-    error => Err(error)
-  }
-  match raced {
-    Ok(value) => value
-    Err(error) => raise execution_error("AwaitingTools", error)
-  }
-}
-
-///|
 /// Propagate reducer-declared cancellation effects at their terminal boundary.
 /// Cancellation has no reducer completion input: converting it into a tool or
 /// model result would fabricate a fact. The host must return one disposition
@@ -96,6 +58,7 @@ async fn execute_tool_wave(
 async fn propagate_terminal_cancellations(
   effects : Array[Effect],
   context : ExecutionContext,
+  on_cancel~ : (Array[(EffectId, CancelDisposition)]) -> Unit = fn(_) { () },
 ) -> Unit raise PuppetError {
   for effect in effects {
     match effect {
@@ -115,6 +78,7 @@ async fn propagate_terminal_cancellations(
             )
         }
         validate_cancel_dispositions(cancel_ids, dispositions)
+        on_cancel(dispositions)
       }
       other =>
         raise EffectExecutionFailed(

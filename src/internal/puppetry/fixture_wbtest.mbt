@@ -89,6 +89,7 @@ pub fn FixtureHost::executed_effect_ids(self : FixtureHost) -> Array[EffectId] {
 
 ///|
 pub extend FixtureHost with @kernel_exec.HostRuntime::{
+  execute_tool_scoped,
   cancel_effects,
   execute_tool,
   call_model,
@@ -281,6 +282,9 @@ fn canonical_puppet_config(
     subscribers,
     stream_chunks,
     hooks: [],
+    tool_call_owners: Map::from_array([]),
+    max_tool_depth: None,
+    bound_tool_names: fn() { [] },
     max_iterations: Some(50),
     commands: [],
     session_store: None,
@@ -865,6 +869,7 @@ fn AbortProbeHost::AbortProbeHost(
 
 ///|
 pub extend AbortProbeHost with @kernel_exec.HostRuntime::{
+  execute_tool_scoped,
   cancel_effects,
   execute_tool,
   call_model,

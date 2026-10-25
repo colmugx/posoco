@@ -212,16 +212,20 @@ fn reduce_cancel_tool_facts(
           Some(p) => p
           None => missing_tool_position
         }
-        staged[ep.call_id.to_string()] = (ep.tool_name, outcome, position)
+        if ep.parent is None {
+          staged[ep.call_id.to_string()] = (ep.tool_name, outcome, position)
+        }
+        let call : @kernel.ToolCall = {
+          call_id: ep.call_id,
+          name: ep.tool_name,
+          arguments: ep.arguments,
+        }
         markers.push(
-          ToolCompleted(
-            call={
-              call_id: ep.call_id,
-              name: ep.tool_name,
-              arguments: ep.arguments,
-            },
-            outcome~,
-          ),
+          match ep.parent {
+            Some((parent, _, _)) =>
+              ToolChildAbandoned(call~, parent_effect_id=parent)
+            None => ToolCompleted(call~, outcome~, parent_effect_id=None)
+          },
         )
       }
       _ => ()

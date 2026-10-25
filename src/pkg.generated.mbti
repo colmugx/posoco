@@ -15,7 +15,7 @@ pub const MEMORY_INBOUND_LEAD : String = " ## Memory\n\n The following is memory
 
 pub const SESSION_TITLE_METADATA_KEY : String = "posoco.title"
 
-pub fn agent_config(max_tool_rounds? : Int32?, temperature? : Double?, max_output_tokens? : Int32?, model_context_window? : Int32?, compact_threshold? : Double?, system_prompt? : String?, memory_inbound_timeout_ms? : Int32?) -> AgentConfig
+pub fn agent_config(max_tool_rounds? : Int32?, max_tool_calls? : Int32?, max_tool_depth? : Int32?, temperature? : Double?, max_output_tokens? : Int32?, model_context_window? : Int32?, compact_threshold? : Double?, system_prompt? : String?, memory_inbound_timeout_ms? : Int32?) -> AgentConfig
 
 pub fn assert_events_contain(Array[@types.TurnEvent], Array[@types.TurnEvent]) -> Unit
 
@@ -75,6 +75,8 @@ pub fn Agent::with_runtime(exts~ : Array[&@port.Extension], config~ : AgentConfi
 
 pub struct AgentConfig {
   max_tool_rounds : Int32?
+  max_tool_calls : Int32?
+  max_tool_depth : Int32?
   temperature : Double?
   max_output_tokens : Int32?
   model_context_window : Int32?
@@ -174,6 +176,7 @@ pub async fn RecordingHook::on_post_event_at(Self, @types.EventScope?, @port.Hoo
 pub async fn RecordingHook::on_turn_begin(Self) -> Unit
 pub async fn RecordingHook::on_turn_end(Self) -> Unit
 pub fn RecordingHook::records(Self) -> Array[HookRecord]
+pub fn RecordingHook::tool_exposure(Self, @kernel.ToolDef) -> @kernel.ToolExposure
 pub impl @port.PipelineHook for RecordingHook
 
 pub(all) struct RecordingLifecycle {
@@ -389,6 +392,7 @@ pub async fn SystemPromptHook::on_post_event(Self, @port.HookStage) -> Unit nora
 pub async fn SystemPromptHook::on_post_event_at(Self, @types.EventScope?, @port.HookStage) -> Unit noraise
 pub async fn SystemPromptHook::on_turn_begin(Self) -> Unit
 pub async fn SystemPromptHook::on_turn_end(Self) -> Unit
+pub fn SystemPromptHook::tool_exposure(Self, @kernel.ToolDef) -> @kernel.ToolExposure
 pub impl @port.PipelineHook for SystemPromptHook
 
 pub(all) struct SystemPromptSection {
@@ -434,6 +438,7 @@ pub async fn UiRenderHook::on_post_event(Self, @port.HookStage) -> Unit noraise
 pub async fn UiRenderHook::on_post_event_at(Self, @types.EventScope?, @port.HookStage) -> Unit noraise
 pub async fn UiRenderHook::on_turn_begin(Self) -> Unit
 pub async fn UiRenderHook::on_turn_end(Self) -> Unit
+pub fn UiRenderHook::tool_exposure(Self, @kernel.ToolDef) -> @kernel.ToolExposure
 pub impl @port.PipelineHook for UiRenderHook
 
 // Type aliases
@@ -511,6 +516,8 @@ pub using @port {type HookAbort}
 
 pub using @port {type HookStage}
 
+pub using @kernel {type InvocationResult}
+
 pub using @kernel {type InvocationScope}
 
 pub using @port {type LogDurability}
@@ -581,9 +588,17 @@ pub using @kernel {type ToolCall}
 
 pub using @port {type ToolCallContext}
 
+pub using @port {type ToolContributionCommit}
+
+pub using @port {type ToolContributionError}
+
+pub using @port {type ToolContributions}
+
 pub using @port {type ToolDecision}
 
 pub using @kernel {type ToolDef}
+
+pub using @kernel {type ToolExposure}
 
 pub using @kernel {type ToolName}
 

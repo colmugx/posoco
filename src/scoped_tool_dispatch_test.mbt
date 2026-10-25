@@ -23,6 +23,7 @@ async test "scoped calls enforce canonical schemas and never execute denied tool
       owner: @kernel.OwnerId::unchecked("scoped-test"),
       policy: @kernel.ExecutionPolicy::Parallel,
       provenance: None,
+      exposure: Direct,
     },
   ]
   let recording = @posoco.RecordingToolProvider(defs, {

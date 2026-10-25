@@ -33,6 +33,52 @@ fn reduce_tool_completed(
 ) -> ReduceOutput raise KernelError {
   // Correlation: find the matching ExecuteTool in pending.
   let pending = state.pending_effects()
+  for effect in pending {
+    if effect is ExecuteTool(payload=child, ..) &&
+      child.parent is Some((parent_id, _, _)) &&
+      parent_id == payload.effect_id {
+      return reduce_invariant_violation(
+        state,
+        IllegalPhase(
+          phase="AwaitingTools",
+          detail="parent completed with unjoined children",
+        ),
+      )
+    }
+  }
+  if find_tool_effect(pending, payload.effect_id) is Some(matched) &&
+    matched.parent is Some(_) {
+    if matched.call_id != payload.call_id {
+      return reduce_invariant_violation(
+        state,
+        StaleCorrelation(effect_id=payload.effect_id),
+      )
+    }
+    let events : Array[KernelEvent] = [
+      ToolCompleted(
+        call={
+          call_id: matched.call_id,
+          name: matched.tool_name,
+          arguments: matched.arguments,
+        },
+        outcome=payload.outcome,
+        parent_effect_id=matched.parent.map(p => p.0),
+      ),
+    ]
+    let next = state.transition(
+      phase=AwaitingTools,
+      transcript=state.transcript(),
+      pending_effects=remove_execute_tool_effect(pending, payload.effect_id),
+      next_event_sequence=advance_seq_by(state, events.length()),
+      next_effect_id=state.next_effect_id(),
+      current_model_step_id=state.current_model_step_id(),
+      catalog_version=None,
+      budget_consumed=state.budget_consumed(),
+      outcome=None,
+      suspension_requirement=None,
+    )
+    return reduce_output(next, [], events)
+  }
   let mut found = false
   let mut matched_call : @kernel.ToolCall? = None
   for e in pending {
@@ -78,6 +124,7 @@ fn reduce_tool_completed(
   let event : KernelEvent = ToolCompleted(
     call=canonical_call,
     outcome=payload.outcome,
+    parent_effect_id=None,
   )
   let events = [event]
   if new_pending.is_empty() {
@@ -180,6 +227,16 @@ fn reduce_tool_failed(
     error_category=cat,
     message=msg,
   )
+  if find_tool_effect(pending, payload.effect_id) is Some(matched) &&
+    matched.parent is Some(_) {
+    return reduce_tool_completed(state, {
+      effect_id: payload.effect_id,
+      call_id: payload.call_id,
+      tool_name: payload.tool_name,
+      arguments: payload.arguments,
+      outcome,
+    })
+  }
   let canonical_call = match matched_call {
     Some(call) => call
     None =>
@@ -200,7 +257,11 @@ fn reduce_tool_failed(
   }
   let staged = state.completed_tool_results.copy()
   staged[payload.call_id.to_string()] = (tool_name, outcome, position)
-  let event : KernelEvent = ToolCompleted(call=canonical_call, outcome~)
+  let event : KernelEvent = ToolCompleted(
+    call=canonical_call,
+    outcome~,
+    parent_effect_id=None,
+  )
   let events = [event]
   if new_pending.is_empty() {
     let (committed_transcript, committed_tool_results) = commit_tool_wave(

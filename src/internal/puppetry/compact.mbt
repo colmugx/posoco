@@ -64,7 +64,7 @@ async fn Puppet::handle_compact(
     self.config.host.compact(
       scope,
       messages[:],
-      snap.tool_definitions(),
+      snap.tool_definitions().filter(def => def.exposure is Direct),
       snap.call_options(),
       compact_cmd.trigger(),
     ),
@@ -521,7 +521,7 @@ pub async fn Puppet::compact_standalone(
     self.config.host.compact(
       scope,
       messages[:],
-      snap.tool_definitions(),
+      snap.tool_definitions().filter(def => def.exposure is Direct),
       snap.call_options(),
       trigger,
     ),

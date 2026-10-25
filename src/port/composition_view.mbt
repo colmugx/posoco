@@ -19,6 +19,7 @@ pub struct CompositionView {
   priv ui_ : &UiPort?
   priv tasks_ : Tasks?
   priv wakeup_ : WakeupPort?
+  priv tool_contributions_ : ToolContributions?
 }
 
 ///|
@@ -75,6 +76,16 @@ pub fn CompositionView::wakeup(self : CompositionView) -> WakeupPort? {
 }
 
 ///|
+/// The Agent-owned dynamic tool contribution capability, present only when
+/// the extension declares `Capability::ToolContribution`. The value is bound
+/// to this extension's manifest id, so it can only publish its own group.
+pub fn CompositionView::tool_contributions(
+  self : CompositionView,
+) -> ToolContributions? {
+  self.tool_contributions_
+}
+
+///|
 /// Gate a view on a manifest's declared `requires`: a declared capability is
 /// populated from the composed ports, an undeclared one reads `None`.
 /// Called by the composition after every gate has passed, so `model` and
@@ -87,6 +98,7 @@ pub fn CompositionView::resolve(
   ui~ : &UiPort,
   tasks~ : Tasks? = None,
   wakeup~ : WakeupPort? = None,
+  tool_contributions~ : ToolContributions? = None,
 ) -> CompositionView {
   {
     model_: if requires.contains(Model) {
@@ -116,6 +128,11 @@ pub fn CompositionView::resolve(
     },
     wakeup_: if requires.contains(Wakeup) {
       wakeup
+    } else {
+      None
+    },
+    tool_contributions_: if requires.contains(ToolContribution) {
+      tool_contributions
     } else {
       None
     },

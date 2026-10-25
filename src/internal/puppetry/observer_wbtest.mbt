@@ -22,6 +22,7 @@ struct EffectRecorder {
 
 ///|
 pub extend EffectRecorder with @port.PipelineHook::{
+  tool_exposure,
   on_post_event,
   on_turn_begin,
   on_post_event_at,
@@ -63,6 +64,9 @@ async test "hook_post_event/model_only_turn_fires_model_completed" {
     subscribers: [],
     stream_chunks: None,
     hooks: [recorder_ref],
+    tool_call_owners: Map::from_array([]),
+    max_tool_depth: None,
+    bound_tool_names: fn() { [] },
     max_iterations: Some(10),
     commands: [],
     session_store: None,
@@ -108,6 +112,9 @@ async test "hook_post_event/tool_turn_fires_model_then_tool" {
     subscribers: [],
     stream_chunks: None,
     hooks: [recorder_ref],
+    tool_call_owners: Map::from_array([]),
+    max_tool_depth: None,
+    bound_tool_names: fn() { [] },
     max_iterations: Some(10),
     commands: [],
     session_store: None,

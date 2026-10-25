@@ -99,6 +99,7 @@ pub fn RecordingHook::records(self : RecordingHook) -> Array[HookRecord] {
 
 ///|
 pub extend RecordingHook with @port.PipelineHook::{
+  tool_exposure,
   on_post_event,
   on_turn_begin,
   on_post_event_at,

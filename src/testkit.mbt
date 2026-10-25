@@ -29,6 +29,7 @@ fn testkit_snapshot_tool_def(tool : @kernel.ToolDef) -> @kernel.ToolDef {
     owner=tool.owner,
     policy=tool.policy,
     provenance=tool.provenance,
+    exposure=tool.exposure,
   )
 }
 
@@ -65,6 +66,7 @@ fn testkit_snapshot_event(event : @types.TurnEvent) -> @types.TurnEvent {
   match event {
     TurnStarted => TurnStarted
     ModelRequestStarted => ModelRequestStarted
+    ToolChildDeclared(..) => event
     ToolCallPending(call) => ToolCallPending(snapshot_tool_call(call))
     ToolCallApproved(call~, consent_scope~) =>
       ToolCallApproved(call=snapshot_tool_call(call), consent_scope~)

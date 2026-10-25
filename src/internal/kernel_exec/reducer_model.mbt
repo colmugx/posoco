@@ -272,6 +272,7 @@ fn reduce_model_completed_with_tools(
               arguments: call.arguments,
               owner: entry.definition.owner,
               catalog_version: catalog.version(),
+              parent: None,
             }
             effects.push(ExecuteTool(effect_id~, payload=exec_payload))
           }
@@ -385,13 +386,24 @@ fn reduce_model_completed_with_tools(
 /// Classify one model-proposed call against the catalog. Returns
 /// `Some(NotExecuted outcome)` when the call must be rejected (unknown tool
 /// or schema mismatch), `None` when it becomes an `ExecuteTool` effect.
-fn classify_rejected_outcome(
+pub fn classify_rejected_outcome(
   catalog : ToolCatalogSnapshot,
   call : @kernel.ToolCall,
+  direct~ : Bool = true,
 ) -> @kernel.ToolOutcome? {
   // Unknown tool → NotExecuted(UnknownTool)
   if !catalog.contains(call.name) {
     return Some(NotExecuted(reason=UnknownTool, original_call_id=call.call_id))
+  }
+  match catalog.find(call.name) {
+    Some(entry) =>
+      if entry.definition.exposure is Disabled ||
+        (direct && entry.definition.exposure is Deferred) {
+        return Some(
+          NotExecuted(reason=NotOffered, original_call_id=call.call_id),
+        )
+      }
+    None => ()
   }
   // Schema validation against the catalog.
   match catalog.validate_arguments(call.name, call.arguments) {

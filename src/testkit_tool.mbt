@@ -122,13 +122,13 @@ pub fn tk_tool_call_ctx(
   name~ : String,
   arguments~ : Json = Json::null(),
 ) -> @port.ToolCallContext {
-  {
-    effect_id: @kernel.EffectId::first(),
-    call_id: @kernel.CallId::unchecked("call_1"),
-    name: @kernel.ToolName::unchecked(name),
-    arguments,
-    register_cancel: fn(_ : &@port.ToolCancellable) { () },
-  }
+  @port.ToolCallContext(
+    effect_id=@kernel.EffectId::first(),
+    call_id=@kernel.CallId::unchecked("call_1"),
+    name=@kernel.ToolName::unchecked(name),
+    arguments~,
+    register_cancel=fn(_ : &@port.ToolCancellable) { () },
+  )
 }
 
 ///|
@@ -138,13 +138,13 @@ pub async fn RecordingToolProvider::execute_direct(
   self : RecordingToolProvider,
   call : @kernel.ToolCall,
 ) -> @kernel.ToolOutcome raise @error.RuntimeError {
-  let ctx : @port.ToolCallContext = {
-    effect_id: @kernel.EffectId::first(),
-    call_id: call.call_id,
-    name: call.name,
-    arguments: call.arguments,
-    register_cancel: fn(_ : &@port.ToolCancellable) { () },
-  }
+  let ctx = @port.ToolCallContext(
+    effect_id=@kernel.EffectId::first(),
+    call_id=call.call_id,
+    name=call.name,
+    arguments=call.arguments,
+    register_cancel=fn(_ : &@port.ToolCancellable) { () },
+  )
   (self as &@port.ToolProvider).execute(ctx)
 }
 

@@ -33,6 +33,7 @@ fn BoundaryProbeHost::append_counts_at_model_call(
 
 ///|
 pub extend BoundaryProbeHost with @kernel_exec.HostRuntime::{
+  execute_tool_scoped,
   cancel_effects,
   execute_tool,
   call_model,
@@ -182,6 +183,7 @@ fn CompactReplaceHost::CompactReplaceHost(
 
 ///|
 pub extend CompactReplaceHost with @kernel_exec.HostRuntime::{
+  execute_tool_scoped,
   cancel_effects,
   execute_tool,
   call_model,
@@ -286,6 +288,9 @@ async test "puppet/boundary_journals_auto_compact_replace_rewrite" {
     subscribers: [subscriber as &EventSubscriber],
     stream_chunks: None,
     hooks: [],
+    tool_call_owners: Map::from_array([]),
+    max_tool_depth: None,
+    bound_tool_names: fn() { [] },
     max_iterations: Some(50),
     commands: [],
     session_store: None,

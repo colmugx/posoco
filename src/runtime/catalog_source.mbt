@@ -8,8 +8,9 @@
 ///
 /// Read protocol — Posoco reads the source only at well-defined points:
 /// - once at Agent construction (the initial snapshot), and
-/// - at each prompt boundary (start of every `run_turn`, before the run
-///   begins) when `revision()` differs from the last read.
+/// - at operation admission (turn, resume, wakeup or idle compact) when
+///   `revision()` differs from the last read. Follow-ups within the same
+///   operation keep the captured catalog and bindings.
 ///
 /// Each revision change triggers exactly one rebuild attempt. When the
 /// rebuilt definitions fail catalog validation (name collision, malformed
@@ -21,9 +22,13 @@
 /// started with; refreshes only affect subsequent runs. Posoco pins the
 /// catalog version monotonically — the source's `revision` is an opaque
 /// change signal and is never used as the catalog version itself.
+///
+/// This legacy seam supplies definitions, not fixed implementations. Direct
+/// execution remains the host Runtime's responsibility. Bound dynamic groups
+/// are merged atomically and cannot be shadowed by a source update.
 pub(open) trait CatalogSource {
   /// Opaque change signal. Any change since the last read triggers one
-  /// catalog rebuild at the next prompt boundary. Values are compared for
+  /// catalog rebuild at the next operation boundary. Values are compared for
   /// inequality only — they do not need to be monotonic.
   fn revision(Self) -> Int32
 

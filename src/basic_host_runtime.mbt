@@ -44,15 +44,15 @@ impl @kernel_exec.HostRuntime for BasicFirstHostRuntime with fn execute_tool(
     Some(provider) => {
       let key = effect_id.to_int()
       let runtime = self
-      let call_ctx : @port.ToolCallContext = {
-        effect_id,
-        call_id,
-        name: tool_name,
-        arguments,
-        register_cancel: fn(c : &@port.ToolCancellable) {
+      let call_ctx = @port.ToolCallContext(
+        effect_id~,
+        call_id~,
+        name=tool_name,
+        arguments~,
+        register_cancel=fn(c : &@port.ToolCancellable) {
           runtime.cancels[key] = c
         },
-      }
+      )
       let outcome = provider.execute(call_ctx) catch {
         error =>
           RuntimeFailure(

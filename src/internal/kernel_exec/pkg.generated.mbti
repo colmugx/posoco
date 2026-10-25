@@ -9,11 +9,19 @@ import {
 }
 
 // Values
+pub fn classify_rejected_outcome(ToolCatalogSnapshot, @kernel.ToolCall, direct? : Bool) -> @kernel.ToolOutcome?
+
+pub fn declare_tool_child(RunState, ToolCatalogSnapshot, @kernel.EffectId, @kernel.ToolName, Json, Array[String], Int32?, Array[String]) -> (ReduceOutput, Effect, @kernel.ToolOutcome?) raise KernelError
+
+pub fn find_tool_effect(Array[Effect], @kernel.EffectId) -> ExecuteToolPayload?
+
 pub fn reduce(RunState, ToolCatalogSnapshot, RunInput) -> ReduceOutput raise KernelError
 
 pub fn run_model_step(RunState, ToolCatalogSnapshot, Json) -> ReduceOutput raise KernelError
 
 pub fn schedule(ToolCatalogSnapshot, @kernel.CatalogVersion, Array[@kernel.ToolCall]) -> ExecutionPlan raise SchedulingError
+
+pub fn validate_tool_child(ToolCatalogSnapshot, ExecuteToolPayload, @kernel.ToolCall, Array[String], Array[String]) -> @kernel.ToolOutcome?
 
 // Errors
 pub(all) suberror CatalogCompositionError {
@@ -179,6 +187,7 @@ pub(all) struct ExecuteToolPayload {
   arguments : Json
   owner : @kernel.OwnerId
   catalog_version : @kernel.CatalogVersion
+  parent : (@kernel.EffectId, @kernel.EffectId, Int32)?
 } derive(Eq, @debug.Debug)
 pub fn ExecuteToolPayload::equal(Self, Self) -> Bool
 pub fn ExecuteToolPayload::not_equal(Self, Self) -> Bool
@@ -249,7 +258,9 @@ pub(all) enum KernelEvent {
   ModelStepStarted(model_step_id~ : ModelStepId, effect_id~ : @kernel.EffectId)
   ModelStepCompleted(model_step_id~ : ModelStepId, completion~ : @kernel.Completion)
   ToolBatchStarted(model_step_id~ : ModelStepId, calls~ : Array[@kernel.ToolCall])
-  ToolCompleted(call~ : @kernel.ToolCall, outcome~ : @kernel.ToolOutcome)
+  ToolChildDeclared(effect_id~ : @kernel.EffectId, parent_effect_id~ : @kernel.EffectId, root_effect_id~ : @kernel.EffectId, depth~ : Int32, call~ : @kernel.ToolCall)
+  ToolChildAbandoned(call~ : @kernel.ToolCall, parent_effect_id~ : @kernel.EffectId)
+  ToolCompleted(call~ : @kernel.ToolCall, outcome~ : @kernel.ToolOutcome, parent_effect_id~ : @kernel.EffectId?)
   ToolCallsPreRejected(model_step_id~ : ModelStepId, calls~ : Array[@kernel.ToolCall], outcomes~ : Array[@kernel.ToolOutcome])
   ToolCallApproved(model_step_id~ : ModelStepId, call~ : @kernel.ToolCall, consent_scope~ : String?)
   ToolWaveStarted(model_step_id~ : ModelStepId, calls~ : Array[@kernel.ToolCall])
@@ -483,6 +494,15 @@ pub fn ToolCompletedPayload::equal(Self, Self) -> Bool
 pub fn ToolCompletedPayload::not_equal(Self, Self) -> Bool
 pub fn ToolCompletedPayload::to_repr(Self) -> @debug.Repr
 
+pub(all) struct ToolExecutionScope {
+  invocation : @kernel.InvocationScope
+  parent_effect_id : @kernel.EffectId?
+  root_effect_id : @kernel.EffectId
+  tools : () -> Array[@kernel.ToolDef]
+  invoke : async (String, Json) -> @kernel.InvocationResult
+  active : () -> Bool
+}
+
 pub(all) struct ToolFailedPayload {
   effect_id : @kernel.EffectId
   call_id : @kernel.CallId
@@ -523,6 +543,7 @@ pub using @kernel {type SessionId}
 pub(open) trait HostRuntime {
   async fn call_model(Self, @kernel.InvocationScope, ArrayView[@kernel.Message], Array[@kernel.ToolDef], Json, ((@types.StreamChunk) -> Unit)?) -> Result[@kernel.ModelCallResult, @kernel.ModelFailure]
   async fn execute_tool(Self, @kernel.EffectId, @kernel.OwnerId, @kernel.CallId, @kernel.ToolName, Json) -> @kernel.ToolOutcome
+  async fn execute_tool_scoped(Self, @kernel.EffectId, @kernel.OwnerId, @kernel.CallId, @kernel.ToolName, Json, ToolExecutionScope?) -> @kernel.ToolOutcome = _
   async fn cancel_effects(Self, Array[@kernel.EffectId], @kernel.CancelReason) -> Array[(@kernel.EffectId, @kernel.CancelDisposition)]
   async fn compact(Self, @kernel.InvocationScope, ArrayView[@kernel.Message], Array[@kernel.ToolDef], Json, @kernel.CompactTrigger) -> Result[@kernel.CompactResult, @kernel.ModelFailure]
 }

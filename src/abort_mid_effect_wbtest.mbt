@@ -20,6 +20,7 @@ struct MidEffectAbortRuntime {
   mut model_parks : Int32
   mut tool_parks : Int32
   cancelled_effect_ids : Array[@kernel.EffectId]
+  settled_tool_ids : Map[Int32, Bool]
 }
 
 ///|
@@ -35,6 +36,7 @@ fn MidEffectAbortRuntime::MidEffectAbortRuntime(
     model_parks: 0,
     tool_parks: 0,
     cancelled_effect_ids: [],
+    settled_tool_ids: Map::from_array([]),
   }
 }
 
@@ -74,6 +76,11 @@ impl @runtime.Runtime for MidEffectAbortRuntime with fn execute_tool(
   if self.tool_parks == 0 &&
     self.park_tool_names.contains(ctx.tool_name.to_string()) {
     self.tool_parks = self.tool_parks + 1
+    // This mock owns only the parked coroutine. Its unwind is the real
+    // terminal receipt; no downstream provider has been entered.
+    defer {
+      self.settled_tool_ids[ctx.effect_id.to_int()] = true
+    }
     park_until_cancelled()
   }
   self.inner.execute_tool(ctx)
@@ -88,7 +95,16 @@ impl @runtime.Runtime for MidEffectAbortRuntime with fn cancel_effects(
   for id in effect_ids {
     self.cancelled_effect_ids.push(id)
   }
-  effect_ids.map(id => (id, @kernel.NotPropagated))
+  effect_ids.map(id => {
+    (
+      id,
+      if self.settled_tool_ids.contains(id.to_int()) {
+        @kernel.Stopped
+      } else {
+        @kernel.NotPropagated
+      },
+    )
+  })
 }
 
 ///|

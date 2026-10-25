@@ -66,13 +66,29 @@ pub(all) enum KernelEvent {
     model_step_id~ : ModelStepId,
     calls~ : Array[@kernel.ToolCall]
   )
+  /// Identity of an actual child effect. Followed by the ordinary per-node
+  /// tool lifecycle, without inserting a synthetic assistant message.
+  ToolChildDeclared(
+    effect_id~ : EffectId,
+    parent_effect_id~ : EffectId,
+    root_effect_id~ : EffectId,
+    depth~ : Int32,
+    call~ : @kernel.ToolCall
+  )
+  /// A child scope ended without an outcome. This is not a provider failure
+  /// and never creates a model ToolMessage.
+  ToolChildAbandoned(call~ : @kernel.ToolCall, parent_effect_id~ : EffectId)
   /// Emitted per tool outcome (success, error, runtime failure or
   /// NotExecuted). The outcome tag IS the error status — there is no
   /// parallel `is_error` boolean (ADR §2.11). The call is the canonical
   /// request that was resolved, including the final call after hook
   /// finalization. Arguments are available to in-memory observers, never to
   /// durable diagnostic summaries.
-  ToolCompleted(call~ : @kernel.ToolCall, outcome~ : @kernel.ToolOutcome)
+  ToolCompleted(
+    call~ : @kernel.ToolCall,
+    outcome~ : @kernel.ToolOutcome,
+    parent_effect_id~ : EffectId?
+  )
   /// Emitted when the reducer's pre-pass validation rejects calls before
   /// they become `ExecuteTool` effects (unknown tool, schema mismatch).
   /// These calls never enter the execution pipeline; the projection emits
@@ -163,7 +179,17 @@ pub impl Show for KernelEvent with fn to_string(self : KernelEvent) -> String {
       "ModelStepCompleted(step=\{model_step_id.to_int()}, \{completion_summary(completion)})"
     ToolBatchStarted(model_step_id~, calls~) =>
       "ToolBatchStarted(step=\{model_step_id.to_int()}, \{calls.length()} calls)"
-    ToolCompleted(call~, outcome~) =>
+    ToolChildDeclared(
+      effect_id~,
+      parent_effect_id~,
+      root_effect_id~,
+      depth~,
+      ..
+    ) =>
+      "ToolChildDeclared(effect=\{effect_id.to_int()}, parent=\{parent_effect_id.to_int()}, root=\{root_effect_id.to_int()}, depth=\{depth})"
+    ToolChildAbandoned(call~, parent_effect_id~) =>
+      "ToolChildAbandoned(call=\{call.call_id.to_string()}, parent=\{parent_effect_id.to_int()})"
+    ToolCompleted(call~, outcome~, ..) =>
       "ToolCompleted(call=\{call.call_id.to_string()}, \{outcome.summary()})"
     ToolCallsPreRejected(model_step_id~, calls~, ..) =>
       "ToolCallsPreRejected(step=\{model_step_id.to_int()}, \{calls.length()} calls)"

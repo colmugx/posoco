@@ -77,7 +77,8 @@ fn event_to_boundary_kind(event : KernelEvent) -> SavepointKind {
     RunStarted(..) => InputAccepted
     ModelStepCompleted(..) => AssistantCommitted
     ToolCompleted(..) | ToolCallsPreRejected(..) => ToolCommitted
-    ToolCallApproved(..) | ToolWaveStarted(..) => ToolCommitted
+    ToolChildDeclared(..) | ToolCallApproved(..) | ToolWaveStarted(..) =>
+      ToolCommitted
     RunSuspended(..) => RunSuspended
     RunCompleted(..) | RunFailed(..) | RunCancelled(..) => RunTerminal
     _ => AssistantCommitted
@@ -195,7 +196,38 @@ fn kernel_event_payload(event : KernelEvent) -> Json {
           ("call_count", Json::number(calls.length().to_double())),
         ]),
       )
-    ToolCompleted(call~, outcome~) =>
+    ToolChildDeclared(
+      effect_id~,
+      parent_effect_id~,
+      root_effect_id~,
+      depth~,
+      call~
+    ) =>
+      Json::object(
+        Map::from_array([
+          ("kind", Json::string("ToolChildDeclared")),
+          ("effect_id", Json::number(effect_id.to_int().to_double())),
+          (
+            "parent_effect_id",
+            Json::number(parent_effect_id.to_int().to_double()),
+          ),
+          ("root_effect_id", Json::number(root_effect_id.to_int().to_double())),
+          ("depth", Json::number(depth.to_double())),
+          ("call_id", Json::string(call.call_id.to_string())),
+        ]),
+      )
+    ToolChildAbandoned(call~, parent_effect_id~) =>
+      Json::object(
+        Map::from_array([
+          ("kind", Json::string("ToolChildAbandoned")),
+          ("call_id", Json::string(call.call_id.to_string())),
+          (
+            "parent_effect_id",
+            Json::number(parent_effect_id.to_int().to_double()),
+          ),
+        ]),
+      )
+    ToolCompleted(call~, outcome~, parent_effect_id~) =>
       // The committed call is available to in-memory subscribers, but this
       // durable diagnostic payload intentionally excludes its arguments.
       Json::object(
@@ -203,6 +235,13 @@ fn kernel_event_payload(event : KernelEvent) -> Json {
           ("kind", Json::string("ToolCompleted")),
           ("call_id", Json::string(call.call_id.to_string())),
           ("outcome", Json::string(outcome.summary())),
+          (
+            "parent_effect_id",
+            match parent_effect_id {
+              Some(id) => Json::number(id.to_int().to_double())
+              None => Json::null()
+            },
+          ),
         ]),
       )
     ToolCallsPreRejected(model_step_id~, calls~, ..) =>

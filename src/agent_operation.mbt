@@ -175,7 +175,18 @@ async fn[X] AgentRuntime::execute_operation(
             "operation execution cancelled",
           )
         }
-        let result = body()
+        let startup : Result[Unit, @error.AgentError] = Ok(
+          if !self.start_notified {
+            self.notify_start_if_first()
+            self.capture_tool_contributions()
+          },
+        ) catch {
+          error => Err(error)
+        }
+        let result = match startup {
+          Ok(_) => body()
+          Err(error) => Err(error)
+        }
         body_outcome.val = Some(result)
         result
       })
@@ -395,6 +406,7 @@ fn AgentRuntime::admit_operation(
       )
     None => ()
   }
+  self.tool_runtime.require_settled()
   let identity = self.mint_turn_identity(session_id)
   let operation_id = match operation_label {
     Some(label) => label
@@ -412,6 +424,15 @@ fn AgentRuntime::admit_operation(
     session_id,
   }
   self.operations.current = Some(admission)
+  errdefer {
+    self.operations.current = None
+  }
+  // Startup may publish dynamic tools asynchronously. Its first operation
+  // holds this guard, then captures once after startup; later admissions
+  // keep their synchronous pre-await capture.
+  if self.start_notified {
+    self.capture_tool_contributions()
+  }
   self.turn_active = true
   self.operations.execution = Some({
     operation_id: admission.operation_id,

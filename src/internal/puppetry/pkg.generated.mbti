@@ -44,6 +44,7 @@ pub(all) suberror PuppetError {
   PumpLoopExceeded(iterations~ : Int32)
   DuplicateOrLateCompletion(effect_id~ : @kernel.EffectId, detail~ : String)
   EffectExecutionFailed(phase~ : String, cause~ : String)
+  ExecutionCleanupFailed(primary~ : PuppetError, detail~ : String)
   EffectExecutionCancelled(phase~ : String)
   ReducerInvariantViolation(category~ : @kernel_exec.InvariantCategory)
   HookRejected(reason~ : String)
@@ -434,6 +435,9 @@ pub(all) struct PuppetConfig {
   subscribers : Array[&EventSubscriber]
   stream_chunks : ((@types.StreamChunk) -> Unit)?
   hooks : Array[&@port.PipelineHook]
+  tool_call_owners : Map[String, Array[String]]
+  max_tool_depth : Int32?
+  bound_tool_names : () -> Array[String]
   max_iterations : Int32?
   commands : Array[&@port.CommandPort]
   session_store : &@port.SessionStore?

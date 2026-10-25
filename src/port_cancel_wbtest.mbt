@@ -1,70 +1,15 @@
 ///|
+using @support {probe_effect}
+
+///|
+using @support {type CancellableProbe}
+
+///|
 /// Port-level cancellation contract: a ToolProvider that registers a
 /// `ToolCancellable` facet via `ToolCallContext.register_cancel` has the
 /// facet routed by `PortRuntime.cancel_effects` while the effect is in
 /// flight; plain providers and already-settled effects report
 /// `NotPropagated`.
-
-///|
-/// Cancellable fake: registers its facet at execute start, then suspends on
-/// a release queue so the effect stays in flight until the test lets it go.
-priv struct CancellableProbe {
-  release : @aqueue.Queue[Int32]
-  registered_effects : Array[Int32]
-  cancelled_effects : Array[Int32]
-  seen_reasons : Array[@kernel.CancelReason]
-}
-
-///|
-fn CancellableProbe::CancellableProbe() -> CancellableProbe {
-  {
-    release: Queue(kind=Unbounded),
-    registered_effects: [],
-    cancelled_effects: [],
-    seen_reasons: [],
-  }
-}
-
-///|
-impl @port.ToolProvider for CancellableProbe with fn list_tools(_self) {
-  [tk_tool_def("probe", "cancellable probe")]
-}
-
-///|
-impl @port.ToolProvider for CancellableProbe with fn execute(
-  self,
-  ctx : @port.ToolCallContext,
-) -> @kernel.ToolOutcome raise @error.RuntimeError {
-  (ctx.register_cancel)(self as &@port.ToolCancellable)
-  self.registered_effects.push(ctx.effect_id.to_int())
-  ignore(self.release.get() catch { _ => 0 })
-  tk_ok_result("probe settled")
-}
-
-///|
-impl @port.ToolCancellable for CancellableProbe with fn cancel(
-  self,
-  effect_id : @kernel.EffectId,
-  reason : @kernel.CancelReason,
-) -> @kernel.CancelDisposition {
-  self.cancelled_effects.push(effect_id.to_int())
-  self.seen_reasons.push(reason)
-  @kernel.CancelDisposition::Propagated
-}
-
-///|
-fn probe_effect(
-  effect_id : Int32,
-  tool_name~ : String = "probe",
-) -> @runtime.EffectContext {
-  {
-    effect_id: { value: effect_id, },
-    owner: @kernel.OwnerId::unchecked("probe_owner"),
-    call_id: @kernel.CallId::unchecked("call_probe"),
-    tool_name: @kernel.ToolName::unchecked(tool_name),
-    arguments: Json::object(Map::from_array([])),
-  }
-}
 
 ///|
 async test "port cancel/registered facet routes while effect in flight" {

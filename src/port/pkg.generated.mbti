@@ -41,6 +41,7 @@ pub(all) enum Capability {
   Ui
   Tasks
   Wakeup
+  ToolContribution
 } derive(Eq, @debug.Debug)
 pub fn Capability::equal(Self, Self) -> Bool
 pub fn Capability::not_equal(Self, Self) -> Bool
@@ -103,8 +104,9 @@ pub struct CompositionView {
 pub fn CompositionView::decision(Self) -> &DecisionPort?
 pub fn CompositionView::log(Self) -> &LogPort?
 pub fn CompositionView::model(Self) -> &ModelPort?
-pub fn CompositionView::resolve(requires~ : Array[Capability], model~ : &ModelPort, decision? : &DecisionPort?, log? : &LogPort?, ui~ : &UiPort, tasks? : Tasks?, wakeup? : WakeupPort?) -> Self
+pub fn CompositionView::resolve(requires~ : Array[Capability], model~ : &ModelPort, decision? : &DecisionPort?, log? : &LogPort?, ui~ : &UiPort, tasks? : Tasks?, wakeup? : WakeupPort?, tool_contributions? : ToolContributions?) -> Self
 pub fn CompositionView::tasks(Self) -> Tasks?
+pub fn CompositionView::tool_contributions(Self) -> ToolContributions?
 pub fn CompositionView::ui(Self) -> &UiPort?
 pub fn CompositionView::wakeup(Self) -> WakeupPort?
 
@@ -211,8 +213,9 @@ pub(all) struct ExtensionManifest {
   ui : Array[&UiPort]
   prompt_contributors : Array[&SystemPromptContributor]
   requires : Array[Capability]
+  tool_call_owners : Array[String]
 }
-pub fn ExtensionManifest::ExtensionManifest(id~ : String, models? : Array[&ModelPort], decisions? : Array[&DecisionPort], logs? : Array[&LogPort], tools? : Array[&ToolProvider], sessions? : Array[&SessionStore], observers? : Array[&Observer], hooks? : Array[&PipelineHook], memory? : Array[&MemoryPort], lifecycle? : Array[&Lifecycle], commands? : Array[&CommandPort], ui? : Array[&UiPort], prompt_contributors? : Array[&SystemPromptContributor], requires? : Array[Capability]) -> Self
+pub fn ExtensionManifest::ExtensionManifest(id~ : String, models? : Array[&ModelPort], decisions? : Array[&DecisionPort], logs? : Array[&LogPort], tools? : Array[&ToolProvider], sessions? : Array[&SessionStore], observers? : Array[&Observer], hooks? : Array[&PipelineHook], memory? : Array[&MemoryPort], lifecycle? : Array[&Lifecycle], commands? : Array[&CommandPort], ui? : Array[&UiPort], prompt_contributors? : Array[&SystemPromptContributor], requires? : Array[Capability], tool_call_owners? : Array[String]) -> Self
 pub fn ExtensionManifest::default(id~ : String) -> Self
 
 pub(all) enum HookStage {
@@ -363,13 +366,49 @@ pub struct Tasks {
 pub fn Tasks::from_submit(submit~ : (TaskSpec) -> Result[TaskHandle, TaskSubmitError]) -> Self
 pub fn Tasks::submit(Self, TaskSpec) -> Result[TaskHandle, TaskSubmitError]
 
-pub(all) struct ToolCallContext {
+pub struct ToolCallContext {
   effect_id : @kernel.EffectId
   call_id : @kernel.CallId
   name : @kernel.ToolName
   arguments : Json
   register_cancel : (&ToolCancellable) -> Unit
+  scope : @kernel.InvocationScope?
+  parent_effect_id : @kernel.EffectId?
+  root_effect_id : @kernel.EffectId
+  // private fields
 }
+pub fn ToolCallContext::ToolCallContext(effect_id~ : @kernel.EffectId, call_id~ : @kernel.CallId, name~ : @kernel.ToolName, arguments~ : Json, register_cancel~ : (&ToolCancellable) -> Unit, scope? : @kernel.InvocationScope, parent_effect_id? : @kernel.EffectId, root_effect_id? : @kernel.EffectId, tools? : () -> Array[@kernel.ToolDef], invoke? : async (String, Json) -> @kernel.InvocationResult, active? : () -> Bool) -> Self
+pub async fn ToolCallContext::invoke(Self, String, Json) -> @kernel.InvocationResult raise @error.RuntimeError
+pub fn ToolCallContext::tools(Self) -> Array[@kernel.ToolDef]
+
+pub(all) struct ToolContributionCommit {
+  owner : String
+  revision : Int32
+} derive(Eq, @debug.Debug)
+pub fn ToolContributionCommit::equal(Self, Self) -> Bool
+pub fn ToolContributionCommit::not_equal(Self, Self) -> Bool
+pub fn ToolContributionCommit::to_repr(Self) -> @debug.Repr
+
+pub(all) enum ToolContributionError {
+  Closed
+  NotContributed
+  Rejected(reason~ : String)
+} derive(Eq, @debug.Debug)
+pub fn ToolContributionError::equal(Self, Self) -> Bool
+pub fn ToolContributionError::not_equal(Self, Self) -> Bool
+pub fn ToolContributionError::output(Self, &Logger) -> Unit
+pub fn ToolContributionError::to_repr(Self) -> @debug.Repr
+pub fn ToolContributionError::to_string(Self) -> String
+pub impl Show for ToolContributionError
+
+pub struct ToolContributions {
+  // private fields
+}
+pub fn ToolContributions::from_callbacks(owner~ : String, replace~ : (&ToolProvider) -> Result[ToolContributionCommit, ToolContributionError], withdraw~ : () -> Result[ToolContributionCommit, ToolContributionError], revision~ : () -> Int32?) -> Self
+pub fn ToolContributions::owner(Self) -> String
+pub fn ToolContributions::replace(Self, provider~ : &ToolProvider) -> Result[ToolContributionCommit, ToolContributionError]
+pub fn ToolContributions::revision(Self) -> Int32?
+pub fn ToolContributions::withdraw(Self) -> Result[ToolContributionCommit, ToolContributionError]
 
 pub(all) enum ToolDecision {
   Approve(call~ : @kernel.ToolCall)
@@ -540,6 +579,7 @@ pub(open) trait Observer {
 }
 
 pub(open) trait PipelineHook {
+  fn tool_exposure(Self, @kernel.ToolDef) -> @kernel.ToolExposure = _
   async fn before_model(Self, Array[@kernel.Message]) -> Array[@kernel.Message] raise HookAbort = _
   async fn before_tool(Self, @kernel.ToolCall) -> ToolDecision = _
   async fn on_post_event(Self, HookStage) -> Unit noraise = _

@@ -82,6 +82,7 @@ priv struct ExecutionContext {
   run_id : RunId
   session_id : SessionId
   mailbox : &Mailbox
+  tool_scope : @kernel_exec.ToolExecutionScope?
 }
 
 ///|
@@ -92,7 +93,7 @@ fn ExecutionContext::ExecutionContext(
   session_id~ : SessionId,
   mailbox~ : &Mailbox,
 ) -> ExecutionContext {
-  { host, catalog, run_id, session_id, mailbox, }
+  { host, catalog, run_id, session_id, mailbox, tool_scope: None, }
 }
 
 ///|
@@ -146,7 +147,9 @@ async fn execute_call_model(
   // explicitly forbidden (REPAIR §6.3) to pass an empty array here — that
   // would hide a missing-catalog bug as a successful but tool-blind model
   // call. The snapshot owns the definitions; we project them out.
-  let tool_definitions : Array[@kernel.ToolDef] = ctx.catalog.definitions()
+  let tool_definitions = ctx.catalog
+    .definitions()
+    .filter(def => def.exposure is Direct)
   // Fold the Run identity (carried by the context) and this effect's id into
   // the invocation scope handed to the host — the canonical answer to
   // "which session/run is this model call serving". Chat carries no
@@ -293,12 +296,13 @@ async fn execute_execute_tool(
   // ToolFailed so the reducer sees an explicit signal rather than a silent
   // success — REPAIR §11 forbids masking such cases.
   let attempted : Result[@kernel.ToolOutcome, Error] = Ok(
-    ctx.host.execute_tool(
+    ctx.host.execute_tool_scoped(
       effect_id,
       payload.owner,
       payload.call_id,
       payload.tool_name,
       payload.arguments,
+      ctx.tool_scope,
     ),
   ) catch {
     error => Err(error)

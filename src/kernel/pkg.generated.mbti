@@ -24,6 +24,7 @@ pub fn CallId::unchecked(String) -> Self
 
 pub(all) enum CancelDisposition {
   Propagated
+  Stopped
   NotPropagated
   AlreadySettled
 } derive(Eq, @debug.Debug)
@@ -171,6 +172,14 @@ pub fn FinishReason::to_repr(Self) -> @debug.Repr
 pub fn FinishReason::to_string(Self) -> String
 pub impl Show for FinishReason
 
+pub(all) enum InvocationResult {
+  Completed(ToolOutcome)
+  Interrupted(reason~ : String, cancellation~ : CancelDisposition, side_effects_possible~ : Bool)
+} derive(Eq, @debug.Debug)
+pub fn InvocationResult::equal(Self, Self) -> Bool
+pub fn InvocationResult::not_equal(Self, Self) -> Bool
+pub fn InvocationResult::to_repr(Self) -> @debug.Repr
+
 pub(all) struct InvocationScope {
   session_id : SessionId
   run_id : RunId
@@ -218,6 +227,11 @@ pub impl Show for ModelFailure
 
 pub(all) enum NotExecutedReason {
   UnknownTool
+  NotOffered
+  OwnerNotAllowed
+  InvocationLimit
+  PolicyConflict
+  UnsupportedInvocation
   SchemaMismatch(json_path~ : String, expected~ : String, actual~ : String)
   RejectedByHook(reason~ : String)
 } derive(Eq, @debug.Debug)
@@ -307,15 +321,26 @@ pub(all) struct ToolDef {
   input_schema : Json
   owner : OwnerId
   policy : ExecutionPolicy
+  exposure : ToolExposure
   provenance : String?
 } derive(Eq, @debug.Debug)
-pub fn ToolDef::ToolDef(name~ : ToolName, description~ : String, input_schema~ : Json, owner~ : OwnerId, policy~ : ExecutionPolicy, provenance~ : String?) -> Self
+pub fn ToolDef::ToolDef(name~ : ToolName, description~ : String, input_schema~ : Json, owner~ : OwnerId, policy~ : ExecutionPolicy, provenance~ : String?, exposure? : ToolExposure) -> Self
 pub fn ToolDef::equal(Self, Self) -> Bool
 pub fn ToolDef::not_equal(Self, Self) -> Bool
 pub fn ToolDef::output(Self, &Logger) -> Unit
 pub fn ToolDef::to_repr(Self) -> @debug.Repr
 pub fn ToolDef::to_string(Self) -> String
 pub impl Show for ToolDef
+
+pub(all) enum ToolExposure {
+  Direct
+  Deferred
+  Disabled
+} derive(Eq, @debug.Debug)
+pub fn ToolExposure::equal(Self, Self) -> Bool
+pub fn ToolExposure::narrow(Self, Self) -> Self
+pub fn ToolExposure::not_equal(Self, Self) -> Bool
+pub fn ToolExposure::to_repr(Self) -> @debug.Repr
 
 pub(all) enum ToolFailure {
   ReportedError(content~ : String, structured~ : Json?)

@@ -1,0 +1,9 @@
+import {
+  "colmugx/posoco" @agent,
+  "colmugx/posoco/tests/support",
+  "colmugx/posoco/runtime",
+  "colmugx/posoco/kernel",
+  "colmugx/posoco/port",
+  "colmugx/posoco/error",
+  "moonbitlang/async",
+} for "wbtest"

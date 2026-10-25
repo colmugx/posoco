@@ -306,6 +306,7 @@ async fn Puppet::pump_abort(
   run_id : RunId,
   turn_id : TurnId,
   session_id : SessionId,
+  on_cancel~ : (Array[(EffectId, CancelDisposition)]) -> Unit = fn(_) { () },
 ) -> PumpStep noraise {
   let mut state = state
   let cancel_input : RunInput = CancelRequested(payload={ detail: None, })
@@ -326,7 +327,7 @@ async fn Puppet::pump_abort(
     Ok(out) => {
       state = out.next_state()
       let propagated : Result[Unit, PuppetError] = Ok(
-        propagate_terminal_cancellations(out.effects(), exec_ctx),
+        propagate_terminal_cancellations(out.effects(), exec_ctx, on_cancel~),
       ) catch {
         error => Err(error)
       }
@@ -718,143 +719,21 @@ async fn Puppet::pump_awaiting_tools(
   for effect in pending {
     match effect {
       ExecuteTool(effect_id~, payload~) => {
-        let mut current_call : ToolCall = snapshot_tool_call({
-          call_id: payload.call_id,
-          name: payload.tool_name,
-          arguments: payload.arguments,
-        })
-        let mut deferred_reason : String? = None
-        let mut consented_call : ToolCall? = None
-        let mut consent_scope : String? = None
-        let mut call_id_mutated = false
-        let reject_reasons : Array[String] = []
-        for hook in self.config.hooks {
-          // Never lend the hook the current tree: a malicious hook may mutate
-          // the argument object before returning its decision.
-          let hook_input = snapshot_tool_call(current_call)
-          let attempted = Ok(hook.before_tool(hook_input)) catch {
-            err => Err(err)
-          }
-          let decision = match attempted {
-            Err(err) =>
-              // A cancellation inside the hook travels as a runtime signal
-              // and bypasses this handler entirely; only hook defects land
-              // here, and they keep the `HookRejected` classification.
-              return StopWith(
-                self.finalize_rejected(
-                  error=HookRejected(
-                    reason="pre_tool_hook raised: " + err.to_string(),
-                  ),
-                ),
-              )
-            Ok(decision) => decision
-          }
-          match decision {
-            Approve(call~) => {
-              if call.call_id != payload.call_id {
-                call_id_mutated = true
-              }
-              current_call = snapshot_tool_call(call)
-              continue
-            }
-            ApproveAfterConsent(call~, consent_scope=granted) => {
-              // Record the surviving grant scope for the approval event.
-              consent_scope = Some(granted)
-              if call.call_id != payload.call_id {
-                call_id_mutated = true
-              }
-              // Keep consent and the live chain state on separate trees. A
-              // later hook retaining its input cannot mutate the grant.
-              consented_call = Some(snapshot_tool_call(call))
-              current_call = snapshot_tool_call(call)
-              // Each explicit consent authorizes the exact call it carries.
-              // A later consent may intentionally authorize a new call; a
-              // plain Approve rewrite after it fails the equality check below.
-              continue
-            }
-            // Terminal until M5: stop polling further hooks.
-            Defer(reason~) => {
-              deferred_reason = Some(reason)
-              break
-            }
-            // Keep polling: a later hook's consent outranks this.
-            Reject(reason~) => {
-              reject_reasons.push(reason)
-              continue
-            }
-          }
+        let finalized = finalize_tool_call(
+          self.config.catalog,
+          self.config.hooks,
+          {
+            call_id: payload.call_id,
+            name: payload.tool_name,
+            arguments: payload.arguments,
+          },
+          direct=true,
+        ) catch {
+          error => return StopWith(self.finalize_rejected(error~))
         }
-        match deferred_reason {
-          // Frozen wording: extensions (e.g. posoco-ext-permission)
-          // document this exact terminal-reject behavior; M5 will replace
-          // it with real suspension.
-          Some(reason) =>
-            return StopWith(
-              self.finalize_rejected(
-                error=HookRejected(
-                  reason="pre_tool_hook defer not yet supported: " + reason,
-                ),
-              ),
-            )
-          None => ()
-        }
-        if call_id_mutated {
-          // call_id is the reducer correlation identity. It is never a
-          // rewriteable part of a tool request.
-          return StopWith(
-            self.finalize_rejected(
-              error=HookRejected(
-                reason="pre_tool_hook changed call_id for a pending tool call",
-              ),
-            ),
-          )
-        }
-        let consent_invalidated = match consented_call {
-          Some(consented) => consented != current_call
-          None => false
-        }
-        let hook_outcome : @kernel.ToolOutcome? = if consent_invalidated {
-          // Consent is a capability grant for one exact call, not a general
-          // approval that a later hook can reuse after changing the request.
-          Some(
-            NotExecuted(
-              reason=RejectedByHook(
-                reason="tool call changed after consent; authorization was not reused",
-              ),
-              original_call_id=payload.call_id,
-            ),
-          )
-        } else if consented_call is None && !reject_reasons.is_empty() {
-          Some(
-            NotExecuted(
-              reason=RejectedByHook(reason=reject_reasons.join("; ")),
-              original_call_id=payload.call_id,
-            ),
-          )
-        } else if !self.config.catalog.contains(current_call.name) {
-          Some(
-            NotExecuted(reason=UnknownTool, original_call_id=payload.call_id),
-          )
-        } else {
-          match
-            self.config.catalog.validate_arguments(
-              current_call.name,
-              current_call.arguments,
-            ) {
-            Ok(_) => None
-            Err(diag) =>
-              Some(
-                NotExecuted(
-                  reason=SchemaMismatch(
-                    json_path=diag.json_path,
-                    expected=diag.expected,
-                    actual=diag.actual,
-                  ),
-                  original_call_id=payload.call_id,
-                ),
-              )
-          }
-        }
+        let current_call = finalized.call
+        let consent_scope = finalized.consent_scope
+        let hook_outcome = finalized.rejection
         let final_owner = match self.config.catalog.find(current_call.name) {
           Some(entry) => entry.definition.owner
           None => payload.owner
@@ -869,6 +748,7 @@ async fn Puppet::pump_awaiting_tools(
           owner: final_owner,
           model_step_id: payload.model_step_id,
           catalog_version: payload.catalog_version,
+          parent: payload.parent,
         })
         normalized_pending.push(normalized_pending_effect)
         match hook_outcome {
@@ -890,6 +770,7 @@ async fn Puppet::pump_awaiting_tools(
               owner: final_owner,
               model_step_id: payload.model_step_id,
               catalog_version: payload.catalog_version,
+              parent: payload.parent,
             })
             executable_effects.push(executable_effect)
             approved_finalized.push(
@@ -1028,7 +909,7 @@ async fn Puppet::pump_awaiting_tools(
     Ok(value) => value
   }
   for wave_index, wave in waves {
-    // Announce the launch before `@async.all` starts: one durable
+    // Announce the launch before the wave driver starts: one durable
     // boundary per wave, one event per wave, expanded per call by the
     // projection. Observers therefore see execution begin instead of
     // inferring it from a later completion.
@@ -1083,48 +964,17 @@ async fn Puppet::pump_awaiting_tools(
         Ok(_) => ()
       }
     }
-    // `@async.all` starts every effect in the finalized wave, waits at its
-    // barrier, and returns inputs in source order. The reducer remains the
-    // sole owner of transcript/result ordering. The await races the mailbox
-    // abort flag: `None` means abort landed mid-wave, the wave's partial
-    // results are discarded, and the loop top feeds CancelRequested to the
-    // reducer, which declares CancelOutstanding for the still-pending effects.
-    let executed : Result[Array[RunInput]?, PuppetError] = Ok(
-      execute_tool_wave(wave, exec_ctx),
+    // The wave driver receives child requests while roots wait, and folds
+    // root outcomes in source order. On abort it returns the latest state,
+    // including pending children, for the normal CancelRequested boundary.
+    let executed = self.execute_tool_tree(
+      wave, state, exec_ctx, dispatcher, turn_id, snap, hook_scope,
     ) catch {
-      error => Err(error)
+      error => return StopWith(self.finalize_rejected(error~))
     }
-    let inputs = match executed {
-      Err(error) => return StopWith(self.finalize_rejected(error~))
-      Ok(None) => return ContinueWith(state)
-      Ok(Some(value)) => value
-    }
-    for input in inputs {
-      let folded : Result[FoldOutcome, PuppetError] = Ok(
-        self.fold_effect_input(
-          state,
-          input,
-          dispatcher,
-          run_id,
-          turn_id,
-          session_id,
-          "sp_tool_wave_\{wave_index}",
-          snap,
-        ),
-      ) catch {
-        error => Err(error)
-      }
-      match folded {
-        Err(error) => return StopWith(self.finalize_rejected(error~))
-        Ok(Return(r)) => return StopWith(r)
-        Ok(Continue(next_state)) => {
-          self.fire_post_event_hooks(input, hook_scope)
-          state = next_state
-        }
-      }
-      if state.phase() == Terminal || state.phase() == Suspended {
-        break
-      }
+    match executed {
+      StopWith(result) => return StopWith(result)
+      ContinueWith(next) => state = next
     }
     // Abort is observed at a side-effect boundary. Do not launch a later
     // wave after it was requested; the next pump iteration feeds

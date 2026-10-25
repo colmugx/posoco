@@ -1,4 +1,7 @@
 ///|
+using @support {compact_tools_seed}
+
+///|
 /// Records compact inputs independently of chat, including the durable
 /// window at entry so failures can be checked for accidental rewrites.
 struct CompactToolsModel {
@@ -68,14 +71,6 @@ fn compact_tools_model(
 }
 
 ///|
-fn compact_tools_seed(store : RecordingSessionStore, id : String) -> Unit {
-  store.seed(id, {
-    messages: [tk_user_msg("committed history")],
-    metadata: Map::from_array([]),
-  })
-}
-
-///|
 fn compact_tools_assert(
   model : CompactToolsModel,
   expected : Array[@kernel.ToolDef],
@@ -100,6 +95,7 @@ async fn compact_tools_idle(fail_compact : Bool, refresh : Bool) -> Unit {
   ])
   let original = tk_tool_def("original", "previous chat tools")
   let current = tk_tool_def("current", "current snapshot tools")
+  let pending = tk_tool_def("pending", "adopted at compact admission")
   let source = FakeCatalogSource([original])
   let agent = Agent::with_runtime(
     exts=[tk_ext(id="model", model=Some(model), sessions=[store])],
@@ -113,7 +109,7 @@ async fn compact_tools_idle(fail_compact : Bool, refresh : Bool) -> Unit {
     source.revision = source.revision + 1
     // CatalogSource changes are adopted at the next prompt boundary.
     ignore(agent.run_turn(tk_user_msg("adopt refresh"), id))
-    source.defs = [tk_tool_def("pending", "not yet adopted")]
+    source.defs = [pending]
     source.revision = source.revision + 1
   }
   let before = snapshot_messages(store.store[id].messages)
@@ -143,7 +139,7 @@ async fn compact_tools_idle(fail_compact : Bool, refresh : Bool) -> Unit {
   compact_tools_assert(
     model,
     if refresh {
-      [current]
+      [pending]
     } else {
       [original]
     },
@@ -430,7 +426,6 @@ async test "compact_tools/default Agent idle manual forwards composed definition
     ],
     Map::from_array([]),
   )
-  let expected = build_agent_catalog([tools]).definitions()
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model), tools=[tools], sessions=[store]),
@@ -439,5 +434,13 @@ async test "compact_tools/default Agent idle manual forwards composed definition
   )
   ignore(agent.compact_session("tools-composed"))
   assert_eq(model.call_count(), 0)
-  assert_true(model.received_compact_tools == [expected])
+  guard model.received_compact_tools is [[echo, lookup]] else {
+    fail("compact must receive both composed definitions")
+  }
+  assert_eq(echo.name.to_string(), "echo")
+  assert_eq(echo.owner.to_string(), "model")
+  assert_eq(echo.provenance, Some("echo-provider"))
+  assert_true(echo.policy is Sequential)
+  assert_eq(lookup.name.to_string(), "lookup")
+  assert_eq(lookup.owner.to_string(), "model")
 }

@@ -1,0 +1,72 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "colmugx/posoco/tests/support"
+
+import {
+  "colmugx/posoco",
+  "colmugx/posoco/error",
+  "colmugx/posoco/kernel",
+  "colmugx/posoco/port",
+  "colmugx/posoco/runtime",
+  "colmugx/posoco/types",
+  "moonbitlang/async/aqueue",
+}
+
+// Values
+pub fn compact_tools_seed(@posoco.RecordingSessionStore, String) -> Unit
+
+pub fn policy_replace_result() -> @kernel.CompactResult
+
+pub fn probe_effect(Int32, tool_name? : String, run_id? : String) -> @runtime.EffectContext
+
+// Errors
+
+// Types and methods
+pub(all) struct CancellableProbe {
+  release : @aqueue.Queue[Int32]
+  registered_effects : Array[Int32]
+  cancelled_effects : Array[Int32]
+  seen_reasons : Array[@kernel.CancelReason]
+}
+pub fn CancellableProbe::CancellableProbe() -> Self
+pub async fn CancellableProbe::cancel(Self, @kernel.EffectId, @kernel.CancelReason) -> @kernel.CancelDisposition
+pub async fn CancellableProbe::execute(Self, @port.ToolCallContext) -> @kernel.ToolOutcome raise @error.RuntimeError
+pub fn CancellableProbe::list_tools(Self) -> Array[@kernel.ToolDef]
+pub impl @port.ToolCancellable for CancellableProbe
+pub impl @port.ToolProvider for CancellableProbe
+
+pub(all) struct FakeCatalogSource {
+  mut revision : Int32
+  mut defs : Array[@kernel.ToolDef]
+}
+pub fn FakeCatalogSource::FakeCatalogSource(Array[@kernel.ToolDef]) -> Self
+pub fn FakeCatalogSource::revision(Self) -> Int32
+pub fn FakeCatalogSource::tools(Self) -> Array[@kernel.ToolDef]
+pub impl @runtime.CatalogSource for FakeCatalogSource
+
+pub(all) struct FakeRuntime {
+  inner : @runtime.PortRuntime
+  mut bound_support : Bool
+  mut deny_tools : Bool
+  mut fail_tool : String?
+  seen_contexts : Array[@runtime.EffectContext]
+  seen_scopes : Array[@kernel.InvocationScope]
+  mut cancel_calls : Int32
+  cancel_seen : Array[Array[@kernel.EffectId]]
+  mut cancel_report : ((Array[@kernel.EffectId]) -> Array[(@kernel.EffectId, @kernel.CancelDisposition)])?
+  mut control : @posoco.AgentControl?
+  mut abort_on_tool : Bool
+  mut follow_up_on_tool : Bool
+  mut follow_up_sent : Bool
+  mut on_first_execute : (() -> Unit)?
+}
+pub fn FakeRuntime::FakeRuntime(@runtime.PortRuntime) -> Self
+pub async fn FakeRuntime::call_model(Self, @kernel.InvocationScope, ArrayView[@kernel.Message], Array[@kernel.ToolDef], Json, ((@types.StreamChunk) -> Unit)?) -> Result[@kernel.ModelCallResult, @kernel.ModelFailure]
+pub async fn FakeRuntime::cancel_effects(Self, Array[@kernel.EffectId], @kernel.CancelReason) -> Array[(@kernel.EffectId, @kernel.CancelDisposition)]
+pub async fn FakeRuntime::compact(Self, @kernel.InvocationScope, ArrayView[@kernel.Message], Array[@kernel.ToolDef], Json, @kernel.CompactTrigger) -> Result[@kernel.CompactResult, @kernel.ModelFailure]
+pub async fn FakeRuntime::execute_tool(Self, @runtime.EffectContext) -> @kernel.ToolOutcome
+pub fn FakeRuntime::supports_bound_tools(Self) -> Bool
+pub impl @runtime.Runtime for FakeRuntime
+
+// Type aliases
+
+// Traits

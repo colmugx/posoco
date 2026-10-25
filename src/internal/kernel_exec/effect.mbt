@@ -51,6 +51,8 @@ pub(all) struct ExecuteToolPayload {
   arguments : Json
   owner : @kernel.OwnerId
   catalog_version : CatalogVersion
+  /// None for model calls; child identity is allocated by the reducer.
+  parent : (EffectId, EffectId, Int32)?
 } derive(Eq, Debug)
 
 ///|

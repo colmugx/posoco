@@ -25,6 +25,9 @@ pub(all) enum Capability {
   /// The Agent-owned session wakeup capability (extension-requested
   /// ordinary turns executed through the single-operation lifecycle).
   Wakeup
+  /// The Agent-owned dynamic tool contribution capability, bound to the
+  /// declaring manifest's owner id.
+  ToolContribution
 } derive(Eq, Debug)
 
 ///|
@@ -61,6 +64,9 @@ pub(all) struct ExtensionManifest {
   ui : Array[&UiPort]
   prompt_contributors : Array[&SystemPromptContributor]
   requires : Array[Capability]
+  /// Owners this extension's tools may invoke. Empty means deny all;
+  /// every allowed child still passes ordinary tool governance.
+  tool_call_owners : Array[String]
 }
 
 ///|
@@ -79,6 +85,7 @@ pub fn ExtensionManifest::ExtensionManifest(
   ui~ : Array[&UiPort] = [],
   prompt_contributors~ : Array[&SystemPromptContributor] = [],
   requires~ : Array[Capability] = [],
+  tool_call_owners~ : Array[String] = [],
 ) -> ExtensionManifest {
   {
     id,
@@ -95,6 +102,7 @@ pub fn ExtensionManifest::ExtensionManifest(
     ui,
     prompt_contributors,
     requires,
+    tool_call_owners,
   }
 }
 

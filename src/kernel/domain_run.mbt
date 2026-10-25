@@ -269,8 +269,11 @@ pub impl Show for CancelReason with fn to_string(self : CancelReason) -> String 
 /// What an adapter reports after a `CancelOutstanding` effect. The reducer
 /// never waits for this.
 pub(all) enum CancelDisposition {
-  /// Cancel signal propagated.
+  /// Cancel signal propagated; execution may still be running.
   Propagated
+  /// Cancellation completed and the executor confirms work has stopped.
+  /// This says nothing about rollback of side effects already performed.
+  Stopped
   /// Cancel not propagated; only stops the reducer waiting.
   NotPropagated
   /// Effect already settled before cancel arrived.
@@ -290,6 +293,7 @@ pub extend CancelDisposition with Show::{to_string, output}
 pub impl Show for CancelDisposition with fn to_string(self : CancelDisposition) -> String {
   match self {
     Propagated => "Propagated"
+    Stopped => "Stopped"
     NotPropagated => "NotPropagated"
     AlreadySettled => "AlreadySettled"
   }

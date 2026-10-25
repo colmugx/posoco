@@ -55,6 +55,7 @@ fn HookRewriteHost::mutated_arguments(self : HookRewriteHost) -> Array[Json] {
 
 ///|
 pub extend HookRewriteHost with @kernel_exec.HostRuntime::{
+  execute_tool_scoped,
   cancel_effects,
   execute_tool,
   call_model,
@@ -314,6 +315,9 @@ fn hook_config_with_subscribers(
     subscribers,
     stream_chunks: None,
     hooks,
+    tool_call_owners: Map::from_array([]),
+    max_tool_depth: None,
+    bound_tool_names: fn() { [] },
     max_iterations: Some(50),
     commands: [],
     session_store: None,
@@ -471,7 +475,7 @@ async test "hook_rewrite/final_schema_and_owner_are_used" {
   let mut saw_final_event = false
   for envelope in subscriber.received() {
     match envelope.event() {
-      ToolCompleted(call~, outcome~) => {
+      ToolCompleted(call~, outcome~, ..) => {
         assert_eq(call.name.to_string(), "target")
         assert_eq(call.arguments, final_args)
         assert_true(outcome is Success(..))
@@ -536,7 +540,7 @@ async test "hook_rewrite/provider_argument_mutation_does_not_change_observer_cal
   let mut saw_final_event = false
   for envelope in subscriber.received() {
     match envelope.event() {
-      ToolCompleted(call~, outcome~) => {
+      ToolCompleted(call~, outcome~, ..) => {
         assert_eq(call.name.to_string(), "target")
         assert_eq(call.arguments, final_args)
         assert_true(outcome is Success(..))

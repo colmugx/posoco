@@ -109,7 +109,7 @@ impl @puppetry.EventSubscriber for SessionCheckpointSubscriber with fn on_event(
           ),
         )
       }
-    ToolCompleted(call~, outcome~) =>
+    ToolCompleted(call~, outcome~, parent_effect_id=None) =>
       if !self.dirty.contains(session_id) {
         self.append_committed_message(
           session_id,
@@ -284,6 +284,37 @@ impl @puppetry.EventSubscriber for AgentEventSubscriber with fn on_event(
             )
         }
       }
+    ToolChildDeclared(
+      effect_id~,
+      parent_effect_id~,
+      root_effect_id~,
+      depth~,
+      call~
+    ) =>
+      self.emit(
+        Some(scope),
+        ToolChildDeclared(
+          call_id=call.call_id,
+          effect_id~,
+          parent_effect_id~,
+          root_effect_id~,
+          depth~,
+        ),
+      )
+    ToolChildAbandoned(call~, ..) => {
+      let key = call.call_id.to_string()
+      if !self.pending_calls.contains(key) {
+        raise ContractViolation(
+          subscriber_id="agent_committed_event_projection",
+          detail="abandoned child without committed declaration",
+        )
+      }
+      self.pending_calls.remove(key)
+      self.emit(
+        Some(scope),
+        ToolCallAbandoned(call~, reason="run cancelled before child completion"),
+      )
+    }
     ToolCallApproved(model_step_id=_, call~, consent_scope~) =>
       self.emit(Some(scope), ToolCallApproved(call~, consent_scope~))
     ToolWaveStarted(calls~, ..) =>
@@ -322,7 +353,7 @@ impl @puppetry.EventSubscriber for AgentEventSubscriber with fn on_event(
         self.pending_calls[snapshot.call_id.to_string()] = snapshot
         self.emit(Some(scope), ToolCallPending(snapshot))
       }
-    ToolCompleted(call~, outcome~) =>
+    ToolCompleted(call~, outcome~, ..) =>
       self.emit_tool_result(scope, call, outcome)
     _ => ()
   }

@@ -15,12 +15,40 @@
 /// runtime later receives in `cancel_effects`. Runtimes that propagate
 /// cancellation MUST key their in-flight execution state (e.g. an
 /// `AbortController`) by `effect_id`, not by execution order or call content.
-pub(all) struct EffectContext {
+pub struct EffectContext {
   effect_id : @kernel.EffectId
   owner : @kernel.OwnerId
   call_id : @kernel.CallId
   tool_name : @kernel.ToolName
   arguments : Json
+  priv bound_tool : &@port.ToolProvider?
+  priv tool_context : (((&@port.ToolCancellable) -> Unit) -> @port.ToolCallContext)?
+}
+
+///|
+/// Hosts forwarding an effect must forward this context unchanged. This
+/// constructor creates an unbound legacy effect unless a framework supplies
+/// an operation-captured provider.
+pub fn EffectContext::EffectContext(
+  effect_id~ : @kernel.EffectId,
+  owner~ : @kernel.OwnerId,
+  call_id~ : @kernel.CallId,
+  tool_name~ : @kernel.ToolName,
+  arguments~ : Json,
+  bound_tool? : &@port.ToolProvider,
+  tool_context? : ((&@port.ToolCancellable) -> Unit) -> @port.ToolCallContext,
+) -> EffectContext {
+  { effect_id, owner, call_id, tool_name, arguments, bound_tool, tool_context, }
+}
+
+///|
+pub fn EffectContext::has_bound_tool(self : EffectContext) -> Bool {
+  self.bound_tool is Some(_)
+}
+
+///|
+impl Runtime with fn supports_bound_tools(_self) -> Bool {
+  false
 }
 
 ///|
@@ -32,6 +60,11 @@ pub(all) struct EffectContext {
 /// they need (typically `execute_tool` + `cancel_effects`); see
 /// `docs/RUNTIME.md`.
 pub(open) trait Runtime {
+  /// True only if the entire runtime chain preserves bound contexts and its
+  /// final executor honors them. An unsupported chain is rejected before a
+  /// dynamic contribution can be published.
+  fn supports_bound_tools(Self) -> Bool = _
+
   /// Execute a `CallModel` effect. `on_chunk` is the live streaming sink;
   /// `None` means the product did not enable streaming. `scope` carries the
   /// run/session identity; `scope.effect_id` is always `Some` here and hosts
@@ -54,10 +87,12 @@ pub(open) trait Runtime {
   /// reducer-side category).
   async fn execute_tool(Self, ctx : EffectContext) -> @kernel.ToolOutcome
 
-  /// Best-effort cancel. Fire-and-forget from the loop's perspective; the
-  /// returned dispositions are recorded for observability. MUST be
-  /// idempotent per effect id: cancelling an already-settled effect reports
-  /// `AlreadySettled`, never raises.
+  /// Idempotent cancellation with one disposition per requested effect.
+  /// `Propagated` acknowledges signalling, not termination. Return `Stopped`
+  /// only after confirming execution stopped, or `AlreadySettled` if it had
+  /// already finished. An unresolved tool execution prevents Agent reuse.
+  /// Core bounds each cleanup attempt; failures remain visible and retryable
+  /// during shutdown. Never report a terminal disposition on cleanup failure.
   async fn cancel_effects(
     Self,
     effect_ids : Array[@kernel.EffectId],
