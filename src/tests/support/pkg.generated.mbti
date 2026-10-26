@@ -57,7 +57,7 @@ pub(all) struct FakeRuntime {
   mut abort_on_tool : Bool
   mut follow_up_on_tool : Bool
   mut follow_up_sent : Bool
-  mut on_first_execute : (() -> Unit)?
+  mut on_first_execute : (async () -> Unit)?
 }
 pub fn FakeRuntime::FakeRuntime(@runtime.PortRuntime) -> Self
 pub async fn FakeRuntime::call_model(Self, @kernel.InvocationScope, ArrayView[@kernel.Message], Array[@kernel.ToolDef], Json, ((@types.StreamChunk) -> Unit)?) -> Result[@kernel.ModelCallResult, @kernel.ModelFailure]

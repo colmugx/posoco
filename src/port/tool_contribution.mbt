@@ -15,20 +15,98 @@
 ///   owner's active group). A rejected group changes nothing.
 /// - `replace` reads the provider's definitions exactly once and deep-copies
 ///   them; the accepted revision is bound to that provider as its executor.
+/// - Both `replace` and `withdraw` are async because the committed change can
+///   immediately retire superseded versions that no operation references.
+///   Every candidate check and the authoritative publish/withdraw happen
+///   before the first await, so a failure never half-changes the directory.
 /// - Accepted changes affect future operations only. An operation that was
 ///   already admitted keeps the catalog and execution table it captured at
 ///   admission, including follow-up turns drained by the same operation.
-/// - `withdraw` is a soft withdrawal: future operations no longer see the
-///   group, admitted operations keep using it.
+/// - `withdraw` defaults to a soft withdrawal: future operations no longer see
+///   the group, admitted operations keep using it. A hard withdrawal revokes
+///   every live version of the owner, so no operation can start a new call
+///   through them and affected in-flight effects are cancelled.
+/// - Retire callbacks must be bounded and safe to retry. A failed retire keeps
+///   the version in the pending-cleanup set, is reported on the actual commit
+///   ACK, and is retried by later commits, operation settlement and shutdown.
 /// - After `Agent::shutdown` every change is rejected with `Closed`.
+
+///|
+/// What a withdraw request means for still-live versions of the owner.
+pub(all) enum ToolWithdrawMode {
+  /// Hide the group from future operations. Admitted operations keep working.
+  Soft
+  /// Hide the group and revoke every live version: no operation may start a
+  /// new call through them, and affected in-flight effects are cancelled.
+  Hard
+} derive(Eq, Debug)
+
+///|
+pub extend ToolWithdrawMode with Eq::{not_equal, equal}
+
+///|
+pub extend ToolWithdrawMode with Debug::{to_repr}
+
+///|
+pub extend ToolWithdrawMode with Show::{to_string, output}
+
+///|
+pub impl Show for ToolWithdrawMode with fn to_string(self : ToolWithdrawMode) -> String {
+  match self {
+    Soft => "Soft"
+    Hard => "Hard"
+  }
+}
+
+///|
+/// Directory state of one owner slot, as reported by an ACK or a query.
+pub(all) enum ToolContributionState {
+  /// The owner's group is part of the captured directory.
+  Active
+  /// The owner's group is no longer captured. Its versions stay alive only
+  /// while an operation or an unconfirmed execution still references them.
+  Withdrawn
+  /// The Agent shut down; contribution handles are closed.
+  Closed
+} derive(Eq, Debug)
+
+///|
+pub extend ToolContributionState with Eq::{not_equal, equal}
+
+///|
+pub extend ToolContributionState with Debug::{to_repr}
+
+///|
+pub extend ToolContributionState with Show::{to_string, output}
+
+///|
+pub impl Show for ToolContributionState with fn to_string(
+  self : ToolContributionState,
+) -> String {
+  match self {
+    Active => "Active"
+    Withdrawn => "Withdrawn"
+    Closed => "Closed"
+  }
+}
+
+///|
+/// Optional version cleanup callback supplied by the publishing owner. Core
+/// calls it once the version is neither active nor referenced by any operation
+/// or unconfirmed execution. Return `Err(detail)` for a failed cleanup; core
+/// also bounds the call. Either failure keeps the version pending for a later
+/// retry, so the callback must be safe to run again.
+pub type ToolRetire = async () -> Result[Unit, String]
 
 ///|
 /// Acknowledgement of one accepted contribution commit. `revision` is
 /// core-owned and monotonic per owner; it is distinct from the catalog
-/// version an operation captures at admission.
+/// version an operation captures at admission. `state` is the owner slot's
+/// state after the commit.
 pub(all) struct ToolContributionCommit {
   owner : String
   revision : Int32
+  state : ToolContributionState
 } derive(Eq, Debug)
 
 ///|
@@ -47,6 +125,14 @@ pub(all) enum ToolContributionError {
   /// or empty name, malformed schema). The previously accepted revision, if
   /// any, stays in effect.
   Rejected(reason~ : String)
+  /// The change committed and stays committed, but retiring a superseded
+  /// version failed or timed out. `revision`/`state` describe the committed
+  /// slot; the version stays in the pending-cleanup set for a later retry.
+  CleanupPending(
+    revision~ : Int32,
+    state~ : ToolContributionState,
+    detail~ : String
+  )
 } derive(Eq, Debug)
 
 ///|
@@ -66,18 +152,24 @@ pub impl Show for ToolContributionError with fn to_string(
     Closed => "ToolContributionError::Closed"
     NotContributed => "ToolContributionError::NotContributed"
     Rejected(reason~) => "ToolContributionError::Rejected(\{reason})"
+    CleanupPending(revision~, state~, detail~) =>
+      "ToolContributionError::CleanupPending(revision=\{revision}, state=\{state.to_string()}, detail=\{detail})"
   }
 }
 
 ///|
 pub struct ToolContributions {
   priv owner_ : String
-  priv replace_ : (&ToolProvider) -> Result[
+  priv replace_ : async (&ToolProvider, ToolRetire?) -> Result[
     ToolContributionCommit,
     ToolContributionError,
-  ]
-  priv withdraw_ : () -> Result[ToolContributionCommit, ToolContributionError]
+  ] noraise
+  priv withdraw_ : async (ToolWithdrawMode) -> Result[
+    ToolContributionCommit,
+    ToolContributionError,
+  ] noraise
   priv revision_ : () -> Int32?
+  priv state_ : () -> ToolContributionState
 }
 
 ///|
@@ -87,21 +179,27 @@ pub fn ToolContributions::owner(self : ToolContributions) -> String {
 }
 
 ///|
-pub fn ToolContributions::replace(
+/// Atomically replace this owner's contributed group. `retire` becomes the
+/// cleanup callback for the newly published version's own resources.
+pub async fn ToolContributions::replace(
   self : ToolContributions,
   provider~ : &ToolProvider,
-) -> Result[ToolContributionCommit, ToolContributionError] {
-  (self.replace_)(provider)
+  retire? : ToolRetire,
+) -> Result[ToolContributionCommit, ToolContributionError] noraise {
+  (self.replace_)(provider, retire)
 }
 
 ///|
-/// Soft-withdraw this owner's contributed group. The transition increments
-/// revision; a repeated withdrawal returns the same revision. The tombstone
-/// retains the sequence so a later `replace` continues it.
-pub fn ToolContributions::withdraw(
+/// Withdraw this owner's contributed group. The transition increments
+/// revision; repeating the same withdrawal mode returns the current revision
+/// unchanged. A hard withdrawal after a soft one is a new revocation fact and
+/// therefore advances the revision. The tombstone retains the sequence so a
+/// later `replace` continues it.
+pub async fn ToolContributions::withdraw(
   self : ToolContributions,
-) -> Result[ToolContributionCommit, ToolContributionError] {
-  (self.withdraw_)()
+  mode~ : ToolWithdrawMode = Soft,
+) -> Result[ToolContributionCommit, ToolContributionError] noraise {
+  (self.withdraw_)(mode)
 }
 
 ///|
@@ -112,21 +210,34 @@ pub fn ToolContributions::revision(self : ToolContributions) -> Int32? {
 }
 
 ///|
+/// The owner slot's current state: `Active`, `Withdrawn` or `Closed`.
+pub fn ToolContributions::state(
+  self : ToolContributions,
+) -> ToolContributionState {
+  (self.state_)()
+}
+
+///|
 /// Framework construction hook. Product extensions obtain the value through
 /// `CompositionView` and do not need this constructor.
 pub fn ToolContributions::from_callbacks(
   owner~ : String,
-  replace~ : (&ToolProvider) -> Result[
+  replace~ : async (&ToolProvider, ToolRetire?) -> Result[
     ToolContributionCommit,
     ToolContributionError,
-  ],
-  withdraw~ : () -> Result[ToolContributionCommit, ToolContributionError],
+  ] noraise,
+  withdraw~ : async (ToolWithdrawMode) -> Result[
+    ToolContributionCommit,
+    ToolContributionError,
+  ] noraise,
   revision~ : () -> Int32?,
+  state~ : () -> ToolContributionState,
 ) -> ToolContributions {
   {
     owner_: owner,
     replace_: replace,
     withdraw_: withdraw,
     revision_: revision,
+    state_: state,
   }
 }

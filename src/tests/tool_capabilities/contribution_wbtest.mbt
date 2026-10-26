@@ -245,6 +245,7 @@ async test "tool_contribution/rejected_group_keeps_the_accepted_revision" {
     ]),
   )
   let publisher = ContributionPublisher::new(v1 as &@port.ToolProvider)
+  publisher.publish_at_start = false
   let model = ScriptedModel([
     Respond(tk_tool_call_response("dyn_echo", "call_1", Json::null())),
     Respond(tk_stop_response("done")),
@@ -259,6 +260,7 @@ async test "tool_contribution/rejected_group_keeps_the_accepted_revision" {
     ],
     config=tk_config(),
   )
+  ignore(publisher.publish(v1 as &@port.ToolProvider))
   guard publisher
     .capability()
     .replace(provider=conflicting as &@port.ToolProvider)

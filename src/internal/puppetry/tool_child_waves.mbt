@@ -79,7 +79,6 @@ async fn Puppet::start_ready_children(
     for effect in ready {
       let id = effect.effect_id().to_int()
       tree.waiting.remove(id)
-      tree.running[id] = effect
       tree.launch(group, effect, context, self.config.tool_call_owners)
     }
   }

@@ -134,10 +134,37 @@ pub fn ToolCallSnapshot::equal(Self, Self) -> Bool
 pub fn ToolCallSnapshot::not_equal(Self, Self) -> Bool
 pub fn ToolCallSnapshot::to_repr(Self) -> @debug.Repr
 
+pub(all) enum ToolCatalogChange {
+  Published
+  Withdrawn
+  Captured
+  CleanupFailed
+} derive(Eq, @debug.Debug)
+pub fn ToolCatalogChange::equal(Self, Self) -> Bool
+pub fn ToolCatalogChange::not_equal(Self, Self) -> Bool
+pub fn ToolCatalogChange::output(Self, &Logger) -> Unit
+pub fn ToolCatalogChange::to_repr(Self) -> @debug.Repr
+pub fn ToolCatalogChange::to_string(Self) -> String
+pub impl Show for ToolCatalogChange
+
+pub(all) struct ToolCatalogChangedPayload {
+  change : ToolCatalogChange
+  owner : String
+  revision : Int32?
+  catalog_version : Int32?
+  tool_count : Int32
+  operation_id : String?
+  detail : String?
+} derive(Eq, @debug.Debug)
+pub fn ToolCatalogChangedPayload::equal(Self, Self) -> Bool
+pub fn ToolCatalogChangedPayload::not_equal(Self, Self) -> Bool
+pub fn ToolCatalogChangedPayload::to_repr(Self) -> @debug.Repr
+
 pub(all) enum TurnEvent {
   TurnStarted
   ModelRequestStarted
   ToolChildDeclared(call_id~ : @kernel.CallId, effect_id~ : @kernel.EffectId, parent_effect_id~ : @kernel.EffectId, root_effect_id~ : @kernel.EffectId, depth~ : Int32)
+  ToolCatalogChanged(payload~ : ToolCatalogChangedPayload)
   ToolCallPending(@kernel.ToolCall)
   ToolCallApproved(call~ : @kernel.ToolCall, consent_scope~ : String?)
   ToolCallStarted(call~ : @kernel.ToolCall)

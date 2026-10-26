@@ -110,11 +110,15 @@ fn contribution_result_texts(
 }
 
 ///|
-/// Extension-side publisher: publishes one provider group from
-/// `on_compose` and keeps the accepted capability so a test can replace or
-/// withdraw it while the Agent is alive.
+/// Extension-side publisher: takes the capability in `on_compose` (which only
+/// wires handles) and publishes its first group from the managed async
+/// `on_start` scope. The accepted capability stays reachable so a test can
+/// replace or withdraw it while the Agent is alive.
 priv struct ContributionPublisher {
   initial : &@port.ToolProvider
+  /// Publish `initial` from the managed `on_start` scope. Tests that need to
+  /// publish at a precise moment clear this and call `publish` themselves.
+  mut publish_at_start : Bool
   mut contributions : @port.ToolContributions?
   mut published : @port.ToolContributionCommit?
 }
@@ -123,7 +127,12 @@ priv struct ContributionPublisher {
 fn ContributionPublisher::new(
   provider : &@port.ToolProvider,
 ) -> ContributionPublisher {
-  { initial: provider, contributions: None, published: None, }
+  {
+    initial: provider,
+    publish_at_start: true,
+    contributions: None,
+    published: None,
+  }
 }
 
 ///|
@@ -137,11 +146,12 @@ fn ContributionPublisher::capability(
 }
 
 ///|
-fn ContributionPublisher::publish(
+async fn ContributionPublisher::publish(
   self : ContributionPublisher,
   provider : &@port.ToolProvider,
+  retire? : @port.ToolRetire,
 ) -> @port.ToolContributionCommit {
-  let commit = match self.capability().replace(provider~) {
+  let commit = match self.capability().replace(provider~, retire?) {
     Ok(commit) => commit
     Err(error) =>
       abort("tool contribution publish rejected: " + error.to_string())
@@ -156,15 +166,21 @@ impl @port.Lifecycle for ContributionPublisher with fn on_compose(
   view : @port.CompositionView,
 ) {
   match view.tool_contributions() {
-    Some(contributions) => {
-      self.contributions = Some(contributions)
-      ignore(self.publish(self.initial))
-    }
+    Some(contributions) => self.contributions = Some(contributions)
     None =>
       raise @error.CompositionError::ExtensionComposeFailed(
         manifest_id="contrib",
         detail="Capability::ToolContribution was not delivered",
       )
+  }
+}
+
+///|
+impl @port.Lifecycle for ContributionPublisher with fn on_start(
+  self : ContributionPublisher,
+) {
+  if self.publish_at_start {
+    ignore(self.publish(self.initial))
   }
 }
 

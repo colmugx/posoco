@@ -19,6 +19,8 @@ pub using @types {
   type StreamAccumulator,
   type Session,
   type TurnEvent,
+  type ToolCatalogChange,
+  type ToolCatalogChangedPayload,
   type TurnResult,
   type EventScope,
 }
@@ -96,6 +98,9 @@ pub using @port {
   type ToolContributions,
   type ToolContributionCommit,
   type ToolContributionError,
+  type ToolContributionState,
+  type ToolWithdrawMode,
+  type ToolRetire,
 }
 
 ///|

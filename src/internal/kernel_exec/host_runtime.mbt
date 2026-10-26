@@ -30,6 +30,7 @@ pub(all) struct ToolExecutionScope {
   tools : () -> Array[@kernel.ToolDef]
   invoke : async (String, Json) -> @kernel.InvocationResult
   active : () -> Bool
+  before_start : () -> @kernel.NotExecutedReason?
 }
 
 ///|

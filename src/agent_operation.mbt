@@ -174,13 +174,20 @@ async fn[X] AgentRuntime::execute_operation(
         let startup : Result[Unit, @error.AgentError] = Ok(
           if !self.start_notified {
             self.notify_start_if_first()
-            self.capture_tool_contributions()
+            self.capture_tool_contributions(operation_id=admission.operation_id)
+            self.acquire_operation_versions()
           },
         ) catch {
           error => Err(error)
         }
         let result = match startup {
-          Ok(_) => body()
+          Ok(_) => {
+            // Retry a retire that a previous commit left pending. The
+            // directory itself is already committed, so this cannot change it,
+            // and a failure here is only a secondary diagnostic.
+            self.retire_pending_versions()
+            body()
+          }
           Err(error) => Err(error)
         }
         body_outcome.val = Some(result)
@@ -426,9 +433,13 @@ fn AgentRuntime::admit_operation(
   // Startup may publish dynamic tools asynchronously. Its first operation
   // holds this guard, then captures once after startup; later admissions
   // keep their synchronous pre-await capture.
+  // The admitted operation gets a fresh revocation fact set: only versions
+  // hard-withdrawn while this operation runs can refuse its launches.
+  self.tool_revocations.reset()
   if self.start_notified {
-    self.capture_tool_contributions()
+    self.capture_tool_contributions(operation_id=admission.operation_id)
   }
+  self.acquire_operation_versions()
   self.turn_active = true
   self.operations.execution = Some({
     operation_id: admission.operation_id,
@@ -466,6 +477,9 @@ fn AgentRuntime::release_operation(
     Some(active) if active.operation_id == admission.operation_id => {
       self.turn_active = false
       self.operations.current = None
+      // Fallback for unwind paths that never reached the managed settle step:
+      // the lease is always given back (or retained for unknown executions).
+      self.release_operation_versions()
       match self.operations.execution {
         Some(execution) if execution.operation_id == admission.operation_id => {
           // The worker fully unwound before this release ran; mark settled

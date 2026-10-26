@@ -384,6 +384,7 @@ pub fn ToolCallContext::tools(Self) -> Array[@kernel.ToolDef]
 pub(all) struct ToolContributionCommit {
   owner : String
   revision : Int32
+  state : ToolContributionState
 } derive(Eq, @debug.Debug)
 pub fn ToolContributionCommit::equal(Self, Self) -> Bool
 pub fn ToolContributionCommit::not_equal(Self, Self) -> Bool
@@ -393,6 +394,7 @@ pub(all) enum ToolContributionError {
   Closed
   NotContributed
   Rejected(reason~ : String)
+  CleanupPending(revision~ : Int32, state~ : ToolContributionState, detail~ : String)
 } derive(Eq, @debug.Debug)
 pub fn ToolContributionError::equal(Self, Self) -> Bool
 pub fn ToolContributionError::not_equal(Self, Self) -> Bool
@@ -401,14 +403,27 @@ pub fn ToolContributionError::to_repr(Self) -> @debug.Repr
 pub fn ToolContributionError::to_string(Self) -> String
 pub impl Show for ToolContributionError
 
+pub(all) enum ToolContributionState {
+  Active
+  Withdrawn
+  Closed
+} derive(Eq, @debug.Debug)
+pub fn ToolContributionState::equal(Self, Self) -> Bool
+pub fn ToolContributionState::not_equal(Self, Self) -> Bool
+pub fn ToolContributionState::output(Self, &Logger) -> Unit
+pub fn ToolContributionState::to_repr(Self) -> @debug.Repr
+pub fn ToolContributionState::to_string(Self) -> String
+pub impl Show for ToolContributionState
+
 pub struct ToolContributions {
   // private fields
 }
-pub fn ToolContributions::from_callbacks(owner~ : String, replace~ : (&ToolProvider) -> Result[ToolContributionCommit, ToolContributionError], withdraw~ : () -> Result[ToolContributionCommit, ToolContributionError], revision~ : () -> Int32?) -> Self
+pub fn ToolContributions::from_callbacks(owner~ : String, replace~ : async (&ToolProvider, (async () -> Result[Unit, String])?) -> Result[ToolContributionCommit, ToolContributionError] noraise, withdraw~ : async (ToolWithdrawMode) -> Result[ToolContributionCommit, ToolContributionError] noraise, revision~ : () -> Int32?, state~ : () -> ToolContributionState) -> Self
 pub fn ToolContributions::owner(Self) -> String
-pub fn ToolContributions::replace(Self, provider~ : &ToolProvider) -> Result[ToolContributionCommit, ToolContributionError]
+pub async fn ToolContributions::replace(Self, provider~ : &ToolProvider, retire? : async () -> Result[Unit, String]) -> Result[ToolContributionCommit, ToolContributionError] noraise
 pub fn ToolContributions::revision(Self) -> Int32?
-pub fn ToolContributions::withdraw(Self) -> Result[ToolContributionCommit, ToolContributionError]
+pub fn ToolContributions::state(Self) -> ToolContributionState
+pub async fn ToolContributions::withdraw(Self, mode? : ToolWithdrawMode) -> Result[ToolContributionCommit, ToolContributionError] noraise
 
 pub(all) enum ToolDecision {
   Approve(call~ : @kernel.ToolCall)
@@ -420,6 +435,17 @@ pub fn ToolDecision::output(Self, &Logger) -> Unit
 pub fn ToolDecision::to_repr(Self) -> @debug.Repr
 pub fn ToolDecision::to_string(Self) -> String
 pub impl Show for ToolDecision
+
+pub(all) enum ToolWithdrawMode {
+  Soft
+  Hard
+} derive(Eq, @debug.Debug)
+pub fn ToolWithdrawMode::equal(Self, Self) -> Bool
+pub fn ToolWithdrawMode::not_equal(Self, Self) -> Bool
+pub fn ToolWithdrawMode::output(Self, &Logger) -> Unit
+pub fn ToolWithdrawMode::to_repr(Self) -> @debug.Repr
+pub fn ToolWithdrawMode::to_string(Self) -> String
+pub impl Show for ToolWithdrawMode
 
 pub(all) enum UiBody {
   Text(String)
@@ -532,6 +558,7 @@ pub fn WakeupTicket::not_equal(Self, Self) -> Bool
 pub fn WakeupTicket::to_repr(Self) -> @debug.Repr
 
 // Type aliases
+pub type ToolRetire = async () -> Result[Unit, String]
 
 // Traits
 pub(open) trait CommandPort {

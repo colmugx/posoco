@@ -1,4 +1,11 @@
 ///|
+/// Whether any execution still lacks a confirmed terminal disposition. A
+/// version lease is retained while this is true.
+pub fn RuntimeHostShim::has_unconfirmed(self : RuntimeHostShim) -> Bool {
+  !self.incomplete.is_empty()
+}
+
+///|
 /// Runtime uses run-local effect ids. Admission cannot reuse those ids while
 /// an earlier execution has no confirmed terminal disposition.
 pub fn RuntimeHostShim::require_settled(

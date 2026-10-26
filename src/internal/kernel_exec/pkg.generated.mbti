@@ -501,6 +501,7 @@ pub(all) struct ToolExecutionScope {
   tools : () -> Array[@kernel.ToolDef]
   invoke : async (String, Json) -> @kernel.InvocationResult
   active : () -> Bool
+  before_start : () -> @kernel.NotExecutedReason?
 }
 
 pub(all) struct ToolFailedPayload {
@@ -515,6 +516,13 @@ pub(all) struct ToolFailedPayload {
 pub fn ToolFailedPayload::equal(Self, Self) -> Bool
 pub fn ToolFailedPayload::not_equal(Self, Self) -> Bool
 pub fn ToolFailedPayload::to_repr(Self) -> @debug.Repr
+
+pub struct ToolLaunchGate {
+  // private fields
+}
+pub fn ToolLaunchGate::ToolLaunchGate() -> Self
+pub fn ToolLaunchGate::record_refusal(Self, String, Int32, @kernel.NotExecutedReason) -> Unit
+pub fn ToolLaunchGate::take_refusal(Self, String, Int32) -> @kernel.NotExecutedReason?
 
 pub(all) struct TranscriptRewritePayload {
   rewritten_messages : Array[@kernel.Message]

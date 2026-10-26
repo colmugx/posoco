@@ -3,6 +3,9 @@
 pub struct ToolEntry {
   definition : @kernel.ToolDef
   provider : &@port.ToolProvider?
+  /// Contributed version this entry belongs to; `None` for base/static entries
+  /// that have no version lifetime.
+  version : Int32?
 }
 
 ///|
@@ -11,7 +14,11 @@ pub fn ToolEntry::bound(
   owner : String,
   provider : &@port.ToolProvider,
 ) -> ToolEntry {
-  { definition: owned_tool_def(definition, owner), provider: Some(provider), }
+  {
+    definition: owned_tool_def(definition, owner),
+    provider: Some(provider),
+    version: None,
+  }
 }
 
 ///|
@@ -19,7 +26,7 @@ pub fn ToolEntry::legacy(
   definition : @kernel.ToolDef,
   provider : &@port.ToolProvider?,
 ) -> ToolEntry {
-  { definition: snapshot_tool_def(definition), provider, }
+  { definition: snapshot_tool_def(definition), provider, version: None, }
 }
 
 ///|

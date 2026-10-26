@@ -1,5 +1,6 @@
 import {
   "colmugx/posoco/kernel",
+  "moonbitlang/async",
   "colmugx/posoco/internal/kernel_exec",
   "colmugx/posoco/port",
   "colmugx/posoco/error",

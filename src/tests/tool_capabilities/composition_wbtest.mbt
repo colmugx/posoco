@@ -69,6 +69,10 @@ async test "tool_directory/static_and_dynamic_definitions_are_deep_copied_at_com
     calls: [],
   }
   let publisher = ContributionPublisher::new(dynamic_provider)
+  // Publish in a managed async scope while the originals are still intact, so
+  // the frozen definitions — not a later mutation — are what the operation
+  // captures.
+  publisher.publish_at_start = false
   let model = ScriptedModel([
     Respond(tk_tool_call_response("static_raw", "static", { "value": "text" })),
     Respond(
@@ -86,6 +90,7 @@ async test "tool_directory/static_and_dynamic_definitions_are_deep_copied_at_com
     ],
     config=tk_config(),
   )
+  ignore(publisher.publish(dynamic_provider))
   properties["value"] = { "type": "number" }
   static_provider.definitions[0] = tk_tool_def("changed_static", "changed")
   dynamic_provider.definitions[0] = tk_tool_def("changed_dynamic", "changed")
@@ -161,7 +166,7 @@ async test "tool_directory/source_and_binding_updates_share_operation_boundary" 
   )
   runtime.bound_support = true
   runtime.follow_up_on_tool = true
-  runtime.on_first_execute = Some(fn() {
+  runtime.on_first_execute = Some(async fn() {
     source.defs = [tk_tool_def("legacy_v2", "legacy")]
     source.revision += 1
     ignore(publisher.publish(replacement))
@@ -211,6 +216,8 @@ async test "tool_directory/renaming_and_owner_withdrawal_do_not_leave_stale_rout
   )
   let a = ContributionPublisher::new(old)
   let b = ContributionPublisher::new(other)
+  a.publish_at_start = false
+  b.publish_at_start = false
   let model = ScriptedModel([
     Respond(tk_tool_call_response("old", "stale", Json::null())),
     Respond(tk_tool_call_response("renamed", "new", Json::null())),
@@ -225,6 +232,8 @@ async test "tool_directory/renaming_and_owner_withdrawal_do_not_leave_stale_rout
     ],
     config=tk_config(),
   )
+  ignore(a.publish(old))
+  ignore(b.publish(other))
   guard a.capability().withdraw() is Ok(first) else {
     fail("withdraw rejected")
   }

@@ -69,6 +69,11 @@ pub struct Puppet {
   mut last_outcome : RunOutcome?
   mut auto_compact_attempt_version : Int32?
   context_states : Map[String, @types.ContextState]
+  /// Core-owned launch gate of the version-bound tool bindings. Installed by
+  /// the Agent before the first run; `None` keeps pure legacy behaviour.
+  mut launch_gate : @kernel_exec.ToolLaunchGate?
+  /// Revocation facts of the admitted operation's captured bindings.
+  mut tool_revocations : ToolRevocationFacts?
 }
 
 ///|
@@ -81,7 +86,21 @@ pub fn Puppet::Puppet(config : PuppetConfig) -> Puppet {
     last_outcome: None,
     auto_compact_attempt_version: None,
     context_states: Map::from_array([]),
+    launch_gate: None,
+    tool_revocations: None,
   }
+}
+
+///|
+/// Install the core launch gate and the operation revocation facts. Called once
+/// by the Agent after construction, before any prompt.
+pub fn Puppet::install_tool_lifecycle(
+  self : Puppet,
+  launch_gate : @kernel_exec.ToolLaunchGate,
+  tool_revocations : ToolRevocationFacts,
+) -> Unit {
+  self.launch_gate = Some(launch_gate)
+  self.tool_revocations = Some(tool_revocations)
 }
 
 ///|
@@ -152,6 +171,9 @@ pub fn Puppet::is_quiescent(self : Puppet) -> Bool {
 ///|
 /// Shut the pump down. Idempotent.
 pub fn Puppet::shutdown(self : Puppet) -> Unit raise PuppetError {
+  if self.phase_gate.phase() == Shutdown {
+    return
+  }
   // ShuttingDown rejects further commands; active runs are not forcibly
   // aborted.
   self.phase_gate = self.phase_gate.transition(ShuttingDown)

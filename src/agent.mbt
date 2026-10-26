@@ -263,6 +263,18 @@ priv struct AgentRuntime {
   /// declaring manifest). Empty and inert unless an extension declares
   /// `Capability::ToolContribution`.
   tool_contributions : ToolContributionRegistry
+  /// Revocations of the admitted operation's captured bindings.
+  tool_revocations : @puppetry.ToolRevocationFacts
+  /// Tool name → contributed version of the installed capture.
+  binding_versions : Ref[Map[String, Int32]]
+  /// Versions projected by the installed capture; an admitted operation
+  /// retains each of them once.
+  mut captured_versions : Array[Int32]
+  /// Lease held by the admitted operation.
+  mut operation_versions : Array[Int32]
+  /// Lease kept alive for executions whose termination is not confirmed. An
+  /// unknown execution must not release the version's resources.
+  mut retained_versions : Array[Int32]
   /// Only replaced at operation admission. Each effect receives its captured
   /// provider in a private Runtime context, not a mutable host name route.
   tool_bindings : Ref[Map[String, &@port.ToolProvider]]
@@ -572,8 +584,22 @@ fn AgentRuntime::compose(
     basic_tools,
     entries,
   ) = compose_tool_catalog(agg, catalog_source)
+  let launch_gate = @kernel_exec.ToolLaunchGate::ToolLaunchGate()
+  let tool_revocations = @puppetry.ToolRevocationFacts::ToolRevocationFacts()
+  let binding_versions : Ref[Map[String, Int32]] = Ref(Map::from_array([]))
   let tool_contributions = ToolContributionRegistry::ToolContributionRegistry(
     entries,
+    launcher=launch_gate,
+    on_change=change => emit_tool_catalog_change(agg.observers, change),
+    on_revoke=fn(versions, _names) {
+      let affected : Array[String] = []
+      for name, version in binding_versions.val {
+        if versions.contains(version) {
+          affected.push(name)
+        }
+      }
+      tool_revocations.add(affected)
+    },
   )
   let static_tools = tool_contributions.captured_tools()
   let composed_hooks = compose_hook_chain(agg, config, ui_projection)
@@ -686,8 +712,10 @@ fn AgentRuntime::compose(
     )
     entry.port.on_compose(view)
   }
+  let puppet = @puppetry.Puppet(puppet_config)
+  puppet.install_tool_lifecycle(launch_gate, tool_revocations)
   let runtime : AgentRuntime = {
-    puppet: Puppet(puppet_config),
+    puppet,
     model: agg.model,
     observers: agg.observers,
     hooks: composed_hooks,
@@ -707,6 +735,11 @@ fn AgentRuntime::compose(
     next_catalog_version: 2,
     basic_tool_defs: basic_defs,
     tool_contributions,
+    tool_revocations,
+    binding_versions,
+    captured_versions: [],
+    operation_versions: [],
+    retained_versions: [],
     tool_bindings,
     tool_runtime,
     next_run_seq: 1,
@@ -917,6 +950,24 @@ async fn AgentRuntime::shutdown(self : AgentRuntime) -> Unit {
     self.lifecycle[self.next_lifecycle_shutdown].on_shutdown()
     self.next_lifecycle_shutdown = self.next_lifecycle_shutdown - 1
   }
+  // Core-managed contribution versions retire last: every operation, managed
+  // task and extension shutdown above has already completed, so no new use can
+  // start. An extension is never asked to withdraw on a closed handle. A retire
+  // that fails keeps its pending slot, is reported as a cleanup failure, and
+  // leaves `shutdown_complete` false so a retry resumes the same versions
+  // instead of repeating already-retired ones.
+  self.release_retained_versions()
+  self.tool_contributions.begin_retire_all()
+  ignore(self.tool_contributions.retire_unreferenced())
+  let cleanup = self.tool_contributions.pending_cleanup()
+  if !cleanup.is_empty() {
+    raise @error.AgentError::Runtime(
+      @error.RuntimeError::InvocationFailed(
+        "tool version cleanup pending: \{cleanup.length()} version(s): " +
+        safe_error_label(cleanup[0].detail),
+      ),
+    )
+  }
   self.shutdown_complete = true
 }
 
@@ -997,6 +1048,7 @@ fn snapshot_turn_event(event : @types.TurnEvent) -> @types.TurnEvent {
     TurnStarted => TurnStarted
     ModelRequestStarted => ModelRequestStarted
     ToolChildDeclared(..) => event
+    ToolCatalogChanged(..) => event
     ToolCallPending(call) => ToolCallPending(snapshot_tool_call(call))
     ToolCallApproved(call~, consent_scope~) =>
       ToolCallApproved(call=snapshot_tool_call(call), consent_scope~)
@@ -1208,7 +1260,11 @@ async fn AgentRuntime::run_turn_with_mode(
   // catch below (a re-raising with_task_group can surface it raw), so the
   // guard and the operation must also release on unwind or the Agent stays
   // wedged busy.
-  errdefer self.release_operation(admission, Cancelled)
+  errdefer (if self.operations.current is Some(active) &&
+    active.operation_id == admission.operation_id {
+    self.retire_released_versions()
+    self.release_operation(admission, Cancelled)
+  })
   let result : Result[@types.TurnResult, @error.AgentError] = Ok(
     self.execute_operation(admission, async fn() -> Result[
       @types.TurnResult,
@@ -1249,6 +1305,10 @@ async fn AgentRuntime::run_turn_with_mode(
     Ok(_) => Completed
     Err(error) => error.operation_outcome()
   }
+  // Managed version settlement runs before the guard is released: the
+  // operation's lease is returned, unreferenced versions are retired, and a
+  // retire failure stays a secondary diagnostic instead of masking `result`.
+  self.retire_released_versions()
   self.release_operation(admission, outcome)
   match result {
     Ok(value) => value

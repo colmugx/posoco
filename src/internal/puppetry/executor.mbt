@@ -61,17 +61,33 @@ priv struct ExecutionContext {
   session_id : SessionId
   mailbox : &Mailbox
   tool_scope : @kernel_exec.ToolExecutionScope?
+  /// Core launch gate of the captured bindings; a refusal recorded here is the
+  /// trusted "provider never entered" fact.
+  launch_gate : @kernel_exec.ToolLaunchGate?
+  /// Revocations of the admitted operation's captured bindings.
+  revocations : ToolRevocationFacts?
 }
 
 ///|
 fn ExecutionContext::ExecutionContext(
   host : &@kernel_exec.HostRuntime,
-  catalog~ : @kernel_exec.ToolCatalogSnapshot,
+  catalog~ : ToolCatalogSnapshot,
   run_id~ : RunId,
   session_id~ : SessionId,
   mailbox~ : &Mailbox,
+  launch_gate? : @kernel_exec.ToolLaunchGate,
+  revocations? : ToolRevocationFacts,
 ) -> ExecutionContext {
-  { host, catalog, run_id, session_id, mailbox, tool_scope: None, }
+  {
+    host,
+    catalog,
+    run_id,
+    session_id,
+    mailbox,
+    tool_scope: None,
+    launch_gate,
+    revocations,
+  }
 }
 
 ///|
@@ -259,39 +275,65 @@ async fn execute_execute_tool(
     Err(error) =>
       raise EffectExecutionFailed(phase="ExecuteTool", cause=error.to_string())
   }
-  match outcome {
-    NotExecuted(reason~, ..) =>
-      // Host contract violation: surface a typed, observable failure.
-      ToolFailed(payload={
-        effect_id,
-        call_id: payload.call_id,
-        tool_name: payload.tool_name,
-        arguments: payload.arguments,
-        reason: "host returned NotExecuted: " + reason.to_string(),
-        runtime: Some(
-          Parse(reason="host returned NotExecuted: " + reason.to_string()),
-        ),
-        invariant_failure: None,
-      })
-    RuntimeFailure(error_category="MissingOwner", ..) =>
-      // A missing owner is a composition invariant, not a tool-level failure;
-      // the run must not continue with a broken catalog binding.
-      ToolFailed(payload={
-        effect_id,
-        call_id: payload.call_id,
-        tool_name: payload.tool_name,
-        arguments: payload.arguments,
-        reason: "missing owner: " + payload.owner.to_string(),
-        runtime: None,
-        invariant_failure: Some(MissingOwner(owner=payload.owner)),
-      })
-    _ =>
+  // A refusal our own launch gate recorded means the provider was never
+  // entered: that is a real, typed non-execution, not a host inventing
+  // `NotExecuted`. Anything else keeps the contract-violation treatment.
+  let gated = match outcome {
+    NotExecuted(..) =>
+      match ctx.launch_gate {
+        Some(gate) =>
+          gate.take_refusal(ctx.run_id.to_string(), effect_id.to_int())
+        None => None
+      }
+    _ => None
+  }
+  match gated {
+    Some(reason) =>
       ToolCompleted(payload={
         effect_id,
         call_id: payload.call_id,
         tool_name: payload.tool_name,
         arguments: payload.arguments,
-        outcome,
+        outcome: @kernel.ToolOutcome::NotExecuted(
+          reason~,
+          original_call_id=payload.call_id,
+        ),
       })
+    None =>
+      match outcome {
+        NotExecuted(reason~, ..) =>
+          // Host contract violation: surface a typed, observable failure.
+          ToolFailed(payload={
+            effect_id,
+            call_id: payload.call_id,
+            tool_name: payload.tool_name,
+            arguments: payload.arguments,
+            reason: "host returned NotExecuted: " + reason.to_string(),
+            runtime: Some(
+              Parse(reason="host returned NotExecuted: " + reason.to_string()),
+            ),
+            invariant_failure: None,
+          })
+        RuntimeFailure(error_category="MissingOwner", ..) =>
+          // A missing owner is a composition invariant, not a tool-level failure;
+          // the run must not continue with a broken catalog binding.
+          ToolFailed(payload={
+            effect_id,
+            call_id: payload.call_id,
+            tool_name: payload.tool_name,
+            arguments: payload.arguments,
+            reason: "missing owner: " + payload.owner.to_string(),
+            runtime: None,
+            invariant_failure: Some(MissingOwner(owner=payload.owner)),
+          })
+        _ =>
+          ToolCompleted(payload={
+            effect_id,
+            call_id: payload.call_id,
+            tool_name: payload.tool_name,
+            arguments: payload.arguments,
+            outcome,
+          })
+      }
   }
 }

@@ -1537,7 +1537,7 @@ async test "hook_turn_error_fires_on_before_tool_abort" {
 }
 
 ///|
-test "catalog: declared execution policy survives composition" {
+async test "catalog: declared execution policy survives composition" {
   let exclusive_def : @kernel.ToolDef = {
     ..tk_tool_def("mutating_tool", "mutates files"),
     policy: Exclusive,
@@ -1551,8 +1551,16 @@ test "catalog: declared execution policy survives composition" {
     [exclusive_def, parallel_def],
     Map::from_array([]),
   )
-  let catalog = build_agent_catalog([provider])
-  let defs = catalog.definitions()
+  let model = ScriptedModel([Respond(tk_stop_response("ok"))])
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="tools", tools=[provider]),
+    ],
+    config=tk_config(),
+  )
+  ignore(agent.run_turn(tk_user_msg("hello"), "execution-policy"))
+  let defs = model.received_tools[0]
   inspect(defs.length(), content="2")
   debug_inspect(defs[0].policy, content="Exclusive")
   debug_inspect(defs[1].policy, content="Parallel")

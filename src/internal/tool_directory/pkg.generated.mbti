@@ -24,27 +24,43 @@ pub fn tool_provenance(@kernel.ToolDef) -> String
 // Errors
 
 // Types and methods
+pub(all) enum ToolCatalogChange {
+  Published(owner~ : String, revision~ : Int32, tools~ : Array[String])
+  Withdrawn(owner~ : String, revision~ : Int32, mode~ : String)
+  CleanupFailed(owner~ : String, revision~ : Int32, detail~ : String)
+}
+
 pub struct ToolContributionRegistry {
   // private fields
 }
-pub fn ToolContributionRegistry::ToolContributionRegistry(Array[ToolEntry]) -> Self
+pub fn ToolContributionRegistry::ToolContributionRegistry(Array[ToolEntry], launcher? : @kernel_exec.ToolLaunchGate, on_change? : (ToolCatalogChange) -> Unit, on_revoke? : (Array[Int32], Array[String]) -> Unit) -> Self
 pub fn ToolContributionRegistry::accept_capture(Self, ToolDirectoryCapture) -> Unit
+pub fn ToolContributionRegistry::begin_retire_all(Self) -> Unit
 pub fn ToolContributionRegistry::capability(Self, String) -> @port.ToolContributions
 pub fn ToolContributionRegistry::captured_tools(Self) -> Map[String, &@port.ToolProvider]
 pub fn ToolContributionRegistry::close(Self) -> Unit
 pub fn ToolContributionRegistry::is_closed(Self) -> Bool
+pub fn ToolContributionRegistry::pending_cleanup(Self) -> Array[ToolRetireFailure]
 pub fn ToolContributionRegistry::prepare_capture(Self, @kernel.CatalogVersion, Array[&@port.PipelineHook]) -> ToolDirectoryCapture? raise @error.CompositionError
+pub fn ToolContributionRegistry::release_versions(Self, Array[Int32]) -> Unit
+pub async fn ToolContributionRegistry::replace(Self, String, &@port.ToolProvider, (async () -> Result[Unit, String])?) -> Result[@port.ToolContributionCommit, @port.ToolContributionError] noraise
 pub fn ToolContributionRegistry::replace_source(Self, Array[@kernel.ToolDef], @kernel.CatalogVersion) -> Unit raise @error.CompositionError
+pub fn ToolContributionRegistry::retain_versions(Self, Array[Int32]) -> Unit
+pub async fn ToolContributionRegistry::retire_unreferenced(Self, owner? : String) -> Array[ToolRetireFailure] noraise
+pub async fn ToolContributionRegistry::withdraw(Self, String, @port.ToolWithdrawMode) -> Result[@port.ToolContributionCommit, @port.ToolContributionError] noraise
 
 pub struct ToolDirectoryCapture {
   catalog : @kernel_exec.ToolCatalogSnapshot
   bindings : Map[String, &@port.ToolProvider]
   // private fields
 }
+pub fn ToolDirectoryCapture::binding_versions(Self) -> Map[String, Int32]
+pub fn ToolDirectoryCapture::versions(Self) -> Array[Int32]
 
 pub struct ToolEntry {
   definition : @kernel.ToolDef
   provider : &@port.ToolProvider?
+  version : Int32?
 }
 pub fn ToolEntry::bound(@kernel.ToolDef, String, &@port.ToolProvider) -> Self
 pub fn ToolEntry::legacy(@kernel.ToolDef, &@port.ToolProvider?) -> Self
@@ -54,6 +70,13 @@ pub struct ToolNameIndex {
 }
 pub fn ToolNameIndex::new() -> Self
 pub fn ToolNameIndex::record(Self, String, String) -> Array[String]?
+
+pub(all) struct ToolRetireFailure {
+  owner : String
+  revision : Int32
+  version : Int32
+  detail : String
+}
 
 // Type aliases
 

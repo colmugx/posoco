@@ -22,6 +22,8 @@ priv enum ToolTreeMessage {
   Request(EffectId, String, Json, ChildReply)
   Finished(Effect, Result[RunInput, PuppetError])
   Abort
+  /// The operation's captured bindings gained hard-revoked names.
+  Revocations
 }
 
 ///|
@@ -72,12 +74,19 @@ fn ToolTree::launch(
     abort("tool tree received a non-tool effect")
   }
   self.executing[effect_id.to_int()] = effect_id
+  self.running[effect_id.to_int()] = effect
   if self.child_replies.get(effect_id.to_int()) is Some(reply) {
     reply.started = true
   }
   let live = Ref(true)
   self.scopes[effect_id.to_int()] = live
   let allowed = owners.get(payload.owner.to_string()).unwrap_or([]).copy()
+  let revoked = fn() {
+    match context.revocations {
+      Some(facts) => self.is_revoked(effect_id, facts)
+      None => false
+    }
+  }
   let scope : @kernel_exec.ToolExecutionScope = {
     invocation: {
       session_id: context.session_id,
@@ -88,8 +97,22 @@ fn ToolTree::launch(
     parent_effect_id: payload.parent.map(p => p.0),
     root_effect_id: payload.parent.map(p => p.1).unwrap_or(effect_id),
     active: fn() { self.active.val && live.val },
+    before_start: fn() {
+      if revoked() {
+        if context.launch_gate is Some(gate) {
+          gate.record_refusal(
+            context.run_id.to_string(),
+            effect_id.to_int(),
+            Revoked,
+          )
+        }
+        Some(Revoked)
+      } else {
+        None
+      }
+    },
     tools: fn() {
-      if !self.active.val || !live.val {
+      if !self.active.val || !live.val || revoked() {
         return []
       }
       context.catalog
@@ -100,9 +123,9 @@ fn ToolTree::launch(
       .map(def => { ..def, input_schema: snapshot_json(def.input_schema), })
     },
     invoke: async fn(name, arguments) {
-      if !self.active.val || !live.val {
+      if !self.active.val || !live.val || revoked() {
         return Interrupted(
-          reason="parent tool has settled",
+          reason="parent tool has settled or been revoked",
           cancellation=AlreadySettled,
           side_effects_possible=false,
         )
@@ -183,6 +206,24 @@ async fn Puppet::execute_tool_tree(
         await_abort_requested(context.mailbox)
         tree.queue.put(Abort)
       })
+      // Hard withdrawal of a captured binding must reach in-flight effects.
+      // Only the watcher observes the fact; the tree loop owns cancellation and
+      // never fabricates a provider result.
+      match context.revocations {
+        Some(facts) => {
+          let mut seen = facts.generation()
+          group.spawn_bg(async fn() {
+            while true {
+              @async.sleep(effect_abort_poll_ms)
+              if facts.generation() != seen {
+                seen = facts.generation()
+                tree.queue.put(Revocations)
+              }
+            }
+          })
+        }
+        None => ()
+      }
       while roots.length() < wave.length() || !tree.child_replies.is_empty() {
         match tree.queue.get() {
           Abort => {
@@ -191,9 +232,32 @@ async fn Puppet::execute_tool_tree(
             group.return_immediately(ContinueWith(state))
             return ContinueWith(state)
           }
+          Revocations => {
+            // The cancellation report is the fact; a raised cleanup failure is
+            // preserved as the tree's primary error instead of being dropped.
+            let attempted : Result[Unit, PuppetError] = Ok(
+              cancel_revoked_effects(tree, context),
+            ) catch {
+              error => Err(tool_tree_error(error))
+            }
+            guard attempted is Ok(_) else {
+              returning.val = true
+              let error = attempted.unwrap_err()
+              if tree.cleanup_error is Some(detail) {
+                raise ExecutionCleanupFailed(primary=error, detail~)
+              }
+              raise error
+            }
+          }
           Request(parent_id, name, arguments, reply) => {
             let parent_live = tree.scopes.get(parent_id.to_int())
-            if parent_live is None || !parent_live.unwrap().val {
+            let parent_revoked = match context.revocations {
+              Some(facts) => tree.is_revoked(parent_id, facts)
+              None => false
+            }
+            if parent_live is None ||
+              !parent_live.unwrap().val ||
+              parent_revoked {
               reply.finish(
                 Interrupted(
                   reason="parent tool has settled",
@@ -251,7 +315,7 @@ async fn Puppet::execute_tool_tree(
             let mut rejection = pre_rejection
             let mut consent_scope : String? = None
             if rejection is None {
-              let finalized = @async.any([
+              let contenders : Array[async () -> FinalizedToolCall?] = [
                 async fn() {
                   Some(
                     finalize_tool_call(
@@ -259,6 +323,7 @@ async fn Puppet::execute_tool_tree(
                       self.config.hooks,
                       call,
                       direct=false,
+                      revocations?=self.tool_revocations,
                     ),
                   )
                 },
@@ -266,7 +331,26 @@ async fn Puppet::execute_tool_tree(
                   await_abort_requested(context.mailbox)
                   None
                 },
-              ])
+              ]
+              if context.revocations is Some(facts) {
+                contenders.push(async fn() {
+                  while !tree.is_revoked(parent_id, facts) &&
+                        !facts.is_revoked(call.name.to_string()) {
+                    @async.sleep(effect_abort_poll_ms)
+                  }
+                  Some(FinalizedToolCall::{
+                    call,
+                    consent_scope: None,
+                    rejection: Some(
+                      @kernel.ToolOutcome::NotExecuted(
+                        reason=Revoked,
+                        original_call_id=call.call_id,
+                      ),
+                    ),
+                  })
+                })
+              }
+              let finalized = @async.any(contenders)
               guard finalized is Some(finalized) else {
                 returning.val = true
                 aborted.val = true
@@ -428,7 +512,17 @@ async fn Puppet::execute_tool_tree(
               }
               let reply = tree.child_replies[effect_id.to_int()]
               tree.child_replies.remove(effect_id.to_int())
-              reply.finish(Completed(outcome))
+              reply.finish(
+                if outcome is NotExecuted(reason=Revoked, ..) {
+                  Interrupted(
+                    reason="tool version revoked before provider start",
+                    cancellation=AlreadySettled,
+                    side_effects_possible=false,
+                  )
+                } else {
+                  Completed(outcome)
+                },
+              )
             }
           }
         }

@@ -18,9 +18,9 @@ pub(all) struct FakeRuntime {
   mut abort_on_tool : Bool
   mut follow_up_on_tool : Bool
   mut follow_up_sent : Bool
-  /// One-shot hook fired inside the first `execute_tool` — lets a test
-  /// mutate external state (e.g. a CatalogSource) mid-run.
-  mut on_first_execute : (() -> Unit)?
+  /// One-shot async hook fired inside the first `execute_tool` — lets a test
+  /// mutate external state (e.g. a CatalogSource or a contribution) mid-run.
+  mut on_first_execute : (async () -> Unit)?
 }
 
 ///|

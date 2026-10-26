@@ -255,6 +255,10 @@ pub impl Show for FinishReason with fn to_string(self : FinishReason) -> String 
 /// - `RejectedByHook`: a `PipelineHook::before_tool` returned `Reject`; the call
 ///   was never dispatched and `reason` is the hook's steering text fed
 ///   back to the model.
+/// - `Revoked`: the target is still present in the caller's captured catalog,
+///   but the contributing version that supplied it was hard-withdrawn. The
+///   provider was never entered, so this is neither an unknown tool nor a
+///   business failure.
 ///
 /// Malformed-argument cases never reach this variant — they are
 /// `ModelParseFailure` at the reducer boundary (ADR §2.4).
@@ -265,6 +269,7 @@ pub(all) enum NotExecutedReason {
   InvocationLimit
   PolicyConflict
   UnsupportedInvocation
+  Revoked
   SchemaMismatch(json_path~ : String, expected~ : String, actual~ : String)
   RejectedByHook(reason~ : String)
 } derive(Eq, Debug)
@@ -287,6 +292,7 @@ pub impl Show for NotExecutedReason with fn to_string(self : NotExecutedReason) 
     InvocationLimit => "InvocationLimit"
     PolicyConflict => "PolicyConflict"
     UnsupportedInvocation => "UnsupportedInvocation"
+    Revoked => "Revoked"
     SchemaMismatch(json_path~, expected~, actual~) =>
       "SchemaMismatch(path=\{json_path}, expected=\{expected}, actual=\{actual})"
     RejectedByHook(reason~) => "RejectedByHook(\{reason})"

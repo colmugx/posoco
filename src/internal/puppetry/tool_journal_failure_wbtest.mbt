@@ -67,10 +67,49 @@ impl @kernel_exec.HostRuntime for JournalChildHost with fn cancel_effects(
 }
 
 ///|
+priv struct RevokingJournal {
+  inner : FailOnNthJournal
+  facts : ToolRevocationFacts
+  at : Int32
+  mut calls : Int32
+}
+
+///|
+impl RunJournal for RevokingJournal with fn append(self, batch) {
+  self.calls += 1
+  if self.calls == self.at {
+    self.facts.add(["parent"])
+  }
+  self.inner.append(batch)
+}
+
+///|
+impl RunJournal for RevokingJournal with fn revision(self) {
+  self.inner.revision()
+}
+
+///|
+impl RunJournal for RevokingJournal with fn entries_for_run(self, run) {
+  self.inner.entries_for_run(run)
+}
+
+///|
+impl RunJournal for RevokingJournal with fn entries_for_savepoint(
+  self,
+  run,
+  savepoint,
+) {
+  self.inner.entries_for_savepoint(run, savepoint)
+}
+
+///|
 async test "tool_tree/journal_failure_at_each_child_boundary_ends_waiters_and_cleans_only_unsettled_work" {
   // Declaration, approval, start intent and completion are distinct durable
   // boundaries. Inject at each, never after a guessed wall-clock delay.
-  for fail_on in [5, 6, 7, 8] {
+  for scenario in 0..<8 {
+    let fail_on = 5 + scenario % 4
+    let hard = scenario >= 4
+    let facts = ToolRevocationFacts()
     let replies : Array[@kernel.InvocationResult] = []
     let signal = @async.CondVar::Cond()
     let parent_exited = Ref(false)
@@ -122,7 +161,16 @@ async test "tool_tree/journal_failure_at_each_child_boundary_ends_waiters_and_cl
             ),
           )
         }
-        let journal = FailOnNthJournal(InMemoryJournal(), fail_on)
+        let journal = RevokingJournal::{
+          inner: FailOnNthJournal(InMemoryJournal(), fail_on),
+          facts,
+          at: if hard {
+            fail_on
+          } else {
+            -1
+          },
+          calls: 0,
+        }
         let config = canonical_puppet_config(
           host,
           builder.finish(version=CatalogVersion(1)),
@@ -136,6 +184,7 @@ async test "tool_tree/journal_failure_at_each_child_boundary_ends_waiters_and_cl
           tool_call_owners: Map::from_array([("parent", ["child"])]),
           bound_tool_names: fn() { ["parent", "child"] },
         })
+        puppet.install_tool_lifecycle(@kernel_exec.ToolLaunchGate(), facts)
         match fixture_prompt(puppet, "journal_child_failure") {
           Rejected(error=SavepointFailed(cause=BarrierFailed(detail~), ..)) =>
             assert_true(

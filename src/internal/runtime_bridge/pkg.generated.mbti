@@ -26,6 +26,7 @@ pub async fn RuntimeHostShim::cleanup_unconfirmed(Self) -> Unit
 pub async fn RuntimeHostShim::compact(Self, @kernel.InvocationScope, ArrayView[@kernel.Message], Array[@kernel.ToolDef], Json, @kernel.CompactTrigger) -> Result[@kernel.CompactResult, @kernel.ModelFailure]
 pub async fn RuntimeHostShim::execute_tool(Self, @kernel.EffectId, @kernel.OwnerId, @kernel.CallId, @kernel.ToolName, Json) -> @kernel.ToolOutcome
 pub async fn RuntimeHostShim::execute_tool_scoped(Self, @kernel.EffectId, @kernel.OwnerId, @kernel.CallId, @kernel.ToolName, Json, @kernel_exec.ToolExecutionScope?) -> @kernel.ToolOutcome
+pub fn RuntimeHostShim::has_unconfirmed(Self) -> Bool
 pub fn RuntimeHostShim::require_settled(Self) -> Unit raise @error.AgentError
 pub impl @kernel_exec.HostRuntime for RuntimeHostShim
 

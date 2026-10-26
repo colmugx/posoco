@@ -1061,7 +1061,11 @@ async fn AgentRuntime::compact_session(
   let admission = self.admit_operation(session_id, Compact)
   // Same unwind guard as run_turn_with_mode: a hard-cancelled compact must
   // not wedge the Agent busy, and the operation must settle cancelled.
-  errdefer self.release_operation(admission, Cancelled)
+  errdefer (if self.operations.current is Some(active) &&
+    active.operation_id == admission.operation_id {
+    self.retire_released_versions()
+    self.release_operation(admission, Cancelled)
+  })
   let result : Result[@types.CompactOutcome, @error.AgentError] = Ok(
     self.execute_operation(admission, async fn() -> Result[
       @types.CompactOutcome,
@@ -1086,6 +1090,7 @@ async fn AgentRuntime::compact_session(
     Ok(_) => Completed
     Err(error) => error.operation_outcome()
   }
+  self.retire_released_versions()
   self.release_operation(admission, outcome)
   match result {
     Ok(value) =>

@@ -280,12 +280,6 @@ pub fn ScopeRecordingModel::compact_scopes(Self) -> Array[@kernel.InvocationScop
 pub fn ScopeRecordingModel::provider_config(Self) -> @port.ProviderConfig
 pub impl @port.ModelPort for ScopeRecordingModel
 
-pub struct ScopedToolDispatch {
-  // private fields
-}
-pub fn ScopedToolDispatch::ScopedToolDispatch(Array[&@port.ToolProvider], hooks? : Array[&@port.PipelineHook]) -> Self raise @error.CompositionError
-pub async fn ScopedToolDispatch::call(Self, String, Json) -> @kernel.ToolOutcome
-
 pub(all) struct ScriptedDecisionPort {
   steps : Array[ScriptedDecisionStep]
   mut index : Int32
@@ -588,9 +582,15 @@ pub using @kernel {type ToolCall}
 
 pub using @port {type ToolCallContext}
 
+pub using @types {type ToolCatalogChange}
+
+pub using @types {type ToolCatalogChangedPayload}
+
 pub using @port {type ToolContributionCommit}
 
 pub using @port {type ToolContributionError}
+
+pub using @port {type ToolContributionState}
 
 pub using @port {type ToolContributions}
 
@@ -603,6 +603,10 @@ pub using @kernel {type ToolExposure}
 pub using @kernel {type ToolName}
 
 pub using @kernel {type ToolOutcome}
+
+pub type ToolRetire = async () -> Result[Unit, String]
+
+pub using @port {type ToolWithdrawMode}
 
 pub using @kernel {type Transcript}
 

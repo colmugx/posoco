@@ -141,9 +141,15 @@ impl @puppetry.EventSubscriber for SessionCheckpointSubscriber with fn on_event(
 /// `ToolBatchStarted` and consumed by completion events. Committed pending
 /// events retain the model's original call; completion events carry the
 /// canonical call that reached the host.
+priv struct PendingToolProjection {
+  call : @kernel.ToolCall
+  mut started : Bool
+}
+
+///|
 priv struct AgentEventSubscriber {
   observers : Array[&@port.Observer]
-  pending_calls : Map[String, @kernel.ToolCall]
+  pending_calls : Map[String, PendingToolProjection]
   chunk_dispatcher : Ref[ChunkDispatcher?]
   /// Late-bound live context-state lookup (session id -> puppet state),
   /// wired after the runtime exists in `AgentRuntime::compose`. `None` (or
@@ -211,7 +217,18 @@ fn AgentEventSubscriber::emit_tool_result(
       detail="ToolCompleted without committed ToolBatchStarted for call " + key,
     )
   }
+  let started = self.pending_calls[key].started
   self.pending_calls.remove(key)
+  if started && outcome is NotExecuted(reason=Revoked, ..) {
+    self.emit(
+      Some(scope),
+      ToolCallAbandoned(
+        call~,
+        reason="tool version revoked before provider start",
+      ),
+    )
+    return
+  }
   // One outcome shape maps to one terminal tool event: success, failure and
   // rejection never share an event.
   let event : @types.TurnEvent = match outcome {
@@ -242,8 +259,8 @@ fn AgentEventSubscriber::drain_pending(
   if self.pending_calls.is_empty() {
     return
   }
-  for _key, call in self.pending_calls {
-    self.emit(scope, ToolCallAbandoned(call~, reason~))
+  for _key, pending in self.pending_calls {
+    self.emit(scope, ToolCallAbandoned(call=pending.call, reason~))
   }
   self.pending_calls.clear()
 }
@@ -319,6 +336,9 @@ impl @puppetry.EventSubscriber for AgentEventSubscriber with fn on_event(
       self.emit(Some(scope), ToolCallApproved(call~, consent_scope~))
     ToolWaveStarted(calls~, ..) =>
       for call in calls {
+        if self.pending_calls.get(call.call_id.to_string()) is Some(pending) {
+          pending.started = true
+        }
         self.emit(Some(scope), ToolCallStarted(call=snapshot_tool_call(call)))
       }
     ModelStepStarted(..) => self.emit(Some(scope), ModelRequestStarted)
@@ -350,7 +370,10 @@ impl @puppetry.EventSubscriber for AgentEventSubscriber with fn on_event(
     ToolBatchStarted(calls~, ..) =>
       for call in calls {
         let snapshot = snapshot_tool_call(call)
-        self.pending_calls[snapshot.call_id.to_string()] = snapshot
+        self.pending_calls[snapshot.call_id.to_string()] = {
+          call: snapshot,
+          started: false,
+        }
         self.emit(Some(scope), ToolCallPending(snapshot))
       }
     ToolCompleted(call~, outcome~, ..) =>

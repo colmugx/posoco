@@ -41,6 +41,8 @@ async fn Puppet::drive_run(
     run_id~,
     session_id~,
     mailbox=self.mailbox,
+    launch_gate?=self.launch_gate,
+    revocations?=self.tool_revocations,
   )
   let dispatcher = EventDispatcher(run_id, turn_id, session_id)
   for sub in self.config.subscribers {
@@ -689,6 +691,7 @@ async fn Puppet::pump_awaiting_tools(
             arguments: payload.arguments,
           },
           direct=true,
+          revocations?=self.tool_revocations,
         ) catch {
           error => return StopWith(self.finalize_rejected(error~))
         }

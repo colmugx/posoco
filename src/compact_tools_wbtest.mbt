@@ -331,7 +331,7 @@ async fn compact_tools_auto(fail_compact : Bool, pre_request : Bool) -> Unit {
       tools=Map::from_array([("echo", policy_tools() as &@port.ToolProvider)]),
     ),
   )
-  runtime.on_first_execute = Some(fn() {
+  runtime.on_first_execute = Some(() => {
     source.defs = [tk_tool_def("next", "not in active snapshot")]
     source.revision = source.revision + 1
   })

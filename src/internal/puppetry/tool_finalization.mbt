@@ -13,6 +13,7 @@ async fn finalize_tool_call(
   hooks : Array[&@port.PipelineHook],
   input : ToolCall,
   direct~ : Bool,
+  revocations? : ToolRevocationFacts,
 ) -> FinalizedToolCall raise PuppetError {
   let mut current = snapshot_tool_call(input)
   let mut consented : ToolCall? = None
@@ -55,7 +56,21 @@ async fn finalize_tool_call(
     Some(call) => call != current
     None => false
   }
-  let rejection = if invalid_consent {
+  // Final pre-start check AFTER the hook chain: a target whose contributing
+  // version was hard-withdrawn must not start, even when a hook rewrote it into
+  // that name or granted consent while the withdrawal landed.
+  let revoked = match revocations {
+    Some(facts) => facts.is_revoked(current.name.to_string())
+    None => false
+  }
+  let rejection = if revoked {
+    Some(
+      @kernel.ToolOutcome::NotExecuted(
+        reason=Revoked,
+        original_call_id=input.call_id,
+      ),
+    )
+  } else if invalid_consent {
     Some(
       @kernel.ToolOutcome::NotExecuted(
         reason=RejectedByHook(

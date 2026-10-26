@@ -4,6 +4,7 @@ import {
   "colmugx/posoco/runtime",
   "colmugx/posoco/kernel",
   "colmugx/posoco/port",
+  "colmugx/posoco/types",
   "colmugx/posoco/error",
   "moonbitlang/async",
 } for "wbtest"

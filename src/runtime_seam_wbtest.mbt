@@ -234,7 +234,7 @@ async test "runtime seam/catalog change mid-run does not disturb the active run"
   )
   let fake = FakeRuntime(port_runtime)
   // The host's tool set changes while the run is executing a tool.
-  fake.on_first_execute = Some(fn() {
+  fake.on_first_execute = Some(() => {
     source.defs = [echo_def, web_def]
     source.revision = 2
   })

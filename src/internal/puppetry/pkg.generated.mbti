@@ -411,11 +411,14 @@ pub struct Puppet {
   mut last_outcome : @kernel_exec.RunOutcome?
   mut auto_compact_attempt_version : Int32?
   context_states : Map[String, @types.ContextState]
+  mut launch_gate : @kernel_exec.ToolLaunchGate?
+  mut tool_revocations : ToolRevocationFacts?
 }
 pub fn Puppet::Puppet(PuppetConfig) -> Self
 pub fn Puppet::adopt_context_state(Self, String, @types.ContextState) -> Unit
 pub async fn Puppet::compact_standalone(Self, @kernel.RunId, @kernel.TurnId, @kernel.SessionId, Array[@kernel.Message], RunPolicy, String, @kernel.CompactTrigger) -> PromptResult raise PuppetError
 pub fn Puppet::context_version(Self) -> Int32
+pub fn Puppet::install_tool_lifecycle(Self, @kernel_exec.ToolLaunchGate, ToolRevocationFacts) -> Unit
 pub fn Puppet::is_quiescent(Self) -> Bool
 pub fn Puppet::last_completed_transcript(Self) -> @kernel.Transcript?
 pub fn Puppet::last_terminal_outcome(Self) -> @kernel_exec.RunOutcome?
@@ -543,6 +546,15 @@ pub(all) struct SteerCommand {
 pub fn SteerCommand::equal(Self, Self) -> Bool
 pub fn SteerCommand::not_equal(Self, Self) -> Bool
 pub fn SteerCommand::to_repr(Self) -> @debug.Repr
+
+pub struct ToolRevocationFacts {
+  // private fields
+}
+pub fn ToolRevocationFacts::ToolRevocationFacts() -> Self
+pub fn ToolRevocationFacts::add(Self, Array[String]) -> Unit
+pub fn ToolRevocationFacts::generation(Self) -> Int32
+pub fn ToolRevocationFacts::is_revoked(Self, String) -> Bool
+pub fn ToolRevocationFacts::reset(Self) -> Unit
 
 pub struct TurnSnapshot {
   run_id : @kernel.RunId

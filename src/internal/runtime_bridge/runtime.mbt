@@ -106,7 +106,19 @@ pub impl @kernel_exec.HostRuntime for RuntimeHostShim with fn execute_tool_scope
       arguments~,
       tool_context?=factory,
       bound_tool?=if self.inner.supports_bound_tools() {
-        self.bindings.val.get(tool_name.to_string())
+        self.bindings.val
+        .get(tool_name.to_string())
+        .map(provider => {
+          match scope {
+            Some(scope) =>
+              (
+                ScopedBoundProvider::{
+                  inner: provider,
+                  before_start: scope.before_start,
+                } : &@port.ToolProvider)
+            None => provider
+          }
+        })
       } else {
         None
       },

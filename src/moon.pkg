@@ -13,7 +13,6 @@ import {
   "moonbitlang/async",
   "moonbitlang/async/aqueue",
   "moonbitlang/core/string",
-  "moonbitlang/core/json",
 }
 
 import {

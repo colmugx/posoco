@@ -248,6 +248,69 @@ pub extend EventScope with Eq::{not_equal, equal}
 pub extend EventScope with Debug::{to_repr}
 
 ///|
+/// Which Agent-owned tool-catalog fact `ToolCatalogChanged` reports. These are
+/// composition/publication facts, not reducer-journal facts: the default
+/// `InMemoryJournal` does not persist them.
+pub(all) enum ToolCatalogChange {
+  /// An owner published or replaced its contributed group.
+  Published
+  /// An owner's group left the active directory (soft or hard withdrawal).
+  Withdrawn
+  /// An operation admitted a new catalog version.
+  Captured
+  /// A superseded version's retire callback failed; cleanup stays pending.
+  CleanupFailed
+} derive(Eq, Debug)
+
+///|
+pub extend ToolCatalogChange with Eq::{not_equal, equal}
+
+///|
+pub extend ToolCatalogChange with Debug::{to_repr}
+
+///|
+pub extend ToolCatalogChange with Show::{to_string, output}
+
+///|
+pub impl Show for ToolCatalogChange with fn to_string(self : ToolCatalogChange) -> String {
+  match self {
+    Published => "published"
+    Withdrawn => "withdrawn"
+    Captured => "captured"
+    CleanupFailed => "cleanup_failed"
+  }
+}
+
+///|
+/// Payload of `TurnEvent::ToolCatalogChanged`. `revision` is the owner's
+/// contribution revision, while `catalog_version` is the operation-level
+/// catalog version the Agent allocated at capture — the two are deliberately
+/// separate numbers. `operation_id` names the admitting operation for
+/// `Captured` facts. The payload never carries provider objects, credentials,
+/// arguments or connection details.
+pub(all) struct ToolCatalogChangedPayload {
+  change : ToolCatalogChange
+  /// Contributing manifest id; empty for Agent-wide capture facts.
+  owner : String
+  /// Contribution revision of `owner`, when the fact is owner-scoped.
+  revision : Int32?
+  /// Catalog version captured by the operation, for `Captured` only.
+  catalog_version : Int32?
+  /// Number of tool definitions the fact covers.
+  tool_count : Int32
+  /// Operation identity for `Captured`; `None` for out-of-run facts.
+  operation_id : String?
+  /// Bounded cleanup failure detail; never raw payload text.
+  detail : String?
+} derive(Eq, Debug)
+
+///|
+pub extend ToolCatalogChangedPayload with Eq::{not_equal, equal}
+
+///|
+pub extend ToolCatalogChangedPayload with Debug::{to_repr}
+
+///|
 /// Turn lifecycle events observed via `Observer::on_event`. R3 M3.7: payload
 /// types are canonical kernel types (`ToolCall`, `ToolOutcome`, `Message`,
 /// `Usage`). Tool events form an explicit per-call state machine — every
@@ -285,6 +348,10 @@ pub(all) enum TurnEvent {
     root_effect_id~ : @kernel.EffectId,
     depth~ : Int32
   )
+  /// An Agent-owned directory fact: contribution published/withdrawn, an
+  /// operation captured a catalog version, or a retire failed. It is not a
+  /// reducer-journal fact and carries no provider payload.
+  ToolCatalogChanged(payload~ : ToolCatalogChangedPayload)
   ToolCallPending(@kernel.ToolCall)
   ToolCallApproved(call~ : @kernel.ToolCall, consent_scope~ : String?)
   ToolCallStarted(call~ : @kernel.ToolCall)
@@ -373,6 +440,8 @@ pub impl Show for TurnEvent with fn to_string(self : TurnEvent) -> String {
       depth~
     ) =>
       "ToolChildDeclared(\{call_id.to_string()}, effect=\{effect_id.to_int()}, parent=\{parent_effect_id.to_int()}, root=\{root_effect_id.to_int()}, depth=\{depth})"
+    ToolCatalogChanged(payload~) =>
+      "ToolCatalogChanged(\{payload.change.to_string()}, owner=\{payload.owner}, tools=\{payload.tool_count})"
     ToolCallPending(call) => "ToolCallPending(\{call.call_id.to_string()})"
     ToolCallApproved(call~, consent_scope~) =>
       "ToolCallApproved(\{call.call_id.to_string()}, consent=\{consent_scope is Some(_)})"
