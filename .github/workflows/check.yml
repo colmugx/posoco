@@ -26,10 +26,12 @@ jobs:
         if: ${{ matrix.os == 'windows-latest' }}
         run: git config --global core.autocrlf false
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+
       - uses: actions/setup-node@v6
         with:
           node-version: '>=22.4.0'
+
       - name: install MSVC (Windows)
         if: ${{ matrix.os == 'windows-latest' }}
         uses: ilammy/msvc-dev-cmd@v1
@@ -65,7 +67,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: install
         run: |
@@ -84,38 +86,11 @@ jobs:
       - name: moon test (release)
         run: moon test --release
 
-  test:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: install
-        run: |
-          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
-          echo "$HOME/.moon/bin" >> $GITHUB_PATH
-
-      - name: moon version
-        run: |
-          moon version --all
-          moonrun --version
-
-      - name: moon update
-        run: |
-          moon update
-
-      # target-gated test files (e.g. error_transparency_shutdown_native_test.mbt)
-      # run only when the target is requested explicitly
-      - name: moon check/test
-        run: |
-          moon check
-          moon test
-
   moon-format:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: install
         run: |
@@ -140,7 +115,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: install
         run: |

@@ -1,10 +1,10 @@
 name = "colmugx/posoco"
 
-version = "0.22.4"
+version = "0.23.0"
 
 import {
   "colmugx/fuwaroid@0.3.1",
-  "moonbitlang/async@0.22.4",
+  "moonbitlang/async@0.22.5",
   "colmugx/json-schema@0.1.4",
 }
 
@@ -16,6 +16,6 @@ license = "Apache-2.0"
 
 keywords = [ "llm", "agent", "framework", "ports-and-adapters", "ai-runtime" ]
 
-description = "LLM Agent framework with hexagonal (ports-and-adapters) architecture. Defines extension ports + Agent loop. Depends on moonbitlang/async and colmugx/fuwaroid."
+description = "LLM Agent framework with hexagonal (ports-and-adapters) architecture. Defines extension ports + Agent loop."
 
 source = "src"

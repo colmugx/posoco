@@ -249,3 +249,5 @@ test "accumulator assembles streamed completion" {
 
 写扩展时用 testkit 里的 `ScriptedModelStep::Stream` 做一致性假件很方便，但它是
 测试专用 API——生产扩展要直接实现 `ModelPort` 和 `Extension`。
+
+下一篇：[06 — 动态工具：让 Agent 的能力随工作变化](06-dynamic-tools.md)。

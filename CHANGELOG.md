@@ -1,5 +1,97 @@
 # Changelog
 
+## 0.23.0
+
+### Dynamic tools: change capabilities without rebuilding the Agent
+
+Tools no longer have to be fixed for the Agent's entire lifetime. Extensions can
+publish, replace or withdraw their own tool groups through owner-bound
+`ToolContributions` — useful for provider-specific search, MCP connections and
+task-specific toolkits. Static manifest tools remain the simplest default.
+
+**Publish now; adopt at the next operation boundary.** A normal replacement does
+not interrupt the current operation: its model steps, tool calls and drained
+follow-ups keep the same captured definitions and executors. The next operation
+installs the new pair before entering its model/tool flow. The first operation
+captures after `on_start`, so startup publications are available immediately;
+a standalone compact also captures, but follow-ups do not recapture.
+
+- **Prefer Soft for ordinary changes.** `replace` swaps the whole owned group;
+  `withdraw()` hides it from future operations while admitted work finishes.
+- **Use Hard for urgent revocation.** It blocks later provider starts and sends
+  cancellation to affected in-flight subtrees, including cross-owner children,
+  without cancelling unrelated roots. It does not install a new tool face into
+  the current operation, roll back effects, or guarantee physical termination.
+- **Retire resources safely.** Attach each new version's own cleanup callback to
+  `replace(..., retire=...)`. Core calls it after the version is inactive and its
+  last execution reference is released. Make it retry-safe; never close an old
+  connection just because publication returned. `CleanupPending` means the
+  directory commit succeeded but cleanup needs retry — not rollback.
+- **Keep governance intact.** Use `ToolExposure` to narrow visibility and real
+  `ToolCallContext.tools()/invoke()` for composition; declare minimal
+  `tool_call_owners` (default deny). Do not bypass snapshots with live-name
+  dispatch, mutate a published provider into a new version, or treat cancellation
+  signalling as confirmed stop. Model switching must be coordinated by the
+  provider/router extension; core does not automatically connect vendor MCPs.
+
+Start with [06 — Dynamic tools](docs/06-dynamic-tools.md) for the switching
+lifecycle, usage recipes and pitfalls. Breaking changes include async
+`replace/withdraw`, ACK state, new exposure/invocation/revocation and observer
+variants, `CancelDisposition::Stopped`, named context constructors and removal
+of `ScopedToolDispatch`. Custom Runtime chains must support fixed bindings and
+forward the original `EffectContext`; see the
+[Runtime migration guide](docs/advance/runtime.md). `AgentConfig` adds optional
+`max_tool_calls` / `max_tool_depth` for bounded composition.
+
+Release validation is not complete: `moon prove` is blocked by generated WhyML's
+unbound `json` type. See the [verification record](docs/advance/s5-s6-implementation-results.md);
+this entry does not claim passed proofs or shipped vendor integrations.
+
+### Removed: unused testkit fixture `tk_system_msg`
+
+`tk_system_msg` (a `SystemMessage` builder in the root-package testkit) had
+no remaining in-repo users and is removed from the published testkit surface.
+Downstream test code that called it should construct the message directly:
+`@kernel.Message::SystemMessage(content=[@kernel.Content::Text(...)])`.
+No production API changed.
+
+### Changed: tool input schemas validate via `colmugx/json-schema` (full 2020-12 profile)
+
+The hand-rolled JSON Schema subset validator
+(`internal/kernel_exec/schema_validation.mbt`) is replaced by
+[`colmugx/json-schema@0.1.3`](https://github.com/colmugx/json-schema.mbt).
+Schemas now compile once at composition (`ToolCatalogBuilder::add`) and the
+compiled plan validates every call. Keywords the old subset rejected at
+composition — `oneOf`/`anyOf`/`allOf`/`not`, `$ref`/`$defs`/`$id`/anchors
+(including preloaded external resources), `pattern`/`patternProperties`,
+numeric and string/array bounds, `uniqueItems`, `prefixItems`/`contains`,
+`if`/`then`/`else`, `unevaluated*` — are now accepted and fully enforced at
+call time.
+
+Behavior changes for extension authors:
+
+- Tool schemas that previously failed composition with
+  `UnsupportedSchemaKeyword` now compose. Composition still hard-fails on
+  schemas the compiler rejects (malformed keyword values, unresolvable
+  `$ref`, unknown required vocabularies, depth overruns): keyword/pattern
+  rejections keep the `UnsupportedSchemaKeyword` variant, everything else
+  reports as `MalformedSchema` with the compiler's explanation.
+- Schemas deeper than the compiler's structural depth limit (128 levels)
+  now fail composition with `MalformedSchema` instead of being accepted and
+  crashing the evaluator later.
+- `SchemaDiagnostic` keeps its `{ json_path, expected, actual }` shape and
+  payload-free contract (`json_path` stays "$"-rooted); `expected` now
+  carries the failing keyword with its schema pointer.
+- `ToolCatalogSnapshot` / `ToolCatalogBuilder` gained a read-only
+  `compiled` field (the compiled plans). Equality and debug output ignore
+  it; constructors are not public, so no construction code breaks.
+
+Validation guarantees are pinned by new tests: keyword-matrix coverage
+(`oneOf` XOR, `anyOf`/`allOf`, `$ref`/`$defs`, `pattern`, numeric bounds),
+a diagnostic payload-leak guard, and Agent-level testkit tests proving a
+`oneOf` tool composes, executes conforming calls, and pre-pass rejects
+violations with `NotExecuted(SchemaMismatch)` without touching the provider.
+
 ## 0.22.0
 
 ### Added: `ModelRequestStarted` observer event — per-step request anchor
