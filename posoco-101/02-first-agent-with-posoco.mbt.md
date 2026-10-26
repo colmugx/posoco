@@ -133,6 +133,7 @@ pub impl @posoco.Extension for FixedModel with fn manifest(self) -> @posoco.Exte
     ui: [],
     prompt_contributors: [],
     requires: [],
+    tool_call_owners: [],
   }
 }
 
@@ -222,6 +223,7 @@ pub impl @posoco.Extension for InMemoryStore with fn manifest(self) -> @posoco.E
     ui: [],
     prompt_contributors: [],
     requires: [],
+    tool_call_owners: [],
   }
 }
 
@@ -357,6 +359,7 @@ pub impl @posoco.Extension for FailingModel with fn manifest(self) -> @posoco.Ex
     ui: [],
     prompt_contributors: [],
     requires: [],
+    tool_call_owners: [],
   }
 }
 
