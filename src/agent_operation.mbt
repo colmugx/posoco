@@ -1,15 +1,13 @@
 ///|
-/// Agent operation lifecycle: one centralized admission point
-/// for the existing single-operation guard, one release point that projects
-/// `operation_started` / `operation_settled` exactly once per admission.
+/// Agent operation lifecycle: one admission point for the single-operation
+/// guard and one release point projecting `operation_started` /
+/// `operation_settled` exactly once per admission.
 ///
-/// The lifecycle sits above the per-turn identity layer: one admitted
-/// operation covers the initial turn plus every follow-up drained inside the
-/// same call (ordinary operations drain all follow-ups before settling). The
-/// projection is independent of `TurnCompleted` and the internal
-/// `OperationFinalized` phase event — settled is emitted only after the
-/// single-operation guard has been released, on the normal, failure, soft-,
-/// and hard-cancel paths alike.
+/// The lifecycle sits above the per-turn identity layer: one admitted operation
+/// covers the initial turn plus every follow-up drained inside the same call.
+/// Settling is independent of `TurnCompleted` and the internal
+/// `OperationFinalized` phase event — settled is emitted only after the guard is
+/// released, on normal, failure, soft- and hard-cancel paths alike.
 
 ///|
 /// What kind of host-visible operation holds the guard. Ordinary user input
@@ -104,11 +102,10 @@ priv struct OperationExecution {
 }
 
 ///|
-/// Register the spawned worker under the admitted operation's execution
-/// record and replay an already-requested cancellation to it (the
-/// registration recheck covers the eager-spawn race where shutdown asks for
-/// cancellation between admission and this registration). Runs
-/// synchronously before the guarded caller's first await.
+/// Register the spawned worker under the admitted operation's execution record
+/// and replay an already-requested cancellation to it, covering the eager-spawn
+/// race where shutdown asks for cancellation between admission and this
+/// registration. Runs synchronously before the guarded caller's first await.
 fn[X] AgentRuntime::register_operation_execution(
   self : AgentRuntime,
   admission : OperationAdmission,
@@ -126,17 +123,16 @@ fn[X] AgentRuntime::register_operation_execution(
 }
 
 ///|
-/// Execute the admitted operation body on a dedicated worker task so the
-/// Agent owns a cancellation handle for it. The typed `AgentError` outcome
-/// travels as data through the worker boundary. The whole group/join boundary
-/// runs under `handle_cancellation`: a caller cancellation first unwinds the
-/// worker through its ordinary lifecycle (the spawned-body errdefer), the
-/// group joins every child, and only then is the intercepted signal mapped
-/// to `AgentError::Cancelled` — so callers observe a typed, catchable error
-/// instead of a raw signal. An explicit agent-owned worker cancellation
-/// surfaces from the joined `wait` as `@async.WaitedTaskAlreadyCancelled`
-/// and is reported as `AgentError::Cancelled` the same way, only after the
-/// worker fully unwound.
+/// Execute the admitted operation body on a dedicated worker task so the Agent
+/// owns a cancellation handle for it; the typed `AgentError` travels as data
+/// through the worker boundary. The group/join boundary runs under
+/// `handle_cancellation`: a caller cancellation first unwinds the worker
+/// through its ordinary lifecycle (the spawned-body errdefer), the group joins
+/// every child, and only then is the signal mapped to `AgentError::Cancelled`,
+/// so callers see a typed, catchable error instead of a raw signal. A
+/// worker cancellation surfaces from the joined `wait` as
+/// `@async.WaitedTaskAlreadyCancelled` and is reported the same way, only after
+/// the worker fully unwound.
 async fn[X] AgentRuntime::execute_operation(
   self : AgentRuntime,
   admission : OperationAdmission,

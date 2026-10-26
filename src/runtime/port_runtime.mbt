@@ -91,7 +91,6 @@ priv struct ToolCancellationRegistration {
 }
 
 ///|
-/// The default runtime, built from the composed extension ports.
 pub struct PortRuntime {
   priv model : &@port.ModelPort
   /// Legacy unbound route. Bound effects never consult this table.
@@ -261,7 +260,6 @@ pub impl Runtime for PortRuntime with fn cancel_effects(
 }
 
 ///|
-/// Forward compact to `ModelPort::compact`.
 pub impl Runtime for PortRuntime with fn compact(
   self,
   scope : @kernel.InvocationScope,

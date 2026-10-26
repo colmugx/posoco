@@ -38,8 +38,6 @@ pub extend ToolContributionCommit with Eq::{not_equal, equal}
 pub extend ToolContributionCommit with Debug::{to_repr}
 
 ///|
-/// Contribution change failures. Each one is explicit so an extension never
-/// mistakes a rejected group for a published one.
 pub(all) enum ToolContributionError {
   /// The Agent is shut down; contribution handles are closed.
   Closed
@@ -89,7 +87,6 @@ pub fn ToolContributions::owner(self : ToolContributions) -> String {
 }
 
 ///|
-/// Atomically replace this owner's contributed provider group.
 pub fn ToolContributions::replace(
   self : ToolContributions,
   provider~ : &ToolProvider,

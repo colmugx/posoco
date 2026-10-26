@@ -39,7 +39,6 @@ fn reduce_initializing(
 }
 
 ///|
-/// Handle the Start input: seed the transcript, emit RunStarted, transition to ReadyForModel.
 fn reduce_start(
   state : RunState,
   catalog : ToolCatalogSnapshot,
@@ -62,8 +61,8 @@ fn reduce_start(
     outcome=None,
     suspension_requirement=None,
   )
-  // The catalog passed in must match the catalog_version the host carried.
-  // ADR §2.6: stale snapshot is a kernel invariant failure.
+  // The catalog must match the catalog_version the host carried; a stale
+  // snapshot is a kernel invariant failure.
   if catalog.version() != payload.catalog_version {
     return reduce_invariant_violation(
       next_state,
@@ -85,7 +84,6 @@ fn reduce_ready_for_model(
     BudgetExhausted(payload~) =>
       reduce_terminal_fail(state, BudgetExhausted(dimension=payload.dimension))
     SuspendRequested(_) =>
-      // No model in flight; nothing to suspend. Reject.
       reject_input(state, input, "ReadyForModel: nothing to suspend")
     ModelCompleted(_) | ModelFailed(_) | ToolCompleted(_) | ToolFailed(_) =>
       reject_input(state, input, "ReadyForModel: no pending effect to complete")
@@ -131,7 +129,6 @@ fn reduce_suspended(
     | ToolCompleted(_)
     | ToolFailed(_)
     | TranscriptRewrite(_) =>
-      // Suspended rejects ordinary completions explicitly (ADR §2.6).
       reject_input(
         state, input, "Suspended: only Resume/Cancel/Deadline/Budget legal",
       )
@@ -139,7 +136,8 @@ fn reduce_suspended(
 }
 
 ///|
-/// Enter Suspended from AwaitingModel. Drop the pending CallModel, emit CancelOutstanding, emit RunSuspended.
+/// Enter Suspended from AwaitingModel: drop the pending CallModel behind a
+/// CancelOutstanding effect, then emit RunSuspended.
 fn reduce_suspend(
   state : RunState,
   requirement : SuspensionRequirement,
@@ -147,7 +145,6 @@ fn reduce_suspend(
   let pending = state.pending_effects()
   let effects : Array[Effect] = []
   let events : Array[KernelEvent] = []
-  // Build a CancelOutstanding effect for the in-flight model effect.
   if !pending.is_empty() {
     let cancel_effect_id = state.next_effect_id()
     let cancel_payload : CancelOutstandingPayload = {
@@ -185,7 +182,7 @@ fn reduce_suspend(
 }
 
 ///|
-/// Cancel when no pending effects (ReadyForModel, Suspended). Just terminate.
+/// Cancel with no pending effects (ReadyForModel, Suspended).
 fn reduce_cancel_ready(
   state : RunState,
   detail : String?,
@@ -260,8 +257,8 @@ fn reduce_cancel_tool_facts(
 }
 
 ///|
-/// Cancel when there are pending effects (AwaitingModel, AwaitingTools).
-/// Emit CancelOutstanding for them, then terminate.
+/// Cancel with pending effects (AwaitingModel, AwaitingTools): emit
+/// CancelOutstanding for them, then terminate.
 fn reduce_cancel_with_pending(
   state : RunState,
   detail : String?,
@@ -309,7 +306,6 @@ fn reduce_cancel_with_pending(
 }
 
 ///|
-/// Terminate the Run with Failed. Clears pending effects, emits RunFailed.
 fn reduce_terminal_fail(
   state : RunState,
   reason : FailureReason,
@@ -324,8 +320,8 @@ fn reduce_terminal_fail(
 }
 
 ///|
-/// Terminate the Run with Failed, optionally with extra events to emit
-/// before the terminal event and a custom transcript/budget.
+/// Terminate the Run with Failed, optionally with extra events emitted before
+/// the terminal event and a custom transcript/budget.
 fn reduce_terminal_fail_with(
   state : RunState,
   transcript : @kernel.Transcript,
@@ -361,7 +357,6 @@ fn reduce_terminal_fail_with(
 }
 
 ///|
-/// Terminate the Run with Cancelled.
 fn reduce_terminal_cancel(
   state : RunState,
   reason : CancelReason,
@@ -385,7 +380,7 @@ fn reduce_terminal_cancel(
 }
 
 ///|
-/// Convert a kernel-invariant violation to terminal Failed. Never silently downgraded (ADR §2.4).
+/// Invariant violations always terminate Failed; never silently downgraded.
 fn reduce_invariant_violation(
   state : RunState,
   category : InvariantCategory,
@@ -417,11 +412,10 @@ fn reject_input(
 
 ///|
 /// Fold a host-side transcript rewrite (pre-model hook chain, compact
-/// Replace/Append) into state. The reducer is the sole transcript writer:
-/// the pump submits the rewritten messages as an input and this branch
-/// commits them with a `TranscriptRewritten` event so the journal records
-/// the fact. Phase, pending effects and budget are untouched; the event
-/// sequence advances by one.
+/// Replace/Append) into state. The reducer is the sole transcript writer, so
+/// the pump submits rewritten messages as an input and this branch commits
+/// them with a `TranscriptRewritten` event. Phase and pending effects are
+/// untouched; the event sequence advances by one.
 fn reduce_transcript_rewrite(
   state : RunState,
   payload : TranscriptRewritePayload,

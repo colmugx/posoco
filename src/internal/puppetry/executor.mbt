@@ -1,32 +1,17 @@
 ///|
-/// Stateless single-effect executor for the functional Kernel (ADR §2.1,
-/// §2.5, §2.9).
-///
-/// This is the imperative shell that turns ONE reducer-declared Effect into
-/// ONE structured RunInput. It executes no business logic, owns no RunState,
-/// holds no queues, journals or barriers. The Puppet reuses `execute_one`
-/// verbatim and supplies the queue/savepoint/barrier pump around it.
-///
-/// Three responsibilities:
-/// 1. `execute_one(effect, host, ctx)`: dispatch one Effect to the
-///    host runtime. Convert every host result to a typed RunInput.
-/// 2. reject any effect kind that does not produce a reducer input.
-///
-/// The executor imports async (it is the imperative shell) and delegates all
-/// provider interaction to `@kernel_exec.HostRuntime`, preserving a clean package
-/// boundary.
-///
-/// The REDUCER remains the pure part and never calls into this module.
+/// Imperative shell that turns ONE reducer-declared Effect into ONE structured
+/// RunInput. It holds no RunState, queues, journals or barriers; all provider
+/// interaction goes through `@kernel_exec.HostRuntime`. The Puppet reuses
+/// `execute_one` verbatim and supplies the pump around it, while the pure
+/// reducer never calls into this module.
 
 // ──────────────────────────────────────────────────────────────────────────
 // ModelId (binding identity)
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-/// Identifier for a model binding. A Run uses one host-supplied model. The
-/// Kernel reducer never
-/// references this; it only sees the model step id. The executor carries it
-/// purely so telemetry/events can name the model that produced a completion.
+/// Identifier for a model binding, carried so telemetry/events can name the
+/// model behind a completion. The Kernel reducer only ever sees model step ids.
 pub(all) struct ModelId {
   value : String
 } derive(Eq, Hash, Debug)
@@ -64,18 +49,11 @@ pub fn ModelId::to_string(self : ModelId) -> String {
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-/// Context passed to `execute_one`: the host runtime that actually calls the
-/// model/tool adapters and the catalog snapshot to source tool definitions
-/// from for `CallModel` effects.
-///
-/// The snapshot is carried here (not re-resolved from a registry) because the
-/// reducer already validated against `catalog_version`; the executor forwards
-/// the same definitions so the model sees what was validated (ADR §2.7, §6.3 —
-/// forbidden to substitute an empty tool list).
-///
-/// `run_id`/`session_id` are the Run's identity: the executor folds them
-/// (plus the per-effect `effect_id`) into the `InvocationScope` passed to
-/// `HostRuntime::call_model`.
+/// Context passed to `execute_one`. The catalog snapshot is carried here, not
+/// re-resolved from a registry, because the reducer already validated against
+/// `catalog_version`; the model must see exactly those definitions.
+/// `run_id`/`session_id` plus the per-effect `effect_id` form the
+/// `InvocationScope`.
 priv struct ExecutionContext {
   host : &@kernel_exec.HostRuntime
   catalog : @kernel_exec.ToolCatalogSnapshot
@@ -97,27 +75,11 @@ fn ExecutionContext::ExecutionContext(
 }
 
 ///|
-/// Execute ONE Effect and return ONE structured RunInput. The executor holds
-/// no state; every call is independent. The result is fed straight back to
-/// `reduce`.
-///
-/// Categorisation:
-/// - `CallModel` → delegates to `HostRuntime::call_model`, passing the catalog
-///   definitions (forwarding them is mandatory — never an empty array). On
-///   `Ok(completion)` returns `ModelCompleted`; on `Err(failure)` returns
-///   `ModelFailed`.
-/// - `ExecuteTool` → delegates to `HostRuntime::execute_tool`. The host owns
-///   owner-resolution; a missing owner / stale registration surfaces as a
-///   typed `ToolOutcome::RuntimeFailure` from the host, which the reducer
-///   converts to the canonical outcome (ADR §2.4).
-/// - `CancelOutstanding` → delegates to `HostRuntime::cancel_effects`. The
-///   reducer treats cancel as fire-and-forget (it has already terminal-
-///   transitioned); the driver therefore drops the returned RunInput.
-///
-/// Returns `RunInput` for the reducer. (R3 M3.7: the previous
-/// `(RunInput, NewThreadSpec?)` tuple has been removed — compact is now a
-/// separate `ModelPort::compact` method driven by posoco, not a side-channel
-/// of `CallModel`.)
+/// Execute ONE Effect and return ONE structured RunInput fed straight back to
+/// `reduce`; every call is independent. `CallModel` must forward the catalog
+/// definitions (never an empty array). `CancelOutstanding` has already been
+/// terminal-transitioned by the reducer, so it is propagated at the terminal
+/// boundary instead of being converted here.
 async fn execute_one(
   effect : @kernel_exec.Effect,
   ctx : ExecutionContext,
@@ -143,17 +105,13 @@ async fn execute_call_model(
   ctx : ExecutionContext,
   on_chunk : @kernel_exec.HostChunkCallback?,
 ) -> @kernel_exec.RunInput raise PuppetError {
-  // Forward the REAL catalog definitions the reducer validated against. It is
-  // explicitly forbidden (REPAIR §6.3) to pass an empty array here — that
-  // would hide a missing-catalog bug as a successful but tool-blind model
-  // call. The snapshot owns the definitions; we project them out.
+  // Forward the REAL catalog definitions the reducer validated against; an
+  // empty array here would hide a missing-catalog bug as a successful but
+  // tool-blind model call.
   let tool_definitions = ctx.catalog
     .definitions()
     .filter(def => def.exposure is Direct)
-  // Fold the Run identity (carried by the context) and this effect's id into
-  // the invocation scope handed to the host — the canonical answer to
-  // "which session/run is this model call serving". Chat carries no
-  // pressure advisory; only the compact path attaches one.
+  // Chat carries no pressure advisory; only the compact path attaches one.
   let scope : InvocationScope = {
     session_id: ctx.session_id,
     run_id: ctx.run_id,
@@ -162,14 +120,11 @@ async fn execute_call_model(
   }
 
   // The callback is a live boundary: providers may invoke it before their
-  // final ModelCallResult exists. Validate there as well as on the returned
-  // completion, and only forward accepted chunks to observers. Indexes use
-  // the same continuous 0-based protocol as StreamAccumulator: an existing
-  // index may be revisited, but a new index must be exactly the next one.
-  // HostChunkCallback is a non-raising ABI, so an invalid chunk cannot
-  // interrupt provider-owned work. Posoco's guarantee is narrower and
-  // observable: the invalid chunk and all later chunks are not sent to the
-  // Posoco sink/observer, accumulator, or reducer.
+  // final ModelCallResult exists, so validate here too. Indexes follow the
+  // continuous 0-based StreamAccumulator protocol — reuse allowed, skipping
+  // not. HostChunkCallback cannot raise, so the guarantee is only that an
+  // invalid chunk and every later chunk stop reaching the sink/observer,
+  // accumulator and reducer.
   let stream_failure : Array[String] = []
   let mut highest_tool_index = -1
   let checked_on_chunk : @kernel_exec.HostChunkCallback? = match on_chunk {
@@ -228,8 +183,7 @@ async fn execute_call_model(
   }
   match attempted {
     // A host raise (including transport errors and async cancellation) is the
-    // primary outcome. A malformed callback observed before that raise must
-    // never reclassify the host failure as a parse failure.
+    // primary outcome; a malformed callback must not reclassify it as parse.
     Err(error) => raise execution_error("CallModel", error)
     Ok(Ok(result)) =>
       match stream_failure.get(0) {
@@ -268,9 +222,8 @@ async fn execute_call_model(
               })
           }
       }
-    // A returned provider failure is already the host's typed primary
-    // outcome. Stream validation only controls the successful-return path;
-    // it must not erase retry/rate-limit semantics from `failure`.
+    // Stream validation only governs the successful-return path; it must not
+    // erase retry/rate-limit semantics from `failure`.
     Ok(Err(failure)) =>
       ModelFailed(payload={
         effect_id,
@@ -286,15 +239,9 @@ async fn execute_execute_tool(
   payload : @kernel_exec.ExecuteToolPayload,
   ctx : ExecutionContext,
 ) -> @kernel_exec.RunInput raise PuppetError {
-  // Owner resolution lives in the host. The host returns a typed ToolOutcome
-  // for every path:
-  //   Success | ToolReportedError | RuntimeFailure.
-  // `NotExecuted` is a reducer-side category (unknown tool / schema mismatch)
-  // that the reducer produces BEFORE declaring an ExecuteTool effect, so a
-  // well-formed host never returns it here. If a host does return NotExecuted,
-  // we treat it as a host contract violation and surface a typed
-  // ToolFailed so the reducer sees an explicit signal rather than a silent
-  // success — REPAIR §11 forbids masking such cases.
+  // Owner resolution lives in the host. `NotExecuted` is reducer-side (unknown
+  // tool / schema mismatch, decided BEFORE the effect is declared), so a host
+  // returning it is a contract violation that must surface, not be masked.
   let attempted : Result[@kernel.ToolOutcome, Error] = Ok(
     ctx.host.execute_tool_scoped(
       effect_id,
@@ -314,9 +261,7 @@ async fn execute_execute_tool(
   }
   match outcome {
     NotExecuted(reason~, ..) =>
-      // Host contract violation: NotExecuted crossed the host boundary.
-      // Surface as a typed ToolFailed with a Parse-flavoured runtime failure
-      // so the reducer records an explicit, observable signal.
+      // Host contract violation: surface a typed, observable failure.
       ToolFailed(payload={
         effect_id,
         call_id: payload.call_id,
@@ -329,9 +274,8 @@ async fn execute_execute_tool(
         invariant_failure: None,
       })
     RuntimeFailure(error_category="MissingOwner", ..) =>
-      // A missing owner is a Kernel composition/runtime invariant, not a
-      // tool-level failure. Do not let the reducer turn it into a normal
-      // RuntimeFailure message and continue with a broken catalog binding.
+      // A missing owner is a composition invariant, not a tool-level failure;
+      // the run must not continue with a broken catalog binding.
       ToolFailed(payload={
         effect_id,
         call_id: payload.call_id,

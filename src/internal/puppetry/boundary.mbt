@@ -3,10 +3,10 @@
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-/// Commit one fixed side-effect boundary. The boundary emits every KernelEvent
-/// only after the single journal barrier succeeds, but persists only its
-/// recovery-relevant primary fact. This keeps append count proportional to
-/// side effects rather than the number of observer events.
+/// Commit one fixed side-effect boundary: dispatch every KernelEvent only after
+/// the single journal barrier succeeds, and persist only the
+/// recovery-relevant primary fact so append count tracks side effects rather
+/// than observer events.
 async fn Puppet::commit_boundary(
   self : Puppet,
   state : RunState,
@@ -43,12 +43,11 @@ async fn Puppet::commit_boundary(
 }
 
 ///|
-/// Select the one boundary category for a reducer transition in a single
-/// pass over the events. Priority is terminal → suspension → tool outcome
-/// → assistant completion → input; events with no natural category (intents
-/// such as `ModelStepStarted`) never win, and the assistant fallback applies
-/// only when nothing else matched. This is a fixed runtime rule, not an
-/// extension-selectable policy.
+/// Select the one boundary category for a reducer transition in a single pass:
+/// priority is terminal → suspension → tool outcome → assistant completion →
+/// input. Events with no natural category (intents such as `ModelStepStarted`)
+/// never win, and the assistant fallback applies only when nothing matched.
+/// This is a fixed runtime rule, not an extension-selectable policy.
 fn boundary_kind_for_events(events : Array[KernelEvent]) -> SavepointKind {
   let mut best_rank = -1
   let mut best_kind = AssistantCommitted
@@ -70,8 +69,7 @@ fn boundary_kind_for_events(events : Array[KernelEvent]) -> SavepointKind {
 }
 
 ///|
-/// Map one event to its natural boundary category. Used solely to choose the
-/// persisted primary fact within a multi-event boundary.
+/// Choose the persisted primary fact within a multi-event boundary.
 fn event_to_boundary_kind(event : KernelEvent) -> SavepointKind {
   match event {
     RunStarted(..) => InputAccepted
@@ -87,7 +85,7 @@ fn event_to_boundary_kind(event : KernelEvent) -> SavepointKind {
 
 ///|
 /// Construct the one durable entry for a boundary. The entry kind describes
-/// the recovery boundary; event payloads retain their exact event kind for
+/// the recovery boundary; event payloads keep their exact event kind for
 /// inspection without forcing a durability barrier per observer event.
 fn boundary_entry(
   state : RunState,
@@ -135,7 +133,6 @@ fn boundary_entry(
 }
 
 ///|
-/// Find the event that represents the durable fact for its boundary.
 fn boundary_primary_event(
   events : Array[KernelEvent],
   kind : SavepointKind,
@@ -158,9 +155,8 @@ fn boundary_primary_event(
 
 ///|
 /// Convert a committed domain event into a bounded, machine-readable journal
-/// payload. This intentionally carries event facts and safe summaries only;
-/// prompts, tool arguments, image data and tool result bodies remain outside
-/// the journal payload.
+/// payload: event facts and safe summaries only. Prompts, tool arguments, image
+/// data and tool result bodies stay outside the journal.
 fn kernel_event_payload(event : KernelEvent) -> Json {
   match event {
     RunStarted(details~) =>
@@ -409,10 +405,10 @@ fn Puppet::release_run_binding(self : Puppet) -> Unit {
 }
 
 ///|
-/// Put the Puppet back into a quiescent, retryable state on a host-level
-/// failure that prevents the reducer from producing a terminal outcome. The
-/// typed error remains the caller-visible diagnostic; cleanup must not leave a
-/// stale lease or an active mailbox behind.
+/// Put the Puppet back into a quiescent, retryable state after a host-level
+/// failure prevented a terminal outcome. The typed error stays the
+/// caller-visible diagnostic, and cleanup must leave no stale lease or active
+/// mailbox behind.
 fn Puppet::reject_run(self : Puppet, error~ : PuppetError) -> PromptResult {
   self.release_run_binding()
   self.mailbox.set_quiescent(Idle)

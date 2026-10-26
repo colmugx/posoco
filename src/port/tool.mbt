@@ -1,11 +1,8 @@
 ///|
 /// Effect-scoped execution context handed to `ToolProvider::execute`.
-///
-/// `effect_id` is the reducer-assigned identity of this `ExecuteTool`
-/// effect — the exact id a later cancellation carries, so a provider that
-/// owns interruptible work (a subprocess, a request) keys its in-flight
-/// state by it. `call_id`, `name`, and `arguments` identify the model's
-/// tool call.
+/// `effect_id` is the reducer-assigned identity of this `ExecuteTool` effect —
+/// the exact id a later cancellation carries, so a provider owning
+/// interruptible work keys its in-flight state by it.
 pub struct ToolCallContext {
   effect_id : @kernel.EffectId
   call_id : @kernel.CallId
@@ -128,11 +125,10 @@ pub(open) trait ToolProvider {
   /// Exposure defaults to Direct and operation hooks may only narrow it.
   fn list_tools(Self) -> Array[@kernel.ToolDef]
 
-  /// Execute one tool call described by `ctx`. The provider maps its
-  /// internal result/error to `ToolOutcome`: `Success` for normal returns,
-  /// `ToolReportedError` for business-level failures the model should see,
-  /// and let posoco's catch-all convert raised `RuntimeError` to
-  /// `RuntimeFailure`. Providers that own interruptible work register a
-  /// `ToolCancellable` facet via `ctx.register_cancel` before starting it.
+  /// Execute one tool call described by `ctx`: map the internal result to
+  /// `Success` or `ToolReportedError` for business failures the model should
+  /// see, and let posoco's catch-all turn a raised `RuntimeError` into
+  /// `RuntimeFailure`. Interruptible work registers its `ToolCancellable` facet
+  /// via `ctx.register_cancel` before starting.
   async fn execute(Self, ctx : ToolCallContext) -> @kernel.ToolOutcome raise @error.RuntimeError
 }

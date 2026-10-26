@@ -1,10 +1,9 @@
 ///|
-/// Tool dispatch service for a program with a fixed composed capability
-/// snapshot. This is NOT an alternate agent loop or a reducer-owned Effect.
-/// It executes only leaf tools that are passed explicitly at composition.
-/// Every request is checked against the same catalog validator and the
-/// supplied PipelineHook::before_tool chain as normal tool calls.
-/// Consumers must not grant recursive program execution.
+/// Tool dispatch for a program with a fixed composed capability snapshot. This
+/// is NOT an alternate agent loop or a reducer-owned Effect: it executes only
+/// the leaf tools passed explicitly at composition, checking every request
+/// against the same catalog validator and `PipelineHook::before_tool` chain as
+/// normal tool calls. It must never grant recursive program execution.
 pub struct ScopedToolDispatch {
   priv catalog : @kernel_exec.ToolCatalogSnapshot
   priv routes : Map[String, &@port.ToolProvider]
@@ -141,10 +140,8 @@ pub async fn ScopedToolDispatch::call(
 }
 
 ///|
-/// Build the tool routing table. Raises CompositionError::ToolCollision on
-/// the FIRST name collision (fail-fast), rather than last-wins. The
-/// collision message identifies the tool name and a provenance hint for each
-/// conflicting provider (ToolDef.provenance if present, else an actionable marker).
+/// Build the tool routing table, raising `ToolCollision` on the FIRST name
+/// collision (fail-fast, not last-wins) with a provenance hint per provider.
 fn build_tool_routing(
   tools : Array[&@port.ToolProvider],
 ) -> ToolRouting raise @error.CompositionError {
@@ -157,8 +154,6 @@ fn build_tool_routing(
       let provenance = tool_provenance(tool)
       match seen_names.record(name, provenance) {
         Some(labels) =>
-          // T06-B: fail-fast on collision. The error names the tool and both
-          // sources so the caller can locate the conflict without guessing.
           raise ToolCollision(
             safe_error_label(name),
             tool_collision_message(labels[0], provenance),
@@ -173,9 +168,8 @@ fn build_tool_routing(
 }
 
 ///|
-/// Legacy provisional ScopedToolDispatch assembly. Agent does not call this:
-/// its manifest-bound entries are assembled once in aggregate_extensions.
-/// Remove this helper with the old scoped bypass when real invoke lands.
+/// Legacy provisional assembly; Agent does not call this, since its
+/// manifest-bound entries are assembled once in `aggregate_extensions`.
 fn provider_tool_defs(
   providers : Array[&@port.ToolProvider],
 ) -> Array[@kernel.ToolDef] {

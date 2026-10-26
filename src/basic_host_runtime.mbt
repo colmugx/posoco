@@ -1,10 +1,8 @@
 ///|
-/// Host-runtime decorator for the composition seam: core basic tools (the
-/// built-in memory surface) execute through their own providers ahead of the
-/// host's runtime chain, so a host that wires `Agent::with_runtime` without
-/// knowing the basic names still runs them. Everything else — model calls,
-/// cancellation, compact, and every non-basic tool — forwards to the host
-/// runtime untouched.
+/// Core basic tools (the built-in memory surface) execute through their own
+/// providers ahead of the host's runtime chain, so a host wiring
+/// `Agent::with_runtime` without knowing the basic names still runs them.
+/// Everything else forwards to the host runtime untouched.
 
 ///|
 priv struct BasicFirstHostRuntime {

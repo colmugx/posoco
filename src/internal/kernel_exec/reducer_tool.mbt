@@ -25,13 +25,13 @@ fn reduce_awaiting_tools(
 }
 
 ///|
-/// Fold a tool completion into state. When the last pending effect is
-/// resolved, transition to ReadyForModel.
+/// Fold a tool completion into state, returning to ReadyForModel once the last
+/// pending effect is resolved.
 fn reduce_tool_completed(
   state : RunState,
   payload : ToolCompletedPayload,
 ) -> ReduceOutput raise KernelError {
-  // Correlation: find the matching ExecuteTool in pending.
+  // A parent may not complete while children it started are still pending.
   let pending = state.pending_effects()
   for effect in pending {
     if effect is ExecuteTool(payload=child, ..) &&
@@ -204,13 +204,11 @@ fn reduce_tool_failed(
       StaleCorrelation(effect_id=payload.effect_id),
     )
   }
-  // Invariant failure → terminal Failed.
   match payload.invariant_failure {
     Some(category) =>
       return reduce_terminal_fail(state, InvariantViolation(category~))
     None => ()
   }
-  // Runtime failure: build RuntimeFailure outcome and continue.
   let (cat, msg) = match payload.runtime {
     Some(f) =>
       match f {
@@ -470,7 +468,6 @@ fn sort_tool_records_by_position(
 }
 
 ///|
-/// Insertion-sort an array of tool-result records by source position.
 fn sort_result_records_by_position(
   records : Array[(@kernel.CallId, @kernel.ToolOutcome, Int32)],
 ) -> Unit {
@@ -556,12 +553,10 @@ fn commit_tool_wave(
   }
   sort_tool_records_by_position(staged_records)
 
-  // Build new transcript.
   let messages = transcript.messages_snapshot()
   let new_messages : Array[@kernel.Message] = []
   match find_owning_assistant_index(messages, staged) {
     Some(idx) => {
-      // Messages up to and including the owning assistant.
       for i in 0..<=idx {
         new_messages.push(messages[i])
       }
@@ -588,7 +583,6 @@ fn commit_tool_wave(
           }
         }
       }
-      // Combine and sort all tool records for this wave by source position.
       let combined = existing_tool_records.copy()
       for record in staged_records {
         combined.push(record)
@@ -615,8 +609,7 @@ fn commit_tool_wave(
     }
   }
 
-  // Build new tool-result ledger by merging existing results with staged ones
-  // in global source order.
+  // Merge existing results with the staged ones in global source order.
   let combined_results : Array[(@kernel.CallId, @kernel.ToolOutcome, Int32)] = []
   for record in existing_tool_results {
     let (call_id, outcome) = record

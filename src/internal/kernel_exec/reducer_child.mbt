@@ -1,6 +1,6 @@
 ///|
-/// Program requests enter the same RunState as their parent. Effects remain
-/// plain data; no provider, callback, queue or permission hook lives here.
+/// Child requests enter the same RunState as their parent. Effects remain plain
+/// data; no provider, callback, queue or permission hook lives here.
 pub fn declare_tool_child(
   state : RunState,
   catalog : ToolCatalogSnapshot,

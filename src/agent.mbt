@@ -74,13 +74,12 @@ fn AgentConfig::to_call_options_json(self : AgentConfig) -> Json {
 }
 
 ///|
-/// Internal routing table: tool name → owning provider. Built during Agent::new.
+/// Tool name → owning provider, built during Agent::new.
 priv struct ToolRouting {
   tool_map : Map[String, &@port.ToolProvider]
 }
 
 ///|
-/// Bound an error label without interpreting its contents.
 fn bounded_error_label(value : String, cap : Int32) -> String {
   let chars : Array[Char] = []
   let mut truncated = false
@@ -221,7 +220,6 @@ fn snapshot_tool_outcome(outcome : @kernel.ToolOutcome) -> @kernel.ToolOutcome {
 }
 
 ///|
-/// Private mutable implementation owned by the Agent facade.
 priv struct AgentRuntime {
   puppet : @puppetry.Puppet
   /// The aggregated ModelPort, queried per turn for the active model's
@@ -363,17 +361,14 @@ fn validate_agent_config(
 }
 
 ///|
-/// Build the tool routing table and the initial catalog snapshot. Core
-/// basic tools (the built-in memory surface) are the base layer: they join
-/// the routing like extension tools and lead the model-facing catalog —
-/// both the port-derived snapshot and the merge ahead of a wired
-/// `CatalogSource`. Built-in memory tools route through the same
-/// ToolCollision fail-fast as extension tools: an extension also declaring
-/// "memory_search" collides here at compose instead of shadowing or being
-/// shadowed. A wired CatalogSource owns the extension portion of the
-/// catalog from the start (version 1, built from its definitions merged
-/// after the basic layer, failing fast when invalid); otherwise the catalog
-/// is the static port-derived snapshot.
+/// Build the tool routing table and the initial catalog snapshot. Core basic
+/// tools (the built-in memory surface) are the base layer: they join the
+/// routing like extension tools and lead the model-facing catalog, and they
+/// pass through the same ToolCollision fail-fast, so an extension declaring
+/// "memory_search" collides at compose instead of shadowing or being shadowed.
+/// A wired CatalogSource owns the extension portion from the start (version 1,
+/// merged after the basic layer); otherwise the catalog is the static
+/// port-derived snapshot.
 fn compose_tool_catalog(
   agg : AggregatedPorts,
   catalog_source : &@runtime.CatalogSource?,
@@ -449,9 +444,8 @@ fn compose_hook_chain(
   ui_projection : Bool,
 ) -> Array[&@port.PipelineHook] {
   let composed_hooks : Array[&@port.PipelineHook] = []
-  // 1. System prompt projection (if a base prompt is configured or any
-  // contributors are registered). The base prompt lives in AgentConfig so
-  // the host can seed a stable system message without inventing a contributor.
+  // 1. System prompt projection. The base prompt lives in AgentConfig so the
+  // host can seed a stable system message without inventing a contributor.
   let base_prompt = match config.system_prompt {
     Some(p) => p
     None => ""
@@ -468,8 +462,8 @@ fn compose_hook_chain(
   for h in agg.hooks {
     composed_hooks.push(h)
   }
-  // UI projection is opt-in (BR-5): the built-in render policy is installed
-  // only when the host asks for it via `ui_projection=true`.
+  // UI projection is opt-in: the built-in render policy is installed only
+  // when the host asks for it via `ui_projection=true`.
   if ui_projection {
     let ui_hook = UiRenderHook(ui=agg.ui)
     composed_hooks.push(ui_hook as &@port.PipelineHook)
@@ -739,7 +733,7 @@ fn AgentRuntime::compose(
 /// Aggregation order is the array order; collisions fail-fast.
 /// At least one extension must contribute a `ModelPort`.
 ///
-/// `ui_projection` (default `false`, BR-5): when `true`, Posoco's built-in
+/// `ui_projection` (default `false`): when `true`, Posoco's built-in
 /// render policy (`UiRenderHook` over the aggregated `UiPort`) is appended
 /// to the hook chain. Hosts with their own UI policy leave it off and
 /// register their own `PipelineHook` instead.
@@ -1109,9 +1103,9 @@ async fn AgentRuntime::dispatch_on_turn_end(
 /// Emit a sanitized secondary-failure diagnostic to every observer's
 /// session-level channel. Secondary failures never replace the primary
 /// outcome; the payload carries only a bounded category label, never the
-/// failing component's raw payload. (`Observer::on_event` is non-raising
-/// by contract — a violating observer aborts loudly, which the ADR's
-/// error-transparency rules intentionally preserve.)
+/// failing component's raw payload. (`Observer::on_event` is non-raising by
+/// contract; a violating observer aborts loudly, as error transparency
+/// requires.)
 fn emit_secondary_failure(
   observers : Array[&@port.Observer],
   hook_point : String,
@@ -1129,7 +1123,7 @@ fn emit_secondary_failure(
   )
   for observer in observers {
     // Secondary failures are emitted from hook closures and refresh paths
-    // that hold no run identity — scope is None by design (v1).
+    // that hold no run identity — scope is None by design.
     observer.on_event_at(None, snapshot_turn_event(event))
   }
 }

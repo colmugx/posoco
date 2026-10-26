@@ -1,12 +1,10 @@
 ///|
-/// Host-side runtime contract for executing Kernel Effects. The reducer emits
-/// Effects; the host executes them. All inputs/outputs are canonical Kernel types.
-/// This trait is async (hosts use async I/O); the Kernel reducer never calls it.
+/// Host-side runtime contract for executing Kernel Effects: the reducer emits
+/// Effects, the host executes them. All inputs/outputs are canonical Kernel
+/// types, and the reducer never calls this async trait.
 
 ///|
-/// Streaming chunk callback. The host delivers canonical `StreamChunk` values
-/// to the observer/telemetry surface; interpretation is still a host/telemetry
-/// concern (ADR §2.11), but the contract is the typed `StreamChunk` shape.
+/// Streaming chunk callback; interpreting `StreamChunk` stays a host concern.
 pub type HostChunkCallback = (@types.StreamChunk) -> Unit
 
 ///|
@@ -35,19 +33,14 @@ pub(all) struct ToolExecutionScope {
 }
 
 ///|
-/// Host runtime contract. Implementations live outside the Kernel package.
 pub(open) trait HostRuntime {
-  /// Execute a `CallModel` effect. Converts messages + tool_definitions to
-  /// provider wire format, calls the model (optionally streaming), and returns
-  /// `ModelCallResult` with both the completion and `processed_messages`.
-  /// The pump always replaces the transcript body with the returned value.
-  /// When the modelport initiates a compact, it fills `new_thread` and the
-  /// pump starts a new thread using `processed_messages` as the new body.
-  /// `scope` carries the run/session identity; `scope.effect_id` is always
-  /// `Some` here and hosts that propagate cancellation key in-flight model
-  /// calls by it, mirroring the tool side's `effect_id`. `messages` is an
-  /// `ArrayView` borrow valid only for the duration of the call; hosts must
-  /// not retain it.
+  /// Execute a `CallModel` effect. The pump always replaces the transcript body
+  /// with the returned `processed_messages`; when the modelport initiates a
+  /// compact it fills `new_thread`, and the pump starts a new thread with
+  /// `processed_messages` as the new body. `scope.effect_id` is always `Some`
+  /// here and hosts that propagate cancellation key in-flight model calls by
+  /// it, mirroring the tool side. `messages` is an `ArrayView` borrow valid
+  /// only for the duration of the call; hosts must not retain it.
   async fn call_model(
     Self,
     scope : @kernel.InvocationScope,
@@ -57,13 +50,11 @@ pub(open) trait HostRuntime {
     on_chunk : HostChunkCallback?,
   ) -> Result[@kernel.ModelCallResult, @kernel.ModelFailure]
 
-  /// Execute a single tool call. Looks up the owner, invokes the provider,
-  /// and maps the result to a canonical `ToolOutcome`. Missing owner /
-  /// stale registration → `RuntimeFailure("MissingOwner")`; business errors
-  /// → `ToolReportedError`; transport errors → `RuntimeFailure`.
-  /// `effect_id` is the reducer-allocated identity of this `ExecuteTool`
-  /// effect; hosts that propagate cancellation use it to correlate
-  /// `cancel_effects` calls with in-flight executions.
+  /// Execute a single tool call. Missing owner / stale registration →
+  /// `RuntimeFailure("MissingOwner")`; business errors → `ToolReportedError`;
+  /// transport errors → `RuntimeFailure`. `effect_id` is the reducer-allocated
+  /// identity of this `ExecuteTool` effect and correlates `cancel_effects`
+  /// calls with in-flight executions.
   async fn execute_tool(
     Self,
     effect_id : EffectId,
@@ -73,8 +64,8 @@ pub(open) trait HostRuntime {
     arguments : Json,
   ) -> @kernel.ToolOutcome
 
-  /// Scope-aware dispatch. Legacy internal hosts can retain plain execution;
-  /// the Agent shim forwards the real scope into its public Runtime context.
+  /// Scope-aware dispatch; the default retains plain execution, while the Agent
+  /// shim forwards the real scope into its public Runtime context.
   async fn execute_tool_scoped(
     Self,
     effect_id : EffectId,
@@ -92,11 +83,9 @@ pub(open) trait HostRuntime {
     reason : CancelReason,
   ) -> Array[(EffectId, CancelDisposition)]
 
-  /// Compact the conversation. Forwards to `ModelPort::compact` and returns
-  /// the compacted message body plus a `CompactMode`. `trigger` lets the
-  /// modelport pick a strategy (Auto = cheap elision, Manual = thorough).
-  /// `tools` comes from the active TurnSnapshot, including standalone
-  /// compact before any chat; runtime proxies forward it unchanged.
+  /// Compact the conversation. `trigger` lets the modelport pick a strategy
+  /// (Auto = cheap elision, Manual = thorough). `tools` comes from the active
+  /// TurnSnapshot, including standalone compact before any chat.
   /// `scope.effect_id` is always `None` here: compact is host-driven, not a
   /// reducer-allocated effect. `messages` is an `ArrayView` borrow valid only
   /// for the duration of the call; hosts must not retain it.

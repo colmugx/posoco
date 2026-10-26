@@ -11,7 +11,7 @@ fn ToolTree::record_cancellations(
 
 ///|
 /// Runs after the structured group has stopped its provider tasks. Fibre
-/// cancellation is not a provider stop receipt, so retain each real report.
+/// cancellation is not a provider stop receipt, so keep each real report.
 async fn ToolTree::cleanup(self : ToolTree, context : ExecutionContext) -> Unit {
   self.active.val = false
   let ids = self.executing.values().to_array()

@@ -15,19 +15,14 @@ async fn await_abort_requested(mailbox : &Mailbox) -> Unit {
 }
 
 ///|
-/// Execute the single reducer-declared model effect, racing the await against
-/// the mailbox abort flag. Expected provider failures travel as `ModelFailed`
-/// data; raised host defects are surfaced as a distinct Puppet error and never
-/// fabricated into a completion.
+/// Race the single reducer-declared model effect against the mailbox abort
+/// flag. Provider failures travel as `ModelFailed` data; raised host defects
+/// never become a fabricated completion.
 ///
 /// Returns `None` when abort was requested while the call was in flight: the
 /// effect task is cancelled, its partial result discarded (cancellation has no
 /// reducer completion input), and the pump falls back to its loop top where
-/// `pump_abort` feeds `CancelRequested` to the reducer.
-///
-/// (R3 M3.7: the previous `(RunInput, NewThreadSpec?)` tuple has been removed
-/// — compact is now a separate `ModelPort::compact` method driven by posoco,
-/// not a side-channel of `CallModel`.)
+/// `pump_abort` feeds `CancelRequested`.
 async fn execute_model_effect(
   effect : Effect,
   context : ExecutionContext,
@@ -53,8 +48,7 @@ async fn execute_model_effect(
 ///|
 /// Propagate reducer-declared cancellation effects at their terminal boundary.
 /// Cancellation has no reducer completion input: converting it into a tool or
-/// model result would fabricate a fact. The host must return one disposition
-/// for every requested effect id; malformed reports fail the run loudly.
+/// model result would fabricate a fact. Malformed reports fail the run loudly.
 async fn propagate_terminal_cancellations(
   effects : Array[Effect],
   context : ExecutionContext,
@@ -137,8 +131,7 @@ fn validate_cancel_dispositions(
 }
 
 ///|
-/// Convert an executor-raised error into an observable typed product error.
-/// Cancellation travels as a runtime signal and never reaches this function;
+/// Convert an executor-raised error into an observable typed product error;
 /// typed cancellation outcomes and host defects stay distinct, and neither
 /// becomes a normal tool result or a synthetic model completion.
 fn execution_error(phase : String, error : Error) -> PuppetError {

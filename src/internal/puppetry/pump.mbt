@@ -3,21 +3,10 @@
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-/// Drive a run to terminal or suspended. Returns a PromptResult carrying
-/// the terminal outcome or a typed failure.
-///
-/// The pump loops over reducer transitions. Each iteration:
-/// 1. If ReadyForModel: call `run_model_step` to declare CallModel.
-/// 2. If AwaitingModel/AwaitingTools: for each pending effect, execute_one
-///    and feed the resulting RunInput back to reduce.
-/// 3. After each transition: commit savepoint entries, dispatch events.
-/// 4. Check for abort: if mailbox.abort_requested, inject CancelRequested.
-/// 5. If Suspended: stop the pump and wait for resume.
-/// 6. If Terminal: dispatch terminal event, release lease, set quiescent.
-///
-/// This is the ONLY loop in the product that drives RunState. It reuses
-/// `execute_one` (stateless single-effect executor) and never inspects
-/// `tool_calls.is_empty()` to decide termination.
+/// Drive a run to terminal or suspended, returning the terminal outcome or a
+/// typed failure. This is the ONLY loop in the product that drives RunState: it
+/// loops over reducer transitions and reuses `execute_one` per pending effect,
+/// never inferring termination from `tool_calls.is_empty()`.
 async fn Puppet::drive_run(
   self : Puppet,
   run_id : RunId,
@@ -34,7 +23,6 @@ async fn Puppet::drive_run(
     self.release_run_binding()
     self.mailbox.set_quiescent(Idle)
   }
-  // Build the initial RunState.
   let initial_state = RunState::initial(
     run_id~,
     session_id~,
@@ -47,9 +35,6 @@ async fn Puppet::drive_run(
         ),
       )
   }
-  // Build the execution context from the host runtime + catalog snapshot.
-  // Puppetry forwards canonical values without product-specific conversion.
-  // The Run identity is carried so CallModel effects can be scoped.
   let exec_ctx = ExecutionContext(
     self.config.host,
     catalog=self.config.catalog,
@@ -57,16 +42,13 @@ async fn Puppet::drive_run(
     session_id~,
     mailbox=self.mailbox,
   )
-  // Build the event dispatcher.
   let dispatcher = EventDispatcher(run_id, turn_id, session_id)
   for sub in self.config.subscribers {
     dispatcher.register(sub)
   }
-  // Attribution scope for post-event hook dispatch: inside a run the
-  // identity is always known, so hooks always see `Some`.
+  // Inside a run the identity is always known, so hooks always see `Some`.
   let hook_scope : @types.EventScope = { session_id, run_id, turn_id, }
-  // Seed the reducer with Start.
-  // Run before_model hooks on the initial messages — they can modify or abort.
+  // before_model hooks may rewrite or abort the initial messages.
   let mut seeded_messages = initial_messages.copy()
   for hook in self.config.hooks {
     seeded_messages = hook.before_model(seeded_messages) catch {
@@ -159,7 +141,6 @@ async fn Puppet::drive_run(
       }
   }
   state = initial_state
-  // Drive the loop.
   let mut iter = 0
   let max_iter = self.config.max_iterations
   while state.phase() != Terminal && state.phase() != Suspended {
@@ -169,7 +150,6 @@ async fn Puppet::drive_run(
         return self.finalize_rejected(error=PumpLoopExceeded(iterations=iter))
       _ => ()
     }
-    // Check abort.
     if self.mailbox.abort_requested() {
       match
         self.pump_abort(
@@ -182,23 +162,16 @@ async fn Puppet::drive_run(
         }
       }
     }
-    // ── M3.5 SAFE POINT A2: fork.
-    // Consume one fork command. Fork is copy-on-write: the original
-    // transcript is never mutated. We snapshot the transcript's first
-    // `fork_index` messages, write them as a new session (carrying
-    // `parent_thread_id` lineage) if a session_store is configured, and
-    // return PromptResult::ForkCompleted. The current turn stops; the
-    // product layer may then drive the new session as a separate turn.
+    // Safe point: fork. Fork is copy-on-write, so the original transcript is
+    // never mutated; the current turn stops and the product layer may then
+    // drive the new lineage session as a separate turn.
     match self.mailbox.consume_one_fork() {
       Some(fork_cmd) =>
         return self.pump_fork(state, fork_cmd, session_id, run_id, turn_id)
       None => ()
     }
-    // ── M3.5 SAFE POINT A3: compact (manual).
-    // Consume one compact command from the queue. Manual compacts come
-    // from `/compact` (the BuiltinCommandPort enqueued them with
-    // trigger=Manual). Auto compacts (trigger=Auto from context-window
-    // pressure) are checked separately inside the ReadyForModel branch.
+    // Safe point: manual compact, enqueued by `/compact`. Auto compacts
+    // (context-window pressure) are decided inside `fold_effect_input`.
     match self.mailbox.consume_one_compact() {
       Some(compact_cmd) =>
         match
@@ -242,7 +215,6 @@ async fn Puppet::drive_run(
       _ => break
     }
   }
-  // Handle terminal / suspended outcomes.
   match state.phase() {
     Terminal => {
       let outcome = match state.outcome() {
@@ -274,7 +246,7 @@ async fn Puppet::drive_run(
             ),
           )
       }
-      // Generate a suspension_id (deterministic; M5 will use a durable id).
+      // Deterministic suspension id derived from the current model step.
       let suspension_id = "susp_\{run_id.to_string()}_\{state.current_model_step_id().to_int()}"
       return self.finalize_run(
         Suspended(run_id~, turn_id~, suspension_id~, requirement_kind=req.kind),
@@ -492,11 +464,8 @@ async fn Puppet::pump_ready_for_model(
   iter : Int32,
 ) -> PumpStep noraise {
   let mut state = state
-  // Run before_model hooks — they can rewrite the transcript messages
-  // or abort the turn before the model is called. Each hook sees the
-  // previous hook's output (chained rewrite). The rewritten messages
-  // replace the reducer state's transcript so the next CallModel
-  // effect uses them.
+  // Rewrites chain — each hook sees the previous output — and the result
+  // replaces the reducer's transcript for the next CallModel effect.
   let initial_messages = state.transcript().messages_snapshot()
   let mut current_messages = initial_messages
   let mut hook_aborted = false
@@ -526,13 +495,11 @@ async fn Puppet::pump_ready_for_model(
     )
   }
   // Fold the hook-rewritten transcript through the reducer — the sole
-  // transcript writer — so the rewrite is journaled as a
-  // TranscriptRewritten event in the same boundary as the next model
-  // intent. Comparison is by content, not length: a same-length
-  // rewrite (e.g. system-prompt replacement) is a real rewrite and
-  // must not be silently dropped. A cheap physical-equality check
-  // first skips the O(N) content comparison when no hook allocated a
-  // new array.
+  // transcript writer — so the rewrite is journaled as a TranscriptRewritten
+  // event in the same boundary as the next model intent. Comparison is by
+  // content, not length: a same-length rewrite (e.g. system-prompt
+  // replacement) is real and must not be dropped. A physical-equality check
+  // first skips the O(N) comparison when no hook allocated a new array.
   let rewrite_events : Array[KernelEvent] = []
   if hook_changed && current_messages != initial_messages {
     let rewrite_input : RunInput = TranscriptRewrite(payload={
@@ -564,15 +531,10 @@ async fn Puppet::pump_ready_for_model(
       }
     }
   }
-  // M3.5: auto-compact threshold check runs INSIDE fold_effect_input
-  // (the path the pump takes through AwaitingModel / AwaitingTools),
-  // not here. The ReadyForModel branch only fires on the very first
-  // model step (the Start input lands in ReadyForModel and
-  // declare_model_effect_if_ready moves it to AwaitingModel before
-  // the loop iterates), so a check here would never see post-tool
-  // usage observations. Auto compact therefore lives in
-  // fold_effect_input where the reducer's budget update is
-  // observable before the next model effect is declared.
+  // The auto-compact threshold check lives in `fold_effect_input`, not here:
+  // ReadyForModel only fires on the very first model step, so a check here
+  // would never see post-tool usage observations. Folding is where the
+  // reducer's budget update is observable before the next model effect.
   let declared : Result[(RunState, Array[KernelEvent]), PuppetError] = Ok(
     declare_model_effect_if_ready(
       state,
@@ -713,8 +675,7 @@ async fn Puppet::pump_awaiting_tools(
   let normalized_pending : Array[Effect] = []
   let hook_rejected_inputs : Array[RunInput] = []
   // Approved calls with the consent scope that survived the full chain
-  // (None for plain approval). Collected for the post-normalization
-  // ToolCallApproved boundary.
+  // (None for plain approval), published in the ToolCallApproved boundary.
   let approved_finalized : Array[(ModelStepId, ToolCall, String?)] = []
   for effect in pending {
     match effect {

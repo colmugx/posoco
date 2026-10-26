@@ -137,10 +137,10 @@ impl @puppetry.EventSubscriber for SessionCheckpointSubscriber with fn on_event(
 
 ///|
 /// Agent-facing projection of committed Puppet envelopes. It never scans a
-/// final transcript. The pending call cache is correlation state populated by
-/// `ToolBatchStarted` and consumed by completion events. A committed
-/// Pending events retain the model's original call; completion events carry
-/// the canonical call that reached the host.
+/// final transcript: the pending call cache is correlation state populated by
+/// `ToolBatchStarted` and consumed by completion events. Committed pending
+/// events retain the model's original call; completion events carry the
+/// canonical call that reached the host.
 priv struct AgentEventSubscriber {
   observers : Array[&@port.Observer]
   pending_calls : Map[String, @kernel.ToolCall]
@@ -212,8 +212,8 @@ fn AgentEventSubscriber::emit_tool_result(
     )
   }
   self.pending_calls.remove(key)
-  // One outcome shape → one terminal tool event. The variant IS the node:
-  // success, failure and rejection never share an event.
+  // One outcome shape maps to one terminal tool event: success, failure and
+  // rejection never share an event.
   let event : @types.TurnEvent = match outcome {
     Success(content~, structured~) =>
       ToolCallSucceeded(call~, content~, structured~, attachments=[])

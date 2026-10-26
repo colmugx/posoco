@@ -6,8 +6,8 @@ priv struct FinalizedToolCall {
 }
 
 ///|
-/// Shared by model and child entry points. Every hook sees a private copy;
-/// later rewrites invalidate consent granted to an earlier exact call.
+/// Every hook sees a private copy; a later rewrite invalidates consent granted
+/// to an earlier exact call.
 async fn finalize_tool_call(
   catalog : @kernel_exec.ToolCatalogSnapshot,
   hooks : Array[&@port.PipelineHook],

@@ -1,7 +1,7 @@
 ///|
-/// Adapter to the public Runtime seam. Bound-capable chains receive the
-/// provider captured at operation admission; execution still passes through
-/// the host's Runtime rather than bypassing its policy or instrumentation.
+/// Adapter to the public Runtime seam: bound-capable chains receive the provider
+/// captured at operation admission, yet execution still passes through the
+/// host's Runtime instead of bypassing its policy or instrumentation.
 
 ///|
 pub struct RuntimeHostShim {

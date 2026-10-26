@@ -23,62 +23,54 @@ pub struct CompositionView {
 }
 
 ///|
-/// The single composed ModelPort — present only when the extension declared
-/// `Capability::Model` in its manifest's `requires`. This is the unique
-/// outlet that passed the composition cardinality gate, source-agnostic
-/// (the extension cannot tell a plain provider from a routing
-/// meta-extension, and must not).
+/// Present only when the extension declared `Capability::Model`. The value is
+/// source-agnostic: an extension cannot tell a plain provider from a routing
+/// meta-extension, and must not.
 pub fn CompositionView::model(self : CompositionView) -> &ModelPort? {
   self.model_
 }
 
 ///|
-/// The single optional composed DecisionPort — visible only when the extension
-/// declared `Capability::Decision`. Absence is legal: consumers that treat
-/// decision support as an enhancement should keep their deterministic
-/// fallback; consumers that require it may fail explicitly in `on_compose`.
+/// Visible only when the extension declared `Capability::Decision`. Absence is
+/// legal: consumers that treat decision support as an enhancement keep their
+/// deterministic fallback, and consumers that require it may fail in
+/// `on_compose`.
 pub fn CompositionView::decision(self : CompositionView) -> &DecisionPort? {
   self.decision_
 }
 
 ///|
-/// The single optional composed LogPort — visible only when the extension
-/// declared Capability::Log. Absence is legal: logging is optional
-/// infrastructure, and consumers decide whether a missing sink is acceptable.
+/// Visible only when the extension declared `Capability::Log`. Absence is
+/// legal: consumers decide whether a missing sink is acceptable.
 pub fn CompositionView::log(self : CompositionView) -> &LogPort? {
   self.log_
 }
 
 ///|
-/// The composed UiPort (single contributor, `CompositeUiPort`, or
-/// `NoopUiPort`) — present only when the extension declared
-/// `Capability::Ui`. Human-interaction requests (`UiRequest::Confirm` /
-/// `Select` / `Input`) go here; do not occupy the `ui` manifest slot just to
-/// consume the composed UI.
+/// Present only when the extension declared `Capability::Ui`. Declaring `ui`
+/// only to consume the composed UI is not allowed.
 pub fn CompositionView::ui(self : CompositionView) -> &UiPort? {
   self.ui_
 }
 
 ///|
-/// The Agent-owned structured task capability, present only when the
-/// extension declares `Capability::Tasks`.
+/// Present only when the extension declares `Capability::Tasks`.
 pub fn CompositionView::tasks(self : CompositionView) -> Tasks? {
   self.tasks_
 }
 
 ///|
-/// The Agent-owned session wakeup capability, present only when the
-/// extension declares `Capability::Wakeup`. `request` queues one ordinary
-/// turn for a session; execution stays inside the Agent's
+/// Present only when the extension declares `Capability::Wakeup`. `request`
+/// queues one ordinary turn for a session; execution stays inside the Agent's
 /// single-operation lifecycle.
 pub fn CompositionView::wakeup(self : CompositionView) -> WakeupPort? {
   self.wakeup_
 }
 
 ///|
-/// The Agent-owned dynamic tool contribution capability, present only when
-/// the extension declares `Capability::ToolContribution`. The value is bound
-/// to this extension's manifest id, so it can only publish its own group.
+/// Present only when the extension declares `Capability::ToolContribution`.
+/// The value is bound to this extension's manifest id, so it can only publish
+/// its own group.
 pub fn CompositionView::tool_contributions(
   self : CompositionView,
 ) -> ToolContributions? {

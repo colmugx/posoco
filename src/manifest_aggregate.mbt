@@ -39,7 +39,6 @@ priv struct AggregatedPorts {
 }
 
 ///|
-/// Aggregate every extension's manifest into one port bundle.
 /// Order follows extension array order; collisions fail fast.
 fn aggregate_extensions(
   exts : Array[&@port.Extension],
@@ -47,7 +46,6 @@ fn aggregate_extensions(
   if exts.length() == 0 {
     raise EmptyManifests
   }
-  // Per-port collectors.
   let models : Array[&@port.ModelPort] = []
   let model_manifests : Array[String] = []
   let decisions : Array[&@port.DecisionPort] = []
@@ -83,22 +81,18 @@ fn aggregate_extensions(
       )
     }
     tool_call_owners[mid] = manifest.tool_call_owners.copy()
-    // models: collect for later cardinality check
     for m in manifest.models {
       models.push(m)
       model_manifests.push(mid)
     }
-    // decisions: optional singleton capability; cardinality checked below
     for d in manifest.decisions {
       decisions.push(d)
       decision_manifests.push(mid)
     }
-    // logs: optional singleton capability; cardinality checked below
     for log in manifest.logs {
       logs.push(log)
       log_manifests.push(mid)
     }
-    // tools: collect + collision check by tool name
     for provider in manifest.tools {
       for tool_def in provider.list_tools() {
         let name = tool_def.name.to_string()
@@ -126,7 +120,6 @@ fn aggregate_extensions(
         tools.push(ToolEntry::bound(tool_def, mid, provider))
       }
     }
-    // commands: collect + collision check by command id
     for cmd in manifest.commands {
       for def in cmd.commands() {
         let cid = def.id
@@ -140,7 +133,6 @@ fn aggregate_extensions(
       }
       commands.push(cmd)
     }
-    // simple concat ports
     for s in manifest.sessions {
       sessions.push(s)
     }
@@ -163,7 +155,6 @@ fn aggregate_extensions(
       prompt_contributors.push((mid, p))
     }
   }
-  // Model cardinality: exactly 1.
   match models.length() {
     0 => raise MissingModel
     1 => ()
@@ -218,12 +209,11 @@ fn aggregate_extensions(
 
 ///|
 /// Core-owned wrapper around the aggregated `UiPort`. Every interactive user
-/// request (permission confirm, plan review, ask_question) that enters the
-/// port broadcasts `UserRequestStarted` / `UserRequestFinished` to the
-/// observer bus, so presence-style observers can surface "waiting for user"
-/// without coupling to any single caller. The wrapper only sees requests that
-/// resolve the port from a `CompositionView` (requires `Capability::Ui`);
-/// holders of a raw contributor reference bypass it by construction.
+/// request (permission confirm, plan review, ask_question) entering the port
+/// broadcasts `UserRequestStarted` / `UserRequestFinished` to the observer bus,
+/// so presence-style observers can surface "waiting for user" without coupling
+/// to a single caller. It only sees requests resolved from a `CompositionView`
+/// (requires `Capability::Ui`); raw contributor holders bypass it.
 priv struct UserRequestObservingUiPort {
   inner : &@port.UiPort
   observers : Array[&@port.Observer]
@@ -253,8 +243,7 @@ fn UserRequestObservingUiPort::emit_user_request_event(
 ) -> Unit {
   let snapshot = snapshot_turn_event(event)
   for observer in self.observers {
-    // Scope is None: the wrapper sits outside any run identity (v1, same
-    // precedent as secondary-failure diagnostics).
+    // Scope is None: the wrapper sits outside any run identity.
     observer.on_event_at(None, snapshot)
   }
 }

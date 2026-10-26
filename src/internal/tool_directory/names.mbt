@@ -8,10 +8,8 @@ pub fn tool_provenance(tool : @kernel.ToolDef) -> String {
 }
 
 ///|
-/// Shared tool-name collision scan for the two composition passes that walk
-/// provider tool lists (`aggregate_extensions` and `build_tool_routing`).
-/// Each pass labels a ToolDef with its own source wording but delegates
-/// duplicate detection and the message skeleton here.
+/// Shared collision scan for the composition passes that walk provider tool
+/// lists; each pass supplies its own source wording.
 pub struct ToolNameIndex {
   /// Tool name → source labels in declaration order; `labels[0]` is the
   /// first declaration.
@@ -24,9 +22,7 @@ pub fn ToolNameIndex::new() -> ToolNameIndex {
 }
 
 ///|
-/// Record one declared tool. Returns None for a new name; on the first
-/// duplicate returns the labels recorded so far, untouched — callers raise
-/// from this arm, so no further bookkeeping happens.
+/// Returns the labels recorded so far when `name` was already declared.
 pub fn ToolNameIndex::record(
   self : ToolNameIndex,
   name : String,
@@ -41,15 +37,11 @@ pub fn ToolNameIndex::record(
 }
 
 ///|
-/// The shared collision message skeleton; each pass supplies its own
-/// source labels.
 pub fn tool_collision_message(first : String, conflicting : String) -> String {
   "tool collision; first declaration: \{first}; conflicting declaration: \{conflicting}"
 }
 
 ///|
-/// A ToolDef's provenance when present and non-empty; None marks an
-/// unlabeled definition and each pass words its own actionable fallback.
 pub fn nonempty_provenance(tool : @kernel.ToolDef) -> String? {
   match tool.provenance {
     Some(s) if s != "" => Some(s)

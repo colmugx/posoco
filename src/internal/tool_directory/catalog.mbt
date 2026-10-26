@@ -1,5 +1,4 @@
 ///|
-/// Bound an error label without interpreting its contents.
 fn bounded_error_label(value : String, cap : Int32) -> String {
   let chars : Array[Char] = []
   let mut truncated = false
@@ -42,11 +41,8 @@ fn snapshot_json(value : Json) -> Json {
 }
 
 ///|
-/// Normalise a tool schema into the canonical form the Kernel catalog
-/// accepts. The Kernel requires a JSON object (`{"type":"object",...}`) or a
-/// boolean at the top level; providers often pass `Json::null()` to signal
-/// "no schema". We convert `null` → empty object so providers keep working
-/// without each one having to construct `{}`.
+/// The Kernel accepts only an object or boolean top-level schema; providers
+/// signal "no schema" with `Json::null()`, which becomes `{}` here.
 fn normalize_tool_schema(schema : Json) -> Json {
   match schema {
     Null => Json::object(Map::from_array([]))
@@ -55,11 +51,8 @@ fn normalize_tool_schema(schema : Json) -> Json {
 }
 
 ///|
-/// Build a `ToolCatalogSnapshot` from canonical definitions. Used both for
-/// the port-derived catalog (at composition) and for `CatalogSource`
-/// refreshes (at prompt boundaries, with a bumped version). The schema is
-/// normalised into the Kernel's required object/boolean form; `owner` and
-/// `policy` are taken verbatim from each definition.
+/// Serves both the port-derived catalog at composition and `CatalogSource`
+/// refreshes at prompt boundaries.
 pub fn build_catalog_from_defs(
   defs : Array[@kernel.ToolDef],
   version : @kernel.CatalogVersion,
@@ -96,11 +89,9 @@ pub fn build_catalog_from_defs(
 }
 
 ///|
-/// Merge the core basic definitions ahead of a wired `CatalogSource`'s
-/// definitions. Basic tools are the base layer, so a source definition
-/// colliding with a basic name is shadowed (first-name-wins, basic first);
-/// duplicates within the source list itself are not resolved here — the
-/// catalog builder still rejects them.
+/// Basic tools are the base layer: a source definition colliding with a basic
+/// name is shadowed, while duplicates inside `source` are left for the catalog
+/// builder to reject.
 pub fn merge_basic_catalog_defs(
   basic : Array[@kernel.ToolDef],
   source : Array[@kernel.ToolDef],

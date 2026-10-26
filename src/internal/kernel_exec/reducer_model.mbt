@@ -1,10 +1,9 @@
 /// Model-turn branches: `run_model_step` and the `ModelCompleted` / `ModelFailed` folds.
 
 ///|
-/// Issue a CallModel effect. Allocates a fresh EffectId and ModelStepId, builds the payload
-/// from the current transcript + catalog, transitions to AwaitingModel.
-/// This is NOT called via `reduce(state, catalog, input)` — the host/driver decides when
-/// to advance; the reducer only writes state.
+/// Declare the CallModel effect for the current model step. Unlike the folds,
+/// this is NOT reached through `reduce(state, catalog, input)`: the driver
+/// decides when to advance.
 pub fn run_model_step(
   state : RunState,
   catalog : ToolCatalogSnapshot,
@@ -55,13 +54,10 @@ fn reduce_awaiting_model(
   catalog : ToolCatalogSnapshot,
   input : RunInput,
 ) -> ReduceOutput raise KernelError {
-  // Race priority (ADR §2.5):
-  // 1. DeadlineReached beats completions for the same tick.
-  // 2. CancelRequested beats completion only if cancel was queued earlier;
-  //    for M1 we treat the input order at the reducer as already-decided, so
-  //    we apply each input as it arrives (no batching). Therefore: at the
-  //    reducer, if the input IS DeadlineReached, terminate Failed; if it IS
-  //    CancelRequested, terminate Cancelled; if it IS a completion, fold it.
+  // Race priority: DeadlineReached beats a completion in the same tick, and
+  // CancelRequested beats a completion only if it was queued earlier. The
+  // reducer treats arrival order as already-decided (no batching), so each
+  // input is applied as it comes.
   match input {
     ModelCompleted(payload~) => reduce_model_completed(state, catalog, payload)
     ModelFailed(payload~) => reduce_model_failed(state, payload)
@@ -78,7 +74,6 @@ fn reduce_awaiting_model(
 }
 
 ///|
-/// Fold a successful model completion into the state.
 fn reduce_model_completed(
   state : RunState,
   catalog : ToolCatalogSnapshot,
@@ -127,7 +122,6 @@ fn reduce_model_completed(
       }
     None => ()
   }
-  // Length finish reason → terminal failure (ADR §2.7).
   match completion.finish_reason() {
     Length =>
       return reduce_terminal_fail(
@@ -142,8 +136,8 @@ fn reduce_model_completed(
     reasoning=completion.message.reasoning,
     finish_reason=completion.message.finish_reason,
   )
-  // Replace transcript body with what the modelport actually sent (it may have elided entries),
-  // then append the new assistant message. No-op when no preprocessing occurred.
+  // The modelport may have elided entries; its processed messages become the
+  // transcript body, followed by the new assistant message.
   let base_transcript = @kernel.Transcript::from_array(
     payload.processed_messages,
   )
@@ -152,7 +146,6 @@ fn reduce_model_completed(
     model_step_id=payload.model_step_id,
     completion~,
   )
-  // budget: model_steps + 1, tool_rounds unchanged, usage if any.
   let next_consumed = bump_model_step(state.budget_consumed(), completion.usage)
   let usage_check = next_consumed.exceeded(state.budget())
   match usage_check {
@@ -173,7 +166,6 @@ fn reduce_model_completed(
       )
     UnknownUsage(_) | WithinBudget => ()
   }
-  // No tool calls → terminal Completed (single-step run).
   if !completion.has_tool_calls() {
     let final_msg = @kernel.AssistantMessage(
       content=completion.message.content.copy(),
@@ -207,18 +199,14 @@ fn reduce_model_completed(
     )
     return reduce_output(terminal_state, [], [step_completed, terminal_event])
   }
-  // Tool calls: validate each (unknown name → NotExecuted; schema mismatch
-  // → NotExecuted). Build a list of (call, NotExecuted outcome OR ExecuteTool
-  // effect). For M1, ALL validated calls go into a SINGLE AwaitingTools
-  // batch (the scheduler's waves are a driver concern; the reducer just
-  // declares effects).
+  // Every validated call goes into a SINGLE AwaitingTools batch: splitting it
+  // into waves is the scheduler's concern, not the reducer's.
   reduce_model_completed_with_tools(
     state, catalog, payload, completion, transcript, next_consumed, step_completed,
   )
 }
 
 ///|
-/// Continue model-completed handling once we know there are tool calls.
 fn reduce_model_completed_with_tools(
   state : RunState,
   catalog : ToolCatalogSnapshot,
@@ -261,7 +249,6 @@ fn reduce_model_completed_with_tools(
         tool_results = updated.1
       }
       None =>
-        // Valid call → ExecuteTool effect.
         match catalog.find(call.name) {
           Some(entry) => {
             let effect_id = state.next_effect_id().add(effects.length())
@@ -300,9 +287,8 @@ fn reduce_model_completed_with_tools(
       ),
     )
   }
-  // All calls were NotExecuted? Then no ExecuteTool was declared. Continue
-  // back to ReadyForModel so the host/driver can issue the next model step
-  // (the model needs to see its own rejected calls).
+  // No ExecuteTool was declared: go back to ReadyForModel so the model can see
+  // its own rejected calls on the next step.
   if effects.is_empty() {
     let next_state = state.transition(
       phase=ReadyForModel,
@@ -383,15 +369,13 @@ fn reduce_model_completed_with_tools(
 }
 
 ///|
-/// Classify one model-proposed call against the catalog. Returns
-/// `Some(NotExecuted outcome)` when the call must be rejected (unknown tool
-/// or schema mismatch), `None` when it becomes an `ExecuteTool` effect.
+/// Returns `Some(NotExecuted outcome)` when the call must be rejected (unknown
+/// tool, not offered, or schema mismatch), `None` when it may execute.
 pub fn classify_rejected_outcome(
   catalog : ToolCatalogSnapshot,
   call : @kernel.ToolCall,
   direct~ : Bool = true,
 ) -> @kernel.ToolOutcome? {
-  // Unknown tool → NotExecuted(UnknownTool)
   if !catalog.contains(call.name) {
     return Some(NotExecuted(reason=UnknownTool, original_call_id=call.call_id))
   }
@@ -405,7 +389,6 @@ pub fn classify_rejected_outcome(
       }
     None => ()
   }
-  // Schema validation against the catalog.
   match catalog.validate_arguments(call.name, call.arguments) {
     Err(diag) =>
       if is_unknown_tool_diagnostic(diag) {
@@ -429,8 +412,7 @@ pub fn classify_rejected_outcome(
 
 ///|
 /// Merge one rejected call's NotExecuted outcome into the transcript, the
-/// tool-result ledger and the rejected-batch arrays, preserving source
-/// order. Returns the updated transcript and tool-result ledger.
+/// tool-result ledger and the rejected-batch arrays, preserving source order.
 fn record_rejected_call(
   transcript : @kernel.Transcript,
   tool_results : Array[(@kernel.CallId, @kernel.ToolOutcome)],
@@ -461,7 +443,6 @@ fn reduce_model_failed(
   state : RunState,
   payload : ModelFailedPayload,
 ) -> ReduceOutput raise KernelError {
-  // Correlation check.
   let pending = state.pending_effects()
   let pending_id = match pending[0] {
     CallModel(effect_id~, ..) => effect_id

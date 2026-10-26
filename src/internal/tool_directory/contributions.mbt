@@ -6,7 +6,7 @@ priv struct ContributedToolGroup {
 }
 
 ///|
-/// Definitions and executors are committed together. Only operation admission
+/// Definitions and executors are committed together; only operation admission
 /// derives a catalog and a binding projection from this authority.
 pub struct ToolContributionRegistry {
   priv mut base : Array[ToolEntry]
