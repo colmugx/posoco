@@ -392,7 +392,8 @@ pub impl @posoco.SessionStore for InMemoryStore with fn save(
 
 ## 5. Observer：只读旁观者
 
-`Observer::on_event` 只读、同步、带默认空实现。事件载荷用权威的 `Message`、
+`Observer::on_event(scope, event)` 只读、同步、带默认空实现，每个事件都与
+`EventScope?` 归因一起送达。事件载荷用权威的 `Message`、
 `ToolCall` 值；工具调用按节点各发一种事件，变体即状态：
 
 ```moonbit
@@ -400,6 +401,7 @@ pub(all) struct ConsoleObserver {}
 
 pub impl @posoco.Observer for ConsoleObserver with fn on_event(
   _self,
+  _scope : @posoco.EventScope?,
   event : @posoco.TurnEvent,
 ) -> Unit {
   match event {
@@ -447,18 +449,18 @@ pub impl @posoco.Observer for ConsoleObserver with fn on_event(
 Observer 的失败不会被静默吞掉：违反 `Unit` 合同的运行时失败保持 loud，让宿主
 能发现。每个 observer 收到的都是事件数据的独立快照，改它不影响别人。
 
-需要把事件归因到具体 run 时（成本核算、按代际聚合、遥测关联），改覆盖
-`Observer::on_event_at(scope, event)`：核心只分发这个带 `EventScope?`
-（`session_id`/`run_id`/`turn_id`）的变体，上面这种只覆盖 `on_event` 的写法由
-默认委托继续工作。scope 保证：turn 生命周期事件、envelope 投影事件
-（`ModelResponseReceived`/`ToolCallPending`/工具终态家族/`SessionRedirect`）
-恒为 `Some`；`StreamChunkReceived` 与 `Custom` secondary failure 这类 run 外诊断
-为 `None`。
+`on_event` 的签名是 `on_event(scope, event)`：归因随事件一起送达，想把事件
+关联到具体 run（成本核算、按代际聚合、遥测关联）直接读 `scope` 即可。
+
+- `Some(EventScope{session_id, run_id, turn_id})`：turn 生命周期事件、envelope
+  投影事件（`ModelResponseReceived` / `ToolCallPending` / 工具终态家族 /
+  `SessionRedirect`）恒带归因。
+- `None`：`StreamChunkReceived` 与 `Custom` secondary failure 这类 run 外诊断。
 
 ## 6. PipelineHook：插手流程
 
 一个 `PipelineHook` trait 装多种拦截点，每个方法都有默认实现，你只覆盖需要的
-那几个。`before_model` / `before_tool` 可以改写或中止；`on_post_event*` 是只读通知；
+那几个。`before_model` / `before_tool` 可以改写或中止；`on_post_event` 是只读通知；
 `on_turn_begin` / `on_turn_end` 在 turn 边界执行副作用：
 
 ```moonbit
@@ -470,10 +472,9 @@ pub(open) trait PipelineHook {
   ) -> Array[Message] raise HookAbort = _
   /// 在每次工具执行前审批、改写或拒绝。
   async fn before_tool(Self, call : ToolCall) -> ToolDecision = _
-  /// 效果完成后的只读通知，不能失败。
-  async fn on_post_event(Self, stage : HookStage) -> Unit noraise = _
-  /// 带归因 scope 的变体；核心只分发它，默认委托回 on_post_event。
-  async fn on_post_event_at(Self, scope : EventScope?, stage : HookStage) -> Unit noraise = _
+  /// 效果完成后的只读通知，不能失败；`scope` 是提交该效果的 run 归因
+  /// （run 外诊断为 `None`）。
+  async fn on_post_event(Self, scope : EventScope?, stage : HookStage) -> Unit noraise = _
   /// turn 开始： lifecycle on_start 之后、第一个 before_model 之前。
   async fn on_turn_begin(Self) -> Unit = _
   /// turn 结束：终端事件投影之后。

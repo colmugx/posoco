@@ -39,6 +39,18 @@
 
 ## 3. 扩展怎样接入
 
+### 只实现需要的部分
+
+- 普通工具只实现 `ToolProvider::list_tools/execute`，不必实现 `tool_exposure`、Hook 或 Lifecycle。
+- 只有要按操作收窄可见性时，才实现 `PipelineHook::tool_exposure`。该方法已有默认值 Direct；它表示“不额外收窄”，不会提升工具自身声明的 Deferred/Disabled。其他 Hook 回调也有默认值，例如只需要 before_tool 就只实现它。
+- Lifecycle 三个阶段均有默认实现。只领取能力可只实现 on_compose；只初始化可只实现 on_start；没有自有资源清理时不用补空 on_shutdown。有资源仍需明确清理，动态版本的资源优先交给各自 retire。
+- Runtime 必须转发完整 `EffectContext`，其中包含本次操作捕获的真实 provider 和调用上下文；不存在能力开关或按名字兜底的执行入口。取消必须携带 `run_id~`，与 effect id 一起定位真实调用。
+- Observer 只有 `on_event(scope, event)`，Hook 的效果通知只有 `on_post_event(scope, stage)`，均默认不做事；需要通知才覆盖。DecisionPort 只实现 `evaluate(request, context~)`，调用上下文不再经兼容方法补齐。
+
+`ToolDef` 构造器的 exposure 参数默认 Direct，可以省略；这是**构造函数参数默认值**，不是记录字段自动补齐机制。推荐通过公开构造器创建定义，不要把构造器参数可省略误解成旧完整记录字面量一定兼容。
+
+### 发布流程
+
 动态贡献使用已有的 `ToolProvider`，不是另一套工具执行协议：
 
 1. 在 manifest 的 `requires` 声明 `Capability::ToolContribution`。

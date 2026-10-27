@@ -198,6 +198,7 @@ Agent 会把 `StreamChunk` 回调投影成 `TurnEvent::StreamChunkReceived` 事�
 ```moonbit
 pub impl @posoco.Observer for TokenPrinter with fn on_event(
   _self,
+  _scope : @posoco.EventScope?,
   event : @posoco.TurnEvent,
 ) -> Unit {
   match event {
