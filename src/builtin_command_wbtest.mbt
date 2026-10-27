@@ -335,3 +335,23 @@ async test "d3_singleton/command_ids_are_monotonic_across_invokes" {
     _ => fail("expected 3 distinct commands")
   }
 }
+
+///|
+/// The port is constructed before the runtime exists, so a valid session_id
+/// with no bound idle-compact entry must yield the dedicated diagnostic —
+/// not the missing-argument failure and not a panic.
+async test "m35_builtin/idle_compact_without_bound_runtime_reports_unavailable" {
+  // No bound run on the mailbox, so invoke reaches the idle-compact branch.
+  let port = BuiltinCommandPort(@puppetry.ControlMailbox())
+  let outcome = port.invoke(
+    "compact",
+    Json::object(Map::from_array([("session_id", Json::string("any-session"))])),
+  )
+  guard outcome is Failure(reason~) else {
+    fail("expected the unbound idle compact to fail, got \{repr(outcome)}")
+  }
+  assert_true(
+    reason.contains("no active run and no agent runtime bound"),
+    msg="unbound idle compact must report the dedicated diagnostic",
+  )
+}

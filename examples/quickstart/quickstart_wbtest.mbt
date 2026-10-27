@@ -5,14 +5,10 @@
 /// boundary.
 async test "quickstart_persists_user_and_assistant_history" {
   let extension = QuickstartExtension()
-  let agent = @posoco.Agent(exts=[extension], config={
-    max_tool_rounds: Some(0),
-    temperature: None,
-    max_output_tokens: None,
-    model_context_window: None,
-    compact_threshold: None,
-    system_prompt: None,
-  })
+  let agent = @posoco.Agent(
+    exts=[extension],
+    config=@posoco.agent_config(max_tool_rounds=Some(0)),
+  )
   let input : @posoco.Message = @posoco.Message::UserMessage(content=[
     @posoco.Content::Text("Say hello"),
   ])

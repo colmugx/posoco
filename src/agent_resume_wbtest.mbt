@@ -130,3 +130,81 @@ async test "rate-limit resume after tool progress appends continue" {
     is AssistantMessage(content=[Text("finished"), ..], ..),
   )
 }
+
+///|
+/// Store whose save fails from the `fail_from`-th call onward, so the
+/// failed-turn transcript path can be observed end to end through the public
+/// Agent interface.
+struct SaveFailingStore {
+  mut saves : Int32
+  fail_from : Int32
+}
+
+///|
+impl @port.SessionStore for SaveFailingStore with fn load(_self, _id) -> @types.Session {
+  { messages: [], metadata: Map::from_array([]), }
+}
+
+///|
+impl @port.SessionStore for SaveFailingStore with fn save(self, _id, _session) -> Unit raise @error.SessionError {
+  self.saves = self.saves + 1
+  if self.saves >= self.fail_from {
+    raise Save("store offline")
+  }
+}
+
+///|
+async test "rate-limit failure persists best-effort and reports save failure as secondary" {
+  let model = ScriptedModel([
+    // Usage on the completed step gives the Puppet a context reading, so the
+    // failed turn's terminal save carries changed metadata (a real store
+    // write) instead of collapsing into the incremental checkpoints.
+    Respond(scope_test_tool_call_with_usage(10)),
+    Fail(
+      RateLimited({
+        message: "quota exhausted",
+        reset_at_ms: Some(1000L),
+        provider_code: Some("429"),
+      }),
+    ),
+  ])
+  let tools = RecordingToolProvider(
+    [tk_tool_def("echo", "echo")],
+    Map::from_array([("echo", OutcomeOk(tk_ok_result("echoed")))]),
+  )
+  let store = SaveFailingStore::{ saves: 0, fail_from: 4, }
+  let observer = RecordingObserver()
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="tools", tools=[tools]),
+      tk_ext(id="io", sessions=[store], observers=[observer]),
+    ],
+    config=agent_config(
+      max_tool_rounds=Some(10),
+      model_context_window=Some(1000),
+      compact_threshold=Some(0.9),
+    ),
+  )
+  let first = Ok(agent.run_turn(tk_user_msg("original task"), "failed-save")) catch {
+    error => Err(error)
+  }
+  guard first is Err(Model(msg)) else {
+    let why = match first {
+      Err(e) => e.to_string()
+      Ok(_) => "turn completed"
+    }
+    fail("expected Model error, got \{why}; saves=\{store.saves}")
+  }
+  assert_true(msg.contains("model quota exhausted"))
+  // The failed turn attempted exactly one transcript save against the store
+  // (after the admission and per-boundary checkpoint saves).
+  assert_eq(store.saves, 4)
+  // The save failure stays observable without replacing the primary error.
+  let failures = secondary_failure_errors(
+    observer, "failed_turn_transcript_save",
+  )
+  assert_eq(failures.length(), 1)
+  assert_true(failures[0].contains("session_id=failed-save"))
+  assert_true(failures[0].contains("SessionError::Save"))
+}

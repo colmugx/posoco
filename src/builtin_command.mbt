@@ -15,7 +15,12 @@
 /// instance, three views. The Agent owns the concrete composition.
 priv struct BuiltinCommandPort {
   mailbox : &@puppetry.Mailbox
-  runtime : Ref[AgentRuntime?]
+  /// Idle-compact entry bound by `Agent::Agent` after composition. The port
+  /// needs only this one operation — never the whole runtime — so an unbound
+  /// port fails idle compact with the dedicated diagnostic below.
+  idle_compact : Ref[
+    (async (String) -> Result[@types.CompactOutcome, @error.AgentError])?,
+  ]
   /// Monotonic counter for command ids. Lives on the port so successive
   /// invokes produce distinct ids without needing wall-clock time.
   mut seq : Int32
@@ -29,7 +34,7 @@ fn BuiltinCommandPort::BuiltinCommandPort(
 ) -> BuiltinCommandPort {
   {
     mailbox,
-    runtime: Ref(None),
+    idle_compact: Ref(None),
     seq: 0,
     compact_enabled: true,
     fork_enabled: true,
@@ -154,13 +159,11 @@ async fn BuiltinCommandPort::invoke_idle_compact(
       reason="compact requires a \"session_id\" argument when no run is active",
     )
   }
-  match self.runtime.val {
-    Some(runtime) => {
-      let attempted : Result[@types.CompactOutcome, @error.AgentError] = Ok(
-        runtime.compact_session(session_id),
-      ) catch {
-        error => Err(error)
-      }
+  match self.idle_compact.val {
+    Some(idle_compact) => {
+      let attempted : Result[@types.CompactOutcome, @error.AgentError] = idle_compact(
+        session_id,
+      )
       match attempted {
         Err(error) =>
           // Keep the category and safe bounded label in the command outcome.

@@ -20,7 +20,7 @@ pub impl @posoco.ModelPort for QuickstartModel with fn chat(
   )
   // No preprocessing occurs in this fixed model. Return a fresh snapshot so
   // Posoco can persist the complete user+assistant transcript safely.
-  { completion, processed_messages: messages.to_owned() }
+  { completion, processed_messages: messages.to_owned(), }
 }
 
 ///|
@@ -28,6 +28,7 @@ pub impl @posoco.ModelPort for QuickstartModel with fn compact(
   _self,
   _scope : @posoco.InvocationScope,
   _messages : ArrayView[@posoco.Message],
+  _tools : Array[@posoco.ToolDef],
   _options : @posoco.ChatOptions,
   _trigger : @posoco.CompactTrigger,
 ) -> @posoco.CompactResult raise @posoco.ModelError {
@@ -53,12 +54,12 @@ struct QuickstartSessionStore {
 
 ///|
 fn QuickstartSessionStore::QuickstartSessionStore() -> QuickstartSessionStore {
-  { sessions: Map::from_array([]) }
+  { sessions: Map::from_array([]), }
 }
 
 ///|
 fn copy_session(session : @posoco.Session) -> @posoco.Session {
-  { messages: session.messages.copy(), metadata: session.metadata.copy() }
+  { messages: session.messages.copy(), metadata: session.metadata.copy(), }
 }
 
 ///|
@@ -71,7 +72,7 @@ pub impl @posoco.SessionStore for QuickstartSessionStore with fn load(
     None =>
       // A missing id starts a new conversation. Storage failures should raise
       // SessionError instead of being converted to an empty session.
-      { messages: [], metadata: Map::from_array([]) }
+      { messages: [], metadata: Map::from_array([]), }
   }
 }
 
@@ -94,7 +95,7 @@ struct QuickstartExtension {
 
 ///|
 fn QuickstartExtension::QuickstartExtension() -> QuickstartExtension {
-  { model: QuickstartModel::{  }, sessions: QuickstartSessionStore() }
+  { model: QuickstartModel::{ }, sessions: QuickstartSessionStore(), }
 }
 
 ///|
@@ -105,20 +106,16 @@ pub impl @posoco.Extension for QuickstartExtension with fn extension_id(_self) -
 ///|
 pub impl @posoco.Extension for QuickstartExtension with fn manifest(self) -> @posoco.ExtensionManifest {
   let manifest = @posoco.ExtensionManifest::default(id="quickstart")
-  { ..manifest, models: [self.model], sessions: [self.sessions] }
+  { ..manifest, models: [self.model], sessions: [self.sessions], }
 }
 
 ///|
 async fn main {
   let extension = QuickstartExtension()
-  let agent = @posoco.Agent(exts=[extension], config={
-    max_tool_rounds: Some(0),
-    temperature: None,
-    max_output_tokens: None,
-    model_context_window: None,
-    compact_threshold: None,
-    system_prompt: None,
-  })
+  let agent = @posoco.Agent(
+    exts=[extension],
+    config=@posoco.agent_config(max_tool_rounds=Some(0)),
+  )
   let input : @posoco.Message = @posoco.Message::UserMessage(content=[
     @posoco.Content::Text("Say hello"),
   ])

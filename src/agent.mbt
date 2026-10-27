@@ -251,14 +251,9 @@ priv struct AgentRuntime {
   tool_revocations : @puppetry.ToolRevocationFacts
   /// Tool name → contributed version of the installed capture.
   binding_versions : Ref[Map[String, Int32]]
-  /// Versions projected by the installed capture; an admitted operation
-  /// retains each of them once.
-  mut captured_versions : Array[Int32]
-  /// Lease held by the admitted operation.
-  mut operation_versions : Array[Int32]
-  /// Lease kept alive for executions whose termination is not confirmed. An
-  /// unknown execution must not release the version's resources.
-  mut retained_versions : Array[Int32]
+  /// Captured / operation / retained version sets with their joint lease
+  /// invariants (see `ToolVersionLeases`).
+  versions : ToolVersionLeases
   /// Only replaced at operation admission. Each effect receives its captured
   /// provider in a private Runtime context, not a mutable host name route.
   tool_bindings : Ref[Map[String, &@port.ToolProvider]]
@@ -614,9 +609,7 @@ fn AgentRuntime::compose(
     tool_contributions,
     tool_revocations,
     binding_versions,
-    captured_versions: [],
-    operation_versions: [],
-    retained_versions: [],
+    versions: ToolVersionLeases::ToolVersionLeases(),
     tool_bindings,
     tool_runtime,
     next_run_seq: 1,
@@ -631,7 +624,13 @@ fn AgentRuntime::compose(
     checkpoint_dirty,
     body_recovery: Map::from_array([]),
   }
-  builtin_command_port.runtime.val = Some(runtime)
+  builtin_command_port.idle_compact.val = Some(async fn(
+    session_id,
+  ) -> Result[@types.CompactOutcome, @error.AgentError] {
+    Ok(runtime.compact_session(session_id)) catch {
+      error => Err(error)
+    }
+  })
   context_state_of.val = Some(fn(session_id) {
     runtime.puppet.session_context_state(session_id)
   })

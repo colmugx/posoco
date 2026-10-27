@@ -414,36 +414,12 @@ async fn AgentRuntime::run_puppet_turn_body(
     Rejected(error=ReducerInvariantViolation(..)) =>
       raise Runtime(InvocationFailed("puppet invariant violation"))
     Rejected(error=EffectExecutionFailed(phase="auto_compact", cause~)) => {
-      match self.puppet.last_completed_transcript() {
-        Some(t) => {
-          let operation = transcript_save_operation(
-            t,
-            request.initial_messages,
-            current_turn_start,
-          )
-          let saved : Result[Unit, @error.AgentError] = Ok(
-            self.save_turn_transcript(
-              session_id,
-              t,
-              current_metadata,
-              request.initial_messages,
-              current_turn_start,
-            ),
-          ) catch {
-            error => Err(error)
-          }
-          match saved {
-            Ok(_) => self.task_runtime.commit_outcomes(session_id)
-            Err(error) =>
-              emit_secondary_failure(
-                self.observers,
-                "failed_turn_transcript_save",
-                "session_id=\{safe_error_label(session_id)};op=\{operation};cause=\{failed_save_cause_label(error)}",
-              )
-          }
-        }
-        None => ()
-      }
+      self.save_failed_turn_transcript(
+        session_id,
+        request.initial_messages,
+        current_turn_start,
+        current_metadata,
+      )
       raise @error.AgentError::AutoCompactFailed(cause)
     }
     Rejected(error=EffectExecutionCancelled(phase~)) =>
@@ -476,42 +452,12 @@ async fn AgentRuntime::run_puppet_turn_body(
       let failure : @error.AgentError? = self.terminal_failure_to_agent_error()
       match failure {
         Some(err) => {
-          // A failed turn still owns its transcript: the user input and any
-          // completed progress must reach the session store, or the next turn
-          // reloads pre-turn state and the model loses the context of what it
-          // was doing — and what the user asked.
-          match self.puppet.last_completed_transcript() {
-            Some(t) => {
-              let operation = transcript_save_operation(
-                t,
-                request.initial_messages,
-                current_turn_start,
-              )
-              let saved : Result[Unit, @error.AgentError] = Ok(
-                self.save_turn_transcript(
-                  session_id,
-                  t,
-                  current_metadata,
-                  request.initial_messages,
-                  current_turn_start,
-                ),
-              ) catch {
-                error => Err(error)
-              }
-              match saved {
-                Ok(_) => self.task_runtime.commit_outcomes(session_id)
-                Err(error) =>
-                  // The turn's own failure is the primary signal; a
-                  // secondary save failure must remain observable.
-                  emit_secondary_failure(
-                    self.observers,
-                    "failed_turn_transcript_save",
-                    "session_id=\{safe_error_label(session_id)};op=\{operation};cause=\{failed_save_cause_label(error)}",
-                  )
-              }
-            }
-            None => ()
-          }
+          self.save_failed_turn_transcript(
+            session_id,
+            request.initial_messages,
+            current_turn_start,
+            current_metadata,
+          )
           raise err
         }
         None => ()
@@ -623,6 +569,48 @@ fn AgentRuntime::terminal_failure_to_agent_error(
 }
 
 ///|
+/// Shared tail of every NewThread-style diversion: snapshot the transcript,
+/// attach the parent-thread lineage, persist the new sibling session to every
+/// store under the operation's save label, advance its cursor, and emit the
+/// SessionRedirect so observers can switch. The save count and order, the
+/// per-operation save label, the fresh empty metadata, and the redirect
+/// counts (source transcript length on both sides) are identical across the
+/// fork and compact NewThread terminals; each caller keeps its own result
+/// projection (final_session_id and follow-up events).
+async fn AgentRuntime::persist_new_thread_session(
+  self : AgentRuntime,
+  scope : @types.EventScope?,
+  parent_session_id : String,
+  new_session_id : String,
+  messages : Array[@kernel.Message],
+  save_label : String,
+) -> Unit raise @error.AgentError {
+  let new_session : @types.Session = {
+    messages: snapshot_messages(messages),
+    metadata: Map::from_array([]),
+  }
+  let with_lineage = new_session.with_parent_thread_id(parent_session_id)
+  self.save_sessions_all(
+    new_session_id,
+    with_lineage.messages,
+    with_lineage.metadata,
+    save_label,
+  )
+  self.session_cursors[new_session_id] = with_lineage.messages.length()
+  // Emit a SessionRedirect so observers know a sibling thread was
+  // created and can switch the UI.
+  let redirect : @types.TurnEvent = SessionRedirect(
+    from=parent_session_id,
+    to=new_session_id,
+    messages_before=messages.length(),
+    messages_after=messages.length(),
+  )
+  for observer in self.observers {
+    observer.on_event(scope, snapshot_turn_event(redirect))
+  }
+}
+
+///|
 /// Fork terminal state (M3.5): fork creates a new session and stops the
 /// current turn. The original thread is untouched; product code switches its
 /// active thread to `new_session_id`. We persist the new session to every
@@ -638,29 +626,13 @@ async fn AgentRuntime::complete_fork_turn(
   forked_messages : Array[@kernel.Message],
   input : @kernel.Message,
 ) -> @types.TurnResult raise @error.AgentError {
-  let forked_session : @types.Session = {
-    messages: snapshot_messages(forked_messages),
-    metadata: Map::from_array([]),
-  }
-  let with_lineage = forked_session.with_parent_thread_id(parent_session_id)
-  self.save_sessions_all(
+  self.persist_new_thread_session(
+    Some(identity.scope()),
+    parent_session_id,
     new_session_id,
-    with_lineage.messages,
-    with_lineage.metadata,
+    forked_messages,
     "fork_save",
   )
-  self.session_cursors[new_session_id] = with_lineage.messages.length()
-  // Emit a SessionRedirect so observers know a sibling thread was
-  // created and can switch the UI.
-  let redirect : @types.TurnEvent = SessionRedirect(
-    from=parent_session_id,
-    to=new_session_id,
-    messages_before=forked_messages.length(),
-    messages_after=forked_messages.length(),
-  )
-  for observer in self.observers {
-    observer.on_event(Some(identity.scope()), snapshot_turn_event(redirect))
-  }
   let result : @types.TurnResult = {
     message: input,
     tool_results: [],
@@ -690,30 +662,13 @@ async fn AgentRuntime::complete_compact_turn(
     NewThread =>
       match new_session_id {
         Some(new_sid) => {
-          let new_session : @types.Session = {
-            messages: snapshot_messages(compacted_messages),
-            metadata: Map::from_array([]),
-          }
-          let with_lineage = new_session.with_parent_thread_id(session_id)
-          self.save_sessions_all(
+          self.persist_new_thread_session(
+            Some(identity.scope()),
+            session_id,
             new_sid,
-            with_lineage.messages,
-            with_lineage.metadata,
+            compacted_messages,
             "compact_newthread_save",
           )
-          self.session_cursors[new_sid] = with_lineage.messages.length()
-          let redirect : @types.TurnEvent = SessionRedirect(
-            from=session_id,
-            to=new_sid,
-            messages_before=compacted_messages.length(),
-            messages_after=compacted_messages.length(),
-          )
-          for observer in self.observers {
-            observer.on_event(
-              Some(identity.scope()),
-              snapshot_turn_event(redirect),
-            )
-          }
           let result : @types.TurnResult = {
             message: input,
             tool_results: [],
@@ -905,6 +860,47 @@ async fn AgentRuntime::save_turn_transcript(
     self.session_cursors[session_id] = final_messages.length()
   }
   self.checkpoint_dirty.remove(session_id)
+}
+
+///|
+/// Best-effort persistence for a failed turn. A failed turn still owns its
+/// transcript: the user input and any completed progress must reach the
+/// session store, or the next turn reloads pre-turn state and the model loses
+/// the context of what it was doing — and what the user asked. Save success
+/// commits the turn's outcomes; a save failure is emitted as a
+/// `failed_turn_transcript_save` secondary observation and never replaces the
+/// turn's primary error, which the caller raises.
+async fn AgentRuntime::save_failed_turn_transcript(
+  self : AgentRuntime,
+  session_id : String,
+  initial_messages : Array[@kernel.Message],
+  current_turn_start : Int32,
+  current_metadata : Map[String, Json],
+) -> Unit noraise {
+  match self.puppet.last_completed_transcript() {
+    Some(t) => {
+      let operation = transcript_save_operation(
+        t, initial_messages, current_turn_start,
+      )
+      let saved : Result[Unit, @error.AgentError] = Ok(
+        self.save_turn_transcript(
+          session_id, t, current_metadata, initial_messages, current_turn_start,
+        ),
+      ) catch {
+        error => Err(error)
+      }
+      match saved {
+        Ok(_) => self.task_runtime.commit_outcomes(session_id)
+        Err(error) =>
+          emit_secondary_failure(
+            self.observers,
+            "failed_turn_transcript_save",
+            "session_id=\{safe_error_label(session_id)};op=\{operation};cause=\{failed_save_cause_label(error)}",
+          )
+      }
+    }
+    None => ()
+  }
 }
 
 ///|
@@ -1234,27 +1230,13 @@ async fn AgentRuntime::run_compact_operation(
         NewThread =>
           match new_session_id {
             Some(new_sid) => {
-              let new_session : @types.Session = {
-                messages: snapshot_messages(compacted_messages),
-                metadata: Map::from_array([]),
-              }
-              let with_lineage = new_session.with_parent_thread_id(session_id)
-              self.save_sessions_all(
+              self.persist_new_thread_session(
+                Some(scope),
+                session_id,
                 new_sid,
-                with_lineage.messages,
-                with_lineage.metadata,
+                compacted_messages,
                 "compact_newthread_save",
               )
-              self.session_cursors[new_sid] = with_lineage.messages.length()
-              let redirect : @types.TurnEvent = SessionRedirect(
-                from=session_id,
-                to=new_sid,
-                messages_before=compacted_messages.length(),
-                messages_after=compacted_messages.length(),
-              )
-              for observer in self.observers {
-                observer.on_event(Some(scope), snapshot_turn_event(redirect))
-              }
               self.project_context_state(Some(scope), new_sid)
               self.emit_turn_event(
                 Some(scope),

@@ -79,6 +79,85 @@ fn emit_catalog_captured(
 }
 
 ///|
+/// The three version sets one admitted operation moves through, with the
+/// invariants that tie them together: acquisition copies the installed
+/// capture's versions and retains each exactly once; a release either gives
+/// the lease back or — while any execution's termination is still unconfirmed
+/// — moves it to the retained set, because an unknown execution must keep the
+/// version's resources alive; the retained set drains only once nothing is
+/// unconfirmed. The settlement order
+/// (release operation → release retained → retire pending) and the shutdown
+/// special entry stay with the `AgentRuntime` methods that own those
+/// transitions.
+priv struct ToolVersionLeases {
+  /// Versions projected by the installed capture; an admitted operation
+  /// retains each of them once.
+  mut captured : Array[Int32]
+  /// Lease held by the admitted operation.
+  mut operation : Array[Int32]
+  /// Lease kept alive for executions whose termination is not confirmed.
+  mut retained : Array[Int32]
+}
+
+///|
+fn ToolVersionLeases::ToolVersionLeases() -> ToolVersionLeases {
+  { captured: [], operation: [], retained: [], }
+}
+
+///|
+fn ToolVersionLeases::install_captured(
+  self : ToolVersionLeases,
+  versions : Array[Int32],
+) -> Unit {
+  self.captured = versions
+}
+
+///|
+/// Retain the installed capture's versions once for the admitted operation.
+fn ToolVersionLeases::acquire(
+  self : ToolVersionLeases,
+  registry : ToolContributionRegistry,
+) -> Unit {
+  self.operation = self.captured.copy()
+  registry.retain_versions(self.operation)
+}
+
+///|
+/// Give the admitted operation's lease back. When an execution's termination is
+/// still unconfirmed the lease is retained instead: an unknown execution keeps
+/// the version — and therefore its resources — alive.
+fn ToolVersionLeases::release_operation(
+  self : ToolVersionLeases,
+  registry : ToolContributionRegistry,
+  unconfirmed : Bool,
+) -> Unit {
+  if self.operation.is_empty() {
+    return
+  }
+  if unconfirmed {
+    self.retained.append(self.operation)
+  } else {
+    registry.release_versions(self.operation)
+  }
+  self.operation = []
+}
+
+///|
+/// Release retained leases once every unconfirmed execution has a terminal
+/// disposition. Called after runtime cleanup confirms that state, never before.
+fn ToolVersionLeases::release_retained(
+  self : ToolVersionLeases,
+  registry : ToolContributionRegistry,
+  unconfirmed : Bool,
+) -> Unit {
+  if self.retained.is_empty() || unconfirmed {
+    return
+  }
+  registry.release_versions(self.retained)
+  self.retained = []
+}
+
+///|
 /// Capture the directory into the Puppet at operation admission and take the
 /// new version lease. A capture that changed nothing keeps the installed
 /// bindings and their versions instead of re-capturing.
@@ -111,7 +190,7 @@ fn AgentRuntime::capture_tool_contributions(
   let catalog_version = self.next_catalog_version
   self.tool_bindings.val = capture.bindings
   self.binding_versions.val = capture.binding_versions()
-  self.captured_versions = capture.versions()
+  self.versions.install_captured(capture.versions())
   self.next_catalog_version += 1
   self.tool_contributions.accept_capture(capture)
   match operation_id {
@@ -129,8 +208,7 @@ fn AgentRuntime::capture_tool_contributions(
 ///|
 /// Retain the installed capture's versions once for the admitted operation.
 fn AgentRuntime::acquire_operation_versions(self : AgentRuntime) -> Unit {
-  self.operation_versions = self.captured_versions.copy()
-  self.tool_contributions.retain_versions(self.operation_versions)
+  self.versions.acquire(self.tool_contributions)
 }
 
 ///|
@@ -138,26 +216,20 @@ fn AgentRuntime::acquire_operation_versions(self : AgentRuntime) -> Unit {
 /// still unconfirmed the lease is retained instead: an unknown execution keeps
 /// the version — and therefore its resources — alive.
 fn AgentRuntime::release_operation_versions(self : AgentRuntime) -> Unit {
-  if self.operation_versions.is_empty() {
-    return
-  }
-  if self.tool_runtime.has_unconfirmed() {
-    self.retained_versions.append(self.operation_versions)
-  } else {
-    self.tool_contributions.release_versions(self.operation_versions)
-  }
-  self.operation_versions = []
+  self.versions.release_operation(
+    self.tool_contributions,
+    self.tool_runtime.has_unconfirmed(),
+  )
 }
 
 ///|
 /// Release retained leases once every unconfirmed execution has a terminal
 /// disposition. Called after runtime cleanup confirms that state, never before.
 fn AgentRuntime::release_retained_versions(self : AgentRuntime) -> Unit {
-  if self.retained_versions.is_empty() || self.tool_runtime.has_unconfirmed() {
-    return
-  }
-  self.tool_contributions.release_versions(self.retained_versions)
-  self.retained_versions = []
+  self.versions.release_retained(
+    self.tool_contributions,
+    self.tool_runtime.has_unconfirmed(),
+  )
 }
 
 ///|
