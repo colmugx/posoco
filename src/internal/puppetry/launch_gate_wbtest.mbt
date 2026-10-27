@@ -39,21 +39,6 @@ impl @kernel_exec.HostRuntime for NotExecutedHost with fn execute_tool(
   _call,
   _name,
   _arguments,
-) {
-  NotExecuted(
-    reason=@kernel.NotExecutedReason::UnknownTool,
-    original_call_id=@kernel.CallId::unchecked("invented"),
-  )
-}
-
-///|
-impl @kernel_exec.HostRuntime for NotExecutedHost with fn execute_tool_scoped(
-  _self,
-  _id,
-  _owner,
-  _call,
-  _name,
-  _arguments,
   _scope,
 ) {
   NotExecuted(
@@ -65,9 +50,12 @@ impl @kernel_exec.HostRuntime for NotExecutedHost with fn execute_tool_scoped(
 ///|
 impl @kernel_exec.HostRuntime for NotExecutedHost with fn cancel_effects(
   _self,
+  run_id~,
   ids,
   _reason,
 ) {
+  let _ = run_id
+
   ids.map(id => (id, @kernel.CancelDisposition::AlreadySettled))
 }
 
@@ -103,7 +91,7 @@ async test "launch_gate/a_host_invented_not_executed_is_still_a_contract_violati
     [],
     None,
   )
-  let puppet = Puppet({ ..config, bound_tool_names: fn() { ["echo"] }, })
+  let puppet = Puppet(config)
   // The reducer turns the host's invented rejection into a runtime failure
   // instead of accepting it as a legitimate non-execution.
   match fixture_prompt(puppet, "host_not_executed") {

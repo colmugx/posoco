@@ -93,29 +93,18 @@ priv struct ToolCancellationRegistration {
 ///|
 pub struct PortRuntime {
   priv model : &@port.ModelPort
-  /// Legacy unbound route. Bound effects never consult this table.
-  priv tools : Map[String, &@port.ToolProvider]
   /// Retain unsettled executions by run and effect. Legacy cancellation
   /// requests contain only effect ids, so ambiguous requests must fail closed.
   priv cancels : Map[(String, Int32), ToolCancellationRegistration]
 }
 
 ///|
-pub fn PortRuntime::PortRuntime(
-  model~ : &@port.ModelPort,
-  tools~ : Map[String, &@port.ToolProvider],
-) -> PortRuntime {
-  { model, tools, cancels: Map::from_array([]), }
-}
-
-///|
-pub impl Runtime for PortRuntime with fn supports_bound_tools(_self) -> Bool {
-  true
+pub fn PortRuntime::PortRuntime(model~ : &@port.ModelPort) -> PortRuntime {
+  { model, cancels: Map::from_array([]), }
 }
 
 ///|
 pub extend PortRuntime with Runtime::{
-  supports_bound_tools,
   cancel_effects,
   execute_tool,
   call_model,
@@ -159,19 +148,7 @@ pub impl Runtime for PortRuntime with fn call_model(
 
 ///|
 pub impl Runtime for PortRuntime with fn execute_tool(self, ctx : EffectContext) -> @kernel.ToolOutcome {
-  let name = ctx.tool_name.to_string()
-  let selected = match ctx.bound_tool {
-    Some(provider) => Some(provider)
-    None => self.tools.get(name)
-  }
-  let provider = match selected {
-    Some(p) => p
-    None =>
-      return RuntimeFailure(
-        error_category="MissingOwner",
-        message="no tool provider for '" + name + "'",
-      )
-  }
+  let provider = ctx.bound_tool
   let registration : ToolCancellationRegistration = {
     handler: None,
     active: true,
@@ -184,21 +161,8 @@ pub impl Runtime for PortRuntime with fn execute_tool(self, ctx : EffectContext)
       registration.handler = Some(c)
     }
   }
-  let call_ctx = match ctx.tool_context {
-    Some(factory) => factory(register_cancel)
-    None =>
-      @port.ToolCallContext(
-        effect_id=ctx.effect_id,
-        call_id=ctx.call_id,
-        name=ctx.tool_name,
-        arguments=ctx.arguments,
-        register_cancel~,
-      )
-  }
-  let run_id = match call_ctx.scope {
-    Some(scope) => scope.run_id.to_string()
-    None => ""
-  }
+  let call_ctx = (ctx.tool_context)(register_cancel)
+  let run_id = ctx.run_id.to_string()
   let key = (run_id, ctx.effect_id.to_int())
   if self.cancels.contains(key) {
     raise @error.RuntimeError::InvocationFailed(
@@ -230,22 +194,17 @@ pub impl Runtime for PortRuntime with fn execute_tool(self, ctx : EffectContext)
 /// for shutdown retry rather than silently reported as a normal disposition.
 pub impl Runtime for PortRuntime with fn cancel_effects(
   self : PortRuntime,
+  run_id~,
   effect_ids : Array[@kernel.EffectId],
   reason : @kernel.CancelReason,
 ) -> Array[(@kernel.EffectId, @kernel.CancelDisposition)] {
   let dispositions : Array[(@kernel.EffectId, @kernel.CancelDisposition)] = []
   for id in effect_ids {
-    let keys = self.cancels.keys().filter(key => key.1 == id.to_int()).collect()
-    if keys.length() > 1 {
-      raise @error.RuntimeError::InvocationFailed(
-        "ambiguous tool cancellation across runs: effect \{id.to_int()}",
-      )
-    }
-    match keys.get(0) {
-      Some(key) => {
-        let registration = self.cancels[key]
+    let key = (run_id.to_string(), id.to_int())
+    match self.cancels.get(key) {
+      Some(registration) => {
         let disposition = match registration.handler {
-          Some(handler) => handler.cancel(id, reason)
+          Some(handler) => handler.cancel(id, reason, run_id~)
           None => NotPropagated
         }
         if disposition is (Stopped | AlreadySettled) {

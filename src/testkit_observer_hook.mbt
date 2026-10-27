@@ -23,10 +23,14 @@ pub fn RecordingObserver::events(
 }
 
 ///|
-pub extend RecordingObserver with @port.Observer::{on_event_at}
+pub extend RecordingObserver with @port.Observer::{on_event}
 
 ///|
-pub impl @port.Observer for RecordingObserver with fn on_event(self, event) {
+pub impl @port.Observer for RecordingObserver with fn on_event(
+  self,
+  _scope,
+  event,
+) {
   self.events.push(testkit_snapshot_event(event))
 }
 
@@ -100,9 +104,8 @@ pub fn RecordingHook::records(self : RecordingHook) -> Array[HookRecord] {
 ///|
 pub extend RecordingHook with @port.PipelineHook::{
   tool_exposure,
-  on_post_event,
   on_turn_begin,
-  on_post_event_at,
+  on_post_event,
   on_turn_end,
 }
 
@@ -153,6 +156,7 @@ pub impl @port.PipelineHook for RecordingHook with fn before_tool(
 ///|
 pub impl @port.PipelineHook for RecordingHook with fn on_post_event(
   self,
+  _scope,
   _stage : @port.HookStage,
 ) -> Unit {
   let label = "on_post_event"

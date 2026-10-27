@@ -42,7 +42,6 @@ pub(all) suberror CompositionError {
   MultipleLogs(manifests~ : Array[String])
   EmptyManifests
   ManifestSchemaError(manifest_id~ : String, detail~ : String)
-  EmptyPort(String)
   ExtensionComposeFailed(manifest_id~ : String, detail~ : String)
 } derive(@debug.Debug)
 pub fn CompositionError::output(Self, &Logger) -> Unit

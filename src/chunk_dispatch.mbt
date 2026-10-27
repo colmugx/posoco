@@ -78,7 +78,7 @@ fn ChunkDispatcher::emit(
   event : @types.TurnEvent,
 ) -> Unit {
   for observer in self.observers {
-    observer.on_event_at(None, snapshot_turn_event(event))
+    observer.on_event(None, snapshot_turn_event(event))
   }
 }
 

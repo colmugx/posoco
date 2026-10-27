@@ -71,7 +71,7 @@ pub async fn[X] Agent::run_scoped(Self, async (Self) -> X) -> X
 pub async fn Agent::run_turn(Self, @kernel.Message, String) -> @types.TurnResult raise @error.AgentError
 pub fn Agent::set_active_session(Self, String?) -> Unit
 pub async fn Agent::shutdown(Self) -> Unit
-pub fn Agent::with_runtime(exts~ : Array[&@port.Extension], config~ : AgentConfig, runtime~ : &@runtime.Runtime, ui_projection? : Bool, catalog_source? : &@runtime.CatalogSource) -> Self raise @error.CompositionError
+pub fn Agent::with_runtime(exts~ : Array[&@port.Extension], config~ : AgentConfig, runtime~ : &@runtime.Runtime, ui_projection? : Bool) -> Self raise @error.CompositionError
 
 pub struct AgentConfig {
   max_tool_rounds : Int32?
@@ -93,13 +93,6 @@ pub fn AgentControl::active_run_id(Self) -> @kernel.RunId?
 pub fn AgentControl::active_turn_id(Self) -> @kernel.TurnId?
 pub fn AgentControl::enqueue_follow_up(Self, @kernel.Message) -> @runtime.EnqueueOutcome
 pub fn AgentControl::pending_follow_ups(Self) -> Int32
-
-pub(all) struct CompositeToolProvider {
-  providers : Array[&@port.ToolProvider]
-}
-pub async fn CompositeToolProvider::execute(Self, @port.ToolCallContext) -> @kernel.ToolOutcome raise @error.RuntimeError
-pub fn CompositeToolProvider::list_tools(Self) -> Array[@kernel.ToolDef]
-pub impl @port.ToolProvider for CompositeToolProvider
 
 pub(all) struct CompositeUiPort {
   contributors : Array[&@port.UiPort]
@@ -171,8 +164,7 @@ pub fn RecordingHook::abort_when(Self, String, String) -> Unit
 pub async fn RecordingHook::before_model(Self, Array[@kernel.Message]) -> Array[@kernel.Message] raise @port.HookAbort
 pub async fn RecordingHook::before_tool(Self, @kernel.ToolCall) -> @port.ToolDecision
 pub fn RecordingHook::defer_when(Self, String, String) -> Unit
-pub async fn RecordingHook::on_post_event(Self, @port.HookStage) -> Unit noraise
-pub async fn RecordingHook::on_post_event_at(Self, @types.EventScope?, @port.HookStage) -> Unit noraise
+pub async fn RecordingHook::on_post_event(Self, @types.EventScope?, @port.HookStage) -> Unit noraise
 pub async fn RecordingHook::on_turn_begin(Self) -> Unit
 pub async fn RecordingHook::on_turn_end(Self) -> Unit
 pub fn RecordingHook::records(Self) -> Array[HookRecord]
@@ -208,8 +200,7 @@ pub(all) struct RecordingObserver {
 }
 pub fn RecordingObserver::RecordingObserver() -> Self
 pub fn RecordingObserver::events(Self) -> Array[@types.TurnEvent]
-pub fn RecordingObserver::on_event(Self, @types.TurnEvent) -> Unit
-pub fn RecordingObserver::on_event_at(Self, @types.EventScope?, @types.TurnEvent) -> Unit
+pub fn RecordingObserver::on_event(Self, @types.EventScope?, @types.TurnEvent) -> Unit
 pub impl @port.Observer for RecordingObserver
 
 pub(all) struct RecordingSessionStore {
@@ -287,9 +278,7 @@ pub(all) struct ScriptedDecisionPort {
 }
 pub fn ScriptedDecisionPort::ScriptedDecisionPort(Array[ScriptedDecisionStep]) -> Self
 pub fn ScriptedDecisionPort::call_count(Self) -> Int32
-pub async fn ScriptedDecisionPort::evaluate(Self, @port.DecisionRequest) -> @port.DecisionResult raise @error.DecisionError
-pub async fn ScriptedDecisionPort::evaluate_direct(Self, @port.DecisionRequest) -> @port.DecisionResult raise @error.DecisionError
-pub async fn ScriptedDecisionPort::evaluate_with_context(Self, @port.DecisionRequest, context~ : @port.DecisionCallContext) -> @port.DecisionResult raise @error.DecisionError
+pub async fn ScriptedDecisionPort::evaluate(Self, @port.DecisionRequest, context~ : @port.DecisionCallContext) -> @port.DecisionResult raise @error.DecisionError
 pub fn ScriptedDecisionPort::received_requests(Self) -> Array[@port.DecisionRequest]
 pub impl @port.DecisionPort for ScriptedDecisionPort
 
@@ -382,8 +371,7 @@ pub fn SystemPromptHook::SystemPromptHook(base_prompt~ : String, contributors~ :
 pub fn SystemPromptHook::assemble(Self) -> String
 pub async fn SystemPromptHook::before_model(Self, Array[@kernel.Message]) -> Array[@kernel.Message] raise @port.HookAbort
 pub async fn SystemPromptHook::before_tool(Self, @kernel.ToolCall) -> @port.ToolDecision
-pub async fn SystemPromptHook::on_post_event(Self, @port.HookStage) -> Unit noraise
-pub async fn SystemPromptHook::on_post_event_at(Self, @types.EventScope?, @port.HookStage) -> Unit noraise
+pub async fn SystemPromptHook::on_post_event(Self, @types.EventScope?, @port.HookStage) -> Unit noraise
 pub async fn SystemPromptHook::on_turn_begin(Self) -> Unit
 pub async fn SystemPromptHook::on_turn_end(Self) -> Unit
 pub fn SystemPromptHook::tool_exposure(Self, @kernel.ToolDef) -> @kernel.ToolExposure
@@ -428,8 +416,7 @@ pub(all) struct UiRenderHook {
 pub fn UiRenderHook::UiRenderHook(ui~ : &@port.UiPort) -> Self
 pub async fn UiRenderHook::before_model(Self, Array[@kernel.Message]) -> Array[@kernel.Message] raise @port.HookAbort
 pub async fn UiRenderHook::before_tool(Self, @kernel.ToolCall) -> @port.ToolDecision
-pub async fn UiRenderHook::on_post_event(Self, @port.HookStage) -> Unit noraise
-pub async fn UiRenderHook::on_post_event_at(Self, @types.EventScope?, @port.HookStage) -> Unit noraise
+pub async fn UiRenderHook::on_post_event(Self, @types.EventScope?, @port.HookStage) -> Unit noraise
 pub async fn UiRenderHook::on_turn_begin(Self) -> Unit
 pub async fn UiRenderHook::on_turn_end(Self) -> Unit
 pub fn UiRenderHook::tool_exposure(Self, @kernel.ToolDef) -> @kernel.ToolExposure

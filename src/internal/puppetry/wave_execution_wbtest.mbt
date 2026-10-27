@@ -47,9 +47,8 @@ fn WaveFixtureHost::finished(self : WaveFixtureHost) -> Array[String] {
 
 ///|
 pub extend WaveFixtureHost with @kernel_exec.HostRuntime::{
-  execute_tool_scoped,
-  cancel_effects,
   execute_tool,
+  cancel_effects,
   call_model,
   compact,
 }
@@ -84,6 +83,7 @@ pub impl @kernel_exec.HostRuntime for WaveFixtureHost with fn execute_tool(
   call_id : CallId,
   _tool_name : ToolName,
   _arguments : Json,
+  _scope,
 ) -> @kernel.ToolOutcome {
   let id = call_id.to_string()
   self.started.push(id)
@@ -106,9 +106,12 @@ pub impl @kernel_exec.HostRuntime for WaveFixtureHost with fn execute_tool(
 ///|
 pub impl @kernel_exec.HostRuntime for WaveFixtureHost with fn cancel_effects(
   self : WaveFixtureHost,
+  run_id~,
   effect_ids : Array[EffectId],
   _reason : CancelReason,
 ) -> Array[(EffectId, CancelDisposition)] {
+  let _ = run_id
+
   ignore(self)
   effect_ids.map(id => (id, NotPropagated))
 }

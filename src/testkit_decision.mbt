@@ -127,24 +127,15 @@ pub fn ScriptedDecisionPort::received_requests(
 }
 
 ///|
-pub async fn ScriptedDecisionPort::evaluate_direct(
-  self : ScriptedDecisionPort,
-  request : @port.DecisionRequest,
-) -> @port.DecisionResult raise @error.DecisionError {
-  (self as &@port.DecisionPort).evaluate(request)
-}
-
-///|
 pub extend ScriptedDecisionPort with @port.DecisionPort::{evaluate}
-
-///|
-pub extend ScriptedDecisionPort with @port.DecisionPort::{evaluate_with_context}
 
 ///|
 pub impl @port.DecisionPort for ScriptedDecisionPort with fn evaluate(
   self,
   request,
+  context~,
 ) -> @port.DecisionResult raise @error.DecisionError {
+  let _ = context
   self.received.push(snapshot_decision_request(request))
   if self.index >= self.steps.length() {
     raise @error.DecisionError::Transport(

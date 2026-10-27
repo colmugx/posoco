@@ -1,5 +1,5 @@
 ///|
-using @support {type FakeRuntime, type FakeCatalogSource}
+using @support {type FakeRuntime}
 
 ///|
 /// End-to-end contract tests for the public runtime seam: a custom
@@ -21,10 +21,7 @@ fn build_fake_runtime_agent(
     [tk_tool_def("echo", "echo tool")],
     Map::from_array([("echo", OutcomeOk(tk_ok_result("echoed")))]),
   )
-  let port_runtime = @runtime.PortRuntime(
-    model~,
-    tools=Map::from_array([("echo", tools as &@port.ToolProvider)]),
-  )
+  let port_runtime = @runtime.PortRuntime(model~)
   let fake = FakeRuntime(port_runtime)
   fake.abort_on_tool = abort_on_tool
   let agent = Agent::with_runtime(
@@ -103,10 +100,7 @@ async test "runtime seam/follow-up during turn drives a subsequent turn" {
     [tk_tool_def("echo", "echo tool")],
     Map::from_array([("echo", OutcomeOk(tk_ok_result("echoed")))]),
   )
-  let port_runtime = @runtime.PortRuntime(
-    model~,
-    tools=Map::from_array([("echo", tools as &@port.ToolProvider)]),
-  )
+  let port_runtime = @runtime.PortRuntime(model~)
   let fake = FakeRuntime(port_runtime)
   fake.follow_up_on_tool = true
   let store = RecordingSessionStore()
@@ -186,135 +180,98 @@ fn tool_names_seen(model : ScriptedModel, call : Int32) -> Array[String] {
 }
 
 ///|
-async test "runtime seam/catalog refresh applies at the next prompt boundary" {
-  let echo_def = tk_tool_def("echo", "echo tool")
-  let web_def = tk_tool_def("web", "web tool")
+async test "runtime seam/publication applies at the next operation boundary" {
+  let echo = tk_tool_def("echo", "echo tool")
+  let web = tk_tool_def("web", "web tool")
+  let publisher = ToolPublisher(RecordingToolProvider([echo], Map([])))
   let model = ScriptedModel([
-    Respond(tk_stop_response("turn one")),
-    Respond(tk_stop_response("turn two")),
+    Respond(tk_stop_response("one")),
+    Respond(tk_stop_response("two")),
   ])
-  let source = FakeCatalogSource([echo_def])
-  let port_runtime = @runtime.PortRuntime(model~, tools=Map::from_array([]))
-  let fake = FakeRuntime(port_runtime)
   let agent = Agent::with_runtime(
-    exts=[
-      tk_ext(id="model", model=Some(model), sessions=[RecordingSessionStore()]),
-    ],
+    exts=[tk_ext(id="model", model=Some(model)), publisher],
     config=tk_config(),
-    runtime=fake as &@runtime.Runtime,
-    catalog_source=source as &@runtime.CatalogSource,
+    runtime=FakeRuntime(@runtime.PortRuntime(model~)),
   )
-  ignore(agent.run_turn(tk_user_msg("one"), "session_seam_catalog"))
+  ignore(agent.run_turn(tk_user_msg("one"), "seam-publish"))
   assert_eq(tool_names_seen(model, 0), ["echo"])
-  // The host registers a new tool between turns; the revision change
-  // triggers exactly one rebuild at the next prompt boundary.
-  source.defs = [echo_def, web_def]
-  source.revision = 2
-  ignore(agent.run_turn(tk_user_msg("two"), "session_seam_catalog"))
+  publisher.publish(RecordingToolProvider([echo, web], Map([])))
+  ignore(agent.run_turn(tk_user_msg("two"), "seam-publish"))
   assert_eq(tool_names_seen(model, 1), ["echo", "web"])
+  agent.shutdown()
 }
 
 ///|
-async test "runtime seam/catalog change mid-run does not disturb the active run" {
-  let echo_def = tk_tool_def("echo", "echo tool")
-  let web_def = tk_tool_def("web", "web tool")
+async test "runtime seam/publication mid-operation preserves captured execution" {
+  let echo = tk_tool_def("echo", "echo tool")
+  let web = tk_tool_def("web", "web tool")
+  let old = RecordingToolProvider(
+    [echo],
+    Map([("echo", OutcomeOk(tk_ok_result("old")))]),
+  )
+  let next = RecordingToolProvider(
+    [echo, web],
+    Map([("echo", OutcomeOk(tk_ok_result("new")))]),
+  )
+  let publisher = ToolPublisher(old)
   let model = ScriptedModel([
     Respond(tk_tool_call_response("echo", "call_1", Json::null())),
-    Respond(tk_stop_response("turn one")),
-    Respond(tk_stop_response("turn two")),
+    Respond(tk_stop_response("one")),
+    Respond(tk_tool_call_response("echo", "call_2", Json::null())),
+    Respond(tk_stop_response("two")),
   ])
-  let tools = RecordingToolProvider(
-    [tk_tool_def("echo", "echo tool")],
-    Map::from_array([("echo", OutcomeOk(tk_ok_result("echoed")))]),
-  )
-  let source = FakeCatalogSource([echo_def])
-  let port_runtime = @runtime.PortRuntime(
-    model~,
-    tools=Map::from_array([("echo", tools as &@port.ToolProvider)]),
-  )
-  let fake = FakeRuntime(port_runtime)
-  // The host's tool set changes while the run is executing a tool.
-  fake.on_first_execute = Some(() => {
-    source.defs = [echo_def, web_def]
-    source.revision = 2
-  })
+  let runtime = FakeRuntime(@runtime.PortRuntime(model~))
+  runtime.on_first_execute = Some(() => publisher.publish(next))
   let agent = Agent::with_runtime(
-    exts=[
-      tk_ext(id="model", model=Some(model), tools=[tools], sessions=[
-        RecordingSessionStore(),
-      ]),
-    ],
+    exts=[tk_ext(id="model", model=Some(model)), publisher],
     config=tk_config(),
-    runtime=fake as &@runtime.Runtime,
-    catalog_source=source as &@runtime.CatalogSource,
+    runtime~,
   )
-  ignore(agent.run_turn(tk_user_msg("one"), "session_seam_catalog_midrun"))
-  // Both model calls of the first run — including the one AFTER the
-  // mid-run change — saw the snapshot the run started with.
+  let one = agent.run_turn(tk_user_msg("one"), "seam-captured")
+  guard one.tool_results is [Success(content="old", ..)] else {
+    fail("captured executor changed mid-operation")
+  }
   assert_eq(tool_names_seen(model, 0), ["echo"])
   assert_eq(tool_names_seen(model, 1), ["echo"])
-  // The next run picks up the refreshed catalog.
-  ignore(agent.run_turn(tk_user_msg("two"), "session_seam_catalog_midrun"))
+  let two = agent.run_turn(tk_user_msg("two"), "seam-captured")
+  guard two.tool_results is [Success(content="new", ..)] else {
+    fail("next operation did not adopt executor")
+  }
   assert_eq(tool_names_seen(model, 2), ["echo", "web"])
+  assert_eq(old.exec_records().length(), 1)
+  assert_eq(next.exec_records().length(), 1)
+  agent.shutdown()
 }
 
 ///|
-async test "runtime seam/invalid catalog rebuild keeps the previous snapshot" {
-  let echo_def = tk_tool_def("echo", "echo tool")
-  let web_def = tk_tool_def("web", "web tool")
+async test "runtime seam/rejected publication retains the last valid group" {
+  let echo = tk_tool_def("echo", "echo tool")
+  let web = tk_tool_def("web", "web tool")
+  let publisher = ToolPublisher(RecordingToolProvider([echo], Map([])))
   let model = ScriptedModel([
     Respond(tk_stop_response("one")),
     Respond(tk_stop_response("two")),
     Respond(tk_stop_response("three")),
   ])
-  let source = FakeCatalogSource([echo_def])
-  let observer = RecordingObserver()
-  let port_runtime = @runtime.PortRuntime(model~, tools=Map::from_array([]))
-  let fake = FakeRuntime(port_runtime)
   let agent = Agent::with_runtime(
-    exts=[
-      tk_ext(
-        id="model",
-        model=Some(model),
-        sessions=[RecordingSessionStore()],
-        observers=[observer],
-      ),
-    ],
+    exts=[tk_ext(id="model", model=Some(model)), publisher],
     config=tk_config(),
-    runtime=fake as &@runtime.Runtime,
-    catalog_source=source as &@runtime.CatalogSource,
+    runtime=FakeRuntime(@runtime.PortRuntime(model~)),
   )
-  ignore(agent.run_turn(tk_user_msg("one"), "session_seam_catalog_bad"))
+  ignore(agent.run_turn(tk_user_msg("one"), "seam-invalid"))
   assert_eq(tool_names_seen(model, 0), ["echo"])
-  // A colliding definition set fails catalog validation: the previous
-  // snapshot stays in effect and the turn still completes.
-  source.defs = [echo_def, tk_tool_def("echo", "duplicate echo")]
-  source.revision = 2
-  ignore(agent.run_turn(tk_user_msg("two"), "session_seam_catalog_bad"))
-  assert_eq(tool_names_seen(model, 1), ["echo"])
-  let mut saw_refresh_failure = false
-  for event in observer.events() {
-    match event {
-      Custom(source=event_source, label~, data~) =>
-        if event_source == "posoco.core" && label == "secondary_failure" {
-          match data {
-            Object(fields) =>
-              match fields.get("hook_point") {
-                Some(String(point)) if point == "catalog_refresh" =>
-                  saw_refresh_failure = true
-                _ => ()
-              }
-            _ => ()
-          }
-        }
-      _ => ()
-    }
+  let bad = RecordingToolProvider(
+    [echo, tk_tool_def("echo", "duplicate")],
+    Map([]),
+  )
+  guard publisher.capability().replace(provider=bad) is Err(@port.Rejected(..)) else {
+    fail("collision was accepted")
   }
-  assert_true(saw_refresh_failure)
-  // The failed revision was attempted exactly once; fixing the definitions
-  // under a new revision refreshes successfully.
-  source.defs = [echo_def, web_def]
-  source.revision = 3
-  ignore(agent.run_turn(tk_user_msg("three"), "session_seam_catalog_bad"))
+  assert_eq(publisher.capability().revision(), Some(1))
+  ignore(agent.run_turn(tk_user_msg("two"), "seam-invalid"))
+  assert_eq(tool_names_seen(model, 1), ["echo"])
+  publisher.publish(RecordingToolProvider([echo, web], Map([])))
+  ignore(agent.run_turn(tk_user_msg("three"), "seam-invalid"))
   assert_eq(tool_names_seen(model, 2), ["echo", "web"])
+  agent.shutdown()
 }

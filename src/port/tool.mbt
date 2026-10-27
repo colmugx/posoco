@@ -102,6 +102,7 @@ pub async fn ToolCallContext::invoke(
 pub(open) trait ToolCancellable {
   async fn cancel(
     Self,
+    run_id~ : @kernel.RunId,
     effect_id : @kernel.EffectId,
     reason : @kernel.CancelReason,
   ) -> @kernel.CancelDisposition

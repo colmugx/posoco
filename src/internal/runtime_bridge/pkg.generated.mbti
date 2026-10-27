@@ -21,11 +21,10 @@ pub struct RuntimeHostShim {
 }
 pub fn RuntimeHostShim::RuntimeHostShim(&@runtime.Runtime, @ref.Ref[Map[String, &@port.ToolProvider]], cancel_settle_ms~ : Int32, on_cleanup_failure? : (String) -> Unit) -> Self
 pub async fn RuntimeHostShim::call_model(Self, @kernel.InvocationScope, ArrayView[@kernel.Message], Array[@kernel.ToolDef], Json, ((@types.StreamChunk) -> Unit)?) -> Result[@kernel.ModelCallResult, @kernel.ModelFailure]
-pub async fn RuntimeHostShim::cancel_effects(Self, Array[@kernel.EffectId], @kernel.CancelReason) -> Array[(@kernel.EffectId, @kernel.CancelDisposition)]
+pub async fn RuntimeHostShim::cancel_effects(Self, run_id~ : @kernel.RunId, Array[@kernel.EffectId], @kernel.CancelReason) -> Array[(@kernel.EffectId, @kernel.CancelDisposition)]
 pub async fn RuntimeHostShim::cleanup_unconfirmed(Self) -> Unit
 pub async fn RuntimeHostShim::compact(Self, @kernel.InvocationScope, ArrayView[@kernel.Message], Array[@kernel.ToolDef], Json, @kernel.CompactTrigger) -> Result[@kernel.CompactResult, @kernel.ModelFailure]
-pub async fn RuntimeHostShim::execute_tool(Self, @kernel.EffectId, @kernel.OwnerId, @kernel.CallId, @kernel.ToolName, Json) -> @kernel.ToolOutcome
-pub async fn RuntimeHostShim::execute_tool_scoped(Self, @kernel.EffectId, @kernel.OwnerId, @kernel.CallId, @kernel.ToolName, Json, @kernel_exec.ToolExecutionScope?) -> @kernel.ToolOutcome
+pub async fn RuntimeHostShim::execute_tool(Self, @kernel.EffectId, @kernel.OwnerId, @kernel.CallId, @kernel.ToolName, Json, @kernel_exec.ToolExecutionScope) -> @kernel.ToolOutcome
 pub fn RuntimeHostShim::has_unconfirmed(Self) -> Bool
 pub fn RuntimeHostShim::require_settled(Self) -> Unit raise @error.AgentError
 pub impl @kernel_exec.HostRuntime for RuntimeHostShim

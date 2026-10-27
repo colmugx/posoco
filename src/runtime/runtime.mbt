@@ -16,39 +16,39 @@
 /// cancellation MUST key their in-flight execution state (e.g. an
 /// `AbortController`) by `effect_id`, not by execution order or call content.
 pub struct EffectContext {
+  run_id : @kernel.RunId
   effect_id : @kernel.EffectId
   owner : @kernel.OwnerId
   call_id : @kernel.CallId
   tool_name : @kernel.ToolName
   arguments : Json
-  priv bound_tool : &@port.ToolProvider?
-  priv tool_context : (((&@port.ToolCancellable) -> Unit) -> @port.ToolCallContext)?
+  priv bound_tool : &@port.ToolProvider
+  priv tool_context : ((&@port.ToolCancellable) -> Unit) -> @port.ToolCallContext
 }
 
 ///|
 /// Hosts forwarding an effect must forward this context unchanged. This
-/// constructor creates an unbound legacy effect unless a framework supplies
-/// an operation-captured provider.
+/// constructor requires the operation-captured provider and call context.
 pub fn EffectContext::EffectContext(
+  run_id~ : @kernel.RunId,
   effect_id~ : @kernel.EffectId,
   owner~ : @kernel.OwnerId,
   call_id~ : @kernel.CallId,
   tool_name~ : @kernel.ToolName,
   arguments~ : Json,
-  bound_tool? : &@port.ToolProvider,
-  tool_context? : ((&@port.ToolCancellable) -> Unit) -> @port.ToolCallContext,
+  bound_tool~ : &@port.ToolProvider,
+  tool_context~ : ((&@port.ToolCancellable) -> Unit) -> @port.ToolCallContext,
 ) -> EffectContext {
-  { effect_id, owner, call_id, tool_name, arguments, bound_tool, tool_context, }
-}
-
-///|
-pub fn EffectContext::has_bound_tool(self : EffectContext) -> Bool {
-  self.bound_tool is Some(_)
-}
-
-///|
-impl Runtime with fn supports_bound_tools(_self) -> Bool {
-  false
+  {
+    run_id,
+    effect_id,
+    owner,
+    call_id,
+    tool_name,
+    arguments,
+    bound_tool,
+    tool_context,
+  }
 }
 
 ///|
@@ -60,11 +60,6 @@ impl Runtime with fn supports_bound_tools(_self) -> Bool {
 /// they need (typically `execute_tool` + `cancel_effects`); see
 /// `docs/RUNTIME.md`.
 pub(open) trait Runtime {
-  /// True only if the entire runtime chain preserves bound contexts and its
-  /// final executor honors them. An unsupported chain is rejected before a
-  /// dynamic contribution can be published.
-  fn supports_bound_tools(Self) -> Bool = _
-
   /// Execute a `CallModel` effect. `on_chunk` is the live streaming sink;
   /// `None` means the product did not enable streaming. `scope` carries the
   /// run/session identity; `scope.effect_id` is always `Some` here and hosts
@@ -95,6 +90,7 @@ pub(open) trait Runtime {
   /// during shutdown. Never report a terminal disposition on cleanup failure.
   async fn cancel_effects(
     Self,
+    run_id~ : @kernel.RunId,
     effect_ids : Array[@kernel.EffectId],
     reason : @kernel.CancelReason,
   ) -> Array[(@kernel.EffectId, @kernel.CancelDisposition)]

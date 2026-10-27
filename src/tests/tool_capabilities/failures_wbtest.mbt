@@ -43,10 +43,7 @@ async test "tool_cleanup/malformed_runtime_receipts_do_not_release_unconfirmed_e
         let model = ScriptedModel([
           Respond(tk_tool_call_response("parent", "p", {})),
         ])
-        let runtime = FakeRuntime(
-          @runtime.PortRuntime(model~, tools=Map::from_array([])),
-        )
-        runtime.bound_support = true
+        let runtime = FakeRuntime(@runtime.PortRuntime(model~))
         runtime.cancel_report = Some(ids => {
           if shape == "missing" {
             []
@@ -128,9 +125,12 @@ priv struct FailingToolCancellation {
 ///|
 impl @port.ToolCancellable for FailingToolCancellation with fn cancel(
   self,
+  run_id~,
   _id,
   _reason,
 ) -> @kernel.CancelDisposition {
+  let _ = run_id
+
   self.calls += 1
   if self.hanging {
     let never = @async.CondVar::Cond()
@@ -352,10 +352,7 @@ async test "tool_cleanup/runtime_dispatch_failure_ends_waiters_and_retains_unkno
     Map::from_array([]),
   )
   let model = ScriptedModel([Respond(tk_tool_call_response("parent", "p", {}))])
-  let runtime = FakeRuntime(
-    @runtime.PortRuntime(model~, tools=Map::from_array([])),
-  )
-  runtime.bound_support = true
+  let runtime = FakeRuntime(@runtime.PortRuntime(model~))
   runtime.fail_tool = Some("child")
   let observer = RecordingObserver()
   @async.with_timeout(3_000, async fn() {

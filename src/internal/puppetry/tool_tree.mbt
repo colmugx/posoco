@@ -282,7 +282,6 @@ async fn Puppet::execute_tool_tree(
               arguments,
               allowed,
               self.config.max_tool_depth,
-              (self.config.bound_tool_names)(),
             ) catch {
               error =>
                 raise ReducerInvariantViolation(
@@ -367,7 +366,6 @@ async fn Puppet::execute_tool_tree(
                     parent,
                     call,
                     allowed,
-                    (self.config.bound_tool_names)(),
                   )
               }
             }

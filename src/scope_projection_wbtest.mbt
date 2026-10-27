@@ -1,9 +1,6 @@
 ///|
-/// Contract pins for `EventScope` projection (P1): the core dispatches ONLY
-/// the scoped variants (`Observer::on_event_at`, `PipelineHook::on_post_event_at`),
-/// and every run-bound event carries the identity minted for its turn.
-/// Out-of-run diagnostics (stream chunks, secondary failures) may carry
-/// `None`.
+/// Run-bound callbacks carry the identity minted for their turn;
+/// out-of-run notifications may carry None.
 
 ///|
 /// Observer double recording (tag, scope) for every scoped dispatch.
@@ -45,10 +42,10 @@ fn scope_projection_event_tag(event : @types.TurnEvent) -> String {
 }
 
 ///|
-pub extend ScopedObserver with @port.Observer::{on_event, on_event_at}
+pub extend ScopedObserver with @port.Observer::{on_event}
 
 ///|
-pub impl @port.Observer for ScopedObserver with fn on_event_at(
+pub impl @port.Observer for ScopedObserver with fn on_event(
   self,
   scope,
   event : @types.TurnEvent,
@@ -65,16 +62,15 @@ struct ScopedHook {
 ///|
 pub extend ScopedHook with @port.PipelineHook::{
   tool_exposure,
-  on_post_event,
   on_turn_begin,
-  on_post_event_at,
+  on_post_event,
   before_model,
   before_tool,
   on_turn_end,
 }
 
 ///|
-pub impl @port.PipelineHook for ScopedHook with fn on_post_event_at(
+pub impl @port.PipelineHook for ScopedHook with fn on_post_event(
   self,
   scope,
   stage : @port.HookStage,
@@ -212,9 +208,7 @@ async test "scope_projection/tool_loop_events_and_hook_stages_share_run" {
 }
 
 ///|
-/// Back-compat: observers/hooks overriding only the legacy unscoped methods
-/// keep working — the scoped dispatch delegates through the defaults.
-async test "scope_projection/legacy_observer_and_hook_unchanged" {
+async test "scope_projection/testkit_records_single_callback_dispatch" {
   let observer = RecordingObserver()
   let hook = RecordingHook()
   let agent = Agent(
@@ -232,7 +226,7 @@ async test "scope_projection/legacy_observer_and_hook_unchanged" {
     ],
     config=tk_config(),
   )
-  ignore(agent.run_turn(tk_user_msg("hello"), "s_legacy"))
+  ignore(agent.run_turn(tk_user_msg("hello"), "s_testkit"))
   let events = scope_projection_turn_events(observer.events())
   assert_eq(events.length(), 4)
   guard events[0] is TurnStarted else {

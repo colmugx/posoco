@@ -44,7 +44,7 @@ priv struct LogObserver {
 }
 
 ///|
-impl @port.Observer for LogObserver with fn on_event(self, event) {
+impl @port.Observer for LogObserver with fn on_event(self, _scope, event) {
   self.log.push("obs:" + event.to_string())
 }
 

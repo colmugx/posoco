@@ -152,6 +152,7 @@ async test "turn_begin/raised_hook_is_secondary_failure_turn_proceeds" {
 ///|
 impl @port.Observer for TurnEndLogObserver with fn on_event(
   self,
+  _scope,
   event : @types.TurnEvent,
 ) -> Unit {
   self.log.push("obs:" + event.to_string())

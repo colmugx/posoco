@@ -50,89 +50,50 @@ pub impl @kernel_exec.HostRuntime for RuntimeHostShim with fn execute_tool(
   call_id : @kernel.CallId,
   tool_name : @kernel.ToolName,
   arguments : Json,
+  scope : @kernel_exec.ToolExecutionScope,
 ) -> @kernel.ToolOutcome {
-  @kernel_exec.HostRuntime::execute_tool_scoped(
-    self,
-    effect_id,
-    owner_id,
-    call_id,
-    tool_name,
-    arguments,
-    None,
-  )
-}
-
-///|
-pub impl @kernel_exec.HostRuntime for RuntimeHostShim with fn execute_tool_scoped(
-  self,
-  effect_id : @kernel.EffectId,
-  owner_id : @kernel.OwnerId,
-  call_id : @kernel.CallId,
-  tool_name : @kernel.ToolName,
-  arguments : Json,
-  scope : @kernel_exec.ToolExecutionScope?,
-) -> @kernel.ToolOutcome {
-  let factory = scope.map(scope => {
-    fn(register_cancel) {
-      @port.ToolCallContext(
-        effect_id~,
-        call_id~,
-        name=tool_name,
-        arguments~,
-        register_cancel~,
-        scope=scope.invocation,
-        parent_effect_id?=scope.parent_effect_id,
-        root_effect_id=scope.root_effect_id,
-        tools=scope.tools,
-        invoke=scope.invoke,
-        active=scope.active,
-      )
-    }
-  })
-  let key = scope.map(scope => {
-    (scope.invocation.run_id.to_string(), effect_id.to_int())
-  })
-  if key is Some(key) && scope is Some(scope) {
-    self.incomplete[key] = scope.invocation
+  let factory = fn(register_cancel) {
+    @port.ToolCallContext(
+      effect_id~,
+      call_id~,
+      name=tool_name,
+      arguments~,
+      register_cancel~,
+      scope=scope.invocation,
+      parent_effect_id?=scope.parent_effect_id,
+      root_effect_id=scope.root_effect_id,
+      tools=scope.tools,
+      invoke=scope.invoke,
+      active=scope.active,
+    )
   }
+  let key = (scope.invocation.run_id.to_string(), effect_id.to_int())
+  self.incomplete[key] = scope.invocation
   // An abnormal unwind deliberately retains this execution. Only a real
   // return or an executor-confirmed terminal cancellation releases it.
   let outcome = self.inner.execute_tool(
     @runtime.EffectContext(
+      run_id=scope.invocation.run_id,
       effect_id~,
       owner=owner_id,
       call_id~,
       tool_name~,
       arguments~,
-      tool_context?=factory,
-      bound_tool?=if self.inner.supports_bound_tools() {
-        self.bindings.val
-        .get(tool_name.to_string())
-        .map(provider => {
-          match scope {
-            Some(scope) =>
-              (
-                ScopedBoundProvider::{
-                  inner: provider,
-                  before_start: scope.before_start,
-                } : &@port.ToolProvider)
-            None => provider
-          }
-        })
-      } else {
-        None
+      tool_context=factory,
+      bound_tool=ScopedBoundProvider::{
+        inner: self.bindings.val[tool_name.to_string()],
+        before_start: scope.before_start,
       },
     ),
   )
-  if key is Some(key) {
-    self.incomplete.remove(key)
-  }
+  self.incomplete.remove(key)
   outcome
 }
 
 ///|
 pub impl @kernel_exec.HostRuntime for RuntimeHostShim with fn cancel_effects(
   self,
+  run_id~,
   effect_ids : Array[@kernel.EffectId],
   reason : @kernel.CancelReason,
 ) -> Array[(@kernel.EffectId, @kernel.CancelDisposition)] {
@@ -142,7 +103,7 @@ pub impl @kernel_exec.HostRuntime for RuntimeHostShim with fn cancel_effects(
   ] = Ok(
     {
       let reported = @async.with_timeout(self.cancel_settle_ms, async fn() {
-        self.inner.cancel_effects(effect_ids, reason)
+        self.inner.cancel_effects(effect_ids, reason, run_id~)
       })
       validate_runtime_cancellations(effect_ids, reported)
       reported
@@ -160,11 +121,7 @@ pub impl @kernel_exec.HostRuntime for RuntimeHostShim with fn cancel_effects(
   for entry in reported {
     let (id, disposition) = entry
     if disposition is (Stopped | AlreadySettled) {
-      for key in self.incomplete.keys().to_array() {
-        if key.1 == id.to_int() {
-          self.incomplete.remove(key)
-        }
-      }
+      self.incomplete.remove((run_id.to_string(), id.to_int()))
     }
   }
   reported
@@ -186,7 +143,6 @@ pub impl @kernel_exec.HostRuntime for RuntimeHostShim with fn compact(
 pub extend RuntimeHostShim with @kernel_exec.HostRuntime::{
   call_model,
   execute_tool,
-  execute_tool_scoped,
   cancel_effects,
   compact,
 }

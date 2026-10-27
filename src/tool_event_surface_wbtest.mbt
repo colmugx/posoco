@@ -260,10 +260,7 @@ async test "tool_event_surface/mid_wave_cancel_abandons_pending_calls" {
     metadata: Map::from_array([]),
   })
   let observer = RecordingObserver()
-  let port_runtime = @runtime.PortRuntime(
-    model~,
-    tools=Map::from_array([("slow_tool", tools as &@port.ToolProvider)]),
-  )
+  let port_runtime = @runtime.PortRuntime(model~)
   let probe = MidEffectAbortRuntime(inner=port_runtime as &@runtime.Runtime, park_tool_names=[
     "slow_tool",
   ])

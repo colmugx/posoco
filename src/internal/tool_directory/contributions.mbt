@@ -28,7 +28,7 @@ pub(all) enum ToolCatalogChange {
 /// the active version; superseded versions stay alive only while an operation
 /// references them or while their retire is still pending.
 pub struct ToolContributionRegistry {
-  priv mut base : Array[ToolEntry]
+  priv base : Array[ToolEntry]
   priv mut captured_defs : Array[@kernel.ToolDef]
   priv versions : Map[Int32, ToolVersion]
   priv slots : Map[String, OwnerSlot]
@@ -157,7 +157,7 @@ pub async fn ToolContributionRegistry::replace(
   }
   let version_entries = definitions.map(def => {
     definition: def,
-    provider: Some(gated),
+    provider: gated,
     version: Some(version_id),
   })
   let previous = match self.slots.get(owner) {
@@ -470,9 +470,7 @@ pub fn ToolContributionRegistry::captured_tools(
 ) -> Map[String, &@port.ToolProvider] {
   let tools : Map[String, &@port.ToolProvider] = Map::from_array([])
   for entry in self.entries() {
-    if entry.provider is Some(provider) {
-      tools[entry.definition.name.to_string()] = provider
-    }
+    tools[entry.definition.name.to_string()] = entry.provider
   }
   tools
 }

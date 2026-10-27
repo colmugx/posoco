@@ -244,7 +244,7 @@ fn UserRequestObservingUiPort::emit_user_request_event(
   let snapshot = snapshot_turn_event(event)
   for observer in self.observers {
     // Scope is None: the wrapper sits outside any run identity.
-    observer.on_event_at(None, snapshot)
+    observer.on_event(None, snapshot)
   }
 }
 

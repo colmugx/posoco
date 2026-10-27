@@ -25,9 +25,8 @@ fn ChunkDemandHost::delivered_chunks(self : ChunkDemandHost) -> Int32 {
 
 ///|
 pub extend ChunkDemandHost with @kernel_exec.HostRuntime::{
-  execute_tool_scoped,
-  cancel_effects,
   execute_tool,
+  cancel_effects,
   call_model,
   compact,
 }
@@ -62,6 +61,7 @@ pub impl @kernel_exec.HostRuntime for ChunkDemandHost with fn execute_tool(
   call_id : CallId,
   _tool_name : ToolName,
   _arguments : Json,
+  _scope,
 ) -> @kernel.ToolOutcome {
   Success(content=call_id.to_string(), structured=None)
 }
@@ -69,9 +69,12 @@ pub impl @kernel_exec.HostRuntime for ChunkDemandHost with fn execute_tool(
 ///|
 pub impl @kernel_exec.HostRuntime for ChunkDemandHost with fn cancel_effects(
   self : ChunkDemandHost,
+  run_id~,
   effect_ids : Array[EffectId],
   _reason : CancelReason,
 ) -> Array[(EffectId, CancelDisposition)] {
+  let _ = run_id
+
   ignore(self)
   effect_ids.map(id => (id, NotPropagated))
 }

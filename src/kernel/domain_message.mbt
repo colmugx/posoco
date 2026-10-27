@@ -247,7 +247,6 @@ pub impl Show for FinishReason with fn to_string(self : FinishReason) -> String 
 /// - `OwnerNotAllowed`: the caller manifest did not declare the target owner.
 /// - `InvocationLimit`: a child would exceed the shared call budget or depth.
 /// - `PolicyConflict`: a child needs stronger isolation than its parent's slot.
-/// - `UnsupportedInvocation`: a legacy host route has no captured executor.
 /// - `SchemaMismatch`: the arguments parsed successfully but failed
 ///   validation against the tool's input schema. The diagnostic carries a safe
 ///   JSON path and type expectation; it never includes the raw argument
@@ -268,7 +267,6 @@ pub(all) enum NotExecutedReason {
   OwnerNotAllowed
   InvocationLimit
   PolicyConflict
-  UnsupportedInvocation
   Revoked
   SchemaMismatch(json_path~ : String, expected~ : String, actual~ : String)
   RejectedByHook(reason~ : String)
@@ -291,7 +289,6 @@ pub impl Show for NotExecutedReason with fn to_string(self : NotExecutedReason) 
     OwnerNotAllowed => "OwnerNotAllowed"
     InvocationLimit => "InvocationLimit"
     PolicyConflict => "PolicyConflict"
-    UnsupportedInvocation => "UnsupportedInvocation"
     Revoked => "Revoked"
     SchemaMismatch(json_path~, expected~, actual~) =>
       "SchemaMismatch(path=\{json_path}, expected=\{expected}, actual=\{actual})"

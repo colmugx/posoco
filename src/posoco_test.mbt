@@ -91,7 +91,7 @@ struct MockObserver {
 }
 
 ///|
-impl @port.Observer for MockObserver with fn on_event(self, event) {
+impl @port.Observer for MockObserver with fn on_event(self, _scope, event) {
   self.events.push(event)
 }
 

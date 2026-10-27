@@ -231,7 +231,6 @@ pub(all) enum NotExecutedReason {
   OwnerNotAllowed
   InvocationLimit
   PolicyConflict
-  UnsupportedInvocation
   Revoked
   SchemaMismatch(json_path~ : String, expected~ : String, actual~ : String)
   RejectedByHook(reason~ : String)

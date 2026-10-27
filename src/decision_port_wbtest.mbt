@@ -71,7 +71,10 @@ test "decision/validation_rejects_malformed_probability" {
 async test "decision/testkit_records_and_replays" {
   let port = ScriptedDecisionPort([Return(decision_result())])
   let request = decision_request()
-  let result = port.evaluate_direct(request)
+  let result = port.evaluate(
+    request,
+    context=@port.DecisionCallContext::make(purpose="testkit"),
+  )
   result.validate_for(request)
   assert_eq(port.call_count(), 1)
   assert_eq(port.received_requests(), [request])

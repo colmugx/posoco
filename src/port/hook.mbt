@@ -140,15 +140,9 @@ pub impl Show for HookStage with fn to_string(self : HookStage) -> String {
 /// - `before_tool`: invoked before every tool execution. Every hook is
 ///   evaluated; merge precedence on `ToolDecision` (consent beats
 ///   Reject; Defer still aborts the run until M5).
-/// - `on_post_event`: invoked after every effect completes. Read-only and
-///   non-raising — all registered hooks run in registration order; a
-///   handler cannot fail in a typed way, and a contract violation aborts
-///   loudly by design. For interception or abortion use `before_model` /
-///   `before_tool`.
-/// - `on_post_event_at`: scoped variant of `on_post_event`, additionally
-///   carrying the `EventScope` attribution of the run that committed the
-///   effect. The core dispatches ONLY this variant; its default delegates
-///   to `on_post_event`, so pre-scope hooks keep working unchanged.
+/// - `on_post_event`: read-only, non-raising notification with the
+///   committing run's `EventScope`. Hooks run in registration order;
+///   interception belongs in `before_model` or `before_tool`.
 /// - `on_turn_end`: async turn-end slot, no payload. The terminal outcome
 ///   already lives on the Observer channel — `TurnCompleted` /
 ///   `TurnFailed(String)` — and an extension typically implements Observer
@@ -161,7 +155,7 @@ pub impl Show for HookStage with fn to_string(self : HookStage) -> String {
 ///   that must finish by turn end, such as committing buffered writes to an
 ///   external system. Implementations must carry their own timeout budget
 ///   and may not block the turn's return indefinitely. Division of labor
-///   with `Observer::on_event_at(TurnCompleted)`: the observer slot is
+///   with `Observer::on_event(TurnCompleted)`: the observer slot is
 ///   sync, read-only and fires first; `on_turn_end` may await. A raise from
 ///   `on_turn_end` is a secondary failure — reported to observers, never
 ///   replacing the turn's primary outcome — and cancellation is not a
@@ -194,8 +188,7 @@ pub(open) trait PipelineHook {
   /// telemetry sink) can await their IO. `noraise` keeps the read-only,
   /// non-raising contract: a handler cannot fail in a typed way. Sync bodies
   /// keep working unchanged.
-  async fn on_post_event(Self, stage : HookStage) -> Unit noraise = _
-  async fn on_post_event_at(Self, scope : @types.EventScope?, stage : HookStage) -> Unit noraise = _
+  async fn on_post_event(Self, scope : @types.EventScope?, stage : HookStage) -> Unit noraise = _
   async fn on_turn_begin(Self) -> Unit = _
   /// `on_turn_end` is `async` so hooks with turn-end side effects that must
   /// complete before the turn returns (e.g. committing buffered writes to an
@@ -228,20 +221,12 @@ impl PipelineHook with fn before_tool(_self, call : @kernel.ToolCall) -> ToolDec
 }
 
 ///|
-/// Default `on_post_event`: no-op.
-impl PipelineHook with fn on_post_event(_self, _stage : HookStage) -> Unit {
-  ()
-}
-
-///|
-/// Default `on_post_event_at`: drop the scope and delegate to
-/// `on_post_event`. Override this instead when run attribution matters.
-impl PipelineHook with fn on_post_event_at(
-  self,
+impl PipelineHook with fn on_post_event(
+  _self,
   _scope : @types.EventScope?,
-  stage : HookStage,
+  _stage : HookStage,
 ) -> Unit {
-  self.on_post_event(stage)
+  ()
 }
 
 ///|

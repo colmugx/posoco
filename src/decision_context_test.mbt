@@ -1,21 +1,16 @@
 ///|
-/// Blackbox public-API tests for the backwards-compatible Decision call
-/// context: default `evaluate_with_context` delegation for adapters that
-/// only implement `evaluate`, context construction defaults, and the
-/// `TimedOut` error surface. Deterministic; no external calls.
-
-///|
-/// Fixture standing in for an "older" adapter written before the context
-/// API: it implements only `evaluate`.
-struct LegacyOnlyDecisionPort {
+struct ContextDecisionProbe {
   mut evaluate_calls : Int32
+  contexts : Array[@port.DecisionCallContext]
 }
 
 ///|
-impl @port.DecisionPort for LegacyOnlyDecisionPort with fn evaluate(
+impl @port.DecisionPort for ContextDecisionProbe with fn evaluate(
   self,
   _request : @port.DecisionRequest,
+  context~,
 ) -> @port.DecisionResult raise @error.DecisionError {
+  self.contexts.push(context)
   self.evaluate_calls = self.evaluate_calls + 1
   {
     answers: [
@@ -42,15 +37,15 @@ fn context_test_request() -> @port.DecisionRequest {
 }
 
 ///|
-async test "decision/default_evaluate_with_context_delegates_for_legacy_adapter" {
-  let adapter : LegacyOnlyDecisionPort = { evaluate_calls: 0, }
+async test "decision/evaluate_receives_exact_context" {
+  let adapter : ContextDecisionProbe = { evaluate_calls: 0, contexts: [], }
   let context = @port.DecisionCallContext::make(
     purpose="typecheck",
     scope={ session: "session_1", },
     timeout_ms=500,
     failure_mode=@port.FailClosed,
   )
-  let result = (adapter as &@port.DecisionPort).evaluate_with_context(
+  let result = (adapter as &@port.DecisionPort).evaluate(
     context_test_request(),
     context~,
   )
@@ -58,7 +53,7 @@ async test "decision/default_evaluate_with_context_delegates_for_legacy_adapter"
   guard! result.answers[0]
     is @port.DecisionAnswer::BooleanAnswer(id="read_only", probability_true=0.5)
   guard! result.model is Some("legacy")
-  // The context is accepted but delegation reaches the legacy evaluate.
+  assert_eq(adapter.contexts, [context])
   assert_eq(adapter.evaluate_calls, 1)
 }
 

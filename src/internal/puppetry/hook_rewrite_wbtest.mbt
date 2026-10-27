@@ -55,9 +55,8 @@ fn HookRewriteHost::mutated_arguments(self : HookRewriteHost) -> Array[Json] {
 
 ///|
 pub extend HookRewriteHost with @kernel_exec.HostRuntime::{
-  execute_tool_scoped,
-  cancel_effects,
   execute_tool,
+  cancel_effects,
   call_model,
   compact,
 }
@@ -92,6 +91,7 @@ pub impl @kernel_exec.HostRuntime for HookRewriteHost with fn execute_tool(
   call_id : CallId,
   tool_name : ToolName,
   arguments : Json,
+  _scope,
 ) -> @kernel.ToolOutcome {
   let recorded_arguments = snapshot_json(arguments)
   if self.mutate_arguments {
@@ -127,9 +127,12 @@ pub impl @kernel_exec.HostRuntime for HookRewriteHost with fn execute_tool(
 ///|
 pub impl @kernel_exec.HostRuntime for HookRewriteHost with fn cancel_effects(
   self : HookRewriteHost,
+  run_id~,
   effect_ids : Array[EffectId],
   _reason : CancelReason,
 ) -> Array[(EffectId, CancelDisposition)] {
+  let _ = run_id
+
   ignore(self)
   effect_ids.map(id => (id, NotPropagated))
 }
@@ -317,7 +320,6 @@ fn hook_config_with_subscribers(
     hooks,
     tool_call_owners: Map::from_array([]),
     max_tool_depth: None,
-    bound_tool_names: fn() { [] },
     max_iterations: Some(50),
     commands: [],
     session_store: None,

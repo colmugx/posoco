@@ -8,19 +8,6 @@
 pub type HostChunkCallback = (@types.StreamChunk) -> Unit
 
 ///|
-impl HostRuntime with fn execute_tool_scoped(
-  self,
-  effect_id,
-  owner_id,
-  call_id,
-  tool_name,
-  arguments,
-  _scope,
-) -> @kernel.ToolOutcome {
-  self.execute_tool(effect_id, owner_id, call_id, tool_name, arguments)
-}
-
-///|
 /// Imperative effect scope supplied by the driver, never stored in Effects or
 /// RunState. Only the driver can create real child requests.
 pub(all) struct ToolExecutionScope {
@@ -63,23 +50,13 @@ pub(open) trait HostRuntime {
     call_id : @kernel.CallId,
     tool_name : @kernel.ToolName,
     arguments : Json,
+    scope : ToolExecutionScope,
   ) -> @kernel.ToolOutcome
-
-  /// Scope-aware dispatch; the default retains plain execution, while the Agent
-  /// shim forwards the real scope into its public Runtime context.
-  async fn execute_tool_scoped(
-    Self,
-    effect_id : EffectId,
-    owner_id : @kernel.OwnerId,
-    call_id : @kernel.CallId,
-    tool_name : @kernel.ToolName,
-    arguments : Json,
-    scope : ToolExecutionScope?,
-  ) -> @kernel.ToolOutcome = _
 
   /// Best-effort cancel. Fire-and-forget from the reducer's perspective.
   async fn cancel_effects(
     Self,
+    run_id~ : RunId,
     effect_ids : Array[EffectId],
     reason : CancelReason,
   ) -> Array[(EffectId, CancelDisposition)]

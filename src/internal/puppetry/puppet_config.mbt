@@ -24,7 +24,6 @@ pub(all) struct PuppetConfig {
   hooks : Array[&PipelineHook]
   tool_call_owners : Map[String, Array[String]]
   max_tool_depth : Int32?
-  bound_tool_names : () -> Array[String]
   /// Livelock backstop only: max pump iterations before the pump declares
   /// PumpLoopExceeded. `None` disables the backstop. The kernel budget is
   /// the sole semantic limit; when a budget is configured this is derived

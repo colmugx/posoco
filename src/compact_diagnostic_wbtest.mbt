@@ -314,10 +314,11 @@ impl @runtime.Runtime for MidRunCompactRuntime with fn execute_tool(
 ///|
 impl @runtime.Runtime for MidRunCompactRuntime with fn cancel_effects(
   self,
+  run_id~,
   effect_ids : Array[@kernel.EffectId],
   reason : @kernel.CancelReason,
 ) -> Array[(@kernel.EffectId, @kernel.CancelDisposition)] {
-  self.inner.cancel_effects(effect_ids, reason)
+  self.inner.cancel_effects(effect_ids, reason, run_id~)
 }
 
 ///|
@@ -341,10 +342,7 @@ async test "compact_diag/midrun_manual_compact_failure_forwards_bounded_label" {
   ])
   let tools = policy_tools()
   let store = RecordingSessionStore()
-  let port_runtime = @runtime.PortRuntime(
-    model~,
-    tools=Map::from_array([("echo", tools as &@port.ToolProvider)]),
-  )
+  let port_runtime = @runtime.PortRuntime(model~)
   let probe = MidRunCompactRuntime::{
     inner: port_runtime as &@runtime.Runtime,
     model_calls: 0,
@@ -429,10 +427,11 @@ impl @runtime.Runtime for CompactParkingRuntime with fn execute_tool(
 ///|
 impl @runtime.Runtime for CompactParkingRuntime with fn cancel_effects(
   self,
+  run_id~,
   effect_ids : Array[@kernel.EffectId],
   reason : @kernel.CancelReason,
 ) -> Array[(@kernel.EffectId, @kernel.CancelDisposition)] {
-  self.inner.cancel_effects(effect_ids, reason)
+  self.inner.cancel_effects(effect_ids, reason, run_id~)
 }
 
 ///|
@@ -471,7 +470,7 @@ async test "compact_diag/cancelled_compact_stays_a_cancelled_outcome" {
     metadata: Map::from_array([]),
   })
   let observer = RecordingObserver()
-  let port_runtime = @runtime.PortRuntime(model~, tools=Map::from_array([]))
+  let port_runtime = @runtime.PortRuntime(model~)
   let probe = CompactParkingRuntime::{
     inner: port_runtime as &@runtime.Runtime,
     compact_calls: 0,
@@ -549,7 +548,7 @@ async test "compact_diag/busy_agent_rejects_compact_and_stays_usable" {
     messages: [tk_user_msg("seeded")],
     metadata: Map::from_array([]),
   })
-  let port_runtime = @runtime.PortRuntime(model~, tools=Map::from_array([]))
+  let port_runtime = @runtime.PortRuntime(model~)
   let probe = MidRunCompactRuntime::{
     inner: port_runtime as &@runtime.Runtime,
     model_calls: 0,

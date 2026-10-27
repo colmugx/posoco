@@ -202,8 +202,8 @@ pub async fn Puppet::wait_idle(self : Puppet) -> QuiescentStatus {
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-/// Fire every registered hook's `on_post_event_at` for a completed effect.
-/// The `PipelineHook::on_post_event_at` contract is non-raising: handlers cannot fail
+/// Fire every registered hook's `on_post_event` for a completed effect.
+/// The `PipelineHook::on_post_event` contract is non-raising: handlers cannot fail
 /// in a typed way, and a contract violation aborts loudly (aborts are not
 /// catchable). Components with fallible internal work must catch it
 /// themselves and surface it as a `secondary_failure` observer event —
@@ -212,7 +212,7 @@ pub async fn Puppet::wait_idle(self : Puppet) -> QuiescentStatus {
 /// the attribution scope is always delivered as `Some`.
 
 ///|
-/// Async because `on_post_event_at` is an async slot; the noraise slot
+/// Async because `on_post_event` is an async slot; the noraise slot
 /// contract keeps this helper non-failing.
 async fn Puppet::fire_post_event_hooks(
   self : Puppet,
@@ -248,6 +248,6 @@ async fn Puppet::fire_post_event_hooks(
     _ => return
   }
   for hook in self.config.hooks {
-    hook.on_post_event_at(Some(scope), stage)
+    hook.on_post_event(Some(scope), stage)
   }
 }

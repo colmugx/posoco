@@ -33,9 +33,8 @@ fn BoundaryProbeHost::append_counts_at_model_call(
 
 ///|
 pub extend BoundaryProbeHost with @kernel_exec.HostRuntime::{
-  execute_tool_scoped,
-  cancel_effects,
   execute_tool,
+  cancel_effects,
   call_model,
   compact,
 }
@@ -71,6 +70,7 @@ pub impl @kernel_exec.HostRuntime for BoundaryProbeHost with fn execute_tool(
   call_id : CallId,
   _tool_name : ToolName,
   _arguments : Json,
+  _scope,
 ) -> @kernel.ToolOutcome {
   Success(content=call_id.to_string(), structured=None)
 }
@@ -78,9 +78,12 @@ pub impl @kernel_exec.HostRuntime for BoundaryProbeHost with fn execute_tool(
 ///|
 pub impl @kernel_exec.HostRuntime for BoundaryProbeHost with fn cancel_effects(
   self : BoundaryProbeHost,
+  run_id~,
   effect_ids : Array[EffectId],
   _reason : CancelReason,
 ) -> Array[(EffectId, CancelDisposition)] {
+  let _ = run_id
+
   ignore(self)
   effect_ids.map(id => (id, NotPropagated))
 }
@@ -183,9 +186,8 @@ fn CompactReplaceHost::CompactReplaceHost(
 
 ///|
 pub extend CompactReplaceHost with @kernel_exec.HostRuntime::{
-  execute_tool_scoped,
-  cancel_effects,
   execute_tool,
+  cancel_effects,
   call_model,
   compact,
 }
@@ -221,6 +223,7 @@ pub impl @kernel_exec.HostRuntime for CompactReplaceHost with fn execute_tool(
   call_id : CallId,
   _tool_name : ToolName,
   _arguments : Json,
+  _scope,
 ) -> @kernel.ToolOutcome {
   Success(content=call_id.to_string(), structured=None)
 }
@@ -228,9 +231,12 @@ pub impl @kernel_exec.HostRuntime for CompactReplaceHost with fn execute_tool(
 ///|
 pub impl @kernel_exec.HostRuntime for CompactReplaceHost with fn cancel_effects(
   self : CompactReplaceHost,
+  run_id~,
   effect_ids : Array[EffectId],
   _reason : CancelReason,
 ) -> Array[(EffectId, CancelDisposition)] {
+  let _ = run_id
+
   ignore(self)
   effect_ids.map(id => (id, NotPropagated))
 }
@@ -290,7 +296,6 @@ async test "puppet/boundary_journals_auto_compact_replace_rewrite" {
     hooks: [],
     tool_call_owners: Map::from_array([]),
     max_tool_depth: None,
-    bound_tool_names: fn() { [] },
     max_iterations: Some(50),
     commands: [],
     session_store: None,

@@ -11,9 +11,6 @@ pub extend NoopCommandPort with @port.CommandPort::{commands, invoke}
 pub extend RecordingHook with @port.PipelineHook::{before_model, before_tool}
 
 ///|
-pub extend RecordingObserver with @port.Observer::{on_event}
-
-///|
 pub extend RecordingSessionStore with @port.SessionStore::{load, save}
 
 ///|
@@ -24,6 +21,3 @@ pub extend RecordingToolProvider with @port.ToolProvider::{list_tools}
 
 ///|
 pub extend SystemPromptHook with @port.PipelineHook::{before_model}
-
-///|
-pub extend UiRenderHook with @port.PipelineHook::{on_post_event}

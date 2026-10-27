@@ -33,36 +33,6 @@ pub fn build_error_message(
 }
 
 ///|
-/// Internal: merges multiple providers' tool lists. Agent routes via ToolRouting instead.
-pub(all) struct CompositeToolProvider {
-  providers : Array[&@port.ToolProvider]
-}
-
-///|
-pub extend CompositeToolProvider with @port.ToolProvider::{execute, list_tools}
-
-///|
-pub impl @port.ToolProvider for CompositeToolProvider with fn list_tools(self) {
-  let all : Array[@kernel.ToolDef] = []
-  for p in self.providers {
-    for t in p.list_tools() {
-      all.push(t)
-    }
-  }
-  all
-}
-
-///|
-pub impl @port.ToolProvider for CompositeToolProvider with fn execute(
-  _self,
-  ctx : @port.ToolCallContext,
-) -> @kernel.ToolOutcome raise @error.RuntimeError {
-  raise UnknownTool(
-    "CompositeToolProvider does not route execute(); Agent uses ToolRouting instead. Tool: '\{ctx.name.to_string()}'",
-  )
-}
-
-///|
 /// Dynamic runtime tool registration. Implements ToolProvider.
 pub(all) struct ToolRegistry {
   mut tools : Map[String, @kernel.ToolDef]
@@ -147,9 +117,7 @@ pub extend NoopLifecycle with @port.Lifecycle::{
 }
 
 ///|
-pub impl @port.Lifecycle for NoopLifecycle with fn on_shutdown(_self) -> Unit {
-  ()
-}
+pub impl @port.Lifecycle for NoopLifecycle
 
 ///|
 /// No-op CommandPort: declares no commands, invoke always raises NotFound.

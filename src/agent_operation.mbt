@@ -385,7 +385,7 @@ fn emit_custom_event(
     data=Json::object(Map::from_array(fields)),
   )
   for observer in observers {
-    observer.on_event_at(scope, snapshot_turn_event(event))
+    observer.on_event(scope, snapshot_turn_event(event))
   }
 }
 

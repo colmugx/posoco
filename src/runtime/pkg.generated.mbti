@@ -14,6 +14,7 @@ import {
 
 // Types and methods
 pub struct EffectContext {
+  run_id : @kernel.RunId
   effect_id : @kernel.EffectId
   owner : @kernel.OwnerId
   call_id : @kernel.CallId
@@ -21,8 +22,7 @@ pub struct EffectContext {
   arguments : Json
   // private fields
 }
-pub fn EffectContext::EffectContext(effect_id~ : @kernel.EffectId, owner~ : @kernel.OwnerId, call_id~ : @kernel.CallId, tool_name~ : @kernel.ToolName, arguments~ : Json, bound_tool? : &@port.ToolProvider, tool_context? : ((&@port.ToolCancellable) -> Unit) -> @port.ToolCallContext) -> Self
-pub fn EffectContext::has_bound_tool(Self) -> Bool
+pub fn EffectContext::EffectContext(run_id~ : @kernel.RunId, effect_id~ : @kernel.EffectId, owner~ : @kernel.OwnerId, call_id~ : @kernel.CallId, tool_name~ : @kernel.ToolName, arguments~ : Json, bound_tool~ : &@port.ToolProvider, tool_context~ : ((&@port.ToolCancellable) -> Unit) -> @port.ToolCallContext) -> Self
 
 pub(all) enum EnqueueOutcome {
   Accepted(command_id~ : String)
@@ -41,26 +41,19 @@ pub impl Show for EnqueueOutcome
 pub struct PortRuntime {
   // private fields
 }
-pub fn PortRuntime::PortRuntime(model~ : &@port.ModelPort, tools~ : Map[String, &@port.ToolProvider]) -> Self
+pub fn PortRuntime::PortRuntime(model~ : &@port.ModelPort) -> Self
 pub async fn PortRuntime::call_model(Self, @kernel.InvocationScope, ArrayView[@kernel.Message], Array[@kernel.ToolDef], Json, ((@types.StreamChunk) -> Unit)?) -> Result[@kernel.ModelCallResult, @kernel.ModelFailure]
-pub async fn PortRuntime::cancel_effects(Self, Array[@kernel.EffectId], @kernel.CancelReason) -> Array[(@kernel.EffectId, @kernel.CancelDisposition)]
+pub async fn PortRuntime::cancel_effects(Self, run_id~ : @kernel.RunId, Array[@kernel.EffectId], @kernel.CancelReason) -> Array[(@kernel.EffectId, @kernel.CancelDisposition)]
 pub async fn PortRuntime::compact(Self, @kernel.InvocationScope, ArrayView[@kernel.Message], Array[@kernel.ToolDef], Json, @kernel.CompactTrigger) -> Result[@kernel.CompactResult, @kernel.ModelFailure]
 pub async fn PortRuntime::execute_tool(Self, EffectContext) -> @kernel.ToolOutcome
-pub fn PortRuntime::supports_bound_tools(Self) -> Bool
 pub impl Runtime for PortRuntime
 
 // Type aliases
 
 // Traits
-pub(open) trait CatalogSource {
-  fn revision(Self) -> Int32
-  fn tools(Self) -> Array[@kernel.ToolDef]
-}
-
 pub(open) trait Runtime {
-  fn supports_bound_tools(Self) -> Bool = _
   async fn call_model(Self, @kernel.InvocationScope, ArrayView[@kernel.Message], Array[@kernel.ToolDef], Json, ((@types.StreamChunk) -> Unit)?) -> Result[@kernel.ModelCallResult, @kernel.ModelFailure]
   async fn execute_tool(Self, EffectContext) -> @kernel.ToolOutcome
-  async fn cancel_effects(Self, Array[@kernel.EffectId], @kernel.CancelReason) -> Array[(@kernel.EffectId, @kernel.CancelDisposition)]
+  async fn cancel_effects(Self, run_id~ : @kernel.RunId, Array[@kernel.EffectId], @kernel.CancelReason) -> Array[(@kernel.EffectId, @kernel.CancelDisposition)]
   async fn compact(Self, @kernel.InvocationScope, ArrayView[@kernel.Message], Array[@kernel.ToolDef], Json, @kernel.CompactTrigger) -> Result[@kernel.CompactResult, @kernel.ModelFailure]
 }

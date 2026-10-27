@@ -20,6 +20,7 @@ pub fn SignalObserver::SignalObserver() -> SignalObserver {
 ///|
 impl @port.Observer for SignalObserver with fn on_event(
   self,
+  _scope,
   event : @types.TurnEvent,
 ) -> Unit {
   self.events.push(event)
@@ -146,6 +147,7 @@ fn FollowUpInjector::FollowUpInjector(
 ///|
 impl @port.Observer for FollowUpInjector with fn on_event(
   self,
+  _scope,
   event : @types.TurnEvent,
 ) -> Unit {
   if event is ModelResponseReceived(..) && !self.injected.val {

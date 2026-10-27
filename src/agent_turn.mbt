@@ -172,7 +172,7 @@ async fn AgentRuntime::inject_memory_inbound(
 
 ///|
 /// Drive one full turn through the Puppet. Steps:
-/// 0. refresh the catalog when a CatalogSource's revision changed
+/// 0. capture the current bound tool contributions at operation admission
 /// 1. load session
 /// 2. snapshot session.messages (deep copy) + append input
 /// 3. (identity minted by the caller, before TurnStarted — see
@@ -659,7 +659,7 @@ async fn AgentRuntime::complete_fork_turn(
     messages_after=forked_messages.length(),
   )
   for observer in self.observers {
-    observer.on_event_at(Some(identity.scope()), snapshot_turn_event(redirect))
+    observer.on_event(Some(identity.scope()), snapshot_turn_event(redirect))
   }
   let result : @types.TurnResult = {
     message: input,
@@ -709,7 +709,7 @@ async fn AgentRuntime::complete_compact_turn(
             messages_after=compacted_messages.length(),
           )
           for observer in self.observers {
-            observer.on_event_at(
+            observer.on_event(
               Some(identity.scope()),
               snapshot_turn_event(redirect),
             )
@@ -1253,7 +1253,7 @@ async fn AgentRuntime::run_compact_operation(
                 messages_after=compacted_messages.length(),
               )
               for observer in self.observers {
-                observer.on_event_at(Some(scope), snapshot_turn_event(redirect))
+                observer.on_event(Some(scope), snapshot_turn_event(redirect))
               }
               self.project_context_state(Some(scope), new_sid)
               self.emit_turn_event(

@@ -1,7 +1,7 @@
 ///|
 priv struct JournalChildHost {
   model : FixtureHost
-  execute : async (EffectId, ToolName, @kernel_exec.ToolExecutionScope?) -> @kernel.ToolOutcome
+  execute : async (EffectId, ToolName, @kernel_exec.ToolExecutionScope) -> @kernel.ToolOutcome
   cancel : async (Array[EffectId]) -> Array[(EffectId, CancelDisposition)]
 }
 
@@ -31,21 +31,6 @@ impl @kernel_exec.HostRuntime for JournalChildHost with fn compact(
 
 ///|
 impl @kernel_exec.HostRuntime for JournalChildHost with fn execute_tool(
-  _self,
-  _id,
-  _owner,
-  _call,
-  _name,
-  _arguments,
-) {
-  RuntimeFailure(
-    error_category="MissingScope",
-    message="journal fixture requires the real tool scope",
-  )
-}
-
-///|
-impl @kernel_exec.HostRuntime for JournalChildHost with fn execute_tool_scoped(
   self,
   id,
   _owner,
@@ -60,9 +45,12 @@ impl @kernel_exec.HostRuntime for JournalChildHost with fn execute_tool_scoped(
 ///|
 impl @kernel_exec.HostRuntime for JournalChildHost with fn cancel_effects(
   self,
+  run_id~,
   ids,
   _reason,
 ) {
+  let _ = run_id
+
   (self.cancel)(ids)
 }
 
@@ -130,7 +118,6 @@ async test "tool_tree/journal_failure_at_each_child_boundary_ends_waiters_and_cl
             defer {
               parent_exited.val = true
             }
-            let scope = scope.unwrap()
             group.spawn_bg(() => {
               replies.push((scope.invoke)("child", {}))
               signal.broadcast()
@@ -182,7 +169,6 @@ async test "tool_tree/journal_failure_at_each_child_boundary_ends_waiters_and_cl
         let puppet = Puppet({
           ..config,
           tool_call_owners: Map::from_array([("parent", ["child"])]),
-          bound_tool_names: fn() { ["parent", "child"] },
         })
         puppet.install_tool_lifecycle(@kernel_exec.ToolLaunchGate(), facts)
         match fixture_prompt(puppet, "journal_child_failure") {

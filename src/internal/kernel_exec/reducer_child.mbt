@@ -9,7 +9,6 @@ pub fn declare_tool_child(
   arguments : Json,
   allowed_owners : Array[String],
   max_depth : Int32?,
-  bound_names : Array[String],
 ) -> (ReduceOutput, Effect, @kernel.ToolOutcome?) raise KernelError {
   let parent = find_tool_effect(state.pending_effects(), parent_id)
   guard parent is Some(parent) else {
@@ -41,9 +40,7 @@ pub fn declare_tool_child(
     parent: Some((parent_id, root_id, depth)),
   }
   let effect = ExecuteTool(effect_id~, payload~)
-  let mut rejection = validate_tool_child(
-    catalog, parent, call, allowed_owners, bound_names,
-  )
+  let mut rejection = validate_tool_child(catalog, parent, call, allowed_owners)
   if rejection is None {
     if max_depth is Some(limit) && depth > limit {
       rejection = Some(
@@ -101,7 +98,6 @@ pub fn validate_tool_child(
   parent : ExecuteToolPayload,
   call : @kernel.ToolCall,
   allowed_owners : Array[String],
-  bound_names : Array[String],
 ) -> @kernel.ToolOutcome? {
   if classify_rejected_outcome(catalog, call, direct=false) is Some(rejected) {
     return Some(rejected)
@@ -111,8 +107,6 @@ pub fn validate_tool_child(
       target.owner.to_string(),
     ) {
     Some(OwnerNotAllowed)
-  } else if !bound_names.contains(call.name.to_string()) {
-    Some(UnsupportedInvocation)
   } else {
     let caller_policy = catalog.find(parent.tool_name).unwrap().definition.policy
     match (caller_policy, target.policy) {

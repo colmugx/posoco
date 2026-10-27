@@ -51,8 +51,7 @@ fn normalize_tool_schema(schema : Json) -> Json {
 }
 
 ///|
-/// Serves both the port-derived catalog at composition and `CatalogSource`
-/// refreshes at prompt boundaries.
+/// Validates captured definitions for composition and operation admission.
 pub fn build_catalog_from_defs(
   defs : Array[@kernel.ToolDef],
   version : @kernel.CatalogVersion,
@@ -86,28 +85,6 @@ pub fn build_catalog_from_defs(
         detail="catalog finish: " + safe_error_label(e.to_string()),
       )
   }
-}
-
-///|
-/// Basic tools are the base layer: a source definition colliding with a basic
-/// name is shadowed, while duplicates inside `source` are left for the catalog
-/// builder to reject.
-pub fn merge_basic_catalog_defs(
-  basic : Array[@kernel.ToolDef],
-  source : Array[@kernel.ToolDef],
-) -> Array[@kernel.ToolDef] {
-  let defs : Array[@kernel.ToolDef] = []
-  let basic_names : Map[String, Bool] = Map::from_array([])
-  for tool in basic {
-    defs.push(tool)
-    basic_names[tool.name.to_string()] = true
-  }
-  for tool in source {
-    if !basic_names.contains(tool.name.to_string()) {
-      defs.push(tool)
-    }
-  }
-  defs
 }
 
 ///|

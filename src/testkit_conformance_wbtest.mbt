@@ -501,9 +501,9 @@ async test "tk_store_fail_load_returns_typed_error" {
 ///|
 async test "tk_observer_preserves_event_order" {
   let obs = RecordingObserver()
-  obs.on_event(TurnStarted)
-  obs.on_event(ToolCallPending(tk_call("c1", "t")))
-  obs.on_event(TurnCompleted)
+  obs.on_event(None, TurnStarted)
+  obs.on_event(None, ToolCallPending(tk_call("c1", "t")))
+  obs.on_event(None, TurnCompleted)
   let events = obs.events()
   assert_eq(events.length(), 3)
   assert_true(events[0] is TurnStarted)
@@ -522,7 +522,7 @@ async test "tk_observer_event_accessor_is_deep_snapshot" {
     reasoning=None,
     finish_reason=Stop,
   )
-  obs.on_event(ModelResponseReceived(message~, usage=None))
+  obs.on_event(None, ModelResponseReceived(message~, usage=None))
   // Mutate the caller-side content array AFTER handing the message off.
   // The recorded event must not see this mutation.
   match message {

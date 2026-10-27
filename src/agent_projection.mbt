@@ -199,7 +199,7 @@ fn AgentEventSubscriber::emit(
     None => ()
   }
   for observer in self.observers {
-    observer.on_event_at(scope, snapshot_turn_event(event))
+    observer.on_event(scope, snapshot_turn_event(event))
   }
 }
 

@@ -7,7 +7,14 @@ priv struct SubtreeStop {
 }
 
 ///|
-impl @port.ToolCancellable for SubtreeStop with fn cancel(self, _id, _reason) {
+impl @port.ToolCancellable for SubtreeStop with fn cancel(
+  self,
+  run_id~,
+  _id,
+  _reason,
+) {
+  let _ = run_id
+
   self.calls.val += 1
   if self.confirms {
     self.stopped.val = true
@@ -349,9 +356,7 @@ async test "tool_lifecycle/hard_parent_blocks_static_child_after_runtime_await" 
     Respond(tk_tool_call_response("parent", "p", Json::null())),
     Respond(tk_stop_response("done")),
   ])
-  let runtime = AwaitingRuntime::AwaitingRuntime(
-    @runtime.PortRuntime(model~, tools=Map([])),
-  )
+  let runtime = AwaitingRuntime::AwaitingRuntime(@runtime.PortRuntime(model~))
   let observer = RecordingObserver()
   let agent = Agent::with_runtime(
     exts=[

@@ -119,7 +119,7 @@ async test "tool_directory/memory_is_core_bound_with_source_and_contribution" {
     ),
     Respond(tk_stop_response("done")),
   ])
-  let runtime = @runtime.PortRuntime(model~, tools=Map::from_array([]))
+  let runtime = @runtime.PortRuntime(model~)
   let agent = Agent::with_runtime(
     exts=[
       tk_ext(id="model", model=Some(model)),
@@ -130,7 +130,6 @@ async test "tool_directory/memory_is_core_bound_with_source_and_contribution" {
     ],
     config=tk_config(),
     runtime~,
-    catalog_source=ContributionCatalogSource::{ },
   )
   ignore(agent.run_turn(tk_user_msg("hello"), "memory-owner"))
   assert_eq(memory.received_searches(), [("needle", None)])
@@ -142,7 +141,7 @@ async test "tool_directory/memory_is_core_bound_with_source_and_contribution" {
 }
 
 ///|
-async test "tool_directory/source_and_binding_updates_share_operation_boundary" {
+async test "tool_directory/multiple_publishers_share_operation_boundary" {
   let old = RecordingToolProvider(
     [tk_tool_def("dynamic", "old")],
     Map::from_array([("dynamic", OutcomeOk(tk_ok_result("old")))]),
@@ -152,7 +151,9 @@ async test "tool_directory/source_and_binding_updates_share_operation_boundary" 
     Map::from_array([("dynamic", OutcomeOk(tk_ok_result("new")))]),
   )
   let publisher = ContributionPublisher::new(old)
-  let source = FakeCatalogSource([tk_tool_def("legacy_v1", "legacy")])
+  let source = @support.ToolPublisher(
+    RecordingToolProvider([tk_tool_def("meta_v1", "metadata")], Map([])),
+  )
   let model = ScriptedModel([
     Respond(tk_tool_call_response("dynamic", "a1", Json::null())),
     Respond(tk_stop_response("a1 done")),
@@ -161,18 +162,17 @@ async test "tool_directory/source_and_binding_updates_share_operation_boundary" 
     Respond(tk_tool_call_response("dynamic", "b", Json::null())),
     Respond(tk_stop_response("b done")),
   ])
-  let runtime = FakeRuntime(
-    @runtime.PortRuntime(model~, tools=Map::from_array([])),
-  )
-  runtime.bound_support = true
+  let runtime = FakeRuntime(@runtime.PortRuntime(model~))
   runtime.follow_up_on_tool = true
   runtime.on_first_execute = Some(async fn() {
-    source.defs = [tk_tool_def("legacy_v2", "legacy")]
-    source.revision += 1
+    source.publish(
+      RecordingToolProvider([tk_tool_def("meta_v2", "metadata")], Map([])),
+    )
     ignore(publisher.publish(replacement))
   })
   let agent = Agent::with_runtime(
     exts=[
+      source,
       tk_ext(id="model", model=Some(model)),
       tk_ext(id="publisher", lifecycle=[publisher], requires=[
         @port.ToolContribution,
@@ -180,22 +180,21 @@ async test "tool_directory/source_and_binding_updates_share_operation_boundary" 
     ],
     config=tk_config(),
     runtime~,
-    catalog_source=source,
   )
   runtime.control = Some(agent.control())
   ignore(agent.run_turn(tk_user_msg("A"), "source-snapshot"))
   assert_eq(old.exec_records().length(), 2)
   assert_eq(replacement.exec_records().length(), 0)
   assert_eq(model.received_tools[0].map(t => t.name.to_string()), [
-    "legacy_v1", "dynamic",
+    "meta_v1", "dynamic",
   ])
   assert_eq(model.received_tools[2].map(t => t.name.to_string()), [
-    "legacy_v1", "dynamic",
+    "meta_v1", "dynamic",
   ])
   let result = agent.run_turn(tk_user_msg("B"), "source-snapshot")
   assert_eq(contribution_result_texts(result.tool_results), ["new"])
   assert_eq(model.received_tools[4].map(t => t.name.to_string()), [
-    "legacy_v2", "dynamic",
+    "meta_v2", "dynamic",
   ])
   assert_eq(replacement.exec_records().length(), 1)
 }

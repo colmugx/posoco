@@ -392,9 +392,8 @@ struct BoundaryMutatingHook {}
 ///|
 pub extend BoundaryMutatingHook with @port.PipelineHook::{
   tool_exposure,
-  on_post_event,
   on_turn_begin,
-  on_post_event_at,
+  on_post_event,
   before_model,
   before_tool,
   on_turn_end,
@@ -420,11 +419,12 @@ pub impl @port.PipelineHook for BoundaryMutatingHook with fn before_tool(
 struct BoundaryMutatingObserver {}
 
 ///|
-pub extend BoundaryMutatingObserver with @port.Observer::{on_event, on_event_at}
+pub extend BoundaryMutatingObserver with @port.Observer::{on_event}
 
 ///|
 pub impl @port.Observer for BoundaryMutatingObserver with fn on_event(
   _self,
+  _scope,
   event,
 ) {
   match event {

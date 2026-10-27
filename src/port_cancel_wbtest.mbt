@@ -15,12 +15,15 @@ using @support {type CancellableProbe}
 async test "port cancel/registered facet routes while effect in flight" {
   let model = ScriptedModel([])
   let probe = CancellableProbe()
-  let port_runtime = @runtime.PortRuntime(
-    model~,
-    tools=Map::from_array([("probe", probe as &@port.ToolProvider)]),
-  )
+  let port_runtime = @runtime.PortRuntime(model~)
   @async.with_task_group(group => {
-    group.spawn_bg(() => ignore(port_runtime.execute_tool(probe_effect(7))))
+    group.spawn_bg(() => {
+      ignore(
+        port_runtime.execute_tool(
+          probe_effect(7, provider=probe, run_id="port-test"),
+        ),
+      )
+    })
     // Ready-poll until the spawned task has registered its facet (the
     // registration site records the effect id) and suspended on the release
     // queue — no fixed sleep.
@@ -29,6 +32,7 @@ async test "port cancel/registered facet routes while effect in flight" {
     }
     let dispositions = @runtime.Runtime::cancel_effects(
       port_runtime,
+      run_id=@kernel.RunId::unchecked("port-test"),
       [{ value: 7, }, { value: 9, }],
       @kernel.CancelReason::HostRequested(detail=Some("port cancel test")),
     )
@@ -49,18 +53,19 @@ async test "port cancel/registered facet routes while effect in flight" {
 async test "port cancel/settled effect drops its registration" {
   let model = ScriptedModel([])
   let probe = CancellableProbe()
-  let port_runtime = @runtime.PortRuntime(
-    model~,
-    tools=Map::from_array([("probe", probe as &@port.ToolProvider)]),
-  )
+  let port_runtime = @runtime.PortRuntime(model~)
   // Pre-loaded release: execute runs to completion, the effect settles, and
   // the registration is dropped.
   probe.release.put(1)
-  let outcome = @runtime.Runtime::execute_tool(port_runtime, probe_effect(3))
+  let outcome = @runtime.Runtime::execute_tool(
+    port_runtime,
+    probe_effect(3, provider=probe, run_id="port-test"),
+  )
   guard outcome is Success(..) else { fail("expected probe success") }
   assert_eq(probe.registered_effects, [3])
   let dispositions = @runtime.Runtime::cancel_effects(
     port_runtime,
+    run_id=@kernel.RunId::unchecked("port-test"),
     [{ value: 3, }],
     @kernel.CancelReason::DeadlineReached,
   )
@@ -75,17 +80,15 @@ async test "port cancel/plain provider and unknown ids stay not propagated" {
     [tk_tool_def("plain", "")],
     Map::from_array([("plain", OutcomeOk(tk_ok_result("ok")))]),
   )
-  let port_runtime = @runtime.PortRuntime(
-    model~,
-    tools=Map::from_array([("plain", tools as &@port.ToolProvider)]),
-  )
+  let port_runtime = @runtime.PortRuntime(model~)
   let outcome = @runtime.Runtime::execute_tool(
     port_runtime,
-    probe_effect(4, tool_name="plain"),
+    probe_effect(4, tool_name="plain", provider=tools, run_id="port-test"),
   )
   guard outcome is Success(..) else { fail("expected plain success") }
   let dispositions = @runtime.Runtime::cancel_effects(
     port_runtime,
+    run_id=@kernel.RunId::unchecked("port-test"),
     [{ value: 4, }, { value: 5, }],
     @kernel.CancelReason::DeadlineReached,
   )

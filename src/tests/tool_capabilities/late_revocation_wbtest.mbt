@@ -20,9 +20,7 @@ async test "tool_revoke/late_child_refusal_returns_interrupted_without_side_effe
     Respond(tk_stop_response("done")),
   ])
   let observer = RecordingObserver()
-  let runtime = AwaitingRuntime::AwaitingRuntime(
-    @runtime.PortRuntime(model~, tools=Map([])),
-  )
+  let runtime = AwaitingRuntime::AwaitingRuntime(@runtime.PortRuntime(model~))
   let agent = Agent::with_runtime(
     exts=[
       tk_ext(id="model", model=Some(model), observers=[observer]),

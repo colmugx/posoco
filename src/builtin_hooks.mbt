@@ -68,9 +68,8 @@ pub fn SystemPromptHook::assemble(self : SystemPromptHook) -> String {
 ///|
 pub extend SystemPromptHook with @port.PipelineHook::{
   tool_exposure,
-  on_post_event,
   on_turn_begin,
-  on_post_event_at,
+  on_post_event,
   before_tool,
   on_turn_end,
 }
@@ -177,7 +176,7 @@ fn UiRenderHook::render_failure(
 pub extend UiRenderHook with @port.PipelineHook::{
   tool_exposure,
   on_turn_begin,
-  on_post_event_at,
+  on_post_event,
   before_model,
   before_tool,
   on_turn_end,
@@ -186,6 +185,7 @@ pub extend UiRenderHook with @port.PipelineHook::{
 ///|
 pub impl @port.PipelineHook for UiRenderHook with fn on_post_event(
   self : UiRenderHook,
+  _scope,
   stage : @port.HookStage,
 ) -> Unit {
   match stage {

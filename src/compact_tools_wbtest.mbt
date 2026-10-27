@@ -80,7 +80,10 @@ fn compact_tools_assert(
   assert_eq(model.seen_triggers[0], trigger)
   assert_eq(model.seen_tools[0].length(), expected.length())
   for i in 0..<expected.length() {
-    assert_true(model.seen_tools[0][i] == expected[i])
+    assert_true(
+      model.seen_tools[0][i] ==
+      { ..expected[i], owner: @kernel.OwnerId::unchecked("published"), },
+    )
   }
 }
 
@@ -96,21 +99,23 @@ async fn compact_tools_idle(fail_compact : Bool, refresh : Bool) -> Unit {
   let original = tk_tool_def("original", "previous chat tools")
   let current = tk_tool_def("current", "current snapshot tools")
   let pending = tk_tool_def("pending", "adopted at compact admission")
-  let source = FakeCatalogSource([original])
+  let source = ToolPublisher(
+    RecordingToolProvider(
+      [original],
+      Map([("echo", OutcomeOk(tk_ok_result("echo")))]),
+    ),
+  )
   let agent = Agent::with_runtime(
-    exts=[tk_ext(id="model", model=Some(model), sessions=[store])],
+    exts=[tk_ext(id="model", model=Some(model), sessions=[store]), source],
     config=tk_config(),
-    runtime=@runtime.PortRuntime(model~, tools=Map::from_array([])),
-    catalog_source=source,
+    runtime=@runtime.PortRuntime(model~),
   )
   if refresh {
     ignore(agent.run_turn(tk_user_msg("before refresh"), id))
-    source.defs = [current]
-    source.revision = source.revision + 1
-    // CatalogSource changes are adopted at the next prompt boundary.
+    source.publish(RecordingToolProvider([current], Map([])))
+    // Published changes are adopted at the next operation boundary.
     ignore(agent.run_turn(tk_user_msg("adopt refresh"), id))
-    source.defs = [pending]
-    source.revision = source.revision + 1
+    source.publish(RecordingToolProvider([pending], Map([])))
   }
   let before = snapshot_messages(store.store[id].messages)
   let result : Result[@types.CompactOutcome, @error.AgentError] = Ok(
@@ -199,10 +204,11 @@ impl @runtime.Runtime for CompactToolsRuntime with fn execute_tool(
 ///|
 impl @runtime.Runtime for CompactToolsRuntime with fn cancel_effects(
   self,
+  run_id~,
   ids : Array[@kernel.EffectId],
   reason : @kernel.CancelReason,
 ) -> Array[(@kernel.EffectId, @kernel.CancelDisposition)] {
-  self.inner.cancel_effects(ids, reason)
+  self.inner.cancel_effects(ids, reason, run_id~)
 }
 
 ///|
@@ -227,20 +233,21 @@ async fn compact_tools_midturn(fail_compact : Bool) -> Unit {
     Respond(tk_stop_response("done")),
   ])
   let original = tk_tool_def("echo", "active snapshot tools")
-  let source = FakeCatalogSource([original])
-  let runtime = CompactToolsRuntime::{
-    inner: @runtime.PortRuntime(
-      model~,
-      tools=Map::from_array([("echo", policy_tools() as &@port.ToolProvider)]),
+  let source = ToolPublisher(
+    RecordingToolProvider(
+      [original],
+      Map([("echo", OutcomeOk(tk_ok_result("echo")))]),
     ),
+  )
+  let runtime = CompactToolsRuntime::{
+    inner: @runtime.PortRuntime(model~),
     parked: false,
     release: false,
   }
   let agent = Agent::with_runtime(
-    exts=[tk_ext(id="model", model=Some(model), sessions=[store])],
+    exts=[tk_ext(id="model", model=Some(model), sessions=[store]), source],
     config=tk_config(),
     runtime~,
-    catalog_source=source,
   )
   let outcome : Ref[Result[@types.TurnResult, @error.AgentError]] = Ref(
     Err(Runtime(InvocationFailed("unset"))),
@@ -254,8 +261,12 @@ async fn compact_tools_midturn(fail_compact : Bool) -> Unit {
     while !runtime.parked {
       @async.pause()
     }
-    source.defs = [tk_tool_def("next", "not in the active snapshot")]
-    source.revision = source.revision + 1
+    source.publish(
+      RecordingToolProvider(
+        [tk_tool_def("next", "not in the active snapshot")],
+        Map([]),
+      ),
+    )
     assert_true(
       compact_diag_builtin_compact(agent).invoke("compact", Json::null())
       is Success(..),
@@ -324,22 +335,25 @@ async fn compact_tools_auto(fail_compact : Bool, pre_request : Bool) -> Unit {
     },
   )
   let original = tk_tool_def("echo", "auto snapshot tools")
-  let source = FakeCatalogSource([original])
-  let runtime = FakeRuntime(
-    @runtime.PortRuntime(
-      model~,
-      tools=Map::from_array([("echo", policy_tools() as &@port.ToolProvider)]),
+  let source = ToolPublisher(
+    RecordingToolProvider(
+      [original],
+      Map([("echo", OutcomeOk(tk_ok_result("echo")))]),
     ),
   )
+  let runtime = FakeRuntime(@runtime.PortRuntime(model~))
   runtime.on_first_execute = Some(() => {
-    source.defs = [tk_tool_def("next", "not in active snapshot")]
-    source.revision = source.revision + 1
+    source.publish(
+      RecordingToolProvider(
+        [tk_tool_def("next", "not in active snapshot")],
+        Map([]),
+      ),
+    )
   })
   let agent = Agent::with_runtime(
-    exts=[tk_ext(id="model", model=Some(model), sessions=[store])],
+    exts=[tk_ext(id="model", model=Some(model), sessions=[store]), source],
     config=tk_config(),
     runtime~,
-    catalog_source=source,
   )
   let result : Result[@types.TurnResult, @error.AgentError] = Ok(
     agent.run_turn(tk_user_msg("hi"), id),

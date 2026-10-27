@@ -89,9 +89,8 @@ pub fn FixtureHost::executed_effect_ids(self : FixtureHost) -> Array[EffectId] {
 
 ///|
 pub extend FixtureHost with @kernel_exec.HostRuntime::{
-  execute_tool_scoped,
-  cancel_effects,
   execute_tool,
+  cancel_effects,
   call_model,
   compact,
 }
@@ -139,6 +138,7 @@ pub impl @kernel_exec.HostRuntime for FixtureHost with fn execute_tool(
   call_id : CallId,
   _tool_name : ToolName,
   _arguments : Json,
+  _scope,
 ) -> @kernel.ToolOutcome {
   self.tool_call_count = self.tool_call_count + 1
   self.executed_effect_ids.push(effect_id)
@@ -155,9 +155,12 @@ pub impl @kernel_exec.HostRuntime for FixtureHost with fn execute_tool(
 ///|
 pub impl @kernel_exec.HostRuntime for FixtureHost with fn cancel_effects(
   self : FixtureHost,
+  run_id~,
   effect_ids : Array[EffectId],
   _reason : CancelReason,
 ) -> Array[(EffectId, CancelDisposition)] {
+  let _ = run_id
+
   ignore(self)
   effect_ids.map(id => (id, NotPropagated))
 }
@@ -284,7 +287,6 @@ fn canonical_puppet_config(
     hooks: [],
     tool_call_owners: Map::from_array([]),
     max_tool_depth: None,
-    bound_tool_names: fn() { [] },
     max_iterations: Some(50),
     commands: [],
     session_store: None,
@@ -869,9 +871,8 @@ fn AbortProbeHost::AbortProbeHost(
 
 ///|
 pub extend AbortProbeHost with @kernel_exec.HostRuntime::{
-  execute_tool_scoped,
-  cancel_effects,
   execute_tool,
+  cancel_effects,
   call_model,
   compact,
 }
@@ -914,6 +915,7 @@ pub impl @kernel_exec.HostRuntime for AbortProbeHost with fn execute_tool(
   call_id : CallId,
   _tool_name : ToolName,
   _arguments : Json,
+  _scope,
 ) -> @kernel.ToolOutcome {
   let id = call_id.to_string()
   self.started_calls.push(id)
@@ -937,9 +939,12 @@ pub impl @kernel_exec.HostRuntime for AbortProbeHost with fn execute_tool(
 ///|
 pub impl @kernel_exec.HostRuntime for AbortProbeHost with fn cancel_effects(
   self : AbortProbeHost,
+  run_id~,
   effect_ids : Array[EffectId],
   reason : CancelReason,
 ) -> Array[(EffectId, CancelDisposition)] {
+  let _ = run_id
+
   // Record-only seam: the disposition contract stays NotPropagated (this
   // fixture does not propagate), but every delivery is logged so the abort
   // tests can assert which in-flight ids reached the host and why.

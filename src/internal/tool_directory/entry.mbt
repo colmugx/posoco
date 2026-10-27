@@ -2,7 +2,7 @@
 /// Definition and fixed executor are assembled once, then projected together.
 pub struct ToolEntry {
   definition : @kernel.ToolDef
-  provider : &@port.ToolProvider?
+  provider : &@port.ToolProvider
   /// Contributed version this entry belongs to; `None` for base/static entries
   /// that have no version lifetime.
   version : Int32?
@@ -14,19 +14,7 @@ pub fn ToolEntry::bound(
   owner : String,
   provider : &@port.ToolProvider,
 ) -> ToolEntry {
-  {
-    definition: owned_tool_def(definition, owner),
-    provider: Some(provider),
-    version: None,
-  }
-}
-
-///|
-pub fn ToolEntry::legacy(
-  definition : @kernel.ToolDef,
-  provider : &@port.ToolProvider?,
-) -> ToolEntry {
-  { definition: snapshot_tool_def(definition), provider, version: None, }
+  { definition: owned_tool_def(definition, owner), provider, version: None, }
 }
 
 ///|
@@ -57,9 +45,7 @@ pub fn entry_routing(
         raise ToolCollision(name, tool_collision_message(labels[0], label), manifests=[])
       None => ()
     }
-    if entry.provider is Some(provider) {
-      tool_map[name] = provider
-    }
+    tool_map[name] = entry.provider
   }
   tool_map
 }

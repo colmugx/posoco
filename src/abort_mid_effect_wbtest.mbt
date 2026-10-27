@@ -89,9 +89,12 @@ impl @runtime.Runtime for MidEffectAbortRuntime with fn execute_tool(
 ///|
 impl @runtime.Runtime for MidEffectAbortRuntime with fn cancel_effects(
   self,
+  run_id~,
   effect_ids : Array[@kernel.EffectId],
   _reason : @kernel.CancelReason,
 ) -> Array[(@kernel.EffectId, @kernel.CancelDisposition)] {
+  let _ = run_id
+
   for id in effect_ids {
     self.cancelled_effect_ids.push(id)
   }
@@ -128,7 +131,7 @@ async test "abort/mid-model-call: structured Cancelled, cancel_effects delivered
   ])
   let store = RecordingSessionStore()
   store.seed("abort-model", { messages: [], metadata: Map::from_array([]), })
-  let port_runtime = @runtime.PortRuntime(model~, tools=Map::from_array([]))
+  let port_runtime = @runtime.PortRuntime(model~)
   let probe = MidEffectAbortRuntime(
     inner=port_runtime as &@runtime.Runtime,
     park_model=true,
@@ -194,10 +197,7 @@ async test "abort/mid-tool-wave: structured Cancelled, tool effect cancelled, in
   )
   let store = RecordingSessionStore()
   store.seed("abort-tools", { messages: [], metadata: Map::from_array([]), })
-  let port_runtime = @runtime.PortRuntime(
-    model~,
-    tools=Map::from_array([("slow_tool", tools as &@port.ToolProvider)]),
-  )
+  let port_runtime = @runtime.PortRuntime(model~)
   let probe = MidEffectAbortRuntime(inner=port_runtime as &@runtime.Runtime, park_tool_names=[
     "slow_tool",
   ])

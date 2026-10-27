@@ -8,6 +8,7 @@ pub(all) struct CancellableProbe {
   release : @aqueue.Queue[Int32]
   registered_effects : Array[Int32]
   cancelled_effects : Array[Int32]
+  cancelled_runs : Array[String]
   seen_reasons : Array[@kernel.CancelReason]
 }
 
@@ -17,6 +18,7 @@ pub fn CancellableProbe::CancellableProbe() -> CancellableProbe {
     release: Queue(kind=Unbounded),
     registered_effects: [],
     cancelled_effects: [],
+    cancelled_runs: [],
     seen_reasons: [],
   }
 }
@@ -46,9 +48,11 @@ pub impl @port.ToolProvider for CancellableProbe with fn execute(
 ///|
 pub impl @port.ToolCancellable for CancellableProbe with fn cancel(
   self,
+  run_id~,
   effect_id : @kernel.EffectId,
   reason : @kernel.CancelReason,
 ) -> @kernel.CancelDisposition {
+  self.cancelled_runs.push(run_id.to_string())
   self.cancelled_effects.push(effect_id.to_int())
   self.seen_reasons.push(reason)
   @kernel.CancelDisposition::Propagated
@@ -58,30 +62,31 @@ pub impl @port.ToolCancellable for CancellableProbe with fn cancel(
 pub fn probe_effect(
   effect_id : Int32,
   tool_name~ : String = "probe",
-  run_id? : String,
+  provider~ : &@port.ToolProvider,
+  run_id~ : String,
 ) -> @runtime.EffectContext {
   @runtime.EffectContext(
+    run_id=@kernel.RunId::unchecked(run_id),
+    bound_tool=provider,
     effect_id={ value: effect_id, },
     owner=@kernel.OwnerId::unchecked("probe_owner"),
     call_id=@kernel.CallId::unchecked("call_probe"),
     tool_name=@kernel.ToolName::unchecked(tool_name),
     arguments=Json::object(Map::from_array([])),
-    tool_context?=run_id.map(run => {
-      register_cancel => {
-        @port.ToolCallContext(
-          effect_id={ value: effect_id, },
-          call_id=@kernel.CallId::unchecked("call_probe"),
-          name=@kernel.ToolName::unchecked(tool_name),
-          arguments={},
-          register_cancel~,
-          scope={
-            session_id: @kernel.SessionId::unchecked("cancel-probe"),
-            run_id: @kernel.RunId::unchecked(run),
-            effect_id: Some({ value: effect_id, }),
-            pressure: None,
-          },
-        )
-      }
-    }),
+    tool_context=register_cancel => {
+      @port.ToolCallContext(
+        effect_id={ value: effect_id, },
+        call_id=@kernel.CallId::unchecked("call_probe"),
+        name=@kernel.ToolName::unchecked(tool_name),
+        arguments={},
+        register_cancel~,
+        scope={
+          session_id: @kernel.SessionId::unchecked("cancel-probe"),
+          run_id: @kernel.RunId::unchecked(run_id),
+          effect_id: Some({ value: effect_id, }),
+          pressure: None,
+        },
+      )
+    },
   )
 }

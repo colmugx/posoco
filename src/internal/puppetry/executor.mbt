@@ -258,14 +258,20 @@ async fn execute_execute_tool(
   // Owner resolution lives in the host. `NotExecuted` is reducer-side (unknown
   // tool / schema mismatch, decided BEFORE the effect is declared), so a host
   // returning it is a contract violation that must surface, not be masked.
+  guard ctx.tool_scope is Some(scope) else {
+    raise EffectExecutionFailed(
+      phase="ExecuteTool",
+      cause="missing tool execution scope",
+    )
+  }
   let attempted : Result[@kernel.ToolOutcome, Error] = Ok(
-    ctx.host.execute_tool_scoped(
+    ctx.host.execute_tool(
       effect_id,
       payload.owner,
       payload.call_id,
       payload.tool_name,
       payload.arguments,
-      ctx.tool_scope,
+      scope,
     ),
   ) catch {
     error => Err(error)

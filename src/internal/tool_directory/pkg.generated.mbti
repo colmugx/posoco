@@ -13,8 +13,6 @@ pub fn build_catalog_from_defs(Array[@kernel.ToolDef], @kernel.CatalogVersion) -
 
 pub fn entry_routing(Array[ToolEntry]) -> Map[String, &@port.ToolProvider] raise @error.CompositionError
 
-pub fn merge_basic_catalog_defs(Array[@kernel.ToolDef], Array[@kernel.ToolDef]) -> Array[@kernel.ToolDef]
-
 pub fn nonempty_provenance(@kernel.ToolDef) -> String?
 
 pub fn tool_collision_message(String, String) -> String
@@ -44,7 +42,6 @@ pub fn ToolContributionRegistry::pending_cleanup(Self) -> Array[ToolRetireFailur
 pub fn ToolContributionRegistry::prepare_capture(Self, @kernel.CatalogVersion, Array[&@port.PipelineHook]) -> ToolDirectoryCapture? raise @error.CompositionError
 pub fn ToolContributionRegistry::release_versions(Self, Array[Int32]) -> Unit
 pub async fn ToolContributionRegistry::replace(Self, String, &@port.ToolProvider, (async () -> Result[Unit, String])?) -> Result[@port.ToolContributionCommit, @port.ToolContributionError] noraise
-pub fn ToolContributionRegistry::replace_source(Self, Array[@kernel.ToolDef], @kernel.CatalogVersion) -> Unit raise @error.CompositionError
 pub fn ToolContributionRegistry::retain_versions(Self, Array[Int32]) -> Unit
 pub async fn ToolContributionRegistry::retire_unreferenced(Self, owner? : String) -> Array[ToolRetireFailure] noraise
 pub async fn ToolContributionRegistry::withdraw(Self, String, @port.ToolWithdrawMode) -> Result[@port.ToolContributionCommit, @port.ToolContributionError] noraise
@@ -59,11 +56,10 @@ pub fn ToolDirectoryCapture::versions(Self) -> Array[Int32]
 
 pub struct ToolEntry {
   definition : @kernel.ToolDef
-  provider : &@port.ToolProvider?
+  provider : &@port.ToolProvider
   version : Int32?
 }
 pub fn ToolEntry::bound(@kernel.ToolDef, String, &@port.ToolProvider) -> Self
-pub fn ToolEntry::legacy(@kernel.ToolDef, &@port.ToolProvider?) -> Self
 
 pub struct ToolNameIndex {
   // private fields

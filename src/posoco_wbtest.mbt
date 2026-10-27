@@ -37,6 +37,7 @@ struct LogHook {
 ///|
 impl @port.PipelineHook for LogHook with fn on_post_event(
   self,
+  _scope,
   stage : @port.HookStage,
 ) -> Unit {
   self.seen.push(stage)
@@ -2003,10 +2004,11 @@ impl @runtime.Runtime for Wave3ParkingRuntime with fn execute_tool(
 ///|
 impl @runtime.Runtime for Wave3ParkingRuntime with fn cancel_effects(
   self,
+  run_id~,
   effect_ids : Array[@kernel.EffectId],
   reason : @kernel.CancelReason,
 ) -> Array[(@kernel.EffectId, @kernel.CancelDisposition)] {
-  self.inner.cancel_effects(effect_ids, reason)
+  self.inner.cancel_effects(effect_ids, reason, run_id~)
 }
 
 ///|
@@ -2037,7 +2039,7 @@ async test "wave3/cancellation/mid-stream cancel is structured and the session s
     messages: [tk_user_msg("seeded question")],
     metadata: Map::from_array([]),
   })
-  let port_runtime = @runtime.PortRuntime(model~, tools=Map::from_array([]))
+  let port_runtime = @runtime.PortRuntime(model~)
   let parking : Wave3ParkingRuntime = {
     inner: port_runtime as &@runtime.Runtime,
     model_calls: 0,

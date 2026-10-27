@@ -66,13 +66,6 @@ impl @port.Lifecycle for ManualPublisher with fn on_compose(
 }
 
 ///|
-impl @port.Lifecycle for ManualPublisher with fn on_shutdown(
-  _self : ManualPublisher,
-) {
-  ()
-}
-
-///|
 async test "tool_lifecycle/publish_ack_reports_active_state_and_retires_the_superseded_version" {
   let v1 = RecordingToolProvider(
     [tk_tool_def("dyn_echo", "dynamic echo")],
@@ -310,13 +303,6 @@ fn AwaitingRuntime::AwaitingRuntime(
 }
 
 ///|
-impl @runtime.Runtime for AwaitingRuntime with fn supports_bound_tools(
-  _self : AwaitingRuntime,
-) -> Bool {
-  true
-}
-
-///|
 impl @runtime.Runtime for AwaitingRuntime with fn call_model(
   self,
   scope,
@@ -354,10 +340,13 @@ impl @runtime.Runtime for AwaitingRuntime with fn execute_tool(
 ///|
 impl @runtime.Runtime for AwaitingRuntime with fn cancel_effects(
   self,
+  run_id~,
   effect_ids,
   reason,
 ) -> Array[(@kernel.EffectId, @kernel.CancelDisposition)] {
-  @runtime.Runtime::cancel_effects(self.inner, effect_ids, reason)
+  let _ = run_id
+
+  @runtime.Runtime::cancel_effects(self.inner, effect_ids, reason, run_id~)
 }
 
 ///|
@@ -390,10 +379,7 @@ async test "tool_lifecycle/hard_withdraw_while_a_runtime_decorator_awaits_is_ref
     Respond(tk_tool_call_response("dyn_echo", "call_1", Json::null())),
     Respond(tk_stop_response("done")),
   ])
-  let inner = @runtime.PortRuntime(
-    model=model as &@port.ModelPort,
-    tools=Map::from_array([]),
-  )
+  let inner = @runtime.PortRuntime(model=model as &@port.ModelPort)
   let runtime = AwaitingRuntime::AwaitingRuntime(inner)
   let observer = RecordingObserver()
   let agent = Agent::with_runtime(
@@ -493,9 +479,12 @@ impl @port.ToolProvider for CancellableProvider with fn execute(
 ///|
 impl @port.ToolCancellable for CancellableProvider with fn cancel(
   self : CancellableProvider,
+  run_id~,
   effect_id : @kernel.EffectId,
   _reason : @kernel.CancelReason,
 ) -> @kernel.CancelDisposition {
+  let _ = run_id
+
   self.cancels.push(effect_id.to_int())
   self.stopped.val = true
   self.wake.broadcast()
@@ -617,13 +606,6 @@ impl @port.Lifecycle for ChildPublisher with fn on_compose(
   view : @port.CompositionView,
 ) {
   self.contributions = view.tool_contributions()
-}
-
-///|
-impl @port.Lifecycle for ChildPublisher with fn on_shutdown(
-  _self : ChildPublisher,
-) {
-  ()
 }
 
 ///|

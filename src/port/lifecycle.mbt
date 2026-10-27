@@ -25,7 +25,7 @@
 pub(open) trait Lifecycle {
   fn on_compose(Self, ctx : CompositionView) -> Unit raise @error.CompositionError = _
   async fn on_start(Self) -> Unit = _
-  async fn on_shutdown(Self) -> Unit
+  async fn on_shutdown(Self) -> Unit = _
 }
 
 ///|
@@ -37,5 +37,10 @@ impl Lifecycle with fn on_compose(_self, _ctx : CompositionView) -> Unit {
 ///|
 /// Default `on_start`: nothing to boot. Sync body satisfies the async slot.
 impl Lifecycle with fn on_start(_self) -> Unit {
+  ()
+}
+
+///|
+impl Lifecycle with fn on_shutdown(_self) -> Unit {
   ()
 }

@@ -21,6 +21,7 @@ async fn ToolTree::cleanup(self : ToolTree, context : ExecutionContext) -> Unit 
   try {
     let reports = context.host.cancel_effects(
       ids,
+      run_id=context.run_id,
       HostRequested(detail=Some("tool subtree failed")),
     )
     validate_cancel_dispositions(ids, reports)
@@ -96,6 +97,7 @@ async fn cancel_revoked_effects(
   }
   let reported = context.host.cancel_effects(
     ids,
+    run_id=context.run_id,
     HostRequested(detail=Some("tool version revoked")),
   ) catch {
     error => raise execution_error("ToolRevocation", error)

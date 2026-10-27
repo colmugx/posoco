@@ -29,18 +29,25 @@ pub fn RuntimeHostShim::require_settled(
 pub async fn RuntimeHostShim::cleanup_unconfirmed(
   self : RuntimeHostShim,
 ) -> Unit {
-  let ids = self.incomplete
-    .values()
-    .to_array()
-    .filter_map(scope => scope.effect_id)
-  if ids.is_empty() {
-    return
+  let runs : Map[String, Array[@kernel.InvocationScope]] = Map([])
+  for scope in self.incomplete.values().to_array() {
+    let key = scope.run_id.to_string()
+    if !runs.contains(key) {
+      runs[key] = []
+    }
+    runs[key].push(scope)
   }
-  let _ = @kernel_exec.HostRuntime::cancel_effects(
-    self,
-    ids,
-    HostRequested(detail=Some("Agent shutdown cleanup")),
-  )
+  for _, scopes in runs {
+    let ids = scopes.map(scope => scope.effect_id.unwrap())
+    ignore(
+      @kernel_exec.HostRuntime::cancel_effects(
+        self,
+        run_id=scopes[0].run_id,
+        ids,
+        HostRequested(detail=Some("Agent shutdown cleanup")),
+      ),
+    )
+  }
   self.require_settled()
 }
 

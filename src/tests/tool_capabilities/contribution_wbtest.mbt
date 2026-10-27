@@ -74,13 +74,6 @@ impl @port.Lifecycle for ContributionMutator with fn on_compose(
 }
 
 ///|
-impl @port.Lifecycle for ContributionMutator with fn on_shutdown(
-  _self : ContributionMutator,
-) {
-  ()
-}
-
-///|
 impl @port.PipelineHook for ContributionMutator with fn before_tool(
   self : ContributionMutator,
   call : @kernel.ToolCall,
@@ -285,10 +278,7 @@ async test "tool_contribution/custom_runtime_executes_captured_binding" {
     Respond(tk_tool_call_response("dyn_echo", "call_1", Json::null())),
     Respond(tk_stop_response("done")),
   ])
-  let runtime = @runtime.PortRuntime(
-    model=model as &@port.ModelPort,
-    tools=Map::from_array([]),
-  )
+  let runtime = @runtime.PortRuntime(model=model as &@port.ModelPort)
   let agent = Agent::with_runtime(
     exts=[
       tk_ext(id="model", model=Some(model)),
@@ -305,25 +295,7 @@ async test "tool_contribution/custom_runtime_executes_captured_binding" {
 }
 
 ///|
-/// An empty legacy source must not hide bound contributions.
-priv struct ContributionCatalogSource {}
-
-///|
-impl @runtime.CatalogSource for ContributionCatalogSource with fn revision(
-  _self : ContributionCatalogSource,
-) -> Int32 {
-  1
-}
-
-///|
-impl @runtime.CatalogSource for ContributionCatalogSource with fn tools(
-  _self : ContributionCatalogSource,
-) -> Array[@kernel.ToolDef] {
-  []
-}
-
-///|
-async test "tool_contribution/catalog_source_and_bound_contributions_coexist" {
+async test "tool_contribution/empty_static_directory_accepts_bound_contributions" {
   let provider = RecordingToolProvider(
     [tk_tool_def("dyn_echo", "dynamic echo")],
     Map::from_array([("dyn_echo", OutcomeOk(tk_ok_result("echo-v1")))]),
@@ -333,10 +305,7 @@ async test "tool_contribution/catalog_source_and_bound_contributions_coexist" {
     Respond(tk_tool_call_response("dyn_echo", "call_1", Json::null())),
     Respond(tk_stop_response("done")),
   ])
-  let runtime = @runtime.PortRuntime(
-    model=model as &@port.ModelPort,
-    tools=Map::from_array([]),
-  )
+  let runtime = @runtime.PortRuntime(model=model as &@port.ModelPort)
   let agent = Agent::with_runtime(
     exts=[
       tk_ext(id="model", model=Some(model)),
@@ -346,7 +315,6 @@ async test "tool_contribution/catalog_source_and_bound_contributions_coexist" {
     ],
     config=tk_config(),
     runtime=runtime as &@runtime.Runtime,
-    catalog_source=ContributionCatalogSource::{ },
   )
   let result = agent.run_turn(tk_user_msg("hello"), "source_and_contribution")
   assert_eq(contribution_result_texts(result.tool_results), ["echo-v1"])
@@ -409,11 +377,6 @@ impl @port.Lifecycle for StartupToolPublisher with fn on_start(self) {
     Ok(_) => ()
     Err(error) => raise @error.RuntimeError::InvocationFailed(error.to_string())
   }
-}
-
-///|
-impl @port.Lifecycle for StartupToolPublisher with fn on_shutdown(_self) {
-  ()
 }
 
 ///|

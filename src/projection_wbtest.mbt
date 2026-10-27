@@ -1104,9 +1104,8 @@ struct SameLengthAgentHook {}
 ///|
 pub extend SameLengthAgentHook with @port.PipelineHook::{
   tool_exposure,
-  on_post_event,
   on_turn_begin,
-  on_post_event_at,
+  on_post_event,
   before_model,
   before_tool,
   on_turn_end,

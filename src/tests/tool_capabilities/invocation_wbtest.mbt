@@ -211,30 +211,31 @@ async test "tool_invoke/a_saved_context_loses_discovery_and_invocation" {
 }
 
 ///|
-test "tool_invoke/declared_composition_requires_a_binding_aware_runtime" {
-  let model = ScriptedModel([])
-  let runtime = FakeRuntime(
-    @runtime.PortRuntime(model~, tools=Map::from_array([])),
+async test "tool_invoke/custom_runtime_forwards_mandatory_child_bindings" {
+  let child = RecordingToolProvider(
+    [{ ..tk_tool_def("child", "child"), exposure: Deferred, }],
+    Map::from_array([("child", OutcomeOk(tk_ok_result("child result")))]),
   )
-  try
-    Agent::with_runtime(
-      exts=[
-        tk_ext(id="model", model=Some(model)),
-        InvokingTool::{ seen_tools: [], },
-      ],
-      config=tk_config(),
-      runtime~,
-    )
-  catch {
-    @error.CompositionError::ManifestSchemaError(manifest_id~, detail~) => {
-      assert_eq(manifest_id, "parent")
-      assert_true(detail.contains("supports_bound_tools"))
-    }
-    error => fail(error.to_string())
-  } noraise {
-    _ =>
-      fail("tool-internal calls were accepted without fixed execution bindings")
-  }
+  let model = ScriptedModel([
+    Respond(tk_tool_call_response("parent", "parent-call", Json::null())),
+    Respond(tk_stop_response("done")),
+  ])
+  let runtime = FakeRuntime(@runtime.PortRuntime(model~))
+  let agent = Agent::with_runtime(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      InvokingTool::{ seen_tools: [], },
+      tk_ext(id="child", tools=[child]),
+    ],
+    config=tk_config(),
+    runtime~,
+  )
+  let result = agent.run_turn(tk_user_msg("invoke"), "bound-child")
+  assert_eq(contribution_result_texts(result.tool_results), ["child result"])
+  assert_eq(child.exec_records().length(), 1)
+  assert_eq(runtime.seen_contexts.map(ctx => ctx.owner.to_string()), [
+    "parent", "child",
+  ])
 }
 
 ///|

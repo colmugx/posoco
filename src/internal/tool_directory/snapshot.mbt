@@ -38,40 +38,6 @@ pub fn ToolContributionRegistry::is_closed(
 }
 
 ///|
-pub fn ToolContributionRegistry::replace_source(
-  self : ToolContributionRegistry,
-  definitions : Array[@kernel.ToolDef],
-  version : @kernel.CatalogVersion,
-) -> Unit raise @error.CompositionError {
-  let bound : Map[String, &@port.ToolProvider] = Map::from_array([])
-  for entry in self.base {
-    if entry.provider is Some(provider) {
-      bound[entry.definition.name.to_string()] = provider
-    }
-  }
-  let candidate = definitions.map(def => {
-    ToolEntry::legacy(def, bound.get(def.name.to_string()))
-  })
-  let all_defs = candidate.map(entry => entry.definition)
-  for owner, slot in self.slots {
-    match slot.version {
-      Some(id) =>
-        match self.versions.get(id) {
-          Some(active) if !active.gate.revoked =>
-            all_defs.append(active.entries.map(entry => entry.definition))
-          _ => ()
-        }
-      None => ()
-    }
-    ignore(owner)
-  }
-  ignore(build_catalog_from_defs(all_defs, version))
-  self.base = candidate
-  self.pending_capture = true
-  self.generation = self.generation + 1
-}
-
-///|
 /// Freeze one entries snapshot, then derive the catalog, the bindings and the
 /// version lease from it so a concurrently published group can never produce
 /// mismatched definitions and bindings.
@@ -103,9 +69,7 @@ pub fn ToolContributionRegistry::prepare_capture(
       exposure,
       input_schema: normalize_tool_schema(definition.input_schema),
     })
-    if entry.provider is Some(provider) {
-      bindings[name] = provider
-    }
+    bindings[name] = entry.provider
     match entry.version {
       Some(version_id) => {
         binding_versions[name] = version_id

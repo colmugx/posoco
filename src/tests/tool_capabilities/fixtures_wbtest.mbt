@@ -19,7 +19,6 @@ using @agent {
 ///|
 using @support {
   type FakeRuntime,
-  type FakeCatalogSource,
   probe_effect,
   policy_replace_result,
   compact_tools_seed,
@@ -182,11 +181,4 @@ impl @port.Lifecycle for ContributionPublisher with fn on_start(
   if self.publish_at_start {
     ignore(self.publish(self.initial))
   }
-}
-
-///|
-impl @port.Lifecycle for ContributionPublisher with fn on_shutdown(
-  _self : ContributionPublisher,
-) {
-  ()
 }

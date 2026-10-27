@@ -127,23 +127,11 @@ pub extend DecisionResult with Debug::{to_repr}
 /// business policy: consumers map the returned probabilities into their own
 /// deterministic policy and authority flow.
 pub(open) trait DecisionPort {
-  async fn evaluate(Self, request : DecisionRequest) -> DecisionResult raise @error.DecisionError
-  /// Backwards-compatible contextual call. Adapters may override
-  /// `evaluate_with_context`; types implementing only `evaluate` receive
-  /// the blanket default below, which ignores the context.
-  async fn evaluate_with_context(
+  async fn evaluate(
     Self,
     request : DecisionRequest,
     context~ : DecisionCallContext,
-  ) -> DecisionResult raise @error.DecisionError = _
-}
-
-///|
-/// Blanket default: delegates to `evaluate` and ignores the context, so
-/// adapters implemented before the context API keep working unchanged.
-impl DecisionPort with fn evaluate_with_context(self, request, context~) {
-  let _ = context
-  self.evaluate(request)
+  ) -> DecisionResult raise @error.DecisionError
 }
 
 ///|
@@ -178,7 +166,7 @@ pub extend DecisionScope with Eq::{not_equal, equal}
 pub extend DecisionScope with Debug::{to_repr}
 
 ///|
-/// Per-call context for `DecisionPort::evaluate_with_context`. Build with
+/// Per-call context for `DecisionPort::evaluate`. Build with
 /// `DecisionCallContext::make`; every field except `purpose` is optional.
 pub(all) struct DecisionCallContext {
   purpose : String

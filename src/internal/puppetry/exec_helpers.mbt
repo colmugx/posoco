@@ -59,7 +59,11 @@ async fn propagate_terminal_cancellations(
       CancelOutstanding(payload~, ..) => {
         let cancel_ids = Array::from_iter(payload.effect_ids.iter())
         let attempted : Result[Array[(EffectId, CancelDisposition)], Error] = Ok(
-          context.host.cancel_effects(cancel_ids, payload.reason),
+          context.host.cancel_effects(
+            cancel_ids,
+            payload.reason,
+            run_id=context.run_id,
+          ),
         ) catch {
           error => Err(error)
         }

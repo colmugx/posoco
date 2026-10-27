@@ -78,9 +78,12 @@ priv struct CancellationProbe {
 ///|
 impl @port.ToolCancellable for CancellationProbe with fn cancel(
   self,
+  run_id~,
   effect_id,
   _reason,
 ) -> @kernel.CancelDisposition {
+  let _ = run_id
+
   self.ids.push(effect_id.to_int())
   self.disposition
 }
@@ -287,9 +290,12 @@ priv struct SettledCoroutineCancellation {
 ///|
 impl @port.ToolCancellable for SettledCoroutineCancellation with fn cancel(
   self,
+  run_id~,
   id,
   _reason,
 ) -> @kernel.CancelDisposition {
+  let _ = run_id
+
   self.calls.push(id.to_int())
   if self.exited.val {
     Stopped

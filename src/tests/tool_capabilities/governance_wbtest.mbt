@@ -148,10 +148,7 @@ async test "tool_invoke/child_crosses_the_same_binding_aware_runtime_decorator" 
     Respond(tk_tool_call_response("parent", "p", Json::null())),
     Respond(tk_stop_response("done")),
   ])
-  let runtime = FakeRuntime(
-    @runtime.PortRuntime(model~, tools=Map::from_array([])),
-  )
-  runtime.bound_support = true
+  let runtime = FakeRuntime(@runtime.PortRuntime(model~))
   let agent = Agent::with_runtime(
     exts=[
       tk_ext(id="model", model=Some(model)),
@@ -166,60 +163,43 @@ async test "tool_invoke/child_crosses_the_same_binding_aware_runtime_decorator" 
   assert_eq(runtime.seen_contexts.map(ctx => ctx.owner.to_string()), [
     "parent", "child",
   ])
-  assert_true(runtime.seen_contexts.all(ctx => ctx.has_bound_tool()))
+  assert_eq(runtime.seen_contexts.length(), 2)
   assert_true(
     runtime.seen_contexts[0].effect_id != runtime.seen_contexts[1].effect_id,
   )
 }
 
 ///|
-async test "tool_invoke/legacy_child_route_is_explicitly_unsupported_not_live_name_dispatched" {
+async test "tool_invoke/unregistered_target_cannot_be_invoked_by_name" {
   let replies : Array[@kernel.InvocationResult] = []
   let parent = InvocationFixture::{
     id: "parent",
     definitions: [{ ..tk_tool_def("parent", "parent"), policy: Exclusive, }],
-    owners: ["legacy"],
+    owners: ["unregistered"],
     action: async fn(ctx) {
-      replies.push(ctx.invoke("legacy", {}))
+      replies.push(ctx.invoke("unregistered", {}))
       tk_ok_result("parent")
     },
   }
-  let legacy = RecordingToolProvider(
-    [tk_tool_def("legacy", "legacy")],
-    Map::from_array([("legacy", OutcomeOk(tk_ok_result("must not be called")))]),
+  let unregistered = RecordingToolProvider(
+    [tk_tool_def("unregistered", "unregistered")],
+    Map::from_array([
+      ("unregistered", OutcomeOk(tk_ok_result("must not be called"))),
+    ]),
   )
-  let source = FakeCatalogSource([
-    {
-      ..tk_tool_def("parent", "parent"),
-      owner: @kernel.OwnerId::unchecked("parent"),
-      policy: Exclusive,
-    },
-    {
-      ..tk_tool_def("legacy", "legacy"),
-      owner: @kernel.OwnerId::unchecked("legacy"),
-      exposure: Deferred,
-    },
-  ])
   let model = ScriptedModel([
     Respond(tk_tool_call_response("parent", "p", Json::null())),
     Respond(tk_stop_response("done")),
   ])
-  let runtime = @runtime.PortRuntime(
-    model~,
-    tools=Map::from_array([
-      ("parent", parent as &@port.ToolProvider),
-      ("legacy", legacy as &@port.ToolProvider),
-    ]),
-  )
+  let runtime = @runtime.PortRuntime(model~)
   let agent = Agent::with_runtime(
     exts=[tk_ext(id="model", model=Some(model)), parent],
     config=tk_config(),
     runtime~,
-    catalog_source=source,
   )
-  let _ = agent.run_turn(tk_user_msg("hello"), "legacy-child")
-  guard replies is [Completed(NotExecuted(reason=UnsupportedInvocation, ..))] else {
-    fail("legacy child was treated as a fixed executor")
+  let _ = agent.run_turn(tk_user_msg("hello"), "unregistered-child")
+  guard replies is [Completed(NotExecuted(reason=UnknownTool, ..))] else {
+    fail("unregistered child was treated as a fixed executor")
   }
-  assert_eq(legacy.exec_records().length(), 0)
+  assert_eq(unregistered.exec_records().length(), 0)
 }

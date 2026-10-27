@@ -440,7 +440,6 @@ pub(all) struct PuppetConfig {
   hooks : Array[&@port.PipelineHook]
   tool_call_owners : Map[String, Array[String]]
   max_tool_depth : Int32?
-  bound_tool_names : () -> Array[String]
   max_iterations : Int32?
   commands : Array[&@port.CommandPort]
   session_store : &@port.SessionStore?
