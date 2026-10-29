@@ -1523,37 +1523,53 @@ async test "core_shadow/missing_provenance_survives_real_next_turn" {
     Err(_) => ()
     Ok(_) => fail("expected the first store checkpoint to fail")
   }
-  let fork_turn = @async.with_task_group(async fn(group) {
-    let running = group.spawn(() => {
-      agent.run_turn(tk_user_msg("fork"), "missing-real-parent")
-    })
-    let enqueued : Result[Bool, Error] = Ok(
-      @async.with_timeout(60, async fn() -> Bool {
-        defer {
-          model.released = true
+  let fork_turn : Result[@types.TurnResult, @error.AgentError] = @async.with_task_group(async fn(
+      group,
+    ) {
+      let turn_body : async () -> Result[@types.TurnResult, @error.AgentError] = () => {
+        let r : Result[@types.TurnResult, @error.AgentError] = Ok(
+          agent.run_turn(tk_user_msg("fork"), "missing-real-parent"),
+        ) catch {
+          error => Err(error)
         }
-        while !model.entered {
-          @async.pause()
-        }
-        shadow_invoke_command(
-          agent,
-          "fork-here",
-          Json::object(Map::from_array([("index", Json::number(1.0))])),
-        )
-      }),
-    ) catch {
-      error => Err(error)
-    }
-    guard enqueued is Ok(true) else {
-      fail("fork enqueue failed: \{repr(enqueued)}")
-    }
-    running.wait()
-  })
-  assert_eq(fork_turn.final_session_id, "missing-real-parent")
-  let redirects = shadow_redirects(observer.events())
-  assert_eq(redirects.length(), 1)
-  let child_sid = redirects[0].1
+        r
+      }
+      let running = group.spawn(turn_body)
+      let enqueued : Result[Bool, Error] = Ok(
+        @async.with_timeout(60, async fn() -> Bool {
+          defer {
+            model.released = true
+          }
+          while !model.entered {
+            @async.pause()
+          }
+          shadow_invoke_command(
+            agent,
+            "fork-here",
+            Json::object(Map::from_array([("index", Json::number(1.0))])),
+          )
+        }),
+      ) catch {
+        error => Err(error)
+      }
+      guard enqueued is Ok(true) else {
+        fail("fork enqueue failed: \{repr(enqueued)}")
+      }
+      running.wait()
+    },
+  )
+  match fork_turn {
+    Err(Runtime(InvocationFailed(detail))) =>
+      assert_true(detail.contains("core child fact"))
+    _ => fail("expected the fork child fact to fail before output")
+  }
+  let child_sid = "missing-real-parent_fork_fork_1"
   assert_false(agent.runtime.core_shadow.store.sessions.contains(child_sid))
+  assert_eq(shadow_redirects(observer.events()).length(), 0)
+  assert_eq(agent.runtime.pending_new_thread.length(), 0)
+  for key, _cursor in agent.runtime.progress.cursors {
+    assert_false(key.has_prefix("missing-real-parent_fork_"))
+  }
   match agent.runtime.core_shadow.state.get(child_sid) {
     Some(MissingProvenance) => ()
     _ => fail("expected the child to be marked missing provenance")
@@ -1715,7 +1731,17 @@ async test "core_shadow/child_failure_revokes_source_snapshot" {
       Map::from_array([]),
     ),
   )
-  ignore(agent.compact_session("no-orphan-child"))
+  let failed : Result[@types.CompactOutcome, @error.AgentError] = Ok(
+    agent.compact_session("no-orphan-child"),
+  ) catch {
+    error => Err(error)
+  }
+  guard failed is Err(Runtime(InvocationFailed(detail))) else {
+    fail("expected the child core fact failure to abort the output")
+  }
+  assert_true(detail.contains("core child fact"))
+  assert_false(store.store.contains(child_sid))
+  assert_eq(agent.runtime.pending_new_thread.length(), 0)
   assert_eq(core_shadow_source_snapshot_count(agent), 0)
   let parent = core_shadow_current(agent, "no-orphan-child")
   assert_eq(parent.messages.length(), 1)

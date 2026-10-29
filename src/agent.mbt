@@ -288,6 +288,22 @@ priv struct AgentRuntime {
   /// no terminal kernel event, so the Agent synthesizes the closure here.
   event_subscriber : AgentEventSubscriber
   body_recovery : Map[String, @types.Session]
+  /// Core-confirmed NewThread outputs awaiting a full write-all. Keyed by the
+  /// child session id; in-process only.
+  pending_new_thread : Map[String, PendingNewThreadOutput]
+}
+
+///|
+/// A fully-formed NewThread sibling whose core child fact exists but whose
+/// production output has not yet been confirmed by every store. The snapshot
+/// is immutable: recovery retries the same child id and body, never the model.
+priv struct PendingNewThreadOutput {
+  scope : @types.EventScope
+  parent_session_id : String
+  child_session_id : String
+  messages : Array[@kernel.Message]
+  metadata : Map[String, Json]
+  save_label : String
 }
 
 ///|
@@ -528,10 +544,6 @@ fn AgentRuntime::compose(
   // checkpoint subscriber and before the observer projection, so externally
   // notified RunStarted events see the coverage already updated.
   let wakeup_cutoff_subscriber = WakeupCutoffSubscriber(wakeup)
-  let session_store : &@port.SessionStore? = match agg.sessions {
-    [first, ..] => Some(first)
-    [] => None
-  }
   let puppet_config : @puppetry.PuppetConfig = {
     host,
     catalog,
@@ -558,7 +570,6 @@ fn AgentRuntime::compose(
       None => None
     },
     commands: command_ports,
-    session_store,
     mailbox: mailbox_ref,
   }
   // Deliver composed capabilities to lifecycle contributors, in
@@ -641,6 +652,7 @@ fn AgentRuntime::compose(
     core_shadow,
     event_subscriber,
     body_recovery: Map::from_array([]),
+    pending_new_thread: Map::from_array([]),
   }
   builtin_command_port.idle_compact.val = Some(async fn(
     session_id,

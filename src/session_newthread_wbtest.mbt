@@ -1,11 +1,11 @@
 ///|
-/// NewThread diversion regression coverage. Until this file, the fork
-/// terminal, both compact NewThread terminals (idle standalone and mid-turn
-/// manual), and their shared persistence tail (`persist_new_thread_session`)
-/// ran under zero tests. These tests pin the batch-4-reviewed contract: the
-/// sibling save succeeds first, then the cursor advances, then exactly one
-/// SessionRedirect reaches observers; a save failure yields the labeled
-/// Session error, none of the three, and the same Agent stays reusable.
+/// NewThread diversion regression coverage. The fork terminal, both compact
+/// NewThread terminals (idle standalone and mid-turn manual), and their shared
+/// tail (`persist_new_thread_session`) are covered here. The Agent is the only
+/// SessionStore writer: the child core fact is established first, the output is
+/// written to every store, then the cursor advances and one SessionRedirect is
+/// emitted. A failure keeps the core fact and pending snapshot; the next
+/// operation must recover that exact child before running a new request.
 ///
 /// Parent-transcript provenance is asserted from the recorded store writes,
 /// not from guessed counts: during a fork turn the parent grows by two
@@ -30,8 +30,54 @@ fn newthread_redirects(
 }
 
 ///|
-/// Count the full saves recorded for one session id (the dual-write
-/// sentinel: Puppet save first, Agent persistence tail second).
+fn newthread_started_events(events : Array[@types.TurnEvent]) -> (Int32, Int32) {
+  let mut turns = 0
+  let mut compacts = 0
+  for event in events {
+    match event {
+      TurnStarted => turns = turns + 1
+      CompactStarted(_) => compacts = compacts + 1
+      _ => ()
+    }
+  }
+  (turns, compacts)
+}
+
+///|
+fn newthread_failure_terminals(events : Array[@types.TurnEvent]) -> Int32 {
+  let mut count = 0
+  for event in events {
+    match event {
+      OperationFinalized(outcome="failed", ..) => count = count + 1
+      TurnFailed(_) => count = count + 1
+      _ => ()
+    }
+  }
+  count
+}
+
+///|
+fn newthread_finished_for(
+  events : Array[@types.TurnEvent],
+  session_id : String,
+) -> Int32 {
+  let mut count = 0
+  for event in events {
+    match event {
+      CompactFinished(final_session_id~, ..) =>
+        if final_session_id == session_id {
+          count = count + 1
+        }
+      _ => ()
+    }
+  }
+  count
+}
+
+///|
+/// Count the full saves recorded for one session id. NewThread output is
+/// written once by the Agent; recovery may repeat a previously successful
+/// store, so failure tests assert the final state rather than exactly-once.
 fn newthread_save_count(
   store : RecordingSessionStore,
   target : String,
@@ -232,8 +278,8 @@ async test "newthread/fork_persists_sibling_with_lineage_and_emits_redirect" {
   assert_true(original.messages[0] == sibling.messages[0])
   assert_true(original.messages[1] == sibling.messages[1])
   assert_false(original.metadata.contains(@types.PARENT_THREAD_ID_KEY))
-  // Dual-write sentinel: Puppet save first, Agent persistence tail second.
-  assert_eq(newthread_save_count(store, to), 2)
+  // The Agent is the only NewThread output owner.
+  assert_eq(newthread_save_count(store, to), 1)
 }
 
 ///|
@@ -289,8 +335,8 @@ async test "newthread/compact_newthread_persists_sibling_with_lineage_and_emits_
   let original = store.load("c1") catch { e => fail("parent missing: \{e}") }
   assert_eq(original.messages.length(), 2)
   assert_false(original.metadata.contains(@types.PARENT_THREAD_ID_KEY))
-  // Dual-write sentinel: Puppet save first, Agent persistence tail second.
-  assert_eq(newthread_save_count(store, to), 2)
+  // The Agent is the only NewThread output owner.
+  assert_eq(newthread_save_count(store, to), 1)
 }
 
 ///|
@@ -380,15 +426,14 @@ async test "newthread/midturn_compact_newthread_reaches_complete_compact_turn" {
   assert_true(sibling.messages[0] == tk_user_msg("mid-turn summary"))
   assert_eq(sibling.metadata[@types.PARENT_THREAD_ID_KEY], Json::string("m1"))
   assert_eq(agent.runtime.progress.cursors.get(to), Some(1))
-  // Dual-write sentinel on the mid-turn path as well.
-  assert_eq(newthread_save_count(store, to), 2)
+  // Single writer on the mid-turn path as well.
+  assert_eq(newthread_save_count(store, to), 1)
 }
 
 ///|
 /// Store that fails saves from the `fail_from`-th call on until disarmed,
-/// counting across ids. On a standalone NewThread compact the Puppet's
-/// sibling save is call 1 and the Agent's shared persistence tail is call 2,
-/// both targeting the same deterministic sid.
+/// counting across ids. NewThread output is one Agent write per store;
+/// recovery may repeat a store that already succeeded.
 struct NewThreadFailStore {
   saves : Array[String]
   seen : Map[String, @types.Session]
@@ -407,14 +452,14 @@ impl @port.SessionStore for NewThreadFailStore with fn load(self, _id) -> @types
 ///|
 impl @port.SessionStore for NewThreadFailStore with fn save(self, id, session) -> Unit raise @error.SessionError {
   self.saves.push(id)
-  self.seen[id] = session
   if self.armed && self.saves.length() >= self.fail_from {
     raise Save("store offline")
   }
+  self.seen[id] = session
 }
 
 ///|
-async test "newthread/tail_save_failure_keeps_error_and_same_agent_stays_reusable" {
+async test "newthread/failed_output_recovers_and_old_terminal_stays" {
   let model = ScriptedModel([
     Compact(result={
       compacted_messages: [tk_user_msg("summary-one")],
@@ -424,13 +469,12 @@ async test "newthread/tail_save_failure_keeps_error_and_same_agent_stays_reusabl
       compacted_messages: [tk_user_msg("summary-two")],
       mode: NewThread,
     }),
-    Respond(tk_stop_response("after failure")),
   ])
   let store = NewThreadFailStore::{
     saves: [],
     seen: Map::from_array([]),
     armed: true,
-    fail_from: 2,
+    fail_from: 1,
     seeded: [tk_user_msg("old-one"), tk_user_msg("old-two")],
   }
   let observer = RecordingObserver()
@@ -441,6 +485,7 @@ async test "newthread/tail_save_failure_keeps_error_and_same_agent_stays_reusabl
     ],
     config=tk_config(),
   )
+  let first_sid = "f1_compact_agent_compact_session_1"
   let outcome = Ok(agent.compact_session("f1")) catch { error => Err(error) }
   guard outcome is Err(Session(error)) else {
     let why = match outcome {
@@ -449,36 +494,38 @@ async test "newthread/tail_save_failure_keeps_error_and_same_agent_stays_reusabl
     }
     fail("expected a Session error from the failed sibling save, got \{why}")
   }
-  // The failure is labeled with the shared tail's operation name.
   assert_true(error.to_string().contains("compact_newthread_save"))
-  // Store-write order sentinel: both writes targeted the same deterministic
-  // sibling sid — Puppet first, Agent tail second (the failing one).
-  let first_sid = "f1_compact_agent_compact_session_1"
-  assert_eq(store.saves, [first_sid, first_sid])
-  // Nothing after the failed tail save ran: no redirect, no sibling cursor.
+  // The first attempt wrote nothing successfully; the core fact and pending
+  // output remain in memory.
+  assert_eq(store.saves, [first_sid])
+  assert_false(store.seen.contains(first_sid))
   assert_eq(newthread_redirects(observer.events()).length(), 0)
   for key, _cursor in agent.runtime.progress.cursors {
     assert_false(key.has_prefix("f1_compact_"))
   }
-  // The same Agent admits the next operation immediately — not Busy — and
-  // its second NewThread compact succeeds end to end.
+  let old_failures = newthread_failure_terminals(observer.events())
+  // The next operation first recovers the old child, then executes the new
+  // compact request. Recovery consumes no model call and creates no new child.
   store.armed = false
   let retried = agent.compact_session("f1")
   let second_sid = retried.final_session_id
   assert_eq(second_sid, "f1_compact_agent_compact_session_2")
   assert_eq(retried.messages_after, 1)
-  assert_eq(newthread_redirects(observer.events()).length(), 1)
-  // The failed attempt's Puppet save (call 1) still persisted the first
-  // sibling with its lineage before the tail failed on call 2.
+  assert_eq(model.compact_call_count(), 2)
+  let redirects = newthread_redirects(observer.events())
+  assert_eq(redirects.length(), 2)
+  assert_eq(redirects[0].1, first_sid)
+  assert_eq(redirects[1].1, second_sid)
+  // The first child is recovered with its original body, not the new answer.
   guard store.seen.get(first_sid) is Some(first_body) else {
-    fail("expected the failed attempt's Puppet save to persist the sibling")
+    fail("expected recovery to persist the failed attempt's child")
   }
+  assert_eq(first_body.messages.length(), 1)
   assert_true(first_body.messages[0] == tk_user_msg("summary-one"))
   assert_eq(
     first_body.metadata.get(@types.PARENT_THREAD_ID_KEY),
     Some(Json::string("f1")),
   )
-  // The retry persisted its own sibling with the new body and lineage.
   guard store.seen.get(second_sid) is Some(second_body) else {
     fail("expected the retried sibling to persist")
   }
@@ -488,23 +535,21 @@ async test "newthread/tail_save_failure_keeps_error_and_same_agent_stays_reusabl
     second_body.metadata.get(@types.PARENT_THREAD_ID_KEY),
     Some(Json::string("f1")),
   )
-  // The turn guard re-arms too: a plain run on the same Agent succeeds.
-  let turn = agent.run_turn(tk_user_msg("again"), "f1")
-  assert_eq(turn.final_session_id, "f1")
-  // Total write order across the failure, the retry, and the turn: the
-  // follow-up run performs exactly two whole-session saves of the parent
-  // (input checkpoint + final save), matching the rewrite-falls-back-to-save
-  // model.
-  assert_eq(store.saves, [
-    first_sid, first_sid, second_sid, second_sid, "f1", "f1",
-  ])
+  assert_eq(agent.runtime.progress.cursors.get(first_sid), Some(1))
+  assert_eq(agent.runtime.progress.cursors.get(second_sid), Some(1))
+  assert_eq(store.saves, [first_sid, first_sid, second_sid])
+  // Recovery only adds the old redirect; the old compact failure terminal is
+  // not replaced by a success and no CompactFinished is invented for it.
+  assert_eq(newthread_failure_terminals(observer.events()), old_failures)
+  assert_eq(newthread_finished_for(observer.events(), first_sid), 0)
+  assert_eq(newthread_finished_for(observer.events(), second_sid), 1)
 }
 
 ///|
-/// Puppet-side fork save failure: the sibling save inside `pump_fork` fails
-/// before any sibling state exists, so the turn fails with the labeled
-/// Runtime error and nothing partial — sibling, redirect, cursor — survives.
-async test "newthread/puppet_fork_save_failure_fails_turn_and_agent_stays_reusable" {
+/// Agent-only fork output failure: the core child fact exists and the pending
+/// snapshot remains, but no sibling, redirect, or cursor is published. The
+/// next operation recovers that child before running its own request.
+async test "newthread/fork_save_failure_recovers_pending_before_next_turn" {
   let model = GatedTurnModel::{
     entered: false,
     released: false,
@@ -516,8 +561,8 @@ async test "newthread/puppet_fork_save_failure_fails_turn_and_agent_stays_reusab
     messages: [tk_user_msg("one"), tk_user_msg("two")],
     metadata: Map::from_array([]),
   })
-  // The first minted fork command id is `fork_1`, so the sibling sid the
-  // Puppet will try to persist is deterministic.
+  // The first minted fork command id is `fork_1`, so the child sid is
+  // deterministic.
   store.fail_save("s1_fork_fork_1")
   let observer = RecordingObserver()
   let tools = RecordingToolProvider(
@@ -533,8 +578,6 @@ async test "newthread/puppet_fork_save_failure_fails_turn_and_agent_stays_reusab
     config=tk_config(),
   )
   @async.with_task_group(async fn(group) {
-    // The typed AgentError travels as data through the task boundary, so
-    // the failing turn can be matched below instead of unwinding.
     let turn_body : async () -> Result[@types.TurnResult, @error.AgentError] = () => {
       let r : Result[@types.TurnResult, @error.AgentError] = Ok(
         agent.run_turn(tk_user_msg("go"), "s1"),
@@ -577,23 +620,22 @@ async test "newthread/puppet_fork_save_failure_fails_turn_and_agent_stays_reusab
       fail("fork enqueue failed: \{repr(enqueued)}")
     }
     let outcome = turn.wait()
-    guard outcome is Err(Runtime(InvocationFailed(detail))) else {
+    guard outcome is Err(Session(error)) else {
       let why = match outcome {
         Ok(_) => "turn completed"
         Err(other) => other.to_string()
       }
-      fail("expected a Runtime error from the failed fork save, got \{why}")
+      fail("expected a Session error from the failed fork save, got \{why}")
     }
-    assert_true(detail.contains("session save failed"))
+    assert_true(error.to_string().contains("fork_save"))
   })
-  // Nothing partial survived: no sibling session, no redirect, no cursor.
-  assert_false(store.store.contains("s1_fork_fork_1"))
+  let child_sid = "s1_fork_fork_1"
+  assert_false(store.store.contains(child_sid))
   assert_eq(newthread_redirects(observer.events()).length(), 0)
   for key, _cursor in agent.runtime.progress.cursors {
     assert_false(key.has_prefix("s1_fork_"))
   }
-  // The parent holds exactly the pre-fork boundary state: two seeded
-  // messages, the turn input, and the assistant tool-call message.
+  // The failed turn still persists its own parent progress, without lineage.
   let parent = store.load("s1") catch { e => fail("parent missing: \{e}") }
   guard parent.messages.length() == 4 else {
     fail(
@@ -602,9 +644,26 @@ async test "newthread/puppet_fork_save_failure_fails_turn_and_agent_stays_reusab
   }
   assert_true(parent.messages[2] == tk_user_msg("go"))
   assert_false(parent.metadata.contains(@types.PARENT_THREAD_ID_KEY))
-  // The same Agent admits and completes the next turn immediately.
+  let old_failures = newthread_failure_terminals(observer.events())
+  // Recovery precedes the next turn: old child first, then the new request.
+  store.heal_save(child_sid)
   let retried = agent.run_turn(tk_user_msg("again"), "s1")
   assert_eq(retried.final_session_id, "s1")
+  let child = store.load(child_sid) catch {
+    e => fail("expected recovery to persist the fork child: \{e}")
+  }
+  assert_eq(child.messages.length(), 2)
+  assert_true(child.messages[0] == tk_user_msg("one"))
+  assert_true(child.messages[1] == tk_user_msg("two"))
+  assert_eq(
+    child.metadata.get(@types.PARENT_THREAD_ID_KEY),
+    Some(Json::string("s1")),
+  )
+  let redirects = newthread_redirects(observer.events())
+  assert_eq(redirects.length(), 1)
+  assert_eq(redirects[0].1, child_sid)
+  assert_eq(agent.runtime.progress.cursors.get(child_sid), Some(2))
+  assert_eq(newthread_failure_terminals(observer.events()), old_failures)
 }
 
 ///|
@@ -699,11 +758,10 @@ impl @port.Observer for TapeObserver with fn on_event(
 }
 
 ///|
-/// Write-all tail with two stores where exactly one store fails. The Puppet
-/// persists the sibling through the FIRST store only (agent.mbt session_store
-/// = sessions[0]); the Agent tail then writes all stores in parallel, so the
-/// second store's failure must not discard the first store's real result.
-async test "newthread/tail_writeall_partial_failure_keeps_successful_store_and_blocks_diversion" {
+/// Write-all tail with two stores where exactly one store fails. The Agent
+/// writes all stores in parallel; a partial success keeps the core fact and
+/// pending snapshot, and the next operation retries both stores.
+async test "newthread/partial_output_retry_repeats_store_without_exactly_once" {
   let model = ScriptedModel([
     Compact(result={
       compacted_messages: [tk_user_msg("summary-one")],
@@ -745,11 +803,9 @@ async test "newthread/tail_writeall_partial_failure_keeps_successful_store_and_b
     }
     fail("expected a Session error from the failing store, got \{why}")
   }
-  // The failure is labeled with the shared tail's operation name.
   assert_true(error.to_string().contains("compact_newthread_save"))
-  // The successful store keeps the real result from both writes: the Puppet's
-  // sibling save and the tail's write-all save.
-  assert_eq(newthread_save_count(first, failed_sid), 2)
+  // One store succeeded on the first attempt; the failing store did not.
+  assert_eq(newthread_save_count(first, failed_sid), 1)
   let kept = first.load(failed_sid) catch {
     e => fail("expected the successful store to retain the sibling: \{e}")
   }
@@ -759,15 +815,15 @@ async test "newthread/tail_writeall_partial_failure_keeps_successful_store_and_b
     kept.metadata.get(@types.PARENT_THREAD_ID_KEY),
     Some(Json::string("p2")),
   )
-  // The failing store never persisted the sibling.
   assert_false(second.store.contains(failed_sid))
   // No diversion side effects: no redirect, no sibling cursor.
   assert_eq(newthread_redirects(observer.events()).length(), 0)
   for key, _cursor in agent.runtime.progress.cursors {
     assert_false(key.has_prefix("p2_compact_"))
   }
-  // Lift the injected failure: the same Agent admits and completes the next
-  // compact end to end, on its own deterministic sibling sid.
+  let old_failures = newthread_failure_terminals(observer.events())
+  // The next operation recovers the old child first (repeating the successful
+  // store), then runs the new compact on its own deterministic sibling.
   second.heal_save(failed_sid)
   let retried : Result[@types.CompactOutcome, @error.AgentError]? = @async.with_timeout_opt(
     250,
@@ -786,16 +842,27 @@ async test "newthread/tail_writeall_partial_failure_keeps_successful_store_and_b
   let retry_sid = retry_ok.final_session_id
   assert_eq(retry_sid, "p2_compact_agent_compact_session_2")
   assert_eq(retry_ok.messages_after, 1)
-  assert_eq(newthread_redirects(observer.events()).length(), 1)
+  let redirects = newthread_redirects(observer.events())
+  assert_eq(redirects.length(), 2)
+  assert_eq(redirects[0].1, failed_sid)
+  assert_eq(redirects[1].1, retry_sid)
+  assert_eq(agent.runtime.progress.cursors.get(failed_sid), Some(1))
   assert_eq(agent.runtime.progress.cursors.get(retry_sid), Some(1))
-  assert_false(
-    agent.runtime.progress.cursors.contains(failed_sid),
-    msg="the failed sid must not gain a cursor after the retry",
-  )
-  // Both stores now hold the retried sibling: the Puppet wrote the first
-  // store, the tail wrote both.
-  assert_eq(newthread_save_count(first, retry_sid), 2)
-  assert_true(second.store.contains(retry_sid))
+  // The recovered child is written to both stores; the store that already
+  // succeeded receives the same body again. This is intentionally not
+  // exactly-once.
+  assert_eq(newthread_save_count(first, failed_sid), 2)
+  assert_true(second.store.contains(failed_sid))
+  let recovered = second.load(failed_sid) catch {
+    e => fail("expected the recovered child in the second store: \{e}")
+  }
+  assert_eq(recovered.messages.length(), 1)
+  assert_true(recovered.messages[0] == tk_user_msg("summary-one"))
+  assert_eq(newthread_save_count(first, retry_sid), 1)
+  assert_eq(newthread_save_count(second, retry_sid), 1)
+  assert_eq(newthread_failure_terminals(observer.events()), old_failures)
+  assert_eq(newthread_finished_for(observer.events(), failed_sid), 0)
+  assert_eq(newthread_finished_for(observer.events(), retry_sid), 1)
 }
 
 ///|
@@ -856,12 +923,12 @@ async test "newthread/all_stores_persist_before_redirect_precedes_terminal_event
       Some(Json::string("w1")),
     )
   }
-  // Exactly three completions for this sibling: store A twice (Puppet save,
-  // then write-all tail save) and store B once (write-all tail save only).
+  // Exactly two completions for this sibling: one Agent write-all save per
+  // store. There is no Puppet sibling write.
   let saves = tape.save_indexes_for(sid)
-  guard saves.length() == 3 else {
+  guard saves.length() == 2 else {
     fail(
-      "expected 3 store save completions before review, got \{saves.length()}",
+      "expected 2 store save completions before review, got \{saves.length()}",
     )
   }
   // Every save completed before the redirect. Max over an order-agnostic set:
@@ -888,4 +955,398 @@ async test "newthread/all_stores_persist_before_redirect_precedes_terminal_event
   }
   assert_true(finished_at < finalized_at)
   assert_eq(agent.runtime.progress.cursors.get(sid), Some(1))
+}
+
+///|
+async test "newthread/single_store_single_write_and_redirect" {
+  let model = ScriptedModel([
+    Compact(result={
+      compacted_messages: [tk_user_msg("single-summary")],
+      mode: NewThread,
+    }),
+  ])
+  let store = RecordingSessionStore()
+  store.seed("single-parent", {
+    messages: [tk_user_msg("old")],
+    metadata: Map::from_array([]),
+  })
+  let observer = RecordingObserver()
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", sessions=[store], observers=[observer]),
+    ],
+    config=tk_config(),
+  )
+  let outcome = agent.compact_session("single-parent")
+  let child = outcome.final_session_id
+  assert_eq(newthread_save_count(store, child), 1)
+  assert_eq(newthread_redirects(observer.events()).length(), 1)
+}
+
+///|
+async test "newthread/failed_output_gate_blocks_then_recovers_before_body" {
+  let model = ScriptedModel([
+    Compact(result={
+      compacted_messages: [tk_user_msg("pending-summary")],
+      mode: NewThread,
+    }),
+    Respond(tk_stop_response("new request")),
+  ])
+  let store = RecordingSessionStore()
+  store.seed("gate-parent", {
+    messages: [tk_user_msg("old")],
+    metadata: Map::from_array([]),
+  })
+  let child_sid = "gate-parent_compact_agent_compact_session_1"
+  store.fail_save(child_sid)
+  let observer = RecordingObserver()
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", sessions=[store], observers=[observer]),
+    ],
+    config=tk_config(),
+  )
+  let first : Result[@types.CompactOutcome, @error.AgentError] = Ok(
+    agent.compact_session("gate-parent"),
+  ) catch {
+    error => Err(error)
+  }
+  guard first is Err(_) else {
+    fail("expected the first child output save to fail")
+  }
+  assert_eq(newthread_redirects(observer.events()).length(), 0)
+  assert_false(store.store.contains(child_sid))
+  guard agent.runtime.pending_new_thread.get(child_sid) is Some(pending) else {
+    fail("expected a pending child output snapshot")
+  }
+  assert_eq(pending.parent_session_id, "gate-parent")
+  assert_eq(pending.child_session_id, child_sid)
+  assert_eq(pending.messages.length(), 1)
+  assert_true(pending.messages[0] == tk_user_msg("pending-summary"))
+  assert_eq(
+    pending.metadata.get(@types.PARENT_THREAD_ID_KEY),
+    Some(Json::string("gate-parent")),
+  )
+  assert_eq(pending.scope.run_id, @kernel.RunId::unchecked("agent_run_1"))
+  assert_eq(pending.scope.turn_id, @kernel.TurnId::unchecked("agent_turn_1"))
+  assert_eq(
+    pending.scope.session_id,
+    @kernel.SessionId::unchecked("gate-parent"),
+  )
+  let (turns_before, compacts_before) = newthread_started_events(
+    observer.events(),
+  )
+  assert_eq(turns_before, 0)
+  assert_eq(compacts_before, 1)
+  // The pending output is not recovered yet: the gate must fail before any
+  // new model request is dispatched.
+  let blocked : Result[@types.TurnResult, @error.AgentError] = Ok(
+    agent.run_turn(tk_user_msg("next"), "gate-parent"),
+  ) catch {
+    error => Err(error)
+  }
+  guard blocked is Err(Session(_)) else {
+    fail("expected recovery failure to surface as a Session error")
+  }
+  assert_eq(model.call_count(), 0)
+  assert_eq(newthread_redirects(observer.events()).length(), 0)
+  assert_false(store.store.contains(child_sid))
+  assert_eq(agent.runtime.pending_new_thread.length(), 1)
+  let (turns_after_failure, compacts_after_failure) = newthread_started_events(
+    observer.events(),
+  )
+  assert_eq(turns_after_failure, turns_before)
+  assert_eq(compacts_after_failure, compacts_before)
+  // Healing the store lets the next operation recover the old output first,
+  // then execute the new request.
+  store.heal_save(child_sid)
+  let next = agent.run_turn(tk_user_msg("next"), "gate-parent")
+  assert_eq(next.final_session_id, "gate-parent")
+  assert_eq(model.call_count(), 1)
+  assert_eq(model.compact_call_count(), 1)
+  let (turns_after, compacts_after) = newthread_started_events(
+    observer.events(),
+  )
+  assert_eq(turns_after, 1)
+  assert_eq(compacts_after, 1)
+  let redirects = newthread_redirects(observer.events())
+  assert_eq(redirects.length(), 1)
+  assert_eq(redirects[0].1, child_sid)
+  let child = store.store[child_sid]
+  assert_eq(child.messages.length(), 1)
+  assert_true(child.messages[0] == tk_user_msg("pending-summary"))
+  assert_eq(agent.runtime.progress.cursors.get(child_sid), Some(1))
+  assert_eq(agent.runtime.pending_new_thread.length(), 0)
+}
+
+///|
+async test "newthread/child_fact_failure_blocks_all_output" {
+  let model = ScriptedModel([
+    Compact(result={
+      compacted_messages: [tk_user_msg("must-not-save")],
+      mode: NewThread,
+    }),
+  ])
+  let store = RecordingSessionStore()
+  store.seed("fact-parent", {
+    messages: [tk_user_msg("old")],
+    metadata: Map::from_array([]),
+  })
+  let observer = RecordingObserver()
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", sessions=[store], observers=[observer]),
+    ],
+    config=tk_config(),
+  )
+  let child_sid = "fact-parent_compact_agent_compact_session_1"
+  ignore(
+    agent.runtime.core_shadow.store.record_full(
+      child_sid,
+      [tk_user_msg("pre-existing")],
+      Map::from_array([]),
+    ),
+  )
+  let outcome : Result[@types.CompactOutcome, @error.AgentError] = Ok(
+    agent.compact_session("fact-parent"),
+  ) catch {
+    error => Err(error)
+  }
+  guard outcome is Err(Runtime(InvocationFailed(detail))) else {
+    fail("expected an explicit child core fact failure")
+  }
+  assert_true(detail.contains("core child fact"))
+  assert_false(store.store.contains(child_sid))
+  assert_eq(newthread_redirects(observer.events()).length(), 0)
+  for key, _cursor in agent.runtime.progress.cursors {
+    assert_false(key.has_prefix("fact-parent_compact_"))
+  }
+}
+
+///|
+priv struct ScopedRedirectObserver {
+  redirects : Array[(@types.EventScope?, String)]
+}
+
+///|
+impl @port.Observer for ScopedRedirectObserver with fn on_event(
+  self,
+  scope,
+  event,
+) -> Unit {
+  match event {
+    SessionRedirect(to~, ..) => self.redirects.push((scope, to))
+    _ => ()
+  }
+}
+
+///|
+async test "newthread/recovery_preserves_parent_and_original_scope" {
+  let model = ScriptedModel([
+    Compact(result={
+      compacted_messages: [tk_user_msg("scope-summary")],
+      mode: NewThread,
+    }),
+    Respond(tk_stop_response("other request")),
+  ])
+  let store = RecordingSessionStore()
+  store.seed("scope-parent", {
+    messages: [tk_user_msg("parent-old")],
+    metadata: Map::from_array([("kept", Json::string("parent-meta"))]),
+  })
+  let child_sid = "scope-parent_compact_agent_compact_session_1"
+  store.fail_save(child_sid)
+  let observer = ScopedRedirectObserver::{ redirects: [], }
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", sessions=[store], observers=[observer]),
+    ],
+    config=tk_config(),
+  )
+  let first : Result[@types.CompactOutcome, @error.AgentError] = Ok(
+    agent.compact_session("scope-parent"),
+  ) catch {
+    error => Err(error)
+  }
+  guard first is Err(_) else { fail("expected the first child output to fail") }
+  assert_eq(observer.redirects.length(), 0)
+  let parent_before = store.load("scope-parent") catch {
+    e => fail("expected the parent to remain loaded: \{e}")
+  }
+  let parent_cursor_before = agent.runtime.progress.cursor_or_zero(
+    "scope-parent",
+  )
+  assert_eq(parent_cursor_before, 1)
+  match agent.runtime.core_shadow.state.get("scope-parent") {
+    Some(Stopped(run_id~, ..)) => assert_eq(run_id, "agent_run_1")
+    _ => fail("expected the parent core tracking to be stopped after diversion")
+  }
+  // Recover while executing a different request/session. The parent is not
+  // part of the recovery write and must stay byte-for-byte unchanged.
+  store.heal_save(child_sid)
+  let next = agent.run_turn(tk_user_msg("other"), "scope-other")
+  assert_eq(next.final_session_id, "scope-other")
+  assert_eq(model.call_count(), 1)
+  assert_eq(model.compact_call_count(), 1)
+  assert_eq(observer.redirects.length(), 1)
+  let (scope, to) = observer.redirects[0]
+  assert_eq(to, child_sid)
+  guard scope is Some(scope) else {
+    fail("expected the recovery redirect to carry a scope")
+  }
+  assert_eq(scope.run_id, @kernel.RunId::unchecked("agent_run_1"))
+  assert_eq(scope.turn_id, @kernel.TurnId::unchecked("agent_turn_1"))
+  assert_eq(scope.session_id, @kernel.SessionId::unchecked("scope-parent"))
+  let parent_after = store.load("scope-parent") catch {
+    e => fail("expected the parent to remain loaded: \{e}")
+  }
+  assert_eq(parent_after.messages.length(), parent_before.messages.length())
+  assert_true(parent_after.messages[0] == parent_before.messages[0])
+  assert_eq(parent_after.metadata, parent_before.metadata)
+  assert_eq(
+    agent.runtime.progress.cursor_or_zero("scope-parent"),
+    parent_cursor_before,
+  )
+  match agent.runtime.core_shadow.state.get("scope-parent") {
+    Some(Stopped(run_id~, ..)) => assert_eq(run_id, "agent_run_1")
+    _ => fail("recovery must not change the stopped parent core state")
+  }
+  assert_eq(agent.runtime.progress.cursors.get(child_sid), Some(1))
+  assert_eq(agent.runtime.pending_new_thread.length(), 0)
+  let child = store.load(child_sid) catch {
+    e => fail("expected the recovered child: \{e}")
+  }
+  assert_eq(child.messages.length(), 1)
+  assert_true(child.messages[0] == tk_user_msg("scope-summary"))
+  assert_false(child.metadata.contains("kept"))
+  assert_eq(
+    child.metadata.get(@types.PARENT_THREAD_ID_KEY),
+    Some(Json::string("scope-parent")),
+  )
+}
+
+///|
+/// Test store that parks the first child save on a real async gate. The
+/// operation can only reach cancellation after the child core fact and pending
+/// snapshot exist; releasing the gate after cancellation lets the next
+/// operation prove it recovers the same child and body.
+priv struct CancelGateStore {
+  inner : RecordingSessionStore
+  child_sid : String
+  mut armed : Bool
+  mut entered : Bool
+  gate : @async.CondVar
+}
+
+///|
+impl @port.SessionStore for CancelGateStore with fn load(self, id : String) -> @types.Session raise @error.SessionError {
+  self.inner.load(id)
+}
+
+///|
+impl @port.SessionStore for CancelGateStore with fn save(
+  self,
+  id : String,
+  session : @types.Session,
+) -> Unit raise @error.SessionError {
+  if self.armed && id == self.child_sid {
+    self.armed = false
+    self.entered = true
+    self.gate.broadcast()
+    self.gate.wait()
+  }
+  self.inner.save(id, session)
+}
+
+///|
+impl @port.SessionStore for CancelGateStore with fn checkpoint(
+  self,
+  id : String,
+  checkpoint : @port.SessionCheckpoint,
+) -> Unit raise @error.SessionError {
+  self.inner.checkpoint(id, checkpoint)
+}
+
+///|
+async test "newthread/cancel_after_core_fact_keeps_pending_for_recovery" {
+  let model = ScriptedModel([
+    Compact(result={
+      compacted_messages: [tk_user_msg("cancel-summary")],
+      mode: NewThread,
+    }),
+    Respond(tk_stop_response("after cancel")),
+  ])
+  let child_sid = "cancel-parent_compact_agent_compact_session_1"
+  let store = CancelGateStore::{
+    inner: RecordingSessionStore(),
+    child_sid,
+    armed: true,
+    entered: false,
+    gate: @async.CondVar::Cond(),
+  }
+  store.inner.seed("cancel-parent", {
+    messages: [tk_user_msg("old")],
+    metadata: Map::from_array([]),
+  })
+  let observer = RecordingObserver()
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", sessions=[store], observers=[observer]),
+    ],
+    config=tk_config(),
+  )
+  @async.with_task_group(async fn(group) {
+    let running = group.spawn(() => {
+      let r : Result[@types.CompactOutcome, @error.AgentError] = Ok(
+        agent.compact_session("cancel-parent"),
+      ) catch {
+        error => Err(error)
+      }
+      r
+    })
+    while !store.entered {
+      @async.pause()
+    }
+    running.cancel()
+    let waited : Result[Result[@types.CompactOutcome, @error.AgentError], Error] = Ok(
+      running.wait(),
+    ) catch {
+      _ => Err(Error::Failure("cancelled"))
+    }
+    ignore(waited)
+  })
+  assert_eq(agent.runtime.pending_new_thread.length(), 1)
+  assert_true(
+    agent.runtime.core_shadow.store.sessions.contains(child_sid),
+    msg="the child core fact must survive cancellation",
+  )
+  assert_false(store.inner.store.contains(child_sid))
+  assert_eq(newthread_redirects(observer.events()).length(), 0)
+  assert_false(agent.runtime.progress.cursors.contains(child_sid))
+  // Release the gate without changing the snapshot; the next operation
+  // recovers the same child and body, then executes its own request.
+  store.gate.broadcast()
+  let next = agent.run_turn(tk_user_msg("next"), "cancel-parent")
+  assert_eq(next.final_session_id, "cancel-parent")
+  assert_eq(agent.runtime.pending_new_thread.length(), 0)
+  assert_eq(model.call_count(), 1)
+  assert_eq(model.compact_call_count(), 1)
+  let child = store.inner.load(child_sid) catch {
+    e => fail("expected cancel recovery to persist the child: \{e}")
+  }
+  assert_eq(child.messages.length(), 1)
+  assert_true(child.messages[0] == tk_user_msg("cancel-summary"))
+  assert_eq(
+    child.metadata.get(@types.PARENT_THREAD_ID_KEY),
+    Some(Json::string("cancel-parent")),
+  )
+  assert_eq(agent.runtime.progress.cursors.get(child_sid), Some(1))
+  let redirects = newthread_redirects(observer.events())
+  assert_eq(redirects.length(), 1)
+  assert_eq(redirects[0].1, child_sid)
 }

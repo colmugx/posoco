@@ -334,10 +334,11 @@ async fn Puppet::pump_abort(
 
 ///|
 /// Fork safe point: snapshot the transcript's first `fork_index` messages,
-/// persist them as a new lineage session when a store is configured, release
-/// the lease, and stop the turn with `ForkCompleted`. Fork is copy-on-write:
-/// the original transcript is never mutated. Always stops the pump.
-async fn Puppet::pump_fork(
+/// capture the core source, release the lease, and stop the turn with
+/// `ForkCompleted`. The Agent is the sole SessionStore writer. Fork is
+/// copy-on-write: the original transcript is never mutated. Always stops the
+/// pump.
+fn Puppet::pump_fork(
   self : Puppet,
   state : RunState,
   fork_cmd : ForkCommand,
@@ -361,31 +362,10 @@ async fn Puppet::pump_fork(
   let new_session_id = parent_session_id +
     "_fork_" +
     fork_cmd.command_id().to_string()
-  // Capture the actual safe-point transcript before any sibling save. The
-  // Agent freezes a deep snapshot; `fork_index` is the child body's prefix.
+  // Capture the actual safe-point transcript before the Agent forms the child
+  // core fact and output. The Agent freezes a deep snapshot; `fork_index` is
+  // the child body's prefix.
   self.capture_source(run_id, parent_session_id, transcript_msgs, fork_index)
-  // Persist the new session if a session_store is configured. The
-  // new session carries `parent_thread_id` lineage so callers can
-  // walk the DAG.
-  match self.config.session_store {
-    Some(store) => {
-      let new_session : @types.Session = {
-        messages: forked_messages.copy(),
-        metadata: Map::from_array([]),
-      }
-      let with_lineage = new_session.with_parent_thread_id(parent_session_id)
-      store.save(new_session_id, with_lineage) catch {
-        error =>
-          return self.finalize_rejected(
-            error=EffectExecutionFailed(
-              phase="fork",
-              cause="session save failed: " + error.to_string(),
-            ),
-          )
-      }
-    }
-    None => ()
-  }
   // Release lease + clear mailbox before returning ForkCompleted so
   // the next prompt can bind cleanly.
   return self.finalize_run(

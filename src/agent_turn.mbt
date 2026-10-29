@@ -597,16 +597,16 @@ fn AgentRuntime::terminal_failure_to_agent_error(
 
 ///|
 /// Shared tail of every NewThread-style diversion: snapshot the transcript,
-/// attach the parent-thread lineage, persist the new sibling session to every
-/// store under the operation's save label, advance its cursor, and emit the
-/// SessionRedirect so observers can switch. The save count and order, the
-/// per-operation save label, the fresh empty metadata, and the redirect
-/// counts (source transcript length on both sides) are identical across the
-/// fork and compact NewThread terminals; each caller keeps its own result
-/// projection (final_session_id and follow-up events).
+/// attach the parent-thread lineage, establish the child core fact, register a
+/// pending output, write the sibling to every store under the operation's save
+/// label, advance its cursor only after all stores confirm, and emit the
+/// SessionRedirect so observers can switch. Failed or cancelled writes keep
+/// the core fact and pending snapshot for the next operation's recovery; the
+/// fork and compact terminals share this tail but keep their own result
+/// projections.
 async fn AgentRuntime::persist_new_thread_session(
   self : AgentRuntime,
-  scope : @types.EventScope?,
+  scope : @types.EventScope,
   parent_session_id : String,
   new_session_id : String,
   messages : Array[@kernel.Message],
@@ -617,33 +617,39 @@ async fn AgentRuntime::persist_new_thread_session(
     metadata: Map::from_array([]),
   }
   let with_lineage = new_session.with_parent_thread_id(parent_session_id)
-  let run_id = match scope {
-    Some(scope) => scope.run_id.to_string()
-    None => ""
+  // The core child fact must exist before any SessionStore write. A missing
+  // fact is an explicit failure, never a diagnostic followed by output with
+  // no provenance.
+  match
+    self.core_shadow.record_new_thread(
+      scope.run_id.to_string(),
+      parent_session_id,
+      new_session_id,
+      with_lineage.messages,
+      with_lineage.metadata,
+    ) {
+    Ok(_) => ()
+    Err(detail) => {
+      self.core_shadow.mark_missing_provenance(new_session_id)
+      raise Runtime(InvocationFailed("core child fact failed: " + detail))
+    }
   }
-  // Record the child core version before the Agent-side output save: the
-  // source was frozen at the Puppet safe point, but the Puppet sibling write
-  // has already happened before this result reaches the Agent. A failure here
-  // is a shadow diagnostic only and never changes the production save path.
-  match scope {
-    Some(scope) =>
-      match
-        self.core_shadow.record_new_thread(
-          scope.run_id.to_string(),
-          parent_session_id,
-          new_session_id,
-          with_lineage.messages,
-          with_lineage.metadata,
-        ) {
-        Ok(_) => ()
-        Err(detail) => {
-          self.core_shadow.mark_missing_provenance(new_session_id)
-          emit_secondary_failure(self.observers, "core_shadow_child", detail)
-        }
-      }
-    None => self.core_shadow.mark_missing_provenance(new_session_id)
+  self.core_shadow.stop(
+    parent_session_id,
+    scope.run_id.to_string(),
+    "diversion",
+  )
+  // Register the pending output before the first store await. If any store
+  // fails or the operation is cancelled, the core fact and this snapshot stay
+  // available for the next operation to retry this exact child.
+  self.pending_new_thread[new_session_id] = {
+    scope,
+    parent_session_id,
+    child_session_id: new_session_id,
+    messages: with_lineage.messages,
+    metadata: with_lineage.metadata,
+    save_label,
   }
-  self.core_shadow.stop(parent_session_id, run_id, "diversion")
   self.save_sessions_all(
     new_session_id,
     with_lineage.messages,
@@ -652,7 +658,8 @@ async fn AgentRuntime::persist_new_thread_session(
   )
   self.progress.set_cursor(new_session_id, with_lineage.messages.length())
   // Emit a SessionRedirect so observers know a sibling thread was
-  // created and can switch the UI.
+  // created and can switch the UI. This is the original operation's scope;
+  // recovery replays this same event, never a new request's scope.
   let redirect : @types.TurnEvent = SessionRedirect(
     from=parent_session_id,
     to=new_session_id,
@@ -660,7 +667,47 @@ async fn AgentRuntime::persist_new_thread_session(
     messages_after=messages.length(),
   )
   for observer in self.observers {
-    observer.on_event(scope, snapshot_turn_event(redirect))
+    observer.on_event(Some(scope), snapshot_turn_event(redirect))
+  }
+  self.pending_new_thread.remove(new_session_id)
+}
+
+///|
+/// Drain core-confirmed NewThread outputs whose write-all was never fully
+/// confirmed. Runs inside the operation guard before the new request body:
+/// recovery itself consumes no model call, creates no child, emits no old
+/// successful terminal, and never touches the parent. A failure propagates and
+/// blocks the new body; the pending record remains for a later attempt.
+async fn AgentRuntime::drain_pending_new_thread_outputs(
+  self : AgentRuntime,
+) -> Unit raise @error.AgentError {
+  let child_ids = self.pending_new_thread.keys().to_array()
+  child_ids.sort()
+  for child_id in child_ids {
+    let pending = match self.pending_new_thread.get(child_id) {
+      Some(value) => value
+      None => continue
+    }
+    self.save_sessions_all(
+      pending.child_session_id,
+      pending.messages,
+      pending.metadata,
+      pending.save_label,
+    )
+    self.progress.set_cursor(
+      pending.child_session_id,
+      pending.messages.length(),
+    )
+    let redirect : @types.TurnEvent = SessionRedirect(
+      from=pending.parent_session_id,
+      to=pending.child_session_id,
+      messages_before=pending.messages.length(),
+      messages_after=pending.messages.length(),
+    )
+    for observer in self.observers {
+      observer.on_event(Some(pending.scope), snapshot_turn_event(redirect))
+    }
+    self.pending_new_thread.remove(pending.child_session_id)
   }
 }
 
@@ -681,7 +728,7 @@ async fn AgentRuntime::complete_fork_turn(
   input : @kernel.Message,
 ) -> @types.TurnResult raise @error.AgentError {
   self.persist_new_thread_session(
-    Some(identity.scope()),
+    identity.scope(),
     parent_session_id,
     new_session_id,
     forked_messages,
@@ -717,7 +764,7 @@ async fn AgentRuntime::complete_compact_turn(
       match new_session_id {
         Some(new_sid) => {
           self.persist_new_thread_session(
-            Some(identity.scope()),
+            identity.scope(),
             session_id,
             new_sid,
             compacted_messages,
@@ -1340,11 +1387,7 @@ async fn AgentRuntime::run_compact_operation(
           match new_session_id {
             Some(new_sid) => {
               self.persist_new_thread_session(
-                Some(scope),
-                session_id,
-                new_sid,
-                compacted_messages,
-                "compact_newthread_save",
+                scope, session_id, new_sid, compacted_messages, "compact_newthread_save",
               )
               self.project_context_state(Some(scope), new_sid)
               self.emit_turn_event(

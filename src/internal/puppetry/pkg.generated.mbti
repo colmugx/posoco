@@ -456,7 +456,6 @@ pub(all) struct PuppetConfig {
   max_tool_depth : Int32?
   max_iterations : Int32?
   commands : Array[&@port.CommandPort]
-  session_store : &@port.SessionStore?
   mailbox : &Mailbox
 }
 

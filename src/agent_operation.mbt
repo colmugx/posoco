@@ -186,7 +186,18 @@ async fn[X] AgentRuntime::execute_operation(
             // directory itself is already committed, so this cannot change it,
             // and a failure here is only a secondary diagnostic.
             self.retire_pending_versions()
-            body()
+            // Recovery is an async, guard-held phase before the new request.
+            // A failure propagates and prevents body() from running; the
+            // pending record stays for the next operation.
+            let drained : Result[Unit, @error.AgentError] = Ok(
+              self.drain_pending_new_thread_outputs(),
+            ) catch {
+              error => Err(error)
+            }
+            match drained {
+              Ok(_) => body()
+              Err(error) => Err(error)
+            }
           }
           Err(error) => Err(error)
         }

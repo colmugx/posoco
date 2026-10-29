@@ -35,11 +35,6 @@ pub(all) struct PuppetConfig {
   /// mailbox, so `/compact` and `/fork-here` only enqueue signals the pump
   /// consumes at its safe points.
   commands : Array[&CommandPort]
-  /// Session store used by fork (and by compact::NewThread) to write the new
-  /// session carrying `parent_thread_id` lineage. `None` still forks
-  /// in-memory (the id comes back via `PromptResult::ForkCompleted`) but saves
-  /// nothing durably.
-  session_store : &SessionStore?
   /// The shared control mailbox. Product composition owns the concrete
   /// `ControlMailbox` and lends this same instance to the Puppet, command
   /// ports and product-layer controllers.

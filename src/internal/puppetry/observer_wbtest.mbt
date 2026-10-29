@@ -68,7 +68,6 @@ async test "hook_post_event/model_only_turn_fires_model_completed" {
     max_tool_depth: None,
     max_iterations: Some(10),
     commands: [],
-    session_store: None,
     mailbox,
   }
   let puppet = Puppet(cfg)
@@ -115,7 +114,6 @@ async test "hook_post_event/tool_turn_fires_model_then_tool" {
     max_tool_depth: None,
     max_iterations: Some(10),
     commands: [],
-    session_store: None,
     mailbox,
   }
   let puppet = Puppet(cfg)

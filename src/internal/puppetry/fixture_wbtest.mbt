@@ -303,7 +303,6 @@ fn canonical_puppet_config(
     max_tool_depth: None,
     max_iterations: Some(50),
     commands: [],
-    session_store: None,
     mailbox,
   }
 }

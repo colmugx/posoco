@@ -322,7 +322,6 @@ fn hook_config_with_subscribers(
     max_tool_depth: None,
     max_iterations: Some(50),
     commands: [],
-    session_store: None,
     mailbox,
   }
 }

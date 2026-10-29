@@ -298,7 +298,6 @@ async test "puppet/boundary_journals_auto_compact_replace_rewrite" {
     max_tool_depth: None,
     max_iterations: Some(50),
     commands: [],
-    session_store: None,
     mailbox: mailbox_instance as &Mailbox,
   }
   let puppet = Puppet(config)

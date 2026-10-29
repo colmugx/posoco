@@ -20,9 +20,9 @@ priv enum CompactFlow {
 /// Apply one compact command. Calls `HostRuntime::compact` (which forwards
 /// to `ModelPort::compact`) and applies the result according to its
 /// `CompactMode`:
-/// - **NewThread**: write a new session with lineage, release lease, and
-///   return `PromptResult::CompactCompleted(new_session_id=Some(...))`.
-///   The current turn stops.
+/// - **NewThread**: return `PromptResult::CompactCompleted` with the new id;
+///   release the lease and stop the turn. The Agent forms the child core fact
+///   and is the sole SessionStore writer.
 /// - **Replace**: rebuild the transcript from `compacted_messages` and
 ///   return `UpdatedState`. The loop continues on the same session id.
 ///
@@ -100,28 +100,6 @@ async fn Puppet::handle_compact(
       let new_session_id = session_id.to_string() +
         "_compact_" +
         compact_cmd.command_id().to_string()
-      // Persist the new session if configured.
-      match self.config.session_store {
-        Some(store) => {
-          let new_session : @types.Session = {
-            messages: compact_result.compacted_messages.copy(),
-            metadata: Map::from_array([]),
-          }
-          let with_lineage = new_session.with_parent_thread_id(
-            session_id.to_string(),
-          )
-          store.save(new_session_id, with_lineage) catch {
-            error =>
-              return Failed(
-                EffectExecutionFailed(
-                  phase="compact",
-                  cause="session save failed: " + error.to_string(),
-                ),
-              )
-          }
-        }
-        None => ()
-      }
       let result : PromptResult = CompactCompleted(
         run_id~,
         turn_id~,
@@ -562,27 +540,6 @@ pub async fn Puppet::compact_standalone(
   match compact_result.mode {
     NewThread => {
       let new_session_id = session_id.to_string() + "_compact_" + operation_id
-      match self.config.session_store {
-        Some(store) => {
-          let new_session : @types.Session = {
-            messages: compact_result.compacted_messages.copy(),
-            metadata: Map::from_array([]),
-          }
-          let with_lineage = new_session.with_parent_thread_id(
-            session_id.to_string(),
-          )
-          store.save(new_session_id, with_lineage) catch {
-            error =>
-              return self.finalize_rejected(
-                error=EffectExecutionFailed(
-                  phase="compact_session",
-                  cause="session save failed: " + error.to_string(),
-                ),
-              )
-          }
-        }
-        None => ()
-      }
       self.record_context_estimate(
         @kernel.SessionId::unchecked(new_session_id),
         compact_result.compacted_messages,
