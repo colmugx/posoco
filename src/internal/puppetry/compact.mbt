@@ -5,8 +5,8 @@
 ///|
 /// Outcome of `handle_compact`: either the pump should return the given
 /// `PromptResult` (compact::NewThread stops the turn with CompactCompleted),
-/// or it should adopt the new `RunState` and continue the loop (Replace /
-/// Append), or it should reject the run (compact failed). `UpdatedState`
+/// or it should adopt the new `RunState` and continue the loop (Replace),
+/// or it should reject the run (compact failed). `UpdatedState`
 /// carries the reducer-emitted rewrite events; the CALLER commits them into
 /// the next boundary so journal order stays causal (the rewrite follows the
 /// facts that produced the pre-compact state).
@@ -25,10 +25,8 @@ priv enum CompactFlow {
 ///   The current turn stops.
 /// - **Replace**: rebuild the transcript from `compacted_messages` and
 ///   return `UpdatedState`. The loop continues on the same session id.
-/// - **Append**: append `compacted_messages` to the current transcript and
-///   return `UpdatedState`. The loop continues on the same session id.
 ///
-/// Replace/Append fold the transcript change through the reducer — the sole
+/// Replace folds the transcript change through the reducer — the sole
 /// transcript writer — as a `TranscriptRewrite` input, so the compact is
 /// journaled as a `TranscriptRewritten` event instead of an untracked
 /// mutation. `commit_boundary` is NOT called here; the caller commits the
@@ -44,6 +42,15 @@ async fn Puppet::handle_compact(
   snap : TurnSnapshot,
 ) -> CompactFlow raise PuppetError {
   let messages = state.transcript().messages_snapshot()
+  // Capture the exact pre-model transcript. The Agent deep-snapshots it before
+  // `host.compact`, so model-side mutation of the input view cannot rewrite the
+  // source used for the NewThread child.
+  self.capture_source(
+    run_id,
+    session_id.to_string(),
+    messages,
+    messages.length(),
+  )
   // Compact is host-driven (a mailbox command), not a reducer-allocated
   // effect — hence `effect_id: None`. Run/session identity still applies.
   // The resolved window/threshold and the latest verified occupancy ride
@@ -132,14 +139,6 @@ async fn Puppet::handle_compact(
         "compact_replace",
         "compact-replace",
       )
-    Append => {
-      let current = state.transcript().messages_snapshot()
-      let combined : Array[@kernel.Message] = current +
-        compact_result.compacted_messages
-      self.rewrite_transcript_for_compact(
-        state, combined, "compact_append", "compact-append",
-      )
-    }
   }
 }
 
@@ -517,6 +516,14 @@ pub async fn Puppet::compact_standalone(
     effect_id: None,
     pressure: Some(pressure),
   }
+  // Freeze the standalone compact source before the model call. The supplied
+  // array is the exact content the model sees.
+  self.capture_source(
+    run_id,
+    session_id.to_string(),
+    messages,
+    messages.length(),
+  )
   let attempted : Result[Result[CompactResult, @kernel.ModelFailure], Error] = Ok(
     self.config.host.compact(
       scope,
@@ -592,12 +599,8 @@ pub async fn Puppet::compact_standalone(
       return self.finalize_run(ReleasedNoCommit(result~))
     }
     Replace => ()
-    Append => ()
   }
-  let final_messages : Array[Message] = match compact_result.mode {
-    Append => messages + compact_result.compacted_messages
-    _ => compact_result.compacted_messages.copy()
-  }
+  let final_messages : Array[Message] = compact_result.compacted_messages.copy()
   let initial_state : RunState = RunState::initial(
     run_id~,
     session_id~,

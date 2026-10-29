@@ -146,7 +146,7 @@ fn snapshot_message(message : @kernel.Message) -> @kernel.Message {
         finish_reason~,
       )
     ToolMessage(call_id~, tool_name~, outcome~) =>
-      ToolMessage(call_id~, tool_name~, outcome~)
+      ToolMessage(call_id~, tool_name~, outcome=snapshot_tool_outcome(outcome))
   }
 }
 
@@ -276,20 +276,17 @@ priv struct AgentRuntime {
   /// buffered queue; `run_turn_via_puppet` creates and swaps the dispatcher
   /// for each turn.
   chunk_dispatcher : Ref[ChunkDispatcher?]
-  /// Per-session cursor tracking how many leading messages are already
-  /// persisted. Shared with the committed-event checkpoint subscriber so
-  /// model/tool boundaries advance the same durability cursor the terminal
-  /// save path uses.
-  session_cursors : Map[String, Int32]
+  /// Persisted-prefix bookkeeping (cursor + rewrite-dirty) shared with the
+  /// committed-event checkpoint subscriber; see `SessionProgress`.
+  progress : SessionProgress
+  /// Shadow core facts shared with the checkpoint subscriber. It never feeds
+  /// the production load path; compact/fork/rewrite are not mirrored here.
+  core_shadow : CoreShadowRecording
   /// The committed-event projection subscriber. Retained so the turn-failure
   /// path can close still-pending tool calls with `ToolCallAbandoned`: the
   /// Puppet's host-level rejection path (`reject_run`) intentionally emits
   /// no terminal kernel event, so the Agent synthesizes the closure here.
   event_subscriber : AgentEventSubscriber
-  /// Sessions whose canonical transcript was rewritten (compact/hook rewrite)
-  /// during a run. Incremental event projection pauses until the terminal
-  /// full-save re-establishes a canonical prefix.
-  checkpoint_dirty : Map[String, Bool]
   body_recovery : Map[String, @types.Session]
 }
 
@@ -515,12 +512,13 @@ fn AgentRuntime::compose(
   control.set_abort_hook(fn(run_id) {
     task_runtime.cancel_foreground_for_run(run_id)
   })
-  let session_cursors : Map[String, Int32] = Map::from_array([])
-  let checkpoint_dirty : Map[String, Bool] = Map::from_array([])
+  let progress = SessionProgress::SessionProgress()
+  let core_shadow = CoreShadowRecording::CoreShadowRecording()
   let checkpoint_subscriber = SessionCheckpointSubscriber(
     agg.sessions,
-    session_cursors,
-    checkpoint_dirty,
+    progress,
+    agg.observers,
+    core_shadow,
   )
   let event_subscriber = AgentEventSubscriber(
     agg.observers,
@@ -589,6 +587,16 @@ fn AgentRuntime::compose(
   }
   let puppet = @puppetry.Puppet(puppet_config)
   puppet.install_tool_lifecycle(launch_gate, tool_revocations)
+  puppet.set_source_observer(
+    Some(fn(run_id, session_id, messages, prefix) {
+      core_shadow.capture_source(
+        run_id.to_string(),
+        session_id,
+        messages,
+        prefix,
+      )
+    }),
+  )
   let runtime : AgentRuntime = {
     puppet,
     model: agg.model,
@@ -619,9 +627,9 @@ fn AgentRuntime::compose(
     start_notified: false,
     turn_active: false,
     chunk_dispatcher: chunk_dispatcher_ref,
-    session_cursors,
+    progress,
+    core_shadow,
     event_subscriber,
-    checkpoint_dirty,
     body_recovery: Map::from_array([]),
   }
   builtin_command_port.idle_compact.val = Some(async fn(
@@ -1231,6 +1239,11 @@ async fn AgentRuntime::run_single_turn(
   self.ensure_agent_running()
   self.notify_start_if_first()
   let identity = admission.identity
+  defer self.core_shadow.finish_run(
+    session_id,
+    identity.run_id.to_string(),
+    "turn_ended_without_terminal",
+  )
   self.task_runtime.begin_operation(
     session_id,
     identity.run_id,

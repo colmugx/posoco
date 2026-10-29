@@ -11,17 +11,19 @@
 /// canonical prefix.
 priv struct SessionCheckpointSubscriber {
   stores : Array[&@port.SessionStore]
-  cursors : Map[String, Int32]
-  dirty : Map[String, Bool]
+  progress : SessionProgress
+  observers : Array[&@port.Observer]
+  shadow : CoreShadowRecording
 }
 
 ///|
 fn SessionCheckpointSubscriber::SessionCheckpointSubscriber(
   stores : Array[&@port.SessionStore],
-  cursors : Map[String, Int32],
-  dirty : Map[String, Bool],
+  progress : SessionProgress,
+  observers : Array[&@port.Observer],
+  shadow : CoreShadowRecording,
 ) -> SessionCheckpointSubscriber {
-  { stores, cursors, dirty, }
+  { stores, progress, observers, shadow, }
 }
 
 ///|
@@ -47,10 +49,7 @@ async fn SessionCheckpointSubscriber::append_committed_message(
   if self.stores.is_empty() {
     return
   }
-  let cursor = match self.cursors.get(session_id) {
-    Some(value) => value
-    None => 0
-  }
+  let cursor = self.progress.cursor_or_zero(session_id)
   let results : Array[Result[Unit, @error.SessionError]] = @async.all(
     self.stores.map(fn(store) {
       () => {
@@ -84,7 +83,30 @@ async fn SessionCheckpointSubscriber::append_committed_message(
         )
     }
   }
-  self.cursors[session_id] = cursor + 1
+  self.progress.advance_one(session_id)
+}
+
+///|
+/// Record committed messages into the shadow core before any store I/O. This
+/// path is independent of the persistence cursor/dirty flag; failures are
+/// diagnostics only and stop shadow tracking for the session.
+fn SessionCheckpointSubscriber::record_shadow_committed(
+  self : SessionCheckpointSubscriber,
+  session_id : String,
+  envelope : @puppetry.EventEnvelope,
+  messages : Array[@kernel.Message],
+) -> Unit {
+  match
+    self.shadow.record_committed(
+      session_id,
+      envelope.run_id().to_string(),
+      envelope.seq,
+      messages,
+    ) {
+    Ok(_) => ()
+    Err(detail) =>
+      emit_secondary_failure(self.observers, "core_shadow_commit", detail)
+  }
 }
 
 ///|
@@ -94,43 +116,58 @@ impl @puppetry.EventSubscriber for SessionCheckpointSubscriber with fn on_event(
 ) -> Unit raise @puppetry.SubscriberError {
   let session_id = envelope.session_id().to_string()
   match envelope.event() {
-    RunStarted(..) => self.dirty.remove(session_id)
-    TranscriptRewritten(..) => self.dirty[session_id] = true
-    ModelStepCompleted(completion~, ..) =>
-      if !self.dirty.contains(session_id) {
-        let payload = completion.message
-        self.append_committed_message(
-          session_id,
-          AssistantMessage(
-            content=payload.content,
-            tool_calls=payload.tool_calls,
-            reasoning=payload.reasoning,
-            finish_reason=payload.finish_reason,
+    RunStarted(..) => self.progress.mark_clean(session_id)
+    TranscriptRewritten(..) => {
+      self.progress.mark_dirty(session_id)
+      // The event carries counts, not content. Stop appended-message tracking
+      // and let only this run's terminal mirror the final transcript.
+      self.shadow.stop_rewrite(session_id, envelope.run_id().to_string())
+    }
+    ModelStepCompleted(completion~, ..) => {
+      let payload = completion.message
+      let message : @kernel.Message = AssistantMessage(
+        content=payload.content,
+        tool_calls=payload.tool_calls,
+        reasoning=payload.reasoning,
+        finish_reason=payload.finish_reason,
+      )
+      self.record_shadow_committed(session_id, envelope, [message])
+      if !self.progress.is_dirty(session_id) {
+        self.append_committed_message(session_id, message)
+      }
+    }
+    ToolCompleted(call~, outcome~, parent_effect_id=None) => {
+      let message : @kernel.Message = ToolMessage(
+        call_id=call.call_id,
+        tool_name=call.name,
+        outcome~,
+      )
+      self.record_shadow_committed(session_id, envelope, [message])
+      if !self.progress.is_dirty(session_id) {
+        self.append_committed_message(session_id, message)
+      }
+    }
+    ToolCallsPreRejected(calls~, outcomes~, ..) => {
+      // Pre-pass rejects are reducer-transcript facts (NotExecuted tool
+      // messages); mirror them exactly like folded completions. Build the
+      // whole batch first so one event sequence covers all its messages.
+      let messages : Array[@kernel.Message] = []
+      for i in 0..<calls.length() {
+        messages.push(
+          ToolMessage(
+            call_id=calls[i].call_id,
+            tool_name=calls[i].name,
+            outcome=outcomes[i],
           ),
         )
       }
-    ToolCompleted(call~, outcome~, parent_effect_id=None) =>
-      if !self.dirty.contains(session_id) {
-        self.append_committed_message(
-          session_id,
-          ToolMessage(call_id=call.call_id, tool_name=call.name, outcome~),
-        )
-      }
-    ToolCallsPreRejected(calls~, outcomes~, ..) =>
-      // Pre-pass rejects are reducer-transcript facts (NotExecuted tool
-      // messages); mirror them exactly like folded completions.
-      if !self.dirty.contains(session_id) {
-        for i in 0..<calls.length() {
-          self.append_committed_message(
-            session_id,
-            ToolMessage(
-              call_id=calls[i].call_id,
-              tool_name=calls[i].name,
-              outcome=outcomes[i],
-            ),
-          )
+      self.record_shadow_committed(session_id, envelope, messages)
+      if !self.progress.is_dirty(session_id) {
+        for message in messages {
+          self.append_committed_message(session_id, message)
         }
       }
+    }
     _ => ()
   }
 }

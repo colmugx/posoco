@@ -413,6 +413,7 @@ pub struct Puppet {
   context_states : Map[String, @types.ContextState]
   mut launch_gate : @kernel_exec.ToolLaunchGate?
   mut tool_revocations : ToolRevocationFacts?
+  mut source_observer : ((@kernel.RunId, String, Array[@kernel.Message], Int32) -> Unit)?
 }
 pub fn Puppet::Puppet(PuppetConfig) -> Self
 pub fn Puppet::adopt_context_state(Self, String, @types.ContextState) -> Unit
@@ -427,6 +428,7 @@ pub fn Puppet::phase(Self) -> PuppetPhase
 pub async fn Puppet::prompt(Self, PromptRequest) -> PromptResult raise PuppetError
 pub fn Puppet::replace_catalog(Self, @kernel_exec.ToolCatalogSnapshot) -> Bool
 pub fn Puppet::session_context_state(Self, String) -> @types.ContextState?
+pub fn Puppet::set_source_observer(Self, ((@kernel.RunId, String, Array[@kernel.Message], Int32) -> Unit)?) -> Unit
 pub fn Puppet::shutdown(Self) -> Unit raise PuppetError
 pub async fn Puppet::wait_idle(Self) -> QuiescentStatus
 

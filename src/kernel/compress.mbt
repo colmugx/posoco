@@ -37,8 +37,6 @@ pub(all) enum CompactMode {
   NewThread
   /// Replace current session body in place; no new session created.
   Replace
-  /// Append compacted messages to current session.
-  Append
 } derive(Eq)
 
 ///|
@@ -52,7 +50,6 @@ pub impl Show for CompactMode with fn to_string(self : CompactMode) -> String {
   match self {
     NewThread => "NewThread"
     Replace => "Replace"
-    Append => "Append"
   }
 }
 

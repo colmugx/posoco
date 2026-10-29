@@ -45,7 +45,7 @@ async fn Puppet::fold_effect_input(
   // M3.5: auto-compact threshold check. If the reducer just landed in
   // ReadyForModel AND observed token usage crossed the threshold, fire
   // a compact (trigger=Auto) BEFORE declaring the next model effect.
-  // NewThread mode stops the turn with CompactCompleted; Replace / Append
+  // NewThread mode stops the turn with CompactCompleted; Replace
   // updates the state and we proceed to declare_model_effect_if_ready
   // on the post-compact transcript.
   let rewrite_events : Array[KernelEvent] = []

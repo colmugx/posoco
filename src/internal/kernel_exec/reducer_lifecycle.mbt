@@ -412,7 +412,7 @@ fn reject_input(
 
 ///|
 /// Fold a host-side transcript rewrite (pre-model hook chain, compact
-/// Replace/Append) into state. The reducer is the sole transcript writer, so
+/// Replace) into state. The reducer is the sole transcript writer, so
 /// the pump submits rewritten messages as an input and this branch commits
 /// them with a `TranscriptRewritten` event. Phase and pending effects are
 /// untouched; the event sequence advances by one.

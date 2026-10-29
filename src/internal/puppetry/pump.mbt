@@ -361,6 +361,9 @@ async fn Puppet::pump_fork(
   let new_session_id = parent_session_id +
     "_fork_" +
     fork_cmd.command_id().to_string()
+  // Capture the actual safe-point transcript before any sibling save. The
+  // Agent freezes a deep snapshot; `fork_index` is the child body's prefix.
+  self.capture_source(run_id, parent_session_id, transcript_msgs, fork_index)
   // Persist the new session if a session_store is configured. The
   // new session carries `parent_thread_id` lineage so callers can
   // walk the DAG.

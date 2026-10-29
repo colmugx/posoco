@@ -264,8 +264,9 @@ fn json_has_poison(value : Json) -> Bool {
 /// Message is an ADT; mutation requires building a new variant. We only
 /// mutate messages that carry mutable arrays (AssistantMessage's content
 /// and tool_calls). For SystemMessage/UserMessage we mutate content only.
-/// For ToolMessage we leave it alone (its body lives in ToolOutcome which
-/// has no mutable text slot to mutate from outside).
+/// For ToolMessage this helper leaves the payload alone; its `ToolOutcome`
+/// does carry mutable structured JSON and attachment arrays, covered by the
+/// dedicated `snapshot_message/tool_*` boundary tests below.
 fn poison_first_message(
   messages : Array[@kernel.Message],
   label : String,
@@ -631,4 +632,236 @@ async test "automatic title comes from admitted human input before memory inject
     persisted.messages[1] ==
     tk_user_msg("  investigate   the login\n race condition  "),
   )
+}
+
+///|
+/// A ToolMessage whose outcome carries both a nested structured payload and an
+/// attachments array, so a shallow ToolMessage snapshot exposes two aliases.
+fn tool_message_with_nested_outcome() -> (
+  @kernel.Message,
+  Json,
+  Array[@kernel.Content],
+) {
+  let structured = Json::object(
+    Map::from_array([
+      (
+        "nested",
+        Json::object(Map::from_array([("value", Json::string("clean"))])),
+      ),
+    ]),
+  )
+  let attachments : Array[@kernel.Content] = [Text("clean-attachment")]
+  let message : @kernel.Message = ToolMessage(
+    call_id=@kernel.CallId::unchecked("tc-snapshot"),
+    tool_name=@kernel.ToolName::unchecked("probe"),
+    outcome=SuccessWithAttachments(
+      content="clean result",
+      structured=Some(structured),
+      attachments~,
+    ),
+  )
+  (message, structured, attachments)
+}
+
+///|
+fn tool_message_snapshot_fields(
+  message : @kernel.Message,
+) -> (Json, Array[@kernel.Content]) raise {
+  match message {
+    ToolMessage(
+      outcome=SuccessWithAttachments(structured=Some(value), attachments~, ..),
+      ..
+    ) => (value, attachments)
+    _ => fail("expected a tool message with structured attachments")
+  }
+}
+
+///|
+test "snapshot_message/tool_outcome_input_aliases_are_copied" {
+  let (message, structured, attachments) = tool_message_with_nested_outcome()
+  let snapshot = snapshot_message(message)
+  // Mutate the inputs at every level after the snapshot was taken.
+  poison_json(structured, "poison")
+  attachments.push(Text("poison"))
+  let (snapshot_structured, snapshot_attachments) = tool_message_snapshot_fields(
+    snapshot,
+  )
+  assert_false(json_has_poison(snapshot_structured))
+  assert_eq(snapshot_attachments.length(), 1)
+}
+
+///|
+test "snapshot_message/tool_outcome_output_aliases_stay_isolated" {
+  let (message, structured, attachments) = tool_message_with_nested_outcome()
+  let snapshot = snapshot_message(message)
+  let (snapshot_structured, snapshot_attachments) = tool_message_snapshot_fields(
+    snapshot,
+  )
+  // Mutating the snapshot must not reach back into the caller's outcome.
+  poison_json(snapshot_structured, "poison")
+  snapshot_attachments.push(Text("poison"))
+  assert_false(json_has_poison(structured))
+  assert_eq(attachments.length(), 1)
+}
+
+///|
+fn tool_reported_error_message_with_nested_structured() -> (
+  @kernel.Message,
+  Json,
+) {
+  let structured = Json::object(
+    Map::from_array([
+      (
+        "nested",
+        Json::object(Map::from_array([("value", Json::string("clean"))])),
+      ),
+    ]),
+  )
+  let message : @kernel.Message = ToolMessage(
+    call_id=@kernel.CallId::unchecked("tc-reported"),
+    tool_name=@kernel.ToolName::unchecked("probe"),
+    outcome=ToolReportedError(
+      content="business failure",
+      structured=Some(structured),
+    ),
+  )
+  (message, structured)
+}
+
+///|
+fn tool_reported_error_snapshot_structured(
+  message : @kernel.Message,
+) -> Json raise {
+  match message {
+    ToolMessage(outcome=ToolReportedError(structured=Some(value), ..), ..) =>
+      value
+    _ => fail("expected a ToolReportedError with structured data")
+  }
+}
+
+///|
+test "snapshot_message/tool_reported_error_input_structured_is_copied" {
+  let (message, structured) = tool_reported_error_message_with_nested_structured()
+  let snapshot = snapshot_message(message)
+  poison_json(structured, "poison")
+  assert_false(
+    json_has_poison(tool_reported_error_snapshot_structured(snapshot)),
+  )
+}
+
+///|
+test "snapshot_message/tool_reported_error_output_structured_stays_isolated" {
+  let (message, structured) = tool_reported_error_message_with_nested_structured()
+  let snapshot = snapshot_message(message)
+  poison_json(tool_reported_error_snapshot_structured(snapshot), "poison")
+  assert_false(json_has_poison(structured))
+}
+
+///|
+/// Whether a tool outcome still carries the tag this regression writes into
+/// the returned `TurnResult`. Only the returned variant is expected to change.
+fn tool_outcome_has_turn_result_poison(outcome : @kernel.ToolOutcome) -> Bool {
+  match outcome {
+    SuccessWithAttachments(structured=Some(value), attachments~, ..) => {
+      let mut poisoned = json_has_poison(value)
+      for content in attachments {
+        match content {
+          Text(text) =>
+            if text.contains("turn-result-poison") {
+              poisoned = true
+            }
+          Image(..) => ()
+        }
+      }
+      poisoned
+    }
+    _ => false
+  }
+}
+
+///|
+async test "t05_turn_result_tool_outcomes_do_not_alias_held_transcript_or_next_input" {
+  let structured = Json::object(
+    Map::from_array([
+      (
+        "nested",
+        Json::object(Map::from_array([("value", Json::string("clean"))])),
+      ),
+    ]),
+  )
+  let attachments : Array[@kernel.Content] = [Text("clean-attachment")]
+  let provider_result : @kernel.ToolOutcome = SuccessWithAttachments(
+    content="clean result",
+    structured=Some(structured),
+    attachments~,
+  )
+  let model = ScriptedModel([
+    Respond(tk_tool_call_response("probe", "tc-turn-result", Json::null())),
+    Respond(tk_stop_response("done")),
+    Respond(tk_stop_response("next")),
+  ])
+  let provider = BoundaryRecordingToolProvider::{
+    result: provider_result,
+    calls: [],
+  }
+  let store = RecordingSessionStore()
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", tools=[provider], sessions=[store]),
+    ],
+    config=metadata_config(),
+  )
+  let first = agent.run_turn(tk_user_msg("run probe"), "turn-result-alias")
+  assert_eq(first.tool_results.length(), 1)
+  // Mutate the returned outcome after the turn completed.
+  match first.tool_results[0] {
+    SuccessWithAttachments(structured=Some(value), attachments~, ..) => {
+      poison_json(value, "turn-result-poison")
+      attachments.push(Text("turn-result-poison"))
+    }
+    _ => fail("expected a returned SuccessWithAttachments")
+  }
+  // The Agent still owns its completed transcript; the returned payload must
+  // not reach it.
+  let held = match agent.runtime.puppet.last_completed_transcript() {
+    Some(transcript) => transcript
+    None => fail("expected the Agent to hold a completed transcript")
+  }
+  let mut held_tool_count = 0
+  let mut held_poisoned = false
+  for message in held.messages_snapshot() {
+    match message {
+      ToolMessage(outcome~, ..) => {
+        held_tool_count = held_tool_count + 1
+        if tool_outcome_has_turn_result_poison(outcome) {
+          held_poisoned = true
+        }
+      }
+      _ => ()
+    }
+  }
+  assert_eq(held_tool_count, 1)
+  // The next turn is fed from that held transcript, so a leak also shows up
+  // in the next model request.
+  ignore(agent.run_turn(tk_user_msg("next"), "turn-result-alias"))
+  let mut next_tool_count = 0
+  let mut next_poisoned = false
+  for message in model.received_messages[2] {
+    match message {
+      ToolMessage(outcome~, ..) => {
+        next_tool_count = next_tool_count + 1
+        if tool_outcome_has_turn_result_poison(outcome) {
+          next_poisoned = true
+        }
+      }
+      _ => ()
+    }
+  }
+  assert_eq(next_tool_count, 1)
+  if held_poisoned || next_poisoned {
+    fail(
+      "TurnResult tool outcome aliased Agent state: held_transcript=\{held_poisoned}, next_input=\{next_poisoned}",
+    )
+  }
 }

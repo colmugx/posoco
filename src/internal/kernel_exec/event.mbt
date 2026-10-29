@@ -136,7 +136,7 @@ pub(all) enum KernelEvent {
   /// Always non-terminal: rejections never change state.
   InputRejected(input_kind~ : String, reason~ : String)
   /// Emitted when a host-side transcript rewrite (pre-model hook chain,
-  /// compact Replace/Append) is folded into state. Carries only counts and
+  /// compact Replace) is folded into state. Carries only counts and
   /// the producer reason — message bodies never enter durable diagnostic
   /// summaries, same rule as `ToolBatchStarted`.
   TranscriptRewritten(

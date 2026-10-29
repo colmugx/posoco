@@ -73,6 +73,9 @@ pub struct Puppet {
   mut launch_gate : @kernel_exec.ToolLaunchGate?
   /// Revocation facts of the admitted operation's captured bindings.
   mut tool_revocations : ToolRevocationFacts?
+  /// Shadow-only safe-point source capture. Called before a compact model
+  /// call and at the fork safe point; `None` keeps legacy behavior.
+  mut source_observer : ((@kernel.RunId, String, Array[@kernel.Message], Int32) -> Unit)?
 }
 
 ///|
@@ -87,6 +90,29 @@ pub fn Puppet::Puppet(config : PuppetConfig) -> Puppet {
     context_states: Map::from_array([]),
     launch_gate: None,
     tool_revocations: None,
+    source_observer: None,
+  }
+}
+
+///|
+pub fn Puppet::set_source_observer(
+  self : Puppet,
+  observer : ((@kernel.RunId, String, Array[@kernel.Message], Int32) -> Unit)?,
+) -> Unit {
+  self.source_observer = observer
+}
+
+///|
+fn Puppet::capture_source(
+  self : Puppet,
+  run_id : @kernel.RunId,
+  session_id : String,
+  messages : Array[@kernel.Message],
+  prefix : Int32,
+) -> Unit {
+  match self.source_observer {
+    Some(observer) => observer(run_id, session_id, messages, prefix)
+    None => ()
   }
 }
 

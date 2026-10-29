@@ -72,12 +72,10 @@ pub(all) enum PromptResult {
   /// - **NewThread**: a new session was created with `parent_thread_id`
   ///   lineage. `new_session_id` is `Some(id)`; product code should switch
   ///   its active thread. The original thread is preserved unchanged.
-  /// - **Replace**: the current session's message body was replaced in
-  ///   place. `new_session_id` is `None`; product code keeps the same
-  ///   active thread. The current turn continues with the compacted body.
-  /// - **Append**: the compacted body was appended to the current session.
-  ///   `new_session_id` is `None`; product code keeps the same active
-  ///   thread. The current turn continues with the appended body.
+  /// - **Replace**: the current session's message body was replaced with
+  ///   the modelport-supplied compacted_messages. `new_session_id` is
+  ///   `None`; product code keeps the same active thread. The current turn
+  ///   continues with that body.
   CompactCompleted(
     run_id~ : RunId,
     turn_id~ : TurnId,

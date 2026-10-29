@@ -190,6 +190,12 @@ async fn AgentRuntime::run_turn_via_puppet(
   operation_id : String,
 ) -> @types.TurnResult raise @error.AgentError {
   let session = self.load_session_for_operation(session_id)
+  match
+    self.core_shadow.hydrate(session_id, session.messages, session.metadata) {
+    Ok(_) => ()
+    Err(detail) =>
+      emit_secondary_failure(self.observers, "core_shadow_hydrate", detail)
+  }
   let applied_task_ids = parse_task_applied_ids(session.metadata)
   match @types.ContextState::from_metadata(session.metadata) {
     Some(state) =>
@@ -208,7 +214,10 @@ async fn AgentRuntime::run_turn_via_puppet(
   // state.
   let raw = snapshot_messages(session.messages)
   let messages = fixate_pending_tool_calls(raw)
-  self.session_cursors[session_id] = fixated_persisted_boundary(raw, messages)
+  self.progress.set_cursor(
+    session_id,
+    fixated_persisted_boundary(raw, messages),
+  )
   // Uncommitted arms die on every exit of this turn: the keyed disarm is a
   // no-op once the run's committed RunStarted consumed the arm, and can
   // never remove a later turn's arm.
@@ -243,6 +252,22 @@ async fn AgentRuntime::run_turn_via_puppet(
   // Session display state is admitted from the caller's real input before
   // memory/hooks can inject additional model-facing UserMessages.
   let current_metadata = session_metadata_for_admission(session, input)
+  // Shadow admission records the actual operation baseline only when the core
+  // still matches what this turn loaded. A stale store after a save failure
+  // must never overwrite leading core facts; in that case tracking stops for
+  // this operation and the diagnostic is non-fatal.
+  match
+    self.core_shadow.admit(
+      session_id,
+      messages,
+      current_metadata,
+      session.messages,
+      identity.run_id.to_string(),
+    ) {
+    Ok(_) => ()
+    Err(detail) =>
+      emit_secondary_failure(self.observers, "core_shadow_admit", detail)
+  }
   let admission_metadata : Map[String, Json]? = if session_metadata_equal(
       current_metadata,
       session.metadata,
@@ -251,10 +276,7 @@ async fn AgentRuntime::run_turn_via_puppet(
   } else {
     Some(current_metadata)
   }
-  let cursor = match self.session_cursors.get(session_id) {
-    Some(value) => value
-    None => 0
-  }
+  let cursor = self.progress.cursor_or_zero(session_id)
   let admission_tail = if cursor < messages.length() {
     snapshot_messages(messages[cursor:].to_owned())
   } else {
@@ -419,6 +441,7 @@ async fn AgentRuntime::run_puppet_turn_body(
         request.initial_messages,
         current_turn_start,
         current_metadata,
+        identity.run_id.to_string(),
       )
       raise @error.AgentError::AutoCompactFailed(cause)
     }
@@ -457,6 +480,7 @@ async fn AgentRuntime::run_puppet_turn_body(
             request.initial_messages,
             current_turn_start,
             current_metadata,
+            identity.run_id.to_string(),
           )
           raise err
         }
@@ -483,7 +507,8 @@ async fn AgentRuntime::run_puppet_turn_body(
     let message = transcript_msgs[i]
     match message {
       AssistantMessage(..) => final_message = message
-      ToolMessage(outcome~, ..) => all_results.push(outcome)
+      ToolMessage(outcome~, ..) =>
+        all_results.push(snapshot_tool_outcome(outcome))
       _ => ()
     }
   }
@@ -495,13 +520,15 @@ async fn AgentRuntime::run_puppet_turn_body(
     current_metadata,
     request.initial_messages,
     current_turn_start,
+    identity.run_id.to_string(),
   )
   self.task_runtime.commit_outcomes(session_id)
   self.project_context_state(Some(identity.scope()), session_id)
 
-  // Step 7: build TurnResult.
+  // Step 7: build TurnResult. The returned payload is a boundary snapshot;
+  // callers own it, so mutating it must not reach the Puppet transcript.
   let result : @types.TurnResult = {
-    message: final_message,
+    message: snapshot_message(final_message),
     tool_results: all_results,
     final_session_id: session_id,
   }
@@ -590,13 +617,40 @@ async fn AgentRuntime::persist_new_thread_session(
     metadata: Map::from_array([]),
   }
   let with_lineage = new_session.with_parent_thread_id(parent_session_id)
+  let run_id = match scope {
+    Some(scope) => scope.run_id.to_string()
+    None => ""
+  }
+  // Record the child core version before the Agent-side output save: the
+  // source was frozen at the Puppet safe point, but the Puppet sibling write
+  // has already happened before this result reaches the Agent. A failure here
+  // is a shadow diagnostic only and never changes the production save path.
+  match scope {
+    Some(scope) =>
+      match
+        self.core_shadow.record_new_thread(
+          scope.run_id.to_string(),
+          parent_session_id,
+          new_session_id,
+          with_lineage.messages,
+          with_lineage.metadata,
+        ) {
+        Ok(_) => ()
+        Err(detail) => {
+          self.core_shadow.mark_missing_provenance(new_session_id)
+          emit_secondary_failure(self.observers, "core_shadow_child", detail)
+        }
+      }
+    None => self.core_shadow.mark_missing_provenance(new_session_id)
+  }
+  self.core_shadow.stop(parent_session_id, run_id, "diversion")
   self.save_sessions_all(
     new_session_id,
     with_lineage.messages,
     with_lineage.metadata,
     save_label,
   )
-  self.session_cursors[new_session_id] = with_lineage.messages.length()
+  self.progress.set_cursor(new_session_id, with_lineage.messages.length())
   // Emit a SessionRedirect so observers know a sibling thread was
   // created and can switch the UI.
   let redirect : @types.TurnEvent = SessionRedirect(
@@ -646,8 +700,8 @@ async fn AgentRuntime::complete_fork_turn(
 /// CompactResult.
 /// - NewThread: persist the new session, return TurnResult with the NEW
 ///   final_session_id (the caller should switch active thread).
-/// - Replace / Append: persist the current session with the updated
-///   transcript body, return TurnResult with the ORIGINAL final_session_id.
+/// - Replace: persist the current session with the model-supplied transcript
+///   body, return TurnResult with the ORIGINAL final_session_id.
 async fn AgentRuntime::complete_compact_turn(
   self : AgentRuntime,
   identity : TurnIdentity,
@@ -676,19 +730,36 @@ async fn AgentRuntime::complete_compact_turn(
           }
           return result
         }
-        None =>
+        None => {
+          self.core_shadow.stop(
+            session_id,
+            identity.run_id.to_string(),
+            "missing_new_thread_id",
+          )
           raise Runtime(
             InvocationFailed(
               "CompactCompleted::NewThread without new_session_id",
             ),
           )
+        }
       }
-    Replace | Append => {
-      // Save the updated original session body. The product caller
-      // stays on the same session id.
+    Replace => {
+      // Save the model-supplied body. The product caller stays on the same
+      // session id.
       let updated_session : @types.Session = {
         messages: snapshot_messages(compacted_messages),
         metadata: snapshot_metadata(current_metadata),
+      }
+      match
+        self.core_shadow.record_terminal(
+          session_id,
+          identity.run_id.to_string(),
+          updated_session.messages,
+          updated_session.metadata,
+        ) {
+        Ok(_) => ()
+        Err(detail) =>
+          emit_secondary_failure(self.observers, "core_shadow_terminal", detail)
       }
       self.save_sessions_all(
         session_id,
@@ -696,7 +767,7 @@ async fn AgentRuntime::complete_compact_turn(
         updated_session.metadata,
         "compact_replace_save",
       )
-      self.session_cursors[session_id] = updated_session.messages.length()
+      self.progress.set_cursor(session_id, updated_session.messages.length())
       let result : @types.TurnResult = {
         message: input,
         tool_results: [],
@@ -720,7 +791,7 @@ async fn AgentRuntime::checkpoint_sessions_all(
   operation : String,
 ) -> Unit raise @error.AgentError {
   if self.sessions.is_empty() {
-    self.session_cursors[session_id] = from_index + messages.length()
+    self.progress.set_cursor(session_id, from_index + messages.length())
     return
   }
   let results : Array[Result[Unit, @error.SessionError]] = @async.all(
@@ -750,7 +821,7 @@ async fn AgentRuntime::checkpoint_sessions_all(
         raise contextualize_session_error(error, session_id, operation)
     }
   }
-  self.session_cursors[session_id] = from_index + messages.length()
+  self.progress.set_cursor(session_id, from_index + messages.length())
 }
 
 ///|
@@ -819,6 +890,7 @@ async fn AgentRuntime::save_turn_transcript(
   metadata : Map[String, Json],
   initial_messages : Array[@kernel.Message],
   current_turn_start : Int32,
+  run_id : String,
 ) -> Unit raise @error.AgentError {
   let final_messages = snapshot_messages(transcript.messages_snapshot())
   let base_metadata = snapshot_metadata(metadata)
@@ -826,6 +898,17 @@ async fn AgentRuntime::save_turn_transcript(
   let metadata = self.task_runtime.metadata_with_applied_outcomes(
     session_id, metadata,
   )
+  // Mirror the authoritative terminal transcript before any store I/O. The
+  // shadow only replaces Tracking / same-run RewriteStopped; a stale admission
+  // conflict or missing provenance never recovers through terminal success.
+  match
+    self.core_shadow.record_terminal(
+      session_id, run_id, final_messages, metadata,
+    ) {
+    Ok(_) => ()
+    Err(detail) =>
+      emit_secondary_failure(self.observers, "core_shadow_terminal", detail)
+  }
   let metadata_checkpoint : Map[String, Json]? = if session_metadata_equal(
       metadata, base_metadata,
     ) {
@@ -833,12 +916,9 @@ async fn AgentRuntime::save_turn_transcript(
   } else {
     Some(metadata)
   }
-  let cursor = match self.session_cursors.get(session_id) {
-    Some(n) => n
-    None => 0
-  }
+  let cursor = self.progress.cursor_or_zero(session_id)
   let operation = if self.task_runtime.has_inflight(session_id) ||
-    self.checkpoint_dirty.contains(session_id) {
+    self.progress.is_dirty(session_id) {
     "final_save"
   } else {
     transcript_save_operation(transcript, initial_messages, current_turn_start)
@@ -857,9 +937,9 @@ async fn AgentRuntime::save_turn_transcript(
   } else {
     // Rewrite, fork, or compact: rewrite the whole persisted session.
     self.save_sessions_all(session_id, final_messages, metadata, "final_save")
-    self.session_cursors[session_id] = final_messages.length()
+    self.progress.set_cursor(session_id, final_messages.length())
   }
-  self.checkpoint_dirty.remove(session_id)
+  self.progress.mark_clean(session_id)
 }
 
 ///|
@@ -876,6 +956,7 @@ async fn AgentRuntime::save_failed_turn_transcript(
   initial_messages : Array[@kernel.Message],
   current_turn_start : Int32,
   current_metadata : Map[String, Json],
+  run_id : String,
 ) -> Unit noraise {
   match self.puppet.last_completed_transcript() {
     Some(t) => {
@@ -885,6 +966,7 @@ async fn AgentRuntime::save_failed_turn_transcript(
       let saved : Result[Unit, @error.AgentError] = Ok(
         self.save_turn_transcript(
           session_id, t, current_metadata, initial_messages, current_turn_start,
+          run_id,
         ),
       ) catch {
         error => Err(error)
@@ -978,7 +1060,7 @@ async fn AgentRuntime::load_session_for_operation(
           loaded
         }
         [] => {
-          self.session_cursors[session_id] = 0
+          self.progress.set_cursor(session_id, 0)
           { messages: [], metadata: Map::from_array([]), }
         }
       }
@@ -1126,6 +1208,11 @@ async fn AgentRuntime::run_compact_operation(
   self.ensure_agent_running()
   self.notify_start_if_first()
   let identity = admission.identity
+  defer self.core_shadow.finish_run(
+    session_id,
+    identity.run_id.to_string(),
+    "compact_ended_without_terminal",
+  )
   self.task_runtime.begin_operation(
     session_id,
     identity.run_id,
@@ -1133,7 +1220,13 @@ async fn AgentRuntime::run_compact_operation(
   )
   let scope = identity.scope()
   let session = self.load_session_for_operation(session_id)
-  self.session_cursors[session_id] = session.messages.length()
+  match
+    self.core_shadow.hydrate(session_id, session.messages, session.metadata) {
+    Ok(_) => ()
+    Err(detail) =>
+      emit_secondary_failure(self.observers, "core_shadow_hydrate", detail)
+  }
+  self.progress.set_cursor(session_id, session.messages.length())
   match @types.ContextState::from_metadata(session.metadata) {
     Some(state) =>
       match self.puppet.session_context_state(session_id) {
@@ -1144,6 +1237,21 @@ async fn AgentRuntime::run_compact_operation(
   }
   self.project_context_state(Some(scope), session_id)
   let messages = fixate_pending_tool_calls(snapshot_messages(session.messages))
+  // A standalone NewThread compact also needs a tracked parent source. This is
+  // the same admission consistency rule as a turn: rewrite only when the core
+  // matches the loaded session; otherwise stop with a non-fatal diagnostic.
+  match
+    self.core_shadow.admit(
+      session_id,
+      messages,
+      session.metadata,
+      session.messages,
+      identity.run_id.to_string(),
+    ) {
+    Ok(_) => ()
+    Err(detail) =>
+      emit_secondary_failure(self.observers, "core_shadow_admit", detail)
+  }
   let live = self.model.provider_config()
   let policy : @puppetry.RunPolicy = {
     model_id: "agent",
@@ -1263,6 +1371,11 @@ async fn AgentRuntime::run_compact_operation(
               outcome
             }
             None => {
+              self.core_shadow.stop(
+                session_id,
+                identity.run_id.to_string(),
+                "missing_new_thread_id",
+              )
               let detail = "CompactCompleted::NewThread without new_session_id"
               self.emit_turn_event(
                 Some(scope),
@@ -1275,7 +1388,9 @@ async fn AgentRuntime::run_compact_operation(
               raise Runtime(InvocationFailed(detail))
             }
           }
-        Replace | Append => {
+        Replace => {
+          // Standalone replace gets a real terminal full-body mirror before
+          // the output save. A save failure leaves the core terminal intact.
           let updated_metadata = self.metadata_with_context_state(
             session_id,
             session.metadata,
@@ -1283,6 +1398,21 @@ async fn AgentRuntime::run_compact_operation(
           let updated_session : @types.Session = {
             messages: snapshot_messages(compacted_messages),
             metadata: updated_metadata,
+          }
+          match
+            self.core_shadow.record_terminal(
+              session_id,
+              identity.run_id.to_string(),
+              updated_session.messages,
+              updated_session.metadata,
+            ) {
+            Ok(_) => ()
+            Err(detail) =>
+              emit_secondary_failure(
+                self.observers,
+                "core_shadow_terminal",
+                detail,
+              )
           }
           let saved : Result[Unit, Error] = Ok(
             self.save_sessions_all(
@@ -1316,7 +1446,10 @@ async fn AgentRuntime::run_compact_operation(
             Ok(_) => ()
           }
           self.body_recovery.remove(session_id)
-          self.session_cursors[session_id] = updated_session.messages.length()
+          self.progress.set_cursor(
+            session_id,
+            updated_session.messages.length(),
+          )
           self.project_context_state(Some(scope), session_id)
           self.emit_turn_event(
             Some(scope),

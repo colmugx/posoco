@@ -154,7 +154,7 @@ pub extend ResumePayload with Eq::{not_equal, equal}
 pub extend ResumePayload with Debug::{to_repr}
 
 ///|
-/// Host-side transcript rewrite (pre-model hook chain, compact Replace/Append).
+/// Host-side transcript rewrite (pre-model hook chain, compact Replace).
 /// The reducer is the sole transcript writer: pumps never mutate the
 /// transcript directly, they submit the rewritten messages as this input and
 /// the reducer commits them with a `TranscriptRewritten` event so the journal
