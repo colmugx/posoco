@@ -35,6 +35,18 @@ async fn Puppet::commit_boundary(
   }
   let batch = prepare_batch(ctx, self.config.contributors)
   let committed_rev = commit_batch(self.config.journal, batch)
+  // Capture the full committed RunState synchronously before any await. A
+  // cancellation during subscriber dispatch must not lose an already
+  // committed fact.
+  self.publish_core_fact({
+    run_id,
+    turn_id,
+    session_id: session_id.to_string(),
+    committed_revision: committed_rev,
+    savepoint_id,
+    is_terminal: kind is RunTerminal,
+    messages: state.transcript().messages_snapshot(),
+  })
   // Every event is published after the one boundary commit. They share its
   // committed revision while EventDispatcher preserves a strict event seq.
   for event in events {

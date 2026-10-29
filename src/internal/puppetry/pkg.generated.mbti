@@ -140,6 +140,16 @@ pub fn ControlMailbox::take_resume(Self, String) -> ResumeCommand?
 pub async fn ControlMailbox::wait_idle(Self) -> QuiescentStatus
 pub impl Mailbox for ControlMailbox
 
+pub(all) struct CoreFactCommit {
+  run_id : @kernel.RunId
+  turn_id : @kernel.TurnId
+  session_id : String
+  committed_revision : Int32
+  savepoint_id : String
+  is_terminal : Bool
+  messages : Array[@kernel.Message]
+}
+
 pub(all) enum EnqueueResult {
   Accepted(command_id~ : CommandId)
   RejectedStale(command_id~ : CommandId, reason~ : String)
@@ -414,6 +424,7 @@ pub struct Puppet {
   mut launch_gate : @kernel_exec.ToolLaunchGate?
   mut tool_revocations : ToolRevocationFacts?
   mut source_observer : ((@kernel.RunId, String, Array[@kernel.Message], Int32) -> Unit)?
+  mut core_fact_observer : ((CoreFactCommit) -> Unit)?
 }
 pub fn Puppet::Puppet(PuppetConfig) -> Self
 pub fn Puppet::adopt_context_state(Self, String, @types.ContextState) -> Unit
@@ -428,6 +439,7 @@ pub fn Puppet::phase(Self) -> PuppetPhase
 pub async fn Puppet::prompt(Self, PromptRequest) -> PromptResult raise PuppetError
 pub fn Puppet::replace_catalog(Self, @kernel_exec.ToolCatalogSnapshot) -> Bool
 pub fn Puppet::session_context_state(Self, String) -> @types.ContextState?
+pub fn Puppet::set_core_fact_observer(Self, ((CoreFactCommit) -> Unit)?) -> Unit
 pub fn Puppet::set_source_observer(Self, ((@kernel.RunId, String, Array[@kernel.Message], Int32) -> Unit)?) -> Unit
 pub fn Puppet::shutdown(Self) -> Unit raise PuppetError
 pub async fn Puppet::wait_idle(Self) -> QuiescentStatus

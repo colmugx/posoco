@@ -1213,6 +1213,7 @@ async fn AgentRuntime::run_compact_operation(
     identity.run_id.to_string(),
     "compact_ended_without_terminal",
   )
+  defer self.drain_core_shadow_errors()
   self.task_runtime.begin_operation(
     session_id,
     identity.run_id,

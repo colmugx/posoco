@@ -12,18 +12,14 @@
 priv struct SessionCheckpointSubscriber {
   stores : Array[&@port.SessionStore]
   progress : SessionProgress
-  observers : Array[&@port.Observer]
-  shadow : CoreShadowRecording
 }
 
 ///|
 fn SessionCheckpointSubscriber::SessionCheckpointSubscriber(
   stores : Array[&@port.SessionStore],
   progress : SessionProgress,
-  observers : Array[&@port.Observer],
-  shadow : CoreShadowRecording,
 ) -> SessionCheckpointSubscriber {
-  { stores, progress, observers, shadow, }
+  { stores, progress, }
 }
 
 ///|
@@ -87,29 +83,6 @@ async fn SessionCheckpointSubscriber::append_committed_message(
 }
 
 ///|
-/// Record committed messages into the shadow core before any store I/O. This
-/// path is independent of the persistence cursor/dirty flag; failures are
-/// diagnostics only and stop shadow tracking for the session.
-fn SessionCheckpointSubscriber::record_shadow_committed(
-  self : SessionCheckpointSubscriber,
-  session_id : String,
-  envelope : @puppetry.EventEnvelope,
-  messages : Array[@kernel.Message],
-) -> Unit {
-  match
-    self.shadow.record_committed(
-      session_id,
-      envelope.run_id().to_string(),
-      envelope.seq,
-      messages,
-    ) {
-    Ok(_) => ()
-    Err(detail) =>
-      emit_secondary_failure(self.observers, "core_shadow_commit", detail)
-  }
-}
-
-///|
 impl @puppetry.EventSubscriber for SessionCheckpointSubscriber with fn on_event(
   self : SessionCheckpointSubscriber,
   envelope : @puppetry.EventEnvelope,
@@ -117,12 +90,7 @@ impl @puppetry.EventSubscriber for SessionCheckpointSubscriber with fn on_event(
   let session_id = envelope.session_id().to_string()
   match envelope.event() {
     RunStarted(..) => self.progress.mark_clean(session_id)
-    TranscriptRewritten(..) => {
-      self.progress.mark_dirty(session_id)
-      // The event carries counts, not content. Stop appended-message tracking
-      // and let only this run's terminal mirror the final transcript.
-      self.shadow.stop_rewrite(session_id, envelope.run_id().to_string())
-    }
+    TranscriptRewritten(..) => self.progress.mark_dirty(session_id)
     ModelStepCompleted(completion~, ..) => {
       let payload = completion.message
       let message : @kernel.Message = AssistantMessage(
@@ -131,7 +99,6 @@ impl @puppetry.EventSubscriber for SessionCheckpointSubscriber with fn on_event(
         reasoning=payload.reasoning,
         finish_reason=payload.finish_reason,
       )
-      self.record_shadow_committed(session_id, envelope, [message])
       if !self.progress.is_dirty(session_id) {
         self.append_committed_message(session_id, message)
       }
@@ -142,7 +109,6 @@ impl @puppetry.EventSubscriber for SessionCheckpointSubscriber with fn on_event(
         tool_name=call.name,
         outcome~,
       )
-      self.record_shadow_committed(session_id, envelope, [message])
       if !self.progress.is_dirty(session_id) {
         self.append_committed_message(session_id, message)
       }
@@ -161,7 +127,6 @@ impl @puppetry.EventSubscriber for SessionCheckpointSubscriber with fn on_event(
           ),
         )
       }
-      self.record_shadow_committed(session_id, envelope, messages)
       if !self.progress.is_dirty(session_id) {
         for message in messages {
           self.append_committed_message(session_id, message)

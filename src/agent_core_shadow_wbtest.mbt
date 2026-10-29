@@ -37,6 +37,11 @@ impl @port.SessionStore for CoreShadowCheckpointFailStore with fn checkpoint(
 }
 
 ///|
+fn core_shadow_source_snapshot_count(agent : Agent) -> Int32 {
+  agent.runtime.core_shadow.store.source_snapshots.length()
+}
+
+///|
 fn core_shadow_current(
   agent : Agent,
   session_id : String,
@@ -743,6 +748,7 @@ async test "core_shadow/hook_rewrite_mirrors_terminal_transcript" {
     _ => fail("expected the rewritten session to persist")
   }
   assert_core_messages_equal(core.messages, persisted.messages)
+  assert_true(session_metadata_equal(core.metadata, persisted.metadata))
   guard core.messages[0] is SystemMessage(content=[Text("rewritten")]) else {
     fail("expected the rewritten system message at the terminal")
   }
@@ -796,7 +802,7 @@ async test "core_shadow/terminal_mirror_survives_store_save_failure" {
 }
 
 ///|
-async test "core_shadow/child_source_failure_is_not_hydrated_as_root" {
+async test "core_shadow/hook_rewrite_fork_pins_committed_source" {
   let model = ShadowGatedTurnModel::{
     gate_calls: [1],
     calls: 0,
@@ -822,7 +828,7 @@ async test "core_shadow/child_source_failure_is_not_hydrated_as_root" {
   )
   let fork_turn = @async.with_task_group(async fn(group) {
     let running = group.spawn(() => {
-      agent.run_turn(tk_user_msg("go"), "missing-parent")
+      agent.run_turn(tk_user_msg("go"), "hook-fork-parent")
     })
     let enqueued : Result[Bool, Error] = Ok(
       @async.with_timeout(60, async fn() -> Bool {
@@ -846,22 +852,29 @@ async test "core_shadow/child_source_failure_is_not_hydrated_as_root" {
     }
     running.wait()
   })
-  assert_eq(fork_turn.final_session_id, "missing-parent")
+  assert_eq(fork_turn.final_session_id, "hook-fork-parent")
   let redirects = shadow_redirects(observer.events())
   assert_eq(redirects.length(), 1)
   let child_sid = redirects[0].1
-  assert_false(agent.runtime.core_shadow.store.sessions.contains(child_sid))
-  assert_true(has_secondary_failure(observer.events(), "core_shadow_child"))
-  match agent.runtime.core_shadow.state.get(child_sid) {
-    Some(MissingProvenance) => ()
-    _ => fail("expected the child to be marked missing provenance")
+  assert_true(agent.runtime.core_shadow.store.sessions.contains(child_sid))
+  assert_true(shadow_is_complete(agent, child_sid))
+  let source = shadow_source_of(agent, child_sid)
+  assert_eq(source.sid, "hook-fork-parent")
+  assert_eq(source.prefix, 1)
+  let resolved = shadow_resolve_source(agent, source)
+  assert_eq(resolved.messages.length(), 1)
+  guard resolved.messages[0] is SystemMessage(content=[Text("rewritten")]) else {
+    fail("expected the hook-rewritten safe-point prefix")
   }
-  // The next real Agent load of the child must not silently create a root.
+  // A child turn keeps the creation source while the terminal boundary is
+  // captured synchronously.
   ignore(agent.run_turn(tk_user_msg("child"), child_sid))
-  assert_false(agent.runtime.core_shadow.store.sessions.contains(child_sid))
-  assert_false(agent.runtime.core_shadow.is_tracked(child_sid))
-  assert_true(has_secondary_failure(observer.events(), "core_shadow_hydrate"))
-  assert_true(has_secondary_failure(observer.events(), "core_shadow_admit"))
+  let versions = agent.runtime.core_shadow.store.sessions[child_sid].versions
+  guard versions[versions.length() - 1].source is Some(latest_source) else {
+    fail("expected the child rewrite to retain its creation source")
+  }
+  assert_eq(latest_source.sid, "hook-fork-parent")
+  assert_eq(latest_source.prefix, 1)
 }
 
 ///|
@@ -936,95 +949,24 @@ async test "core_shadow/h1_admission_conflict_not_revived_by_rewrite" {
 }
 
 ///|
-async test "core_shadow/h2_missing_provenance_not_revived_by_rewrite" {
-  let model = ShadowGatedTurnModel::{
-    gate_calls: [1, 2],
-    calls: 0,
-    entered: false,
-    released: false,
-    compacted: [tk_user_msg("replacement")],
-    compact_mode: Replace,
+test "core_shadow/h2_missing_provenance_not_revived_by_rewrite" {
+  let shadow = CoreShadowRecording::CoreShadowRecording()
+  shadow.mark_missing_provenance("missing-child")
+  shadow.record_boundary("run-1", "missing-child", 1, "sp-1", false, [
+    tk_user_msg("rewritten"),
+  ])
+  match
+    shadow.record_terminal(
+      "missing-child",
+      "run-1",
+      [tk_user_msg("terminal")],
+      Map::from_array([]),
+    ) {
+    Ok(_) => ()
+    Err(_) => ()
   }
-  let store = RecordingSessionStore()
-  let observer = RecordingObserver()
-  let tools = RecordingToolProvider(
-    [tk_tool_def("leaf", "leaf tool")],
-    Map::from_array([("leaf", OutcomeOk(tk_ok_result("ok")))]),
-  )
-  let hook = ShadowRewriteHook::{ }
-  let agent = Agent(
-    exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="tools", tools=[tools]),
-      tk_ext(id="io", sessions=[store], observers=[observer], hooks=[hook]),
-    ],
-    config=tk_config(),
-  )
-  let fork_turn = @async.with_task_group(async fn(group) {
-    let running = group.spawn(() => {
-      agent.run_turn(tk_user_msg("go"), "h2-parent")
-    })
-    let enqueued : Result[Bool, Error] = Ok(
-      @async.with_timeout(60, async fn() -> Bool {
-        defer {
-          model.released = true
-        }
-        while !model.entered {
-          @async.pause()
-        }
-        shadow_invoke_command(
-          agent,
-          "fork-here",
-          Json::object(Map::from_array([("index", Json::number(1.0))])),
-        )
-      }),
-    ) catch {
-      error => Err(error)
-    }
-    guard enqueued is Ok(true) else {
-      fail("fork enqueue failed: \{repr(enqueued)}")
-    }
-    running.wait()
-  })
-  assert_eq(fork_turn.final_session_id, "h2-parent")
-  let redirects = shadow_redirects(observer.events())
-  assert_eq(redirects.length(), 1)
-  let child_sid = redirects[0].1
-  assert_false(agent.runtime.core_shadow.store.sessions.contains(child_sid))
-  match agent.runtime.core_shadow.state.get(child_sid) {
-    Some(MissingProvenance) => ()
-    _ => fail("expected the child to be marked missing provenance")
-  }
-  // A rewrite during the next child operation must not flip MissingProvenance
-  // into a recoverable state or create a root.
-  model.entered = false
-  model.released = false
-  let child_turn = @async.with_task_group(async fn(group) {
-    let running = group.spawn(() => {
-      agent.run_turn(tk_user_msg("child"), child_sid)
-    })
-    let enqueued : Result[Bool, Error] = Ok(
-      @async.with_timeout(60, async fn() -> Bool {
-        defer {
-          model.released = true
-        }
-        while !model.entered {
-          @async.pause()
-        }
-        shadow_invoke_command(agent, "compact", Json::null())
-      }),
-    ) catch {
-      error => Err(error)
-    }
-    guard enqueued is Ok(true) else {
-      fail("compact enqueue failed: \{repr(enqueued)}")
-    }
-    running.wait()
-  })
-  ignore(child_turn)
-  assert_false(agent.runtime.core_shadow.store.sessions.contains(child_sid))
-  assert_false(agent.runtime.core_shadow.is_tracked(child_sid))
-  match agent.runtime.core_shadow.state.get(child_sid) {
+  assert_false(shadow.store.sessions.contains("missing-child"))
+  match shadow.state.get("missing-child") {
     Some(MissingProvenance) => ()
     _ => fail("expected missing provenance to survive the rewrite")
   }
@@ -1067,6 +1009,9 @@ test "core_shadow/late_run_terminal_is_rejected" {
     Some(Tracking(run_id~)) => assert_eq(run_id, "run-1")
     _ => fail("expected the original run to remain tracking")
   }
+  shadow.record_boundary("run-1", "late-parent", 1, "sp-1", true, [
+    tk_user_msg("done"),
+  ])
   match
     shadow.record_terminal(
       "late-parent",
@@ -1081,4 +1026,734 @@ test "core_shadow/late_run_terminal_is_rejected" {
     _ => fail("expected the terminal core body")
   }
   assert_true(done.session.messages[0] == tk_user_msg("done"))
+  match shadow.store.sessions["late-parent"].versions[2].body {
+    Append(tail~) => assert_eq(tail.length(), 0)
+    Full(..) => fail("terminal metadata update must not create a Full body")
+  }
+}
+
+///|
+async test "core_shadow/dispatch_failure_keeps_synced_hook_rewrite_boundary" {
+  let store = CoreShadowCheckpointFailStore::{ checkpoints: 0, fail_at: 2, }
+  let model = ScriptedModel([Respond(tk_stop_response("done"))])
+  let hook = ShadowRewriteHook::{ }
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", sessions=[store], hooks=[hook]),
+    ],
+    config=tk_config(),
+  )
+  let result : Result[@types.TurnResult, @error.AgentError] = Ok(
+    agent.run_turn(tk_user_msg("hello"), "synced-dispatch-fail"),
+  ) catch {
+    error => Err(error)
+  }
+  match result {
+    Err(_) => ()
+    Ok(_) => fail("expected the subscriber checkpoint to fail")
+  }
+  let core = core_shadow_current(agent, "synced-dispatch-fail")
+  assert_eq(core.messages.length(), 3)
+  guard core.messages[0] is SystemMessage(content=[Text("rewritten")]) else {
+    fail("expected the committed hook rewrite at the first message")
+  }
+  assert_true(core.messages[1] == tk_user_msg("hello"))
+  guard core.messages[2] is AssistantMessage(content=[Text("done")], ..) else {
+    fail("expected the committed assistant before subscriber dispatch")
+  }
+}
+
+///|
+async test "core_shadow/cancelled_terminal_is_synced" {
+  let model = ShadowGatedTurnModel::{
+    gate_calls: [1],
+    calls: 0,
+    entered: false,
+    released: false,
+    compacted: [],
+    compact_mode: NewThread,
+  }
+  let store = RecordingSessionStore()
+  let tools = RecordingToolProvider(
+    [tk_tool_def("leaf", "leaf tool")],
+    Map::from_array([("leaf", OutcomeOk(tk_ok_result("ok")))]),
+  )
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="tools", tools=[tools]),
+      tk_ext(id="io", sessions=[store]),
+    ],
+    config=tk_config(),
+  )
+  let outcome : Ref[Result[@types.TurnResult, @error.AgentError]] = Ref(
+    Err(Runtime(InvocationFailed("unset"))),
+  )
+  @async.with_task_group(async fn(group) {
+    let running = group.spawn(async fn() {
+      let r : Result[@types.TurnResult, @error.AgentError] = Ok(
+        agent.run_turn(tk_user_msg("abort me"), "synced-cancel"),
+      ) catch {
+        error => Err(error)
+      }
+      outcome.val = r
+    })
+    while !model.entered {
+      @async.pause()
+    }
+    ignore(agent.control().abort_active(Some("stop")))
+    model.released = true
+    ignore(running.wait())
+  })
+  guard outcome.val is Err(@error.AgentError::Cancelled(_)) else {
+    fail("expected structured Cancelled, got \{repr(outcome.val)}")
+  }
+  let core = core_shadow_current(agent, "synced-cancel")
+  assert_true(core.messages.length() >= 2)
+  assert_true(core.messages[0] == tk_user_msg("abort me"))
+  guard core.messages[1] is AssistantMessage(tool_calls=[call], ..) else {
+    fail("expected the committed assistant before cancellation")
+  }
+  assert_eq(call.call_id.to_string(), "call_1")
+  let terminal = match agent.runtime.puppet.last_completed_transcript() {
+    Some(transcript) => transcript.messages_snapshot()
+    None => fail("expected the cancelled run to expose its terminal transcript")
+  }
+  assert_core_messages_equal(core.messages, terminal)
+  assert_true(shadow_is_complete(agent, "synced-cancel"))
+}
+
+///|
+async test "core_shadow/failed_terminal_is_synced" {
+  let model = ScriptedModel([Fail(Transport("network down"))])
+  let store = RecordingSessionStore()
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", sessions=[store]),
+    ],
+    config=tk_config(),
+  )
+  let result : Result[@types.TurnResult, @error.AgentError] = Ok(
+    agent.run_turn(tk_user_msg("fail"), "synced-failed-terminal"),
+  ) catch {
+    error => Err(error)
+  }
+  match result {
+    Err(_) => ()
+    Ok(_) => fail("expected the model failure")
+  }
+  let core = core_shadow_current(agent, "synced-failed-terminal")
+  assert_eq(core.messages.length(), 1)
+  assert_true(core.messages[0] == tk_user_msg("fail"))
+  assert_true(shadow_is_complete(agent, "synced-failed-terminal"))
+}
+
+///|
+test "core_shadow/duplicate_boundary_is_ignored" {
+  let shadow = CoreShadowRecording::CoreShadowRecording()
+  match
+    shadow.hydrate(
+      "boundary-parent",
+      [tk_user_msg("seed")],
+      Map::from_array([]),
+    ) {
+    Ok(_) => ()
+    Err(detail) => fail(detail)
+  }
+  match
+    shadow.admit(
+      "boundary-parent",
+      [tk_user_msg("seed")],
+      Map::from_array([]),
+      [tk_user_msg("seed")],
+      "run-1",
+    ) {
+    Ok(_) => ()
+    Err(detail) => fail(detail)
+  }
+  shadow.record_boundary("run-1", "boundary-parent", 1, "sp-1", false, [
+    tk_user_msg("seed"),
+    tk_user_msg("one"),
+  ])
+  let first = shadow.store.current("boundary-parent") catch {
+    _ => fail("expected the first committed boundary")
+  }
+  assert_eq(first.version, 1)
+  match shadow.store.sessions["boundary-parent"].versions[1].body {
+    Append(..) => ()
+    Full(..) => fail("prefix growth must use Append, not Full")
+  }
+  shadow.record_boundary("run-1", "boundary-parent", 1, "sp-1", false, [
+    tk_user_msg("seed"),
+    tk_user_msg("poison"),
+  ])
+  let duplicate = shadow.store.current("boundary-parent") catch {
+    _ => fail("expected the duplicate boundary")
+  }
+  assert_eq(duplicate.version, 1)
+  assert_true(duplicate.session.messages[1] == tk_user_msg("one"))
+  shadow.record_boundary("run-1", "boundary-parent", 2, "sp-2", true, [
+    tk_user_msg("seed"),
+    tk_user_msg("one"),
+    tk_user_msg("two"),
+  ])
+  let terminal = shadow.store.current("boundary-parent") catch {
+    _ => fail("expected the terminal boundary")
+  }
+  assert_eq(terminal.version, 2)
+  assert_eq(terminal.session.messages.length(), 3)
+  assert_true(shadow_is_state_complete(shadow, "boundary-parent"))
+}
+
+///|
+fn shadow_is_state_complete(
+  shadow : CoreShadowRecording,
+  session_id : String,
+) -> Bool {
+  match shadow.state.get(session_id) {
+    Some(Complete) => true
+    _ => false
+  }
+}
+
+///|
+async test "core_shadow/standalone_newthread_source_keeps_fixated_tool" {
+  let call : @kernel.ToolCall = {
+    call_id: @kernel.CallId::unchecked("dangling-call"),
+    name: @kernel.ToolName::unchecked("leaf"),
+    arguments: Json::null(),
+  }
+  let dangling : @kernel.Message = AssistantMessage(
+    content=[Text("working")],
+    tool_calls=[call],
+    reasoning=None,
+    finish_reason=ToolCalls,
+  )
+  let model = ScriptedModel([
+    Compact(result={
+      compacted_messages: [tk_user_msg("summary")],
+      mode: NewThread,
+    }),
+    Respond(tk_stop_response("after compact")),
+  ])
+  let store = RecordingSessionStore()
+  store.seed("fixate-parent", {
+    messages: [dangling],
+    metadata: Map::from_array([]),
+  })
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", sessions=[store]),
+    ],
+    config=tk_config(),
+  )
+  let outcome = agent.compact_session("fixate-parent")
+  let child_sid = outcome.final_session_id
+  let source = shadow_source_of(agent, child_sid)
+  assert_eq(source.sid, "fixate-parent")
+  assert_eq(source.prefix, 2)
+  assert_true(
+    source.version < 0,
+    msg="fixated source must be a detached snapshot",
+  )
+  let resolved = shadow_resolve_source(agent, source)
+  assert_eq(resolved.messages.length(), 2)
+  guard resolved.messages[1]
+    is ToolMessage(outcome=RuntimeFailure(error_category="Interrupted", ..), ..) else {
+    fail("expected the fixated interrupted tool result in the source")
+  }
+  let child = core_shadow_current(agent, child_sid)
+  assert_eq(child.messages.length(), 1)
+  assert_true(child.messages[0] == tk_user_msg("summary"))
+  assert_eq(core_shadow_source_snapshot_count(agent), 1)
+  // The source snapshot must not become the parent's current committed fact.
+  let parent = core_shadow_current(agent, "fixate-parent")
+  assert_eq(parent.messages.length(), 1)
+  assert_true(parent.messages[0] == dangling)
+  let head = agent.runtime.core_shadow.store.current("fixate-parent") catch {
+    _ => fail("expected the parent head")
+  }
+  assert_eq(head.version, 0)
+  assert_eq(
+    agent.runtime.core_shadow.store.sessions["fixate-parent"].versions.length(),
+    1,
+  )
+  // The next real turn can continue from the raw parent body.
+  ignore(agent.run_turn(tk_user_msg("next"), "fixate-parent"))
+  let after = core_shadow_current(agent, "fixate-parent")
+  assert_true(after.messages[0] == dangling)
+  assert_true(after.messages.length() >= 2)
+}
+
+///|
+test "core_shadow/terminal_body_mismatch_is_rejected_without_overwrite" {
+  let shadow = CoreShadowRecording::CoreShadowRecording()
+  match
+    shadow.hydrate(
+      "terminal-mismatch",
+      [tk_user_msg("seed")],
+      Map::from_array([]),
+    ) {
+    Ok(_) => ()
+    Err(detail) => fail(detail)
+  }
+  match
+    shadow.admit(
+      "terminal-mismatch",
+      [tk_user_msg("seed")],
+      Map::from_array([]),
+      [tk_user_msg("seed")],
+      "run-1",
+    ) {
+    Ok(_) => ()
+    Err(detail) => fail(detail)
+  }
+  shadow.record_boundary("run-1", "terminal-mismatch", 1, "sp-1", true, [
+    tk_user_msg("seed"),
+    tk_user_msg("committed"),
+  ])
+  match
+    shadow.record_terminal(
+      "terminal-mismatch",
+      "run-1",
+      [tk_user_msg("forged")],
+      Map::from_array([]),
+    ) {
+    Err(_) => ()
+    Ok(_) => fail("expected the mismatched terminal body to be rejected")
+  }
+  let current = shadow.store.current("terminal-mismatch") catch {
+    _ => fail("expected the committed body")
+  }
+  assert_eq(current.session.messages.length(), 2)
+  assert_true(current.session.messages[1] == tk_user_msg("committed"))
+  match shadow.state.get("terminal-mismatch") {
+    Some(Stopped(reason~, ..)) => assert_eq(reason, "terminal_body_mismatch")
+    _ => fail("expected the mismatch to stop shadow completion")
+  }
+}
+
+///|
+async test "core_shadow/standalone_newthread_model_failure_keeps_parent_current" {
+  let call : @kernel.ToolCall = {
+    call_id: @kernel.CallId::unchecked("dangling-call"),
+    name: @kernel.ToolName::unchecked("leaf"),
+    arguments: Json::null(),
+  }
+  let dangling : @kernel.Message = AssistantMessage(
+    content=[Text("working")],
+    tool_calls=[call],
+    reasoning=None,
+    finish_reason=ToolCalls,
+  )
+  let model = ScriptedModel([
+    CompactFail(error=Transport("compact failed")),
+    Respond(tk_stop_response("after compact")),
+  ])
+  let store = RecordingSessionStore()
+  store.seed("fixate-fail-parent", {
+    messages: [dangling],
+    metadata: Map::from_array([]),
+  })
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", sessions=[store]),
+    ],
+    config=tk_config(),
+  )
+  let failed : Result[@types.CompactOutcome, @error.AgentError] = Ok(
+    agent.compact_session("fixate-fail-parent"),
+  ) catch {
+    error => Err(error)
+  }
+  match failed {
+    Err(_) => ()
+    Ok(_) => fail("expected the compact model failure")
+  }
+  let parent = core_shadow_current(agent, "fixate-fail-parent")
+  assert_eq(parent.messages.length(), 1)
+  assert_true(parent.messages[0] == dangling)
+  assert_eq(
+    agent.runtime.core_shadow.store.sessions["fixate-fail-parent"].versions.length(),
+    1,
+  )
+  ignore(agent.run_turn(tk_user_msg("next"), "fixate-fail-parent"))
+  let after = core_shadow_current(agent, "fixate-fail-parent")
+  assert_true(after.messages[0] == dangling)
+  assert_true(after.messages.length() >= 2)
+}
+
+///|
+struct ShadowParkingCompactModel {
+  mut entered : Bool
+}
+
+///|
+impl @port.ModelPort for ShadowParkingCompactModel with fn chat(
+  _self,
+  _scope : @kernel.InvocationScope,
+  _messages : ArrayView[@kernel.Message],
+  _tools : Array[@kernel.ToolDef],
+  _options : @types.ChatOptions,
+  _stream : @types.StreamMode,
+) -> @kernel.ModelCallResult raise @error.ModelError {
+  tk_stop_response("after cancel")
+}
+
+///|
+impl @port.ModelPort for ShadowParkingCompactModel with fn compact(
+  self,
+  _scope : @kernel.InvocationScope,
+  _messages : ArrayView[@kernel.Message],
+  _tools : Array[@kernel.ToolDef],
+  _options : @types.ChatOptions,
+  _trigger : @kernel.CompactTrigger,
+) -> @kernel.CompactResult raise @error.ModelError {
+  self.entered = true
+  for ;; {
+    @async.pause()
+  }
+}
+
+///|
+impl @port.ModelPort for ShadowParkingCompactModel with fn provider_config(
+  _self,
+) -> @port.ProviderConfig {
+  @port.ProviderConfig::empty()
+}
+
+///|
+async test "core_shadow/standalone_newthread_cancel_keeps_parent_current" {
+  let call : @kernel.ToolCall = {
+    call_id: @kernel.CallId::unchecked("dangling-call"),
+    name: @kernel.ToolName::unchecked("leaf"),
+    arguments: Json::null(),
+  }
+  let dangling : @kernel.Message = AssistantMessage(
+    content=[Text("working")],
+    tool_calls=[call],
+    reasoning=None,
+    finish_reason=ToolCalls,
+  )
+  let model = ShadowParkingCompactModel::{ entered: false, }
+  let store = RecordingSessionStore()
+  store.seed("fixate-cancel-parent", {
+    messages: [dangling],
+    metadata: Map::from_array([]),
+  })
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", sessions=[store]),
+    ],
+    config=tk_config(),
+  )
+  let outcome : Ref[Result[@types.CompactOutcome, @error.AgentError]] = Ref(
+    Err(Runtime(InvocationFailed("unset"))),
+  )
+  @async.with_task_group(async fn(group) {
+    let running = group.spawn(async fn() {
+      let r : Result[@types.CompactOutcome, @error.AgentError] = Ok(
+        agent.compact_session("fixate-cancel-parent"),
+      ) catch {
+        error => Err(error)
+      }
+      outcome.val = r
+    })
+    while !model.entered {
+      @async.pause()
+    }
+    running.cancel()
+    let waited : Result[Unit, Error] = Ok(running.wait()) catch {
+      _ => Err(Error::Failure("cancelled"))
+    }
+    ignore(waited)
+  })
+  match outcome.val {
+    Err(@error.AgentError::Cancelled(_)) => ()
+    _ => fail("expected the compact to be cancelled")
+  }
+  let parent = core_shadow_current(agent, "fixate-cancel-parent")
+  assert_eq(parent.messages.length(), 1)
+  assert_true(parent.messages[0] == dangling)
+  assert_eq(
+    agent.runtime.core_shadow.store.sessions["fixate-cancel-parent"].versions.length(),
+    1,
+  )
+  ignore(agent.run_turn(tk_user_msg("next"), "fixate-cancel-parent"))
+  let after = core_shadow_current(agent, "fixate-cancel-parent")
+  assert_true(after.messages[0] == dangling)
+  assert_true(after.messages.length() >= 2)
+}
+
+///|
+async test "core_shadow/missing_provenance_survives_real_next_turn" {
+  let store = CoreShadowCheckpointFailStore::{ checkpoints: 0, fail_at: 2, }
+  let observer = RecordingObserver()
+  let model = ShadowGatedTurnModel::{
+    gate_calls: [2],
+    calls: 0,
+    entered: false,
+    released: false,
+    compacted: [],
+    compact_mode: NewThread,
+  }
+  let tools = RecordingToolProvider(
+    [tk_tool_def("leaf", "leaf tool")],
+    Map::from_array([("leaf", OutcomeOk(tk_ok_result("ok")))]),
+  )
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="tools", tools=[tools]),
+      tk_ext(id="io", sessions=[store], observers=[observer]),
+    ],
+    config=tk_config(),
+  )
+  let first : Result[@types.TurnResult, @error.AgentError] = Ok(
+    agent.run_turn(tk_user_msg("hello"), "missing-real-parent"),
+  ) catch {
+    error => Err(error)
+  }
+  match first {
+    Err(_) => ()
+    Ok(_) => fail("expected the first store checkpoint to fail")
+  }
+  let fork_turn = @async.with_task_group(async fn(group) {
+    let running = group.spawn(() => {
+      agent.run_turn(tk_user_msg("fork"), "missing-real-parent")
+    })
+    let enqueued : Result[Bool, Error] = Ok(
+      @async.with_timeout(60, async fn() -> Bool {
+        defer {
+          model.released = true
+        }
+        while !model.entered {
+          @async.pause()
+        }
+        shadow_invoke_command(
+          agent,
+          "fork-here",
+          Json::object(Map::from_array([("index", Json::number(1.0))])),
+        )
+      }),
+    ) catch {
+      error => Err(error)
+    }
+    guard enqueued is Ok(true) else {
+      fail("fork enqueue failed: \{repr(enqueued)}")
+    }
+    running.wait()
+  })
+  assert_eq(fork_turn.final_session_id, "missing-real-parent")
+  let redirects = shadow_redirects(observer.events())
+  assert_eq(redirects.length(), 1)
+  let child_sid = redirects[0].1
+  assert_false(agent.runtime.core_shadow.store.sessions.contains(child_sid))
+  match agent.runtime.core_shadow.state.get(child_sid) {
+    Some(MissingProvenance) => ()
+    _ => fail("expected the child to be marked missing provenance")
+  }
+  ignore(agent.run_turn(tk_user_msg("child"), child_sid))
+  assert_false(agent.runtime.core_shadow.store.sessions.contains(child_sid))
+  assert_false(agent.runtime.core_shadow.is_tracked(child_sid))
+  match agent.runtime.core_shadow.state.get(child_sid) {
+    Some(MissingProvenance) => ()
+    _ => fail("expected missing provenance to survive the next real turn")
+  }
+}
+
+///|
+fn shadow_dangling_message() -> @kernel.Message {
+  AssistantMessage(
+    content=[Text("working")],
+    tool_calls=[
+      {
+        call_id: @kernel.CallId::unchecked("dangling-call"),
+        name: @kernel.ToolName::unchecked("leaf"),
+        arguments: Json::null(),
+      },
+    ],
+    reasoning=None,
+    finish_reason=ToolCalls,
+  )
+}
+
+///|
+async test "core_shadow/replace_compact_leaves_no_source_snapshot" {
+  let model = ScriptedModel([
+    Compact(result={
+      compacted_messages: [tk_user_msg("replacement")],
+      mode: Replace,
+    }),
+  ])
+  let store = RecordingSessionStore()
+  store.seed("no-orphan-replace", {
+    messages: [shadow_dangling_message()],
+    metadata: Map::from_array([]),
+  })
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", sessions=[store]),
+    ],
+    config=tk_config(),
+  )
+  ignore(agent.compact_session("no-orphan-replace"))
+  assert_eq(core_shadow_source_snapshot_count(agent), 0)
+  let core = core_shadow_current(agent, "no-orphan-replace")
+  assert_eq(core.messages.length(), 1)
+  assert_true(core.messages[0] == tk_user_msg("replacement"))
+}
+
+///|
+async test "core_shadow/model_failure_leaves_no_source_snapshot" {
+  let model = ScriptedModel([
+    CompactFail(error=Transport("compact failed")),
+    Respond(tk_stop_response("after failure")),
+  ])
+  let store = RecordingSessionStore()
+  let dangling = shadow_dangling_message()
+  store.seed("no-orphan-failure", {
+    messages: [dangling],
+    metadata: Map::from_array([]),
+  })
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", sessions=[store]),
+    ],
+    config=tk_config(),
+  )
+  let failed : Result[@types.CompactOutcome, @error.AgentError] = Ok(
+    agent.compact_session("no-orphan-failure"),
+  ) catch {
+    error => Err(error)
+  }
+  match failed {
+    Err(_) => ()
+    Ok(_) => fail("expected the compact model failure")
+  }
+  assert_eq(core_shadow_source_snapshot_count(agent), 0)
+  let parent = core_shadow_current(agent, "no-orphan-failure")
+  assert_eq(parent.messages.length(), 1)
+  assert_true(parent.messages[0] == dangling)
+  ignore(agent.run_turn(tk_user_msg("next"), "no-orphan-failure"))
+}
+
+///|
+async test "core_shadow/cancel_leaves_no_source_snapshot" {
+  let model = ShadowParkingCompactModel::{ entered: false, }
+  let store = RecordingSessionStore()
+  let dangling = shadow_dangling_message()
+  store.seed("no-orphan-cancel", {
+    messages: [dangling],
+    metadata: Map::from_array([]),
+  })
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", sessions=[store]),
+    ],
+    config=tk_config(),
+  )
+  @async.with_task_group(async fn(group) {
+    let running = group.spawn(async fn() {
+      let result : Result[@types.CompactOutcome, @error.AgentError] = Ok(
+        agent.compact_session("no-orphan-cancel"),
+      ) catch {
+        error => Err(error)
+      }
+      ignore(result)
+    })
+    while !model.entered {
+      @async.pause()
+    }
+    running.cancel()
+    let waited : Result[Unit, Error] = Ok(running.wait()) catch {
+      _ => Err(Error::Failure("cancelled"))
+    }
+    ignore(waited)
+  })
+  assert_eq(core_shadow_source_snapshot_count(agent), 0)
+  let parent = core_shadow_current(agent, "no-orphan-cancel")
+  assert_eq(parent.messages.length(), 1)
+  assert_true(parent.messages[0] == dangling)
+  ignore(agent.run_turn(tk_user_msg("next"), "no-orphan-cancel"))
+}
+
+///|
+async test "core_shadow/child_failure_revokes_source_snapshot" {
+  let model = ScriptedModel([
+    Compact(result={
+      compacted_messages: [tk_user_msg("summary")],
+      mode: NewThread,
+    }),
+  ])
+  let store = RecordingSessionStore()
+  let dangling = shadow_dangling_message()
+  store.seed("no-orphan-child", {
+    messages: [dangling],
+    metadata: Map::from_array([]),
+  })
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", sessions=[store]),
+    ],
+    config=tk_config(),
+  )
+  let child_sid = "no-orphan-child_compact_agent_compact_session_1"
+  ignore(
+    agent.runtime.core_shadow.store.record_full(
+      child_sid,
+      [tk_user_msg("pre-existing")],
+      Map::from_array([]),
+    ),
+  )
+  ignore(agent.compact_session("no-orphan-child"))
+  assert_eq(core_shadow_source_snapshot_count(agent), 0)
+  let parent = core_shadow_current(agent, "no-orphan-child")
+  assert_eq(parent.messages.length(), 1)
+  assert_true(parent.messages[0] == dangling)
+}
+
+///|
+async test "core_shadow/replace_compact_saves_model_body_exactly" {
+  let model = ScriptedModel([
+    Compact(result={
+      compacted_messages: [
+        tk_user_msg("summary-one"),
+        tk_user_msg("summary-two"),
+      ],
+      mode: Replace,
+    }),
+  ])
+  let store = RecordingSessionStore()
+  store.seed("replace-exact", {
+    messages: [tk_user_msg("old-one"), tk_user_msg("old-two")],
+    metadata: Map::from_array([]),
+  })
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", sessions=[store]),
+    ],
+    config=tk_config(),
+  )
+  ignore(agent.compact_session("replace-exact"))
+  let persisted = store.load("replace-exact") catch {
+    _ => fail("expected the replaced session to persist")
+  }
+  assert_eq(persisted.messages.length(), 2)
+  assert_true(persisted.messages[0] == tk_user_msg("summary-one"))
+  assert_true(persisted.messages[1] == tk_user_msg("summary-two"))
+  let core = core_shadow_current(agent, "replace-exact")
+  assert_eq(core.messages.length(), 2)
+  assert_true(core.messages[0] == tk_user_msg("summary-one"))
+  assert_true(core.messages[1] == tk_user_msg("summary-two"))
 }

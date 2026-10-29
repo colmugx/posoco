@@ -613,9 +613,32 @@ pub async fn Puppet::compact_standalone(
         ),
       )
   }
-  let reduced : Result[ReduceOutput, KernelError] = Ok(
+  // The reducer requires Start before TranscriptRewrite. This private seed is
+  // not a published boundary; only the rewrite event is committed below.
+  let started : Result[ReduceOutput, KernelError] = Ok(
     reduce(
       initial_state,
+      self.config.catalog,
+      Start(payload={
+        initial_messages: messages.copy(),
+        catalog_version: snap.catalog_version(),
+      }),
+    ),
+  ) catch {
+    e => Err(e)
+  }
+  let start_out = match started {
+    Err(e) =>
+      return self.finalize_rejected(
+        error=ReducerInvariantViolation(
+          category=IllegalPhase(phase="compact_session", detail=e.to_string()),
+        ),
+      )
+    Ok(value) => value
+  }
+  let reduced : Result[ReduceOutput, KernelError] = Ok(
+    reduce(
+      start_out.next_state(),
       self.config.catalog,
       TranscriptRewrite(payload={
         rewritten_messages: final_messages,

@@ -8,6 +8,17 @@
 /// identity, and long append chains.
 
 ///|
+/// Test-only prefix derivation using the production resolve + content APIs.
+fn record_derived_prefix(
+  store : CoreVersionStore,
+  sid : String,
+  source : CoreSource,
+) -> Int32 raise CoreVersionError {
+  let window = store.resolve_source(source)
+  store.record_derived_content(sid, source, window.messages, window.metadata)
+}
+
+///|
 test "core_versions/full_then_append_and_current" {
   let store = CoreVersionStore::CoreVersionStore()
   let v0 = store.record_full(
@@ -385,7 +396,7 @@ test "core_versions/derived_version_pins_historical_source_across_parent_rewrite
     ),
   )
   let source : CoreSource = { sid: "p", version: 0, prefix: 2, }
-  let v0 = store.record_derived("c", source)
+  let v0 = record_derived_prefix(store, "c", source)
   assert_eq(v0, 0)
   assert_core_source(store.sessions["c"].versions[0].source, "p", 0, 2)
   let child = store.current("c")
@@ -436,7 +447,7 @@ test "core_versions/derived_lineage_keeps_source_across_append_and_rewrite" {
     ),
   )
   let source : CoreSource = { sid: "p", version: 0, prefix: 1, }
-  ignore(store.record_derived("c", source))
+  ignore(record_derived_prefix(store, "c", source))
   assert_core_source(store.sessions["c"].versions[0].source, "p", 0, 1)
   assert_no_core_source(store.sessions["p"].versions[0].source)
   let v1 = store.append(
@@ -478,7 +489,11 @@ test "core_versions/derived_creation_failure_is_atomic" {
     (
       () => {
         ignore(
-          store.record_derived("child", { sid: "p", version: 1, prefix: 0, }),
+          record_derived_prefix(store, "child", {
+            sid: "p",
+            version: 1,
+            prefix: 0,
+          }),
         )
       },
       "UnknownVersion",
@@ -486,7 +501,11 @@ test "core_versions/derived_creation_failure_is_atomic" {
     (
       () => {
         ignore(
-          store.record_derived("child", { sid: "p", version: 0, prefix: 2, }),
+          record_derived_prefix(store, "child", {
+            sid: "p",
+            version: 0,
+            prefix: 2,
+          }),
         )
       },
       "PrefixOutOfRange",
@@ -494,7 +513,7 @@ test "core_versions/derived_creation_failure_is_atomic" {
     (
       () => {
         ignore(
-          store.record_derived("child", {
+          record_derived_prefix(store, "child", {
             sid: "missing",
             version: 0,
             prefix: 0,
@@ -506,14 +525,20 @@ test "core_versions/derived_creation_failure_is_atomic" {
     (
       () => {
         ignore(
-          store.record_derived("self", { sid: "self", version: 0, prefix: 0, }),
+          record_derived_prefix(store, "self", {
+            sid: "self",
+            version: 0,
+            prefix: 0,
+          }),
         )
       },
       "UnknownSession",
     ),
     (
       () => {
-        ignore(store.record_derived("p", { sid: "p", version: 0, prefix: 0, }))
+        ignore(
+          record_derived_prefix(store, "p", { sid: "p", version: 0, prefix: 0, }),
+        )
       },
       "SessionExists",
     ),
@@ -533,12 +558,18 @@ test "core_versions/derived_creation_failure_is_atomic" {
     assert_eq(store.current("p").session.messages.length(), 1)
   }
   // An already-existing child also fails without moving it.
-  ignore(store.record_derived("child", { sid: "p", version: 0, prefix: 1, }))
+  ignore(
+    record_derived_prefix(store, "child", { sid: "p", version: 0, prefix: 1, }),
+  )
   ignore(store.record_full("other", [tk_user_msg("x")], Map::from_array([])))
   match
     core_version_error_of(() => {
       ignore(
-        store.record_derived("child", { sid: "other", version: 0, prefix: 0, }),
+        record_derived_prefix(store, "child", {
+          sid: "other",
+          version: 0,
+          prefix: 0,
+        }),
       )
     }) {
     Some(SessionExists(sid~)) => assert_eq(sid, "child")
@@ -993,7 +1024,11 @@ test "core_versions/failed_operations_keep_current" {
     () => ignore(store.resolve_source({ sid: "s", version: 9, prefix: 0, })),
     () => {
       ignore(
-        store.record_derived("child", { sid: "s", version: 9, prefix: 0, }),
+        record_derived_prefix(store, "child", {
+          sid: "s",
+          version: 9,
+          prefix: 0,
+        }),
       )
     },
   ]
@@ -1033,4 +1068,91 @@ test "core_versions/empty_append_changes_metadata_only" {
   let v0 = store.materialize("s", 0)
   assert_eq(v0.messages.length(), 1)
   assert_eq(v0.metadata["tag"], Json::string("v0"))
+}
+
+///|
+test "core_versions/detached_source_snapshot_is_isolated_and_validated" {
+  let store = CoreVersionStore::CoreVersionStore()
+  ignore(
+    store.record_full(
+      "snapshot-parent",
+      [tk_user_msg("seed")],
+      Map::from_array([]),
+    ),
+  )
+  let content : Array[@kernel.Content] = [Text("source")]
+  let source_messages : Array[@kernel.Message] = [UserMessage(content~)]
+  let metadata : Map[String, Json] = Map::from_array([
+    (
+      "nested",
+      Json::object(Map::from_array([("value", Json::string("clean"))])),
+    ),
+  ])
+  let version = store.record_source_snapshot(
+    "snapshot-parent", source_messages, metadata,
+  )
+  assert_true(version < 0)
+  let source : CoreSource = { sid: "snapshot-parent", version, prefix: 1, }
+  let resolved = store.resolve_source(source)
+  assert_eq(resolved.messages.length(), 1)
+  guard resolved.messages[0] is UserMessage(content~) else {
+    fail("expected the detached source user message")
+  }
+  assert_eq(content.length(), 1)
+  guard content[0] is Text(text) else { fail("expected source text") }
+  assert_eq(text, "source")
+  // Input and output mutation must not alias the detached snapshot.
+  match source_messages[0] {
+    UserMessage(content=value) => value.push(Text("input-poison"))
+    _ => ()
+  }
+  match metadata["nested"] {
+    Object(fields) => fields["poison"] = Json::string("poison")
+    _ => fail("expected nested metadata")
+  }
+  let first = store.resolve_source(source)
+  guard first.messages[0] is UserMessage(content~) else {
+    fail("expected source user message")
+  }
+  assert_eq(content.length(), 1)
+  content.push(Text("output-poison"))
+  match first.metadata["nested"] {
+    Object(fields) => fields["poison"] = Json::string("output-poison")
+    _ => fail("expected nested metadata")
+  }
+  let again = store.resolve_source(source)
+  guard again.messages[0] is UserMessage(content~) else {
+    fail("expected source user message")
+  }
+  assert_eq(content.length(), 1)
+  match again.metadata["nested"] {
+    Object(fields) => assert_false(fields.contains("poison"))
+    _ => fail("expected nested metadata")
+  }
+  // Wrong sid, wrong prefix, and too-large prefix stay loud.
+  match
+    core_version_error_of(() => {
+      ignore(store.resolve_source({ sid: "other", version, prefix: 0, }))
+    }) {
+    Some(UnknownVersion(..)) => ()
+    _ => fail("expected UnknownVersion for a wrong snapshot sid")
+  }
+  match
+    core_version_error_of(() => {
+      ignore(
+        store.resolve_source({ sid: "snapshot-parent", version, prefix: -1, }),
+      )
+    }) {
+    Some(PrefixOutOfRange(..)) => ()
+    _ => fail("expected PrefixOutOfRange for a negative prefix")
+  }
+  match
+    core_version_error_of(() => {
+      ignore(
+        store.resolve_source({ sid: "snapshot-parent", version, prefix: 2, }),
+      )
+    }) {
+    Some(PrefixOutOfRange(..)) => ()
+    _ => fail("expected PrefixOutOfRange for an oversized prefix")
+  }
 }

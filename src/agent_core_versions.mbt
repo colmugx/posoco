@@ -60,10 +60,19 @@ priv struct CoreSessionVersions {
 }
 
 ///|
+/// A non-head, referenceable source snapshot. Used when the exact ModelPort
+/// input differs from current committed content (for example a fixated
+/// dangling tool call); it never becomes the session head.
+priv struct CoreSourceSnapshot {
+  sid : String
+  messages : Array[@kernel.Message]
+  metadata : Map[String, Json]
+}
+
+///|
 /// A reference to the source content a fork or NewThread compact consumed:
-/// the parent session id, the pinned version, and how many materialized
-/// messages of that version the diversion read. Named fields; one immutable
-/// value.
+/// the parent session id, a pinned positive version or negative source
+/// snapshot, and how many materialized messages the diversion read.
 priv struct CoreSource {
   sid : String
   version : Int32
@@ -97,11 +106,19 @@ priv struct CoreCurrent {
 ///|
 priv struct CoreVersionStore {
   sessions : Map[String, CoreSessionVersions]
+  /// Snapshot id -> detached exact source content. Negative source versions
+  /// address this store; they are never materialized as the session head.
+  source_snapshots : Map[String, CoreSourceSnapshot]
+  source_seq : Ref[Int32]
 }
 
 ///|
 fn CoreVersionStore::CoreVersionStore() -> CoreVersionStore {
-  { sessions: Map::from_array([]), }
+  {
+    sessions: Map::from_array([]),
+    source_snapshots: Map::from_array([]),
+    source_seq: Ref(0),
+  }
 }
 
 ///|
@@ -158,21 +175,6 @@ fn CoreVersionStore::record_derived_content(
     ],
   }
   0
-}
-
-///|
-/// Convenience for fork: derive a new session's version 0 by copying the
-/// source version's first `prefix` messages and metadata. The source must
-/// already exist and its prefix must be in range. Use
-/// `record_derived_content` when the child body is independent content, such
-/// as a NewThread compact summary.
-fn CoreVersionStore::record_derived(
-  self : CoreVersionStore,
-  sid : String,
-  source : CoreSource,
-) -> Int32 raise CoreVersionError {
-  let window = self.resolve_source(source)
-  self.record_derived_content(sid, source, window.messages, window.metadata)
 }
 
 ///|
@@ -278,6 +280,40 @@ fn CoreVersionStore::materialize(
 }
 
 ///|
+fn core_source_snapshot_key(sid : String, version : Int32) -> String {
+  sid + "\u0000" + version.to_string()
+}
+
+///|
+/// Store an exact non-head source snapshot and return its negative version.
+fn CoreVersionStore::record_source_snapshot(
+  self : CoreVersionStore,
+  sid : String,
+  messages : Array[@kernel.Message],
+  metadata : Map[String, Json],
+) -> Int32 {
+  let version = -1 - self.source_seq.val
+  self.source_seq.val = self.source_seq.val + 1
+  self.source_snapshots[core_source_snapshot_key(sid, version)] = {
+    sid,
+    messages: snapshot_messages(messages),
+    metadata: snapshot_metadata(metadata),
+  }
+  version
+}
+
+///|
+/// Revoke a just-allocated, not-yet-referenced source snapshot. Used only when
+/// child creation fails; the source sequence is not reused.
+fn CoreVersionStore::remove_source_snapshot(
+  self : CoreVersionStore,
+  sid : String,
+  version : Int32,
+) -> Unit {
+  self.source_snapshots.remove(core_source_snapshot_key(sid, version))
+}
+
+///|
 /// Validate a source reference without materializing its full body: the
 /// session/version must exist and `prefix` must fit the recorded length. Used
 /// by callers that already hold the child body and only need provenance checks.
@@ -285,6 +321,28 @@ fn CoreVersionStore::validate_source(
   self : CoreVersionStore,
   source : CoreSource,
 ) -> Unit raise CoreVersionError {
+  if source.version < 0 {
+    let snapshot = match
+      self.source_snapshots.get(
+        core_source_snapshot_key(source.sid, source.version),
+      ) {
+      Some(value) => value
+      None => raise UnknownVersion(sid=source.sid, version=source.version)
+    }
+    if snapshot.sid != source.sid {
+      raise UnknownSession(sid=source.sid)
+    }
+    let available = snapshot.messages.length()
+    if source.prefix < 0 || source.prefix > available {
+      raise PrefixOutOfRange(
+        sid=source.sid,
+        version=source.version,
+        prefix=source.prefix,
+        available~,
+      )
+    }
+    return
+  }
   let lineage = match self.sessions.get(source.sid) {
     Some(lineage) => lineage
     None => raise UnknownSession(sid=source.sid)
@@ -314,6 +372,23 @@ fn CoreVersionStore::resolve_source(
   source : CoreSource,
 ) -> @types.Session raise CoreVersionError {
   self.validate_source(source)
+  if source.version < 0 {
+    let snapshot = match
+      self.source_snapshots.get(
+        core_source_snapshot_key(source.sid, source.version),
+      ) {
+      Some(value) => value
+      None => raise UnknownVersion(sid=source.sid, version=source.version)
+    }
+    let windowed : Array[@kernel.Message] = []
+    for message in snapshot.messages[0:source.prefix].to_owned() {
+      windowed.push(snapshot_message(message))
+    }
+    return {
+      messages: windowed,
+      metadata: snapshot_metadata(snapshot.metadata),
+    }
+  }
   let full = self.materialize(source.sid, source.version)
   let windowed : Array[@kernel.Message] = []
   for message in full.messages[0:source.prefix].to_owned() {

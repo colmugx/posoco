@@ -25,6 +25,8 @@ pub(all) struct FixtureHost {
   /// This models a provider that reports a transport/cancellation failure
   /// after an invalid callback, so executor error precedence is testable.
   mut raise_model_transport : Bool
+  /// Optional compact result for standalone compact tests.
+  mut compact_result : CompactResult?
 }
 
 ///|
@@ -44,6 +46,7 @@ pub fn FixtureHost::FixtureHost(
     executed_effect_ids: [],
     stream_chunks: [],
     raise_model_transport: false,
+    compact_result: None,
   }
 }
 
@@ -59,6 +62,15 @@ fn FixtureHost::with_stream_chunks(
 ///|
 fn FixtureHost::with_model_transport_failure(self : FixtureHost) -> FixtureHost {
   self.raise_model_transport = true
+  self
+}
+
+///|
+fn FixtureHost::with_compact_result(
+  self : FixtureHost,
+  result : CompactResult,
+) -> FixtureHost {
+  self.compact_result = Some(result)
   self
 }
 
@@ -175,8 +187,10 @@ pub impl @kernel_exec.HostRuntime for FixtureHost with fn compact(
   _call_options : Json,
   _trigger : @kernel.CompactTrigger,
 ) -> Result[CompactResult, ModelFailure] {
-  ignore(self)
-  Err(Parse(reason="FixtureHost does not implement compact"))
+  match self.compact_result {
+    Some(result) => Ok(result)
+    None => Err(Parse(reason="FixtureHost does not implement compact"))
+  }
 }
 
 ///|

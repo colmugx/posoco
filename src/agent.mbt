@@ -517,8 +517,6 @@ fn AgentRuntime::compose(
   let checkpoint_subscriber = SessionCheckpointSubscriber(
     agg.sessions,
     progress,
-    agg.observers,
-    core_shadow,
   )
   let event_subscriber = AgentEventSubscriber(
     agg.observers,
@@ -594,6 +592,18 @@ fn AgentRuntime::compose(
         session_id,
         messages,
         prefix,
+      )
+    }),
+  )
+  puppet.set_core_fact_observer(
+    Some(fn(fact) {
+      core_shadow.record_boundary(
+        fact.run_id.to_string(),
+        fact.session_id,
+        fact.committed_revision,
+        fact.savepoint_id,
+        fact.is_terminal,
+        fact.messages,
       )
     }),
   )
@@ -1027,6 +1037,13 @@ async fn AgentRuntime::dispatch_on_turn_end(
 /// failing component's raw payload. (`Observer::on_event` is non-raising by
 /// contract; a violating observer aborts loudly, as error transparency
 /// requires.)
+fn AgentRuntime::drain_core_shadow_errors(self : AgentRuntime) -> Unit {
+  for detail in self.core_shadow.take_errors() {
+    emit_secondary_failure(self.observers, "core_shadow_boundary", detail)
+  }
+}
+
+///|
 fn emit_secondary_failure(
   observers : Array[&@port.Observer],
   hook_point : String,
@@ -1244,6 +1261,7 @@ async fn AgentRuntime::run_single_turn(
     identity.run_id.to_string(),
     "turn_ended_without_terminal",
   )
+  defer self.drain_core_shadow_errors()
   self.task_runtime.begin_operation(
     session_id,
     identity.run_id,

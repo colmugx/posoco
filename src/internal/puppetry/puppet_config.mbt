@@ -51,6 +51,20 @@ pub(all) struct PuppetConfig {
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
+/// One committed boundary handed synchronously to the Agent core. `messages`
+/// is the full RunState transcript at commit; the receiver must snapshot it
+/// synchronously and must not perform observer or store I/O.
+pub(all) struct CoreFactCommit {
+  run_id : @kernel.RunId
+  turn_id : @kernel.TurnId
+  session_id : String
+  committed_revision : Int32
+  savepoint_id : String
+  is_terminal : Bool
+  messages : Array[@kernel.Message]
+}
+
+///|
 /// The assembled pump: construct once via `Puppet::new`, call `startup` once
 /// before any prompt and `shutdown` once at product exit.
 pub struct Puppet {
@@ -76,6 +90,9 @@ pub struct Puppet {
   /// Shadow-only safe-point source capture. Called before a compact model
   /// call and at the fork safe point; `None` keeps legacy behavior.
   mut source_observer : ((@kernel.RunId, String, Array[@kernel.Message], Int32) -> Unit)?
+  /// Synchronous post-journal/pre-dispatch core fact sink. `None` keeps the
+  /// Agent core detached from Puppet commits.
+  mut core_fact_observer : ((CoreFactCommit) -> Unit)?
 }
 
 ///|
@@ -91,6 +108,7 @@ pub fn Puppet::Puppet(config : PuppetConfig) -> Puppet {
     launch_gate: None,
     tool_revocations: None,
     source_observer: None,
+    core_fact_observer: None,
   }
 }
 
@@ -112,6 +130,24 @@ fn Puppet::capture_source(
 ) -> Unit {
   match self.source_observer {
     Some(observer) => observer(run_id, session_id, messages, prefix)
+    None => ()
+  }
+}
+
+///|
+pub fn Puppet::set_core_fact_observer(
+  self : Puppet,
+  observer : ((CoreFactCommit) -> Unit)?,
+) -> Unit {
+  self.core_fact_observer = observer
+}
+
+///|
+/// Publish one committed boundary. This is synchronous and must stay free of
+/// observer dispatch and store I/O.
+fn Puppet::publish_core_fact(self : Puppet, fact : CoreFactCommit) -> Unit {
+  match self.core_fact_observer {
+    Some(observer) => observer(fact)
     None => ()
   }
 }
