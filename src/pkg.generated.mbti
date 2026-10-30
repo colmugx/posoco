@@ -6,6 +6,7 @@ import {
   "colmugx/posoco/kernel",
   "colmugx/posoco/port",
   "colmugx/posoco/runtime",
+  "colmugx/posoco/testkit",
   "colmugx/posoco/types",
   "moonbitlang/core/debug",
 }
@@ -94,16 +95,6 @@ pub fn AgentControl::active_turn_id(Self) -> @kernel.TurnId?
 pub fn AgentControl::enqueue_follow_up(Self, @kernel.Message) -> @runtime.EnqueueOutcome
 pub fn AgentControl::pending_follow_ups(Self) -> Int32
 
-pub(all) struct CompositeUiPort {
-  contributors : Array[&@port.UiPort]
-}
-pub fn CompositeUiPort::CompositeUiPort(Array[&@port.UiPort]) -> Self
-pub fn CompositeUiPort::contributors(Self) -> Array[&@port.UiPort]
-pub fn CompositeUiPort::render(Self, @port.UiRender) -> Unit
-pub async fn CompositeUiPort::request(Self, @port.UiRequest) -> @port.UiResponse raise @error.UiError
-pub fn CompositeUiPort::ui_descriptor(Self) -> @port.UiDescriptor
-pub impl @port.UiPort for CompositeUiPort
-
 pub(all) struct HookRecord {
   label : String
   outcome : RecordedHookOutcome
@@ -123,21 +114,6 @@ pub(all) struct NoopCommandPort {
 pub fn NoopCommandPort::commands(Self) -> Array[@port.CommandDef]
 pub async fn NoopCommandPort::invoke(Self, String, Json) -> @port.CommandOutcome raise @error.CommandError
 pub impl @port.CommandPort for NoopCommandPort
-
-pub(all) struct NoopLifecycle {
-}
-pub fn NoopLifecycle::on_compose(Self, @port.CompositionView) -> Unit raise @error.CompositionError
-pub async fn NoopLifecycle::on_shutdown(Self) -> Unit
-pub async fn NoopLifecycle::on_start(Self) -> Unit
-pub impl @port.Lifecycle for NoopLifecycle
-
-pub(all) struct NoopUiPort {
-}
-pub fn NoopUiPort::NoopUiPort() -> Self
-pub fn NoopUiPort::render(Self, @port.UiRender) -> Unit
-pub async fn NoopUiPort::request(Self, @port.UiRequest) -> @port.UiResponse raise @error.UiError
-pub fn NoopUiPort::ui_descriptor(Self) -> @port.UiDescriptor
-pub impl @port.UiPort for NoopUiPort
 
 pub(all) enum RecordedHookOutcome {
   PassedThrough
@@ -238,24 +214,6 @@ pub fn RecordingToolProvider::list_call_count(Self) -> Int32
 pub fn RecordingToolProvider::list_tools(Self) -> Array[@kernel.ToolDef]
 pub fn RecordingToolProvider::ops(Self) -> Array[ToolProviderOp]
 pub impl @port.ToolProvider for RecordingToolProvider
-
-pub(all) struct RecordingUiPort {
-  mut rendered : Array[@port.UiRender]
-  mut scripted_responses : Array[@port.UiResponse]
-  mut unsupported_mode : Bool
-  mut descriptor : @port.UiDescriptor
-}
-pub fn RecordingUiPort::RecordingUiPort(responses? : Array[@port.UiResponse]) -> Self
-pub fn RecordingUiPort::new_unsupported() -> Self
-pub fn RecordingUiPort::render(Self, @port.UiRender) -> Unit
-pub fn RecordingUiPort::render_count(Self) -> Int32
-pub fn RecordingUiPort::rendered_in_slot(Self, @port.UiSlot) -> Array[@port.UiRender]
-pub fn RecordingUiPort::rendered_intents(Self) -> Array[@port.UiRender]
-pub async fn RecordingUiPort::request(Self, @port.UiRequest) -> @port.UiResponse raise @error.UiError
-pub fn RecordingUiPort::set_descriptor(Self, @port.UiDescriptor) -> Unit
-pub fn RecordingUiPort::ui_descriptor(Self) -> @port.UiDescriptor
-pub fn RecordingUiPort::unconsumed_response_count(Self) -> Int32
-pub impl @port.UiPort for RecordingUiPort
 
 pub struct ScopeRecordingModel {
   scripted : ScriptedModel
@@ -362,27 +320,6 @@ pub(all) enum SessionOp {
 } derive(@debug.Debug)
 pub fn SessionOp::to_repr(Self) -> @debug.Repr
 
-pub(all) struct SystemPromptHook {
-  base_prompt : String
-  contributors : Array[SystemPromptSection]
-  mut assembled : String?
-}
-pub fn SystemPromptHook::SystemPromptHook(base_prompt~ : String, contributors~ : Array[SystemPromptSection]) -> Self
-pub fn SystemPromptHook::assemble(Self) -> String
-pub async fn SystemPromptHook::before_model(Self, Array[@kernel.Message]) -> Array[@kernel.Message] raise @port.HookAbort
-pub async fn SystemPromptHook::before_tool(Self, @kernel.ToolCall) -> @port.ToolDecision
-pub async fn SystemPromptHook::on_post_event(Self, @types.EventScope?, @port.HookStage) -> Unit noraise
-pub async fn SystemPromptHook::on_turn_begin(Self) -> Unit
-pub async fn SystemPromptHook::on_turn_end(Self) -> Unit
-pub fn SystemPromptHook::tool_exposure(Self, @kernel.ToolDef) -> @kernel.ToolExposure
-pub impl @port.PipelineHook for SystemPromptHook
-
-pub(all) struct SystemPromptSection {
-  id : String
-  contributor : &@port.SystemPromptContributor
-}
-pub fn SystemPromptSection::SystemPromptSection(id~ : String, contributor~ : &@port.SystemPromptContributor) -> Self
-
 pub(all) struct ToolExecRecord {
   requested_name : String
   call_id : String
@@ -397,30 +334,6 @@ pub(all) enum ToolProviderOp {
   ExecuteTool(requested_name~ : String, call~ : @kernel.ToolCall)
 } derive(@debug.Debug)
 pub fn ToolProviderOp::to_repr(Self) -> @debug.Repr
-
-pub(all) struct ToolRegistry {
-  mut tools : Map[String, @kernel.ToolDef]
-  mut executors : Map[String, (@port.ToolCallContext) -> @kernel.ToolOutcome]
-}
-pub fn ToolRegistry::ToolRegistry() -> Self
-pub async fn ToolRegistry::execute(Self, @port.ToolCallContext) -> @kernel.ToolOutcome raise @error.RuntimeError
-pub fn ToolRegistry::list_tools(Self) -> Array[@kernel.ToolDef]
-pub fn ToolRegistry::register(Self, @kernel.ToolDef, (@port.ToolCallContext) -> @kernel.ToolOutcome) -> Unit
-pub fn ToolRegistry::register_strict(Self, @kernel.ToolDef, (@port.ToolCallContext) -> @kernel.ToolOutcome) -> Unit raise @error.RuntimeError
-pub fn ToolRegistry::unregister(Self, String) -> Unit
-pub impl @port.ToolProvider for ToolRegistry
-
-pub(all) struct UiRenderHook {
-  ui : &@port.UiPort
-}
-pub fn UiRenderHook::UiRenderHook(ui~ : &@port.UiPort) -> Self
-pub async fn UiRenderHook::before_model(Self, Array[@kernel.Message]) -> Array[@kernel.Message] raise @port.HookAbort
-pub async fn UiRenderHook::before_tool(Self, @kernel.ToolCall) -> @port.ToolDecision
-pub async fn UiRenderHook::on_post_event(Self, @types.EventScope?, @port.HookStage) -> Unit noraise
-pub async fn UiRenderHook::on_turn_begin(Self) -> Unit
-pub async fn UiRenderHook::on_turn_end(Self) -> Unit
-pub fn UiRenderHook::tool_exposure(Self, @kernel.ToolDef) -> @kernel.ToolExposure
-pub impl @port.PipelineHook for UiRenderHook
 
 // Type aliases
 pub using @error {type AgentError}
@@ -454,6 +367,8 @@ pub using @kernel {type CompactTrigger}
 pub using @kernel {type Completion}
 
 pub using @kernel {type CompletionPayload}
+
+pub using @colmugx/posoco/builtin {type CompositeUiPort}
 
 pub using @error {type CompositionError}
 
@@ -519,6 +434,10 @@ pub using @error {type ModelError}
 
 pub using @kernel {type ModelFailure}
 
+pub using @colmugx/posoco/builtin {type NoopLifecycle}
+
+pub using @colmugx/posoco/builtin {type NoopUiPort}
+
 pub using @kernel {type NotExecutedReason}
 
 pub using @kernel {type OwnerId}
@@ -530,6 +449,8 @@ pub using @port {type ProviderConfig}
 pub using @error {type RateLimitInfo}
 
 pub using @kernel {type Reasoning}
+
+pub using @testkit {type RecordingUiPort}
 
 pub using @kernel {type RunId}
 
@@ -548,6 +469,10 @@ pub using @types {type StreamAccumulator}
 pub using @types {type StreamChunk}
 
 pub using @types {type StreamMode}
+
+pub using @colmugx/posoco/builtin {type SystemPromptHook}
+
+pub using @colmugx/posoco/builtin {type SystemPromptSection}
 
 pub using @port {type TaskHandle}
 
@@ -591,6 +516,8 @@ pub using @kernel {type ToolName}
 
 pub using @kernel {type ToolOutcome}
 
+pub using @colmugx/posoco/builtin {type ToolRegistry}
+
 pub type ToolRetire = async () -> Result[Unit, String]
 
 pub using @port {type ToolWithdrawMode}
@@ -614,6 +541,8 @@ pub using @error {type UiError}
 pub using @port {type UiHint}
 
 pub using @port {type UiRender}
+
+pub using @colmugx/posoco/builtin {type UiRenderHook}
 
 pub using @port {type UiRequest}
 
