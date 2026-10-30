@@ -157,6 +157,11 @@ pub using @kernel {
 }
 
 ///|
+// The recording UI adapter is test-only. The root alias is transitional
+// source compatibility for existing clients and whitebox tests.
+pub using @testkit {type RecordingUiPort}
+
+///|
 // Optional built-in utilities live in their own package. Keep the existing
 // root API names as compatibility aliases for downstream users.
 pub using @builtin {
