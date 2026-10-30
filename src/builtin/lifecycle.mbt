@@ -10,4 +10,3 @@ pub extend NoopLifecycle with @port.Lifecycle::{
 
 ///|
 pub impl @port.Lifecycle for NoopLifecycle
-

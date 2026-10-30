@@ -19,5 +19,3 @@ pub extend ScriptedMemoryPort with @port.MemoryPort::{inbound}
 ///|
 pub extend RecordingToolProvider with @port.ToolProvider::{list_tools}
 
-///|
-pub extend SystemPromptHook with @port.PipelineHook::{before_model}
