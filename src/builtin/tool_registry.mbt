@@ -1,7 +1,4 @@
 ///|
-using @error {type RuntimeError}
-
-///|
 /// Dynamic runtime tool registration. Implements ToolProvider.
 pub(all) struct ToolRegistry {
   mut tools : Map[String, @kernel.ToolDef]

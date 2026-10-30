@@ -1,7 +1,4 @@
 ///|
-using @port {type ParamType}
-
-///|
 /// Tokenize a slash argument string, honoring double-quoted spans.
 fn tokenize_args(text : String) -> Array[String] {
   let tokens : Array[String] = []

@@ -1,5 +1,5 @@
 import {
-  "colmugx/posoco/builtin" @builtin,
+  "colmugx/posoco/builtin",
   "colmugx/fuwaroid",
   "colmugx/posoco/port",
   "colmugx/posoco/types",
@@ -13,7 +13,6 @@ import {
   "moonbitlang/core/env",
   "moonbitlang/async",
   "moonbitlang/async/aqueue",
-  "moonbitlang/core/string",
 }
 
 import {
