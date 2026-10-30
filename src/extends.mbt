@@ -18,4 +18,3 @@ pub extend ScriptedMemoryPort with @port.MemoryPort::{inbound}
 
 ///|
 pub extend RecordingToolProvider with @port.ToolProvider::{list_tools}
-
