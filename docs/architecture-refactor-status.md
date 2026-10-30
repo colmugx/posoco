@@ -22,8 +22,10 @@ Base revision: `e1c65aff41e6e024523e76fde9b7a30896fc8bda` (2026-10-30 audit).
 
 - [x] Split the reusable `ToolRegistry` and command argument parsing into `src/builtin/` as an actual MoonBit package.
 - [x] Retain legacy root symbol names through `pub using` aliases.
+- [x] Extract the self-contained built-in UI/prompt hooks and no-op lifecycle adapter without changing their method bodies.
 - [x] Leave all tests and runtime business rules untouched.
-- [ ] CI build, tests, fmt, and moon-info compatibility must be confirmed by GitHub Actions (not executable in the analysis environment).
+- [x] Initial CI: native/release builds and tests were successful on Linux/macOS/Windows where configured.
+- [ ] Resolve CI formatting and generated `.mbti` checks for the expanded migration.
 
 ## Follow-on work blocked by the no-test-change constraint
 

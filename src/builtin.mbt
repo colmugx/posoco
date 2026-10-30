@@ -33,19 +33,6 @@ pub fn build_error_message(
 }
 
 ///|
-pub(all) struct NoopLifecycle {}
-
-///|
-pub extend NoopLifecycle with @port.Lifecycle::{
-  on_compose,
-  on_shutdown,
-  on_start,
-}
-
-///|
-pub impl @port.Lifecycle for NoopLifecycle
-
-///|
 /// No-op CommandPort: declares no commands, invoke always raises NotFound.
 /// Useful as a default or for testing.
 pub(all) struct NoopCommandPort {}
