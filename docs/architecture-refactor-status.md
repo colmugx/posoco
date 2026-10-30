@@ -23,6 +23,7 @@ Base revision: `e1c65aff41e6e024523e76fde9b7a30896fc8bda` (2026-10-30 audit).
 - [x] Split the reusable `ToolRegistry` and command argument parsing into `src/builtin/` as an actual MoonBit package.
 - [x] Retain legacy root symbol names through `pub using` aliases.
 - [x] Extract the self-contained built-in UI/prompt hooks and no-op lifecycle adapter without changing their method bodies.
+- [x] Extract the built-in memory collector, message builder and tool provider to `src/internal/memory/`, retaining root local imports for unchanged whitebox tests.
 - [x] Establish an independent `src/testkit/` package for the self-contained `RecordingUiPort` fake and pure trace assertion helpers; retain root compatibility aliases.
 - [x] Leave all tests and runtime business rules untouched.
 - [x] Initial CI: native/release builds and tests were successful on Linux/macOS/Windows where configured.
