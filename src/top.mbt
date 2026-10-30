@@ -155,3 +155,12 @@ pub using @kernel {
   type RunId,
   type TurnId,
 }
+
+///|
+// Optional built-in utilities live in their own package. Keep the existing
+// root API names as compatibility aliases for downstream users.
+pub using @builtin {
+  type ToolRegistry,
+  parse_slash_args,
+  validate_args,
+}
