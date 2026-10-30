@@ -10,7 +10,7 @@ async test "rate-limit resume replays persisted user without duplicating transcr
     ),
     Respond(tk_stop_response("resumed")),
   ])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
@@ -46,7 +46,7 @@ async test "rate-limit resume replays persisted user without duplicating transcr
 ///|
 async test "rate-limit resume appends literal continue after persisted progress" {
   let model = ScriptedModel([Respond(tk_stop_response("continued"))])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let seeded : Session = {
     messages: [
       tk_user_msg("original task"),
@@ -97,7 +97,7 @@ async test "rate-limit resume after tool progress appends continue" {
     [tk_tool_def("echo", "echo")],
     Map::from_array([("echo", OutcomeOk(tk_ok_result("echoed")))]),
   )
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
@@ -141,12 +141,12 @@ struct SaveFailingStore {
 }
 
 ///|
-impl @port.SessionStore for SaveFailingStore with fn load(_self, _id) -> @types.Session {
+impl @port.SessionPort for SaveFailingStore with fn load(_self, _id) -> @types.Session {
   { messages: [], metadata: Map::from_array([]), }
 }
 
 ///|
-impl @port.SessionStore for SaveFailingStore with fn save(self, _id, _session) -> Unit raise @error.SessionError {
+impl @port.SessionPort for SaveFailingStore with fn save(self, _id, _session) -> Unit raise @error.SessionError {
   self.saves = self.saves + 1
   if self.saves >= self.fail_from {
     raise Save("store offline")

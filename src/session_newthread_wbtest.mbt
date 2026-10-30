@@ -2,7 +2,7 @@
 /// NewThread diversion regression coverage. The fork terminal, both compact
 /// NewThread terminals (idle standalone and mid-turn manual), and their shared
 /// tail (`persist_new_thread_session`) are covered here. The Agent is the only
-/// SessionStore writer: the child core fact is established first, the output is
+/// SessionPort writer: the child core fact is established first, the output is
 /// written to every store, then the cursor advances and one SessionRedirect is
 /// emitted. A failure keeps the core fact and pending snapshot; the next
 /// operation must recover that exact child before running a new request.
@@ -78,10 +78,7 @@ fn newthread_finished_for(
 /// Count the full saves recorded for one session id. NewThread output is
 /// written once by the Agent; recovery may repeat a previously successful
 /// store, so failure tests assert the final state rather than exactly-once.
-fn newthread_save_count(
-  store : RecordingSessionStore,
-  target : String,
-) -> Int32 {
+fn newthread_save_count(store : RecordingSessionPort, target : String) -> Int32 {
   let mut count = 0
   for op in store.ops() {
     match op {
@@ -149,7 +146,7 @@ async test "newthread/fork_persists_sibling_with_lineage_and_emits_redirect" {
     calls: 0,
     compacted: [],
   }
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   store.seed("s1", {
     messages: [tk_user_msg("one"), tk_user_msg("two")],
     metadata: Map::from_array([]),
@@ -252,13 +249,13 @@ async test "newthread/fork_persists_sibling_with_lineage_and_emits_redirect" {
       _ => ()
     }
   }
-  guard checkpoints.length() == 2 else {
-    fail("expected two parent checkpoints, got \{checkpoints.length()}")
+  guard checkpoints.length() == 1 else {
+    fail(
+      "expected one parent checkpoint after initial full alignment, got \{checkpoints.length()}",
+    )
   }
-  assert_eq(checkpoints[0].0, 2)
-  assert_eq(checkpoints[0].1, 3)
-  assert_eq(checkpoints[1].0, 3)
-  assert_eq(checkpoints[1].1, 4)
+  assert_eq(checkpoints[0].0, 3)
+  assert_eq(checkpoints[0].1, 4)
   let original = store.load("s1") catch { e => fail("parent missing: \{e}") }
   guard original.messages.length() == 4 else {
     fail(
@@ -290,7 +287,7 @@ async test "newthread/compact_newthread_persists_sibling_with_lineage_and_emits_
       mode: NewThread,
     }),
   ])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   store.seed("c1", {
     messages: [tk_user_msg("old-one"), tk_user_msg("old-two")],
     metadata: Map::from_array([]),
@@ -350,7 +347,7 @@ async test "newthread/midturn_compact_newthread_reaches_complete_compact_turn" {
     calls: 0,
     compacted: [tk_user_msg("mid-turn summary")],
   }
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   store.seed("m1", {
     messages: [tk_user_msg("old-one"), tk_user_msg("old-two")],
     metadata: Map::from_array([]),
@@ -445,12 +442,12 @@ struct NewThreadFailStore {
 ///|
 
 ///|
-impl @port.SessionStore for NewThreadFailStore with fn load(self, _id) -> @types.Session {
+impl @port.SessionPort for NewThreadFailStore with fn load(self, _id) -> @types.Session {
   { messages: self.seeded.copy(), metadata: Map::from_array([]), }
 }
 
 ///|
-impl @port.SessionStore for NewThreadFailStore with fn save(self, id, session) -> Unit raise @error.SessionError {
+impl @port.SessionPort for NewThreadFailStore with fn save(self, id, session) -> Unit raise @error.SessionError {
   self.saves.push(id)
   if self.armed && self.saves.length() >= self.fail_from {
     raise Save("store offline")
@@ -556,7 +553,7 @@ async test "newthread/fork_save_failure_recovers_pending_before_next_turn" {
     calls: 0,
     compacted: [],
   }
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   store.seed("s1", {
     messages: [tk_user_msg("one"), tk_user_msg("two")],
     metadata: Map::from_array([]),
@@ -710,21 +707,21 @@ fn OrderTape::save_indexes_for(self : OrderTape, sid : String) -> Array[Int32] {
 
 ///|
 /// Store wrapper that records every completed save on the shared tape. The
-/// wrapped RecordingSessionStore keeps the seeded state and the persisted
+/// wrapped RecordingSessionPort keeps the seeded state and the persisted
 /// sessions; the marker is appended only after the inner save returned.
 priv struct TapeStore {
   name : String
   tape : OrderTape
-  inner : RecordingSessionStore
+  inner : RecordingSessionPort
 }
 
 ///|
-impl @port.SessionStore for TapeStore with fn load(self, id : String) -> @types.Session raise @error.SessionError {
+impl @port.SessionPort for TapeStore with fn load(self, id : String) -> @types.Session raise @error.SessionError {
   self.inner.load(id)
 }
 
 ///|
-impl @port.SessionStore for TapeStore with fn save(
+impl @port.SessionPort for TapeStore with fn save(
   self,
   id : String,
   session : @types.Session,
@@ -772,8 +769,8 @@ async test "newthread/partial_output_retry_repeats_store_without_exactly_once" {
       mode: NewThread,
     }),
   ])
-  let first = RecordingSessionStore()
-  let second = RecordingSessionStore()
+  let first = RecordingSessionPort()
+  let second = RecordingSessionPort()
   let observer = RecordingObserver()
   let agent = Agent(
     exts=[
@@ -873,8 +870,8 @@ async test "newthread/partial_output_retry_repeats_store_without_exactly_once" {
 /// relative order is deliberately not assumed.
 async test "newthread/all_stores_persist_before_redirect_precedes_terminal_events" {
   let tape = OrderTape::OrderTape()
-  let store_a = TapeStore::{ name: "A", tape, inner: RecordingSessionStore(), }
-  let store_b = TapeStore::{ name: "B", tape, inner: RecordingSessionStore(), }
+  let store_a = TapeStore::{ name: "A", tape, inner: RecordingSessionPort(), }
+  let store_b = TapeStore::{ name: "B", tape, inner: RecordingSessionPort(), }
   for wrapped in [store_a, store_b] {
     wrapped.inner.seed("w1", {
       messages: [tk_user_msg("old-one"), tk_user_msg("old-two")],
@@ -965,7 +962,7 @@ async test "newthread/single_store_single_write_and_redirect" {
       mode: NewThread,
     }),
   ])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   store.seed("single-parent", {
     messages: [tk_user_msg("old")],
     metadata: Map::from_array([]),
@@ -993,7 +990,7 @@ async test "newthread/failed_output_gate_blocks_then_recovers_before_body" {
     }),
     Respond(tk_stop_response("new request")),
   ])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   store.seed("gate-parent", {
     messages: [tk_user_msg("old")],
     metadata: Map::from_array([]),
@@ -1089,7 +1086,7 @@ async test "newthread/child_fact_failure_blocks_all_output" {
       mode: NewThread,
     }),
   ])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   store.seed("fact-parent", {
     messages: [tk_user_msg("old")],
     metadata: Map::from_array([]),
@@ -1152,7 +1149,7 @@ async test "newthread/recovery_preserves_parent_and_original_scope" {
     }),
     Respond(tk_stop_response("other request")),
   ])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   store.seed("scope-parent", {
     messages: [tk_user_msg("parent-old")],
     metadata: Map::from_array([("kept", Json::string("parent-meta"))]),
@@ -1180,7 +1177,9 @@ async test "newthread/recovery_preserves_parent_and_original_scope" {
   let parent_cursor_before = agent.runtime.progress.cursor_or_zero(
     "scope-parent",
   )
-  assert_eq(parent_cursor_before, 1)
+  // The failed diversion never confirmed parent output, so no persisted
+  // cursor exists until a successful write.
+  assert_eq(parent_cursor_before, 0)
   match agent.runtime.core_shadow.state.get("scope-parent") {
     Some(Stopped(run_id~, ..)) => assert_eq(run_id, "agent_run_1")
     _ => fail("expected the parent core tracking to be stopped after diversion")
@@ -1235,7 +1234,7 @@ async test "newthread/recovery_preserves_parent_and_original_scope" {
 /// snapshot exist; releasing the gate after cancellation lets the next
 /// operation prove it recovers the same child and body.
 priv struct CancelGateStore {
-  inner : RecordingSessionStore
+  inner : RecordingSessionPort
   child_sid : String
   mut armed : Bool
   mut entered : Bool
@@ -1243,12 +1242,12 @@ priv struct CancelGateStore {
 }
 
 ///|
-impl @port.SessionStore for CancelGateStore with fn load(self, id : String) -> @types.Session raise @error.SessionError {
+impl @port.SessionPort for CancelGateStore with fn load(self, id : String) -> @types.Session raise @error.SessionError {
   self.inner.load(id)
 }
 
 ///|
-impl @port.SessionStore for CancelGateStore with fn save(
+impl @port.SessionPort for CancelGateStore with fn save(
   self,
   id : String,
   session : @types.Session,
@@ -1263,7 +1262,7 @@ impl @port.SessionStore for CancelGateStore with fn save(
 }
 
 ///|
-impl @port.SessionStore for CancelGateStore with fn checkpoint(
+impl @port.SessionPort for CancelGateStore with fn checkpoint(
   self,
   id : String,
   checkpoint : @port.SessionCheckpoint,
@@ -1282,7 +1281,7 @@ async test "newthread/cancel_after_core_fact_keeps_pending_for_recovery" {
   ])
   let child_sid = "cancel-parent_compact_agent_compact_session_1"
   let store = CancelGateStore::{
-    inner: RecordingSessionStore(),
+    inner: RecordingSessionPort(),
     child_sid,
     armed: true,
     entered: false,

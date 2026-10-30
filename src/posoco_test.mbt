@@ -67,12 +67,12 @@ impl @port.ToolProvider for MockToolProvider with fn execute(
 }
 
 ///|
-struct MockSessionStore {
+struct MockSessionPort {
   store : Map[String, @types.Session]
 }
 
 ///|
-impl @port.SessionStore for MockSessionStore with fn load(self, id) -> @types.Session {
+impl @port.SessionPort for MockSessionPort with fn load(self, id) -> @types.Session {
   if self.store.contains(id) {
     self.store[id]
   } else {
@@ -81,7 +81,7 @@ impl @port.SessionStore for MockSessionStore with fn load(self, id) -> @types.Se
 }
 
 ///|
-impl @port.SessionStore for MockSessionStore with fn save(self, id, session) -> Unit {
+impl @port.SessionPort for MockSessionPort with fn save(self, id, session) -> Unit {
   self.store[id] = session
 }
 
@@ -128,7 +128,7 @@ fn empty_tools() -> MockToolProvider {
 ///|
 async test "b1_simple_turn_no_tools" {
   let model = MockModelPort::{ responses: [stop_response("hi")], index: 0, }
-  let store = MockSessionStore::{ store: Map::from_array([]), }
+  let store = MockSessionPort::{ store: Map::from_array([]), }
   let observer = MockObserver::{ events: [], }
   let config = make_config()
 
@@ -191,7 +191,7 @@ async test "b7_agent_error_display" {
 ///|
 async test "b8_turn_event_lifecycle" {
   let model = MockModelPort::{ responses: [stop_response("ok")], index: 0, }
-  let store = MockSessionStore::{ store: Map::from_array([]), }
+  let store = MockSessionPort::{ store: Map::from_array([]), }
   let observer = MockObserver::{ events: [], }
   let config = make_config()
 
@@ -239,7 +239,7 @@ async test "b8_turn_event_lifecycle" {
 ///|
 async test "b9_model_error_aborts" {
   let model = MockModelPort::{ responses: [], index: 0, }
-  let store = MockSessionStore::{ store: Map::from_array([]), }
+  let store = MockSessionPort::{ store: Map::from_array([]), }
   let observer = MockObserver::{ events: [], }
   let config = make_config()
 
@@ -265,7 +265,7 @@ async test "b10_agent_reuses_one_puppet_across_turns" {
     responses: [stop_response("first"), stop_response("second")],
     index: 0,
   }
-  let store = MockSessionStore::{ store: Map::from_array([]), }
+  let store = MockSessionPort::{ store: Map::from_array([]), }
   let observer = MockObserver::{ events: [], }
   let agent = @posoco.Agent(
     exts=[

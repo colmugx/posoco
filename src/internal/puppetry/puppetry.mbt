@@ -52,7 +52,7 @@ pub(all) enum PromptResult {
   /// M3.5: Fork completed. The pump consumed a `ForkCommand` at a safe
   /// point, snapshotted the transcript's first `fork_index` messages,
   /// wrote them as a new session (carrying `parent_thread_id` lineage) to
-  /// the configured SessionStore if any, and stopped the current turn.
+  /// the configured SessionPort if any, and stopped the current turn.
   /// Product code should switch its active thread to `new_session_id`.
   /// `forked_messages` is the new thread's body (deep copy of the parent's
   /// transcript prefix). The original thread is untouched and may continue

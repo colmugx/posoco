@@ -22,7 +22,7 @@ priv enum CompactFlow {
 /// `CompactMode`:
 /// - **NewThread**: return `PromptResult::CompactCompleted` with the new id;
 ///   release the lease and stop the turn. The Agent forms the child core fact
-///   and is the sole SessionStore writer.
+///   and is the sole SessionPort writer.
 /// - **Replace**: rebuild the transcript from `compacted_messages` and
 ///   return `UpdatedState`. The loop continues on the same session id.
 ///

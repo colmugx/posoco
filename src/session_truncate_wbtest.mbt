@@ -1,10 +1,10 @@
 ///|
-/// Rewind primitive regression tests: `SessionStore::truncate`.
+/// Rewind primitive regression tests: `SessionPort::truncate`.
 ///
 /// The Agent reloads persisted history from the store at the start of every
 /// turn, so truncating the store changes what the next turn sees. These tests
 /// pin the trait default implementation (load → slice → full save), the
-/// RecordingSessionStore override, and the Agent-level end-to-end behaviour.
+/// RecordingSessionPort override, and the Agent-level end-to-end behaviour.
 
 // ---------------------------------------------------------------------------
 // Minimal store implementing only load/save — drives the trait default impl.
@@ -19,7 +19,7 @@ struct TruncateFallbackStore {
 }
 
 ///|
-pub extend TruncateFallbackStore with @port.SessionStore::{checkpoint, truncate}
+pub extend TruncateFallbackStore with @port.SessionPort::{checkpoint, truncate}
 
 ///|
 fn TruncateFallbackStore::make(
@@ -29,14 +29,14 @@ fn TruncateFallbackStore::make(
 }
 
 ///|
-pub extend TruncateFallbackStore with @port.SessionStore::{
+pub extend TruncateFallbackStore with @port.SessionPort::{
   save,
   append_messages,
   load,
 }
 
 ///|
-pub impl @port.SessionStore for TruncateFallbackStore with fn load(
+pub impl @port.SessionPort for TruncateFallbackStore with fn load(
   self,
   _id : String,
 ) -> @types.Session raise @error.SessionError {
@@ -47,7 +47,7 @@ pub impl @port.SessionStore for TruncateFallbackStore with fn load(
 }
 
 ///|
-pub impl @port.SessionStore for TruncateFallbackStore with fn save(
+pub impl @port.SessionPort for TruncateFallbackStore with fn save(
   self,
   _id : String,
   session : @types.Session,
@@ -140,12 +140,12 @@ async test "rewind_truncate_default_impl_labels_load_and_save_failures" {
 }
 
 // ---------------------------------------------------------------------------
-// RecordingSessionStore: in-memory slice + OpTruncate recording.
+// RecordingSessionPort: in-memory slice + OpTruncate recording.
 // ---------------------------------------------------------------------------
 
 ///|
 async test "rewind_recording_store_truncate_slices_and_records_op" {
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   store.seed("s1", truncate_test_session())
   store.truncate("s1", 1)
   let mut recorded = 0
@@ -181,7 +181,7 @@ async test "rewind_truncate_changes_history_seen_by_next_agent_turn" {
     Respond(tk_stop_response("second")),
     Respond(tk_stop_response("third")),
   ])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
@@ -191,13 +191,30 @@ async test "rewind_truncate_changes_history_seen_by_next_agent_turn" {
   )
   let _ = agent.run_turn(tk_user_msg("hello"), "s1")
   let _ = agent.run_turn(tk_user_msg("world"), "s1")
-  // Rewind to just after the first user/assistant pair.
+  // External rewind changes only the projection; the existing Agent keeps
+  // its confirmed core history.
   store.truncate("s1", 2)
+  let fresh_model = ScriptedModel([Respond(tk_stop_response("fresh"))])
+  let fresh = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(fresh_model)),
+      tk_ext(id="io", sessions=[store]),
+    ],
+    config=tk_config(),
+  )
+  let _ = fresh.run_turn(tk_user_msg("new"), "s1")
+  let fresh_prompt = fresh_model.received_messages[0]
+  assert_eq(fresh_prompt.length(), 3)
+  assert_true(fresh_prompt[0] == tk_user_msg("hello"))
+  assert_true(fresh_prompt[1] == truncate_first_assistant())
+  assert_true(fresh_prompt[2] == tk_user_msg("new"))
+  // The existing Agent still reads core, not the externally truncated store.
   let _ = agent.run_turn(tk_user_msg("more"), "s1")
   assert_eq(model.received_messages.length(), 3)
   let prompt = model.received_messages[2]
-  assert_eq(prompt.length(), 3)
+  assert_eq(prompt.length(), 5)
   assert_true(prompt[0] == tk_user_msg("hello"))
   assert_true(prompt[1] == truncate_first_assistant())
-  assert_true(prompt[2] == tk_user_msg("more"))
+  assert_true(prompt[2] == tk_user_msg("world"))
+  assert_true(prompt[4] == tk_user_msg("more"))
 }

@@ -96,7 +96,7 @@ async test "tool_event_surface/happy_path_pending_approved_started_succeeded" {
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
-      tk_ext(id="tools", tools=[tools], sessions=[RecordingSessionStore()], observers=[
+      tk_ext(id="tools", tools=[tools], sessions=[RecordingSessionPort()], observers=[
         observer,
       ]),
     ],
@@ -133,7 +133,7 @@ async test "tool_event_surface/hook_reject_surfaces_as_rejected_run_continues" {
       tk_ext(
         id="tools",
         tools=[tools],
-        sessions=[RecordingSessionStore()],
+        sessions=[RecordingSessionPort()],
         observers=[observer],
         hooks=[RejectAllHook::{ reason: "not allowed", }],
       ),
@@ -176,7 +176,7 @@ async test "tool_event_surface/consent_hook_approval_carries_scope" {
       tk_ext(
         id="tools",
         tools=[tools],
-        sessions=[RecordingSessionStore()],
+        sessions=[RecordingSessionPort()],
         observers=[observer],
         hooks=[ConsentAllHook::{ scope: "echo:read", }],
       ),
@@ -211,7 +211,7 @@ async test "tool_event_surface/hook_raise_abandons_pending_calls" {
       tk_ext(
         id="tools",
         tools=[tools],
-        sessions=[RecordingSessionStore()],
+        sessions=[RecordingSessionPort()],
         observers=[observer],
         hooks=[RaiseAllHook::{ }],
       ),
@@ -254,7 +254,7 @@ async test "tool_event_surface/mid_wave_cancel_abandons_pending_calls" {
     [tk_tool_def("slow_tool", "slow tool")],
     Map::from_array([]),
   )
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   store.seed("s_surface_cancel", {
     messages: [],
     metadata: Map::from_array([]),

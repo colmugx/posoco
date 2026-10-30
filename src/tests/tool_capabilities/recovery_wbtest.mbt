@@ -1,6 +1,6 @@
 ///|
 async test "tool_recovery/resume_interrupts_the_old_call_and_uses_only_the_new_binding" {
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let old = tk_tool_call_response("leaf", "old-call", Json::null()).completion.message
   store.seed("resumed", {
     messages: [

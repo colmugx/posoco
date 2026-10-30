@@ -36,7 +36,7 @@ impl @port.Lifecycle for WakeupCapture with fn on_shutdown(
 fn wakeup_capture_agent(
   capture : WakeupCapture,
   model : &@port.ModelPort,
-  store : RecordingSessionStore,
+  store : RecordingSessionPort,
   observer : SignalObserver,
 ) -> Agent raise @error.CompositionError {
   Agent(
@@ -79,7 +79,7 @@ async test "wakeup/request is scope-gated and validates session and tag" {
   let agent = wakeup_capture_agent(
     capture,
     model,
-    RecordingSessionStore(),
+    RecordingSessionPort(),
     observer,
   )
   let port = wakeup_capture_port(capture)
@@ -114,7 +114,7 @@ async test "tasks/ready notification covers all four terminals without payloads"
   let agent = wakeup_capture_agent(
     capture,
     ScriptedModel([]),
-    RecordingSessionStore(),
+    RecordingSessionPort(),
     observer,
   )
   agent.run_scoped(async fn(_agent) {

@@ -81,7 +81,7 @@ async test "m35_builtin/idle_compact_starts_compact_session_directly" {
       mode: Replace,
     }),
   ])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   store.seed("idle-session", {
     messages: [tk_user_msg("hello"), tk_user_msg("more")],
     metadata: Map::from_array([]),
@@ -139,7 +139,7 @@ async test "m35_builtin/idle_compact_reports_modelport_failure_not_locked_sessio
   let model = ScriptedModel([
     CompactFail(error=ResponseParse("no compact endpoint")),
   ])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   store.seed("fail-session", {
     messages: [tk_user_msg("hello")],
     metadata: Map::from_array([]),

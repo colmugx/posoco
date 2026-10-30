@@ -1,9 +1,9 @@
 ///|
-/// SessionStore: persist and load conversation sessions by id.
+/// SessionPort: persist and load conversation sessions by id.
 ///
 /// Methods use the `raise` style (matching ModelPort/CommandPort) instead of
 /// returning `Result`. This eliminates the Result-plus-async redundancy and
-/// lets js-target adapters (e.g. JsonlSessionStore) implement the trait
+/// lets js-target adapters (e.g. JsonlSessionPort) implement the trait
 /// directly instead of going through `load_async`/`save_async` side-paths.
 
 ///|
@@ -28,7 +28,7 @@ pub extend SessionCheckpoint with Eq::{not_equal, equal}
 pub extend SessionCheckpoint with Debug::{to_repr}
 
 ///|
-pub(open) trait SessionStore {
+pub(open) trait SessionPort {
   async fn load(Self, id : String) -> @types.Session raise @error.SessionError
   async fn save(Self, id : String, session : @types.Session) -> Unit raise @error.SessionError
   /// Append a slice of messages to a session starting at `from_index`.
@@ -55,11 +55,11 @@ pub(open) trait SessionStore {
 }
 
 ///|
-/// Default `SessionStore::truncate`: compatibility fallback for stores that do
+/// Default `SessionPort::truncate`: compatibility fallback for stores that do
 /// not implement native truncation. Failures from the underlying load/save are
 /// re-raised with their variant preserved and an `operation='truncate'` context
 /// label, mirroring the agent-boundary error contextualization style.
-impl SessionStore with fn truncate(self, id : String, from_index : Int32) -> Unit raise @error.SessionError {
+impl SessionPort with fn truncate(self, id : String, from_index : Int32) -> Unit raise @error.SessionError {
   let session = self.load(id) catch {
     error =>
       raise Load(
@@ -87,9 +87,9 @@ impl SessionStore with fn truncate(self, id : String, from_index : Int32) -> Uni
 }
 
 ///|
-/// Default `SessionStore::append_messages`: compatibility fallback for stores
+/// Default `SessionPort::append_messages`: compatibility fallback for stores
 /// that do not implement true append. Loads, concatenates, and saves.
-impl SessionStore with fn append_messages(
+impl SessionPort with fn append_messages(
   self,
   id : String,
   from_index : Int32,
@@ -105,13 +105,13 @@ impl SessionStore with fn append_messages(
 }
 
 ///|
-/// Default `SessionStore::checkpoint`: keep the legacy fast append path when
+/// Default `SessionPort::checkpoint`: keep the legacy fast append path when
 /// metadata is unchanged. When metadata changed, load the persisted snapshot,
 /// merge the tail, and save one coherent Session snapshot. `from_index` is a
 /// logical cursor; the compatibility fallback deliberately does not require it
 /// to equal the physical message count because replay fixation can insert
 /// transient messages that are not persisted.
-impl SessionStore with fn checkpoint(
+impl SessionPort with fn checkpoint(
   self,
   id : String,
   checkpoint : SessionCheckpoint,

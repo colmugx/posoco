@@ -12,7 +12,7 @@ import {
 }
 
 // Values
-pub fn compact_tools_seed(@posoco.RecordingSessionStore, String) -> Unit
+pub fn compact_tools_seed(@posoco.RecordingSessionPort, String) -> Unit
 
 pub fn policy_replace_result() -> @kernel.CompactResult
 

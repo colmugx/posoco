@@ -55,7 +55,7 @@ fn scripted_model_ext(steps : Array[ScriptedModelStep]) -> ManifestOnly {
 
 ///|
 fn io_ext() -> ManifestOnly {
-  tk_ext(id="io", sessions=[RecordingSessionStore()])
+  tk_ext(id="io", sessions=[RecordingSessionPort()])
 }
 
 ///|
@@ -129,7 +129,7 @@ async test "compose/start_once_before_first_turn_started" {
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", sessions=[RecordingSessionStore()], observers=[
+      tk_ext(id="io", sessions=[RecordingSessionPort()], observers=[
         obs as &@port.Observer,
       ]),
       tk_ext(id="lc", lifecycle=[

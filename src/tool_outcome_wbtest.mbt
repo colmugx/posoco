@@ -59,7 +59,7 @@ async test "t06a_business_error_event_matches_result" {
   ])
   let provider = RecordingToolProvider([tk_tool_def("probe", "")], outcomes)
   let obs = RecordingObserver()
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
@@ -129,7 +129,7 @@ async test "t06a_success_event_is_not_error" {
   ])
   let provider = RecordingToolProvider([tk_tool_def("safe", "")], outcomes)
   let obs = RecordingObserver()
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
@@ -170,7 +170,7 @@ async test "t06a_runtime_error_event_is_runtime_failure" {
   ])
   let provider = RecordingToolProvider([tk_tool_def("boom", "")], outcomes)
   let obs = RecordingObserver()
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
@@ -276,7 +276,7 @@ async test "t06b_collision_fails_composition" {
     Map::from_array([]),
   )
   let model = ScriptedModel([])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let composition_result = Ok(
     Agent(
       exts=[
@@ -309,7 +309,7 @@ async test "t06b_missing_collision_provenance_is_actionable" {
   let p1 = SingleToolProvider::{ tool: tk_tool_def("shared", "first"), }
   let p2 = SingleToolProvider::{ tool: tk_tool_def("shared", "second"), }
   let model = ScriptedModel([])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let composition_result = Ok(
     Agent(
       exts=[
@@ -354,7 +354,7 @@ async test "attachments_outcome_flows_to_result_event_and_transcript" {
   ])
   let provider = RecordingToolProvider([tk_tool_def("probe", "")], outcomes)
   let obs = RecordingObserver()
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),

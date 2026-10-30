@@ -92,7 +92,7 @@ test "decision/composition_is_optional_and_gated" {
           id="model",
           model=Some(ScriptedModel([Respond(tk_stop_response("ok"))])),
         ),
-        tk_ext(id="io", sessions=[RecordingSessionStore()]),
+        tk_ext(id="io", sessions=[RecordingSessionPort()]),
         tk_ext(id="decision", decision=Some(decision)),
         tk_ext(id="consumer", lifecycle=[probe_with as &@port.Lifecycle], requires=[
           @port.Capability::Decision,
@@ -121,7 +121,7 @@ test "decision/composition_rejects_multiple_providers" {
           id="model",
           model=Some(ScriptedModel([Respond(tk_stop_response("ok"))])),
         ),
-        tk_ext(id="io", sessions=[RecordingSessionStore()]),
+        tk_ext(id="io", sessions=[RecordingSessionPort()]),
         tk_ext(id="decision-a", decision=Some(a)),
         tk_ext(id="decision-b", decision=Some(b)),
       ],

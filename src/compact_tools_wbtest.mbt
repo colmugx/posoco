@@ -9,7 +9,7 @@ struct CompactToolsModel {
   seen_tools : Array[Array[@kernel.ToolDef]]
   seen_triggers : Array[@kernel.CompactTrigger]
   committed_at_compact : Array[Array[@kernel.Message]]
-  store : RecordingSessionStore
+  store : RecordingSessionPort
   fail_compact : Bool
   seen_messages : Array[Array[@kernel.Message]]
 }
@@ -55,7 +55,7 @@ impl @port.ModelPort for CompactToolsModel with fn provider_config(_self) -> @po
 
 ///|
 fn compact_tools_model(
-  store : RecordingSessionStore,
+  store : RecordingSessionPort,
   fail_compact : Bool,
   chats : Array[ScriptedModelStep],
 ) -> CompactToolsModel {
@@ -90,7 +90,7 @@ fn compact_tools_assert(
 ///|
 async fn compact_tools_idle(fail_compact : Bool, refresh : Bool) -> Unit {
   let id = "tools-idle"
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   compact_tools_seed(store, id)
   let model = compact_tools_model(store, fail_compact, [
     Respond(tk_stop_response("old chat")),
@@ -226,7 +226,7 @@ impl @runtime.Runtime for CompactToolsRuntime with fn compact(
 ///|
 async fn compact_tools_midturn(fail_compact : Bool) -> Unit {
   let id = "tools-midturn"
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   compact_tools_seed(store, id)
   let model = compact_tools_model(store, fail_compact, [
     Respond(tk_tool_call_response("echo", "call_1", Json::null())),
@@ -309,7 +309,7 @@ async test "compact_tools/mid-turn manual failure preserves committed history" {
 ///|
 async fn compact_tools_auto(fail_compact : Bool, pre_request : Bool) -> Unit {
   let id = "tools-auto"
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   compact_tools_seed(store, id)
   if pre_request {
     store.seed(id, {
@@ -412,7 +412,7 @@ async test "compact_tools/empty snapshot is explicit and does not inherit anothe
   )
   ignore(chat_agent.run_turn(tk_user_msg("hi"), "tools-chat"))
   assert_eq(model.received_tools[0].length(), 1)
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   compact_tools_seed(store, "tools-empty")
   let compact_agent = Agent(
     exts=[tk_ext(id="model", model=Some(model), sessions=[store])],
@@ -427,7 +427,7 @@ async test "compact_tools/empty snapshot is explicit and does not inherit anothe
 ///|
 async test "compact_tools/default Agent idle manual forwards composed definitions before chat" {
   let model = ScriptedModel([Compact(result=policy_replace_result())])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   compact_tools_seed(store, "tools-composed")
   let tools = RecordingToolProvider(
     [

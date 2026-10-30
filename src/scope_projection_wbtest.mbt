@@ -96,7 +96,7 @@ async test "scope_projection/turn_events_carry_one_run_identity" {
         id="model",
         model=Some(ScriptedModel([Respond(tk_stop_response("hi"))])),
       ),
-      tk_ext(id="io", sessions=[RecordingSessionStore()], observers=[observer]),
+      tk_ext(id="io", sessions=[RecordingSessionPort()], observers=[observer]),
     ],
     config=tk_config(),
   )
@@ -130,7 +130,7 @@ async test "scope_projection/two_turns_distinct_runs_same_session" {
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", sessions=[RecordingSessionStore()], observers=[observer]),
+      tk_ext(id="io", sessions=[RecordingSessionPort()], observers=[observer]),
     ],
     config=tk_config(),
   )
@@ -169,7 +169,7 @@ async test "scope_projection/tool_loop_events_and_hook_stages_share_run" {
       tk_ext(
         id="tools",
         tools=[tools],
-        sessions=[RecordingSessionStore()],
+        sessions=[RecordingSessionPort()],
         observers=[observer],
         hooks=[hook],
       ),
@@ -217,12 +217,9 @@ async test "scope_projection/testkit_records_single_callback_dispatch" {
         id="model",
         model=Some(ScriptedModel([Respond(tk_stop_response("hi"))])),
       ),
-      tk_ext(
-        id="io",
-        sessions=[RecordingSessionStore()],
-        observers=[observer],
-        hooks=[hook],
-      ),
+      tk_ext(id="io", sessions=[RecordingSessionPort()], observers=[observer], hooks=[
+        hook,
+      ]),
     ],
     config=tk_config(),
   )

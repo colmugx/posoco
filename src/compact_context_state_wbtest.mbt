@@ -27,7 +27,7 @@ async fn check_manual_compact_context(
     Respond(tk_stop_response("no usage yet")),
     Respond(wave3_stop_with_usage("measured", 37)),
   ])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   store.seed(session_id, {
     messages: [tk_user_msg("earlier")],
     metadata: policy_context_metadata(
@@ -115,7 +115,7 @@ async fn check_auto_compact_context(
     ],
     compacted,
   )
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let observer = RecordingObserver()
   let agent = Agent(
     exts=[
@@ -193,7 +193,7 @@ async test "compact_context/empty raw state preserves canonical summary estimate
         mode: Replace,
       }),
     ])
-    let store = RecordingSessionStore()
+    let store = RecordingSessionPort()
     store.seed("compact-context-empty", {
       messages: [tk_user_msg("earlier")],
       metadata: Map::from_array([]),

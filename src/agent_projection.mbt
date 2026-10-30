@@ -5,18 +5,18 @@
 ///|
 /// Correctness-critical persistence projection for committed model/tool facts.
 /// Agent checkpoints the admitted input before Puppet starts; this subscriber
-/// then awaits SessionStore checkpoints after each committed assistant/tool
+/// then awaits SessionPort checkpoints after each committed assistant/tool
 /// boundary. A transcript rewrite marks the session dirty and pauses
 /// incremental projection until the terminal full save re-establishes a
 /// canonical prefix.
 priv struct SessionCheckpointSubscriber {
-  stores : Array[&@port.SessionStore]
+  stores : Array[&@port.SessionPort]
   progress : SessionProgress
 }
 
 ///|
 fn SessionCheckpointSubscriber::SessionCheckpointSubscriber(
-  stores : Array[&@port.SessionStore],
+  stores : Array[&@port.SessionPort],
   progress : SessionProgress,
 ) -> SessionCheckpointSubscriber {
   { stores, progress, }
@@ -89,7 +89,7 @@ impl @puppetry.EventSubscriber for SessionCheckpointSubscriber with fn on_event(
 ) -> Unit raise @puppetry.SubscriberError {
   let session_id = envelope.session_id().to_string()
   match envelope.event() {
-    RunStarted(..) => self.progress.mark_clean(session_id)
+    RunStarted(..) => ()
     TranscriptRewritten(..) => self.progress.mark_dirty(session_id)
     ModelStepCompleted(completion~, ..) => {
       let payload = completion.message

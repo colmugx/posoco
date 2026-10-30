@@ -20,7 +20,7 @@ async test "t06_sequential_turns_use_append_not_full_save" {
     Respond(tk_stop_response("first")),
     Respond(tk_stop_response("second")),
   ])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
@@ -40,9 +40,10 @@ async test "t06_sequential_turns_use_append_not_full_save" {
       _ => ()
     }
   }
-  assert_eq(save_count, 0)
-  // At minimum: admitted input + committed assistant for each turn.
-  assert_true(checkpoint_count >= 4)
+  // The first dirty initialization performs one full alignment; later pure
+  // appends stay on checkpoints and do not degrade into another full save.
+  assert_eq(save_count, 1)
+  assert_true(checkpoint_count >= 3)
 }
 
 // ---------------------------------------------------------------------------
@@ -87,7 +88,7 @@ async test "t06_compact_turn_uses_full_save_not_append" {
     [tk_tool_def("echo", "echo tool")],
     Map::from_array([("echo", OutcomeOk(tk_ok_result("echoed")))]),
   )
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
@@ -115,7 +116,8 @@ async test "t06_compact_turn_uses_full_save_not_append" {
     }
   }
   assert_true(checkpoint_count >= 2)
-  assert_eq(save_count, 1)
+  // One initial full alignment plus the compact Replace full save.
+  assert_eq(save_count, 2)
 }
 
 ///|
@@ -128,7 +130,7 @@ async test "committed model and tool steps advance the durable cursor" {
     [tk_tool_def("echo", "echo")],
     Map::from_array([("echo", OutcomeOk(tk_ok_result("tool-ok")))]),
   )
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
@@ -145,5 +147,5 @@ async test "committed model and tool steps advance the durable cursor" {
       _ => ()
     }
   }
-  debug_inspect(cursors, content="[0, 1, 2, 3]")
+  debug_inspect(cursors, content="[1, 2, 3]")
 }

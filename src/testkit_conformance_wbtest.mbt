@@ -317,13 +317,13 @@ async test "tk_tool_records_are_recursive_json_snapshots" {
 }
 
 // ---------------------------------------------------------------------------
-// RecordingSessionStore: metadata snapshots + configurable failures
-// (SessionStore methods are non-async, non-raising Result returns — direct calls work.)
+// RecordingSessionPort: metadata snapshots + configurable failures
+// (SessionPort methods are non-async, non-raising Result returns — direct calls work.)
 // ---------------------------------------------------------------------------
 
 ///|
 async test "tk_store_records_save_metadata_snapshot" {
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let meta = Map::from_array([
     ("user_role", Json::string("admin")),
     ("turn_count", Json::number(3.0)),
@@ -340,7 +340,7 @@ async test "tk_store_records_save_metadata_snapshot" {
 
 ///|
 async test "tk_store_load_unknown_returns_empty_session" {
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   try {
     let s = store.load("never_saved")
     assert_true(s.messages.is_empty())
@@ -352,7 +352,7 @@ async test "tk_store_load_unknown_returns_empty_session" {
 
 ///|
 async test "tk_store_load_and_seed_are_snapshot_isolated" {
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let seeded : Session = {
     messages: [tk_user_msg("seed")],
     metadata: Map::from_array([("owner", Json::string("original"))]),
@@ -399,7 +399,7 @@ async test "tk_store_snapshots_nested_json_and_tool_arguments" {
     ],
     metadata: Map::from_array([("nested", Json::object(metadata_object))]),
   }
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   store.seed("nested", session)
   metadata_object["value"] = Json::string("metadata-outside")
   argument_object["value"] = Json::string("argument-outside")
@@ -442,7 +442,7 @@ async test "tk_store_operation_accessors_return_recursive_snapshots" {
   let nested : Map[String, Json] = Map::from_array([
     ("value", Json::string("original")),
   ])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let _ = store.save("ops", {
     messages: [],
     metadata: Map::from_array([("nested", Json::object(nested))]),
@@ -470,7 +470,7 @@ async test "tk_store_operation_accessors_return_recursive_snapshots" {
 
 ///|
 async test "tk_store_fail_save_returns_typed_error" {
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   store.fail_save("broken")
   let result = Ok(
     store.save("broken", { messages: [], metadata: Map::from_array([]), }),
@@ -485,7 +485,7 @@ async test "tk_store_fail_save_returns_typed_error" {
 
 ///|
 async test "tk_store_fail_load_returns_typed_error" {
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   store.fail_load("dead", Load("disk gone"))
   let result = Ok(store.load("dead")) catch { e => Err(e) }
   match result {

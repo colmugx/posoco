@@ -274,7 +274,7 @@ fn secondary_failure_errors(
 fn build_memory_agent(
   model : ScriptedModel,
   memory : Array[&@port.MemoryPort],
-  store : RecordingSessionStore,
+  store : RecordingSessionPort,
   observer : RecordingObserver,
   system_prompt : String?,
   timeout_ms : Int32?,
@@ -446,7 +446,7 @@ async test "m38_sysprompt/config_base_precedes_contributors" {
     exts=[
       tk_ext(id="model", model=Some(model)),
       tk_ext(id="ext", prompt_contributors=[contributor]),
-      tk_ext(id="io", sessions=[RecordingSessionStore()]),
+      tk_ext(id="io", sessions=[RecordingSessionPort()]),
     ],
     config=agent_config(
       max_tool_rounds=Some(10),
@@ -475,7 +475,7 @@ async test "m38_sysprompt/lazy_assembly_reads_post_on_start" {
   let contributor = MutablePromptContributor::{ text: text_ref, }
   let starter : &@port.Lifecycle = StartSettingLifecycle::{ target: text_ref, }
   let model = ScriptedModel([Respond(tk_stop_response("ok"))])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
@@ -514,7 +514,7 @@ async test "m38_memory/fresh_session_injects_once" {
   let agent = build_memory_agent(
     model,
     [mem as &@port.MemoryPort],
-    RecordingSessionStore(),
+    RecordingSessionPort(),
     RecordingObserver(),
     Some("SYS"),
     None,
@@ -554,7 +554,7 @@ async test "m38_memory/memory_at_front_without_system_prompt" {
   let agent = build_memory_agent(
     model,
     [mem as &@port.MemoryPort],
-    RecordingSessionStore(),
+    RecordingSessionPort(),
     RecordingObserver(),
     None,
     None,
@@ -586,7 +586,7 @@ async test "m38_memory/second_turn_no_reread_prefix_stable" {
   let agent = build_memory_agent(
     model,
     [mem as &@port.MemoryPort],
-    RecordingSessionStore(),
+    RecordingSessionPort(),
     RecordingObserver(),
     Some("SYS"),
     None,
@@ -618,7 +618,7 @@ async test "m38_memory/empty_inbound_spends_attempt_per_session" {
   let agent = build_memory_agent(
     model,
     [mem as &@port.MemoryPort],
-    RecordingSessionStore(),
+    RecordingSessionPort(),
     observer,
     None,
     None,
@@ -665,7 +665,7 @@ async test "m38_memory/empty_inbound_spends_attempt_per_session" {
 async test "m38_memory/resume_skips_read_and_replays_prefix" {
   let model1 = ScriptedModel([Respond(tk_stop_response("ok"))])
   let mem1 = ScriptedMemoryPort(inbounds=[Some("fact")])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let agent1 = build_memory_agent(
     model1,
     [mem1 as &@port.MemoryPort],
@@ -701,7 +701,7 @@ async test "m38_memory/resume_skips_read_and_replays_prefix" {
 async test "m38_memory/preseeded_history_never_injects" {
   let model = ScriptedModel([Respond(tk_stop_response("ok"))])
   let mem = ScriptedMemoryPort(inbounds=[Some("must never be read")])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   store.seed("session_pre", {
     messages: [
       tk_user_msg("old question"),
@@ -746,7 +746,7 @@ async test "m38_memory/two_providers_merge_into_one_message" {
   let agent = build_memory_agent(
     model,
     [notes as &@port.MemoryPort, book as &@port.MemoryPort],
-    RecordingSessionStore(),
+    RecordingSessionPort(),
     RecordingObserver(),
     None,
     None,
@@ -771,7 +771,7 @@ async test "m38_memory/failing_provider_does_not_mask_sibling" {
   let agent = build_memory_agent(
     model,
     [failing, ok as &@port.MemoryPort],
-    RecordingSessionStore(),
+    RecordingSessionPort(),
     observer,
     None,
     None,
@@ -797,7 +797,7 @@ async test "m38_memory/inbound_timeout_emits_secondary_failure" {
   let agent = build_memory_agent(
     model,
     [slow],
-    RecordingSessionStore(),
+    RecordingSessionPort(),
     observer,
     None,
     Some(1),
@@ -1044,7 +1044,7 @@ async test "m38_memory/e2e_memory_search_tool_reaches_sources" {
   let agent = build_memory_agent(
     model,
     [mem as &@port.MemoryPort],
-    RecordingSessionStore(),
+    RecordingSessionPort(),
     RecordingObserver(),
     None,
     None,
@@ -1075,7 +1075,7 @@ async test "m38_memory/memory_search_collision_at_composition" {
         tk_ext(id="model", model=Some(ScriptedModel([]))),
         tk_ext(id="tools", tools=[tools]),
         tk_ext(id="memory", memory=[mem as &@port.MemoryPort]),
-        tk_ext(id="io", sessions=[RecordingSessionStore()]),
+        tk_ext(id="io", sessions=[RecordingSessionPort()]),
       ],
       config=tk_config(),
     ),
@@ -1125,7 +1125,7 @@ pub impl @port.PipelineHook for SameLengthAgentHook with fn before_model(
 /// content even when the rewrite keeps the same message count.
 async test "m38_hooks/same_length_rewrite_reaches_model" {
   let model = ScriptedModel([Respond(tk_stop_response("ok"))])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let observer = RecordingObserver()
   let agent = Agent(
     exts=[
@@ -1185,7 +1185,7 @@ fn build_ui_agent(
   Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", tools=[tools], ui=[ui], sessions=[RecordingSessionStore()]),
+      tk_ext(id="io", tools=[tools], ui=[ui], sessions=[RecordingSessionPort()]),
     ],
     config=tk_config(),
     ui_projection~,

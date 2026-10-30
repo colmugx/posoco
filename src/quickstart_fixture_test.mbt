@@ -63,7 +63,7 @@ fn copy_quickstart_session(session : @types.Session) -> @types.Session {
 }
 
 ///|
-pub impl @port.SessionStore for QuickstartMemoryStore with fn load(
+pub impl @port.SessionPort for QuickstartMemoryStore with fn load(
   self,
   id : String,
 ) -> @types.Session {
@@ -74,7 +74,7 @@ pub impl @port.SessionStore for QuickstartMemoryStore with fn load(
 }
 
 ///|
-pub impl @port.SessionStore for QuickstartMemoryStore with fn save(
+pub impl @port.SessionPort for QuickstartMemoryStore with fn save(
   self,
   id : String,
   session : @types.Session,

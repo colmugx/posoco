@@ -129,7 +129,7 @@ async test "abort/mid-model-call: structured Cancelled, cancel_effects delivered
     // after the abort.
     Respond(tk_stop_response("after esc")),
   ])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   store.seed("abort-model", { messages: [], metadata: Map::from_array([]), })
   let port_runtime = @runtime.PortRuntime(model~)
   let probe = MidEffectAbortRuntime(
@@ -195,7 +195,7 @@ async test "abort/mid-tool-wave: structured Cancelled, tool effect cancelled, in
     [tk_tool_def("slow_tool", "slow tool")],
     Map::from_array([]),
   )
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   store.seed("abort-tools", { messages: [], metadata: Map::from_array([]), })
   let port_runtime = @runtime.PortRuntime(model~)
   let probe = MidEffectAbortRuntime(inner=port_runtime as &@runtime.Runtime, park_tool_names=[

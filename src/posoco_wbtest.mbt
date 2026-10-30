@@ -2,7 +2,7 @@
 /// Whitebox tests for the root package. R3 M3.7: all fixtures use canonical
 /// kernel types directly; the scripted/recording fakes come from the
 /// in-package testkit (ScriptedModel, RecordingToolProvider,
-/// RecordingSessionStore, RecordingObserver).
+/// RecordingSessionPort, RecordingObserver).
 
 ///|
 struct PolicyRejectHook {}
@@ -99,7 +99,7 @@ fn empty_tools() -> RecordingToolProvider {
 ///|
 async test "simple_turn_no_tools" {
   let model = ScriptedModel([Respond(stop_response("hi there"))])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let observer = RecordingObserver()
   let config = make_config()
 
@@ -139,7 +139,7 @@ async test "turn_with_single_tool" {
       ("bash", OutcomeOk(Success(content="ok", structured=None))),
     ]),
   )
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let observer = RecordingObserver()
   let config = make_config()
 
@@ -183,7 +183,7 @@ async test "tool_failure_non_fatal" {
     ],
     Map::from_array([("bash", OutcomeErr(InvocationFailed("boom")))]),
   )
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let observer = RecordingObserver()
   let config = make_config()
 
@@ -202,7 +202,7 @@ async test "tool_failure_non_fatal" {
 ///|
 async test "model_error_aborts_turn" {
   let model = ScriptedModel([])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let observer = RecordingObserver()
   let config = make_config()
 
@@ -245,7 +245,7 @@ async test "hook_reject_skips_tool_and_feeds_back" {
     ]),
     executed: [],
   }
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let observer = RecordingObserver()
   let config = make_config()
   let reject_hook = PolicyRejectHook::{ }
@@ -306,7 +306,7 @@ async test "hook_reject_steers_model_to_allowed_tool" {
     ]),
     executed: [],
   }
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let observer = RecordingObserver()
 
   let agent = Agent(
@@ -352,7 +352,7 @@ async fn run_bash_with_hooks(
     ]),
     executed: [],
   }
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
@@ -474,7 +474,7 @@ async test "async_before_tool_gates_tool_wave" {
     ]),
     executed: [],
   }
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let entered : @aqueue.Queue[Int32] = Queue(kind=Unbounded)
   let release : @aqueue.Queue[Int32] = Queue(kind=Unbounded)
   let gate_hook = GateHook::{ entered, release, }
@@ -542,7 +542,7 @@ async test "hook_before_tool_raise_aborts_run" {
       ("bash", OutcomeOk(Success(content="ok", structured=None))),
     ]),
   )
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
@@ -586,7 +586,7 @@ async test "reasoning_raw_replayed_verbatim_into_saved_session" {
       processed_messages: [],
     }),
   ])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
@@ -630,7 +630,7 @@ async test "unbounded_tool_rounds_complete_long_turn" {
     [tk_tool_def("probe", "")],
     Map::from_array([("probe", OutcomeOk(tk_ok_result("ok")))]),
   )
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let observer = RecordingObserver()
   let agent = Agent(
     exts=[
@@ -668,7 +668,7 @@ async test "bounded_tool_rounds_allows_exactly_n_rounds" {
     [tk_tool_def("probe", "")],
     Map::from_array([("probe", OutcomeOk(tk_ok_result("ok")))]),
   )
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let observer = RecordingObserver()
   let agent = Agent(
     exts=[
@@ -714,7 +714,7 @@ async test "observer_event_sequence" {
       ("bash", OutcomeOk(Success(content="seq", structured=None))),
     ]),
   )
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let observer = RecordingObserver()
   let config = make_config()
 
@@ -767,7 +767,7 @@ async test "observer_event_sequence" {
 ///|
 async test "session_persistence" {
   let model = ScriptedModel([Respond(stop_response("saved"))])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let observer = RecordingObserver()
   let config = make_config()
 
@@ -815,7 +815,7 @@ impl @port.PipelineHook for RewriteModelHook with fn before_model(
 /// Test: BeforeModel hook can modify messages
 async test "hook_rewrites_before_model_messages" {
   let model = ScriptedModel([Respond(stop_response("response after rewrite"))])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let observer = RecordingObserver()
   let rewriter = RewriteModelHook::{ }
   let config = make_config()
@@ -881,7 +881,7 @@ async test "hook_deferred_skips_execution" {
       ("restricted", OutcomeOk(Success(content="executed", structured=None))),
     ]),
   )
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let observer = RecordingObserver()
   let hook = DeferToolHook::{ }
   let config = make_config()
@@ -943,7 +943,7 @@ async test "hook_default_methods_pass_through" {
       ("echo", OutcomeOk(Success(content="echoed", structured=None))),
     ]),
   )
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
@@ -1004,7 +1004,7 @@ async test "hook_single_impl_receives_all_points" {
     exts=[
       tk_ext(id="model", model=Some(model)),
       tk_ext(id="io", tools=[tools], hooks=[hook], sessions=[
-        RecordingSessionStore(),
+        RecordingSessionPort(),
       ]),
     ],
     config=make_config(),
@@ -1057,7 +1057,7 @@ async test "agent_routes_tools_to_correct_provider" {
       ("mcp__read", OutcomeOk(Success(content="mcp ok", structured=None))),
     ]),
   )
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let observer = RecordingObserver()
   let config = make_config()
 
@@ -1116,7 +1116,7 @@ async test "agent_tool_collision_detection" {
     ]),
   )
   let model = ScriptedModel([Respond(stop_response("ok"))])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let observer = RecordingObserver()
   let config = make_config()
 
@@ -1156,7 +1156,7 @@ async test "streaming_events_emitted_during_chat" {
   ]
   let final_response = stop_response("Hello world")
   let model = ScriptedModel([Stream(chunks~, response=final_response)])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let observer = RecordingObserver()
   let config = make_config()
 
@@ -1241,7 +1241,7 @@ async test "stream_accumulator_assembles_completion" {
 /// Test: Multiple observers all receive events (fan-out)
 async test "multiple_observers_fan_out" {
   let model = ScriptedModel([Respond(stop_response("fan-out"))])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let obs1 = RecordingObserver()
   let obs2 = RecordingObserver()
   let config = make_config()
@@ -1269,7 +1269,7 @@ async test "multiple_hooks_chained_in_order" {
   let hook1 = LogHook::{ seen: [], }
   let hook2 = LogHook::{ seen: [], }
   let model = ScriptedModel([Respond(stop_response("chained"))])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let observer = RecordingObserver()
   let config = make_config()
 
@@ -1297,8 +1297,8 @@ async test "multiple_hooks_chained_in_order" {
 /// Test: Multiple session stores all receive writes
 async test "multiple_session_stores_write_all" {
   let model = ScriptedModel([Respond(stop_response("multi-store"))])
-  let store1 = RecordingSessionStore()
-  let store2 = RecordingSessionStore()
+  let store1 = RecordingSessionPort()
+  let store2 = RecordingSessionPort()
   let observer = RecordingObserver()
   let config = make_config()
 
@@ -1460,7 +1460,7 @@ async test "noop_command_port_returns_empty_and_raises_notfound" {
 /// After stages run hooks in reverse order: hooks[1] runs before hooks[0].
 async test "hook_turn_error_fires_on_model_error" {
   let model = ScriptedModel([])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let observer = RecordingObserver()
   let log_hook = LogHook::{ seen: [], }
   let config = make_config()
@@ -1506,7 +1506,7 @@ async test "hook_turn_error_fires_on_before_tool_abort" {
     ],
     Map::from_array([]),
   )
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let observer = RecordingObserver()
   // RaisingToolHook aborts the run from BeforeTool (raise, not Reject);
   // LogHook records post-stage events.
@@ -1638,7 +1638,7 @@ async test "all_rejected_wave_unknown_tool_completes_with_rejection_event" {
     Respond(tk_stop_response("recovered")),
   ])
   let tools = RecordingToolProvider([], Map::from_array([]))
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let observer = RecordingObserver()
   let agent = Agent(
     exts=[
@@ -1672,7 +1672,7 @@ async test "all_rejected_wave_schema_mismatch_completes_with_rejection_event" {
     Respond(tk_stop_response("recovered")),
   ])
   let tools = RecordingToolProvider([strict_def], Map::from_array([]))
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let observer = RecordingObserver()
   let agent = Agent(
     exts=[
@@ -1709,7 +1709,7 @@ async test "mixed_wave_pairs_executed_call_and_rejects_unknown_without_pending" 
     [tk_tool_def("probe", "")],
     Map::from_array([("probe", OutcomeOk(tk_ok_result("ok")))]),
   )
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let observer = RecordingObserver()
   let agent = Agent(
     exts=[
@@ -1769,7 +1769,7 @@ async test "wave3/compact_session/idle full chain without a chat request" {
     }),
   ])
   let observer = RecordingObserver()
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   store.seed("wave3-compact", {
     messages: [tk_user_msg("hello"), tk_user_msg("more")],
     metadata: Map::from_array([]),
@@ -1825,7 +1825,7 @@ async test "wave3/compact_session/context state records the post-compact estimat
     }),
   ])
   let observer = RecordingObserver()
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   store.seed("wave3-compact-ctx", {
     messages: [tk_user_msg("hello"), tk_user_msg("more")],
     metadata: Map::from_array([]),
@@ -1880,7 +1880,7 @@ async test "wave3/compact_session/pending tools fixated as interrupted" {
       mode: Replace,
     }),
   ])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   store.seed("wave3-fixate", {
     messages: [
       tk_user_msg("do the thing"),
@@ -1921,20 +1921,24 @@ async test "wave3/compact_session/pending tools fixated as interrupted" {
 }
 
 ///|
-async test "wave3/compact_session/journal committed + body save failure recovers on next operation" {
+async test "wave3/body recovery is scoped to the affected operation session" {
   let model = ScriptedModel([
     Compact(result={
-      compacted_messages: [tk_user_msg("summary")],
+      compacted_messages: [tk_user_msg("summary-a")],
       mode: Replace,
     }),
-    Respond(tk_stop_response("on the compacted window")),
+    Respond(tk_stop_response("b-done")),
   ])
-  let store = RecordingSessionStore()
-  store.seed("wave3-recover", {
-    messages: [tk_user_msg("hello")],
+  let store = RecordingSessionPort()
+  store.seed("recover-a", {
+    messages: [tk_user_msg("a-old")],
     metadata: Map::from_array([]),
   })
-  store.fail_save("wave3-recover")
+  store.seed("recover-b", {
+    messages: [tk_user_msg("b-old")],
+    metadata: Map::from_array([]),
+  })
+  store.fail_save("recover-a")
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
@@ -1942,26 +1946,51 @@ async test "wave3/compact_session/journal committed + body save failure recovers
     ],
     config=tk_config(),
   )
-  let compacted : Result[@types.CompactOutcome, @error.AgentError] = Ok(
-    agent.compact_session("wave3-recover"),
+  let failed : Result[@types.CompactOutcome, @error.AgentError] = Ok(
+    agent.compact_session("recover-a"),
   ) catch {
     error => Err(error)
   }
-  guard compacted
+  guard failed
     is Err(@error.AgentError::Session(@error.SessionError::Conflict(_))) else {
-    fail("expected a needs-recovery conflict error")
+    fail("expected A to leave a body-recovery failure")
   }
-  assert_eq(store.store["wave3-recover"].messages.length(), 1)
-  store.heal_save("wave3-recover")
-  ignore(agent.run_turn(tk_user_msg("next"), "wave3-recover"))
+  let a_saves_before = body_recovery_save_count(store, "recover-a")
+  assert_eq(agent.runtime.body_recovery.length(), 1)
+  // B must run normally; its guard must not drain A's failed output.
+  let b = agent.run_turn(tk_user_msg("b-next"), "recover-b")
+  assert_eq(b.final_session_id, "recover-b")
   assert_eq(model.call_count(), 1)
-  let request = model.received_messages[0]
-  assert_eq(request.length(), 2)
-  assert_true(request[0] == tk_user_msg("summary"))
-  assert_true(request[1] == tk_user_msg("next"))
-  let persisted = store.store["wave3-recover"]
-  assert_eq(persisted.messages.length(), 3)
-  assert_true(persisted.messages[0] == tk_user_msg("summary"))
+  assert_eq(body_recovery_save_count(store, "recover-a"), a_saves_before)
+  assert_eq(agent.runtime.body_recovery.length(), 1)
+  // A's own next operation is the only one that retries and fails at its
+  // output gate, with no model call.
+  let blocked : Result[@types.TurnResult, @error.AgentError] = Ok(
+    agent.run_turn(tk_user_msg("a-next"), "recover-a"),
+  ) catch {
+    error => Err(error)
+  }
+  guard blocked is Err(Session(_)) else {
+    fail("expected A's body recovery to fail as a Session error")
+  }
+  assert_eq(model.call_count(), 1)
+  assert_eq(body_recovery_save_count(store, "recover-a"), a_saves_before + 1)
+  assert_eq(agent.runtime.body_recovery.length(), 1)
+}
+
+///|
+fn body_recovery_save_count(
+  store : RecordingSessionPort,
+  session_id : String,
+) -> Int32 {
+  let mut count = 0
+  for op in store.ops() {
+    match op {
+      OpSave(id~, ..) => if id == session_id { count = count + 1 }
+      _ => ()
+    }
+  }
+  count
 }
 
 ///|
@@ -2034,7 +2063,7 @@ async test "wave3/cancellation/mid-stream cancel is structured and the session s
     Respond(tk_stop_response("second turn after late esc")),
   ])
   let observer = RecordingObserver()
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   store.seed("wave3-cancel", {
     messages: [tk_user_msg("seeded question")],
     metadata: Map::from_array([]),
@@ -2107,7 +2136,7 @@ async test "wave3/cancellation/mid-stream cancel is structured and the session s
 
 ///|
 async test "wave3/context_state/retrievable at initial load and not cleared by TurnStarted" {
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   store.seed("wave3-ctx", {
     messages: [tk_user_msg("earlier")],
     metadata: policy_context_metadata(

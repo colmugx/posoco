@@ -24,7 +24,7 @@ priv struct AggregatedPorts {
   log : &@port.LogPort?
   tools : Array[ToolEntry]
   tool_call_owners : Map[String, Array[String]]
-  sessions : Array[&@port.SessionStore]
+  sessions : Array[&@port.SessionPort]
   observers : Array[&@port.Observer]
   hooks : Array[&@port.PipelineHook]
   /// Memory sources paired with their manifest id — the id routes
@@ -55,7 +55,7 @@ fn aggregate_extensions(
   let tools : Array[ToolEntry] = []
   let tool_call_owners : Map[String, Array[String]] = Map::from_array([])
   let tool_index = ToolNameIndex::new()
-  let sessions : Array[&@port.SessionStore] = []
+  let sessions : Array[&@port.SessionPort] = []
   let observers : Array[&@port.Observer] = []
   let hooks : Array[&@port.PipelineHook] = []
   let memory : Array[(String, &@port.MemoryPort)] = []

@@ -166,7 +166,7 @@ async test "operation/started_settled fire exactly once across the follow-up dra
     Respond(tk_stop_response("two")),
     Respond(tk_stop_response("again")),
   ])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let observer = SignalObserver::SignalObserver()
   let control_ref : Ref[AgentControl?] = Ref(None)
   let injector = FollowUpInjector::FollowUpInjector(control_ref)
@@ -222,7 +222,7 @@ async test "operation/started_settled fire exactly once across the follow-up dra
 ///|
 async test "operation/busy names the incumbent and the loser leaves no trace" {
   let model = GatedModel::GatedModel(responses=["held"])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let observer = SignalObserver::SignalObserver()
   let agent = Agent(
     exts=[
@@ -275,7 +275,7 @@ async test "operation/compact settles with the compact origin and outcome" {
     }),
     Respond(tk_stop_response("unused")),
   ])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   store.seed("op-compact", {
     messages: [tk_user_msg("seeded")],
     metadata: Map::from_array([]),
@@ -315,7 +315,7 @@ async test "operation/resume carries the resume origin" {
     Respond(tk_stop_response("resumed")),
     Respond(tk_stop_response("woken")),
   ])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   store.seed("op-resume", {
     messages: [tk_user_msg("persisted")],
     metadata: Map::from_array([]),
@@ -342,7 +342,7 @@ async test "operation/model failure settles failed and stays reusable" {
     Fail(@error.ModelError::Transport("down")),
     Respond(tk_stop_response("recovered")),
   ])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let observer = SignalObserver::SignalObserver()
   let agent = Agent(
     exts=[

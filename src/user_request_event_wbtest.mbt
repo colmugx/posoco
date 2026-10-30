@@ -109,7 +109,7 @@ fn build_uireq_agent(
         lifecycle=[tool],
         requires~,
         ui~,
-        sessions=[RecordingSessionStore()],
+        sessions=[RecordingSessionPort()],
         observers=[observer],
       ),
     ],

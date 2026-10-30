@@ -33,7 +33,7 @@ pub fn tk_config() -> AgentConfig
 
 pub fn tk_error_result(String) -> @kernel.ToolOutcome
 
-pub fn tk_ext(id~ : String, model? : &@port.ModelPort?, decision? : &@port.DecisionPort?, log? : &@port.LogPort?, tools? : Array[&@port.ToolProvider], sessions? : Array[&@port.SessionStore], observers? : Array[&@port.Observer], hooks? : Array[&@port.PipelineHook], memory? : Array[&@port.MemoryPort], lifecycle? : Array[&@port.Lifecycle], commands? : Array[&@port.CommandPort], ui? : Array[&@port.UiPort], prompt_contributors? : Array[&@port.SystemPromptContributor], requires? : Array[@port.Capability]) -> ManifestOnly
+pub fn tk_ext(id~ : String, model? : &@port.ModelPort?, decision? : &@port.DecisionPort?, log? : &@port.LogPort?, tools? : Array[&@port.ToolProvider], sessions? : Array[&@port.SessionPort], observers? : Array[&@port.Observer], hooks? : Array[&@port.PipelineHook], memory? : Array[&@port.MemoryPort], lifecycle? : Array[&@port.Lifecycle], commands? : Array[&@port.CommandPort], ui? : Array[&@port.UiPort], prompt_contributors? : Array[&@port.SystemPromptContributor], requires? : Array[@port.Capability]) -> ManifestOnly
 
 pub fn tk_ok_attachments_result(String, attachments~ : Array[@kernel.Content]) -> @kernel.ToolOutcome
 
@@ -203,25 +203,25 @@ pub fn RecordingObserver::events(Self) -> Array[@types.TurnEvent]
 pub fn RecordingObserver::on_event(Self, @types.EventScope?, @types.TurnEvent) -> Unit
 pub impl @port.Observer for RecordingObserver
 
-pub(all) struct RecordingSessionStore {
+pub(all) struct RecordingSessionPort {
   store : Map[String, @types.Session]
   mut load_failures : Map[String, @error.SessionError]
   mut save_failures : Array[String]
   mut ops : Array[SessionOp]
 }
-pub fn RecordingSessionStore::RecordingSessionStore() -> Self
-pub async fn RecordingSessionStore::append_messages(Self, String, Int32, ArrayView[@kernel.Message]) -> Unit raise @error.SessionError
-pub async fn RecordingSessionStore::checkpoint(Self, String, @port.SessionCheckpoint) -> Unit raise @error.SessionError
-pub fn RecordingSessionStore::fail_load(Self, String, @error.SessionError) -> Unit
-pub fn RecordingSessionStore::fail_save(Self, String) -> Unit
-pub fn RecordingSessionStore::heal_save(Self, String) -> Unit
-pub async fn RecordingSessionStore::load(Self, String) -> @types.Session raise @error.SessionError
-pub fn RecordingSessionStore::ops(Self) -> Array[SessionOp]
-pub async fn RecordingSessionStore::save(Self, String, @types.Session) -> Unit raise @error.SessionError
-pub fn RecordingSessionStore::save_snapshots(Self) -> Array[(String, Map[String, Json])]
-pub fn RecordingSessionStore::seed(Self, String, @types.Session) -> Unit
-pub async fn RecordingSessionStore::truncate(Self, String, Int32) -> Unit raise @error.SessionError
-pub impl @port.SessionStore for RecordingSessionStore
+pub fn RecordingSessionPort::RecordingSessionPort() -> Self
+pub async fn RecordingSessionPort::append_messages(Self, String, Int32, ArrayView[@kernel.Message]) -> Unit raise @error.SessionError
+pub async fn RecordingSessionPort::checkpoint(Self, String, @port.SessionCheckpoint) -> Unit raise @error.SessionError
+pub fn RecordingSessionPort::fail_load(Self, String, @error.SessionError) -> Unit
+pub fn RecordingSessionPort::fail_save(Self, String) -> Unit
+pub fn RecordingSessionPort::heal_save(Self, String) -> Unit
+pub async fn RecordingSessionPort::load(Self, String) -> @types.Session raise @error.SessionError
+pub fn RecordingSessionPort::ops(Self) -> Array[SessionOp]
+pub async fn RecordingSessionPort::save(Self, String, @types.Session) -> Unit raise @error.SessionError
+pub fn RecordingSessionPort::save_snapshots(Self) -> Array[(String, Map[String, Json])]
+pub fn RecordingSessionPort::seed(Self, String, @types.Session) -> Unit
+pub async fn RecordingSessionPort::truncate(Self, String, Int32) -> Unit raise @error.SessionError
+pub impl @port.SessionPort for RecordingSessionPort
 
 pub(all) struct RecordingToolProvider {
   tool_defs : Array[@kernel.ToolDef]
@@ -647,7 +647,7 @@ pub using @port {trait Observer}
 
 pub using @port {trait PipelineHook}
 
-pub using @port {trait SessionStore}
+pub using @port {trait SessionPort}
 
 pub using @port {trait SystemPromptContributor}
 

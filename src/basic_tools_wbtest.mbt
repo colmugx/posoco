@@ -23,7 +23,7 @@ fn build_basic_tools_agent(
   Agent::with_runtime(
     exts=[
       tk_ext(id="model", model=Some(model), memory=[mem], sessions=[
-        RecordingSessionStore(),
+        RecordingSessionPort(),
       ]),
       publisher,
     ],

@@ -85,7 +85,7 @@ async test "policy/provider-reported window enables auto-compact without host co
     exts=[
       tk_ext(id="model", model=Some(model)),
       tk_ext(id="tools", tools=[policy_tools()]),
-      tk_ext(id="io", sessions=[RecordingSessionStore()]),
+      tk_ext(id="io", sessions=[RecordingSessionPort()]),
     ],
     config=tk_config(),
   )
@@ -112,7 +112,7 @@ async test "policy/compact scope carries the resolved pressure reading" {
     exts=[
       tk_ext(id="model", model=Some(model)),
       tk_ext(id="tools", tools=[policy_tools()]),
-      tk_ext(id="io", sessions=[RecordingSessionStore()]),
+      tk_ext(id="io", sessions=[RecordingSessionPort()]),
     ],
     config=tk_config(),
   )
@@ -146,7 +146,7 @@ async test "policy/host window overrides the provider report" {
     exts=[
       tk_ext(id="model", model=Some(model)),
       tk_ext(id="tools", tools=[policy_tools()]),
-      tk_ext(id="io", sessions=[RecordingSessionStore()]),
+      tk_ext(id="io", sessions=[RecordingSessionPort()]),
     ],
     config={ ..tk_config(), model_context_window: Some(1000), },
   )
@@ -171,7 +171,7 @@ async test "policy/core default threshold is 0.88 when nobody declares one" {
     exts=[
       tk_ext(id="model", model=Some(model)),
       tk_ext(id="tools", tools=[policy_tools()]),
-      tk_ext(id="io", sessions=[RecordingSessionStore()]),
+      tk_ext(id="io", sessions=[RecordingSessionPort()]),
     ],
     config=tk_config(),
   )
@@ -200,7 +200,7 @@ async test "policy/cumulative usage does not trigger, latest occupancy does" {
     exts=[
       tk_ext(id="model", model=Some(model)),
       tk_ext(id="tools", tools=[policy_tools()]),
-      tk_ext(id="io", sessions=[RecordingSessionStore()]),
+      tk_ext(id="io", sessions=[RecordingSessionPort()]),
     ],
     config=tk_config(),
   )
@@ -230,7 +230,7 @@ async test "policy/same task crossing twice compacts twice" {
     exts=[
       tk_ext(id="model", model=Some(model)),
       tk_ext(id="tools", tools=[policy_tools()]),
-      tk_ext(id="io", sessions=[RecordingSessionStore()]),
+      tk_ext(id="io", sessions=[RecordingSessionPort()]),
     ],
     config=tk_config(),
   )
@@ -253,7 +253,7 @@ async test "policy/auto-compact failure stops the turn immediately and is report
       compact_threshold=Some(0.9),
     ),
   }
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
@@ -406,7 +406,7 @@ async test "policy/e2e compacted transcript is what the next model call sees" {
     exts=[
       tk_ext(id="model", model=Some(model)),
       tk_ext(id="tools", tools=[policy_tools()]),
-      tk_ext(id="io", sessions=[RecordingSessionStore()]),
+      tk_ext(id="io", sessions=[RecordingSessionPort()]),
     ],
     config=tk_config(),
   )
@@ -461,7 +461,7 @@ fn policy_context_metadata(
 
 ///|
 async test "policy/pre-request check compacts before the first request" {
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   store.seed("session_pre", {
     messages: [tk_user_msg("hello")],
     metadata: policy_context_metadata(
@@ -494,7 +494,7 @@ async test "policy/pre-request check compacts before the first request" {
 
 ///|
 async test "policy/pre-request check stays quiet below the threshold" {
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   store.seed("session_pre_low", {
     messages: [tk_user_msg("hello")],
     metadata: policy_context_metadata(
@@ -523,7 +523,7 @@ async test "policy/pre-request check stays quiet below the threshold" {
 
 ///|
 async test "policy/pre-request check ignores readings from another window" {
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   store.seed("session_pre_window", {
     messages: [tk_user_msg("hello")],
     metadata: policy_context_metadata(
@@ -565,7 +565,7 @@ async test "policy/e2e compacted transcript persists into the next turn" {
     exts=[
       tk_ext(id="model", model=Some(model)),
       tk_ext(id="tools", tools=[policy_tools()]),
-      tk_ext(id="io", sessions=[RecordingSessionStore()]),
+      tk_ext(id="io", sessions=[RecordingSessionPort()]),
     ],
     config=tk_config(),
   )
@@ -601,7 +601,7 @@ async test "policy/e2e compacted transcript persists into the next turn" {
 
 ///|
 async test "policy/pre-request check covers the first request after resume" {
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   store.seed("session_pre_resume", {
     messages: [
       tk_user_msg("hello"),

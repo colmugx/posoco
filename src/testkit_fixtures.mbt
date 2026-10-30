@@ -303,7 +303,7 @@ pub impl @port.MemoryPort for ScriptedMemoryPort with fn delete(
 /// ```moonbit nocheck
 /// let model = ScriptedModel(..)
 /// let tools = RecordingToolProvider(..)
-/// let store = RecordingSessionStore()
+/// let store = RecordingSessionPort()
 /// let observer = RecordingObserver()
 /// let agent = Agent(
 ///   exts=[
@@ -320,7 +320,7 @@ pub fn tk_ext(
   decision~ : &@port.DecisionPort? = None,
   log~ : &@port.LogPort? = None,
   tools~ : Array[&@port.ToolProvider] = [],
-  sessions~ : Array[&@port.SessionStore] = [],
+  sessions~ : Array[&@port.SessionPort] = [],
   observers~ : Array[&@port.Observer] = [],
   hooks~ : Array[&@port.PipelineHook] = [],
   memory~ : Array[&@port.MemoryPort] = [],

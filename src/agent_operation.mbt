@@ -188,11 +188,18 @@ async fn[X] AgentRuntime::execute_operation(
             self.retire_pending_versions()
             // Recovery is an async, guard-held phase before the new request.
             // A failure propagates and prevents body() from running; the
-            // pending record stays for the next operation.
-            let drained : Result[Unit, @error.AgentError] = Ok(
-              self.drain_pending_new_thread_outputs(),
+            // pending records stay for the next operation.
+            let body_drained : Result[Unit, @error.AgentError] = Ok(
+              self.drain_body_recovery_outputs(admission.session_id),
             ) catch {
               error => Err(error)
+            }
+            let drained : Result[Unit, @error.AgentError] = match body_drained {
+              Ok(_) =>
+                Ok(self.drain_pending_new_thread_outputs()) catch {
+                  error => Err(error)
+                }
+              Err(error) => Err(error)
             }
             match drained {
               Ok(_) => body()

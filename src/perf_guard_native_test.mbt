@@ -57,7 +57,7 @@ async test "perf guard: multi-wave tool commit is linear in transcript" {
     [@posoco.tk_tool_def("echo", "echo tool")],
     outcomes,
   )
-  let store = @posoco.RecordingSessionStore()
+  let store = @posoco.RecordingSessionPort()
   let config : @posoco.AgentConfig = @posoco.agent_config(
     max_tool_rounds=Some(waves + 2),
   )
@@ -93,7 +93,7 @@ async test "perf guard: streaming turn drains 50k chunks fast" {
   let model = @posoco.ScriptedModel([
     Stream(chunks~, response=@posoco.tk_stop_response("ok")),
   ])
-  let store = @posoco.RecordingSessionStore()
+  let store = @posoco.RecordingSessionPort()
   let observer = @posoco.RecordingObserver()
   let agent = @posoco.Agent(
     exts=[

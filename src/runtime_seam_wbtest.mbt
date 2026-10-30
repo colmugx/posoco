@@ -27,7 +27,7 @@ fn build_fake_runtime_agent(
   let agent = Agent::with_runtime(
     exts=[
       tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", tools=[tools], sessions=[RecordingSessionStore()]),
+      tk_ext(id="io", tools=[tools], sessions=[RecordingSessionPort()]),
     ],
     config=tk_config(),
     runtime=fake as &@runtime.Runtime,
@@ -103,7 +103,7 @@ async test "runtime seam/follow-up during turn drives a subsequent turn" {
   let port_runtime = @runtime.PortRuntime(model~)
   let fake = FakeRuntime(port_runtime)
   fake.follow_up_on_tool = true
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let observer = RecordingObserver()
   let agent = Agent::with_runtime(
     exts=[

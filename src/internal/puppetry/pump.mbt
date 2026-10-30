@@ -335,7 +335,7 @@ async fn Puppet::pump_abort(
 ///|
 /// Fork safe point: snapshot the transcript's first `fork_index` messages,
 /// capture the core source, release the lease, and stop the turn with
-/// `ForkCompleted`. The Agent is the sole SessionStore writer. Fork is
+/// `ForkCompleted`. The Agent is the sole SessionPort writer. Fork is
 /// copy-on-write: the original transcript is never mutated. Always stops the
 /// pump.
 fn Puppet::pump_fork(

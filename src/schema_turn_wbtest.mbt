@@ -48,7 +48,7 @@ async test "oneOf tool composes through Agent and executes conforming call" {
       ("write_thing", OutcomeOk(Success(content="ok", structured=None))),
     ]),
   )
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let observer = RecordingObserver()
   let agent = Agent(
     exts=[
@@ -75,7 +75,7 @@ async test "oneOf XOR violations are pre-pass rejected without execution" {
     Respond(stop_response("done")),
   ])
   let tools = RecordingToolProvider([oneof_tool_def()], Map::from_array([]))
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let observer = RecordingObserver()
   let agent = Agent(
     exts=[

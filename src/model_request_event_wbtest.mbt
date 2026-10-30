@@ -23,7 +23,7 @@ async test "model_request_started/brackets_every_step_before_chunks" {
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
-      tk_ext(id="tools", tools=[tools], sessions=[RecordingSessionStore()], observers=[
+      tk_ext(id="tools", tools=[tools], sessions=[RecordingSessionPort()], observers=[
         observer,
       ]),
     ],

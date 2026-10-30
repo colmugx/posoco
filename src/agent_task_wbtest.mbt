@@ -373,7 +373,7 @@ fn foreground_abort_tasks(
 async test "managed_tasks/run_scoped_completes_and_waits" {
   let capture = TaskCapture::new()
   let model = ScriptedModel([Respond(tk_stop_response("ok"))])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
@@ -421,7 +421,7 @@ async test "managed_tasks/run_scoped_completes_and_waits" {
 ///|
 fn task_test_agent(
   model : &@port.ModelPort,
-  store : RecordingSessionStore,
+  store : RecordingSessionPort,
   capture : TaskCapture,
 ) -> Agent raise @error.CompositionError {
   Agent(
@@ -494,7 +494,7 @@ async test "managed_tasks/outcomes_route_to_fixed_session" {
     Respond(tk_stop_response("B")),
     Respond(tk_stop_response("A")),
   ])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let agent = task_test_agent(model as &@port.ModelPort, store, capture)
   agent.run_scoped(async fn(agent) {
     let a = task_test_submit(capture, "session_a", "a")
@@ -521,7 +521,7 @@ async test "managed_tasks/long_horizon_background_outcomes_are_exactly_once" {
     steps.push(Respond(tk_stop_response("turn-\{i}")))
   }
   let model = ScriptedModel(steps)
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let agent = task_test_agent(model as &@port.ModelPort, store, capture)
   let markers : Array[String] = []
   agent.run_scoped(async fn(agent) {
@@ -567,7 +567,7 @@ async test "managed_tasks/save_failure_retains_one_pending_outcome" {
     Respond(tk_stop_response("first")),
     Respond(tk_stop_response("retry")),
   ])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let agent = task_test_agent(model as &@port.ModelPort, store, capture)
   agent.run_scoped(async fn(agent) {
     let handle = task_test_submit(capture, "session_save", "save")
@@ -599,7 +599,7 @@ async test "managed_tasks/save_failure_retains_one_pending_outcome" {
 async test "managed_tasks/abort_cancels_overlapping_foreground_and_keeps_background" {
   let model = ForegroundAbortModel::new()
   let probe = ForegroundAbortProbe::new()
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let tools = RecordingToolProvider(
     [tk_tool_def("abort-tool", "abort test tool")],
     Map::from_array([("abort-tool", OutcomeOk(tk_ok_result("unused")))]),
@@ -661,7 +661,7 @@ async test "managed_tasks/abort_cancels_overlapping_foreground_and_keeps_backgro
 ///|
 async test "managed_tasks/rejects_malformed_applied_ids_before_model_call" {
   let model = ScriptedModel([Respond(tk_stop_response("healed"))])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   store.seed("malformed", {
     messages: [],
     metadata: Map::from_array([
@@ -694,7 +694,7 @@ async test "managed_tasks/rejects_malformed_applied_ids_before_model_call" {
 async test "managed_tasks/repeated_waits_are_payload_isolated" {
   let capture = TaskCapture::new()
   let model = ScriptedModel([Respond(tk_stop_response("unused"))])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let agent = task_test_agent(model as &@port.ModelPort, store, capture)
   agent.run_scoped(async fn(_agent) {
     let handle = task_test_submit(capture, "snapshot-session", "snapshot")
@@ -726,7 +726,7 @@ async test "managed_tasks/repeated_waits_are_payload_isolated" {
 ///|
 async test "managed_tasks/compact_keeps_busy_guard_through_blocked_operation" {
   let model = CompactBusyModel::new()
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let agent = Agent(
     exts=[
       tk_ext(
@@ -789,7 +789,7 @@ async test "managed_tasks/compact_keeps_busy_guard_through_blocked_operation" {
 async test "managed_tasks/timeout_survives_masked_raise" {
   let capture = TaskCapture::new()
   let model = ScriptedModel([Respond(tk_stop_response("unused"))])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let agent = task_test_agent(model as &@port.ModelPort, store, capture)
   agent.run_scoped(async fn(_agent) {
     let tasks = match capture.tasks {
@@ -829,7 +829,7 @@ async test "managed_tasks/timeout_survives_masked_raise" {
 async test "managed_tasks/timeout_survives_masked_return" {
   let capture = TaskCapture::new()
   let model = ScriptedModel([Respond(tk_stop_response("unused"))])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let agent = task_test_agent(model as &@port.ModelPort, store, capture)
   agent.run_scoped(async fn(_agent) {
     let tasks = match capture.tasks {
@@ -868,7 +868,7 @@ async test "managed_tasks/timeout_survives_masked_return" {
 async test "managed_tasks/business_error_survives_cancel_guard" {
   let capture = TaskCapture::new()
   let model = ScriptedModel([Respond(tk_stop_response("unused"))])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let agent = task_test_agent(model as &@port.ModelPort, store, capture)
   agent.run_scoped(async fn(_agent) {
     let tasks = match capture.tasks {
@@ -903,7 +903,7 @@ async test "managed_tasks/business_error_survives_cancel_guard" {
 async test "managed_tasks/plain_completion_unaffected_by_guard" {
   let capture = TaskCapture::new()
   let model = ScriptedModel([Respond(tk_stop_response("unused"))])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let agent = task_test_agent(model as &@port.ModelPort, store, capture)
   agent.run_scoped(async fn(_agent) {
     let tasks = match capture.tasks {

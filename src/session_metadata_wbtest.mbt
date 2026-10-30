@@ -23,7 +23,7 @@ async test "t05_metadata_roundtrip_preserves_unknown_keys" {
   // Seed a session with user-owned metadata. After a no-tool turn, the saved
   // session MUST still contain those keys with unchanged values.
   let model = ScriptedModel([Respond(tk_stop_response("done"))])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let initial_meta = Map::from_array([
     ("user_role", Json::string("admin")),
     ("turn_count", Json::number(5.0)),
@@ -55,7 +55,7 @@ async test "t05_metadata_roundtrip_preserves_unknown_keys" {
 ///|
 async test "t05_save_failure_returns_session_error_no_turn_completed" {
   let model = ScriptedModel([Respond(tk_stop_response("done"))])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   // Configure the session id to fail on save.
   store.fail_save("doomed")
   let obs = RecordingObserver()
@@ -97,7 +97,7 @@ async test "t05_save_failure_returns_session_error_no_turn_completed" {
 ///|
 async test "t05_failed_turn_persists_progress_without_aliasing" {
   let model = ScriptedModel([Fail(Transport("network down"))])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let original_messages = [tk_user_msg("already persisted")]
   store.seed("stable", {
     messages: original_messages,
@@ -138,7 +138,7 @@ async test "t05_failed_turn_persists_progress_without_aliasing" {
 ///|
 async test "t05_session_load_error_has_context_without_metadata" {
   let model = ScriptedModel([])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   store.fail_load("load-target", Load("backend unavailable"))
   let agent = Agent(
     exts=[
@@ -167,7 +167,7 @@ async test "t05_session_load_error_has_context_without_metadata" {
 async test "t05_session_error_uses_bounded_single_line_id" {
   let raw_id = "line-one\n" + "x".repeat(100) + "TAIL_SESSION_SECRET"
   let model = ScriptedModel([])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   store.fail_load(raw_id, Load("backend unavailable"))
   let agent = Agent(
     exts=[
@@ -196,7 +196,7 @@ async test "t05_session_error_uses_bounded_single_line_id" {
 async test "t05_session_save_cause_cannot_reexpand_raw_id" {
   let raw_id = "save-line\n" + "y".repeat(100) + "TAIL_SAVE_SECRET"
   let model = ScriptedModel([Respond(tk_stop_response("done"))])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   // This fake includes the raw id in its underlying Save message, exercising
   // both the contextual id label and the bounded cause label.
   store.fail_save(raw_id)
@@ -351,7 +351,7 @@ fn assert_session_has_no_boundary_poison(session : @types.Session) -> Unit {
 struct BoundaryMutatingStore {}
 
 ///|
-pub extend BoundaryMutatingStore with @port.SessionStore::{
+pub extend BoundaryMutatingStore with @port.SessionPort::{
   save,
   append_messages,
   checkpoint,
@@ -360,7 +360,7 @@ pub extend BoundaryMutatingStore with @port.SessionStore::{
 }
 
 ///|
-pub impl @port.SessionStore for BoundaryMutatingStore with fn load(_self, _id) -> @types.Session {
+pub impl @port.SessionPort for BoundaryMutatingStore with fn load(_self, _id) -> @types.Session {
   {
     messages: [],
     metadata: Map::from_array([
@@ -375,7 +375,7 @@ pub impl @port.SessionStore for BoundaryMutatingStore with fn load(_self, _id) -
 }
 
 ///|
-pub impl @port.SessionStore for BoundaryMutatingStore with fn save(
+pub impl @port.SessionPort for BoundaryMutatingStore with fn save(
   _self,
   _id,
   session,
@@ -464,7 +464,7 @@ pub impl @port.Observer for BoundaryMutatingObserver with fn on_event(
 ///|
 async test "t05_each_final_save_store_gets_independent_deep_snapshot" {
   let mutating_store = BoundaryMutatingStore::{ }
-  let recording_store = RecordingSessionStore()
+  let recording_store = RecordingSessionPort()
   let model = ScriptedModel([Respond(tk_stop_response("done"))])
   let agent = Agent(
     exts=[
@@ -551,7 +551,7 @@ async test "t05_tool_ports_hooks_and_observers_get_json_snapshots" {
   let hook = BoundaryMutatingHook::{ }
   let mutating_observer = BoundaryMutatingObserver::{ }
   let recording_observer = RecordingObserver()
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
@@ -599,7 +599,7 @@ async test "automatic title comes from admitted human input before memory inject
   let memory = ScriptedMemoryPort(inbounds=[
     Some("the same injected memory appears in every fresh session"),
   ])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
@@ -804,7 +804,7 @@ async test "t05_turn_result_tool_outcomes_do_not_alias_held_transcript_or_next_i
     result: provider_result,
     calls: [],
   }
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),

@@ -8,7 +8,7 @@ struct CoreShadowCheckpointFailStore {
 }
 
 ///|
-impl @port.SessionStore for CoreShadowCheckpointFailStore with fn load(
+impl @port.SessionPort for CoreShadowCheckpointFailStore with fn load(
   _self,
   _id,
 ) -> @types.Session {
@@ -16,7 +16,7 @@ impl @port.SessionStore for CoreShadowCheckpointFailStore with fn load(
 }
 
 ///|
-impl @port.SessionStore for CoreShadowCheckpointFailStore with fn save(
+impl @port.SessionPort for CoreShadowCheckpointFailStore with fn save(
   _self,
   _id,
   _session,
@@ -25,12 +25,51 @@ impl @port.SessionStore for CoreShadowCheckpointFailStore with fn save(
 }
 
 ///|
-impl @port.SessionStore for CoreShadowCheckpointFailStore with fn checkpoint(
+impl @port.SessionPort for CoreShadowCheckpointFailStore with fn checkpoint(
   self,
   _id,
   _checkpoint,
 ) -> Unit raise @error.SessionError {
   self.checkpoints = self.checkpoints + 1
+  if self.checkpoints == self.fail_at {
+    raise Save("core shadow test store offline")
+  }
+}
+
+///|
+/// H1-specific store: records the one initial load, every full save, and every
+/// checkpoint body, while keeping the checkpoint failure at a fixed call.
+struct H1Store {
+  mut checkpoints : Int32
+  fail_at : Int32
+  mut loads : Int32
+  saves : Array[@types.Session]
+  checkpoint_bodies : Array[Array[@kernel.Message]]
+}
+
+///|
+impl @port.SessionPort for H1Store with fn load(self, _id : String) -> @types.Session {
+  self.loads = self.loads + 1
+  { messages: [], metadata: Map::from_array([]), }
+}
+
+///|
+impl @port.SessionPort for H1Store with fn save(
+  self,
+  _id : String,
+  session : @types.Session,
+) -> Unit {
+  self.saves.push(snapshot_session(session.messages, session.metadata))
+}
+
+///|
+impl @port.SessionPort for H1Store with fn checkpoint(
+  self,
+  _id : String,
+  checkpoint : @port.SessionCheckpoint,
+) -> Unit raise @error.SessionError {
+  self.checkpoints = self.checkpoints + 1
+  self.checkpoint_bodies.push(snapshot_messages(checkpoint.messages))
   if self.checkpoints == self.fail_at {
     raise Save("core shadow test store offline")
   }
@@ -61,28 +100,6 @@ fn assert_core_messages_equal(
   for i in 0..<left.length() {
     assert_true(left[i] == right[i])
   }
-}
-
-///|
-fn has_secondary_failure(
-  events : Array[@types.TurnEvent],
-  hook_point : String,
-) -> Bool {
-  for event in events {
-    match event {
-      Custom(source="posoco.core", label="secondary_failure", data~) =>
-        match data {
-          Object(fields) =>
-            match fields.get("hook_point") {
-              Some(String(value)) if value == hook_point => return true
-              _ => ()
-            }
-          _ => ()
-        }
-      _ => ()
-    }
-  }
-  false
 }
 
 ///|
@@ -142,7 +159,7 @@ async test "core_shadow/new_session_with_store_matches_persisted" {
       ("probe", OutcomeOk(Success(content="ok", structured=None))),
     ]),
   )
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
@@ -173,7 +190,7 @@ async test "core_shadow/new_session_with_store_matches_persisted" {
 
 ///|
 async test "core_shadow/hydrates_existing_store_before_new_boundaries" {
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   store.seed("shadow-seeded", {
     messages: [tk_user_msg("old")],
     metadata: Map::from_array([("seed", Json::string("kept"))]),
@@ -199,7 +216,13 @@ async test "core_shadow/hydrates_existing_store_before_new_boundaries" {
 
 ///|
 async test "core_shadow/store_failure_keeps_recorded_core" {
-  let store = CoreShadowCheckpointFailStore::{ checkpoints: 0, fail_at: 2, }
+  let store = H1Store::{
+    checkpoints: 0,
+    fail_at: 2,
+    loads: 0,
+    saves: [],
+    checkpoint_bodies: [],
+  }
   let observer = RecordingObserver()
   let model = ScriptedModel([
     Respond(tk_tool_call_response("probe", "tc-shadow", Json::null())),
@@ -230,26 +253,31 @@ async test "core_shadow/store_failure_keeps_recorded_core" {
     Ok(_) => fail("expected the committed checkpoint to fail the turn")
   }
   let core = core_shadow_current(agent, "shadow-fail")
-  assert_eq(core.messages.length(), 2)
+  assert_eq(core.messages.length(), 3)
   assert_true(core.messages[0] == tk_user_msg("hello"))
   guard core.messages[1] is AssistantMessage(tool_calls=[call], ..) else {
     fail("expected the committed assistant message before store I/O")
   }
   assert_eq(call.name.to_string(), "probe")
-  // The store still loads an empty (stale) session. The next operation must
-  // not overwrite the leading core: production proceeds, shadow stops, and a
-  // diagnostic is emitted.
+  guard core.messages[2] is ToolMessage(outcome=Success(content="ok", ..), ..) else {
+    fail("expected the committed tool result before store I/O")
+  }
+  assert_eq(store.loads, 1)
   ignore(agent.run_turn(tk_user_msg("next"), "shadow-fail"))
+  assert_eq(store.loads, 1)
   let after = core_shadow_current(agent, "shadow-fail")
-  assert_eq(after.messages.length(), 2)
+  assert_eq(after.messages.length(), 5)
   assert_true(after.messages[0] == tk_user_msg("hello"))
   assert_true(after.messages[1] == core.messages[1])
-  assert_false(agent.runtime.core_shadow.is_tracked("shadow-fail"))
-  match agent.runtime.core_shadow.state.get("shadow-fail") {
-    Some(Stopped(reason~, ..)) => assert_eq(reason, "admission_conflict")
-    _ => fail("expected the stale admission conflict to stay stopped")
+  assert_true(after.messages[2] == core.messages[2])
+  assert_true(after.messages[3] == tk_user_msg("next"))
+  guard after.messages[4] is AssistantMessage(content=[Text("done")], ..) else {
+    fail("expected the next turn terminal from core")
   }
-  assert_true(has_secondary_failure(observer.events(), "core_shadow_admit"))
+  match agent.runtime.core_shadow.state.get("shadow-fail") {
+    Some(Complete) => ()
+    _ => fail("expected the core session to complete after the next turn")
+  }
 }
 
 ///|
@@ -304,6 +332,19 @@ impl @port.ModelPort for ShadowGatedTurnModel with fn compact(
 ///|
 impl @port.ModelPort for ShadowGatedTurnModel with fn provider_config(_self) -> @port.ProviderConfig {
   @port.ProviderConfig::empty()
+}
+
+///|
+async fn core_shadow_wait_entered(model : ShadowGatedTurnModel) -> Bool {
+  let waited : Unit = @async.with_timeout(60, async fn() {
+    while !model.entered {
+      @async.pause()
+    }
+  }) catch {
+    _ => fail("model gate did not enter")
+  }
+  ignore(waited)
+  true
 }
 
 ///|
@@ -367,7 +408,7 @@ async test "core_shadow/fork_pins_safe_point_source_after_assistant_commit" {
     compacted: [],
     compact_mode: NewThread,
   }
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   store.seed("fork-parent", {
     messages: [tk_user_msg("old-one"), tk_user_msg("old-two")],
     metadata: Map::from_array([]),
@@ -490,7 +531,7 @@ async test "core_shadow/midturn_newthread_source_includes_tool_and_assistant" {
     compacted: [tk_user_msg("mid-turn summary")],
     compact_mode: NewThread,
   }
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   store.seed("mid-parent", {
     messages: [tk_user_msg("old-one"), tk_user_msg("old-two")],
     metadata: Map::from_array([]),
@@ -572,7 +613,7 @@ async test "core_shadow/idle_newthread_source_and_summary_stay_separate" {
     }),
     Respond(tk_stop_response("child done")),
   ])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   store.seed("idle-parent", {
     messages: [tk_user_msg("old-one"), tk_user_msg("old-two")],
     metadata: Map::from_array([]),
@@ -623,7 +664,7 @@ async test "core_shadow/replace_compact_mirrors_terminal_without_child" {
       mode: Replace,
     }),
   ])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   store.seed("replace-parent", {
     messages: [tk_user_msg("old-one"), tk_user_msg("old-two")],
     metadata: Map::from_array([]),
@@ -688,7 +729,7 @@ impl @port.ModelPort for ShadowMutatingCompactModel with fn provider_config(
 ///|
 async test "core_shadow/compact_source_frozen_before_model_mutation" {
   let model = ShadowMutatingCompactModel::{ }
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   store.seed("frozen-parent", {
     messages: [tk_user_msg("old")],
     metadata: Map::from_array([]),
@@ -733,7 +774,7 @@ impl @port.PipelineHook for ShadowRewriteHook with fn before_model(
 ///|
 async test "core_shadow/hook_rewrite_mirrors_terminal_transcript" {
   let model = ScriptedModel([Respond(tk_stop_response("done"))])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let hook = ShadowRewriteHook::{ }
   let agent = Agent(
     exts=[
@@ -768,7 +809,7 @@ async test "core_shadow/terminal_mirror_survives_store_save_failure" {
       mode: Replace,
     }),
   ])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   store.seed("save-fail", {
     messages: [tk_user_msg("old-one"), tk_user_msg("old-two")],
     metadata: Map::from_array([]),
@@ -811,7 +852,7 @@ async test "core_shadow/hook_rewrite_fork_pins_committed_source" {
     compacted: [],
     compact_mode: NewThread,
   }
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let observer = RecordingObserver()
   let tools = RecordingToolProvider(
     [tk_tool_def("leaf", "leaf tool")],
@@ -879,7 +920,13 @@ async test "core_shadow/hook_rewrite_fork_pins_committed_source" {
 
 ///|
 async test "core_shadow/h1_admission_conflict_not_revived_by_rewrite" {
-  let store = CoreShadowCheckpointFailStore::{ checkpoints: 0, fail_at: 2, }
+  let store = H1Store::{
+    checkpoints: 0,
+    fail_at: 2,
+    loads: 0,
+    saves: [],
+    checkpoint_bodies: [],
+  }
   let observer = RecordingObserver()
   let model = ShadowGatedTurnModel::{
     gate_calls: [2],
@@ -911,10 +958,17 @@ async test "core_shadow/h1_admission_conflict_not_revived_by_rewrite" {
     Ok(_) => fail("expected the first store checkpoint to fail")
   }
   let before = core_shadow_current(agent, "h1-conflict")
-  assert_eq(before.messages.length(), 2)
+  assert_eq(before.messages.length(), 3)
   assert_true(before.messages[0] == tk_user_msg("hello"))
-  // The stale store reloads empty, so admission conflicts. A Replace rewrite
-  // and terminal success must not revive/overwrite the leading core.
+  assert_eq(store.loads, 1)
+  guard before.messages[1] is AssistantMessage(tool_calls=[call], ..) else {
+    fail("expected the committed assistant before the failed checkpoint")
+  }
+  assert_eq(call.call_id.to_string(), "call_1")
+  guard before.messages[2] is ToolMessage(call_id~, ..) else {
+    fail("expected the committed tool result before the failed checkpoint")
+  }
+  assert_eq(call_id.to_string(), "call_1")
   let second = @async.with_task_group(async fn(group) {
     let running = group.spawn(() => {
       agent.run_turn(tk_user_msg("next"), "h1-conflict")
@@ -924,8 +978,8 @@ async test "core_shadow/h1_admission_conflict_not_revived_by_rewrite" {
         defer {
           model.released = true
         }
-        while !model.entered {
-          @async.pause()
+        if !core_shadow_wait_entered(model) {
+          return false
         }
         shadow_invoke_command(agent, "compact", Json::null())
       }),
@@ -935,16 +989,29 @@ async test "core_shadow/h1_admission_conflict_not_revived_by_rewrite" {
     guard enqueued is Ok(true) else {
       fail("compact enqueue failed: \{repr(enqueued)}")
     }
-    running.wait()
+    ignore(running.wait())
   })
   ignore(second)
+  assert_eq(store.loads, 1)
+  assert_eq(store.saves.length(), 2)
+  assert_eq(store.checkpoint_bodies.length(), 4)
   let after = core_shadow_current(agent, "h1-conflict")
-  assert_eq(after.messages.length(), 2)
-  assert_true(after.messages[0] == tk_user_msg("hello"))
-  assert_true(after.messages[1] == before.messages[1])
+  assert_eq(after.messages.length(), 3)
+  assert_true(after.messages[0] == tk_user_msg("replacement"))
+  guard after.messages[1]
+    is ToolMessage(call_id~, outcome=Success(content="ok", ..), ..) else {
+    fail("expected the continued tool result after Replace")
+  }
+  assert_eq(call_id.to_string(), "call_2")
+  guard after.messages[2] is AssistantMessage(content=[Text("done")], ..) else {
+    fail("expected the terminal assistant after Replace continuation")
+  }
+  assert_true(
+    core_shadow_messages_equal(after.messages, store.saves[1].messages),
+  )
   match agent.runtime.core_shadow.state.get("h1-conflict") {
-    Some(Stopped(reason~, ..)) => assert_eq(reason, "admission_conflict")
-    _ => fail("expected the admission conflict to stay Stopped")
+    Some(Complete) => ()
+    _ => fail("expected the core session to be Complete after the terminal")
   }
 }
 
@@ -1034,7 +1101,7 @@ test "core_shadow/late_run_terminal_is_rejected" {
 
 ///|
 async test "core_shadow/dispatch_failure_keeps_synced_hook_rewrite_boundary" {
-  let store = CoreShadowCheckpointFailStore::{ checkpoints: 0, fail_at: 2, }
+  let store = CoreShadowCheckpointFailStore::{ checkpoints: 0, fail_at: 1, }
   let model = ScriptedModel([Respond(tk_stop_response("done"))])
   let hook = ShadowRewriteHook::{ }
   let agent = Agent(
@@ -1074,7 +1141,7 @@ async test "core_shadow/cancelled_terminal_is_synced" {
     compacted: [],
     compact_mode: NewThread,
   }
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let tools = RecordingToolProvider(
     [tk_tool_def("leaf", "leaf tool")],
     Map::from_array([("leaf", OutcomeOk(tk_ok_result("ok")))]),
@@ -1127,7 +1194,7 @@ async test "core_shadow/cancelled_terminal_is_synced" {
 ///|
 async test "core_shadow/failed_terminal_is_synced" {
   let model = ScriptedModel([Fail(Transport("network down"))])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
@@ -1238,7 +1305,7 @@ async test "core_shadow/standalone_newthread_source_keeps_fixated_tool" {
     }),
     Respond(tk_stop_response("after compact")),
   ])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   store.seed("fixate-parent", {
     messages: [dangling],
     metadata: Map::from_array([]),
@@ -1353,7 +1420,7 @@ async test "core_shadow/standalone_newthread_model_failure_keeps_parent_current"
     CompactFail(error=Transport("compact failed")),
     Respond(tk_stop_response("after compact")),
   ])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   store.seed("fixate-fail-parent", {
     messages: [dangling],
     metadata: Map::from_array([]),
@@ -1440,7 +1507,7 @@ async test "core_shadow/standalone_newthread_cancel_keeps_parent_current" {
     finish_reason=ToolCalls,
   )
   let model = ShadowParkingCompactModel::{ entered: false, }
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   store.seed("fixate-cancel-parent", {
     messages: [dangling],
     metadata: Map::from_array([]),
@@ -1558,29 +1625,24 @@ async test "core_shadow/missing_provenance_survives_real_next_turn" {
       running.wait()
     },
   )
-  match fork_turn {
-    Err(Runtime(InvocationFailed(detail))) =>
-      assert_true(detail.contains("core child fact"))
-    _ => fail("expected the fork child fact to fail before output")
+  guard fork_turn is Ok(_) else {
+    fail("fork must continue from the retained core, not a stale store")
   }
   let child_sid = "missing-real-parent_fork_fork_1"
-  assert_false(agent.runtime.core_shadow.store.sessions.contains(child_sid))
-  assert_eq(shadow_redirects(observer.events()).length(), 0)
-  assert_eq(agent.runtime.pending_new_thread.length(), 0)
-  for key, _cursor in agent.runtime.progress.cursors {
-    assert_false(key.has_prefix("missing-real-parent_fork_"))
+  assert_true(agent.runtime.core_shadow.store.sessions.contains(child_sid))
+  assert_eq(shadow_redirects(observer.events()).length(), 1)
+  let missing_sid = "missing-real-runtime-child"
+  agent.runtime.core_shadow.mark_missing_provenance(missing_sid)
+  let blocked : Result[@types.TurnResult, @error.AgentError] = Ok(
+    agent.run_turn(tk_user_msg("child"), missing_sid),
+  ) catch {
+    error => Err(error)
   }
-  match agent.runtime.core_shadow.state.get(child_sid) {
-    Some(MissingProvenance) => ()
-    _ => fail("expected the child to be marked missing provenance")
+  guard blocked is Err(_) else {
+    fail("runtime MissingProvenance must fail before model execution")
   }
-  ignore(agent.run_turn(tk_user_msg("child"), child_sid))
-  assert_false(agent.runtime.core_shadow.store.sessions.contains(child_sid))
-  assert_false(agent.runtime.core_shadow.is_tracked(child_sid))
-  match agent.runtime.core_shadow.state.get(child_sid) {
-    Some(MissingProvenance) => ()
-    _ => fail("expected missing provenance to survive the next real turn")
-  }
+  assert_eq(model.calls, 2)
+  assert_false(agent.runtime.core_shadow.store.sessions.contains(missing_sid))
 }
 
 ///|
@@ -1607,7 +1669,7 @@ async test "core_shadow/replace_compact_leaves_no_source_snapshot" {
       mode: Replace,
     }),
   ])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   store.seed("no-orphan-replace", {
     messages: [shadow_dangling_message()],
     metadata: Map::from_array([]),
@@ -1632,7 +1694,7 @@ async test "core_shadow/model_failure_leaves_no_source_snapshot" {
     CompactFail(error=Transport("compact failed")),
     Respond(tk_stop_response("after failure")),
   ])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let dangling = shadow_dangling_message()
   store.seed("no-orphan-failure", {
     messages: [dangling],
@@ -1664,7 +1726,7 @@ async test "core_shadow/model_failure_leaves_no_source_snapshot" {
 ///|
 async test "core_shadow/cancel_leaves_no_source_snapshot" {
   let model = ShadowParkingCompactModel::{ entered: false, }
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let dangling = shadow_dangling_message()
   store.seed("no-orphan-cancel", {
     messages: [dangling],
@@ -1710,7 +1772,7 @@ async test "core_shadow/child_failure_revokes_source_snapshot" {
       mode: NewThread,
     }),
   ])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let dangling = shadow_dangling_message()
   store.seed("no-orphan-child", {
     messages: [dangling],
@@ -1759,7 +1821,7 @@ async test "core_shadow/replace_compact_saves_model_body_exactly" {
       mode: Replace,
     }),
   ])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   store.seed("replace-exact", {
     messages: [tk_user_msg("old-one"), tk_user_msg("old-two")],
     metadata: Map::from_array([]),
@@ -1782,4 +1844,126 @@ async test "core_shadow/replace_compact_saves_model_body_exactly" {
   assert_eq(core.messages.length(), 2)
   assert_true(core.messages[0] == tk_user_msg("summary-one"))
   assert_true(core.messages[1] == tk_user_msg("summary-two"))
+}
+
+///|
+fn core_authority_load_count(store : RecordingSessionPort) -> Int32 {
+  let mut count = 0
+  for op in store.ops() {
+    match op {
+      OpLoad(..) => count = count + 1
+      _ => ()
+    }
+  }
+  count
+}
+
+///|
+async test "core_authority/store_seeded_once_then_core" {
+  let model = ScriptedModel([
+    Respond(tk_stop_response("first")),
+    Respond(tk_stop_response("second")),
+  ])
+  let store = RecordingSessionPort()
+  store.seed("authority-once", {
+    messages: [tk_user_msg("seed")],
+    metadata: Map::from_array([]),
+  })
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", sessions=[store]),
+    ],
+    config=tk_config(),
+  )
+  ignore(agent.run_turn(tk_user_msg("one"), "authority-once"))
+  ignore(agent.run_turn(tk_user_msg("two"), "authority-once"))
+  assert_eq(core_authority_load_count(store), 1)
+  assert_eq(model.call_count(), 2)
+  let second_request = model.received_messages[1]
+  assert_true(second_request.length() >= 4)
+  assert_true(second_request[0] == tk_user_msg("seed"))
+  assert_true(second_request[1] == tk_user_msg("one"))
+}
+
+///|
+async test "core_authority/no_store_multiturn_keeps_core_history" {
+  let model = ScriptedModel([
+    Respond(tk_stop_response("first")),
+    Respond(tk_stop_response("second")),
+  ])
+  let agent = Agent(
+    exts=[tk_ext(id="model", model=Some(model))],
+    config=tk_config(),
+  )
+  ignore(agent.run_turn(tk_user_msg("one"), "authority-ephemeral"))
+  ignore(agent.run_turn(tk_user_msg("two"), "authority-ephemeral"))
+  assert_eq(model.call_count(), 2)
+  let second_request = model.received_messages[1]
+  assert_true(second_request.length() >= 3)
+  assert_true(second_request[0] == tk_user_msg("one"))
+}
+
+///|
+async test "core_authority/external_store_change_does_not_rewind_core" {
+  let model = ScriptedModel([
+    Respond(tk_stop_response("first")),
+    Respond(tk_stop_response("second")),
+  ])
+  let store = RecordingSessionPort()
+  store.seed("authority-stable", {
+    messages: [tk_user_msg("seed")],
+    metadata: Map::from_array([]),
+  })
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", sessions=[store]),
+    ],
+    config=tk_config(),
+  )
+  ignore(agent.run_turn(tk_user_msg("one"), "authority-stable"))
+  store.truncate("authority-stable", 1) catch {
+    error => fail("expected truncate to succeed: \{error}")
+  }
+  ignore(agent.run_turn(tk_user_msg("two"), "authority-stable"))
+  assert_eq(core_authority_load_count(store), 1)
+  let second_request = model.received_messages[1]
+  assert_true(second_request.length() >= 4)
+  assert_true(second_request[0] == tk_user_msg("seed"))
+  assert_true(second_request[1] == tk_user_msg("one"))
+}
+
+///|
+async test "core_authority/runtime_missing_provenance_is_not_washed_by_store" {
+  let model = ScriptedModel([Respond(tk_stop_response("must-not-run"))])
+  let store = RecordingSessionPort()
+  let observer = RecordingObserver()
+  let agent = Agent(
+    exts=[
+      tk_ext(id="model", model=Some(model)),
+      tk_ext(id="io", sessions=[store], observers=[observer]),
+    ],
+    config=tk_config(),
+  )
+  let child_sid = "missing-wash-child"
+  // Establish the runtime's known no-body capture failure before seeding the
+  // external store. There is deliberately no core body to be washed.
+  agent.runtime.core_shadow.mark_missing_provenance(child_sid)
+  // A store body must not wash away the runtime's known capture failure.
+  store.seed(child_sid, {
+    messages: [tk_user_msg("store-washed")],
+    metadata: Map::from_array([
+      (@types.PARENT_THREAD_ID_KEY, Json::string("missing-wash-parent")),
+    ]),
+  })
+  let next : Result[@types.TurnResult, @error.AgentError] = Ok(
+    agent.run_turn(tk_user_msg("child"), child_sid),
+  ) catch {
+    error => Err(error)
+  }
+  guard next is Err(_) else {
+    fail("runtime MissingProvenance must not be washed by a store body")
+  }
+  assert_eq(model.call_count(), 0)
 }

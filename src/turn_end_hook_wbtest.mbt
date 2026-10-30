@@ -68,7 +68,7 @@ async test "turn_begin/dispatched_after_turn_started_before_first_model" {
         id="model",
         model=Some(ScriptedModel([Respond(tk_stop_response("hi"))])),
       ),
-      tk_ext(id="io", sessions=[RecordingSessionStore()], observers=[
+      tk_ext(id="io", sessions=[RecordingSessionPort()], observers=[
         obs as &@port.Observer,
       ]),
       tk_ext(id="hooks", hooks=[hook as &@port.PipelineHook]),
@@ -122,7 +122,7 @@ async test "turn_begin/raised_hook_is_secondary_failure_turn_proceeds" {
         id="model",
         model=Some(ScriptedModel([Respond(tk_stop_response("hi"))])),
       ),
-      tk_ext(id="io", sessions=[RecordingSessionStore()], observers=[
+      tk_ext(id="io", sessions=[RecordingSessionPort()], observers=[
         obs as &@port.Observer,
       ]),
       tk_ext(id="hooks", hooks=[
@@ -169,7 +169,7 @@ async test "turn_end/completed_dispatched_once_after_turn_completed" {
         id="model",
         model=Some(ScriptedModel([Respond(tk_stop_response("hi"))])),
       ),
-      tk_ext(id="io", sessions=[RecordingSessionStore()], observers=[
+      tk_ext(id="io", sessions=[RecordingSessionPort()], observers=[
         obs as &@port.Observer,
       ]),
       tk_ext(id="hooks", hooks=[hook as &@port.PipelineHook]),
@@ -196,7 +196,7 @@ async test "turn_end/failed_path_also_dispatches_after_turn_failed" {
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(ScriptedModel([Fail(Transport("boom"))]))),
-      tk_ext(id="io", sessions=[RecordingSessionStore()], observers=[
+      tk_ext(id="io", sessions=[RecordingSessionPort()], observers=[
         obs as &@port.Observer,
       ]),
       tk_ext(id="hooks", hooks=[hook as &@port.PipelineHook]),
@@ -232,7 +232,7 @@ async test "turn_end/hooks_dispatched_in_registration_order" {
         id="model",
         model=Some(ScriptedModel([Respond(tk_stop_response("hi"))])),
       ),
-      tk_ext(id="io", sessions=[RecordingSessionStore()]),
+      tk_ext(id="io", sessions=[RecordingSessionPort()]),
       tk_ext(id="hooks", hooks=[
         first as &@port.PipelineHook,
         second as &@port.PipelineHook,
@@ -257,7 +257,7 @@ async test "turn_end/raised_hook_is_secondary_failure_not_turn_failure" {
         id="model",
         model=Some(ScriptedModel([Respond(tk_stop_response("hi"))])),
       ),
-      tk_ext(id="io", sessions=[RecordingSessionStore()], observers=[
+      tk_ext(id="io", sessions=[RecordingSessionPort()], observers=[
         obs as &@port.Observer,
       ]),
       tk_ext(id="hooks", hooks=[

@@ -1,6 +1,6 @@
 ///|
 /// Every agent contributor implements Extension. Returns an `ExtensionManifest`
-/// listing which ports it provides (ModelPort, ToolProvider, SessionStore, etc.).
+/// listing which ports it provides (ModelPort, ToolProvider, SessionPort, etc.).
 /// Posoco is a protocol, not a framework — an agent is the composition of
 /// extensions.
 
@@ -51,7 +51,7 @@ pub(all) struct ExtensionManifest {
   decisions : Array[&DecisionPort]
   logs : Array[&LogPort]
   tools : Array[&ToolProvider]
-  sessions : Array[&SessionStore]
+  sessions : Array[&SessionPort]
   observers : Array[&Observer]
   /// Pipeline interception points. One array for every hook kind: the pump
   /// calls `PipelineHook::before_model` / `before_tool` / `on_post_event` on each
@@ -76,7 +76,7 @@ pub fn ExtensionManifest::ExtensionManifest(
   decisions~ : Array[&DecisionPort] = [],
   logs~ : Array[&LogPort] = [],
   tools~ : Array[&ToolProvider] = [],
-  sessions~ : Array[&SessionStore] = [],
+  sessions~ : Array[&SessionPort] = [],
   observers~ : Array[&Observer] = [],
   hooks~ : Array[&PipelineHook] = [],
   memory~ : Array[&MemoryPort] = [],

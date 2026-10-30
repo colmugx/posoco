@@ -9,7 +9,7 @@ async test "tool_invoke/child_result_returns_to_parent_without_another_model_tur
     Respond(tk_tool_call_response("parent", "parent-call", Json::null())),
     Respond(tk_stop_response("done")),
   ])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let observer = RecordingObserver()
   let agent = Agent(
     exts=[

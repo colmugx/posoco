@@ -60,7 +60,7 @@ fn count_user_messages(messages : Array[@kernel.Message]) -> Int32 {
 ///|
 async test "turn path fixates dangling trailing tool calls into the next model window" {
   let call = turn_fixate_dangling_call("call_turn_fix")
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   store.seed("turn-fixate", {
     messages: [
       tk_user_msg("do the thing"),
@@ -111,7 +111,7 @@ async test "turn path fixates dangling trailing tool calls into the next model w
 ///|
 async test "resume over dangling calls replays the persisted trailing user once" {
   let call = turn_fixate_dangling_call("call_resume_fix")
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   store.seed("turn-resume", {
     messages: [
       tk_user_msg("do the thing"),
@@ -151,11 +151,17 @@ async test "resume over dangling calls replays the persisted trailing user once"
   assert_eq(count_user_messages(window), 2)
   // Append-save math must not re-persist the replayed user message.
   let persisted = store.store["turn-resume"]
-  assert_eq(persisted.messages.length(), 4)
-  assert_true(persisted.messages[2] == tk_user_msg("please continue"))
+  // The initial full alignment persists the fixated window, then the terminal
+  // append adds the resumed assistant. The replayed user stays exactly once.
+  assert_eq(persisted.messages.length(), 5)
+  guard persisted.messages[2]
+    is ToolMessage(outcome=RuntimeFailure(error_category="Interrupted", ..), ..) else {
+    fail("expected the persisted interrupted output at index 2")
+  }
+  assert_true(persisted.messages[3] == tk_user_msg("please continue"))
   assert_eq(count_user_messages(persisted.messages), 2)
   assert_true(
-    persisted.messages[3]
+    persisted.messages[4]
     is AssistantMessage(content=[Text("resumed work"), ..], ..),
   )
 }
@@ -230,7 +236,7 @@ test "fixate inserts synthesized outputs immediately after the owning assistant"
 ///|
 async test "consecutive turns keep exactly one interrupted output per dangling call" {
   let call = turn_fixate_dangling_call("call_stable")
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   store.seed("turn-stable", {
     messages: [
       tk_user_msg("do the thing"),

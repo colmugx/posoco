@@ -139,7 +139,7 @@ async test "tool_exposure/deferred_tool_is_not_offered_and_guessing_is_rejected"
 ///|
 async test "tool_exposure/manual_compact_only_receives_direct_projection" {
   let model = ScriptedModel([Compact(result=policy_replace_result())])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   compact_tools_seed(store, "exposure-compact")
   let provider = RecordingToolProvider(
     [

@@ -65,7 +65,7 @@ test "log/composition_is_optional_and_gated" {
           id="model",
           model=Some(ScriptedModel([Respond(tk_stop_response("ok"))])),
         ),
-        tk_ext(id="io", sessions=[RecordingSessionStore()]),
+        tk_ext(id="io", sessions=[RecordingSessionPort()]),
         tk_ext(id="log", log=Some(log)),
         tk_ext(id="consumer", lifecycle=[probe_with as &@port.Lifecycle], requires=[
           @port.Capability::Log,
@@ -94,7 +94,7 @@ test "log/composition_rejects_multiple_providers" {
           id="model",
           model=Some(ScriptedModel([Respond(tk_stop_response("ok"))])),
         ),
-        tk_ext(id="io", sessions=[RecordingSessionStore()]),
+        tk_ext(id="io", sessions=[RecordingSessionPort()]),
         tk_ext(id="log-a", log=Some(a)),
         tk_ext(id="log-b", log=Some(b)),
       ],

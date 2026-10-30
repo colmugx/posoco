@@ -231,7 +231,7 @@ priv struct AgentRuntime {
   /// Sessions whose inbound read already ran (freeze-even-if-empty: an
   /// empty or failed read never retries within this process).
   memory_inbound_attempted : Map[String, Bool]
-  sessions : Array[&@port.SessionStore]
+  sessions : Array[&@port.SessionPort]
   lifecycle : Array[&@port.Lifecycle]
   commands : Array[&@port.CommandPort]
   builtin_command_port : BuiltinCommandPort

@@ -113,7 +113,7 @@ async test "p2 concurrent run_turn rejects before side effects and preserves fir
     @types.TextDelta(token="p2-2"),
   ]
   let model = YieldingStreamModel(chunks, tk_stop_response("done"))
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let observer = RecordingObserver()
   let entered : @aqueue.Queue[Int32] = Queue(kind=Unbounded)
   let release : @aqueue.Queue[Int32] = Queue(kind=Unbounded)
@@ -216,7 +216,7 @@ async test "p2 concurrent run_turn rejects before side effects and preserves fir
 /// same Agent and gate to prove no stale `turn_active` bit remains.
 async test "p2 cancelled turn releases Agent guard for the next turn" {
   let model = ScriptedModel([Respond(tk_stop_response("after-cancel"))])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let entered : @aqueue.Queue[Int32] = Queue(kind=Unbounded)
   let release : @aqueue.Queue[Int32] = Queue(kind=Unbounded)
   let gate = TurnLoopGate::{ entered, release, }
@@ -274,7 +274,7 @@ async test "chunk dispatch: streaming turn delivers chunks in order before TurnC
     chunks.push(@types.TextDelta(token="t\{i}"))
   }
   let model = ScriptedModel([Stream(chunks~, response=tk_stop_response("ok"))])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let observer = RecordingObserver()
   let agent = Agent(
     exts=[
@@ -336,7 +336,7 @@ async test "chunk dispatch: overflow drops oldest and emits StreamChunksDropped"
     chunks.push(@types.TextDelta(token="c\{i}"))
   }
   let model = ScriptedModel([Stream(chunks~, response=tk_stop_response("ok"))])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let observer = RecordingObserver()
   let agent = Agent(
     exts=[
@@ -447,7 +447,7 @@ async test "chunk dispatch: flush drains chunks before TurnFailed" {
     ),
     Fail(Transport("boom")),
   ])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let observer = RecordingObserver()
   let agent = Agent(
     exts=[
@@ -491,7 +491,7 @@ async test "chunk dispatch: adjacent identical tokens pass through 1:1 without d
     chunks.push(@types.TextDelta(token~))
   }
   let model = ScriptedModel([Stream(chunks~, response=tk_stop_response("ok"))])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let observer = RecordingObserver()
   let agent = Agent(
     exts=[

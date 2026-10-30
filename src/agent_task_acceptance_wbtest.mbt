@@ -270,7 +270,7 @@ async test "managed_tasks/background_routes_by_session_and_normalizes_result" {
     Respond(tk_stop_response("A complete")),
     Respond(tk_stop_response("A follow-up complete")),
   ])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let gate = AcceptanceTurnGate::{
     entered: Queue(kind=Unbounded),
     release: Queue(kind=Unbounded),
@@ -348,7 +348,7 @@ async test "managed_tasks/background_outcome_survives_failed_save_and_heal" {
     Respond(tk_stop_response("first attempt")),
     Respond(tk_stop_response("healed attempt")),
   ])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
@@ -391,7 +391,7 @@ async test "managed_tasks/background_outcome_survives_failed_save_and_heal" {
     store.heal_save("retry-session")
     ignore(agent.run_turn(tk_user_msg("healed attempt"), "retry-session"))
 
-    let persisted = (store as &@port.SessionStore).load("retry-session")
+    let persisted = (store as &@port.SessionPort).load("retry-session")
     assert_eq(acceptance_text_count(persisted.messages, marker), 1)
     assert_eq(model.received_messages.length(), 1)
     assert_eq(acceptance_text_count(model.received_messages[0], marker), 1)
@@ -406,7 +406,7 @@ async test "managed_tasks/background_outcome_survives_failed_save_and_heal" {
 async test "managed_tasks/cancelled_waiter_does_not_cancel_background_and_late_waits_agree" {
   let capture = AcceptanceTaskCapture::new()
   let model = ScriptedModel([Respond(tk_stop_response("unused"))])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let waiter_started : @aqueue.Queue[Int32] = Queue(kind=Unbounded)
   let release : @aqueue.Queue[Int32] = Queue(kind=Unbounded)
   let late_one : Ref[@port.TaskOutcome?] = Ref(None)
@@ -481,7 +481,7 @@ async test "managed_tasks/cancelled_waiter_does_not_cancel_background_and_late_w
 async test "managed_tasks/user_marker_does_not_suppress_first_task_outcome" {
   let capture = AcceptanceTaskCapture::new()
   let model = ScriptedModel([Respond(tk_stop_response("collision handled"))])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
@@ -533,7 +533,7 @@ async test "managed_tasks/user_marker_does_not_suppress_first_task_outcome" {
 async test "managed_tasks/nested_scope_rejects_without_closing_outer_scope" {
   let capture = AcceptanceTaskCapture::new()
   let model = ScriptedModel([Respond(tk_stop_response("outer turn completed"))])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
@@ -589,7 +589,7 @@ async test "managed_tasks/scope_error_and_ambient_cancel_reap_background_work" {
   // reaps the blocked worker. The handle remains a stable terminal capability.
   let error_capture = AcceptanceTaskCapture::new()
   let error_model = ScriptedModel([])
-  let error_store = RecordingSessionStore()
+  let error_store = RecordingSessionPort()
   let error_agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(error_model)),
@@ -644,7 +644,7 @@ async test "managed_tasks/scope_error_and_ambient_cancel_reap_background_work" {
   // its worker is blocked and its body has reached its own suspension point.
   let cancel_capture = AcceptanceTaskCapture::new()
   let cancel_model = ScriptedModel([])
-  let cancel_store = RecordingSessionStore()
+  let cancel_store = RecordingSessionPort()
   let cancel_agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(cancel_model)),
@@ -712,7 +712,7 @@ async test "managed_tasks/shutdown_before_start_calls_lifecycle_once" {
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(ScriptedModel([]))),
-      tk_ext(id="io", sessions=[RecordingSessionStore()]),
+      tk_ext(id="io", sessions=[RecordingSessionPort()]),
       tk_ext(id="probe", lifecycle=[probe as &@port.Lifecycle]),
     ],
     config=tk_config(),
@@ -727,7 +727,7 @@ async test "managed_tasks/shutdown_before_start_calls_lifecycle_once" {
 async test "managed_tasks/external_worker_message_mutation_does_not_rewrite_terminal" {
   let capture = AcceptanceTaskCapture::new()
   let model = ScriptedModel([])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
@@ -769,7 +769,7 @@ async test "managed_tasks/external_worker_message_mutation_does_not_rewrite_term
 async test "managed_tasks/wait_result_mutation_isolated_from_late_wait_and_delivery" {
   let capture = AcceptanceTaskCapture::new()
   let model = ScriptedModel([Respond(tk_stop_response("turn completed"))])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
@@ -824,7 +824,7 @@ async test "managed_tasks/tasks_requires_gate_and_scope_admission" {
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(ScriptedModel([]))),
-      tk_ext(id="io", sessions=[RecordingSessionStore()]),
+      tk_ext(id="io", sessions=[RecordingSessionPort()]),
       tk_ext(id="hidden", lifecycle=[hidden as &@port.Lifecycle]),
       tk_ext(id="declared", lifecycle=[declared as &@port.Lifecycle], requires=[
         @port.Capability::Tasks,
@@ -860,7 +860,7 @@ async test "managed_tasks/foreground_requires_operation_and_matching_session" {
           ScriptedModel([Respond(tk_stop_response("foreground admission turn"))]),
         ),
       ),
-      tk_ext(id="io", sessions=[RecordingSessionStore()]),
+      tk_ext(id="io", sessions=[RecordingSessionPort()]),
       tk_ext(
         id="foreground-probe",
         hooks=[probe as &@port.PipelineHook],
@@ -907,7 +907,7 @@ async test "managed_tasks/background_failure_timeout_and_immediate_cancel_are_st
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(ScriptedModel([]))),
-      tk_ext(id="io", sessions=[RecordingSessionStore()]),
+      tk_ext(id="io", sessions=[RecordingSessionPort()]),
       tk_ext(id="tasks", lifecycle=[capture as &@port.Lifecycle], requires=[
         @port.Capability::Tasks,
       ]),

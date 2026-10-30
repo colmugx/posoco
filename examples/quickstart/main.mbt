@@ -45,15 +45,15 @@ pub impl @posoco.ModelPort for QuickstartModel with fn provider_config(_self) ->
 }
 
 ///|
-/// An in-memory SessionStore keeps the example deterministic and offline.
+/// An in-memory SessionPort keeps the example deterministic and offline.
 /// Session values are copied at both boundaries so callers cannot mutate a
 /// saved transcript through a shared array or map.
-struct QuickstartSessionStore {
+struct QuickstartSessionPort {
   sessions : Map[String, @posoco.Session]
 }
 
 ///|
-fn QuickstartSessionStore::QuickstartSessionStore() -> QuickstartSessionStore {
+fn QuickstartSessionPort::QuickstartSessionPort() -> QuickstartSessionPort {
   { sessions: Map::from_array([]), }
 }
 
@@ -63,7 +63,7 @@ fn copy_session(session : @posoco.Session) -> @posoco.Session {
 }
 
 ///|
-pub impl @posoco.SessionStore for QuickstartSessionStore with fn load(
+pub impl @posoco.SessionPort for QuickstartSessionPort with fn load(
   self,
   id : String,
 ) -> @posoco.Session {
@@ -77,7 +77,7 @@ pub impl @posoco.SessionStore for QuickstartSessionStore with fn load(
 }
 
 ///|
-pub impl @posoco.SessionStore for QuickstartSessionStore with fn save(
+pub impl @posoco.SessionPort for QuickstartSessionPort with fn save(
   self,
   id : String,
   session : @posoco.Session,
@@ -90,12 +90,12 @@ pub impl @posoco.SessionStore for QuickstartSessionStore with fn save(
 /// one manifest. No testkit or internal runtime type is needed here.
 struct QuickstartExtension {
   model : QuickstartModel
-  sessions : QuickstartSessionStore
+  sessions : QuickstartSessionPort
 }
 
 ///|
 fn QuickstartExtension::QuickstartExtension() -> QuickstartExtension {
-  { model: QuickstartModel::{ }, sessions: QuickstartSessionStore(), }
+  { model: QuickstartModel::{ }, sessions: QuickstartSessionPort(), }
 }
 
 ///|

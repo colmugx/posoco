@@ -40,7 +40,7 @@ fn compact_diag_failure_agent(
   session_id~ : String,
 ) -> Agent raise {
   let model = ScriptedModel(steps)
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   store.seed(session_id, {
     messages: [tk_user_msg("secret prompt")],
     metadata: Map::from_array([]),
@@ -112,7 +112,7 @@ async test "compact_diag/standalone_compact_failure_detail_and_no_commit" {
   let model = ScriptedModel([
     CompactFail(error=Transport(compact_generic_failure)),
   ])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   store.seed("diag-detail", {
     messages: [tk_user_msg("seeded")],
     metadata: Map::from_array([]),
@@ -248,7 +248,7 @@ async test "compact_diag/auto_compact_failure_forwards_bounded_label" {
   let model = AutoCompactFailModel::make([
     Respond(scope_test_tool_call_with_usage(95)),
   ])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),
@@ -341,7 +341,7 @@ async test "compact_diag/midrun_manual_compact_failure_forwards_bounded_label" {
     Respond(tk_stop_response("done")),
   ])
   let tools = policy_tools()
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let port_runtime = @runtime.PortRuntime(model~)
   let probe = MidRunCompactRuntime::{
     inner: port_runtime as &@runtime.Runtime,
@@ -464,7 +464,7 @@ async test "compact_diag/cancelled_compact_stays_a_cancelled_outcome" {
     }),
     Respond(tk_stop_response("after retry")),
   ])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   store.seed("diag-cancel", {
     messages: [tk_user_msg("seeded")],
     metadata: Map::from_array([]),
@@ -543,7 +543,7 @@ async test "compact_diag/busy_agent_rejects_compact_and_stays_usable" {
       mode: Replace,
     }),
   ])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   store.seed("diag-busy", {
     messages: [tk_user_msg("seeded")],
     metadata: Map::from_array([]),

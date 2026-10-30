@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// RecordingSessionStore — load/save history with metadata snapshots.
+// RecordingSessionPort — load/save history with metadata snapshots.
 // ---------------------------------------------------------------------------
 
 ///|
@@ -34,10 +34,10 @@ pub(all) enum SessionOp {
 pub extend SessionOp with Debug::{to_repr}
 
 ///|
-/// SessionStore fake that keeps an in-memory map and records every load/save
+/// SessionPort fake that keeps an in-memory map and records every load/save
 /// with the metadata snapshot at save time. Load/save failures are
 /// configurable per id.
-pub(all) struct RecordingSessionStore {
+pub(all) struct RecordingSessionPort {
   store : Map[String, @types.Session]
   mut load_failures : Map[String, @error.SessionError]
   mut save_failures : Array[String]
@@ -45,7 +45,7 @@ pub(all) struct RecordingSessionStore {
 }
 
 ///|
-pub fn RecordingSessionStore::RecordingSessionStore() -> RecordingSessionStore {
+pub fn RecordingSessionPort::RecordingSessionPort() -> RecordingSessionPort {
   {
     store: Map::from_array([]),
     load_failures: Map::from_array([]),
@@ -56,8 +56,8 @@ pub fn RecordingSessionStore::RecordingSessionStore() -> RecordingSessionStore {
 
 ///|
 /// Seed a session id with an existing session (including metadata).
-pub fn RecordingSessionStore::seed(
-  self : RecordingSessionStore,
+pub fn RecordingSessionPort::seed(
+  self : RecordingSessionPort,
   id : String,
   session : @types.Session,
 ) -> Unit {
@@ -66,8 +66,8 @@ pub fn RecordingSessionStore::seed(
 
 ///|
 /// Configure load to fail for a given id.
-pub fn RecordingSessionStore::fail_load(
-  self : RecordingSessionStore,
+pub fn RecordingSessionPort::fail_load(
+  self : RecordingSessionPort,
   id : String,
   err : @error.SessionError,
 ) -> Unit {
@@ -76,16 +76,16 @@ pub fn RecordingSessionStore::fail_load(
 
 ///|
 /// Configure save to fail for a given id (all subsequent saves to that id).
-pub fn RecordingSessionStore::fail_save(
-  self : RecordingSessionStore,
+pub fn RecordingSessionPort::fail_save(
+  self : RecordingSessionPort,
   id : String,
 ) -> Unit {
   self.save_failures.push(id)
 }
 
 ///|
-pub fn RecordingSessionStore::heal_save(
-  self : RecordingSessionStore,
+pub fn RecordingSessionPort::heal_save(
+  self : RecordingSessionPort,
   id : String,
 ) -> Unit {
   let kept : Array[String] = []
@@ -102,8 +102,8 @@ pub fn RecordingSessionStore::heal_save(
 
 ///|
 /// Recorded operations in order.
-pub fn RecordingSessionStore::ops(
-  self : RecordingSessionStore,
+pub fn RecordingSessionPort::ops(
+  self : RecordingSessionPort,
 ) -> Array[SessionOp] {
   self.ops.map(fn(op) {
     match op {
@@ -146,8 +146,8 @@ pub fn RecordingSessionStore::ops(
 
 ///|
 /// All save operations, in order, as (id, metadata_snapshot) pairs.
-pub fn RecordingSessionStore::save_snapshots(
-  self : RecordingSessionStore,
+pub fn RecordingSessionPort::save_snapshots(
+  self : RecordingSessionPort,
 ) -> Array[(String, Map[String, Json])] {
   let out : Array[(String, Map[String, Json])] = []
   for op in self.ops {
@@ -162,8 +162,8 @@ pub fn RecordingSessionStore::save_snapshots(
 ///|
 /// The configured save failure for `id`, if one was armed via `fail_save`.
 /// Shared guard of every mutating store operation.
-fn RecordingSessionStore::guard_save(
-  self : RecordingSessionStore,
+fn RecordingSessionPort::guard_save(
+  self : RecordingSessionPort,
   id : String,
 ) -> @error.SessionError? {
   if self.save_failures.contains(id) {
@@ -177,8 +177,8 @@ fn RecordingSessionStore::guard_save(
 /// Record an operation, then surface its failure: ops keep arrival order and
 /// a configured error raises only after being recorded. Shared tail of
 /// load/save/append/truncate.
-fn[T] RecordingSessionStore::record(
-  self : RecordingSessionStore,
+fn[T] RecordingSessionPort::record(
+  self : RecordingSessionPort,
   op : SessionOp,
   result : Result[T, @error.SessionError],
 ) -> T raise @error.SessionError {
@@ -190,14 +190,14 @@ fn[T] RecordingSessionStore::record(
 }
 
 ///|
-pub extend RecordingSessionStore with @port.SessionStore::{
+pub extend RecordingSessionPort with @port.SessionPort::{
   append_messages,
   checkpoint,
   truncate,
 }
 
 ///|
-pub impl @port.SessionStore for RecordingSessionStore with fn load(
+pub impl @port.SessionPort for RecordingSessionPort with fn load(
   self,
   id : String,
 ) -> @types.Session raise @error.SessionError {
@@ -218,7 +218,7 @@ pub impl @port.SessionStore for RecordingSessionStore with fn load(
 }
 
 ///|
-pub impl @port.SessionStore for RecordingSessionStore with fn save(
+pub impl @port.SessionPort for RecordingSessionPort with fn save(
   self,
   id : String,
   session : @types.Session,
@@ -235,7 +235,7 @@ pub impl @port.SessionStore for RecordingSessionStore with fn save(
 }
 
 ///|
-pub impl @port.SessionStore for RecordingSessionStore with fn append_messages(
+pub impl @port.SessionPort for RecordingSessionPort with fn append_messages(
   self,
   id : String,
   from_index : Int32,
@@ -261,7 +261,7 @@ pub impl @port.SessionStore for RecordingSessionStore with fn append_messages(
 }
 
 ///|
-pub impl @port.SessionStore for RecordingSessionStore with fn truncate(
+pub impl @port.SessionPort for RecordingSessionPort with fn truncate(
   self,
   id : String,
   from_index : Int32,
@@ -290,7 +290,7 @@ pub impl @port.SessionStore for RecordingSessionStore with fn truncate(
 }
 
 ///|
-pub impl @port.SessionStore for RecordingSessionStore with fn checkpoint(
+pub impl @port.SessionPort for RecordingSessionPort with fn checkpoint(
   self,
   id : String,
   checkpoint : @port.SessionCheckpoint,

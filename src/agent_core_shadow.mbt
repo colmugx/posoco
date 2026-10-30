@@ -24,6 +24,15 @@ priv struct CoreCommit {
 }
 
 ///|
+/// Private read failure surface. `UnknownSession` is the only case that may
+/// initialize from an external seed; `Unreadable` is a known fact capture
+/// failure and must never fall back to a store or old current.
+priv suberror CoreReadError {
+  UnknownSession(sid~ : String)
+  Unreadable(sid~ : String, reason~ : String)
+}
+
+///|
 priv enum CoreShadowState {
   /// The current operation may accept committed boundaries and capture a
   /// source. It is not a completion claim.
@@ -50,6 +59,10 @@ priv struct CoreShadowRecording {
   pending_source : Map[String, CoreSourceCapture]
   /// Synchronous-boundary failures waiting for the Agent diagnostic path.
   pending_errors : Array[String]
+  /// Facts whose latest capture failed or whose content is known inconsistent.
+  /// This is independent of the operation state: `Stopped`/`Complete` do not
+  /// by themselves make a confirmed current unreadable.
+  unreadable : Map[String, String]
 }
 
 ///|
@@ -61,6 +74,7 @@ fn CoreShadowRecording::CoreShadowRecording() -> CoreShadowRecording {
     last_commit: Map::from_array([]),
     pending_source: Map::from_array([]),
     pending_errors: [],
+    unreadable: Map::from_array([]),
   }
 }
 
@@ -74,14 +88,15 @@ fn CoreShadowRecording::hydrate(
   messages : Array[@kernel.Message],
   metadata : Map[String, Json],
 ) -> Result[Unit, String] {
-  match self.state.get(session_id) {
-    Some(MissingProvenance) =>
-      return Err("known child missing provenance; refusing root hydration")
-    _ => ()
-  }
   if self.store.sessions.contains(session_id) {
     return Ok(())
   }
+  // A runtime-known capture failure is never washed by rereading a store.
+  if self.state.get(session_id) is Some(MissingProvenance) {
+    return Err("known child missing provenance; refusing root hydration")
+  }
+  // A fresh runtime may legally recover a child that only carries lineage
+  // metadata. The parent version is intentionally not required or fabricated.
   let recorded : Result[Int32, CoreVersionError] = Ok(
     self.store.record_full(session_id, messages, metadata),
   ) catch {
@@ -105,10 +120,12 @@ fn CoreShadowRecording::admit(
   loaded : Array[@kernel.Message],
   run_id : String,
 ) -> Result[Unit, String] {
-  match self.state.get(session_id) {
-    Some(MissingProvenance) =>
-      return Err("known child missing provenance; shadow tracking disabled")
-    _ => ()
+  if self.unreadable.get(session_id) is Some(_) {
+    return Err("known fact capture failure; shadow tracking disabled")
+  }
+  if !self.store.sessions.contains(session_id) &&
+    self.state.get(session_id) is Some(MissingProvenance) {
+    return Err("known child missing provenance; shadow tracking disabled")
   }
   self.state[session_id] = Stopped(run_id~, reason="admission_pending")
   self.last_commit.remove(session_id)
@@ -128,11 +145,13 @@ fn CoreShadowRecording::admit(
         run_id~,
         reason="admission_current_failed",
       )
+      self.unreadable[session_id] = "admission_current_failed"
       Err("admission current failed: " + core_shadow_error_label(error))
     }
     Ok(current) =>
       if !core_shadow_messages_equal(current.session.messages, loaded) {
         self.state[session_id] = Stopped(run_id~, reason="admission_conflict")
+        self.unreadable[session_id] = "admission_conflict"
         Err(
           "core current does not match the loaded session; shadow tracking stopped for this operation",
         )
@@ -205,6 +224,34 @@ fn CoreShadowRecording::mark_missing_provenance(
 ) -> Unit {
   if !self.store.sessions.contains(session_id) {
     self.state[session_id] = MissingProvenance
+  }
+}
+
+///|
+/// State-independent read of the trusted core snapshot. An operation ending as
+/// Stopped due to normal diversion/cancel does not make its last confirmed
+/// current unreadable; a known capture failure does.
+fn CoreShadowRecording::read_session(
+  self : CoreShadowRecording,
+  session_id : String,
+) -> @types.Session raise CoreReadError {
+  match self.unreadable.get(session_id) {
+    Some(reason) => raise Unreadable(sid=session_id, reason~)
+    None => ()
+  }
+  if self.state.get(session_id) is Some(MissingProvenance) {
+    raise Unreadable(sid=session_id, reason="missing_provenance")
+  }
+  let current : Result[CoreCurrent, CoreVersionError] = Ok(
+    self.store.current(session_id),
+  ) catch {
+    error => Err(error)
+  }
+  match current {
+    Ok(value) => value.session
+    Err(UnknownSession(..)) => raise UnknownSession(sid=session_id)
+    Err(error) =>
+      raise Unreadable(sid=session_id, reason=core_shadow_error_label(error))
   }
 }
 
@@ -415,6 +462,7 @@ fn CoreShadowRecording::record_boundary(
         run_id~,
         reason="missing_admission_metadata",
       )
+      self.unreadable[session_id] = "missing_admission_metadata"
       self.pending_errors.push(
         "boundary record failed: run=" +
         safe_error_label(run_id) +
@@ -447,6 +495,7 @@ fn CoreShadowRecording::record_boundary(
           run_id~,
           reason="boundary_record_failed",
         )
+        self.unreadable[session_id] = "boundary_record_failed"
         self.pending_errors.push(
           "boundary record failed: run=" +
           safe_error_label(run_id) +
@@ -471,6 +520,7 @@ fn CoreShadowRecording::record_boundary(
         run_id~,
         reason="boundary_current_failed",
       )
+      self.unreadable[session_id] = "boundary_current_failed"
       self.pending_errors.push(
         "boundary record failed: run=" +
         safe_error_label(run_id) +
@@ -516,6 +566,7 @@ fn CoreShadowRecording::record_boundary(
     }
     Err(error) => {
       self.state[session_id] = Stopped(run_id~, reason="boundary_record_failed")
+      self.unreadable[session_id] = "boundary_record_failed"
       self.pending_errors.push(
         "boundary record failed: run=" +
         safe_error_label(run_id) +
@@ -580,6 +631,7 @@ fn CoreShadowRecording::record_terminal(
   }
   if !core_shadow_messages_equal(current.session.messages, messages) {
     self.state[session_id] = Stopped(run_id~, reason="terminal_body_mismatch")
+    self.unreadable[session_id] = "terminal_body_mismatch"
     return Err(
       "terminal body does not match the committed core: run=" +
       safe_error_label(run_id) +
@@ -602,6 +654,7 @@ fn CoreShadowRecording::record_terminal(
         run_id~,
         reason="terminal_metadata_failed",
       )
+      self.unreadable[session_id] = "terminal_metadata_failed"
       Err(
         "terminal metadata update failed: run=" +
         safe_error_label(run_id) +

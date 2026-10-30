@@ -131,7 +131,7 @@ async test "t07_model_error_emits_turnfailed_not_turncompleted" {
   // When the model raises, the observer must see TurnFailed (from the model
   // error path) and MUST NOT see TurnCompleted.
   let model = @posoco.ScriptedModel([Fail(Transport("network down"))])
-  let store = @posoco.RecordingSessionStore()
+  let store = @posoco.RecordingSessionPort()
   let obs = @posoco.RecordingObserver()
   let agent = @posoco.Agent(
     exts=[
@@ -175,7 +175,7 @@ async test "t07_rate_limited_model_surfaces_quota_scheduling_data" {
       }),
     ),
   ])
-  let store = @posoco.RecordingSessionStore()
+  let store = @posoco.RecordingSessionPort()
   let obs = @posoco.RecordingObserver()
   let agent = @posoco.Agent(
     exts=[
@@ -222,7 +222,7 @@ fn count_terminal_events(events : Array[TurnEvent]) -> Int32 {
 ///|
 async test "t07_save_error_emits_exactly_one_turnfailed" {
   let model = @posoco.ScriptedModel([Respond(@posoco.tk_stop_response("done"))])
-  let store = @posoco.RecordingSessionStore()
+  let store = @posoco.RecordingSessionPort()
   store.fail_save("save-fail")
   let obs = @posoco.RecordingObserver()
   let agent = @posoco.Agent(
@@ -247,7 +247,7 @@ async test "t07_save_error_emits_exactly_one_turnfailed" {
 ///|
 async test "t07_model_failure_keeps_primary_after_input_checkpoint" {
   let model = @posoco.ScriptedModel([Fail(Transport("primary network failure"))])
-  let store = @posoco.RecordingSessionStore()
+  let store = @posoco.RecordingSessionPort()
   let obs = @posoco.RecordingObserver()
   let agent = @posoco.Agent(
     exts=[
@@ -293,7 +293,7 @@ async test "t07_model_failure_keeps_primary_after_input_checkpoint" {
 ///|
 async test "t07_load_error_emits_one_safe_turnfailed" {
   let model = @posoco.ScriptedModel([])
-  let store = @posoco.RecordingSessionStore()
+  let store = @posoco.RecordingSessionPort()
   store.fail_load("load-fail", Load("backend detail must stay with caller"))
   let obs = @posoco.RecordingObserver()
   let agent = @posoco.Agent(
@@ -334,7 +334,7 @@ async test "t07_afterturn_hook_failure_is_observable_but_nonfatal" {
   // This test verifies that a PreModelHook abort still emits exactly one
   // terminal event (TurnFailed).
   let model = @posoco.ScriptedModel([Respond(@posoco.tk_stop_response("done"))])
-  let store = @posoco.RecordingSessionStore()
+  let store = @posoco.RecordingSessionPort()
   let obs = @posoco.RecordingObserver()
   let hook = @posoco.RecordingHook()
   hook.abort_when("before_model", "hook blocked the model call")
@@ -368,7 +368,7 @@ async test "t07_error_hook_failure_preserves_primary_and_is_observable" {
   // the PipelineAborted (not the model error). This test verifies the abort is
   // observable as PipelineAborted.
   let model = @posoco.ScriptedModel([Fail(Transport("primary network failure"))])
-  let store = @posoco.RecordingSessionStore()
+  let store = @posoco.RecordingSessionPort()
   let obs = @posoco.RecordingObserver()
   let hook = @posoco.RecordingHook()
   hook.abort_when("before_model", "hook aborted before model call")
@@ -393,7 +393,7 @@ async test "t07_error_hook_failure_preserves_primary_and_is_observable" {
 ///|
 async test "t07_turnerror_hook_failure_preserves_primary_and_is_observable" {
   let model = @posoco.ScriptedModel([Fail(Transport("primary network failure"))])
-  let store = @posoco.RecordingSessionStore()
+  let store = @posoco.RecordingSessionPort()
   let obs = @posoco.RecordingObserver()
   let hook = @posoco.RecordingHook()
   hook.abort_when("before_model", "hook aborted before model call")
@@ -430,7 +430,7 @@ async test "t07_aftertool_hook_failure_is_observable_but_nonfatal" {
     [@posoco.tk_tool_def("probe", "")],
     Map::from_array([("probe", OutcomeOk(@posoco.tk_ok_result("ok")))]),
   )
-  let store = @posoco.RecordingSessionStore()
+  let store = @posoco.RecordingSessionPort()
   let obs = @posoco.RecordingObserver()
   let hook = @posoco.RecordingHook()
   hook.abort_when("before_model", "hook blocked after tool execution")
@@ -461,7 +461,7 @@ async test "t07_aftertool_hook_failure_is_observable_but_nonfatal" {
 ///|
 async test "t07_beforemodel_abort_emits_exactly_one_turnfailed" {
   let model = @posoco.ScriptedModel([])
-  let store = @posoco.RecordingSessionStore()
+  let store = @posoco.RecordingSessionPort()
   let obs = @posoco.RecordingObserver()
   let hook = @posoco.RecordingHook()
   hook.abort_when("before_model", "policy rejected model call")
@@ -498,7 +498,7 @@ async test "t07_beforemodel_abort_emits_exactly_one_turnfailed" {
 ///|
 async test "t07_premodel_abort_emits_turnstarted_and_one_terminal_event" {
   let model = @posoco.ScriptedModel([])
-  let store = @posoco.RecordingSessionStore()
+  let store = @posoco.RecordingSessionPort()
   let obs = @posoco.RecordingObserver()
   let hook = @posoco.RecordingHook()
   hook.abort_when("before_model", "turn rejected before start")
@@ -534,7 +534,7 @@ async test "t07_tool_loop_emits_exactly_one_turnfailed" {
     [@posoco.tk_tool_def("probe", "")],
     Map::from_array([("probe", OutcomeOk(@posoco.tk_ok_result("ok")))]),
   )
-  let store = @posoco.RecordingSessionStore()
+  let store = @posoco.RecordingSessionPort()
   let obs = @posoco.RecordingObserver()
   let config : AgentConfig = @posoco.agent_config(max_tool_rounds=Some(0))
   let agent = @posoco.Agent(

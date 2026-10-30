@@ -109,7 +109,7 @@ test "agent control/follow_up drain reports queue read failure" {
 ///|
 async test "agent run_turn exposes follow-up drain failure as Runtime error" {
   let model = ScriptedModel([Respond(tk_stop_response("done"))])
-  let store = RecordingSessionStore()
+  let store = RecordingSessionPort()
   let agent = Agent(
     exts=[
       tk_ext(id="model", model=Some(model)),

@@ -5,7 +5,7 @@ using @agent {
   type ScriptedModel,
   type RecordingToolProvider,
   type RecordingObserver,
-  type RecordingSessionStore,
+  type RecordingSessionPort,
   type ScriptedMemoryPort,
   tk_ext,
   tk_config,
