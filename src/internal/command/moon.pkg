@@ -1,0 +1,6 @@
+import {
+  "colmugx/posoco/internal/puppetry",
+  "colmugx/posoco/port",
+  "colmugx/posoco/error",
+  "colmugx/posoco/types",
+}

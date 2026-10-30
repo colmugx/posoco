@@ -25,6 +25,7 @@ Base revision: `e1c65aff41e6e024523e76fde9b7a30896fc8bda` (2026-10-30 audit).
 - [x] Extract the self-contained built-in UI/prompt hooks and no-op lifecycle adapter without changing their method bodies.
 - [x] Extract the built-in memory collector, message builder and tool provider to `src/internal/memory/`, retaining root local imports for unchanged whitebox tests.
 - [x] Extract `SessionProgress` persisted-prefix cursor/dirty bookkeeping to `src/internal/session_state/`.
+- [x] Extract mailbox-based built-in command implementation and fork-index parser to `src/internal/command/`; keep `Agent::commands` at root.
 - [x] Establish an independent `src/testkit/` package for the self-contained `RecordingUiPort` fake and pure trace assertion helpers; retain root compatibility aliases.
 - [x] Leave all tests and runtime business rules untouched.
 - [x] Initial CI: native/release builds and tests were successful on Linux/macOS/Windows where configured.
