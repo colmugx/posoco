@@ -67,6 +67,7 @@ pub fn SystemPromptHook::assemble(self : SystemPromptHook) -> String {
 
 ///|
 pub extend SystemPromptHook with @port.PipelineHook::{
+  before_model,
   tool_exposure,
   on_turn_begin,
   on_post_event,
