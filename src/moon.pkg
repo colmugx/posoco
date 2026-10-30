@@ -1,5 +1,6 @@
 import {
   "colmugx/posoco/builtin",
+  "colmugx/posoco/testkit",
   "colmugx/fuwaroid",
   "colmugx/posoco/port",
   "colmugx/posoco/types",
