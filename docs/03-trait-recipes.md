@@ -66,13 +66,13 @@ pub extend EchoModel with @posoco.Extension::{extension_id, manifest}
 - 两个扩展注册了同名工具时，`Agent` 在构造时立即抛
   `CompositionError::ToolCollision`——不存在"后声明覆盖前声明"。
 
-把扩展直接交给 `Agent` 即可。Agent 恰好需要一个模型；`SessionStore`、工具、
+把扩展直接交给 `Agent` 即可。Agent 恰好需要一个模型；`SessionPort`、工具、
 observer、hook、memory、UI、command、lifecycle 都是可选的。没有 store 时 Agent
 以 ephemeral 模式运行，不做跨 turn 的 session 持久化：
 
 ```moonbit
 let model = EchoModel::{  }
-let store = MySessionStore()
+let store = MySessionPort()
 let agent = @posoco.Agent(
   exts=[
     model as &@posoco.Extension,
@@ -335,12 +335,12 @@ registry.unregister("echo")
 `register` 表示有意的热替换；想重名时报错就用 `register_strict`（抛
 `RuntimeError::ToolAlreadyRegistered`）。
 
-## 4. SessionStore：对话的记事本
+## 4. SessionPort：对话的记事本
 
 ### 签名
 
 ```moonbit
-pub(open) trait SessionStore {
+pub(open) trait SessionPort {
   async fn load(Self, id : String) -> Session raise SessionError
   async fn save(Self, id : String, session : Session) -> Unit raise SessionError
 }
@@ -366,7 +366,7 @@ fn snapshot_session(session : @posoco.Session) -> @posoco.Session {
   }
 }
 
-pub impl @posoco.SessionStore for InMemoryStore with fn load(
+pub impl @posoco.SessionPort for InMemoryStore with fn load(
   self,
   id : String,
 ) -> @posoco.Session {
@@ -376,7 +376,7 @@ pub impl @posoco.SessionStore for InMemoryStore with fn load(
   }
 }
 
-pub impl @posoco.SessionStore for InMemoryStore with fn save(
+pub impl @posoco.SessionPort for InMemoryStore with fn save(
   self,
   id : String,
   session : @posoco.Session,
@@ -775,7 +775,7 @@ pub impl @posoco.PipelineHook for ModeIndicatorHook with fn before_model(
 | 端口 | 必需？ | 主要职责 |
 |------|-------|----------|
 | `ModelPort` | 是（恰好一个） | 调用模型：chat、compact、provider config |
-| `SessionStore` | 是（至少一个） | 对话记录与元数据持久化 |
+| `SessionPort` | 是（至少一个） | 对话记录与元数据持久化 |
 | `ToolProvider` | 否 | 工具声明与执行 |
 | `Observer` | 否 | 只读 turn 事件 |
 | `PipelineHook` | 否 | 改写消息、审批工具、效果后通知、turn 边界副作用 |

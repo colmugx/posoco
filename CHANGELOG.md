@@ -1,5 +1,89 @@
 # Changelog
 
+## 0.23.1
+
+### Breaking: `SessionStore` is now `SessionPort`
+
+The session persistence trait is renamed to match the port vocabulary used by
+the rest of the public surface. There is no deprecated alias:
+
+```moonbit
+impl @posoco.SessionPort for MyStore with fn load(...) { ... }
+impl @posoco.SessionPort for MyStore with fn save(...) { ... }
+```
+
+Public testkit/example implementations follow the same rename:
+`RecordingSessionPort`, `MockSessionPort`, and `QuickstartSessionPort`.
+Downstream implementations must update their `impl` headers and imports;
+`SessionPort::load/save/append_messages/checkpoint/truncate` semantics are
+unchanged.
+
+### Breaking: `CompactMode::Append` removed
+
+`CompactMode` now has only `Replace` and `NewThread`. The ModelPort owns compact
+message arrangement: it returns the transcript it wants, and Posoco does not
+hard-code a system-message prefix or a “last three messages” policy. Existing
+code matching `Append` must choose explicit replacement/new-thread behavior.
+
+### Changed: first seed, then the runtime core is authoritative
+
+When a SessionPort is configured, the first operation for a session reads the
+first configured port once as the initial seed; after initialization, reads come
+from the Agent's runtime core snapshot, not the SessionPort. Later turns do not
+reload the port, so external store edits/truncation do not rewind an existing
+Agent. A new Agent still sees whatever the store contains on its first load.
+With no SessionPort, an in-memory core initialized empty keeps multi-turn
+history.
+
+The first confirmed write is a full all-store alignment: sampling one port does
+not imply the other ports agree. Only after every store confirms does the Agent
+advance its persisted-output cursor and clear the unaligned state. The cursor
+tracks confirmed persisted output, not core message count. Fixation that changes
+the message prefix also forces a full alignment; `RunStarted` no longer clears
+an unrepaired dirty/aligned state.
+
+### Changed: Agent is the sole fork/NewThread output owner
+
+Puppet no longer writes sibling sessions. For fork and compact `NewThread`, the
+Agent establishes the child core fact first, preserves the child's
+`parent_thread_id` metadata, then writes all configured stores, then advances the
+child cursor and emits the original-scope `SessionRedirect`.
+If a store write fails or the operation is cancelled, the core fact and an
+in-process pending output snapshot remain; a later operation retries the same
+child id/body without re-running the model or fabricating a new child. Recovery
+emits only the original-scope redirect and does not rewrite the old failed
+terminal. Recovery failure blocks the new body; partial multi-store success is
+retried by all stores, so this is not exactly-once delivery.
+
+Replace body recovery is an output gate for the affected session only: it is
+retried before that session's new body, and does not block unrelated sessions.
+
+### Changed: task outcomes and applied ids stay one fact
+
+Task outcome messages and their `posoco.task.applied_ids` metadata are recorded
+in the same committed core fact/output. A terminal save failure or cancellation
+keeps the applied ids with the committed message, so the next real turn does not
+inject the same outcome again; queue cleanup still follows confirmed success.
+Malformed applied-id metadata remains a pre-model admission error.
+
+### Fixed: standalone Replace journal event
+
+Standalone Replace now journals the real `TranscriptRewritten` event instead of
+the reducer's `InputRejected` error state. The internal `Start` seed is private
+and is not published as an extra `RunStarted` boundary; model results and the
+saved body are unchanged.
+
+### Internal
+
+The core fact/version layer owns detached source snapshots and deep-copy
+isolation; committed boundaries are captured synchronously before dispatch.
+Session initialization/hydration and the Agent's pending-output/recovery state
+are internal; no new public recovery API or `core_shadow` rename is claimed.
+
+Boundaries: pending fork/NewThread output is process-local and is not recovered
+across process restarts; this release does not claim exactly-once store writes,
+cross-process fact replay, or all planned performance optimizations.
+
 ## 0.23.0
 
 ### Dynamic tools: change capabilities without rebuilding the Agent
@@ -8,6 +92,15 @@ Tools no longer have to be fixed for the Agent's entire lifetime. Extensions can
 publish, replace or withdraw their own tool groups through owner-bound
 `ToolContributions` — useful for provider-specific search, MCP connections and
 task-specific toolkits. Static manifest tools remain the simplest default.
+
+Implement only what you use: ordinary tools still need just `list_tools` and
+`execute`. `PipelineHook::tool_exposure` already defaults to no extra narrowing;
+other hook callbacks also have defaults. `Lifecycle::on_shutdown` now defaults to
+a no-op, matching compose/start, so startup-only or capability-wiring extensions
+need no empty cleanup override. Extensions owning resources must still provide
+real cleanup; cancellation and persistence contracts retain their required
+implementations. Runtime tool execution always receives a captured provider;
+there is no optional binding-support switch or name-based fallback.
 
 **Publish now; adopt at the next operation boundary.** A normal replacement does
 not interrupt the current operation: its model steps, tool calls and drained
@@ -261,10 +354,10 @@ unchanged: without a pending cancellation the pause is a no-op yield. Pinned by
 
 ### Improved: coherent session checkpoints and optional persistence
 
-- `SessionStore` is now optional at Agent composition. With no store, Agent
+- `SessionPort` is now optional at Agent composition. With no store, Agent
   runs ephemerally: turns execute normally, while cross-turn session load/save
   is skipped.
-- Added `SessionCheckpoint` and `SessionStore::checkpoint`, which persist an
+- Added `SessionCheckpoint` and `SessionPort::checkpoint`, which persist an
   append-only message delta together with an optional metadata replacement.
   Existing stores remain compatible through a default implementation.
 - Agent derives the stable `posoco.title` metadata value from the first
@@ -794,12 +887,12 @@ after this release (full table and methodology:
   via `@async.all`; results are merged in registration order and per-port
   failures are reported through `on_failure`.
 - **Session persistence scales with bytes appended, not history size** —
-  pure-append turns save through `SessionStore::append_messages` (below)
+  pure-append turns save through `SessionPort::append_messages` (below)
   instead of a full load + save of the whole transcript.
 
-### Added: `SessionStore::append_messages` and selective append saves
+### Added: `SessionPort::append_messages` and selective append saves
 
-`SessionStore` gains `append_messages(id, from_index, messages :
+`SessionPort` gains `append_messages(id, from_index, messages :
 ArrayView[@kernel.Message])` with a default load-concat-save fallback. The Agent
 now calls `append_messages` when a turn was a pure append (a per-session
 persisted cursor tracks the boundary), and falls back to a full `save` after
@@ -956,20 +1049,18 @@ pub(all) struct EventScope {
 }
 
 pub(open) trait Observer {
-  fn on_event(Self, event : TurnEvent) -> Unit = _
-  fn on_event_at(Self, scope : EventScope?, event : TurnEvent) -> Unit = _
+  fn on_event(Self, scope : EventScope?, event : TurnEvent) -> Unit = _
 }
 
 pub(open) trait Hook {
   // ... before_model / before_tool unchanged ...
-  fn on_post_event(Self, stage : HookStage) -> Unit = _
-  fn on_post_event_at(Self, scope : EventScope?, stage : HookStage) -> Unit = _
+  fn on_post_event(Self, scope : EventScope?, stage : HookStage) -> Unit = _
 }
 ```
 
-- The core dispatches ONLY the scoped variants; their defaults delegate to
-  the legacy unscoped methods, so existing `Observer`/`Hook`
-  implementations keep working unchanged (non-breaking).
+- One slot per purpose: `Observer::on_event(scope, event)` and
+  `Hook::on_post_event(scope, stage)` always carry the attribution — there is
+  no unscoped shadow method and no default forwarding between the two.
 - Scope guarantees: turn-lifecycle events (`TurnStarted`/`TurnCompleted`/
   `TurnFailed`), envelope-projected events (`ModelResponseReceived`,
   `ToolCallPending`, `ToolCallResult`, `SessionRedirect`), and post-event

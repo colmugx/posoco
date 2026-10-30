@@ -7,7 +7,7 @@
 ## 1. 设计思想：端口与适配器
 
 Posoco 采用**六边形（端口-适配器）架构**：框架核心不依赖任何具体实现。核心只
-认识一组接口——端口（port，即公开 trait），比如 `ModelPort`、`SessionStore`、
+认识一组接口——端口（port，即公开 trait），比如 `ModelPort`、`SessionPort`、
 `ToolProvider`。具体实现（OpenAI 适配器、文件存储、Bash 工具……）都是插在端口
 上的**适配器**，随时可以替换。
 
@@ -38,7 +38,7 @@ graph TD
   subgraph "第 1 层 — 端口（纯声明）"
     MP["ModelPort"]
     TP["ToolProvider"]
-    SS["SessionStore"]
+    SS["SessionPort"]
     OB["Observer"]
     HK["PipelineHook"]
     ME["MemoryPort"]
@@ -66,7 +66,7 @@ graph TD
 | 端口 | 数量 | 必需？ | 干什么用的 |
 |------|------|--------|-----------|
 | `ModelPort` | 恰好一个 | ✅ 必需 | 调用 LLM；对话压缩也是它的能力 |
-| `SessionStore` | 任意 | 可选 | 对话记录、metadata 与 checkpoint 的持久化；缺省时 Agent 以 ephemeral 模式运行 |
+| `SessionPort` | 任意 | 可选 | 对话记录、metadata 与 checkpoint 的持久化；缺省时 Agent 以 ephemeral 模式运行 |
 | `ToolProvider` | 任意 | 可选 | 声明并执行工具 |
 | `Observer` | 任意 | 可选 | 只读旁观：收到 turn 生命周期事件 |
 | `PipelineHook` | 任意 | 可选 | 插手流程：改写消息、审批工具调用 |
@@ -74,7 +74,7 @@ graph TD
 | `Lifecycle` | 任意 | 可选 | Agent 关闭时的资源清理 |
 
 Agent 在构造时汇总所有 manifest，并对真正必需的能力做一次**快速失败（fail-fast）**校验：缺模型、
-工具重名、命令重名都会立刻抛 `CompositionError`。`SessionStore` 是可选 durability capability；
+工具重名、命令重名都会立刻抛 `CompositionError`。`SessionPort` 是可选 durability capability；
 未提供时 turn 仍然正常执行，只是不加载或写入跨 turn 的持久化 session。工具重名时错误信息会带上每个 `ToolDef.provenance`
 （来源标签），方便你定位是哪个扩展声明的。
 
@@ -86,19 +86,19 @@ Posoco 最核心的流程：
 ```mermaid
 flowchart TD
   START(["run_turn(input, session_id)"]) --> OBS_START["observer.on_event(TurnStarted)"]
-  OBS_START --> LOAD["可选 SessionStore.load(session_id)<br/>无 store → 空 session"]
+  OBS_START --> LOAD["可选 SessionPort.load(session_id)<br/>无 store → 空 session"]
   LOAD -->|成功 / ephemeral| ADD_INPUT["从真实 input 生成稳定 metadata title<br/>memory injection 后追加真实 input"]
   LOAD -->|存储失败| FATAL
   ADD_INPUT --> INPUT_CP["checkpoint: input + metadata delta<br/>无 store → no-op"]
 
   INPUT_CP --> COMPACT{"该压缩了吗？<br/>上下文到 90% 或手动触发"}
-  COMPACT -->|是| CALL_COMPACT["model_port.compact(trigger)<br/>→ CompactResult（NewThread / Replace / Append）"]
+  COMPACT -->|是| CALL_COMPACT["model_port.compact(trigger)<br/>→ CompactResult（NewThread / Replace）"]
   COMPACT -->|否| HOOK_BM
   CALL_COMPACT --> HOOK_BM
 
   HOOK_BM["before_model hooks（链式改写）<br/>raise HookAbort 中止 turn"] --> MODEL["model_port.chat(...)"]
 
-  MODEL -->|成功| MODEL_CP["committed model boundary<br/>await SessionStore.checkpoint()"]
+  MODEL -->|成功| MODEL_CP["committed model boundary<br/>await SessionPort.checkpoint()"]
   MODEL_CP --> AFTER_M["observer.on_event(ModelResponseReceived)<br/>on_post_event(ModelCompleted)"]
   MODEL -->|失败| FATAL
 
@@ -119,7 +119,7 @@ flowchart TD
   APPROVE --> EXEC["执行这一波工具（可并行）<br/>每个工具后 on_post_event(ToolCompleted / ToolFailed)"]
   TERM_REJECT --> FATAL
   SKIP --> MERGE
-  EXEC --> TOOL_CP["committed tool boundary<br/>await SessionStore.checkpoint()"]
+  EXEC --> TOOL_CP["committed tool boundary<br/>await SessionPort.checkpoint()"]
   TOOL_CP --> MERGE["工具终态事件（Succeeded / Failed / Rejected / Abandoned）<br/>工具结果追加到 messages"]
 
   MERGE --> NEXT_MODEL["继续下一轮模型调用（before_model 不重跑）"]

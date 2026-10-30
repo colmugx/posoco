@@ -14,7 +14,7 @@ command、prompt、memory、lifecycle——都通过开放的 port trait 注入�
 ## 安装
 
 ```bash
-moon add colmugx/posoco@0.23.1
+moon add colmugx/posoco@0.23.2
 ```
 
 ## Port
@@ -27,7 +27,7 @@ Port 是 Posoco 核心与 agent 所用能力之间唯一的接缝。
 | `DecisionPort` | provider-neutral 的结构化语义判断 |
 | `ToolProvider` | 工具发现与执行 |
 | `LogPort` | 结构化应用日志，调用方选择持久化强度 |
-| `SessionStore` | 会话加载 / 保存 |
+| `SessionPort` | 会话加载 / 保存 |
 | `Observer` | 只读 turn 事件观察 |
 | `Hook` | 单 trait 带默认方法的管线拦截：模型前改写消息或中止（`before_model`）、工具前审批/推迟/拒绝（`before_tool`）、每个效果后只读（`on_post_event`） |
 | `MemoryPort` | 长期记忆存储与检索 |
@@ -112,7 +112,7 @@ let result = agent.run_turn(input, "session_1")
 - `MultipleModels`——多个扩展直接贡献 `ModelPort`（多 model 路由应由
   meta-ext 如 `posoco-ext-llm` 在内部解决，而非核心）
 - `ToolCollision`——两个扩展注册了同名工具（没有 last-wins）
-- `SessionStore` 是可选的；未提供时 Agent 以 ephemeral 模式运行，不做持久化 session 写入
+- `SessionPort` 是可选的；未提供时 Agent 以 ephemeral 模式运行，不做持久化 session 写入
 
 已发布 `TurnStarted` 的 turn 恰好发布一个 terminal event：成功为
 `TurnCompleted`，任何主路径失败为 `TurnFailed`。

@@ -15,7 +15,7 @@ core never dictates shape.
 ## Installation
 
 ```bash
-moon add colmugx/posoco@0.23.1
+moon add colmugx/posoco@0.23.2
 ```
 
 ## Ports
@@ -29,7 +29,7 @@ uses.
 | `DecisionPort` | Provider-neutral structured semantic judgement |
 | `ToolProvider` | Tool discovery and execution |
 | `LogPort` | Structured application logging with caller-selected durability |
-| `SessionStore` | Load / save conversation session |
+| `SessionPort` | Load / save conversation session |
 | `Observer` | Read-only turn-event observation |
 | `Hook` | Pipeline interception with default methods: rewrite messages or abort before model (`before_model`), approve / defer / reject before tool (`before_tool`), read-only after each effect (`on_post_event`) |
 | `MemoryPort` | Long-term memory storage and retrieval |
@@ -118,7 +118,7 @@ is async and raises `AgentError`. Composition is fail-fast and raises
   (multi-model routing belongs inside a meta-extension such as
   `posoco-ext-llm`, not in the core)
 - `ToolCollision` — two extensions register the same tool name (no last-wins)
-- `SessionStore` is optional; without one the Agent runs ephemerally and skips durable session persistence
+- `SessionPort` is optional; without one the Agent runs ephemerally and skips durable session persistence
 
 A turn that has emitted `TurnStarted` emits exactly one terminal event:
 `TurnCompleted` on success, or `TurnFailed` on any primary failure.

@@ -20,7 +20,7 @@ async test "quickstart_persists_user_and_assistant_history" {
       ])
     _ => fail("expected AssistantMessage")
   }
-  let saved = @port.SessionStore::load(
+  let saved = @port.SessionPort::load(
     extension.sessions,
     "quickstart-test-session",
   )

@@ -30,7 +30,7 @@ fn build_agent(
 
 规则：
 
-- 恰好一个扩展提供 `ModelPort`，至少一个提供 `SessionStore`；
+- 恰好一个扩展提供 `ModelPort`，至少一个提供 `SessionPort`；
 - 工具、observer、hook 等全部可选，没有也能构造；
 - 工具重名、命令重名、manifest 畸形，都在构造阶段以 `CompositionError` 失败。
   不会产生"半成品"Agent，也没有"后声明覆盖前声明"的工具路由。
@@ -192,7 +192,7 @@ async fn report_turn(agent : @posoco.Agent) -> Unit {
 
 ## 6. 会话持久化与压缩
 
-`SessionStore` 是对话连续性的来源。查不到的 id 返回：
+`SessionPort` 是对话连续性的来源。查不到的 id 返回：
 
 ```moonbit
 { messages: [], metadata: Map::from_array([]) }
@@ -202,7 +202,7 @@ async fn report_turn(agent : @posoco.Agent) -> Unit {
 多 store 写入并行执行。这不是事务——后面某个 save 失败时，前面的写入不会回滚。
 需要原子复制就自己实现事务型适配器。
 
-当一次 turn 只是追加消息时，Agent 会调用 `SessionStore::append_messages(id,
+当一次 turn 只是追加消息时，Agent 会调用 `SessionPort::append_messages(id,
 from_index, messages)` 而不是完整的 `save`；compact、fork 或 rewrite 之后仍走完整
 `save`。`append_messages` 有默认的 load-concat-save 实现，所以现有 store 无需修改；
 能真正追加的 store（如 JSONL 文件 store）应该覆盖它以获得更好的性能。
@@ -241,10 +241,9 @@ async fn compact_model(
 }
 ```
 
-`CompactResult.mode` 是三种之一：
+`CompactResult.mode` 是两种之一：
 
-- `Replace`：原地替换当前会话的消息体；
-- `Append`：把压缩结果追加到当前会话；
+- `Replace`：用 modelport 返回的完整消息体替换当前会话；
 - `NewThread`：开一条新会话线程（记录父线程 lineage），`final_session_id`
   随之重定向，原会话保留。
 

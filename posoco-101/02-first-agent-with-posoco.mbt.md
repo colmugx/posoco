@@ -19,7 +19,7 @@ Posoco 是一个 ports-and-adapters 框架。组装一个最小 Agent 只需要�
 | 角色 | 你要做什么 | 为什么必须实现 |
 |------|-----------|---------------|
 | `ModelPort` | 返回一个固定回复 | Agent 需要一个"模型"来产生响应 |
-| `SessionStore` | 在内存里存取对话 | Agent 需要记住这个 session 的消息 |
+| `SessionPort` | 在内存里存取对话 | Agent 需要记住这个 session 的消息 |
 | `Extension` | 自报告你贡献了哪些端口 | Agent 靠 manifest 聚合扩展，不靠位置参数 |
 
 `ToolProvider`、`Observer`、各种 Hook、`MemoryPort`、`Lifecycle`、
@@ -149,14 +149,14 @@ pub extend FixedModel with @posoco.Extension::{extension_id, manifest}
 `FixedModel` 只填 `models: [self]`，其余全空。这种"自报告"模型让 Agent
 聚合时不用关心参数顺序——只要每个扩展诚实报告自己贡献什么。
 
-## 4. 最小 SessionStore：内存字典
+## 4. 最小 SessionPort：内存字典
 
-`SessionStore` 有两个 async 方法：`load` 和 `save`。Agent 在 turn 开始时
+`SessionPort` 有两个 async 方法：`load` 和 `save`。Agent 在 turn 开始时
 `load`，结束时 `save`。同样，它也要 impl `Extension` 才能被 Agent 发现：
 
 ```moonbit check
 ///|
-/// 内存 SessionStore：用 Map 存所有 session。
+/// 内存 SessionPort：用 Map 存所有 session。
 pub(all) struct InMemoryStore {
   sessions : Map[String, @posoco.Session]
 }
@@ -183,7 +183,7 @@ fn copy_session(session : @posoco.Session) -> @posoco.Session {
 ///|
 /// load 未知 id 时返回**空 session**，而不是 raise。
 /// 这是 Posoco 约定：新对话第一次 turn 时 store 里还没有它。
-pub impl @posoco.SessionStore for InMemoryStore with fn load(self, id : String) -> @posoco.Session raise @posoco.SessionError {
+pub impl @posoco.SessionPort for InMemoryStore with fn load(self, id : String) -> @posoco.Session raise @posoco.SessionError {
   match self.sessions.get(id) {
     Some(s) => copy_session(s)
     None => { messages: [], metadata: Map::from_array([]), }
@@ -192,7 +192,7 @@ pub impl @posoco.SessionStore for InMemoryStore with fn load(self, id : String) 
 
 ///|
 /// save 把整个 session 存回去。Agent 在 turn 结束时调用。
-pub impl @posoco.SessionStore for InMemoryStore with fn save(
+pub impl @posoco.SessionPort for InMemoryStore with fn save(
   self,
   id : String,
   session : @posoco.Session,
@@ -214,7 +214,7 @@ pub impl @posoco.Extension for InMemoryStore with fn manifest(self) -> @posoco.E
     decisions: [],
     logs: [],
     tools: [],
-    sessions: [self], // ← 贡献 SessionStore
+    sessions: [self], // ← 贡献 SessionPort
     observers: [],
     hooks: [],
     memory: [],
@@ -278,7 +278,7 @@ async test "first_agent_runs_one_turn" {
 
 构造器会做几道 fail-fast 检查（在组装时就 raise，不是等到运行）：
 
-- **SessionStore 是可选的**：没有 store 时 Agent 仍可运行，但不会持久化跨 turn 的 session 状态。
+- **SessionPort 是可选的**：没有 store 时 Agent 仍可运行，但不会持久化跨 turn 的 session 状态。
 - **恰好一个 ModelPort**：一个没有（`MissingModel`）或声明了两个
   （`MultipleModels`）都拒绝——多模型路由必须收进一个 meta 扩展里做，
   第 05 篇讲 Routing 时会看到为什么。
@@ -405,7 +405,7 @@ raise `ModelError::ResponseParse`，而不是静默变成 `{}`。
 | 概念 | 在第一个 Agent 里的角色 |
 |------|----------------------|
 | `ModelPort` | 你实现的"模型"——固定回复（3 个方法） |
-| `SessionStore` | 你实现的"记忆"——内存字典（load + save） |
+| `SessionPort` | 你实现的"记忆"——内存字典（load + save） |
 | `Extension` | 自报告——告诉 Agent 你贡献了哪些端口 |
 | `Agent(exts=, config=)` | 组装入口，扩展数组 + 配置 |
 | `run_turn` | 运行一轮，返回 TurnResult raise AgentError |

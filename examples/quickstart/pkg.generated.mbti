@@ -19,8 +19,8 @@ pub impl @port.Extension for QuickstartExtension
 type QuickstartModel
 pub impl @port.ModelPort for QuickstartModel
 
-type QuickstartSessionStore
-pub impl @port.SessionStore for QuickstartSessionStore
+type QuickstartSessionPort
+pub impl @port.SessionPort for QuickstartSessionPort
 
 // Type aliases
 

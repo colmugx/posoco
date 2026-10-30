@@ -9,7 +9,7 @@
 Posoco 只有三个核心概念，后面所有内容都是围绕它们展开的：
 
 - **端口（Port）**：一组由 Posoco 定义的能力接口（trait）。比如「接入一个大模型」
-  是 `ModelPort`，「存取对话记录」是 `SessionStore`，「提供工具」是 `ToolProvider`。
+  是 `ModelPort`，「存取对话记录」是 `SessionPort`，「提供工具」是 `ToolProvider`。
   端口只规定"要做什么"，不规定"怎么做"。
 - **扩展（Extension）**：实现了一个或多个端口的组件。你写的模型适配器、工具集合、
   存储后端，都是一个扩展。
@@ -100,7 +100,7 @@ pub extend FixedModel with @posoco.Extension::{extension_id, manifest}
 
 ## 3. 第二步：实现一个会话存储
 
-Agent 需要把对话记录存下来，跨 turn 保持连续性。这就是 `SessionStore`：两个方法，
+Agent 需要把对话记录存下来，跨 turn 保持连续性。这就是 `SessionPort`：两个方法，
 `load` 读、`save` 写。
 
 ```moonbit
@@ -115,7 +115,7 @@ fn copy_session(session : @posoco.Session) -> @posoco.Session {
   }
 }
 
-pub impl @posoco.SessionStore for MemoryStore with fn load(
+pub impl @posoco.SessionPort for MemoryStore with fn load(
   self,
   id : String,
 ) -> @posoco.Session {
@@ -125,7 +125,7 @@ pub impl @posoco.SessionStore for MemoryStore with fn load(
   }
 }
 
-pub impl @posoco.SessionStore for MemoryStore with fn save(
+pub impl @posoco.SessionPort for MemoryStore with fn save(
   self,
   id : String,
   session : @posoco.Session,
@@ -179,7 +179,7 @@ let result = agent.run_turn(input, "quickstart-session")
 - **组装对真正必需的能力 fail-fast**。缺模型、工具重名会在构造时立刻抛
   `CompositionError`；会话存储是可选能力：
   - 没有任何扩展提供模型 → `CompositionError::MissingModel`
-  - 没有 `SessionStore` → Agent 仍可运行，但 session 仅存在于当前 turn 的执行上下文，不做跨 turn 持久化
+  - 没有 `SessionPort` → Agent 仍可运行，但 session 仅存在于当前 turn 的执行上下文，不做跨 turn 持久化
   - 两个扩展注册了同名工具 → `CompositionError::ToolCollision`
     （没有"后声明覆盖前声明"的兜底）
 - **`run_turn` 是 async 的**。调用它的函数或测试也应是 async。第二个参数是
