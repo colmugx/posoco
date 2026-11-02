@@ -304,10 +304,6 @@ async test "b11_agent_runs_ephemerally_without_session_store" {
   assert_eq(model.index, 1)
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// ToolRegistry — register vs register_strict collision semantics
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 fn registry_test_tool(name : String) -> @kernel.ToolDef {
   ToolDef(

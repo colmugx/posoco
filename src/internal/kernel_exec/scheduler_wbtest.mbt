@@ -1,10 +1,5 @@
 ///|
 /// Whitebox tests for the deterministic ToolScheduler.
-
-// ──────────────────────────────────────────────────────────────────────────
-// Helpers
-// ──────────────────────────────────────────────────────────────────────────
-
 fn make_catalog(
   defs : Array[(String, @kernel.ExecutionPolicy)],
 ) -> ToolCatalogSnapshot raise CatalogCompositionError {
@@ -35,10 +30,6 @@ fn make_call(call_id : String, name : String) -> @kernel.ToolCall {
     arguments: Json::object(Map::from_array([])),
   }
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// Happy paths
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 test "Scheduler: empty calls produces empty plan" {
@@ -124,10 +115,6 @@ test "Scheduler: E/E forms two separate waves" {
   assert_eq(plan.waves()[1].calls[0].call_id.to_string(), "c2")
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Invariant failures
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 test "Scheduler: duplicate call_id raises" {
   let catalog = make_catalog([("a", Parallel)])
@@ -174,10 +161,6 @@ test "Scheduler: stale snapshot version raises" {
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Trace (sanitised output)
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 test "Scheduler: trace excludes arguments" {
   let catalog = make_catalog([("a", Parallel), ("b", Exclusive)])
@@ -211,10 +194,6 @@ test "Scheduler: trace excludes arguments" {
   assert_false(trace.contains("arguments"))
   assert_false(trace.contains("schema"))
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// Source-order preservation
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 test "Scheduler: source order preserved within parallel wave" {

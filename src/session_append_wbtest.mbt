@@ -10,10 +10,6 @@ fn append_config() -> AgentConfig {
   agent_config(max_tool_rounds=Some(10))
 }
 
-// ---------------------------------------------------------------------------
-// Regression 1: two sequential turns on one session use append, not full save.
-// ---------------------------------------------------------------------------
-
 ///|
 async test "t06_sequential_turns_use_append_not_full_save" {
   let model = ScriptedModel([
@@ -45,10 +41,6 @@ async test "t06_sequential_turns_use_append_not_full_save" {
   assert_eq(save_count, 1)
   assert_true(checkpoint_count >= 3)
 }
-
-// ---------------------------------------------------------------------------
-// Regression 2: a compact turn falls back to full save, not append.
-// ---------------------------------------------------------------------------
 
 ///|
 fn compact_trigger_response(total_tokens : Int32) -> @kernel.ModelCallResult {

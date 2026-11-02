@@ -1,7 +1,3 @@
-// ---------------------------------------------------------------------------
-// ScriptedDecisionPort — fixed semantic-judgement script + request recording.
-// ---------------------------------------------------------------------------
-
 ///|
 pub(all) enum ScriptedDecisionStep {
   Return(@port.DecisionResult)

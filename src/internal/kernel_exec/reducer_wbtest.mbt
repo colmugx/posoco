@@ -4,23 +4,8 @@
 /// These tests drive the reducer through ADR §3 conformance cases. They are
 /// pure: no async, no trait objects, no IO. The catalog and inputs are
 /// constructed directly; the reducer's output is pattern-matched.
-///
-/// Coverage:
-/// - C-HAPPY-NO-TOOLS, C-HAPPY-ONE-TOOL
-/// - C-MODEL-UNKNOWN-TOOL, C-MODEL-SCHEMA-MISMATCH (NotExecuted, zero ExecuteTool)
-/// - C-MODEL-PARSE-FAILURE (Length finish reason)
-/// - C-INVARIANT-DUPLICATE-CALL-ID
-/// - C-SUSPEND-RESUME-IN-PROCESS
-/// - C-SUSPEND-LATE-COMPLETION-REJECTED
-/// - C-CANCEL-BEFORE-MODEL, C-CANCEL-WHILE-MODEL
-/// - C-DEADLINE-DURING-MODEL
-/// - C-POST-TERMINAL-REJECTED
-/// - C-RACE-DEADLINE-WINS
 
-// ──────────────────────────────────────────────────────────────────────────
-// Fixtures
-// ──────────────────────────────────────────────────────────────────────────
-
+///|
 fn make_catalog_v1() -> ToolCatalogSnapshot raise CatalogCompositionError {
   let builder = ToolCatalogBuilder()
   let _ = builder.add(
@@ -189,10 +174,6 @@ fn run_until_awaiting_model() -> (RunState, EffectId, ModelStepId) raise {
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// C-HAPPY-NO-TOOLS
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 test "C-HAPPY-NO-TOOLS: Start → CallModel → ModelCompleted → Terminal(Completed)" {
   let (st_awaiting, eff_id, step_id) = run_until_awaiting_model()
@@ -226,10 +207,6 @@ test "C-HAPPY-NO-TOOLS: Start → CallModel → ModelCompleted → Terminal(Comp
   // No further effects.
   assert_eq(out.effects().length(), 0)
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// C-HAPPY-ONE-TOOL
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 test "C-HAPPY-ONE-TOOL: model step → tool call → ExecuteTool → ToolCompleted → ReadyForModel" {
@@ -335,10 +312,6 @@ test "C-BUDGET-TOOL-BATCH: count atomically before any tool effect is exposed" {
   )
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// C-MODEL-UNKNOWN-TOOL
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 test "C-MODEL-UNKNOWN-TOOL: unknown tool name → NotExecuted(UnknownTool), zero ExecuteTool" {
   let (st_awaiting, eff_id, step_id) = run_until_awaiting_model()
@@ -375,10 +348,6 @@ test "C-MODEL-UNKNOWN-TOOL: unknown tool name → NotExecuted(UnknownTool), zero
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// C-MODEL-SCHEMA-MISMATCH
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 test "C-MODEL-SCHEMA-MISMATCH: parsed args fail schema → NotExecuted(SchemaMismatch)" {
   let (st_awaiting, eff_id, step_id) = run_until_awaiting_model()
@@ -411,10 +380,6 @@ test "C-MODEL-SCHEMA-MISMATCH: parsed args fail schema → NotExecuted(SchemaMis
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// C-MODEL-PARSE-FAILURE (Length finish reason)
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 test "C-MODEL-LENGTH-FINISH: finish_reason=Length → Terminal(Failed)" {
   let (st_awaiting, eff_id, step_id) = run_until_awaiting_model()
@@ -441,10 +406,6 @@ test "C-MODEL-LENGTH-FINISH: finish_reason=Length → Terminal(Failed)" {
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// C-MODEL-TRANSPORT-FAILURE
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 test "C-MODEL-TRANSPORT-FAILURE: ModelFailed(Transport) → Terminal(Failed)" {
   let (st_awaiting, eff_id, step_id) = run_until_awaiting_model()
@@ -462,12 +423,6 @@ test "C-MODEL-TRANSPORT-FAILURE: ModelFailed(Transport) → Terminal(Failed)" {
     _ => fail("expected Failed(ModelTransport)")
   }
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// C-MODEL-FAILURE-MAPPING — every ModelFailure variant must land on its
-// documented FailureReason (reducer_model.mbt reduce_model_failed). Transport
-// is covered above; the remaining five variants are classified here.
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 /// Drive one AwaitingModel state through `ModelFailed` with the given
@@ -564,10 +519,6 @@ test "C-MODEL-FAILURE-MAPPING: RateLimited with None scheduling data still class
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// C-INVARIANT-DUPLICATE-CALL-ID (within model completion)
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 test "C-INVARIANT-DUPLICATE-CALL-ID: same call_id twice in one batch → Failed" {
   let (st_awaiting, eff_id, step_id) = run_until_awaiting_model()
@@ -610,10 +561,6 @@ test "C-INVARIANT-DUPLICATE-CALL-ID: same call_id twice in one batch → Failed"
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// C-SUSPEND-RESUME-IN-PROCESS
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 test "C-SUSPEND-RESUME-IN-PROCESS: AwaitingModel → Suspended → ReadyForModel" {
   let (st_awaiting, _eff_id, _step_id) = run_until_awaiting_model()
@@ -648,10 +595,6 @@ test "C-SUSPEND-RESUME-IN-PROCESS: AwaitingModel → Suspended → ReadyForModel
   assert_eq(st_resumed.run_id().to_string(), "run_1")
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// C-SUSPEND-LATE-COMPLETION-REJECTED
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 test "C-SUSPEND-LATE-COMPLETION-REJECTED: ModelCompleted while Suspended rejected" {
   let (st_awaiting, eff_id, step_id) = run_until_awaiting_model()
@@ -685,10 +628,6 @@ test "C-SUSPEND-LATE-COMPLETION-REJECTED: ModelCompleted while Suspended rejecte
   assert_true(rejected)
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// C-CANCEL-BEFORE-MODEL (ReadyForModel)
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 test "C-CANCEL-BEFORE-MODEL: ReadyForModel + CancelRequested → Terminal(Cancelled)" {
   let st0 = fresh_state()
@@ -703,10 +642,6 @@ test "C-CANCEL-BEFORE-MODEL: ReadyForModel + CancelRequested → Terminal(Cancel
     _ => fail("expected Cancelled outcome")
   }
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// C-CANCEL-WHILE-MODEL (AwaitingModel)
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 test "C-CANCEL-WHILE-MODEL: AwaitingModel + CancelRequested → CancelOutstanding + Cancelled" {
@@ -734,9 +669,7 @@ test "C-CANCEL-WHILE-MODEL: AwaitingModel + CancelRequested → CancelOutstandin
   assert_eq(st.transcript(), st_awaiting.transcript())
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// C-CANCEL-DURING-TOOLS: staged tool-wave durability (contract A invariant 4)
-// ──────────────────────────────────────────────────────────────────────────
+// Staged completed results are kept; pending tools are marked interrupted.
 
 ///|
 test "C-CANCEL-DURING-TOOLS: staged completed result kept, pending tool marked interrupted" {
@@ -847,10 +780,6 @@ test "C-CANCEL-DURING-TOOLS-NO-STAGED: every pending tool gets an interrupted ma
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// C-DEADLINE-DURING-MODEL
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 test "C-DEADLINE-DURING-MODEL: DeadlineReached wins → Terminal(Failed)" {
   let (st_awaiting, _eff_id, _step_id) = run_until_awaiting_model()
@@ -864,10 +793,6 @@ test "C-DEADLINE-DURING-MODEL: DeadlineReached wins → Terminal(Failed)" {
     _ => fail("expected Failed(DeadlineReached)")
   }
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// C-POST-TERMINAL-REJECTED
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 test "C-POST-TERMINAL-REJECTED: any input after Terminal is rejected" {
@@ -904,10 +829,6 @@ test "C-POST-TERMINAL-REJECTED: any input after Terminal is rejected" {
     })
   assert_true(rejected)
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// C-TOOL-RUNTIME-FAILURE (non-terminal)
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 test "C-TOOL-RUNTIME-FAILURE: ToolFailed(runtime) → RuntimeFailure outcome, Run continues" {
@@ -956,11 +877,6 @@ test "C-TOOL-RUNTIME-FAILURE: ToolFailed(runtime) → RuntimeFailure outcome, Ru
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// C-COMPRESS-PROCESSED-MESSAGES
-// ModelCompleted with shorter processed_messages → transcript trimmed.
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 test "C-COMPRESS-PROCESSED-MESSAGES: ModelCompleted processed_messages replaces transcript body" {
   let (st_awaiting, eff_id, step_id) = run_until_awaiting_model()
@@ -979,9 +895,7 @@ test "C-COMPRESS-PROCESSED-MESSAGES: ModelCompleted processed_messages replaces 
   assert_eq(final_state.transcript().length(), 1)
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// C-TRANSCRIPT-REWRITE — the reducer is the sole transcript writer
-// ──────────────────────────────────────────────────────────────────────────
+// The reducer is the sole transcript writer.
 
 ///|
 fn rewrite_input(
@@ -1126,11 +1040,8 @@ test "C-TRANSCRIPT-REWRITE-INITIALIZING-REJECTED: nothing to rewrite before Star
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// C-TOOL-WAVE-OUT-OF-ORDER: completions arriving in reverse order still
-// produce tool messages in source (call) order. Regression guard for the
-// wave-commit staging path.
-// ──────────────────────────────────────────────────────────────────────────
+// Completions arriving in reverse order still produce tool messages in source
+// (call) order — regression guard for the wave-commit staging path.
 
 ///|
 test "C-TOOL-WAVE-OUT-OF-ORDER: reverse completions preserve source order" {

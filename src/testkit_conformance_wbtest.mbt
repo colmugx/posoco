@@ -12,10 +12,6 @@ fn tk_call(id : String, name : String) -> ToolCall {
   }
 }
 
-// ---------------------------------------------------------------------------
-// ScriptedModel: exhaustion + recording
-// ---------------------------------------------------------------------------
-
 ///|
 async test "tk_model_script_exhausts_loudly" {
   // A model with zero steps must fail on the first call, naming the call index.
@@ -150,10 +146,6 @@ async test "tk_model_records_deep_snapshot_on_failure" {
   assert_false(model.received_compact_tools[0][0] == tool)
 }
 
-// ---------------------------------------------------------------------------
-// ScriptedMemoryPort: store / search / delete recording contract
-// ---------------------------------------------------------------------------
-
 ///|
 /// Storage and retrieval side of the port contract, through the testkit fake
 /// every memory test composes: writes route through `store` (ticketed),
@@ -180,10 +172,6 @@ async test "tk_memory_port_store_search_delete_contract" {
   // Past the script, search degrades to a clean no-hit.
   assert_eq(port.search(query="anything"), None)
 }
-
-// ---------------------------------------------------------------------------
-// RecordingToolProvider: routing + recording
-// ---------------------------------------------------------------------------
 
 ///|
 async test "tk_tool_records_execute_with_call_id" {
@@ -315,11 +303,6 @@ async test "tk_tool_records_are_recursive_json_snapshots" {
   }
   assert_true(recorded_arguments_again["query"] == Json::string("original"))
 }
-
-// ---------------------------------------------------------------------------
-// RecordingSessionPort: metadata snapshots + configurable failures
-// (SessionPort methods are non-async, non-raising Result returns — direct calls work.)
-// ---------------------------------------------------------------------------
 
 ///|
 async test "tk_store_records_save_metadata_snapshot" {
@@ -494,10 +477,6 @@ async test "tk_store_fail_load_returns_typed_error" {
   }
 }
 
-// ---------------------------------------------------------------------------
-// RecordingObserver: full event order (Observer is non-async — direct calls work.)
-// ---------------------------------------------------------------------------
-
 ///|
 async test "tk_observer_preserves_event_order" {
   let obs = RecordingObserver()
@@ -552,10 +531,6 @@ async test "tk_observer_event_accessor_is_deep_snapshot" {
     _ => fail("expected second model response event")
   }
 }
-
-// ---------------------------------------------------------------------------
-// RecordingHook: stage history + configured decisions
-// ---------------------------------------------------------------------------
 
 ///|
 async test "tk_hook_records_stage_and_configured_abort" {
@@ -640,10 +615,6 @@ async test "tk_hook_record_accessor_is_deep_snapshot" {
     _ => fail("expected second PassedThrough outcome")
   }
 }
-
-// ---------------------------------------------------------------------------
-// Trace assertions
-// ---------------------------------------------------------------------------
 
 ///|
 async test "tk_assert_events_eq_passes_on_match" {

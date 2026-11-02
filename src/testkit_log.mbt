@@ -1,7 +1,3 @@
-// ---------------------------------------------------------------------------
-// RecordingLogPort — structured log fake for extension/composition tests.
-// ---------------------------------------------------------------------------
-
 ///|
 pub(all) struct RecordedLogWrite {
   record : @port.LogRecord

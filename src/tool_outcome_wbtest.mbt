@@ -41,11 +41,6 @@ fn outcome_text(outcome : @kernel.ToolOutcome) -> String {
   }
 }
 
-// ---------------------------------------------------------------------------
-// T06-A regression 1: provider returns business-error outcome → the observer
-// sees ToolCallFailed(ReportedError).
-// ---------------------------------------------------------------------------
-
 ///|
 async test "t06a_business_error_event_matches_result" {
   // Provider returns Ok(ToolReportedError). The emitted terminal event
@@ -114,10 +109,6 @@ async test "t06a_business_error_event_matches_result" {
   }
 }
 
-// ---------------------------------------------------------------------------
-// T06-A regression 2: success path — the observer sees ToolCallSucceeded.
-// ---------------------------------------------------------------------------
-
 ///|
 async test "t06a_success_event_is_not_error" {
   let first_response = tk_tool_call_response("safe", "tc_2", Json::null())
@@ -153,11 +144,6 @@ async test "t06a_success_event_is_not_error" {
   }
   assert_true(saw_success_event)
 }
-
-// ---------------------------------------------------------------------------
-// T06-A regression 3: runtime raised error → the observer sees
-// ToolCallFailed(Runtime).
-// ---------------------------------------------------------------------------
 
 ///|
 async test "t06a_runtime_error_event_is_runtime_failure" {
@@ -216,10 +202,6 @@ async test "t06a_runtime_error_event_is_runtime_failure" {
     _ => fail("expected completed runtime-error session to be loadable")
   }
 }
-
-// ---------------------------------------------------------------------------
-// T06-B regression: tool name collision fails composition (not last-wins).
-// ---------------------------------------------------------------------------
 
 ///|
 /// Provider that declares a single tool with a configurable provenance.
@@ -332,12 +314,6 @@ async test "t06b_missing_collision_provenance_is_actionable" {
     _ => fail("expected actionable provenance for collision")
   }
 }
-
-// ---------------------------------------------------------------------------
-// Tool attachments: a provider returning SuccessWithAttachments keeps the
-// blocks end-to-end (turn result, observer event, transcript) without ever
-// leaking the payload into single-line summaries.
-// ---------------------------------------------------------------------------
 
 ///|
 async test "attachments_outcome_flows_to_result_event_and_transcript" {

@@ -1,17 +1,7 @@
 ///|
-/// Regression tests: error transparency in core paths.
-///
-/// T07-1: malformed streamed tool-call JSON must produce a typed
-///        ModelError::ResponseParse, not silently become {}.
-/// T07-2: terminal failure publishes exactly one terminal event
-///        (TurnFailed OR TurnCompleted, never both).
 fn err_config() -> @posoco.AgentConfig {
   @posoco.agent_config(max_tool_rounds=Some(10))
 }
-
-// ---------------------------------------------------------------------------
-// T07-1: StreamAccumulator malformed tool JSON → ModelError::ResponseParse.
-// ---------------------------------------------------------------------------
 
 ///|
 async test "t07_malformed_tool_json_raises_response_parse" {
@@ -102,10 +92,6 @@ async test "t07_tool_parse_error_omits_untrusted_identifiers_and_payload" {
   }
 }
 
-// ---------------------------------------------------------------------------
-// T07-1b: valid tool JSON still works (no false positive).
-// ---------------------------------------------------------------------------
-
 ///|
 async test "t07_valid_tool_json_still_parses" {
   let acc = @types.StreamAccumulator()
@@ -121,10 +107,6 @@ async test "t07_valid_tool_json_still_parses" {
   assert_eq(resp.message.tool_calls.length(), 1)
   assert_eq(resp.message.tool_calls[0].name.to_string(), "ok")
 }
-
-// ---------------------------------------------------------------------------
-// T07-2: terminal failure emits exactly one terminal event.
-// ---------------------------------------------------------------------------
 
 ///|
 async test "t07_model_error_emits_turnfailed_not_turncompleted" {

@@ -274,11 +274,9 @@ fn input_for_effect(
   input
 }
 
-// ──────────────────────────────────────────────────────────────────────────
 // Dead-branch coverage. input_for_effect has two arms that no golden test
 // reaches: the CancelOutstanding ack arm and the (effect, outcome) kind-
 // mismatch arms. The tests below drive all three.
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 fn fixture_catalog() -> ToolCatalogSnapshot raise CatalogCompositionError {

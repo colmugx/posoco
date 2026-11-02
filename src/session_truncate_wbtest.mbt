@@ -6,10 +6,6 @@
 /// pin the trait default implementation (load → slice → full save), the
 /// RecordingSessionPort override, and the Agent-level end-to-end behaviour.
 
-// ---------------------------------------------------------------------------
-// Minimal store implementing only load/save — drives the trait default impl.
-// ---------------------------------------------------------------------------
-
 ///|
 struct TruncateFallbackStore {
   session : @types.Session
@@ -90,10 +86,6 @@ fn truncate_first_assistant() -> @kernel.Message {
   )
 }
 
-// ---------------------------------------------------------------------------
-// Default impl: load → slice → full save, metadata preserved.
-// ---------------------------------------------------------------------------
-
 ///|
 async test "rewind_truncate_default_impl_keeps_prefix_and_metadata" {
   let store = TruncateFallbackStore::make(truncate_test_session())
@@ -139,10 +131,6 @@ async test "rewind_truncate_default_impl_labels_load_and_save_failures" {
   assert_eq(store.saved.length(), 0)
 }
 
-// ---------------------------------------------------------------------------
-// RecordingSessionPort: in-memory slice + OpTruncate recording.
-// ---------------------------------------------------------------------------
-
 ///|
 async test "rewind_recording_store_truncate_slices_and_records_op" {
   let store = RecordingSessionPort()
@@ -169,10 +157,6 @@ async test "rewind_recording_store_truncate_slices_and_records_op" {
   assert_true(session.messages[0] == tk_user_msg("hello"))
   assert_true(session.metadata["lineage"] == Json::string("kept"))
 }
-
-// ---------------------------------------------------------------------------
-// Agent end-to-end: truncate between turns rewires the next turn's prompt.
-// ---------------------------------------------------------------------------
 
 ///|
 async test "rewind_truncate_changes_history_seen_by_next_agent_turn" {

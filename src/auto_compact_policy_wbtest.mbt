@@ -289,13 +289,6 @@ async test "policy/auto-compact failure stops the turn immediately and is report
   assert_true(seen_failed)
 }
 
-// ---------------------------------------------------------------------------
-// End-to-end: the Replace rewrite must actually reach the next model call.
-// The policy tests above pin WHEN auto-compact fires; these pin that the
-// compacted transcript IS what the model sees afterwards — inside the same
-// run and on the next turn of the same session.
-// ---------------------------------------------------------------------------
-
 ///|
 /// PolicyModel variant that also records every `chat` message array, so the
 /// post-compact projection can be asserted exactly.

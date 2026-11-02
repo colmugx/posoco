@@ -1,14 +1,4 @@
 ///|
-/// Model-request projection whitebox tests.
-///
-/// Covers the SystemPromptHook projection and the Agent composition that
-/// wires hooks into the pump chain (before_model / on_post_event), the
-/// same-length rewrite guard, UI projection opt-in, and the memory surface:
-/// session-opening inbound injection plus the built-in memory_search /
-/// memory_add tools.
-
-///|
-/// Minimal SystemPromptContributor fake returning a fixed string.
 struct FixedPromptContributor {
   text : String
 }
@@ -26,9 +16,6 @@ pub impl @port.SystemPromptContributor for FixedPromptContributor with fn system
 }
 
 ///|
-/// Mutable contributor used to prove the SystemPromptHook caches the assembled
-/// text on first use. The shared `Ref[String]` lets later mutations reach the
-/// underlying value even when the contributor is copied into multiple contexts.
 struct MutablePromptContributor {
   text : Ref[String]
 }
@@ -46,7 +33,6 @@ pub impl @port.SystemPromptContributor for MutablePromptContributor with fn syst
 }
 
 ///|
-/// Lifecycle fake that mutates a contributor from its on_start callback.
 struct StartSettingLifecycle {
   target : Ref[String]
 }
@@ -81,9 +67,6 @@ pub impl @port.Lifecycle for StartSettingLifecycle with fn on_shutdown(
 }
 
 ///|
-/// MemoryPort whose every slot raises MemoryError — the failure arm of the
-/// port contract. Success, empty, and per-session cycling are covered by the
-/// testkit `ScriptedMemoryPort`.
 struct FailingInboundPort {
   _dummy : Unit
 }
@@ -133,8 +116,6 @@ pub impl @port.MemoryPort for FailingInboundPort with fn delete(
 }
 
 ///|
-/// Inbound port that suspends well past any small timeout before answering —
-/// the timeout arm of the inbound collector.
 struct SlowInboundPort {
   _dummy : Unit
 }
@@ -153,8 +134,6 @@ pub impl @port.MemoryPort for SlowInboundPort with fn inbound(
   session_id~ : String,
   request~ : String,
 ) -> String? raise @error.MemoryError {
-  // sleep is noraise since async 0.22; the inbound timeout handles its own
-  // teardown, so this stub simply sleeps past it.
   @async.sleep(200)
   Some("too late for \{session_id} \{request}")
 }
@@ -187,9 +166,6 @@ pub impl @port.MemoryPort for SlowInboundPort with fn delete(
 }
 
 ///|
-/// Assert the message is core's injected inbound-memory message: user role,
-/// one Text carrying the lead line and the provider bodies in order,
-/// separated by blank lines.
 fn expect_inbound_message(
   message : @kernel.Message,
   bodies : Array[String],
@@ -206,7 +182,6 @@ fn expect_inbound_message(
 }
 
 ///|
-/// Build a tool call aimed at the built-in memory tools.
 fn tk_memory_call(
   tool : String,
   args : Array[(String, Json)],
@@ -219,7 +194,6 @@ fn tk_memory_call(
 }
 
 ///|
-/// Drive the white-box `MemoryToolProvider` through its port trait.
 async fn exec_memory_tool(
   provider : MemoryToolProvider,
   tool : String,
@@ -237,8 +211,6 @@ async fn exec_memory_tool(
 }
 
 ///|
-/// Sanitized error payloads of the `secondary_failure` Custom events emitted
-/// for `hook_point`, in emission order.
 fn secondary_failure_errors(
   observer : RecordingObserver,
   hook_point : String,
@@ -268,9 +240,6 @@ fn secondary_failure_errors(
 }
 
 ///|
-/// Compose a one-model Agent over `store` with the given memory sources,
-/// observer, system prompt, and inbound timeout — the standard rig for the
-/// inbound-injection tests.
 fn build_memory_agent(
   model : ScriptedModel,
   memory : Array[&@port.MemoryPort],
@@ -295,11 +264,8 @@ fn build_memory_agent(
 }
 
 ///|
-/// Running before_model twice does NOT accumulate SystemMessages.
-/// The hook owns index 0 and keeps the assembled text stable.
 async test "m38_sysprompt/idempotent_across_rounds" {
   let hook = SystemPromptHook(base_prompt="BASE", contributors=[])
-  // Round 1: empty transcript → prepends SystemMessage.
   let after1 = hook.before_model([])
   assert_true(after1.length() == 1)
   match after1[0] {
@@ -310,23 +276,18 @@ async test "m38_sysprompt/idempotent_across_rounds" {
       }
     _ => fail("expected SystemMessage")
   }
-  // Round 2: identical SystemMessage at head → returns the same array.
   let after2 = hook.before_model(after1)
   assert_true(after2.length() == 1)
   assert_true(physical_equal(after2, after1))
 }
 
 ///|
-/// When the transcript already has a SystemMessage (e.g. the caller
-/// seeded one), the hook replaces its content rather than prepending a
-/// second one.
 async test "m38_sysprompt/replaces_existing_system_message" {
   let hook = SystemPromptHook(base_prompt="NEW", contributors=[])
   let seed : @kernel.Message = SystemMessage(content=[Text("OLD")])
   let user : @kernel.Message = UserMessage(content=[Text("hello")])
   let out = hook.before_model([seed, user])
   assert_true(out.length() == 2)
-  // Head is now the new system message.
   match out[0] {
     SystemMessage(content~) =>
       match content {
@@ -338,8 +299,6 @@ async test "m38_sysprompt/replaces_existing_system_message" {
 }
 
 ///|
-/// Contributors are concatenated after the base in registration order,
-/// with blank lines between sections.
 async test "m38_sysprompt/assembles_base_plus_contributors" {
   let c1 : &@port.SystemPromptContributor = FixedPromptContributor::{
     text: "SECTION_A",
@@ -363,8 +322,6 @@ async test "m38_sysprompt/assembles_base_plus_contributors" {
 }
 
 ///|
-/// When the assembled prompt is empty, the hook returns messages unchanged
-/// and does not inject a blank SystemMessage or evict an existing head.
 async test "m38_sysprompt/empty_prompt_short_circuits" {
   let empty : &@port.SystemPromptContributor = FixedPromptContributor::{
     text: "",
@@ -380,7 +337,6 @@ async test "m38_sysprompt/empty_prompt_short_circuits" {
 }
 
 ///|
-/// When there is no SystemMessage at index 0, the hook prepends one.
 async test "m38_sysprompt/prepends_when_no_system_message" {
   let hook = SystemPromptHook(base_prompt="BASE", contributors=[])
   let user : @kernel.Message = UserMessage(content=[Text("hello")])
@@ -401,8 +357,6 @@ async test "m38_sysprompt/prepends_when_no_system_message" {
 }
 
 ///|
-/// The assembled text is cached on first use: a later mutation of the
-/// contributor is ignored.
 async test "m38_sysprompt/caches_assembled_text" {
   let text_ref = Ref("first")
   let contributor = MutablePromptContributor::{ text: text_ref, }
@@ -434,9 +388,6 @@ async test "m38_sysprompt/caches_assembled_text" {
 }
 
 ///|
-/// End-to-end: AgentConfig.system_prompt is the first section, contributor
-/// sections follow in registration order, separated by blank lines, and the
-/// result is a single SystemMessage at index 0.
 async test "m38_sysprompt/config_base_precedes_contributors" {
   let contributor : &@port.SystemPromptContributor = FixedPromptContributor::{
     text: "from_ext",
@@ -468,8 +419,6 @@ async test "m38_sysprompt/config_base_precedes_contributors" {
 }
 
 ///|
-/// Lifecycle::on_start runs before the first before_model, so a contributor
-/// whose value is set in on_start is read with the post-start value.
 async test "m38_sysprompt/lazy_assembly_reads_post_on_start" {
   let text_ref = Ref("before_start")
   let contributor = MutablePromptContributor::{ text: text_ref, }
@@ -500,14 +449,7 @@ async test "m38_sysprompt/lazy_assembly_reads_post_on_start" {
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// memory — session-opening inbound injection (Agent-level)
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
-/// A fresh session injects once: the first model-visible transcript is
-/// [system, memory, input]; the port sees the session id and the exact
-/// first-input text; the memory text is core's lead plus the provider body.
 async test "m38_memory/fresh_session_injects_once" {
   let model = ScriptedModel([Respond(tk_stop_response("ok"))])
   let mem = ScriptedMemoryPort(inbounds=[Some("fact one")])
@@ -546,8 +488,6 @@ async test "m38_memory/fresh_session_injects_once" {
 }
 
 ///|
-/// Without a system prompt the memory message lands at index 0 and the real
-/// input shifts to index 1.
 async test "m38_memory/memory_at_front_without_system_prompt" {
   let model = ScriptedModel([Respond(tk_stop_response("ok"))])
   let mem = ScriptedMemoryPort(inbounds=[Some("fact")])
@@ -574,9 +514,6 @@ async test "m38_memory/memory_at_front_without_system_prompt" {
 }
 
 ///|
-/// A second turn on the same session never re-reads the port; the injected
-/// memory message stays byte-identical at the head of the model-visible
-/// prefix while the transcript grows behind it.
 async test "m38_memory/second_turn_no_reread_prefix_stable" {
   let model = ScriptedModel([
     Respond(tk_stop_response("ok")),
@@ -604,9 +541,6 @@ async test "m38_memory/second_turn_no_reread_prefix_stable" {
 }
 
 ///|
-/// An empty inbound read spends the session's single attempt: no memory
-/// message, the turn still completes, and a later turn of the same session
-/// does not retry. A second session in the same process gets its own read.
 async test "m38_memory/empty_inbound_spends_attempt_per_session" {
   let model = ScriptedModel([
     Respond(tk_stop_response("ok")),
@@ -626,8 +560,6 @@ async test "m38_memory/empty_inbound_spends_attempt_per_session" {
   let first_turn = agent.run_turn(tk_user_msg("q1"), "session_1")
   assert_eq(first_turn.final_session_id, "session_1")
   assert_eq(model.received_messages[0].length(), 1)
-  // Second turn of the same session: the attempt is already spent, so no
-  // retry — history replays unshifted.
   ignore(agent.run_turn(tk_user_msg("q2"), "session_1"))
   assert_eq(mem.call_count(), 1)
   assert_eq(model.received_messages[1].length(), 3)
@@ -639,7 +571,6 @@ async test "m38_memory/empty_inbound_spends_attempt_per_session" {
       }
     _ => fail("expected history replay to start with the first input")
   }
-  // A fresh session gets its own single attempt.
   ignore(agent.run_turn(tk_user_msg("q3"), "session_2"))
   assert_eq(mem.call_count(), 2)
   assert_eq(mem.received_sessions(), ["session_1", "session_2"])
@@ -659,9 +590,6 @@ async test "m38_memory/empty_inbound_spends_attempt_per_session" {
 }
 
 ///|
-/// Resume: a second Agent over the same persisted session replays the
-/// original memory message byte-for-byte and never reads its own port —
-/// the prefix a session was formed under survives process boundaries.
 async test "m38_memory/resume_skips_read_and_replays_prefix" {
   let model1 = ScriptedModel([Respond(tk_stop_response("ok"))])
   let mem1 = ScriptedMemoryPort(inbounds=[Some("fact")])
@@ -696,8 +624,6 @@ async test "m38_memory/resume_skips_read_and_replays_prefix" {
 }
 
 ///|
-/// A session whose persisted transcript is non-empty never reads the port —
-/// injection is keyed to the session's first turn, not to process state.
 async test "m38_memory/preseeded_history_never_injects" {
   let model = ScriptedModel([Respond(tk_stop_response("ok"))])
   let mem = ScriptedMemoryPort(inbounds=[Some("must never be read")])
@@ -737,8 +663,6 @@ async test "m38_memory/preseeded_history_never_injects" {
 }
 
 ///|
-/// Multiple providers land in ONE message: bodies verbatim, in registration
-/// order, behind the single lead line.
 async test "m38_memory/two_providers_merge_into_one_message" {
   let model = ScriptedModel([Respond(tk_stop_response("ok"))])
   let notes = ScriptedMemoryPort(inbounds=[Some("notes fact")])
@@ -760,9 +684,6 @@ async test "m38_memory/two_providers_merge_into_one_message" {
 }
 
 ///|
-/// A failing provider neither cancels the turn nor masks its sibling: the
-/// sibling's body still lands, and exactly one `secondary_failure` event
-/// with hook_point "memory_inbound" reaches the observer.
 async test "m38_memory/failing_provider_does_not_mask_sibling" {
   let model = ScriptedModel([Respond(tk_stop_response("ok"))])
   let failing : &@port.MemoryPort = FailingInboundPort::{ _dummy: (), }
@@ -787,9 +708,6 @@ async test "m38_memory/failing_provider_does_not_mask_sibling" {
 }
 
 ///|
-/// A port that hangs past `memory_inbound_timeout_ms` is cut off: no
-/// injection, the turn completes, and one secondary_failure names the
-/// timeout.
 async test "m38_memory/inbound_timeout_emits_secondary_failure" {
   let model = ScriptedModel([Respond(tk_stop_response("ok"))])
   let slow : &@port.MemoryPort = SlowInboundPort::{ _dummy: (), }
@@ -810,13 +728,7 @@ async test "m38_memory/inbound_timeout_emits_secondary_failure" {
   assert_true(failures[0].contains("timeout"))
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// memory — built-in memory_search / memory_add tools (white-box)
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
-/// memory_search fans out to every source and joins the hits in
-/// registration order; a no-hit source contributes nothing.
 async test "m38_memory/search_merges_sources_in_order" {
   let a = ScriptedMemoryPort(inbounds=[], search_script=[Some("hit-a")])
   let b = ScriptedMemoryPort(inbounds=[], search_script=[Some("hit-b")])
@@ -842,7 +754,6 @@ async test "m38_memory/search_merges_sources_in_order" {
 }
 
 ///|
-/// Every source empty → a clean Success telling the model there is nothing.
 async test "m38_memory/search_all_empty_reports_no_match" {
   let a = ScriptedMemoryPort(inbounds=[])
   let b = ScriptedMemoryPort(inbounds=[])
@@ -861,8 +772,6 @@ async test "m38_memory/search_all_empty_reports_no_match" {
 }
 
 ///|
-/// A raising source is skipped: its sibling's hit still lands and the
-/// failure callback names the failed source.
 async test "m38_memory/search_failure_skips_source_and_names_it" {
   let bad : &@port.MemoryPort = FailingInboundPort::{ _dummy: (), }
   let good = ScriptedMemoryPort(inbounds=[], search_script=[Some("hit-b")])
@@ -884,9 +793,6 @@ async test "m38_memory/search_failure_skips_source_and_names_it" {
 }
 
 ///|
-/// No hit anywhere and every source raised → the failures themselves are
-/// the result: a ToolReportedError with one receipt line per source, never
-/// a false "No matching memory.".
 async test "m38_memory/search_all_failed_reports_failures_not_miss" {
   let bad : &@port.MemoryPort = FailingInboundPort::{ _dummy: (), }
   let reasons : Array[String] = []
@@ -909,8 +815,6 @@ async test "m38_memory/search_all_failed_reports_failures_not_miss" {
 }
 
 ///|
-/// A raising source plus a cleanly-missed sibling is still not a clean
-/// miss: with no hits to show, the failure line renders (decision ①).
 async test "m38_memory/search_failure_with_clean_miss_reports_failure" {
   let bad : &@port.MemoryPort = FailingInboundPort::{ _dummy: (), }
   let miss = ScriptedMemoryPort(inbounds=[], search_script=[None])
@@ -931,9 +835,6 @@ async test "m38_memory/search_failure_with_clean_miss_reports_failure" {
 }
 
 ///|
-/// memory_add without a source writes to EVERY source; receipt lines carry
-/// each source's ticket in registration order, and every store records the
-/// content with empty provider-convention metadata.
 async test "m38_memory/add_writes_all_sources_with_receipts" {
   let a = ScriptedMemoryPort(inbounds=[])
   let b = ScriptedMemoryPort(inbounds=[])
@@ -946,8 +847,6 @@ async test "m38_memory/add_writes_all_sources_with_receipts" {
   ])
   match outcome {
     Success(content~, structured=None) =>
-      // Tickets are per source (each fake numbers from 0); the receipt
-      // prefixes are what identify the target.
       assert_eq(content, "a: scripted-0\nb: scripted-0")
     _ => fail("expected Success outcome for memory_add write-all")
   }
@@ -961,7 +860,6 @@ async test "m38_memory/add_writes_all_sources_with_receipts" {
 }
 
 ///|
-/// memory_add with an explicit source routes to exactly that provider.
 async test "m38_memory/add_targeted_source_routes_to_one" {
   let a = ScriptedMemoryPort(inbounds=[])
   let b = ScriptedMemoryPort(inbounds=[])
@@ -982,9 +880,6 @@ async test "m38_memory/add_targeted_source_routes_to_one" {
 }
 
 ///|
-/// memory_add rejects an unknown source (listing the valid ones) and empty
-/// content as model-visible ToolReportedError; an unregistered memory tool
-/// name raises RuntimeError::UnknownTool.
 async test "m38_memory/add_rejects_unknown_source_and_empty_content" {
   let a = ScriptedMemoryPort(inbounds=[])
   let provider = MemoryToolProvider(sources=[("a", a as &@port.MemoryPort)], on_failure=fn(
@@ -1023,10 +918,6 @@ async test "m38_memory/add_rejects_unknown_source_and_empty_content" {
 }
 
 ///|
-/// End-to-end: a scripted model step that calls `memory_search` runs the
-/// built-in provider through the real tool routing and the outcome lands in
-/// the turn's tool results — while the fresh-session inbound message is
-/// injected in the same turn.
 async test "m38_memory/e2e_memory_search_tool_reaches_sources" {
   let mem = ScriptedMemoryPort(inbounds=[Some("opening fact")], search_script=[
     Some("searched hit"),
@@ -1054,15 +945,11 @@ async test "m38_memory/e2e_memory_search_tool_reaches_sources" {
   assert_eq(mem.call_count(), 1)
   assert_eq(mem.received_searches(), [("prefs", None)])
   assert_eq(result.tool_results, [tk_ok_result("searched hit")])
-  // The first model call saw [memory, input]; the memory message is frozen
-  // into the same transcript the tool wave ran against.
   assert_eq(model.received_messages[0].length(), 2)
   expect_inbound_message(model.received_messages[0][0], ["opening fact"])
 }
 
 ///|
-/// An extension tool named `memory_search` collides with the built-in memory
-/// provider at `Agent(...)` composition — fail-fast, no shadowing.
 async test "m38_memory/memory_search_collision_at_composition" {
   let tools = RecordingToolProvider(
     [tk_tool_def("memory_search", "extension echo of the core tool")],
@@ -1091,14 +978,7 @@ async test "m38_memory/memory_search_collision_at_composition" {
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// W1.1 — same-length pre-model hook rewrite is a real rewrite
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
-/// Probe hook: replaces the transcript with one different message of the
-/// SAME count. Before the reducer became the sole transcript writer the
-/// pump's length-compare guard silently dropped this rewrite.
 struct SameLengthAgentHook {}
 
 ///|
@@ -1120,9 +1000,6 @@ pub impl @port.PipelineHook for SameLengthAgentHook with fn before_model(
 }
 
 ///|
-/// W1.1: the transcript seeds through Start after pre-model hooks rewrite the
-/// initial messages at prompt start; the model must observe the REWRITTEN
-/// content even when the rewrite keeps the same message count.
 async test "m38_hooks/same_length_rewrite_reaches_model" {
   let model = ScriptedModel([Respond(tk_stop_response("ok"))])
   let store = RecordingSessionPort()
@@ -1137,7 +1014,6 @@ async test "m38_hooks/same_length_rewrite_reaches_model" {
   )
   let result = agent.run_turn(tk_user_msg("original"), "session_rewrite")
   ignore(result)
-  // The model must have received the REWRITTEN message, not the original.
   assert_eq(model.received_messages.length(), 1)
   let received = model.received_messages[0]
   assert_eq(received.length(), 1)
@@ -1149,7 +1025,6 @@ async test "m38_hooks/same_length_rewrite_reaches_model" {
       }
     _ => fail("expected rewritten user message")
   }
-  // The turn still completed exactly once.
   let mut completed = 0
   let mut failed = 0
   for e in observer.events() {
@@ -1163,13 +1038,7 @@ async test "m38_hooks/same_length_rewrite_reaches_model" {
   assert_eq(failed, 0)
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// BR-5 — UiRenderHook projection is opt-in, never auto-injected
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
-/// Build an Agent whose only UI contributor is `ui`, with a model that
-/// requests one tool call and then stops.
 fn build_ui_agent(
   ui : RecordingUiPort,
   ui_projection : Bool,
@@ -1193,8 +1062,6 @@ fn build_ui_agent(
 }
 
 ///|
-/// BR-5: by default Posoco's render policy is NOT installed — a host that
-/// contributes a UiPort but does not opt in sees zero render intents.
 async test "br5_ui_projection/default_off_renders_nothing" {
   let ui = RecordingUiPort()
   let agent = build_ui_agent(ui, false)
@@ -1204,8 +1071,6 @@ async test "br5_ui_projection/default_off_renders_nothing" {
 }
 
 ///|
-/// BR-5: `ui_projection=true` restores the built-in UiRenderHook — tool
-/// completion projects into the Notice slot.
 async test "br5_ui_projection/opt_in_renders_tool_notice" {
   let ui = RecordingUiPort()
   let agent = build_ui_agent(ui, true)

@@ -1,7 +1,4 @@
 ///|
-using @command {parse_fork_index}
-
-///|
 /// Bind a mailbox to fixed ids and return it.
 fn bind_test_mailbox() -> @puppetry.ControlMailbox {
   let mb = @puppetry.ControlMailbox()
@@ -216,20 +213,20 @@ test "m35_builtin/parse_fork_index_object_form" {
   let args : Json = Json::object(
     Map::from_array([("index", Json::number(7.0))]),
   )
-  assert_true(parse_fork_index(args) == 7)
+  assert_true(@command.parse_fork_index(args) == 7)
 }
 
 ///|
 test "m35_builtin/parse_fork_index_bare_number" {
   let args : Json = Json::number(11.0)
-  assert_true(parse_fork_index(args) == 11)
+  assert_true(@command.parse_fork_index(args) == 11)
 }
 
 ///|
 test "m35_builtin/parse_fork_index_default" {
-  assert_true(parse_fork_index(Json::null()) == 0)
+  assert_true(@command.parse_fork_index(Json::null()) == 0)
   let args : Json = Json::object(Map::from_array([]))
-  assert_true(parse_fork_index(args) == 0)
+  assert_true(@command.parse_fork_index(args) == 0)
 }
 
 // ──────────────────────────────────────────────────────────────────────────

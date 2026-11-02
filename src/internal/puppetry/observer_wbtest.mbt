@@ -7,10 +7,6 @@
 /// immediately after every effect commits, in real time (not batched at
 /// turn end like the session-level `Observer::on_event` channel).
 
-// ──────────────────────────────────────────────────────────────────────────
-// Test fixture: a PipelineHook that only overrides on_post_event.
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 /// PipelineHook that records every HookStage delivered to `on_post_event`. Does NOT
 /// override `before_model` / `before_tool` — the trait's default
@@ -38,10 +34,6 @@ pub impl @port.PipelineHook for EffectRecorder with fn on_post_event(
 ) -> Unit {
   self.stages.push(stage)
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// Tests
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 /// A model-only turn fires exactly one `ModelCompleted` stage to every

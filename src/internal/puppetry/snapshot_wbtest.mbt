@@ -1,20 +1,7 @@
 ///|
 /// Whitebox tests for TurnSnapshot.
-///
-/// Coverage:
-/// - capture produces an immutable snapshot
-/// - mutating the original catalog array after capture does not change
-///   the snapshot (C-SNAPSHOT-IMMUTABLE seam)
-/// - empty model_id / empty catalog rejected
-/// - negative budget dimensions rejected
-/// - fingerprint is deterministic (same inputs → same fp)
-/// - fingerprint unaffected by Map iteration order (sorted)
-/// - redacted view excludes options payload
 
-// ──────────────────────────────────────────────────────────────────────────
-// Fixtures
-// ──────────────────────────────────────────────────────────────────────────
-
+///|
 fn snapshot_catalog() -> ToolCatalogSnapshot raise CatalogCompositionError {
   let builder = ToolCatalogBuilder()
   let _ = builder.add(
@@ -74,10 +61,6 @@ fn snapshot_input(
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Capture basics
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 test "puppet_snapshot/capture_basic" {
   let catalog = snapshot_catalog()
@@ -119,10 +102,6 @@ test "puppet_snapshot/capture_deep_copies_options" {
   assert_true(snap1.fingerprint() != snap2.fingerprint())
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Immutability — the C-SNAPSHOT-IMMUTABLE seam
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 test "puppet_snapshot/mutation_of_original_array_does_not_affect_snapshot" {
   // The catalog's underlying entries array is not aliased by the snapshot.
@@ -155,10 +134,6 @@ test "puppet_snapshot/mutation_of_original_array_does_not_affect_snapshot" {
   // The snapshot itself is unchanged.
   assert_true(snap.tool_definitions().length() == 1)
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// Validation failures
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 test "puppet_snapshot/empty_model_id_rejected" {
@@ -245,10 +220,6 @@ test "puppet_snapshot/negative_deadline_rejected" {
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Fingerprint determinism
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 test "puppet_snapshot/fingerprint_deterministic" {
   let catalog = snapshot_catalog()
@@ -310,10 +281,6 @@ test "puppet_snapshot/fingerprint_changes_on_budget" {
   let snap2 = TurnSnapshot::capture(input2)
   assert_true(snap1.fingerprint() != snap2.fingerprint())
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// Redacted view
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 test "puppet_snapshot/redacted_view_excludes_options_payload" {

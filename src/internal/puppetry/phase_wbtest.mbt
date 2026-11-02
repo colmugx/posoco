@@ -1,19 +1,7 @@
 ///|
 /// Whitebox tests for the Puppet phase gate.
-///
-/// Coverage:
-/// - Initial state is Idle
-/// - Legal transitions match ADR §4 diagram
-/// - Illegal transitions raise typed PuppetError
-/// - Lease exclusivity (C-LEASE-EXCLUSIVE seam)
-/// - Operation class authorisation per phase
-/// - Suspended retains run_id/turn_id
-/// - rotate_turn only in Active
-/// - enter_suspended sets suspension_id
 
-// ──────────────────────────────────────────────────────────────────────────
-// Helpers — run raise-resulting calls and capture the typed error
-// ──────────────────────────────────────────────────────────────────────────
+///|
 
 ///|
 /// Run a raise-resulting call and capture its typed error, if any.
@@ -104,10 +92,6 @@ fn active_gate(op_id : String) -> PhaseGate raise PuppetError {
   g.transition(Active)
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Initial state
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 test "puppet_phase/initial_is_idle" {
   let g = PhaseGate::idle()
@@ -116,10 +100,6 @@ test "puppet_phase/initial_is_idle" {
   assert_true(g.lease() is None)
   assert_true(g.active_run_id() is None)
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// Operation class authorisation
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 test "puppet_phase/idle_accepts_prompt_and_structural" {
@@ -182,10 +162,6 @@ test "puppet_phase/shutdown_rejects_all" {
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Legal transitions (ADR §4 diagram)
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 test "puppet_phase/legal_transition_idle_to_active" {
   let idle = PhaseGate::idle()
@@ -240,10 +216,6 @@ test "puppet_phase/legal_shutdown_path" {
   assert_true(g.phase() == Shutdown)
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Illegal transitions
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 test "puppet_phase/illegal_idle_to_suspended" {
   let g = PhaseGate::idle()
@@ -296,10 +268,6 @@ test "puppet_phase/shutdown_is_sink" {
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Lease exclusivity (C-LEASE-EXCLUSIVE seam)
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 test "puppet_phase/lease_held_rejects_second_prompt" {
   let idle = PhaseGate::idle()
@@ -346,10 +314,6 @@ test "puppet_phase/release_when_no_lease" {
   )
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// resume with wrong suspension id
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 test "puppet_phase/resume_wrong_suspension_id" {
   let active = active_gate("op1")
@@ -385,10 +349,6 @@ test "puppet_phase/resume_when_not_suspended" {
   )
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// rotate_turn (follow-up seam)
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 test "puppet_phase/rotate_turn_in_active" {
   let active = active_gate("op1")
@@ -414,10 +374,6 @@ test "puppet_phase/rotate_turn_rejected_in_idle" {
     ),
   )
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// Quiescent status union
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 test "puppet_phase/quiescent_phases" {

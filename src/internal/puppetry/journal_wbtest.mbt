@@ -1,23 +1,7 @@
 ///|
 /// Whitebox tests for journal + contribution + coordinator.
-///
-/// Coverage:
-/// - InMemoryJournal append-only semantics; revision monotonic
-/// - duplicate entry id rejected
-/// - post-terminal append rejected
-/// - Suspended does not close journal (resume can append)
-/// - prepare_batch validates contributor entries
-/// - prepare_batch freezes (post-freeze mutation detected)
-/// - commit_batch delegates to journal and advances revision
-/// - FailOnNthJournal raises on Nth append
-/// - contributor raise surfaces as SavepointFailed(ContributorRaised)
-/// - validation failure surfaces as SavepointFailed(ValidationFailed)
-/// - identity mismatch (wrong run id) rejected
 
-// ──────────────────────────────────────────────────────────────────────────
-// Fixtures
-// ──────────────────────────────────────────────────────────────────────────
-
+///|
 fn j_run_id() -> RunId {
   RunId::unchecked("run_j1")
 }
@@ -56,10 +40,6 @@ fn make_entry(
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// InMemoryJournal basics
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 test "puppet_journal/append_only_monotonic_revision" {
   let j = InMemoryJournal()
@@ -96,10 +76,6 @@ test "puppet_journal/multi_entry_batch_single_revision_window" {
   assert_true(sp.length() == 2)
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// duplicate entry id
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 test "puppet_journal/duplicate_entry_id_rejected" {
   let j = InMemoryJournal()
@@ -125,10 +101,6 @@ test "puppet_journal/duplicate_entry_id_rejected" {
   // Journal unchanged.
   assert_true(j.revision() == 1)
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// post-terminal append
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 test "puppet_journal/post_terminal_append_rejected" {
@@ -171,10 +143,6 @@ test "puppet_journal/suspended_does_not_close_journal" {
   assert_true(after_entries[0].identity.kind == AssistantCommitted)
   assert_true(j.entries_for_run(j_run_id()).length() == 2)
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// entries_for_run / entries_for_savepoint
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 test "puppet_journal/entries_for_run_filters_by_run" {

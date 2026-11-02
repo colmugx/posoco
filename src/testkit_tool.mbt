@@ -1,7 +1,3 @@
-// ---------------------------------------------------------------------------
-// RecordingToolProvider — records list/execute order and configurable outcomes.
-// ---------------------------------------------------------------------------
-
 ///|
 /// Configurable outcome for a tool call: success outcome, or raised runtime
 /// error. Constructors are prefixed with `Outcome` to avoid ambiguity with

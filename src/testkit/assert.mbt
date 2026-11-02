@@ -1,7 +1,3 @@
-// ---------------------------------------------------------------------------
-// Trace assertions — structured helpers that report the first differing index.
-// ---------------------------------------------------------------------------
-
 ///|
 /// Return the first structural trace mismatch. Kept pure so conformance tests
 /// can prove missing, duplicate, and out-of-order detection without catching

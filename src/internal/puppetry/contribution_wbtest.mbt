@@ -1,22 +1,8 @@
 ///|
 /// Whitebox tests for contribution + coordinator (companion to
 /// journal_wbtest.mbt).
-///
-/// Coverage:
-/// - NoopContributor returns empty contribution
-/// - prepare_batch merges base + contributions
-/// - prepare_batch freezes (entry keys captured)
-/// - commit_batch advances revision
-/// - contributor raise surfaces as SavepointFailed(ContributorRaised)
-/// - validation failure (wrong kind) surfaces as SavepointFailed(ValidationFailed)
-/// - validation failure (wrong savepoint id)
-/// - validation failure (wrong run id from contributor)
-/// - commit_batch detects post-freeze mutation (entry count changed)
-/// - FailOnNthJournal propagates barrier failure
 
-// ──────────────────────────────────────────────────────────────────────────
-// Test contributors
-// ──────────────────────────────────────────────────────────────────────────
+///|
 
 ///|
 /// Test contributor that proposes one additional entry.
@@ -98,10 +84,6 @@ pub impl JournalContributor for FailingContributor with fn contribute(
   raise Internal(contributor_id=self.id, detail="injected failure")
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Fixtures
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 fn c_run_id() -> RunId {
   RunId::unchecked("run_c1")
@@ -152,10 +134,6 @@ fn make_c_ctx(
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// NoopContributor
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 test "puppet_contribution/noop_returns_empty" {
   let ctx = make_c_ctx("sp1", InputAccepted, [])
@@ -164,10 +142,6 @@ test "puppet_contribution/noop_returns_empty" {
   assert_true(c.proposed_entries.length() == 0)
   assert_true(c.contributor_id == "noop")
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// prepare_batch
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 test "puppet_contribution/prepare_batch_with_no_contributors" {
@@ -306,10 +280,6 @@ test "puppet_contribution/prepare_batch_rejects_duplicate_entry_id" {
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// commit_batch
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 test "puppet_contribution/commit_batch_advances_revision" {
   let journal = InMemoryJournal()
@@ -339,10 +309,6 @@ test "puppet_contribution/commit_batch_via_fail_on_nth" {
     _ => fail("expected SavepointFailed(BarrierFailed)")
   }
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// Post-freeze mutation detection
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 test "puppet_contribution/commit_batch_detects_post_freeze_count_change" {

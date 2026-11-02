@@ -128,11 +128,7 @@ async test "puppet/boundary_commits_intent_before_each_model_effect" {
   assert_eq(journal.append_count(), 6)
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Transcript rewrite observability (W1.1 — reducer is the sole transcript
-// writer; rewrites must surface as TranscriptRewritten facts, not silent
-// mutations)
-// ──────────────────────────────────────────────────────────────────────────
+// Rewrites must surface as TranscriptRewritten facts, not silent mutations.
 
 ///|
 /// Recording EventSubscriber for rewrite-observability tests.

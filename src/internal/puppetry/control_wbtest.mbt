@@ -1,22 +1,7 @@
 ///|
 /// Whitebox tests for control queues + idle barrier.
-///
-/// Coverage:
-/// - bind_run / clear_run cycle
-/// - steer enqueue with valid + stale ids
-/// - follow_up enqueue + OneAtATime consume
-/// - resume enqueue + take_resume
-/// - abort idempotency (first Accepted, second AbortAlreadyRequested)
-/// - queue full
-/// - late command for old run rejected after clear_run
-/// - wait_idle returns immediately when already quiescent
-/// - set_quiescent wakes waiters (verified structurally; the async wait
-///   itself is exercised in the orchestration tests)
 
-// ──────────────────────────────────────────────────────────────────────────
-// Fixtures
-// ──────────────────────────────────────────────────────────────────────────
-
+///|
 fn mb_run_id() -> RunId {
   RunId::unchecked("run_mb")
 }
@@ -78,10 +63,6 @@ fn bound_mailbox() -> ControlMailbox {
   mb
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// bind_run / clear_run
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 test "puppet_control/bind_then_clear" {
   let mb = ControlMailbox()
@@ -92,10 +73,6 @@ test "puppet_control/bind_then_clear" {
   mb.clear_run()
   assert_true(mb.active_run_id() is None)
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// Steer
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 test "puppet_control/steer_enqueue_accepted" {
@@ -138,10 +115,6 @@ test "puppet_control/steer_consume_drains_queue" {
   assert_true(mb.steer_depth() == 0)
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Follow-up
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 test "puppet_control/follow_up_enqueue_accepted" {
   let mb = bound_mailbox()
@@ -176,10 +149,6 @@ test "puppet_control/follow_up_consume_one_at_a_time" {
   let third = mb.consume_one_follow_up()
   assert_true(third is None)
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// Resume
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 test "puppet_control/resume_enqueue_and_take" {
@@ -216,10 +185,6 @@ test "puppet_control/resume_wrong_run_rejected" {
   assert_true(result is RejectedStale(reason="resume targets stale run", ..))
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Abort idempotency
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 test "puppet_control/abort_first_accepted_second_already_requested" {
   let mb = bound_mailbox()
@@ -244,10 +209,6 @@ test "puppet_control/abort_stale_run_rejected" {
   assert_true(r is RejectedStale(reason="abort targets stale run", ..))
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// clear_run drops queued commands
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 test "puppet_control/clear_run_drops_queued_commands" {
   let mb = bound_mailbox()
@@ -262,10 +223,6 @@ test "puppet_control/clear_run_drops_queued_commands" {
   let late = mb.enqueue_steer(make_steer("s_late", mb_run_id(), mb_turn_id()))
   assert_true(late is RejectedStale(reason="steer targets stale run/turn", ..))
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// QueuePolicy semantics
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 test "puppet_control/queue_policy_all_vs_one_at_a_time" {
@@ -284,10 +241,6 @@ test "puppet_control/queue_policy_all_vs_one_at_a_time" {
   assert_true(one_fu is Some(_))
   assert_true(mb.follow_up_depth() == 1)
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// Quiescent status
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 test "puppet_control/quiescent_status_idle_initially" {
@@ -328,10 +281,6 @@ async test "puppet_control/wait_idle_returns_terminal" {
   let s = mb.wait_idle()
   assert_true(s is Terminal(_))
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// Fork
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 fn make_fork(
@@ -406,10 +355,6 @@ test "puppet_control/fork_clear_run_drops_queued" {
   assert_true(mb.fork_depth() == 0)
   assert_true(mb.consume_one_fork() is None)
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// Compact
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 fn make_compact(

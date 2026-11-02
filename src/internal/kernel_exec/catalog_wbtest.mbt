@@ -1,14 +1,5 @@
 ///|
 /// Whitebox tests for the ToolCatalogSnapshot and schema validator.
-///
-/// Coverage:
-/// - Builder happy path
-/// - Composition hard failures: name collision, duplicate provenance,
-///   malformed/uncompilable schema
-/// - Snapshot accessors: find, contains, definitions, size
-/// - Schema validation against compiled plans: type check, required,
-///   additionalProperties, enum, const, items, nested properties, $ref/$defs
-/// - Unknown-tool handling
 fn make_def(
   name : String,
   owner : String,

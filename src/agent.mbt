@@ -124,7 +124,7 @@ priv struct AgentRuntime {
   binding_versions : Ref[Map[String, Int32]]
   /// Captured / operation / retained version sets with their joint lease
   /// invariants (see `ToolVersionLeases`).
-  versions : ToolVersionLeases
+  versions : @directory.ToolVersionLeases
   /// Only replaced at operation admission. Each effect receives its captured
   /// provider in a private Runtime context, not a mutable host name route.
   tool_bindings : Ref[Map[String, &@port.ToolProvider]]
@@ -495,7 +495,7 @@ fn AgentRuntime::compose(
     tool_contributions,
     tool_revocations,
     binding_versions,
-    versions: ToolVersionLeases::ToolVersionLeases(),
+    versions: @directory.ToolVersionLeases::ToolVersionLeases(),
     tool_bindings,
     tool_runtime,
     next_run_seq: 1,

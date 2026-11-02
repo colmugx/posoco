@@ -13,11 +13,8 @@
 /// The testkit is a test/support layer only — it never enters the production
 /// Agent dependency direction.
 
-// ---------------------------------------------------------------------------
-// Snapshot helpers — deep-copy plumbing shared by the recording fakes.
 // The kernel-level copiers (@message_snapshot.snapshot_json/tool_call/message/...) live in
 // agent.mbt; only testkit-specific shapes remain here.
-// ---------------------------------------------------------------------------
 
 ///|
 /// Deep-copy a `@kernel.ToolDef`.

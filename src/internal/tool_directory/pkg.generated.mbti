@@ -74,6 +74,15 @@ pub(all) struct ToolRetireFailure {
   detail : String
 }
 
+pub struct ToolVersionLeases {
+  // private fields
+}
+pub fn ToolVersionLeases::ToolVersionLeases() -> Self
+pub fn ToolVersionLeases::acquire(Self, ToolContributionRegistry) -> Unit
+pub fn ToolVersionLeases::install_captured(Self, Array[Int32]) -> Unit
+pub fn ToolVersionLeases::release_operation(Self, ToolContributionRegistry, Bool) -> Unit
+pub fn ToolVersionLeases::release_retained(Self, ToolContributionRegistry, Bool) -> Unit
+
 // Type aliases
 
 // Traits

@@ -1,7 +1,3 @@
-// ---------------------------------------------------------------------------
-// Testkit constructors — small helpers mirroring the blackbox test helpers.
-// ---------------------------------------------------------------------------
-
 ///|
 /// Build a `ModelCallResult` whose completion is a stop-finish text response
 /// with no tool calls. The processed_messages is `None`, signalling to the

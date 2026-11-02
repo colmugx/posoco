@@ -1,7 +1,3 @@
-// ---------------------------------------------------------------------------
-// ScriptedModel — returns responses/errors/stream chunks by call sequence.
-// ---------------------------------------------------------------------------
-
 ///|
 /// A single scripted model interaction. Each step produces a
 /// `ModelCallResult` (the canonical chat return type). `Stream` carries the chunk sequence plus the final
@@ -309,10 +305,6 @@ pub impl @port.ModelPort for ScriptedModel with fn compact(
 pub impl @port.ModelPort for ScriptedModel with fn provider_config(_self) -> @port.ProviderConfig {
   @port.ProviderConfig::empty()
 }
-
-// ---------------------------------------------------------------------------
-// ScopeRecordingModel — records the InvocationScope of every model-side call.
-// ---------------------------------------------------------------------------
 
 ///|
 /// ModelPort fake that records the `InvocationScope` received by every

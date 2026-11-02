@@ -1,7 +1,3 @@
-// ---------------------------------------------------------------------------
-// RecordingSessionPort — load/save history with metadata snapshots.
-// ---------------------------------------------------------------------------
-
 ///|
 /// A recorded session operation. Constructors are prefixed with `Op` to avoid
 /// ambiguity with `SessionError::Load`/`SessionError::Save`.

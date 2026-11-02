@@ -1,7 +1,3 @@
-// ---------------------------------------------------------------------------
-// RecordingObserver — preserves full event order.
-// ---------------------------------------------------------------------------
-
 ///|
 /// Observer fake that records every TurnEvent in arrival order.
 /// Unlike a counter, it keeps the full sequence for trace assertions.
@@ -33,10 +29,6 @@ pub impl @port.Observer for RecordingObserver with fn on_event(
 ) {
   self.events.push(@event_snapshot.snapshot_turn_event(event))
 }
-
-// ---------------------------------------------------------------------------
-// RecordingHook — records hook invocations (native hook traits).
-// ---------------------------------------------------------------------------
 
 ///|
 /// The exact decision made by a RecordingHook invocation.

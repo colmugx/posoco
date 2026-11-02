@@ -1,18 +1,7 @@
 ///|
 /// Whitebox tests for the event dispatcher.
-///
-/// Coverage:
-/// - NoopSubscriber accepts everything
-/// - dispatcher assigns monotonic seq per run
-/// - subscribers invoked in registration order
-/// - subscriber failure raises SubscriberFailed with committed_revision
-/// - subscriber failure stops further dispatch (correctness-critical default)
-/// - envelope carries run/turn/session/seq/revision/event
-/// - is_terminal delegates to inner event
 
-// ──────────────────────────────────────────────────────────────────────────
-// Test subscribers
-// ──────────────────────────────────────────────────────────────────────────
+///|
 
 ///|
 /// Subscriber that records every envelope it sees into a shared array.
@@ -142,10 +131,6 @@ pub impl EventSubscriber for FailingSubscriber with fn on_event(
   )
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Fixtures
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 fn ev_run_id() -> RunId {
   RunId::unchecked("run_ev")
@@ -176,10 +161,6 @@ fn completed_event() -> KernelEvent {
   RunCompleted(final_message_summary="done", model_steps=1, tool_calls=0)
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// NoopSubscriber
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 async test "puppet_events/noop_subscriber_accepts_all" {
   let d = ev_dispatcher()
@@ -189,10 +170,6 @@ async test "puppet_events/noop_subscriber_accepts_all" {
   d.dispatch(completed_event(), 2)
   assert_true(d.next_seq() == 3)
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// Monotonic seq
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 async test "puppet_events/dispatcher_assigns_monotonic_seq" {
@@ -212,10 +189,6 @@ async test "puppet_events/dispatcher_assigns_monotonic_seq" {
   assert_true(received[0].committed_revision == 1)
   assert_true(received[1].committed_revision == 2)
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// Subscriber registration order
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 async test "puppet_events/subscribers_invoked_in_registration_order" {
@@ -237,10 +210,6 @@ async test "puppet_events/subscribers_invoked_in_registration_order" {
   // One dispatch consumed exactly one seq.
   assert_true(d.next_seq() == 2)
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// Subscriber failure
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 async test "puppet_events/subscriber_failure_raises_subscriber_failed" {
@@ -279,10 +248,6 @@ async test "puppet_events/subscriber_failure_stops_further_dispatch" {
   // b never received the event.
   assert_true(rec.received().length() == 0)
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// Envelope identity
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 async test "puppet_events/envelope_carries_identity" {

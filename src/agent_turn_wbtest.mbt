@@ -1,10 +1,3 @@
-// ---------------------------------------------------------------------------
-// Turn-path fixate tests: persisted dangling tool calls are repaired into
-// every loaded window (fixate_pending_tool_calls in agent_turn.mbt) so the
-// replayed transcript stays wire-valid for providers that require each
-// function_call to carry a matching function_call_output.
-// ---------------------------------------------------------------------------
-
 ///|
 fn turn_fixate_dangling_call(call_id : String) -> @kernel.ToolCall {
   {

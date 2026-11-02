@@ -1,9 +1,4 @@
 ///|
-/// Wakeup seam tests (plan step 3/4): scope gating and (session, tag)
-/// validation on the wakeup request port, plus the core-owned tasks
-/// ready projection across all four terminal statuses.
-
-///|
 /// Capture the composed wakeup/tasks capabilities at on_compose, exactly the
 /// way a product extension would.
 priv struct WakeupCapture {

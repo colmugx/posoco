@@ -5,18 +5,10 @@
 /// session metadata MUST survive a turn unchanged (unknown keys preserved),
 /// and NewThread lineage metadata MUST survive the final save.
 
-// ---------------------------------------------------------------------------
-// Helper: build an Agent wired with the testkit for metadata assertions.
-// ---------------------------------------------------------------------------
-
 ///|
 fn metadata_config() -> AgentConfig {
   agent_config(max_tool_rounds=Some(10))
 }
-
-// ---------------------------------------------------------------------------
-// Regression 1: unknown metadata keys round-trip through a plain turn.
-// ---------------------------------------------------------------------------
 
 ///|
 async test "t05_metadata_roundtrip_preserves_unknown_keys" {
@@ -47,10 +39,6 @@ async test "t05_metadata_roundtrip_preserves_unknown_keys" {
   assert_true(persisted.metadata.contains("turn_count"))
   assert_true(persisted.metadata["turn_count"] == Json::number(5.0))
 }
-
-// ---------------------------------------------------------------------------
-// Regression 2: save failure returns AgentError::Session, no TurnCompleted.
-// ---------------------------------------------------------------------------
 
 ///|
 async test "t05_save_failure_returns_session_error_no_turn_completed" {
@@ -89,11 +77,6 @@ async test "t05_save_failure_returns_session_error_no_turn_completed" {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Regression 3: a failed turn persists its progress, without mutating the
-// loaded session by alias.
-// ---------------------------------------------------------------------------
-
 ///|
 async test "t05_failed_turn_persists_progress_without_aliasing" {
   let model = ScriptedModel([Fail(Transport("network down"))])
@@ -130,10 +113,6 @@ async test "t05_failed_turn_persists_progress_without_aliasing" {
     _ => fail("seeded session should remain loadable")
   }
 }
-
-// ---------------------------------------------------------------------------
-// Regression 4: session failures identify id, operation and error category.
-// ---------------------------------------------------------------------------
 
 ///|
 async test "t05_session_load_error_has_context_without_metadata" {
@@ -223,10 +202,6 @@ async test "t05_session_save_cause_cannot_reexpand_raw_id" {
     _ => fail("expected contextualized session save failure")
   }
 }
-
-// ---------------------------------------------------------------------------
-// Regression 5: every mutable port boundary receives an isolated snapshot.
-// ---------------------------------------------------------------------------
 
 ///|
 fn poison_json(value : Json, label : String) -> Unit {
