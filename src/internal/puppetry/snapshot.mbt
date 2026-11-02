@@ -1,5 +1,5 @@
 ///|
-/// Immutable TurnSnapshot (M2-T02).
+/// Immutable TurnSnapshot.
 ///
 /// ADR §4 rule 2: `TurnSnapshot` captured at turn start does NOT reference
 /// caller-mutable Arrays/Maps. MoonBit containers must be explicitly copied

@@ -27,8 +27,8 @@ pub fn ToolRegistry::register(
 
 ///|
 /// Register a tool, failing fast with `RuntimeError::ToolAlreadyRegistered`
-/// when the name is already taken. This mirrors the composition-time rule
-/// (M0-T06-B): a name collision is never silently resolved by last-wins.
+/// when the name is already taken. This mirrors the composition-time rule:
+/// a name collision is never silently resolved by last-wins.
 pub fn ToolRegistry::register_strict(
   self : ToolRegistry,
   tool : @kernel.ToolDef,

@@ -1,10 +1,6 @@
 ///|
-/// Agent command facade; command-port implementation moved to @command.
-using @command {
-  type BuiltinCommandPort,
-  compose_agent_commands,
-// parse_fork_index,
-}
+/// Agent command facade over the `@command` port.
+using @command {type BuiltinCommandPort, compose_agent_commands}
 
 ///|
 pub fn Agent::commands(self : Agent) -> Array[&@port.CommandPort] {

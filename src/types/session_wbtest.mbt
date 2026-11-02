@@ -1,7 +1,4 @@
 ///|
-/// White-box tests for Session lineage helpers (M3.4).
-
-///|
 test "Session::parent_thread_id: fresh session has no parent" {
   let s : Session = { messages: [], metadata: Map::from_array([]), }
   assert_true(s.parent_thread_id() is None)

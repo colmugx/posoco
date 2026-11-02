@@ -1,5 +1,5 @@
 ///|
-/// Whitebox tests for the M1-T05 ToolCatalogSnapshot and schema validator.
+/// Whitebox tests for the ToolCatalogSnapshot and schema validator.
 ///
 /// Coverage:
 /// - Builder happy path

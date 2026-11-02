@@ -4,9 +4,8 @@
 /// `parent_thread_id`, product-specific flags, anything posoco does not
 /// interpret).
 ///
-/// R3 M3.7: `messages` carries canonical `@kernel.Message` values directly.
-/// There is no longer a legacy `@types.Message` form — the kernel ADT is the
-/// single protocol.
+/// `messages` carries canonical `@kernel.Message` values directly — the
+/// kernel ADT is the single protocol.
 pub(all) struct Session {
   messages : Array[@kernel.Message]
   metadata : Map[String, Json]
@@ -311,8 +310,8 @@ pub extend ToolCatalogChangedPayload with Eq::{not_equal, equal}
 pub extend ToolCatalogChangedPayload with Debug::{to_repr}
 
 ///|
-/// Turn lifecycle events observed via `Observer::on_event`. R3 M3.7: payload
-/// types are canonical kernel types (`ToolCall`, `ToolOutcome`, `Message`,
+/// Turn lifecycle events observed via `Observer::on_event`. Payload types are
+/// canonical kernel types (`ToolCall`, `ToolOutcome`, `Message`,
 /// `Usage`). Tool events form an explicit per-call state machine — every
 /// observable node has its own variant, none doubles as another:
 ///
@@ -480,7 +479,7 @@ pub impl Show for TurnEvent with fn to_string(self : TurnEvent) -> String {
 }
 
 ///|
-/// Return value of `Agent::run_turn`. R3 M3.7: payload types are canonical.
+/// Return value of `Agent::run_turn`.
 pub(all) struct TurnResult {
   message : @kernel.Message
   tool_results : Array[@kernel.ToolOutcome]

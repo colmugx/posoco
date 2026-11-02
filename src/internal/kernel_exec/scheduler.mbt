@@ -1,5 +1,5 @@
 ///|
-/// Deterministic ToolScheduler for the M1 functional Kernel (ADR §2.8).
+/// Deterministic ToolScheduler for the functional Kernel (ADR §2.8).
 /// Given a catalog snapshot and source-order tool calls (pre-validated by the reducer),
 /// produces ordered execution waves. Parallel neighbours share a wave; Exclusive
 /// forms a barrier before and after; Sequential occupies a single-element wave.

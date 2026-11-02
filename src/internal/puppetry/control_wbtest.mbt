@@ -1,5 +1,5 @@
 ///|
-/// Whitebox tests for M2-T03 control queues + idle barrier.
+/// Whitebox tests for control queues + idle barrier.
 ///
 /// Coverage:
 /// - bind_run / clear_run cycle
@@ -330,7 +330,7 @@ async test "puppet_control/wait_idle_returns_terminal" {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Fork (M3.5)
+// Fork
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
@@ -408,7 +408,7 @@ test "puppet_control/fork_clear_run_drops_queued" {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Compact (M3.5)
+// Compact
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|

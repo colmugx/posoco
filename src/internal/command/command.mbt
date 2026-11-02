@@ -312,10 +312,10 @@ pub fn parse_fork_index(args : Json) -> Int32 {
 /// (`/compact`, `/fork-here`) registered first, followed by the extension
 /// commands. Extensions that declare a command with id `compact` or
 /// `fork-here` are dropped from the list — they override the builtins by
-/// being the only one with that id (D5.4). This keeps the BuiltinCommandPort
+/// being the only one with that id. This keeps the BuiltinCommandPort
 /// as a sensible default that products can replace.
 ///
-/// D3-Q1: the builtin port is a per-Agent singleton (constructed once in
+/// The builtin port is a per-Agent singleton (constructed once in
 /// `Agent::Agent`), so its `seq` counter stays monotonic across turns.
 /// This method merely borrows it into the per-turn command list — it does
 /// NOT reconstruct the port.

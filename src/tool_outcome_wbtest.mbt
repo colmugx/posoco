@@ -1,10 +1,10 @@
 ///|
-/// M0-T06 regression tests: tool outcome consistency and collision fail-fast.
+/// Regression tests: tool outcome consistency and collision fail-fast.
 ///
-/// T06-A: the observer's terminal tool event MUST carry the same failure
+/// The observer's terminal tool event MUST carry the same failure
 /// payload as the ToolOutcome (split events: ToolCallSucceeded /
 /// ToolCallFailed / ToolCallRejected; the variant IS the error status).
-/// T06-B: two providers registering the same tool name MUST fail composition
+/// Two providers registering the same tool name MUST fail composition
 /// with CompositionError::ToolCollision, not last-wins.
 fn outcome_config() -> AgentConfig {
   agent_config(max_tool_rounds=Some(10))

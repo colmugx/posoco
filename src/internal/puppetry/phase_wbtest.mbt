@@ -1,5 +1,5 @@
 ///|
-/// Whitebox tests for M2-T02 phase gate.
+/// Whitebox tests for the Puppet phase gate.
 ///
 /// Coverage:
 /// - Initial state is Idle
@@ -421,7 +421,7 @@ test "puppet_phase/rotate_turn_rejected_in_idle" {
 
 ///|
 test "puppet_phase/quiescent_phases" {
-  // Type annotation disambiguates from M1 `Phase::Suspended`/`Phase::Idle`.
+  // Type annotation disambiguates from the kernel `Phase` of the same name.
   let idle : PuppetPhase = Idle
   let suspended : PuppetPhase = Suspended
   let shutdown : PuppetPhase = Shutdown

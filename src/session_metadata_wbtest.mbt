@@ -1,5 +1,5 @@
 ///|
-/// M0-T05 regression tests: session metadata fidelity.
+/// Session metadata fidelity regression tests.
 ///
 /// These tests document and enforce the data-fidelity invariant: loaded
 /// session metadata MUST survive a turn unchanged (unknown keys preserved),
@@ -260,8 +260,8 @@ fn json_has_poison(value : Json) -> Bool {
 }
 
 ///|
-/// Mutate the first message in the array to inject `label` poison. R3 M3.7:
-/// Message is an ADT; mutation requires building a new variant. We only
+/// Mutate the first message in the array to inject `label` poison. Message is
+/// an ADT; mutation requires building a new variant. We only
 /// mutate messages that carry mutable arrays (AssistantMessage's content
 /// and tool_calls). For SystemMessage/UserMessage we mutate content only.
 /// For ToolMessage this helper leaves the payload alone; its `ToolOutcome`
@@ -452,14 +452,6 @@ pub impl @port.Observer for BoundaryMutatingObserver with fn on_event(
     _ => ()
   }
 }
-
-///|
-// R3 M3.7: `boundary_input_message` (User role with non-empty tool_calls,
-// an illegal combo under the canonical ADT) and its two consumers
-// (t05_model_hook_and_observer_inputs_are_deep_snapshots and
-// t05_each_final_save_store_gets_independent_deep_snapshot) have been
-// removed. The deep-snapshot invariant is still exercised by the metadata
-// + reasoning-content tests below.
 
 ///|
 async test "t05_each_final_save_store_gets_independent_deep_snapshot" {

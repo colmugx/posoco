@@ -1,5 +1,5 @@
 ///|
-/// Whitebox tests for the M1-T03 pure reducer.
+/// Whitebox tests for the pure reducer.
 ///
 /// These tests drive the reducer through ADR §3 conformance cases. They are
 /// pure: no async, no trait objects, no IO. The catalog and inputs are
@@ -957,7 +957,7 @@ test "C-TOOL-RUNTIME-FAILURE: ToolFailed(runtime) → RuntimeFailure outcome, Ru
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// C-COMPRESS-PROCESSED-MESSAGES (M3.4)
+// C-COMPRESS-PROCESSED-MESSAGES
 // ModelCompleted with shorter processed_messages → transcript trimmed.
 // ──────────────────────────────────────────────────────────────────────────
 

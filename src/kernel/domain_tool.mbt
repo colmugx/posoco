@@ -1,5 +1,5 @@
 ///|
-/// Canonical tool-definition types for the M1 functional Kernel.
+/// Canonical tool-definition types for the functional Kernel.
 ///
 /// ADR §2.7, §2.8, §2.11: the catalog snapshot is the single source of truth
 /// for tool definitions (model-visible) AND for execution owners. The

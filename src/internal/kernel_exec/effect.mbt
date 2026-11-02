@@ -1,5 +1,5 @@
 ///|
-/// Effect declarations for the M1 functional Kernel (ADR §2.1, §2.5).
+/// Effect declarations for the functional Kernel (ADR §2.1, §2.5).
 ///
 /// Effects are pure data — the reducer declares them, the stateless executor
 /// executes ONE at a time. No effect payload ever carries a trait reference.
@@ -64,7 +64,7 @@ pub extend ExecuteToolPayload with Debug::{to_repr}
 ///|
 /// Payload for `Effect::CancelOutstanding`. Lists the effect ids the reducer
 /// wants the executor to stop; the executor records a `CancelDisposition`
-/// per id (M1 fakes report `Propagated`; real adapters in M3 may report
+/// per id (fake executors report `Propagated`; a real adapter may report
 /// `NotPropagated`).
 #proof_external("int.Int", "int")
 pub(all) struct CancelOutstandingPayload {

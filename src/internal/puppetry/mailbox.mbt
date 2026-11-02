@@ -4,7 +4,7 @@
 
 ///|
 /// Default max queue depth per mailbox. Beyond this, enqueue returns
-/// `RejectedQueueFull`. M2 picks a conservative bound; M4/M5 may tune.
+/// `RejectedQueueFull`. The bound is deliberately conservative and may be tuned.
 let default_max_queue_depth : Int32 = 64
 
 ///|
@@ -26,12 +26,12 @@ pub struct ControlMailbox {
   /// on these to verify drain behaviour.
   mut steer_depth : Int32
   mut follow_up_depth : Int32
-  /// M3.5: fork command queue. OneAtATime policy — the pump consumes one
+  /// Fork command queue. OneAtATime policy — the pump consumes one
   /// fork per safe point (a fork creates a new session and returns
   /// PromptResult::ForkCompleted; batching makes no sense).
   mut fork_queue : @aqueue.Queue[ForkCommand]
   mut fork_depth : Int32
-  /// M3.5: compact command queue. OneAtATime policy — compact is expensive
+  /// Compact command queue. OneAtATime policy — compact is expensive
   /// (LLM call or structural rewrite); batching multiple compacts back-to-
   /// back on the same transcript is a no-op.
   mut compact_queue : @aqueue.Queue[CompactCommand]
@@ -338,7 +338,7 @@ pub impl Mailbox for ControlMailbox with fn enqueue_abort(
 }
 
 ///|
-/// Enqueue a fork command (M3.5). Rejects if no active run or stale ids
+/// Enqueue a fork command. Rejects if no active run or stale ids
 /// or queue full. The pump consumes one fork per safe point — fork is
 /// OneAtATime policy, not All (a fork creates a new session, batching
 /// makes no sense).
@@ -375,7 +375,7 @@ pub impl Mailbox for ControlMailbox with fn enqueue_fork(
 }
 
 ///|
-/// Enqueue a compact command (M3.5). Rejects if no active run or stale ids
+/// Enqueue a compact command. Rejects if no active run or stale ids
 /// or queue full. The pump consumes one compact per safe point — compact
 /// is OneAtATime policy (batching multiple compacts back-to-back on the
 /// same transcript is a no-op).
@@ -460,7 +460,7 @@ pub impl Mailbox for ControlMailbox with fn consume_one_follow_up(
 }
 
 ///|
-/// Consume one fork command (OneAtATime policy, M3.5). The Puppet calls
+/// Consume one fork command (OneAtATime policy). The Puppet calls
 /// this at the safe point after abort check. Returns the oldest fork if
 /// any, else None.
 pub impl Mailbox for ControlMailbox with fn consume_one_fork(
@@ -477,7 +477,7 @@ pub impl Mailbox for ControlMailbox with fn consume_one_fork(
 }
 
 ///|
-/// Consume one compact command (OneAtATime policy, M3.5). The Puppet calls
+/// Consume one compact command (OneAtATime policy). The Puppet calls
 /// this at the safe point after fork check. Auto compacts (triggered by
 /// context-window pressure) bypass this queue and call `execute_compact`
 /// directly, but they still go through the same `HostRuntime::compact`

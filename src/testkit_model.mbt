@@ -3,9 +3,8 @@
 // ---------------------------------------------------------------------------
 
 ///|
-/// A single scripted model interaction. R3 M3.7: each step produces a
-/// `ModelCallResult` (the canonical chat return type) instead of the deleted
-/// `ModelResponse`. `Stream` carries the chunk sequence plus the final
+/// A single scripted model interaction. Each step produces a
+/// `ModelCallResult` (the canonical chat return type). `Stream` carries the chunk sequence plus the final
 /// completion; chunks are emitted to the callback during the call.
 pub(all) enum ScriptedModelStep {
   Respond(@kernel.ModelCallResult)

@@ -1,5 +1,5 @@
 ///|
-/// Whitebox tests for M2-T05 event dispatcher.
+/// Whitebox tests for the event dispatcher.
 ///
 /// Coverage:
 /// - NoopSubscriber accepts everything

@@ -1,6 +1,6 @@
 ///|
-/// Whitebox tests for M2-T04 contribution + coordinator (companion to
-/// puppet_journal_wbtest.mbt).
+/// Whitebox tests for contribution + coordinator (companion to
+/// journal_wbtest.mbt).
 ///
 /// Coverage:
 /// - NoopContributor returns empty contribution

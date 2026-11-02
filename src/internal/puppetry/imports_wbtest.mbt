@@ -4,7 +4,7 @@
 /// from reporting unused type declarations while preserving readable
 /// canonical fixtures.
 ///
-/// R3 M3.7: types already re-exported via `imports.mbt` (Message, Content,
+/// Types already re-exported via `imports.mbt` (Message, Content,
 /// Completion, CompletionPayload, FinishReason, Usage, ToolCall, ToolDef,
 /// ToolOutcome, CompactMode, CompactResult) are NOT duplicated here.
 ///

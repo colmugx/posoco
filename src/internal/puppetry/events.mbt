@@ -1,14 +1,14 @@
 ///|
-/// Puppet event dispatch (M2-T05, ADR §5 step 6, §6 subscriber rules).
+/// Puppet event dispatch (ADR §5 step 6, §6 subscriber rules).
 ///
 /// Post-commit event dispatcher. Receives envelopes CONSTRUCTED AFTER the
 /// journal barrier succeeds; assigns monotonic `seq` per run; dispatches
 /// in registration order; awaits each subscriber.
 ///
-/// M2 default (ADR §7 Q7.4 recommendation): ALL subscribers are
+/// Default (ADR §7 Q7.4 recommendation): ALL subscribers are
 /// correctness-critical. A subscriber failure fails the run with
 /// `PuppetError::SubscriberFailed`; the journal entry is already durable
-/// (commit happened before dispatch). No best-effort escape hatch in M2.
+/// (commit happened before dispatch). No best-effort escape hatch.
 ///
 /// Subscribers never receive a journal writer. If a subscriber needs to add
 /// a domain entry, it must do so via a `JournalContributor` at the NEXT

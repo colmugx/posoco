@@ -84,7 +84,7 @@ pub fn PhaseGate::authorise(
 ) -> Unit raise PuppetError {
   match (self.phase, operation) {
     // Idle accepts Prompt (prompt/continue/resume is a new Run start in this
-    // state) and Structural (M5 reservation). It rejects InFlight (no active
+    // state) and Structural (reserved). It rejects InFlight (no active
     // Run to modify).
     (Idle, Prompt) => ()
     (Idle, Structural) => ()

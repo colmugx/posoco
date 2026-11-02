@@ -1,5 +1,5 @@
 ///|
-/// D1 adversarial tests for tool-completion correlation (reducer_tool.mbt
+/// Adversarial tests for tool-completion correlation (reducer_tool.mbt
 /// reduce_tool_completed): a `ToolCompleted` input matches its pending
 /// `ExecuteTool` effect only when BOTH `effect_id` AND `call_id` agree.
 /// Any other combination is a terminal

@@ -112,10 +112,8 @@ pub extend ToolCallSnapshot with Debug::{to_repr}
 /// needs (e.g. DeepSeek's dynamic tool-result removal during streaming) are
 /// free to ignore this and maintain their own state.
 ///
-/// R3 M3.7: the previous `to_response() -> ModelResponse` has been replaced
-/// by `to_completion() -> @kernel.Completion`. The old `ModelResponse` type
-/// is deleted — `chat` now returns `ModelCallResult` whose `completion`
-/// field is the canonical `Completion`.
+/// `to_completion() -> @kernel.Completion` is the terminal read: `chat`
+/// returns a `ModelCallResult` whose `completion` field holds it.
 pub struct StreamAccumulator {
   priv text_buf : StringBuilder
   priv reasoning_buf : StringBuilder

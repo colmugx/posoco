@@ -80,7 +80,7 @@ pub impl @kernel_exec.HostRuntime for ChunkDemandHost with fn cancel_effects(
 }
 
 ///|
-/// M3.5: compact stub — ChunkDemandHost does not exercise compact.
+/// Compact stub — ChunkDemandHost does not exercise compact.
 pub impl @kernel_exec.HostRuntime for ChunkDemandHost with fn compact(
   self : ChunkDemandHost,
   _scope : InvocationScope,

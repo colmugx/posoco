@@ -1,5 +1,5 @@
 ///|
-/// P1 regressions: finalize hook rewrites before authorization, catalog
+/// Regressions: finalize hook rewrites before authorization, catalog
 /// validation, owner resolution, and wave scheduling.
 
 ///|

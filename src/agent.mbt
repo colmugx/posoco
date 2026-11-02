@@ -734,45 +734,6 @@ fn agent_error_category(error : Error) -> String {
 }
 
 ///|
-fn contextualize_session_error(
-  error : @error.SessionError,
-  session_id : String,
-  operation : String,
-) -> @error.AgentError {
-  let cause = @diagnostic.safe_error_label(error.to_string())
-  Session(
-    match error {
-      Load(_) =>
-        Load(
-          "session_id='\{@diagnostic.safe_error_label(session_id)}', operation='\{operation}', category='SessionError::Load', cause='\{cause}'",
-        )
-      Save(_) =>
-        Save(
-          "session_id='\{@diagnostic.safe_error_label(session_id)}', operation='\{operation}', category='SessionError::Save', cause='\{cause}'",
-        )
-      Conflict(_) =>
-        Conflict(
-          "session_id='\{@diagnostic.safe_error_label(session_id)}', operation='\{operation}', category='SessionError::Conflict', cause='\{cause}'",
-        )
-    },
-  )
-}
-
-///|
-/// Contextualize a generic `Error` raised by a parallel session-save wave as a
-/// `SessionError::Save`. The thunks themselves return `Result[Unit,
-/// SessionError]`, so this path only handles async-runtime/cancellation errors
-/// that escape `@async.all` itself.
-fn save_error_context(
-  error : Error,
-  session_id : String,
-  operation : String,
-) -> @error.AgentError {
-  let context = "session_id='\{@diagnostic.safe_error_label(session_id)}', operation='\{operation}', category='SessionError::Save', cause='\{@diagnostic.safe_error_label(error.to_string())}'"
-  Session(Save(context))
-}
-
-///|
 fn AgentRuntime::emit_turn_event(
   self : AgentRuntime,
   scope : @types.EventScope?,

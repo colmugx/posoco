@@ -1,6 +1,5 @@
 ///|
-/// Journal contribution + pre-commit seam + savepoint coordinator (M2-T04,
-/// ADR §5).
+/// Journal contribution + pre-commit seam + savepoint coordinator (ADR §5).
 ///
 /// Contract (ADR §5 commit order):
 /// 1. Reducer/canonical transition produces base entries.
@@ -136,9 +135,9 @@ pub impl Show for ContributionError with fn to_string(self : ContributionError) 
 /// directly. If they need a domain entry persisted, they must propose it
 /// here and let the coordinator commit it atomically.
 ///
-/// M2 does not ship any production contributor; the trait exists so M4/M5
-/// extensions (e.g. memory persistence, observation logging) can register
-/// without modifying the Puppet pump.
+/// No production contributor ships today; the trait exists so extensions
+/// (e.g. memory persistence, observation logging) can register without
+/// modifying the Puppet pump.
 pub(open) trait JournalContributor {
   /// Stable identifier for this contributor. Used in diagnostics and in
   /// the contribution's `contributor_id` field.
@@ -204,8 +203,8 @@ pub impl JournalContributor for NoopContributor with fn contribute(
 ///
 /// `expected_revision` is the revision the journal SHOULD be at when this
 /// batch commits. If the journal has advanced past this revision (e.g.
-/// concurrent commit elsewhere — impossible in M2 single-writer but the
-/// check is here for M5), the commit fails with `BarrierFailed`.
+/// concurrent commit elsewhere — impossible with the single-writer journal
+/// today, but the check stays), the commit fails with `BarrierFailed`.
 pub(all) struct FrozenBatch {
   savepoint_id : String
   savepoint_kind : SavepointKind

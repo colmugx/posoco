@@ -1,5 +1,5 @@
 ///|
-/// M3.8 — Model-request projection whitebox tests.
+/// Model-request projection whitebox tests.
 ///
 /// Covers the SystemPromptHook projection and the Agent composition that
 /// wires hooks into the pump chain (before_model / on_post_event), the
@@ -501,7 +501,7 @@ async test "m38_sysprompt/lazy_assembly_reads_post_on_start" {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// M3.8 memory — session-opening inbound injection (Agent-level)
+// memory — session-opening inbound injection (Agent-level)
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
@@ -811,7 +811,7 @@ async test "m38_memory/inbound_timeout_emits_secondary_failure" {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// M3.8 memory — built-in memory_search / memory_add tools (white-box)
+// memory — built-in memory_search / memory_add tools (white-box)
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|

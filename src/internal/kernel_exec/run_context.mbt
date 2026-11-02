@@ -1,5 +1,5 @@
 ///|
-/// Budget, Deadline and Cancel contracts for the M1 functional
+/// Budget, Deadline and Cancel contracts for the functional
 /// Kernel (ADR §2.5, §2.6, §2.9).
 ///
 /// Key invariants:

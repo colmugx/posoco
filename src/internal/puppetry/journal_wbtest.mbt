@@ -1,5 +1,5 @@
 ///|
-/// Whitebox tests for M2-T04 journal + contribution + coordinator.
+/// Whitebox tests for journal + contribution + coordinator.
 ///
 /// Coverage:
 /// - InMemoryJournal append-only semantics; revision monotonic

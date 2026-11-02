@@ -1,6 +1,6 @@
 ///|
-/// Whitebox tests for the root package. R3 M3.7: all fixtures use canonical
-/// kernel types directly; the scripted/recording fakes come from the
+/// Whitebox tests for the root package. All fixtures use canonical kernel
+/// types directly; the scripted/recording fakes come from the
 /// in-package testkit (ScriptedModel, RecordingToolProvider,
 /// RecordingSessionPort, RecordingObserver).
 

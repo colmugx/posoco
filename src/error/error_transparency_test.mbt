@@ -1,5 +1,5 @@
 ///|
-/// M0-T07-core regression tests: error transparency in core paths.
+/// Regression tests: error transparency in core paths.
 ///
 /// T07-1: malformed streamed tool-call JSON must produce a typed
 ///        ModelError::ResponseParse, not silently become {}.

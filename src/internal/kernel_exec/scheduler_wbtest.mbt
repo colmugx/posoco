@@ -1,5 +1,5 @@
 ///|
-/// Whitebox tests for the M1-T06 deterministic ToolScheduler.
+/// Whitebox tests for the deterministic ToolScheduler.
 
 // ──────────────────────────────────────────────────────────────────────────
 // Helpers

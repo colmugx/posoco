@@ -1,11 +1,11 @@
 ///|
-/// M1-T09 Golden conformance tests using the scripted minimal driver.
+/// Golden conformance tests using the scripted minimal driver.
 ///
 /// Each test drives a Run from Start to Terminal via the scripted driver
 /// and asserts the resulting DriverTrace: phase transitions, terminal
 /// outcome, event ordering, and absence of unexpected effects.
 ///
-/// These tests are the END-TO-END integration layer for the M1 Kernel.
+/// These tests are the END-TO-END integration layer for the Kernel.
 /// The reducer's per-transition tests (kernel_reducer_wbtest.mbt) cover
 /// individual state changes; these tests verify the whole mechanical loop.
 fn golden_catalog() -> ToolCatalogSnapshot raise CatalogCompositionError {

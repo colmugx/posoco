@@ -22,6 +22,8 @@ pub struct MemoryToolProvider {
   on_failure : (String) -> Unit
 }
 pub fn MemoryToolProvider::MemoryToolProvider(sources~ : Array[(String, &@port.MemoryPort)], on_failure~ : (String) -> Unit) -> Self
+pub async fn MemoryToolProvider::execute(Self, @port.ToolCallContext) -> @kernel.ToolOutcome raise @error.RuntimeError
+pub fn MemoryToolProvider::list_tools(Self) -> Array[@kernel.ToolDef]
 pub impl @port.ToolProvider for MemoryToolProvider
 
 // Type aliases

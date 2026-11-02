@@ -148,7 +148,7 @@ pub fn Completion::tool_calls(self : Completion) -> Array[ToolCall] {
 ///|
 /// Returns the finish reason. `Length` is preserved as a distinct variant so
 /// the reducer can refuse to emit `ExecuteTool` effects for a truncated
-/// completion (ADR §2.7, M0 `StreamAccumulator::to_response` behaviour).
+/// completion (ADR §2.7, `StreamAccumulator` behaviour).
 pub fn Completion::finish_reason(self : Completion) -> FinishReason {
   self.message.finish_reason
 }

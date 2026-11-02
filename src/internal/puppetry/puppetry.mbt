@@ -49,7 +49,7 @@ pub(all) enum PromptResult {
   LeaseBusy(held_by~ : String)
   /// Rejected for another typed reason.
   Rejected(error~ : PuppetError)
-  /// M3.5: Fork completed. The pump consumed a `ForkCommand` at a safe
+  /// Fork completed. The pump consumed a `ForkCommand` at a safe
   /// point, snapshotted the transcript's first `fork_index` messages,
   /// wrote them as a new session (carrying `parent_thread_id` lineage) to
   /// the configured SessionPort if any, and stopped the current turn.
@@ -64,7 +64,7 @@ pub(all) enum PromptResult {
     new_session_id~ : String,
     forked_messages~ : Array[@kernel.Message]
   )
-  /// M3.5: Compact completed. The pump consumed a `CompactCommand`
+  /// Compact completed. The pump consumed a `CompactCommand`
   /// (manual `/compact`) or auto-triggered compact (90% context-window
   /// pressure) and applied the modelport's `CompactResult` to the current
   /// transcript. `mode` reports how the modelport asked posoco to apply
@@ -131,8 +131,8 @@ pub impl Show for PromptResult with fn to_string(self : PromptResult) -> String 
 /// 7. On terminal, dispatch terminal event, release lease, return.
 ///
 /// `run_id` / `turn_id` are caller-supplied (host generates them; the
-/// Puppet does not allocate). This keeps cross-process resume (M5)
-/// possible without a central id factory.
+/// Puppet does not allocate). This keeps cross-process resume possible
+/// without a central id factory.
 pub async fn Puppet::prompt(
   self : Puppet,
   request : PromptRequest,

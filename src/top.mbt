@@ -1,9 +1,7 @@
 ///|
-// Public type re-exports. R3 M3.7: legacy `@types.*` chat/message/tool types
-// are deleted; canonical kernel types are the single protocol. The Kernel
-// concept name "Canonical*" has been dropped in favour of the unqualified
-// name (`Message`, `Content`, ...) so ext authors never see a "Canonical"
-// prefix — one system, one protocol.
+// Public type re-exports. Canonical kernel types are the single protocol, and
+// they keep unqualified names (`Message`, `Content`, ...) so ext authors never
+// see a "Canonical" prefix — one system, one protocol.
 
 ///|
 /// Stable metadata key for Agent-derived automatic session titles. Product

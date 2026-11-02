@@ -1,5 +1,5 @@
 ///|
-/// Whitebox tests for the M1-T02 Kernel contract types:
+/// Whitebox tests for the Kernel contract types:
 /// RunState, RunInput, Effect, KernelEvent, IDs, Budget.
 ///
 /// These tests exercise the CONSTRUCTOR INVARIANTS only — they do NOT drive

@@ -89,7 +89,7 @@ pub impl @kernel_exec.HostRuntime for BoundaryProbeHost with fn cancel_effects(
 }
 
 ///|
-/// M3.5: compact stub — BoundaryProbeHost does not exercise compact.
+/// Compact stub — BoundaryProbeHost does not exercise compact.
 pub impl @kernel_exec.HostRuntime for BoundaryProbeHost with fn compact(
   self : BoundaryProbeHost,
   _scope : InvocationScope,

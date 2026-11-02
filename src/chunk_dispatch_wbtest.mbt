@@ -469,7 +469,7 @@ async test "chunk dispatch: flush drains chunks before TurnFailed" {
 }
 
 ///|
-/// R5-w2 duplicate-chunk investigation: adjacent identical tokens (CJK
+/// Duplicate-chunk invariant: adjacent identical tokens (CJK
 /// punctuation, backticks) are legal model output and must cross the dispatch
 /// path verbatim — one observer event per streamed chunk, no dedup and no
 /// duplication. A duplicate seen in outbound telemetry therefore enters at or

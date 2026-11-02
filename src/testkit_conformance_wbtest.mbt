@@ -79,7 +79,7 @@ async test "tk_model_stream_replays_exact_chunks_in_order" {
   ]
   let response = tk_stop_response("hello world")
   let model = ScriptedModel([Stream(chunks~, response~)])
-  // chat_streaming_direct drives chat with NoStream (M3.7) — to actually
+  // chat_streaming_direct drives chat with NoStream — to actually
   // observe chunks, drive chat with StreamMode::Stream directly.
   let observed : Array[StreamChunk] = []
   let _ = (model as &@port.ModelPort).chat(
@@ -97,7 +97,7 @@ async test "tk_model_stream_replays_exact_chunks_in_order" {
 ///|
 async test "tk_model_stream_does_not_synthesize_chunks_for_response_step" {
   let model = ScriptedModel([Respond(tk_stop_response("do not split me"))])
-  // R3 M3.7: a Respond step does not emit chunks; the host callback is
+  // A Respond step does not emit chunks; the host callback is
   // invoked only inside Stream steps. Driving chat with StreamMode::Stream
   // on a Respond step must not produce any chunks.
   let _ = (model as &@port.ModelPort).chat(
@@ -513,7 +513,7 @@ async test "tk_observer_preserves_event_order" {
 ///|
 async test "tk_observer_event_accessor_is_deep_snapshot" {
   let obs = RecordingObserver()
-  // R3 M3.7: pick an AssistantMessage whose content array is mutable so we
+  // Pick an AssistantMessage whose content array is mutable so we
   // can still prove the observer took a deep copy (SystemMessage/UserMessage
   // also have mutable content arrays; either works the same way).
   let message : Message = AssistantMessage(

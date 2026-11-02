@@ -178,7 +178,7 @@ pub impl @kernel_exec.HostRuntime for FixtureHost with fn cancel_effects(
 }
 
 ///|
-/// M3.5: compact stub — FixtureHost does not exercise compact.
+/// Compact stub — FixtureHost does not exercise compact.
 pub impl @kernel_exec.HostRuntime for FixtureHost with fn compact(
   self : FixtureHost,
   _scope : InvocationScope,
@@ -286,7 +286,7 @@ fn canonical_puppet_config(
   contributors : Array[&JournalContributor],
   stream_chunks : HostChunkCallback?,
 ) -> PuppetConfig {
-  // D1: fresh mailbox per config. The mailbox must outlive the Puppet
+  // Fresh mailbox per config. The mailbox must outlive the Puppet
   // built from this config; tests that need to inject signals grab the
   // reference back via `puppet.mailbox()` after construction.
   let mailbox_instance = ControlMailbox()
@@ -966,7 +966,7 @@ pub impl @kernel_exec.HostRuntime for AbortProbeHost with fn cancel_effects(
 }
 
 ///|
-/// M3.5: compact stub — AbortProbeHost does not exercise compact.
+/// Compact stub — AbortProbeHost does not exercise compact.
 pub impl @kernel_exec.HostRuntime for AbortProbeHost with fn compact(
   self : AbortProbeHost,
   _scope : InvocationScope,

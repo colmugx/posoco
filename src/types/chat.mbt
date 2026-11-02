@@ -1,6 +1,5 @@
 ///|
-/// Provider-agnostic chat options. Trimmed in R3 M3.7 to just the two fields
-/// every provider accepts. Provider-specific tuning (tool_choice, reasoning
+/// Provider-agnostic chat options: only the two fields every provider accepts. Provider-specific tuning (tool_choice, reasoning
 /// effort, top_p, frequency_penalty, ...) belongs on the modelport's own
 /// config struct, not on this shared bag — that way adding a new provider
 /// never bloats the common type.

@@ -1,5 +1,5 @@
 ///|
-/// Whitebox tests for M2-T02 TurnSnapshot.
+/// Whitebox tests for TurnSnapshot.
 ///
 /// Coverage:
 /// - capture produces an immutable snapshot

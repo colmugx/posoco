@@ -117,7 +117,7 @@ pub impl @kernel_exec.HostRuntime for WaveFixtureHost with fn cancel_effects(
 }
 
 ///|
-/// M3.5: compact stub — WaveFixtureHost does not exercise compact.
+/// Compact stub — WaveFixtureHost does not exercise compact.
 pub impl @kernel_exec.HostRuntime for WaveFixtureHost with fn compact(
   self : WaveFixtureHost,
   _scope : InvocationScope,

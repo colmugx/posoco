@@ -1,12 +1,5 @@
 ///|
-/// M3.5 — BuiltinCommandPort whitebox tests.
-///
-/// Covers:
-/// - `/compact` invoke enqueues a Manual compact on the mailbox (mid-run)
-/// - idle `/compact` starts `compact_session` directly on the composed Agent
-/// - `/fork-here N` invoke enqueues a fork at index N
-/// - `commands()` declares the two builtin command ids
-/// - parse_fork_index accepts object form, bare number, and defaults
+using @command {parse_fork_index}
 
 ///|
 /// Bind a mailbox to fixed ids and return it.
@@ -240,19 +233,15 @@ test "m35_builtin/parse_fork_index_default" {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// D1 — Agent ↔ BuiltinCommandPort ↔ Puppet mailbox sharing.
+// Agent ↔ BuiltinCommandPort ↔ Puppet mailbox sharing.
 //
-// Before D1, `BuiltinCommandPort(self.mailbox)` copied the Agent's mailbox
-// value into a fresh ControlMailbox instance, and the Puppet built its own
-// third mailbox. Three instances meant signals enqueued by the product
-// layer never reached the pump. After D1, Agent owns the ControlMailbox
-// and both BuiltinCommandPort and Puppet borrow `&Mailbox` pointing at
-// that same instance. These tests verify the sharing behaviourally:
-// enqueue through one view, consume through another.
+// Agent owns the ControlMailbox; the port and the Puppet both borrow a
+// `&Mailbox` pointing at that same instance. These tests verify the sharing
+// behaviourally: enqueue through one view, consume through another.
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-/// D1: BuiltinCommandPort constructed from a mailbox shares the instance.
+/// BuiltinCommandPort constructed from a mailbox shares the instance.
 /// Enqueue through the port's `invoke("/compact")` then consume directly
 /// from the original mailbox reference — they must agree.
 async test "d1_mailbox/builtin_port_shares_mailbox_instance" {
@@ -271,8 +260,8 @@ async test "d1_mailbox/builtin_port_shares_mailbox_instance" {
 }
 
 ///|
-/// D1: enqueue through the trait reference, consume through the concrete
-/// type. Verifies trait dispatch and instance sharing are consistent.
+/// Enqueue through the trait reference, consume through the concrete type.
+/// Verifies trait dispatch and instance sharing are consistent.
 test "d1_mailbox/trait_ref_and_concrete_share_state" {
   let mb = bind_test_mailbox()
   let mailbox_ref : &@puppetry.Mailbox = mb as &@puppetry.Mailbox
@@ -293,13 +282,10 @@ test "d1_mailbox/trait_ref_and_concrete_share_state" {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// D3-Q1 — per-Agent singleton BuiltinCommandPort.
+// Per-Agent singleton BuiltinCommandPort.
 //
-// Before D3-Q1, `commands_with_builtins` reconstructed the port each
-// turn, resetting the `seq` counter. Across two turns this would produce
-// duplicate command ids (fork_1 in turn 1, fork_1 again in turn 2).
-// After D3-Q1 the port is a per-Agent singleton, so seq is monotonic
-// across the whole session.
+// The port is a per-Agent singleton, so `seq` stays monotonic across the
+// whole session instead of restarting every turn.
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|

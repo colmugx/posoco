@@ -1,6 +1,6 @@
 ///|
-/// Blackbox tests against the public API. Mocks live in this file.
-/// R3 M3.7: all fixtures use canonical kernel types directly.
+/// Blackbox tests against the public API. Mocks live in this file and use
+/// canonical kernel types directly.
 struct MockModelPort {
   responses : Array[@kernel.ModelCallResult]
   mut index : Int32
@@ -333,8 +333,8 @@ test "tool_registry/register_overwrites_deliberately_strict_fails_fast" {
   // Lenient register is deliberate hot-replacement: same name overwrites.
   registry.register(tool, registry_test_executor)
   assert_eq(registry.list_tools().length(), 1)
-  // Strict registration fails fast on the same name (M0-T06-B parity: a
-  // name collision is never silently resolved by last-wins).
+  // Strict registration fails fast on the same name: a name collision is
+  // never silently resolved by last-wins.
   let rejected = Ok(registry.register_strict(tool, registry_test_executor)) catch {
     e => Err(e)
   }

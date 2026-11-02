@@ -1,5 +1,5 @@
 ///|
-/// Puppet phase gate (M2-T02).
+/// Puppet phase gate.
 ///
 /// ADR §4: the Puppet maintains a macro-level phase machine ON TOP OF the
 /// reducer's `Phase`. The reducer phase describes one Run's micro-state; the
@@ -20,7 +20,7 @@
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-/// Product-level macro phase. Distinct from M1 `Phase` (which is per-Run
+/// Product-level macro phase. Distinct from the kernel `Phase` (per-Run
 /// micro-state owned by the reducer).
 ///
 /// Allowed transitions (ADR §4 diagram):
@@ -92,15 +92,15 @@ pub fn PuppetPhase::is_accepting(self : PuppetPhase) -> Bool {
 
 ///|
 /// Class of operation the phase gate is asked to authorise. ADR §6.8
-/// reserves a `Structural` slot for M5 (branch/compact/retry); M2 implements
-/// zero structural operations but the gate already knows how to reject them
+/// reserves a `Structural` slot (branch/compact/retry); no structural
+/// operation is implemented yet, but the gate already knows how to reject them
 /// outside `Idle`.
 pub(all) enum OperationClass {
   /// `prompt`, `continue`, `resume` — start or continue a Run.
   Prompt
   /// `steer`, `follow_up`, `abort` — modify an active Run.
   InFlight
-  /// Reserved for M5: branch, compact, retry. Always rejected outside Idle.
+  /// Reserved: branch, compact, retry. Always rejected outside Idle.
   Structural
 } derive(Eq, Debug)
 

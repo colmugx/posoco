@@ -4,10 +4,16 @@ package "colmugx/posoco/internal/session_output"
 import {
   "colmugx/posoco/error",
   "colmugx/posoco/kernel",
+  "colmugx/posoco/port",
   "colmugx/posoco/types",
 }
 
 // Values
+pub async fn checkpoint_all(Array[&@port.SessionPort], String, Int32, Array[@kernel.Message], Map[String, Json]?, String) -> Unit raise @error.AgentError
+
+pub fn contextualize_session_error(@error.SessionError, String, String) -> @error.AgentError
+
+pub async fn save_all(Array[&@port.SessionPort], String, Array[@kernel.Message], Map[String, Json], String) -> Unit raise @error.AgentError
 
 // Errors
 

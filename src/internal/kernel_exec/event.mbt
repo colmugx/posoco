@@ -23,14 +23,14 @@ pub extend StartedDetails with Debug::{to_repr}
 
 ///|
 /// Suspension requirement — what the host must satisfy before sending
-/// `Resume`. M1 only exercises in-process resume; cross-process durability
-/// is M5. The Kernel never interprets the payload.
+/// `Resume`. Only in-process resume is exercised; cross-process durability
+/// is out of scope. The Kernel never interprets the payload.
 pub(all) struct SuspensionRequirement {
   /// Human/typed label identifying what the suspension is waiting for
   /// (e.g. "approval", "user_input", "checkpoint").
   kind : String
   /// Opaque payload carried across the suspension boundary. The Kernel
-  /// does not interpret this; M5 defines the durable encoding.
+  /// does not interpret this; the durable encoding is out of scope.
   payload : Json
 } derive(Eq, Debug)
 

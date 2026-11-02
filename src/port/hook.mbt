@@ -1,9 +1,9 @@
 ///|
 /// One hook trait: interception points across nearly the whole agent
 /// lifecycle — turn begin/end, before/after the model, before/after tools.
-/// Each method is a distinct point with its own precise contract (M3.6
-/// lesson: the semantics of "can abort", "can rewrite" and "read-only" must
-/// not be squeezed into one signature). Every method has a default
+/// Each method is a distinct point with its own precise contract: the
+/// semantics of "can abort", "can rewrite" and "read-only" must not be
+/// squeezed into one signature. Every method has a default
 /// implementation, so implementors override only the points they care
 /// about, and adding a new interception point is non-breaking: one
 /// defaulted method here plus one call site in the pump — manifest,
@@ -39,7 +39,7 @@ pub impl Show for HookAbort with fn to_string(self : HookAbort) -> String {
 ///
 /// Chain semantics: every registered hook is evaluated (no
 /// short-circuit). Precedence: a raise aborts the run; `Defer`
-/// terminal-rejects until M5; `ApproveAfterConsent` beats `Reject`;
+/// terminal-rejects; `ApproveAfterConsent` beats `Reject`;
 /// `Reject` skips the call and feeds the joined reasons back to the model
 /// as a `NotExecuted(RejectedByHook)` tool result; otherwise the call
 /// executes with the chained rewrite. The complete chain is finalized before
@@ -61,7 +61,7 @@ pub(all) enum ToolDecision {
   /// later. **Current runtime semantics: treated as a terminal reject** —
   /// the run aborts, surfaced to the caller as `AgentError::PipelineAborted`
   /// ("pre_tool_hook defer not yet supported: …"). True suspend/resume is
-  /// M5 work; do not rely on `Defer` for suspension today.
+  /// not implemented; do not rely on `Defer` for suspension today.
   Defer(reason~ : String)
   /// Skip this call: resolved as `NotExecuted(RejectedByHook)` whose
   /// `reason` is fed back to the model; the run continues on the next
@@ -139,7 +139,7 @@ pub impl Show for HookStage with fn to_string(self : HookStage) -> String {
 ///   pipeline — each hook sees the previous hook's output.
 /// - `before_tool`: invoked before every tool execution. Every hook is
 ///   evaluated; merge precedence on `ToolDecision` (consent beats
-///   Reject; Defer still aborts the run until M5).
+///   Reject; Defer still aborts the run).
 /// - `on_post_event`: read-only, non-raising notification with the
 ///   committing run's `EventScope`. Hooks run in registration order;
 ///   interception belongs in `before_model` or `before_tool`.

@@ -1,5 +1,5 @@
 ///|
-/// Control queues + idle barrier (M2-T03, ADR §6).
+/// Control queues + idle barrier (ADR §6).
 ///
 /// Three control mailboxes:
 /// - **Steer mailbox**: FIFO queue of `SteerCommand`. Consumed at the safe
@@ -176,7 +176,7 @@ pub extend AbortCommand with Eq::{not_equal, equal}
 pub extend AbortCommand with Debug::{to_repr}
 
 // ──────────────────────────────────────────────────────────────────────────
-// Fork / Compact commands (M3.5)
+// Fork / Compact commands
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|

@@ -37,7 +37,7 @@ fn deep_instance(depth : Int32, leaf : Json) -> Json {
 }
 
 ///|
-/// D4: deep-but-bounded nesting must validate precisely. The pre-json-schema
+/// Deep-but-bounded nesting must validate precisely. The pre-json-schema
 /// recursive walker trapped the wasm stack between depth 400 (ok) and 600
 /// (crash); the compiled validator pins both compile and evaluation at an
 /// explicit depth limit (default 128 structural levels, two per `properties`

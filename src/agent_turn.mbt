@@ -292,8 +292,12 @@ async fn AgentRuntime::run_turn_via_puppet(
     if self.progress.is_dirty(session_id) {
       // Initialization sampled only one store. The first projection must align
       // every store with the complete core window and its matching metadata.
-      self.save_sessions_all(
-        session_id, messages, current_metadata, "input_checkpoint",
+      @session_output.save_all(
+        self.sessions,
+        session_id,
+        messages,
+        current_metadata,
+        "input_checkpoint",
       )
       self.progress.set_cursor(session_id, messages.length())
       self.progress.mark_clean(session_id)
@@ -677,7 +681,8 @@ async fn AgentRuntime::write_new_thread_output(
   self : AgentRuntime,
   pending : @session_output.NewThreadOutput,
 ) -> Unit raise @error.AgentError {
-  self.save_sessions_all(
+  @session_output.save_all(
+    self.sessions,
     pending.child_session_id,
     pending.messages,
     pending.metadata,
@@ -714,7 +719,8 @@ async fn AgentRuntime::drain_body_recovery_outputs(
   self.session_output.recover_body(session_id, async fn(
     pending,
   ) -> Unit raise @error.AgentError {
-    self.save_sessions_all(
+    @session_output.save_all(
+      self.sessions,
       session_id,
       pending.messages,
       pending.metadata,
@@ -743,7 +749,7 @@ async fn AgentRuntime::drain_pending_new_thread_outputs(
 }
 
 ///|
-/// Fork terminal state (M3.5): fork creates a new session and stops the
+/// Fork terminal state: fork creates a new session and stops the
 /// current turn. The original thread is untouched; product code switches its
 /// active thread to `new_session_id`. We persist the new session to every
 /// configured store (write-all) and return a TurnResult whose
@@ -774,7 +780,7 @@ async fn AgentRuntime::complete_fork_turn(
 }
 
 ///|
-/// Compact terminal state (M3.5): compact applied the modelport's
+/// Compact terminal state: compact applied the modelport's
 /// CompactResult.
 /// - NewThread: persist the new session, return TurnResult with the NEW
 ///   final_session_id (the caller should switch active thread).
@@ -839,7 +845,8 @@ async fn AgentRuntime::complete_compact_turn(
         Err(detail) =>
           emit_secondary_failure(self.observers, "core_shadow_terminal", detail)
       }
-      self.save_sessions_all(
+      @session_output.save_all(
+        self.sessions,
         session_id,
         updated_session.messages,
         updated_session.metadata,
@@ -873,66 +880,15 @@ async fn AgentRuntime::checkpoint_sessions_all(
   if self.sessions.is_empty() {
     return
   }
-  let results : Array[Result[Unit, @error.SessionError]] = @async.all(
-    self.sessions.map(fn(store) {
-      () => {
-        let metadata_snapshot = match metadata {
-          Some(value) => Some(@message_snapshot.snapshot_metadata(value))
-          None => None
-        }
-        let checkpoint : @port.SessionCheckpoint = {
-          from_index,
-          messages: @message_snapshot.snapshot_messages(messages),
-          metadata: metadata_snapshot,
-        }
-        Ok(store.checkpoint(session_id, checkpoint)) catch {
-          error => Err(error)
-        }
-      }
-    }),
-  ) catch {
-    error => raise save_error_context(error, session_id, operation)
-  }
-  for result in results {
-    match result {
-      Ok(_) => ()
-      Err(error) =>
-        raise contextualize_session_error(error, session_id, operation)
-    }
-  }
+  @session_output.checkpoint_all(
+    self.sessions,
+    session_id,
+    from_index,
+    messages,
+    metadata,
+    operation,
+  )
   self.progress.set_cursor(session_id, from_index + messages.length())
-}
-
-///|
-/// Save one session body to every configured store (write-all). Each store
-/// receives its own deep snapshot so a misbehaving store cannot mutate
-/// another store's payload; `operation` labels both error contexts verbatim.
-async fn AgentRuntime::save_sessions_all(
-  self : AgentRuntime,
-  session_id : String,
-  messages : Array[@kernel.Message],
-  metadata : Map[String, Json],
-  operation : String,
-) -> Unit raise @error.AgentError {
-  let save_results : Array[Result[Unit, @error.SessionError]] = @async.all(
-    self.sessions.map(fn(store) {
-      () => {
-        let session = snapshot_session(messages, metadata)
-        Ok(store.save(session_id, session)) catch {
-          error => Err(error)
-        }
-      }
-    }),
-  ) catch {
-    error => raise save_error_context(error, session_id, operation)
-  }
-  for result in save_results {
-    match result {
-      Err(error) =>
-        raise contextualize_session_error(error, session_id, operation)
-      Ok(_) => ()
-    }
-  }
 }
 
 ///|
@@ -1017,7 +973,13 @@ async fn AgentRuntime::save_turn_transcript(
     }
   } else {
     // Rewrite, fork, or compact: rewrite the whole persisted session.
-    self.save_sessions_all(session_id, final_messages, metadata, "final_save")
+    @session_output.save_all(
+      self.sessions,
+      session_id,
+      final_messages,
+      metadata,
+      "final_save",
+    )
     if !self.sessions.is_empty() {
       self.progress.set_cursor(session_id, final_messages.length())
     }
@@ -1145,7 +1107,10 @@ async fn AgentRuntime::load_session_for_operation(
   let loaded : @types.Session = match self.sessions {
     [first, ..] =>
       first.load(session_id) catch {
-        error => raise contextualize_session_error(error, session_id, "load")
+        error =>
+          raise @session_output.contextualize_session_error(
+            error, session_id, "load",
+          )
       }
     [] => { messages: [], metadata: Map::from_array([]), }
   }
@@ -1520,7 +1485,8 @@ async fn AgentRuntime::run_compact_operation(
               )
           }
           let saved : Result[Unit, Error] = Ok(
-            self.save_sessions_all(
+            @session_output.save_all(
+              self.sessions,
               session_id,
               updated_session.messages,
               updated_session.metadata,
@@ -1540,7 +1506,7 @@ async fn AgentRuntime::run_compact_operation(
                   detail="journal committed; body save failed; next operation repairs the projection",
                 ),
               )
-              raise contextualize_session_error(
+              raise @session_output.contextualize_session_error(
                 @error.Conflict(
                   "compact committed but body save failed; session needs recovery",
                 ),

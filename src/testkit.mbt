@@ -1,5 +1,5 @@
 ///|
-/// Conformance testkit for Posoco (M0-T04).
+/// Conformance testkit for Posoco.
 ///
 /// Scripted, recording fakes that let tests assert behavior contracts
 /// (event order, metadata fidelity, tool-outcome consistency) rather than
@@ -7,8 +7,8 @@
 /// blackbox tests: the testkit records call order, arguments, and metadata
 /// snapshots, and fails loudly when a script is exhausted.
 ///
-/// R3 M3.7: all fixtures use canonical kernel types directly. There is no
-/// legacy `@types.Message` / `ModelResponse` / `ToolResult` surface any more.
+/// All fixtures use canonical kernel types directly; there is no legacy
+/// `@types.Message` / `ModelResponse` / `ToolResult` surface.
 ///
 /// The testkit is a test/support layer only — it never enters the production
 /// Agent dependency direction.

@@ -1,6 +1,6 @@
 ///|
 /// RunJournal — append-only, single-writer journal for Puppet savepoints
-/// (M2-T04, ADR §5).
+/// (ADR §5).
 ///
 /// Contract:
 /// - Entries are append-only. No update, no delete of committed entries.
@@ -13,8 +13,8 @@
 /// - The journal stores Posoco canonical domain entries only — never provider
 ///   wire messages (ADR §2 non-goal).
 ///
-/// M2 ships `InMemoryJournal` as the first adapter. M5 will add JSONL/SQLite
-/// by implementing the same `RunJournal` trait.
+/// `InMemoryJournal` is the first adapter; a durable JSONL/SQLite store would
+/// implement the same `RunJournal` trait.
 
 // ──────────────────────────────────────────────────────────────────────────
 // SavepointKind (ADR §5 savepoint table)
@@ -126,7 +126,7 @@ pub extend JournalEntry with Debug::{to_repr}
 ///|
 /// Port: append-only journal with monotonic revision and identity validation.
 ///
-/// M2 ships `InMemoryJournal`. M5 will add JSONL/SQLite by implementing this.
+/// `InMemoryJournal` is the only implementation today.
 ///
 /// The trait intentionally exposes ONLY:
 /// - `append`: commit a frozen batch (advances revision)
@@ -146,7 +146,7 @@ pub(open) trait RunJournal {
   ///
   /// Raises:
   /// - `PuppetError::SavepointFailed(_, BarrierFailed(_))` if the append
-  ///   itself fails (e.g. I/O error in M5).
+  ///   itself fails (e.g. an I/O error in a durable adapter).
   /// - Identity mismatch / post-terminal append also raise SavepointFailed.
   fn append(Self, Array[JournalEntry]) -> Int32 raise PuppetError
 
@@ -170,8 +170,8 @@ pub(open) trait RunJournal {
 /// Append-only in-memory journal. Stores entries in an Array; revision is
 /// derived from the array length (entry N has revision N).
 ///
-/// Thread-safety: M2 runs single-threaded; the Puppet is the only writer.
-/// M5's durable adapter will add its own concurrency control.
+/// Thread-safety: the runtime is single-threaded and the Puppet is the only
+/// writer; a durable adapter would add its own concurrency control.
 pub struct InMemoryJournal {
   // Field visibility is package-private: only this file constructs the
   // journal. The Puppet holds a `&RunJournal` reference; callers cannot
