@@ -1,0 +1,29 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "colmugx/posoco/internal/memory"
+
+import {
+  "colmugx/posoco/error",
+  "colmugx/posoco/kernel",
+  "colmugx/posoco/port",
+}
+
+// Values
+pub const MEMORY_INBOUND_LEAD : String = " ## Memory\n\n The following is memory recalled for this session, for your information. It may be stale or incomplete — verify against the current conversation before relying on it."
+
+pub async fn collect_memory_inbound(Array[(String, &@port.MemoryPort)], String, String, Int32?, (String) -> Unit) -> Array[String] noraise
+
+pub fn memory_inbound_message(Array[String]) -> @kernel.Message
+
+// Errors
+
+// Types and methods
+pub struct MemoryToolProvider {
+  sources : Array[(String, &@port.MemoryPort)]
+  on_failure : (String) -> Unit
+}
+pub fn MemoryToolProvider::MemoryToolProvider(sources~ : Array[(String, &@port.MemoryPort)], on_failure~ : (String) -> Unit) -> Self
+pub impl @port.ToolProvider for MemoryToolProvider
+
+// Type aliases
+
+// Traits

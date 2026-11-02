@@ -11,7 +11,7 @@ pub(all) enum ScriptedDecisionStep {
 ///|
 fn snapshot_optional_json(value : Json?) -> Json? {
   match value {
-    Some(value) => Some(snapshot_json(value))
+    Some(value) => Some(@message_snapshot.snapshot_json(value))
     None => None
   }
 }
@@ -24,14 +24,14 @@ fn snapshot_decision_question(
     Boolean(id~, instructions~, true_criteria~, false_criteria~) =>
       Boolean(
         id~,
-        instructions=snapshot_json(instructions),
+        instructions=@message_snapshot.snapshot_json(instructions),
         true_criteria=snapshot_optional_json(true_criteria),
         false_criteria=snapshot_optional_json(false_criteria),
       )
     Choice(id~, instructions~, options~) =>
       Choice(
         id~,
-        instructions=snapshot_json(instructions),
+        instructions=@message_snapshot.snapshot_json(instructions),
         options=options.map(fn(option) {
           {
             id: option.id,
@@ -42,8 +42,8 @@ fn snapshot_decision_question(
     Score(id~, instructions~, levels~) =>
       Score(
         id~,
-        instructions=snapshot_json(instructions),
-        levels=levels.map(snapshot_json),
+        instructions=@message_snapshot.snapshot_json(instructions),
+        levels=levels.map(@message_snapshot.snapshot_json),
       )
   }
 }
@@ -53,7 +53,7 @@ fn snapshot_decision_request(
   request : @port.DecisionRequest,
 ) -> @port.DecisionRequest {
   {
-    state: snapshot_json(request.state),
+    state: @message_snapshot.snapshot_json(request.state),
     questions: request.questions.map(snapshot_decision_question),
   }
 }

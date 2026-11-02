@@ -34,7 +34,7 @@ fn snapshot_log_record(record : @port.LogRecord) -> @port.LogRecord {
     event: record.event,
     message: record.message,
     scope: record.scope,
-    data: snapshot_json(record.data),
+    data: @message_snapshot.snapshot_json(record.data),
   }
 }
 

@@ -373,3 +373,9 @@ pub impl @port.ToolProvider for MemoryToolProvider with fn execute(
     _ => raise UnknownTool("No executor registered for tool '\{name}'")
   }
 }
+
+///|
+pub extend MemoryToolProvider with @colmugx/posoco/port.ToolProvider::{
+  execute,
+  list_tools,
+}

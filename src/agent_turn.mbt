@@ -112,7 +112,7 @@ fn session_metadata_for_admission(
   session : @types.Session,
   input : @kernel.Message,
 ) -> Map[String, Json] {
-  let metadata = snapshot_metadata(session.metadata)
+  let metadata = @message_snapshot.snapshot_metadata(session.metadata)
   if session.messages.is_empty() &&
     !metadata.contains(@types.SESSION_TITLE_METADATA_KEY) {
     match automatic_session_title(input) {
@@ -206,9 +206,9 @@ async fn AgentRuntime::run_turn_via_puppet(
   // trailing user message without appending it again; every other path
   // appends the supplied input. Deep-copy so callers cannot mutate recorded
   // state.
-  let raw = snapshot_messages(session.messages)
+  let raw = @message_snapshot.snapshot_messages(session.messages)
   let messages = fixate_pending_tool_calls(raw)
-  if !self.sessions.is_empty() && !core_shadow_messages_equal(raw, messages) {
+  if !self.sessions.is_empty() && !@core_facts.messages_equal(raw, messages) {
     // Fixation inserts wire-only messages. The persisted prefix no longer
     // matches the core snapshot, so the next write must be a full alignment.
     self.progress.mark_dirty(session_id)
@@ -238,11 +238,11 @@ async fn AgentRuntime::run_turn_via_puppet(
     // Replay-resume carries no new information, so it never covers wakeup
     // demand; compact does not reach this function at all.
     Some(last) if resume_persisted_user && last is UserMessage(..) =>
-      (snapshot_message(last), messages.length() - 1)
+      (@message_snapshot.snapshot_message(last), messages.length() - 1)
     _ => {
       self.inject_memory_inbound(session, session_id, input, messages)
       let current_turn_start = messages.length()
-      messages.push(snapshot_message(input))
+      messages.push(@message_snapshot.snapshot_message(input))
       (input, current_turn_start)
     }
   }
@@ -259,7 +259,7 @@ async fn AgentRuntime::run_turn_via_puppet(
   // The core current is the loaded fact, so admission is a provenance check,
   // not a stale-store comparison.
   match
-    self.core_shadow.admit(
+    self.core_facts.admit(
       session_id,
       messages,
       current_metadata,
@@ -269,7 +269,9 @@ async fn AgentRuntime::run_turn_via_puppet(
     Ok(_) => ()
     Err(detail) =>
       raise Runtime(
-        InvocationFailed("core admission failed: " + safe_error_label(detail)),
+        InvocationFailed(
+          "core admission failed: " + @diagnostic.safe_error_label(detail),
+        ),
       )
   }
   let admission_metadata : Map[String, Json]? = if session_metadata_equal(
@@ -282,7 +284,7 @@ async fn AgentRuntime::run_turn_via_puppet(
   }
   let cursor = self.progress.cursor_or_zero(session_id)
   let admission_tail = if cursor < messages.length() {
-    snapshot_messages(messages[cursor:].to_owned())
+    @message_snapshot.snapshot_messages(messages[cursor:].to_owned())
   } else {
     []
   }
@@ -350,7 +352,7 @@ async fn AgentRuntime::run_turn_via_puppet(
   // returns only after every child task (the drain loop included) has
   // terminated, and the drain loop terminates only when the queue closes —
   // closing after the group returns would deadlock.
-  let dispatcher = ChunkDispatcher(self.observers)
+  let dispatcher = @chunk_dispatch.ChunkDispatcher(self.observers)
   self.chunk_dispatcher.val = Some(dispatcher)
   // The typed error is captured inside the group closure and re-raised
   // after the boundary: `with_task_group`'s closure signature carries the
@@ -433,7 +435,9 @@ async fn AgentRuntime::run_puppet_turn_body(
       // A cancellation inside the prompt travels as a runtime signal and is
       // translated at the turn boundary; only ordinary defects land here.
       raise Runtime(
-        InvocationFailed("puppet prompt: " + safe_error_label(e.to_string())),
+        InvocationFailed(
+          "puppet prompt: " + @diagnostic.safe_error_label(e.to_string()),
+        ),
       )
   }
 
@@ -466,9 +470,9 @@ async fn AgentRuntime::run_puppet_turn_body(
     Rejected(error=EffectExecutionFailed(cause~, phase~)) => {
       // Compact causes are the adapter's safe bounded label;
       let cause_label = if is_compact_effect_phase(phase) {
-        bounded_error_label(cause, 512)
+        @diagnostic.bounded_error_label(cause, 512)
       } else {
-        safe_error_label(cause)
+        @diagnostic.safe_error_label(cause)
       }
       raise Runtime(InvocationFailed("puppet effect execution: " + cause_label))
     }
@@ -522,7 +526,7 @@ async fn AgentRuntime::run_puppet_turn_body(
     match message {
       AssistantMessage(..) => final_message = message
       ToolMessage(outcome~, ..) =>
-        all_results.push(snapshot_tool_outcome(outcome))
+        all_results.push(@message_snapshot.snapshot_tool_outcome(outcome))
       _ => ()
     }
   }
@@ -542,7 +546,7 @@ async fn AgentRuntime::run_puppet_turn_body(
   // Step 7: build TurnResult. The returned payload is a boundary snapshot;
   // callers own it, so mutating it must not reach the Puppet transcript.
   let result : @types.TurnResult = {
-    message: snapshot_message(final_message),
+    message: @message_snapshot.snapshot_message(final_message),
     tool_results: all_results,
     final_session_id: session_id,
   }
@@ -627,7 +631,7 @@ async fn AgentRuntime::persist_new_thread_session(
   save_label : String,
 ) -> Unit raise @error.AgentError {
   let new_session : @types.Session = {
-    messages: snapshot_messages(messages),
+    messages: @message_snapshot.snapshot_messages(messages),
     metadata: Map::from_array([]),
   }
   let with_lineage = new_session.with_parent_thread_id(parent_session_id)
@@ -635,7 +639,7 @@ async fn AgentRuntime::persist_new_thread_session(
   // fact is an explicit failure, never a diagnostic followed by output with
   // no provenance.
   match
-    self.core_shadow.record_new_thread(
+    self.core_facts.record_new_thread(
       scope.run_id.to_string(),
       parent_session_id,
       new_session_id,
@@ -644,48 +648,59 @@ async fn AgentRuntime::persist_new_thread_session(
     ) {
     Ok(_) => ()
     Err(detail) => {
-      self.core_shadow.mark_missing_provenance(new_session_id)
+      self.core_facts.mark_missing_provenance(new_session_id)
       raise Runtime(InvocationFailed("core child fact failed: " + detail))
     }
   }
-  self.core_shadow.stop(
-    parent_session_id,
-    scope.run_id.to_string(),
-    "diversion",
-  )
+  self.core_facts.stop(parent_session_id, scope.run_id.to_string(), "diversion")
   // Register the pending output before the first store await. If any store
   // fails or the operation is cancelled, the core fact and this snapshot stay
   // available for the next operation to retry this exact child.
-  self.pending_new_thread[new_session_id] = {
+  self.session_output.stage_new_thread(
     scope,
     parent_session_id,
-    child_session_id: new_session_id,
-    messages: with_lineage.messages,
-    metadata: with_lineage.metadata,
-    save_label,
-  }
-  self.save_sessions_all(
     new_session_id,
     with_lineage.messages,
     with_lineage.metadata,
     save_label,
   )
+  self.session_output.execute_new_thread(new_session_id, async fn(
+    pending,
+  ) -> Unit raise @error.AgentError {
+    self.write_new_thread_output(pending)
+  })
+}
+
+///|
+/// Shared confirmed-output callback for initial and recovered NewThread writes.
+async fn AgentRuntime::write_new_thread_output(
+  self : AgentRuntime,
+  pending : @session_output.NewThreadOutput,
+) -> Unit raise @error.AgentError {
+  self.save_sessions_all(
+    pending.child_session_id,
+    pending.messages,
+    pending.metadata,
+    pending.save_label,
+  )
   if !self.sessions.is_empty() {
-    self.progress.set_cursor(new_session_id, with_lineage.messages.length())
+    self.progress.set_cursor(
+      pending.child_session_id,
+      pending.messages.length(),
+    )
   }
-  // Emit a SessionRedirect so observers know a sibling thread was
-  // created and can switch the UI. This is the original operation's scope;
-  // recovery replays this same event, never a new request's scope.
   let redirect : @types.TurnEvent = SessionRedirect(
-    from=parent_session_id,
-    to=new_session_id,
-    messages_before=messages.length(),
-    messages_after=messages.length(),
+    from=pending.parent_session_id,
+    to=pending.child_session_id,
+    messages_before=pending.messages.length(),
+    messages_after=pending.messages.length(),
   )
   for observer in self.observers {
-    observer.on_event(Some(scope), snapshot_turn_event(redirect))
+    observer.on_event(
+      Some(pending.scope),
+      @event_snapshot.snapshot_turn_event(redirect),
+    )
   }
-  self.pending_new_thread.remove(new_session_id)
 }
 
 ///|
@@ -696,20 +711,19 @@ async fn AgentRuntime::drain_body_recovery_outputs(
   self : AgentRuntime,
   session_id : String,
 ) -> Unit raise @error.AgentError {
-  let pending = match self.body_recovery.get(session_id) {
-    Some(value) => value
-    None => return
-  }
-  self.save_sessions_all(
-    session_id,
-    pending.messages,
-    pending.metadata,
-    "compact_recovery_save",
-  )
-  if !self.sessions.is_empty() {
-    self.progress.set_cursor(session_id, pending.messages.length())
-  }
-  self.body_recovery.remove(session_id)
+  self.session_output.recover_body(session_id, async fn(
+    pending,
+  ) -> Unit raise @error.AgentError {
+    self.save_sessions_all(
+      session_id,
+      pending.messages,
+      pending.metadata,
+      "compact_recovery_save",
+    )
+    if !self.sessions.is_empty() {
+      self.progress.set_cursor(session_id, pending.messages.length())
+    }
+  })
 }
 
 ///|
@@ -721,34 +735,11 @@ async fn AgentRuntime::drain_body_recovery_outputs(
 async fn AgentRuntime::drain_pending_new_thread_outputs(
   self : AgentRuntime,
 ) -> Unit raise @error.AgentError {
-  let child_ids = self.pending_new_thread.keys().to_array()
-  child_ids.sort()
-  for child_id in child_ids {
-    let pending = match self.pending_new_thread.get(child_id) {
-      Some(value) => value
-      None => continue
-    }
-    self.save_sessions_all(
-      pending.child_session_id,
-      pending.messages,
-      pending.metadata,
-      pending.save_label,
-    )
-    self.progress.set_cursor(
-      pending.child_session_id,
-      pending.messages.length(),
-    )
-    let redirect : @types.TurnEvent = SessionRedirect(
-      from=pending.parent_session_id,
-      to=pending.child_session_id,
-      messages_before=pending.messages.length(),
-      messages_after=pending.messages.length(),
-    )
-    for observer in self.observers {
-      observer.on_event(Some(pending.scope), snapshot_turn_event(redirect))
-    }
-    self.pending_new_thread.remove(pending.child_session_id)
-  }
+  self.session_output.recover_new_threads(async fn(
+    pending,
+  ) -> Unit raise @error.AgentError {
+    self.write_new_thread_output(pending)
+  })
 }
 
 ///|
@@ -818,7 +809,7 @@ async fn AgentRuntime::complete_compact_turn(
           return result
         }
         None => {
-          self.core_shadow.stop(
+          self.core_facts.stop(
             session_id,
             identity.run_id.to_string(),
             "missing_new_thread_id",
@@ -834,11 +825,11 @@ async fn AgentRuntime::complete_compact_turn(
       // Save the model-supplied body. The product caller stays on the same
       // session id.
       let updated_session : @types.Session = {
-        messages: snapshot_messages(compacted_messages),
-        metadata: snapshot_metadata(current_metadata),
+        messages: @message_snapshot.snapshot_messages(compacted_messages),
+        metadata: @message_snapshot.snapshot_metadata(current_metadata),
       }
       match
-        self.core_shadow.record_terminal(
+        self.core_facts.record_terminal(
           session_id,
           identity.run_id.to_string(),
           updated_session.messages,
@@ -886,12 +877,12 @@ async fn AgentRuntime::checkpoint_sessions_all(
     self.sessions.map(fn(store) {
       () => {
         let metadata_snapshot = match metadata {
-          Some(value) => Some(snapshot_metadata(value))
+          Some(value) => Some(@message_snapshot.snapshot_metadata(value))
           None => None
         }
         let checkpoint : @port.SessionCheckpoint = {
           from_index,
-          messages: snapshot_messages(messages),
+          messages: @message_snapshot.snapshot_messages(messages),
           metadata: metadata_snapshot,
         }
         Ok(store.checkpoint(session_id, checkpoint)) catch {
@@ -980,8 +971,10 @@ async fn AgentRuntime::save_turn_transcript(
   current_turn_start : Int32,
   run_id : String,
 ) -> Unit raise @error.AgentError {
-  let final_messages = snapshot_messages(transcript.messages_snapshot())
-  let base_metadata = snapshot_metadata(metadata)
+  let final_messages = @message_snapshot.snapshot_messages(
+    transcript.messages_snapshot(),
+  )
+  let base_metadata = @message_snapshot.snapshot_metadata(metadata)
   let metadata = self.metadata_with_context_state(session_id, metadata)
   let metadata = self.task_runtime.metadata_with_applied_outcomes(
     session_id, metadata,
@@ -990,7 +983,7 @@ async fn AgentRuntime::save_turn_transcript(
   // shadow only replaces Tracking / same-run RewriteStopped; a stale admission
   // conflict or missing provenance never recovers through terminal success.
   match
-    self.core_shadow.record_terminal(
+    self.core_facts.record_terminal(
       session_id, run_id, final_messages, metadata,
     ) {
     Ok(_) => ()
@@ -1013,7 +1006,7 @@ async fn AgentRuntime::save_turn_transcript(
   }
   if operation == "final_append" {
     let tail = if cursor < final_messages.length() {
-      snapshot_messages(final_messages[cursor:].to_owned())
+      @message_snapshot.snapshot_messages(final_messages[cursor:].to_owned())
     } else {
       []
     }
@@ -1067,7 +1060,7 @@ async fn AgentRuntime::save_failed_turn_transcript(
           emit_secondary_failure(
             self.observers,
             "failed_turn_transcript_save",
-            "session_id=\{safe_error_label(session_id)};op=\{operation};cause=\{failed_save_cause_label(error)}",
+            "session_id=\{@diagnostic.safe_error_label(session_id)};op=\{operation};cause=\{failed_save_cause_label(error)}",
           )
       }
     }
@@ -1101,7 +1094,7 @@ fn AgentRuntime::metadata_with_context_state(
   session_id : String,
   metadata : Map[String, Json],
 ) -> Map[String, Json] {
-  let metadata = snapshot_metadata(metadata)
+  let metadata = @message_snapshot.snapshot_metadata(metadata)
   match self.puppet.session_context_state(session_id) {
     Some(state) =>
       metadata[@types.CONTEXT_STATE_METADATA_KEY] = state.to_metadata_json()
@@ -1129,21 +1122,21 @@ async fn AgentRuntime::load_session_for_operation(
 ) -> @types.Session raise @error.AgentError {
   // A confirmed core snapshot is the only source after initialization. Normal
   // operation termination (diversion/cancel) does not make it unreadable.
-  let read : Result[@types.Session, CoreReadError] = Ok(
-    self.core_shadow.read_session(session_id),
+  let read : Result[@types.Session, @core_facts.CoreReadError] = Ok(
+    self.core_facts.read_session(session_id),
   ) catch {
     error => Err(error)
   }
   match read {
     Ok(session) => return session
-    Err(UnknownSession(..)) => ()
-    Err(Unreadable(reason~, ..)) =>
+    Err(@core_facts.UnknownSession(..)) => ()
+    Err(@core_facts.Unreadable(reason~, ..)) =>
       raise Runtime(
         InvocationFailed(
           "core session is unreadable: " +
-          safe_error_label(session_id) +
+          @diagnostic.safe_error_label(session_id) +
           "; reason=" +
-          safe_error_label(reason),
+          @diagnostic.safe_error_label(reason),
         ),
       )
   }
@@ -1156,7 +1149,7 @@ async fn AgentRuntime::load_session_for_operation(
       }
     [] => { messages: [], metadata: Map::from_array([]), }
   }
-  let hydrated : Result[Unit, String] = self.core_shadow.hydrate(
+  let hydrated : Result[Unit, String] = self.core_facts.hydrate(
     session_id,
     loaded.messages,
     loaded.metadata,
@@ -1167,9 +1160,9 @@ async fn AgentRuntime::load_session_for_operation(
       raise Runtime(
         InvocationFailed(
           "core session initialization failed: " +
-          safe_error_label(session_id) +
+          @diagnostic.safe_error_label(session_id) +
           "; " +
-          safe_error_label(detail),
+          @diagnostic.safe_error_label(detail),
         ),
       )
   }
@@ -1178,27 +1171,27 @@ async fn AgentRuntime::load_session_for_operation(
     // the next full write-all succeeds; the first output must not append.
     self.progress.mark_dirty(session_id)
   }
-  let initialized : Result[@types.Session, CoreReadError] = Ok(
-    self.core_shadow.read_session(session_id),
+  let initialized : Result[@types.Session, @core_facts.CoreReadError] = Ok(
+    self.core_facts.read_session(session_id),
   ) catch {
     error => Err(error)
   }
   match initialized {
     Ok(session) => session
-    Err(UnknownSession(..)) =>
+    Err(@core_facts.UnknownSession(..)) =>
       raise Runtime(
         InvocationFailed(
           "core session initialization produced no fact: " +
-          safe_error_label(session_id),
+          @diagnostic.safe_error_label(session_id),
         ),
       )
-    Err(Unreadable(reason~, ..)) =>
+    Err(@core_facts.Unreadable(reason~, ..)) =>
       raise Runtime(
         InvocationFailed(
           "core session is unreadable after initialization: " +
-          safe_error_label(session_id) +
+          @diagnostic.safe_error_label(session_id) +
           "; reason=" +
-          safe_error_label(reason),
+          @diagnostic.safe_error_label(reason),
         ),
       )
   }
@@ -1255,8 +1248,7 @@ async fn AgentRuntime::compact_session(
   let admission = self.admit_operation(session_id, Compact)
   // Same unwind guard as run_turn_with_mode: a hard-cancelled compact must
   // not wedge the Agent busy, and the operation must settle cancelled.
-  errdefer (if self.operations.current is Some(active) &&
-    active.operation_id == admission.operation_id {
+  errdefer (if self.operations.current_id() == Some(admission.operation_id) {
     self.retire_released_versions()
     self.release_operation(admission, Cancelled)
   })
@@ -1324,12 +1316,12 @@ async fn AgentRuntime::run_compact_operation(
   self.ensure_agent_running()
   self.notify_start_if_first()
   let identity = admission.identity
-  defer self.core_shadow.finish_run(
+  defer self.core_facts.finish_run(
     session_id,
     identity.run_id.to_string(),
     "compact_ended_without_terminal",
   )
-  defer self.drain_core_shadow_errors()
+  defer self.drain_core_facts_errors()
   self.task_runtime.begin_operation(
     session_id,
     identity.run_id,
@@ -1346,13 +1338,13 @@ async fn AgentRuntime::run_compact_operation(
     None => ()
   }
   self.project_context_state(Some(scope), session_id)
-  let raw = snapshot_messages(session.messages)
+  let raw = @message_snapshot.snapshot_messages(session.messages)
   let messages = fixate_pending_tool_calls(raw)
-  if !self.sessions.is_empty() && !core_shadow_messages_equal(raw, messages) {
+  if !self.sessions.is_empty() && !@core_facts.messages_equal(raw, messages) {
     self.progress.mark_dirty(session_id)
   }
   match
-    self.core_shadow.admit(
+    self.core_facts.admit(
       session_id,
       messages,
       session.metadata,
@@ -1362,7 +1354,9 @@ async fn AgentRuntime::run_compact_operation(
     Ok(_) => ()
     Err(detail) =>
       raise Runtime(
-        InvocationFailed("core admission failed: " + safe_error_label(detail)),
+        InvocationFailed(
+          "core admission failed: " + @diagnostic.safe_error_label(detail),
+        ),
       )
   }
   let live = self.model.provider_config()
@@ -1421,7 +1415,9 @@ async fn AgentRuntime::run_compact_operation(
     }
     Err(e) =>
       raise Runtime(
-        InvocationFailed("puppet compact: " + safe_error_label(e.to_string())),
+        InvocationFailed(
+          "puppet compact: " + @diagnostic.safe_error_label(e.to_string()),
+        ),
       )
   }
   match prompt_result {
@@ -1439,7 +1435,7 @@ async fn AgentRuntime::run_compact_operation(
     Rejected(error~) => {
       // Keep the sanitized bounded rendering; the ModelFailure category and
       // its safe label must survive to the observer event and the error.
-      let detail = bounded_error_label(error.to_string(), 512)
+      let detail = @diagnostic.bounded_error_label(error.to_string(), 512)
       self.emit_turn_event(
         Some(scope),
         OperationFinalized(operation="compact", outcome="failed", detail~),
@@ -1480,7 +1476,7 @@ async fn AgentRuntime::run_compact_operation(
               outcome
             }
             None => {
-              self.core_shadow.stop(
+              self.core_facts.stop(
                 session_id,
                 identity.run_id.to_string(),
                 "missing_new_thread_id",
@@ -1505,11 +1501,11 @@ async fn AgentRuntime::run_compact_operation(
             session.metadata,
           )
           let updated_session : @types.Session = {
-            messages: snapshot_messages(compacted_messages),
+            messages: @message_snapshot.snapshot_messages(compacted_messages),
             metadata: updated_metadata,
           }
           match
-            self.core_shadow.record_terminal(
+            self.core_facts.record_terminal(
               session_id,
               identity.run_id.to_string(),
               updated_session.messages,
@@ -1535,7 +1531,7 @@ async fn AgentRuntime::run_compact_operation(
           }
           match saved {
             Err(_) => {
-              self.body_recovery[session_id] = updated_session
+              self.session_output.stage_body(session_id, updated_session)
               self.emit_turn_event(
                 Some(scope),
                 OperationFinalized(
@@ -1554,7 +1550,6 @@ async fn AgentRuntime::run_compact_operation(
             }
             Ok(_) => ()
           }
-          self.body_recovery.remove(session_id)
           if !self.sessions.is_empty() {
             self.progress.set_cursor(
               session_id,

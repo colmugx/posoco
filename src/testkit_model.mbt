@@ -32,7 +32,9 @@ fn testkit_snapshot_model_step(step : ScriptedModelStep) -> ScriptedModelStep {
     Fail(error) => Fail(error)
     Compact(result~) =>
       Compact(result={
-        compacted_messages: snapshot_messages(result.compacted_messages),
+        compacted_messages: @message_snapshot.snapshot_messages(
+          result.compacted_messages,
+        ),
         mode: result.mode,
       })
     CompactFail(error~) => CompactFail(error~)
@@ -112,7 +114,7 @@ pub fn ScriptedModel::received_compacts(
 ) -> Array[(Array[@kernel.Message], @kernel.CompactTrigger)] {
   self.received_compacts.map(fn(entry) {
     let (messages, trigger) = entry
-    (snapshot_messages(messages), trigger)
+    (@message_snapshot.snapshot_messages(messages), trigger)
   })
 }
 
@@ -190,7 +192,9 @@ fn ScriptedModel::record_chat_call(
   options : @types.ChatOptions,
 ) -> Unit {
   self.calls = self.calls + 1
-  self.received_messages.push(snapshot_messages(messages.to_owned()))
+  self.received_messages.push(
+    @message_snapshot.snapshot_messages(messages.to_owned()),
+  )
   self.received_tools.push(tools.map(testkit_snapshot_tool_def))
   self.received_options.push(options)
 }
@@ -279,11 +283,15 @@ pub impl @port.ModelPort for ScriptedModel with fn compact(
 ) -> @kernel.CompactResult raise @error.ModelError {
   self.compact_calls = self.compact_calls + 1
   self.received_compact_tools.push(tools.map(testkit_snapshot_tool_def))
-  self.received_compacts.push((snapshot_messages(messages.to_owned()), trigger))
+  self.received_compacts.push(
+    (@message_snapshot.snapshot_messages(messages.to_owned()), trigger),
+  )
   match self.take_matching_step(testkit_is_compact_step, "compact") {
     Compact(result~) =>
       {
-        compacted_messages: snapshot_messages(result.compacted_messages),
+        compacted_messages: @message_snapshot.snapshot_messages(
+          result.compacted_messages,
+        ),
         mode: result.mode,
       }
     CompactFail(error~) => raise error

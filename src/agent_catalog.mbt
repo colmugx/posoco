@@ -50,7 +50,7 @@ fn emit_tool_catalog_change(
   }
   let event : @types.TurnEvent = ToolCatalogChanged(payload~)
   for observer in observers {
-    observer.on_event(None, snapshot_turn_event(event))
+    observer.on_event(None, @event_snapshot.snapshot_turn_event(event))
   }
 }
 
@@ -74,7 +74,7 @@ fn emit_catalog_captured(
   }
   let event : @types.TurnEvent = ToolCatalogChanged(payload~)
   for observer in observers {
-    observer.on_event(None, snapshot_turn_event(event))
+    observer.on_event(None, @event_snapshot.snapshot_turn_event(event))
   }
 }
 
@@ -175,7 +175,8 @@ fn AgentRuntime::capture_tool_contributions(
     error =>
       raise @error.AgentError::Runtime(
         @error.RuntimeError::InvocationFailed(
-          "tool catalog: " + bounded_error_label(error.to_string(), 256),
+          "tool catalog: " +
+          @diagnostic.bounded_error_label(error.to_string(), 256),
         ),
       )
   }

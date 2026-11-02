@@ -27,13 +27,13 @@ priv struct CoreCommit {
 /// Private read failure surface. `UnknownSession` is the only case that may
 /// initialize from an external seed; `Unreadable` is a known fact capture
 /// failure and must never fall back to a store or old current.
-priv suberror CoreReadError {
+pub suberror CoreReadError {
   UnknownSession(sid~ : String)
   Unreadable(sid~ : String, reason~ : String)
 }
 
 ///|
-priv enum CoreShadowState {
+priv enum CoreFactsState {
   /// The current operation may accept committed boundaries and capture a
   /// source. It is not a completion claim.
   Tracking(run_id~ : String)
@@ -47,26 +47,26 @@ priv enum CoreShadowState {
 }
 
 ///|
-priv struct CoreShadowRecording {
-  store : CoreVersionStore
-  state : Map[String, CoreShadowState]
+pub struct CoreFacts {
+  priv store : CoreVersionStore
+  priv state : Map[String, CoreFactsState]
   /// Metadata captured at admission; committed boundaries do not change it.
-  metadata : Map[String, Map[String, Json]]
+  priv metadata : Map[String, Map[String, Json]]
   /// Last committed boundary per session, for duplicate suppression and
   /// terminal metadata updates.
-  last_commit : Map[String, CoreCommit]
+  priv last_commit : Map[String, CoreCommit]
   /// Frozen safe-point source keyed by run id.
-  pending_source : Map[String, CoreSourceCapture]
+  priv pending_source : Map[String, CoreSourceCapture]
   /// Synchronous-boundary failures waiting for the Agent diagnostic path.
-  pending_errors : Array[String]
+  priv pending_errors : Array[String]
   /// Facts whose latest capture failed or whose content is known inconsistent.
   /// This is independent of the operation state: `Stopped`/`Complete` do not
   /// by themselves make a confirmed current unreadable.
-  unreadable : Map[String, String]
+  priv unreadable : Map[String, String]
 }
 
 ///|
-fn CoreShadowRecording::CoreShadowRecording() -> CoreShadowRecording {
+pub fn CoreFacts::CoreFacts() -> CoreFacts {
   {
     store: CoreVersionStore::CoreVersionStore(),
     state: Map::from_array([]),
@@ -82,8 +82,8 @@ fn CoreShadowRecording::CoreShadowRecording() -> CoreShadowRecording {
 /// Record the first loaded view of a session as version 0. An existing sid is
 /// never overwritten. A known child with lost provenance is refused instead of
 /// being silently re-rooted.
-fn CoreShadowRecording::hydrate(
-  self : CoreShadowRecording,
+pub fn CoreFacts::hydrate(
+  self : CoreFacts,
   session_id : String,
   messages : Array[@kernel.Message],
   metadata : Map[String, Json],
@@ -112,8 +112,8 @@ fn CoreShadowRecording::hydrate(
 /// Arm shadow tracking after admission has decided the operation baseline and
 /// confirmed the core still matches the loaded view. No core fact is written
 /// here: facts are recorded only from a journal-committed boundary.
-fn CoreShadowRecording::admit(
-  self : CoreShadowRecording,
+pub fn CoreFacts::admit(
+  self : CoreFacts,
   session_id : String,
   _baseline : Array[@kernel.Message],
   metadata : Map[String, Json],
@@ -163,19 +163,19 @@ fn CoreShadowRecording::admit(
 }
 
 ///|
-fn CoreShadowRecording::accept(
-  self : CoreShadowRecording,
+fn CoreFacts::accept(
+  self : CoreFacts,
   session_id : String,
   metadata : Map[String, Json],
   run_id : String,
 ) -> Unit {
-  self.metadata[session_id] = snapshot_metadata(metadata)
+  self.metadata[session_id] = @message_snapshot.snapshot_metadata(metadata)
   self.state[session_id] = Tracking(run_id~)
 }
 
 ///|
-fn CoreShadowRecording::stop(
-  self : CoreShadowRecording,
+pub fn CoreFacts::stop(
+  self : CoreFacts,
   session_id : String,
   run_id : String,
   reason : String,
@@ -192,8 +192,8 @@ fn CoreShadowRecording::stop(
 ///|
 /// Demote an unfinished run to `Stopped`; `Complete` and `MissingProvenance`
 /// survive, and a different run's state is left alone.
-fn CoreShadowRecording::finish_run(
-  self : CoreShadowRecording,
+pub fn CoreFacts::finish_run(
+  self : CoreFacts,
   session_id : String,
   run_id : String,
   reason : String,
@@ -207,10 +207,7 @@ fn CoreShadowRecording::finish_run(
 }
 
 ///|
-fn CoreShadowRecording::mark_complete(
-  self : CoreShadowRecording,
-  session_id : String,
-) -> Unit {
+fn CoreFacts::mark_complete(self : CoreFacts, session_id : String) -> Unit {
   self.state[session_id] = Complete
 }
 
@@ -218,8 +215,8 @@ fn CoreShadowRecording::mark_complete(
 /// Remember that a child sid's source edge could not be recorded. Only a child
 /// with no core body is marked: an existing core body already has its own
 /// provenance.
-fn CoreShadowRecording::mark_missing_provenance(
-  self : CoreShadowRecording,
+pub fn CoreFacts::mark_missing_provenance(
+  self : CoreFacts,
   session_id : String,
 ) -> Unit {
   if !self.store.sessions.contains(session_id) {
@@ -231,8 +228,8 @@ fn CoreShadowRecording::mark_missing_provenance(
 /// State-independent read of the trusted core snapshot. An operation ending as
 /// Stopped due to normal diversion/cancel does not make its last confirmed
 /// current unreadable; a known capture failure does.
-fn CoreShadowRecording::read_session(
-  self : CoreShadowRecording,
+pub fn CoreFacts::read_session(
+  self : CoreFacts,
   session_id : String,
 ) -> @types.Session raise CoreReadError {
   match self.unreadable.get(session_id) {
@@ -256,10 +253,34 @@ fn CoreShadowRecording::read_session(
 }
 
 ///|
-fn CoreShadowRecording::is_tracked(
-  self : CoreShadowRecording,
+/// Read the pinned creation source of the current version as a deep snapshot.
+/// The source's internal version/key representation never leaves this package.
+pub fn CoreFacts::read_source(
+  self : CoreFacts,
   session_id : String,
-) -> Bool {
+) -> @types.Session? {
+  let lineage = match self.store.sessions.get(session_id) {
+    Some(value) => value
+    None => return None
+  }
+  let current = lineage.versions[lineage.versions.length() - 1]
+  let source = match current.source {
+    Some(value) => value
+    None => return None
+  }
+  let resolved : Result[@types.Session, CoreVersionError] = Ok(
+    self.store.resolve_source(source),
+  ) catch {
+    error => Err(error)
+  }
+  match resolved {
+    Ok(value) => Some(value)
+    Err(_) => None
+  }
+}
+
+///|
+fn CoreFacts::is_tracked(self : CoreFacts, session_id : String) -> Bool {
   match self.state.get(session_id) {
     Some(Tracking(..)) => true
     _ => false
@@ -267,9 +288,7 @@ fn CoreShadowRecording::is_tracked(
 }
 
 ///|
-fn CoreShadowRecording::take_errors(
-  self : CoreShadowRecording,
-) -> Array[String] {
+pub fn CoreFacts::take_errors(self : CoreFacts) -> Array[String] {
   let errors = self.pending_errors.copy()
   self.pending_errors.clear()
   errors
@@ -279,8 +298,8 @@ fn CoreShadowRecording::take_errors(
 /// Freeze the exact source the model consumer receives. No permanent source
 /// snapshot is allocated here: Replace, model failure, cancellation, and
 /// unrelated paths must leave no orphan snapshot.
-fn CoreShadowRecording::capture_source(
-  self : CoreShadowRecording,
+pub fn CoreFacts::capture_source(
+  self : CoreFacts,
   run_id : String,
   session_id : String,
   messages : Array[@kernel.Message],
@@ -303,9 +322,9 @@ fn CoreShadowRecording::capture_source(
       )
       self.pending_errors.push(
         "source capture failed: run=" +
-        safe_error_label(run_id) +
+        @diagnostic.safe_error_label(run_id) +
         ", session=" +
-        safe_error_label(session_id) +
+        @diagnostic.safe_error_label(session_id) +
         ", missing admission metadata",
       )
       return
@@ -313,16 +332,16 @@ fn CoreShadowRecording::capture_source(
   }
   self.pending_source[run_id] = {
     session_id,
-    messages: snapshot_messages(messages),
-    metadata: snapshot_metadata(metadata),
+    messages: @message_snapshot.snapshot_messages(messages),
+    metadata: @message_snapshot.snapshot_metadata(metadata),
     prefix,
   }
 }
 
 ///|
 /// Create the child core version from the frozen safe-point capture.
-fn CoreShadowRecording::record_new_thread(
-  self : CoreShadowRecording,
+pub fn CoreFacts::record_new_thread(
+  self : CoreFacts,
   run_id : String,
   parent_session_id : String,
   child_session_id : String,
@@ -375,9 +394,9 @@ fn CoreShadowRecording::record_new_thread(
       )
       return Err(
         "child source snapshot failed: run=" +
-        safe_error_label(run_id) +
+        @diagnostic.safe_error_label(run_id) +
         ", parent=" +
-        safe_error_label(parent_session_id) +
+        @diagnostic.safe_error_label(parent_session_id) +
         ", " +
         core_shadow_error_label(error),
       )
@@ -394,9 +413,9 @@ fn CoreShadowRecording::record_new_thread(
       self.revoke_source_snapshot(parent_session_id, allocated_snapshot)
       return Err(
         "frozen source invalid: run=" +
-        safe_error_label(run_id) +
+        @diagnostic.safe_error_label(run_id) +
         ", parent=" +
-        safe_error_label(parent_session_id) +
+        @diagnostic.safe_error_label(parent_session_id) +
         ", " +
         core_shadow_error_label(error),
       )
@@ -422,8 +441,8 @@ fn CoreShadowRecording::record_new_thread(
 }
 
 ///|
-fn CoreShadowRecording::revoke_source_snapshot(
-  self : CoreShadowRecording,
+fn CoreFacts::revoke_source_snapshot(
+  self : CoreFacts,
   session_id : String,
   version : Int32?,
 ) -> Unit {
@@ -436,8 +455,8 @@ fn CoreShadowRecording::revoke_source_snapshot(
 ///|
 /// Record one journal-committed boundary from the full RunState transcript.
 /// Called synchronously after the journal barrier and before dispatch.
-fn CoreShadowRecording::record_boundary(
-  self : CoreShadowRecording,
+pub fn CoreFacts::record_boundary(
+  self : CoreFacts,
   run_id : String,
   session_id : String,
   committed_revision : Int32,
@@ -465,9 +484,9 @@ fn CoreShadowRecording::record_boundary(
       self.unreadable[session_id] = "missing_admission_metadata"
       self.pending_errors.push(
         "boundary record failed: run=" +
-        safe_error_label(run_id) +
+        @diagnostic.safe_error_label(run_id) +
         ", session=" +
-        safe_error_label(session_id) +
+        @diagnostic.safe_error_label(session_id) +
         ", missing admission metadata",
       )
       return
@@ -498,9 +517,9 @@ fn CoreShadowRecording::record_boundary(
         self.unreadable[session_id] = "boundary_record_failed"
         self.pending_errors.push(
           "boundary record failed: run=" +
-          safe_error_label(run_id) +
+          @diagnostic.safe_error_label(run_id) +
           ", session=" +
-          safe_error_label(session_id) +
+          @diagnostic.safe_error_label(session_id) +
           ", " +
           core_shadow_error_label(error),
         )
@@ -523,9 +542,9 @@ fn CoreShadowRecording::record_boundary(
       self.unreadable[session_id] = "boundary_current_failed"
       self.pending_errors.push(
         "boundary record failed: run=" +
-        safe_error_label(run_id) +
+        @diagnostic.safe_error_label(run_id) +
         ", session=" +
-        safe_error_label(session_id) +
+        @diagnostic.safe_error_label(session_id) +
         ", " +
         core_shadow_error_label(error),
       )
@@ -569,9 +588,9 @@ fn CoreShadowRecording::record_boundary(
       self.unreadable[session_id] = "boundary_record_failed"
       self.pending_errors.push(
         "boundary record failed: run=" +
-        safe_error_label(run_id) +
+        @diagnostic.safe_error_label(run_id) +
         ", session=" +
-        safe_error_label(session_id) +
+        @diagnostic.safe_error_label(session_id) +
         ", " +
         core_shadow_error_label(error),
       )
@@ -583,8 +602,8 @@ fn CoreShadowRecording::record_boundary(
 /// Update metadata for the terminal transcript already recorded by the
 /// boundary sink. Only a same-run Tracking or a Complete whose last commit is
 /// this run is eligible; conflict/stopped/missing never recover.
-fn CoreShadowRecording::record_terminal(
-  self : CoreShadowRecording,
+pub fn CoreFacts::record_terminal(
+  self : CoreFacts,
   session_id : String,
   run_id : String,
   messages : Array[@kernel.Message],
@@ -622,9 +641,9 @@ fn CoreShadowRecording::record_terminal(
     Err(error) =>
       return Err(
         "terminal current failed: run=" +
-        safe_error_label(run_id) +
+        @diagnostic.safe_error_label(run_id) +
         ", session=" +
-        safe_error_label(session_id) +
+        @diagnostic.safe_error_label(session_id) +
         ", " +
         core_shadow_error_label(error),
       )
@@ -634,9 +653,9 @@ fn CoreShadowRecording::record_terminal(
     self.unreadable[session_id] = "terminal_body_mismatch"
     return Err(
       "terminal body does not match the committed core: run=" +
-      safe_error_label(run_id) +
+      @diagnostic.safe_error_label(run_id) +
       ", session=" +
-      safe_error_label(session_id),
+      @diagnostic.safe_error_label(session_id),
     )
   }
   let updated : Result[Int32, CoreVersionError] = Ok(
@@ -657,14 +676,22 @@ fn CoreShadowRecording::record_terminal(
       self.unreadable[session_id] = "terminal_metadata_failed"
       Err(
         "terminal metadata update failed: run=" +
-        safe_error_label(run_id) +
+        @diagnostic.safe_error_label(run_id) +
         ", session=" +
-        safe_error_label(session_id) +
+        @diagnostic.safe_error_label(session_id) +
         ", " +
         core_shadow_error_label(error),
       )
     }
   }
+}
+
+///|
+pub fn messages_equal(
+  left : Array[@kernel.Message],
+  right : Array[@kernel.Message],
+) -> Bool {
+  core_shadow_messages_equal(left, right)
 }
 
 ///|
@@ -702,17 +729,19 @@ fn core_shadow_messages_is_prefix(
 ///|
 fn core_shadow_error_label(error : CoreVersionError) -> String {
   match error {
-    UnknownSession(sid~) => "UnknownSession(sid=" + safe_error_label(sid) + ")"
-    SessionExists(sid~) => "SessionExists(sid=" + safe_error_label(sid) + ")"
+    UnknownSession(sid~) =>
+      "UnknownSession(sid=" + @diagnostic.safe_error_label(sid) + ")"
+    SessionExists(sid~) =>
+      "SessionExists(sid=" + @diagnostic.safe_error_label(sid) + ")"
     UnknownVersion(sid~, version~) =>
       "UnknownVersion(sid=" +
-      safe_error_label(sid) +
+      @diagnostic.safe_error_label(sid) +
       ", version=" +
       version.to_string() +
       ")"
     PrefixOutOfRange(sid~, version~, prefix~, available~) =>
       "PrefixOutOfRange(sid=" +
-      safe_error_label(sid) +
+      @diagnostic.safe_error_label(sid) +
       ", version=" +
       version.to_string() +
       ", prefix=" +

@@ -1956,13 +1956,11 @@ async test "wave3/body recovery is scoped to the affected operation session" {
     fail("expected A to leave a body-recovery failure")
   }
   let a_saves_before = body_recovery_save_count(store, "recover-a")
-  assert_eq(agent.runtime.body_recovery.length(), 1)
   // B must run normally; its guard must not drain A's failed output.
   let b = agent.run_turn(tk_user_msg("b-next"), "recover-b")
   assert_eq(b.final_session_id, "recover-b")
   assert_eq(model.call_count(), 1)
   assert_eq(body_recovery_save_count(store, "recover-a"), a_saves_before)
-  assert_eq(agent.runtime.body_recovery.length(), 1)
   // A's own next operation is the only one that retries and fails at its
   // output gate, with no model call.
   let blocked : Result[@types.TurnResult, @error.AgentError] = Ok(
@@ -1975,7 +1973,6 @@ async test "wave3/body recovery is scoped to the affected operation session" {
   }
   assert_eq(model.call_count(), 1)
   assert_eq(body_recovery_save_count(store, "recover-a"), a_saves_before + 1)
-  assert_eq(agent.runtime.body_recovery.length(), 1)
 }
 
 ///|

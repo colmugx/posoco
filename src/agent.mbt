@@ -74,142 +74,13 @@ fn AgentConfig::to_call_options_json(self : AgentConfig) -> Json {
 }
 
 ///|
-fn bounded_error_label(value : String, cap : Int32) -> String {
-  let chars : Array[Char] = []
-  let mut truncated = false
-  for char in value {
-    if chars.length() >= cap {
-      truncated = true
-      break
-    }
-    match char {
-      '\n' | '\r' => chars.push(' ')
-      other => chars.push(other)
-    }
-  }
-  let label = String::from_array(chars)
-  if truncated {
-    label + "...(truncated)"
-  } else {
-    label
-  }
-}
-
-///|
-fn safe_error_label(value : String) -> String {
-  bounded_error_label(value, 64)
-}
-
-///|
-fn snapshot_json(value : Json) -> Json {
-  match value {
-    Array(items) => Json::array(items.map(snapshot_json))
-    Object(fields) => {
-      let snapshot : Map[String, Json] = Map::from_array([])
-      for key in fields.keys() {
-        snapshot[key] = snapshot_json(fields[key])
-      }
-      Json::object(snapshot)
-    }
-    scalar => scalar
-  }
-}
-
-///|
-fn snapshot_tool_call(call : @kernel.ToolCall) -> @kernel.ToolCall {
-  {
-    call_id: call.call_id,
-    name: call.name,
-    arguments: snapshot_json(call.arguments),
-  }
-}
-
-///|
-fn snapshot_content(content : @kernel.Content) -> @kernel.Content {
-  match content {
-    Text(text) => Text(text)
-    Image(media_type~, data~) => Image(media_type~, data~)
-  }
-}
-
-///|
-fn snapshot_message(message : @kernel.Message) -> @kernel.Message {
-  match message {
-    SystemMessage(content~) =>
-      SystemMessage(content=content.map(snapshot_content))
-    UserMessage(content~) => UserMessage(content=content.map(snapshot_content))
-    AssistantMessage(content~, tool_calls~, reasoning~, finish_reason~) =>
-      AssistantMessage(
-        content=content.map(snapshot_content),
-        tool_calls=tool_calls.map(snapshot_tool_call),
-        reasoning~,
-        finish_reason~,
-      )
-    ToolMessage(call_id~, tool_name~, outcome~) =>
-      ToolMessage(call_id~, tool_name~, outcome=snapshot_tool_outcome(outcome))
-  }
-}
-
-///|
-fn snapshot_messages(
-  messages : Array[@kernel.Message],
-) -> Array[@kernel.Message] {
-  messages.map(snapshot_message)
-}
-
-///|
-fn snapshot_metadata(metadata : Map[String, Json]) -> Map[String, Json] {
-  let snapshot : Map[String, Json] = Map::from_array([])
-  for key in metadata.keys() {
-    snapshot[key] = snapshot_json(metadata[key])
-  }
-  snapshot
-}
-
-///|
 fn snapshot_session(
   messages : Array[@kernel.Message],
   metadata : Map[String, Json],
 ) -> @types.Session {
   {
-    messages: snapshot_messages(messages),
-    metadata: snapshot_metadata(metadata),
-  }
-}
-
-///|
-fn snapshot_tool_outcome(outcome : @kernel.ToolOutcome) -> @kernel.ToolOutcome {
-  match outcome {
-    Success(content~, structured~) =>
-      Success(
-        content~,
-        structured=match structured {
-          Some(j) => Some(snapshot_json(j))
-          None => None
-        },
-      )
-    SuccessWithAttachments(content~, structured~, attachments~) =>
-      // Content blocks are immutable; attachments need no deep copy.
-      SuccessWithAttachments(
-        content~,
-        structured=match structured {
-          Some(j) => Some(snapshot_json(j))
-          None => None
-        },
-        attachments=attachments.copy(),
-      )
-    ToolReportedError(content~, structured~) =>
-      ToolReportedError(
-        content~,
-        structured=match structured {
-          Some(j) => Some(snapshot_json(j))
-          None => None
-        },
-      )
-    RuntimeFailure(error_category~, message~) =>
-      RuntimeFailure(error_category~, message~)
-    NotExecuted(reason~, original_call_id~) =>
-      NotExecuted(reason~, original_call_id~)
+    messages: @message_snapshot.snapshot_messages(messages),
+    metadata: @message_snapshot.snapshot_metadata(metadata),
   }
 }
 
@@ -238,7 +109,7 @@ priv struct AgentRuntime {
   control : AgentControl
   task_runtime : AgentTaskRuntime
   /// Centralized single-operation admission/settlement state.
-  operations : AgentOperations
+  operations : @operation_guard.OperationGuard
   /// Agent-owned wakeup ledger and pump.
   wakeup : AgentWakeupRuntime
   config : AgentConfig
@@ -275,35 +146,21 @@ priv struct AgentRuntime {
   /// reads this reference to route `StreamChunk` events to the active turn's
   /// buffered queue; `run_turn_via_puppet` creates and swaps the dispatcher
   /// for each turn.
-  chunk_dispatcher : Ref[ChunkDispatcher?]
+  chunk_dispatcher : Ref[@chunk_dispatch.ChunkDispatcher?]
   /// Persisted-prefix bookkeeping (cursor + rewrite-dirty) shared with the
   /// committed-event checkpoint subscriber; see `SessionProgress`.
   progress : SessionProgress
   /// Shadow core facts shared with the checkpoint subscriber. It never feeds
   /// the production load path; compact/fork/rewrite are not mirrored here.
-  core_shadow : CoreShadowRecording
+  core_facts : @core_facts.CoreFacts
   /// The committed-event projection subscriber. Retained so the turn-failure
   /// path can close still-pending tool calls with `ToolCallAbandoned`: the
   /// Puppet's host-level rejection path (`reject_run`) intentionally emits
   /// no terminal kernel event, so the Agent synthesizes the closure here.
-  event_subscriber : AgentEventSubscriber
-  body_recovery : Map[String, @types.Session]
+  event_subscriber : @event_projection.EventProjection
+  session_output : @session_output.SessionOutput
   /// Core-confirmed NewThread outputs awaiting a full write-all. Keyed by the
   /// child session id; in-process only.
-  pending_new_thread : Map[String, PendingNewThreadOutput]
-}
-
-///|
-/// A fully-formed NewThread sibling whose core child fact exists but whose
-/// production output has not yet been confirmed by every store. The snapshot
-/// is immutable: recovery retries the same child id and body, never the model.
-priv struct PendingNewThreadOutput {
-  scope : @types.EventScope
-  parent_session_id : String
-  child_session_id : String
-  messages : Array[@kernel.Message]
-  metadata : Map[String, Json]
-  save_label : String
 }
 
 ///|
@@ -497,7 +354,7 @@ fn AgentRuntime::compose(
     agg, host_override, tool_bindings,
   )
   let journal = @puppetry.InMemoryJournal()
-  let chunk_dispatcher_ref : Ref[ChunkDispatcher?] = Ref(None)
+  let chunk_dispatcher_ref : Ref[@chunk_dispatch.ChunkDispatcher?] = Ref(None)
   let context_state_of : Ref[((String) -> @types.ContextState?)?] = Ref(None)
   let task_runtime = AgentTaskRuntime::AgentTaskRuntime()
   // Core-owned ready projection after a background outcome is
@@ -523,18 +380,18 @@ fn AgentRuntime::compose(
   // run_scoped startup. No runtime backfill is needed — the ledger owns its
   // admission state, and execution goes through the completed Agent.
   let wakeup = AgentWakeupRuntime::AgentWakeupRuntime(observers=agg.observers)
-  let operations = AgentOperations::AgentOperations()
+  let operations = @operation_guard.OperationGuard::OperationGuard()
   let control = AgentControl(mailbox_ref)
   control.set_abort_hook(fn(run_id) {
     task_runtime.cancel_foreground_for_run(run_id)
   })
   let progress = SessionProgress::SessionProgress()
-  let core_shadow = CoreShadowRecording::CoreShadowRecording()
-  let checkpoint_subscriber = SessionCheckpointSubscriber(
+  let core_facts = @core_facts.CoreFacts::CoreFacts()
+  let checkpoint_subscriber = @session_checkpoint.SessionCheckpointSubscriber::SessionCheckpointSubscriber(
     agg.sessions,
     progress,
   )
-  let event_subscriber = AgentEventSubscriber(
+  let event_subscriber = @event_projection.EventProjection::EventProjection(
     agg.observers,
     chunk_dispatcher_ref,
     context_state_of~,
@@ -598,7 +455,7 @@ fn AgentRuntime::compose(
   puppet.install_tool_lifecycle(launch_gate, tool_revocations)
   puppet.set_source_observer(
     Some(fn(run_id, session_id, messages, prefix) {
-      core_shadow.capture_source(
+      core_facts.capture_source(
         run_id.to_string(),
         session_id,
         messages,
@@ -608,7 +465,7 @@ fn AgentRuntime::compose(
   )
   puppet.set_core_fact_observer(
     Some(fn(fact) {
-      core_shadow.record_boundary(
+      core_facts.record_boundary(
         fact.run_id.to_string(),
         fact.session_id,
         fact.committed_revision,
@@ -649,10 +506,9 @@ fn AgentRuntime::compose(
     turn_active: false,
     chunk_dispatcher: chunk_dispatcher_ref,
     progress,
-    core_shadow,
+    core_facts,
     event_subscriber,
-    body_recovery: Map::from_array([]),
-    pending_new_thread: Map::from_array([]),
+    session_output: @session_output.SessionOutput::SessionOutput(),
   }
   builtin_command_port.idle_compact.val = Some(async fn(
     session_id,
@@ -830,7 +686,7 @@ async fn AgentRuntime::shutdown(self : AgentRuntime) -> Unit {
     error =>
       raise @error.AgentError::Runtime(
         InvocationFailed(
-          "puppet shutdown: " + safe_error_label(error.to_string()),
+          "puppet shutdown: " + @diagnostic.safe_error_label(error.to_string()),
         ),
       )
   }
@@ -855,7 +711,7 @@ async fn AgentRuntime::shutdown(self : AgentRuntime) -> Unit {
     raise @error.AgentError::Runtime(
       @error.RuntimeError::InvocationFailed(
         "tool version cleanup pending: \{cleanup.length()} version(s): " +
-        safe_error_label(cleanup[0].detail),
+        @diagnostic.safe_error_label(cleanup[0].detail),
       ),
     )
   }
@@ -883,20 +739,20 @@ fn contextualize_session_error(
   session_id : String,
   operation : String,
 ) -> @error.AgentError {
-  let cause = safe_error_label(error.to_string())
+  let cause = @diagnostic.safe_error_label(error.to_string())
   Session(
     match error {
       Load(_) =>
         Load(
-          "session_id='\{safe_error_label(session_id)}', operation='\{operation}', category='SessionError::Load', cause='\{cause}'",
+          "session_id='\{@diagnostic.safe_error_label(session_id)}', operation='\{operation}', category='SessionError::Load', cause='\{cause}'",
         )
       Save(_) =>
         Save(
-          "session_id='\{safe_error_label(session_id)}', operation='\{operation}', category='SessionError::Save', cause='\{cause}'",
+          "session_id='\{@diagnostic.safe_error_label(session_id)}', operation='\{operation}', category='SessionError::Save', cause='\{cause}'",
         )
       Conflict(_) =>
         Conflict(
-          "session_id='\{safe_error_label(session_id)}', operation='\{operation}', category='SessionError::Conflict', cause='\{cause}'",
+          "session_id='\{@diagnostic.safe_error_label(session_id)}', operation='\{operation}', category='SessionError::Conflict', cause='\{cause}'",
         )
     },
   )
@@ -912,78 +768,8 @@ fn save_error_context(
   session_id : String,
   operation : String,
 ) -> @error.AgentError {
-  let context = "session_id='\{safe_error_label(session_id)}', operation='\{operation}', category='SessionError::Save', cause='\{safe_error_label(error.to_string())}'"
+  let context = "session_id='\{@diagnostic.safe_error_label(session_id)}', operation='\{operation}', category='SessionError::Save', cause='\{@diagnostic.safe_error_label(error.to_string())}'"
   Session(Save(context))
-}
-
-///|
-fn snapshot_opt_json(value : Json?) -> Json? {
-  match value {
-    Some(j) => Some(snapshot_json(j))
-    None => None
-  }
-}
-
-///|
-fn snapshot_tool_failure(failure : @kernel.ToolFailure) -> @kernel.ToolFailure {
-  match failure {
-    ReportedError(content~, structured~) =>
-      ReportedError(content~, structured=snapshot_opt_json(structured))
-    Runtime(category~, message~) => Runtime(category~, message~)
-  }
-}
-
-///|
-fn snapshot_turn_event(event : @types.TurnEvent) -> @types.TurnEvent {
-  match event {
-    TurnStarted => TurnStarted
-    ModelRequestStarted => ModelRequestStarted
-    ToolChildDeclared(..) => event
-    ToolCatalogChanged(..) => event
-    ToolCallPending(call) => ToolCallPending(snapshot_tool_call(call))
-    ToolCallApproved(call~, consent_scope~) =>
-      ToolCallApproved(call=snapshot_tool_call(call), consent_scope~)
-    ToolCallStarted(call~) => ToolCallStarted(call=snapshot_tool_call(call))
-    ToolCallSucceeded(call~, content~, structured~, attachments~) =>
-      ToolCallSucceeded(
-        call=snapshot_tool_call(call),
-        content~,
-        structured=snapshot_opt_json(structured),
-        attachments=attachments.copy(),
-      )
-    ToolCallFailed(call~, failure~) =>
-      ToolCallFailed(
-        call=snapshot_tool_call(call),
-        failure=snapshot_tool_failure(failure),
-      )
-    ToolCallRejected(call~, reason~) =>
-      ToolCallRejected(call=snapshot_tool_call(call), reason~)
-    ToolCallAbandoned(call~, reason~) =>
-      ToolCallAbandoned(call=snapshot_tool_call(call), reason~)
-    ModelResponseReceived(message~, usage~) =>
-      ModelResponseReceived(message=snapshot_message(message), usage~)
-    SessionRedirect(from~, to~, messages_before~, messages_after~) =>
-      SessionRedirect(from~, to~, messages_before~, messages_after~)
-    TurnCompleted => TurnCompleted
-    TurnFailed(reason) => TurnFailed(reason)
-    StreamChunkReceived(chunk~) => StreamChunkReceived(chunk~)
-    StreamChunksDropped(count~) => StreamChunksDropped(count~)
-    ConfigWarning(field~, value~, reason~) =>
-      ConfigWarning(field~, value~, reason~)
-    ConfigChanged(field~, old_value~, new_value~) =>
-      ConfigChanged(field~, old_value~, new_value~)
-    ContextStateUpdated(state~) => ContextStateUpdated(state~)
-    CompactStarted(trigger~) => CompactStarted(trigger~)
-    CompactFinished(trigger~, mode~, final_session_id~, messages_after~) =>
-      CompactFinished(trigger~, mode~, final_session_id~, messages_after~)
-    OperationFinalized(operation~, outcome~, detail~) =>
-      OperationFinalized(operation~, outcome~, detail~)
-    Custom(source~, label~, data~) =>
-      Custom(source~, label~, data=snapshot_json(data))
-    UserRequestStarted(kind~, prompt~) =>
-      UserRequestStarted(kind~, prompt=safe_error_label(prompt))
-    UserRequestFinished(kind~, outcome~) => UserRequestFinished(kind~, outcome~)
-  }
 }
 
 ///|
@@ -993,7 +779,7 @@ fn AgentRuntime::emit_turn_event(
   event : @types.TurnEvent,
 ) -> Unit {
   for observer in self.observers {
-    observer.on_event(scope, snapshot_turn_event(event))
+    observer.on_event(scope, @event_snapshot.snapshot_turn_event(event))
   }
 }
 
@@ -1049,8 +835,8 @@ async fn AgentRuntime::dispatch_on_turn_end(
 /// failing component's raw payload. (`Observer::on_event` is non-raising by
 /// contract; a violating observer aborts loudly, as error transparency
 /// requires.)
-fn AgentRuntime::drain_core_shadow_errors(self : AgentRuntime) -> Unit {
-  for detail in self.core_shadow.take_errors() {
+fn AgentRuntime::drain_core_facts_errors(self : AgentRuntime) -> Unit {
+  for detail in self.core_facts.take_errors() {
     emit_secondary_failure(self.observers, "core_shadow_boundary", detail)
   }
 }
@@ -1067,14 +853,14 @@ fn emit_secondary_failure(
     data=Json::object(
       Map::from_array([
         ("hook_point", Json::string(hook_point)),
-        ("error", Json::string(safe_error_label(detail))),
+        ("error", Json::string(@diagnostic.safe_error_label(detail))),
       ]),
     ),
   )
   for observer in observers {
     // Secondary failures are emitted from hook closures and refresh paths
     // that hold no run identity — scope is None by design.
-    observer.on_event(None, snapshot_turn_event(event))
+    observer.on_event(None, @event_snapshot.snapshot_turn_event(event))
   }
 }
 
@@ -1090,7 +876,7 @@ fn emit_managed_task_shutdown_failure(
     data=Json::object(
       Map::from_array([
         ("hook_point", Json::string("managed_task_shutdown")),
-        ("error", Json::string(safe_error_label(error))),
+        ("error", Json::string(@diagnostic.safe_error_label(error))),
         // This value is core-generated task identity/status metadata, not
         // arbitrary worker error text. Keep it intact so late fields such
         // as supervisor status are not lost to the short error-label cap.
@@ -1099,7 +885,7 @@ fn emit_managed_task_shutdown_failure(
     ),
   )
   for observer in observers {
-    observer.on_event(None, snapshot_turn_event(event))
+    observer.on_event(None, @event_snapshot.snapshot_turn_event(event))
   }
 }
 
@@ -1158,8 +944,7 @@ async fn AgentRuntime::run_turn_with_mode(
   // catch below (a re-raising with_task_group can surface it raw), so the
   // guard and the operation must also release on unwind or the Agent stays
   // wedged busy.
-  errdefer (if self.operations.current is Some(active) &&
-    active.operation_id == admission.operation_id {
+  errdefer (if self.operations.current_id() == Some(admission.operation_id) {
     self.retire_released_versions()
     self.release_operation(admission, Cancelled)
   })
@@ -1245,7 +1030,8 @@ async fn AgentRuntime::notify_start_if_first(
       error =>
         raise Runtime(
           InvocationFailed(
-            "lifecycle on_start: " + safe_error_label(error.to_string()),
+            "lifecycle on_start: " +
+            @diagnostic.safe_error_label(error.to_string()),
           ),
         )
     }
@@ -1268,12 +1054,12 @@ async fn AgentRuntime::run_single_turn(
   self.ensure_agent_running()
   self.notify_start_if_first()
   let identity = admission.identity
-  defer self.core_shadow.finish_run(
+  defer self.core_facts.finish_run(
     session_id,
     identity.run_id.to_string(),
     "turn_ended_without_terminal",
   )
-  defer self.drain_core_shadow_errors()
+  defer self.drain_core_facts_errors()
   self.task_runtime.begin_operation(
     session_id,
     identity.run_id,

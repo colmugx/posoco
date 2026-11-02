@@ -38,10 +38,14 @@ impl @port.ModelPort for CompactToolsModel with fn compact(
   self.seen_tools.push(tools.map(testkit_snapshot_tool_def))
   self.seen_triggers.push(trigger)
   self.committed_at_compact.push(
-    snapshot_messages(self.store.store[scope.session_id.to_string()].messages),
+    @message_snapshot.snapshot_messages(
+      self.store.store[scope.session_id.to_string()].messages,
+    ),
   )
   ignore(options)
-  self.seen_messages.push(snapshot_messages(messages.to_owned()))
+  self.seen_messages.push(
+    @message_snapshot.snapshot_messages(messages.to_owned()),
+  )
   if self.fail_compact {
     raise Transport("compact rejected")
   }
@@ -117,7 +121,7 @@ async fn compact_tools_idle(fail_compact : Bool, refresh : Bool) -> Unit {
     ignore(agent.run_turn(tk_user_msg("adopt refresh"), id))
     source.publish(RecordingToolProvider([pending], Map([])))
   }
-  let before = snapshot_messages(store.store[id].messages)
+  let before = @message_snapshot.snapshot_messages(store.store[id].messages)
   let result : Result[@types.CompactOutcome, @error.AgentError] = Ok(
     agent.compact_session(id),
   ) catch {

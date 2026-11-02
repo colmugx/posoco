@@ -1,0 +1,25 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "colmugx/posoco/internal/chunk_dispatch"
+
+import {
+  "colmugx/posoco/port",
+  "colmugx/posoco/types",
+}
+
+// Values
+
+// Errors
+
+// Types and methods
+pub struct ChunkDispatcher {
+  // private fields
+}
+pub fn ChunkDispatcher::ChunkDispatcher(Array[&@port.Observer]) -> Self
+pub fn ChunkDispatcher::close(Self) -> Unit
+pub async fn ChunkDispatcher::drain_loop(Self) -> Unit
+pub fn ChunkDispatcher::enqueue(Self, @types.StreamChunk) -> Unit
+pub fn ChunkDispatcher::flush(Self) -> Unit
+
+// Type aliases
+
+// Traits

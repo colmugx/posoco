@@ -1,0 +1,23 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "colmugx/posoco/internal/session_state"
+
+// Values
+
+// Errors
+
+// Types and methods
+pub struct SessionProgress {
+  cursors : Map[String, Int32]
+  dirty : Map[String, Bool]
+}
+pub fn SessionProgress::SessionProgress() -> Self
+pub fn SessionProgress::advance_one(Self, String) -> Unit
+pub fn SessionProgress::cursor_or_zero(Self, String) -> Int32
+pub fn SessionProgress::is_dirty(Self, String) -> Bool
+pub fn SessionProgress::mark_clean(Self, String) -> Unit
+pub fn SessionProgress::mark_dirty(Self, String) -> Unit
+pub fn SessionProgress::set_cursor(Self, String, Int32) -> Unit
+
+// Type aliases
+
+// Traits

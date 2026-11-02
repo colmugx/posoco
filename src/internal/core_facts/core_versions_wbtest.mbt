@@ -1,4 +1,9 @@
 ///|
+fn tk_user_msg(text : String) -> @kernel.Message {
+  @kernel.UserMessage(content=[@kernel.Text(text)])
+}
+
+///|
 /// Whitebox tests for the private immutable core-version slice
 /// (`src/agent_core_versions.mbt`). Covers full/append/rewrite/current,
 /// historical materialization, source references (including a prefix that

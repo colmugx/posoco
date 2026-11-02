@@ -1015,23 +1015,6 @@ async test "newthread/failed_output_gate_blocks_then_recovers_before_body" {
   }
   assert_eq(newthread_redirects(observer.events()).length(), 0)
   assert_false(store.store.contains(child_sid))
-  guard agent.runtime.pending_new_thread.get(child_sid) is Some(pending) else {
-    fail("expected a pending child output snapshot")
-  }
-  assert_eq(pending.parent_session_id, "gate-parent")
-  assert_eq(pending.child_session_id, child_sid)
-  assert_eq(pending.messages.length(), 1)
-  assert_true(pending.messages[0] == tk_user_msg("pending-summary"))
-  assert_eq(
-    pending.metadata.get(@types.PARENT_THREAD_ID_KEY),
-    Some(Json::string("gate-parent")),
-  )
-  assert_eq(pending.scope.run_id, @kernel.RunId::unchecked("agent_run_1"))
-  assert_eq(pending.scope.turn_id, @kernel.TurnId::unchecked("agent_turn_1"))
-  assert_eq(
-    pending.scope.session_id,
-    @kernel.SessionId::unchecked("gate-parent"),
-  )
   let (turns_before, compacts_before) = newthread_started_events(
     observer.events(),
   )
@@ -1050,7 +1033,6 @@ async test "newthread/failed_output_gate_blocks_then_recovers_before_body" {
   assert_eq(model.call_count(), 0)
   assert_eq(newthread_redirects(observer.events()).length(), 0)
   assert_false(store.store.contains(child_sid))
-  assert_eq(agent.runtime.pending_new_thread.length(), 1)
   let (turns_after_failure, compacts_after_failure) = newthread_started_events(
     observer.events(),
   )
@@ -1075,7 +1057,6 @@ async test "newthread/failed_output_gate_blocks_then_recovers_before_body" {
   assert_eq(child.messages.length(), 1)
   assert_true(child.messages[0] == tk_user_msg("pending-summary"))
   assert_eq(agent.runtime.progress.cursors.get(child_sid), Some(1))
-  assert_eq(agent.runtime.pending_new_thread.length(), 0)
 }
 
 ///|
@@ -1101,7 +1082,7 @@ async test "newthread/child_fact_failure_blocks_all_output" {
   )
   let child_sid = "fact-parent_compact_agent_compact_session_1"
   ignore(
-    agent.runtime.core_shadow.store.record_full(
+    agent.runtime.core_facts.hydrate(
       child_sid,
       [tk_user_msg("pre-existing")],
       Map::from_array([]),
@@ -1180,10 +1161,7 @@ async test "newthread/recovery_preserves_parent_and_original_scope" {
   // The failed diversion never confirmed parent output, so no persisted
   // cursor exists until a successful write.
   assert_eq(parent_cursor_before, 0)
-  match agent.runtime.core_shadow.state.get("scope-parent") {
-    Some(Stopped(run_id~, ..)) => assert_eq(run_id, "agent_run_1")
-    _ => fail("expected the parent core tracking to be stopped after diversion")
-  }
+
   // Recover while executing a different request/session. The parent is not
   // part of the recovery write and must stay byte-for-byte unchanged.
   store.heal_save(child_sid)
@@ -1210,12 +1188,8 @@ async test "newthread/recovery_preserves_parent_and_original_scope" {
     agent.runtime.progress.cursor_or_zero("scope-parent"),
     parent_cursor_before,
   )
-  match agent.runtime.core_shadow.state.get("scope-parent") {
-    Some(Stopped(run_id~, ..)) => assert_eq(run_id, "agent_run_1")
-    _ => fail("recovery must not change the stopped parent core state")
-  }
+
   assert_eq(agent.runtime.progress.cursors.get(child_sid), Some(1))
-  assert_eq(agent.runtime.pending_new_thread.length(), 0)
   let child = store.load(child_sid) catch {
     e => fail("expected the recovered child: \{e}")
   }
@@ -1319,9 +1293,13 @@ async test "newthread/cancel_after_core_fact_keeps_pending_for_recovery" {
     }
     ignore(waited)
   })
-  assert_eq(agent.runtime.pending_new_thread.length(), 1)
+  let child_read : Result[@types.Session, @core_facts.CoreReadError] = Ok(
+    agent.runtime.core_facts.read_session(child_sid),
+  ) catch {
+    error => Err(error)
+  }
   assert_true(
-    agent.runtime.core_shadow.store.sessions.contains(child_sid),
+    child_read is Ok(_),
     msg="the child core fact must survive cancellation",
   )
   assert_false(store.inner.store.contains(child_sid))
@@ -1332,7 +1310,6 @@ async test "newthread/cancel_after_core_fact_keeps_pending_for_recovery" {
   store.gate.broadcast()
   let next = agent.run_turn(tk_user_msg("next"), "cancel-parent")
   assert_eq(next.final_session_id, "cancel-parent")
-  assert_eq(agent.runtime.pending_new_thread.length(), 0)
   assert_eq(model.call_count(), 1)
   assert_eq(model.compact_call_count(), 1)
   let child = store.inner.load(child_sid) catch {

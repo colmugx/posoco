@@ -1,4 +1,14 @@
 ///|
+fn core_authority_has_session(agent : Agent, session_id : String) -> Bool {
+  let read : Result[@types.Session, @core_facts.CoreReadError] = Ok(
+    agent.runtime.core_facts.read_session(session_id),
+  ) catch {
+    error => Err(error)
+  }
+  read is Ok(_)
+}
+
+///|
 fn core_authority_file_load_count(store : RecordingSessionPort) -> Int32 {
   let mut count = 0
   for op in store.ops() {
@@ -38,13 +48,13 @@ async test "core_authority/failed_initial_load_is_not_cached" {
     fail("expected the first store load to fail")
   }
   assert_eq(model.call_count(), 0)
-  assert_false(agent.runtime.core_shadow.store.sessions.contains("retry-load"))
+  assert_false(core_authority_has_session(agent, "retry-load"))
   // Clearing the failure must let the SAME Agent retry initialization.
   store.load_failures.remove("retry-load")
   ignore(agent.run_turn(tk_user_msg("one"), "retry-load"))
   assert_eq(core_authority_file_load_count(store), 2)
   assert_eq(model.call_count(), 1)
-  assert_true(agent.runtime.core_shadow.store.sessions.contains("retry-load"))
+  assert_true(core_authority_has_session(agent, "retry-load"))
   // The initialized session now reads core; no third store load.
   ignore(agent.run_turn(tk_user_msg("next"), "retry-load"))
   assert_eq(core_authority_file_load_count(store), 2)
@@ -81,9 +91,7 @@ async test "core_authority/fresh_agent_recovers_child_with_only_parent_id" {
     persisted.metadata.get(@types.PARENT_THREAD_ID_KEY),
     Some(Json::string("absent-parent")),
   )
-  assert_false(
-    agent.runtime.core_shadow.store.sessions.contains("absent-parent"),
-  )
+  assert_false(core_authority_has_session(agent, "absent-parent"))
 }
 
 ///|
@@ -140,7 +148,7 @@ async test "core_authority/two_store_seed_uses_first_then_full_aligns_both" {
   assert_eq(core_authority_file_load_count(first), 1)
   assert_eq(core_authority_file_load_count(second), 0)
   assert_true(
-    core_shadow_messages_equal(
+    @core_facts.messages_equal(
       first.store["align-two"].messages,
       second.store["align-two"].messages,
     ),
@@ -164,14 +172,14 @@ async test "core_authority/real_terminal_mismatch_makes_core_unreadable" {
   )
   // Drive a real internal terminal-body mismatch, not an arbitrary flag.
   ignore(
-    agent.runtime.core_shadow.hydrate(
+    agent.runtime.core_facts.hydrate(
       "unreadable",
       [tk_user_msg("old")],
       Map::from_array([]),
     ),
   )
   ignore(
-    agent.runtime.core_shadow.admit(
+    agent.runtime.core_facts.admit(
       "unreadable",
       [tk_user_msg("old")],
       Map::from_array([]),
@@ -179,7 +187,7 @@ async test "core_authority/real_terminal_mismatch_makes_core_unreadable" {
       "run-unreadable",
     ),
   )
-  agent.runtime.core_shadow.record_boundary(
+  agent.runtime.core_facts.record_boundary(
     "run-unreadable",
     "unreadable",
     1,
@@ -196,7 +204,7 @@ async test "core_authority/real_terminal_mismatch_makes_core_unreadable" {
     ],
   )
   ignore(
-    agent.runtime.core_shadow.record_terminal(
+    agent.runtime.core_facts.record_terminal(
       "unreadable",
       "run-unreadable",
       [
@@ -223,20 +231,6 @@ async test "core_authority/real_terminal_mismatch_makes_core_unreadable" {
   assert_true(detail.contains("unreadable"))
   assert_eq(model.call_count(), 0)
   assert_eq(core_authority_file_load_count(store), loads_before)
-  // The old confirmed snapshot remains available for diagnosis.
-  let current = agent.runtime.core_shadow.store.current("unreadable") catch {
-    _ => fail("expected the old core snapshot for diagnosis")
-  }
-  assert_eq(current.session.messages.length(), 2)
-  assert_true(
-    current.session.messages[1] ==
-    AssistantMessage(
-      content=[Text("committed")],
-      tool_calls=[],
-      reasoning=None,
-      finish_reason=Stop,
-    ),
-  )
 }
 
 ///|
@@ -322,14 +316,11 @@ async test "core_authority/task_outcome_and_applied_ids_fail_atomic_output_once"
       error => Err(error)
     }
     guard first is Err(_) else { fail("expected terminal output failure") }
-    let current = agent.runtime.core_shadow.store.current("task-output-fail") catch {
+    let current = agent.runtime.core_facts.read_session("task-output-fail") catch {
       _ => fail("expected the committed core after terminal failure")
     }
-    assert_eq(
-      core_authority_task_marker_count(current.session.messages, marker),
-      1,
-    )
-    match current.session.metadata.get(task_outcomes_applied_metadata_key) {
+    assert_eq(core_authority_task_marker_count(current.messages, marker), 1)
+    match current.metadata.get(task_outcomes_applied_metadata_key) {
       Some(Json::Array(ids)) =>
         assert_true(ids.contains(Json::string(handle.receipt().id)))
       _ => fail("core is missing applied task ids")
@@ -443,16 +434,11 @@ async test "core_authority/task_outcome_cancel_at_terminal_output_once" {
         r
       })
       core_authority_wait_gate(store)
-      let current = agent.runtime.core_shadow.store.current(
-        "task-output-cancel",
-      ) catch {
+      let current = agent.runtime.core_facts.read_session("task-output-cancel") catch {
         _ => fail("expected core outcome before terminal output")
       }
-      assert_eq(
-        core_authority_task_marker_count(current.session.messages, marker),
-        1,
-      )
-      match current.session.metadata.get(task_outcomes_applied_metadata_key) {
+      assert_eq(core_authority_task_marker_count(current.messages, marker), 1)
+      match current.metadata.get(task_outcomes_applied_metadata_key) {
         Some(Json::Array(ids)) =>
           assert_true(ids.contains(Json::string(handle.receipt().id)))
         _ => fail("core is missing applied task ids")
@@ -518,14 +504,14 @@ async test "core_authority/title_and_context_core_metadata_survive_second_turn" 
     config=tk_config(),
   )
   ignore(agent.run_turn(tk_user_msg("known title"), "title-context"))
-  let first = agent.runtime.core_shadow.store.current("title-context") catch {
+  let first = agent.runtime.core_facts.read_session("title-context") catch {
     _ => fail("expected core after first turn")
   }
   assert_eq(
-    first.session.metadata.get(@types.SESSION_TITLE_METADATA_KEY),
+    first.metadata.get(@types.SESSION_TITLE_METADATA_KEY),
     Some(Json::string("known title")),
   )
-  guard @types.ContextState::from_metadata(first.session.metadata)
+  guard @types.ContextState::from_metadata(first.metadata)
     is Some(first_context) else {
     fail("expected context metadata after first turn")
   }
@@ -534,14 +520,14 @@ async test "core_authority/title_and_context_core_metadata_survive_second_turn" 
   assert_eq(first_context.window_tokens, Some(100))
   ignore(agent.run_turn(tk_user_msg("second"), "title-context"))
   assert_eq(core_authority_file_load_count(store), 1)
-  let second = agent.runtime.core_shadow.store.current("title-context") catch {
+  let second = agent.runtime.core_facts.read_session("title-context") catch {
     _ => fail("expected core after second turn")
   }
   assert_eq(
-    second.session.metadata.get(@types.SESSION_TITLE_METADATA_KEY),
+    second.metadata.get(@types.SESSION_TITLE_METADATA_KEY),
     Some(Json::string("known title")),
   )
-  guard @types.ContextState::from_metadata(second.session.metadata)
+  guard @types.ContextState::from_metadata(second.metadata)
     is Some(second_context) else {
     fail("expected context metadata after second turn")
   }

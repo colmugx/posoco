@@ -1,0 +1,10 @@
+import {
+  "colmugx/posoco/kernel",
+  "colmugx/posoco/types",
+  "colmugx/posoco/error",
+  "colmugx/posoco/internal/message_snapshot",
+}
+
+import {
+  "moonbitlang/async",
+} for "wbtest"

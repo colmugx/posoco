@@ -1,0 +1,38 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "colmugx/posoco/internal/core_facts"
+
+import {
+  "colmugx/posoco/kernel",
+  "colmugx/posoco/types",
+}
+
+// Values
+pub fn messages_equal(Array[@kernel.Message], Array[@kernel.Message]) -> Bool
+
+// Errors
+pub suberror CoreReadError {
+  UnknownSession(sid~ : String)
+  Unreadable(sid~ : String, reason~ : String)
+}
+
+// Types and methods
+pub struct CoreFacts {
+  // private fields
+}
+pub fn CoreFacts::CoreFacts() -> Self
+pub fn CoreFacts::admit(Self, String, Array[@kernel.Message], Map[String, Json], Array[@kernel.Message], String) -> Result[Unit, String]
+pub fn CoreFacts::capture_source(Self, String, String, Array[@kernel.Message], Int32) -> Unit
+pub fn CoreFacts::finish_run(Self, String, String, String) -> Unit
+pub fn CoreFacts::hydrate(Self, String, Array[@kernel.Message], Map[String, Json]) -> Result[Unit, String]
+pub fn CoreFacts::mark_missing_provenance(Self, String) -> Unit
+pub fn CoreFacts::read_session(Self, String) -> @types.Session raise CoreReadError
+pub fn CoreFacts::read_source(Self, String) -> @types.Session?
+pub fn CoreFacts::record_boundary(Self, String, String, Int32, String, Bool, Array[@kernel.Message]) -> Unit
+pub fn CoreFacts::record_new_thread(Self, String, String, String, Array[@kernel.Message], Map[String, Json]) -> Result[Unit, String]
+pub fn CoreFacts::record_terminal(Self, String, String, Array[@kernel.Message], Map[String, Json]) -> Result[Unit, String]
+pub fn CoreFacts::stop(Self, String, String, String) -> Unit
+pub fn CoreFacts::take_errors(Self) -> Array[String]
+
+// Type aliases
+
+// Traits

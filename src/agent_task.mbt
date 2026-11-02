@@ -357,7 +357,9 @@ async fn AgentTaskRuntime::execute(
       }
       match result {
         Ok(Some(message)) =>
-          @port.TaskStatus::Completed(message=snapshot_message(message))
+          @port.TaskStatus::Completed(
+            message=@message_snapshot.snapshot_message(message),
+          )
         Ok(None) => @port.TaskStatus::Cancelled(reason="task cancelled")
         Err(error) if error is @async.TimeoutError => @port.TaskStatus::TimedOut
         Err(error) => @port.TaskStatus::Failed(reason=error.to_string())
@@ -371,7 +373,9 @@ async fn AgentTaskRuntime::execute(
       }
       match result {
         Ok(Some(message)) =>
-          @port.TaskStatus::Completed(message=snapshot_message(message))
+          @port.TaskStatus::Completed(
+            message=@message_snapshot.snapshot_message(message),
+          )
         Ok(None) => @port.TaskStatus::Cancelled(reason="task cancelled")
         Err(error) => @port.TaskStatus::Failed(reason=error.to_string())
       }
@@ -603,7 +607,9 @@ fn AgentTaskRuntime::peek_outcomes(
 fn snapshot_task_outcome(outcome : @port.TaskOutcome) -> @port.TaskOutcome {
   let status = match outcome.status {
     @port.TaskStatus::Completed(message~) =>
-      @port.TaskStatus::Completed(message=snapshot_message(message))
+      @port.TaskStatus::Completed(
+        message=@message_snapshot.snapshot_message(message),
+      )
     @port.TaskStatus::Failed(reason~) => @port.TaskStatus::Failed(reason~)
     @port.TaskStatus::TimedOut => @port.TaskStatus::TimedOut
     @port.TaskStatus::Cancelled(reason~) => @port.TaskStatus::Cancelled(reason~)

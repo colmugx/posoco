@@ -1,0 +1,36 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "colmugx/posoco/internal/session_output"
+
+import {
+  "colmugx/posoco/error",
+  "colmugx/posoco/kernel",
+  "colmugx/posoco/types",
+}
+
+// Values
+
+// Errors
+
+// Types and methods
+pub struct NewThreadOutput {
+  scope : @types.EventScope
+  parent_session_id : String
+  child_session_id : String
+  messages : Array[@kernel.Message]
+  metadata : Map[String, Json]
+  save_label : String
+}
+
+pub struct SessionOutput {
+  // private fields
+}
+pub fn SessionOutput::SessionOutput() -> Self
+pub async fn SessionOutput::execute_new_thread(Self, String, async (NewThreadOutput) -> Unit raise @error.AgentError) -> Unit raise @error.AgentError
+pub async fn SessionOutput::recover_body(Self, String, async (@types.Session) -> Unit raise @error.AgentError) -> Unit raise @error.AgentError
+pub async fn SessionOutput::recover_new_threads(Self, async (NewThreadOutput) -> Unit raise @error.AgentError) -> Unit raise @error.AgentError
+pub fn SessionOutput::stage_body(Self, String, @types.Session) -> Unit
+pub fn SessionOutput::stage_new_thread(Self, @types.EventScope, String, String, Array[@kernel.Message], Map[String, Json], String) -> Unit
+
+// Type aliases
+
+// Traits

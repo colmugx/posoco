@@ -1,0 +1,9 @@
+import {
+  "colmugx/posoco/types",
+  "colmugx/posoco/port",
+  "moonbitlang/async/aqueue",
+}
+
+import {
+  "moonbitlang/async",
+} for "wbtest"

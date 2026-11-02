@@ -316,16 +316,6 @@ async test "chunk dispatch: streaming turn delivers chunks in order before TurnC
 }
 
 ///|
-/// The dispatcher's `enqueue` is synchronous and returns immediately: it does
-/// not wait for observers. This white-box test exercises the queue directly.
-test "chunk dispatch: enqueue does not call observer synchronously" {
-  let observer = RecordingObserver()
-  let dispatcher = ChunkDispatcher([observer])
-  dispatcher.enqueue(TextDelta(token="x"))
-  assert_eq(observer.events().length(), 0)
-}
-
-///|
 /// When the buffer overflows, the oldest chunks are dropped and a single
 /// `StreamChunksDropped` event is emitted before the terminal event.
 async test "chunk dispatch: overflow drops oldest and emits StreamChunksDropped" {
@@ -510,35 +500,6 @@ async test "chunk dispatch: adjacent identical tokens pass through 1:1 without d
       StreamChunkReceived(chunk~) =>
         match chunk {
           TextDelta(token~) => assert_eq(token, sent[i])
-          _ => fail("expected TextDelta")
-        }
-      _ => fail("expected StreamChunkReceived at index \{i}")
-    }
-  }
-}
-
-///|
-/// Direct white-box drain test: a small dispatcher delivers queued events in
-/// FIFO order and terminates when the queue is closed.
-async test "chunk dispatch: drain_loop delivers queued events in order" {
-  let observer = RecordingObserver()
-  let dispatcher = ChunkDispatcher([observer])
-  for i in 0..<5 {
-    dispatcher.enqueue(TextDelta(token="d\{i}"))
-  }
-  @async.with_task_group(async fn(group) {
-    group.spawn_bg(async fn() { dispatcher.drain_loop() })
-    // Yield so the drain task processes the queue, then close it.
-    @async.pause()
-    dispatcher.close()
-  })
-  let events = observer.events()
-  assert_eq(events.length(), 5)
-  for i = 0; i < 5; i = i + 1 {
-    match events[i] {
-      StreamChunkReceived(chunk~) =>
-        match chunk {
-          TextDelta(token~) => assert_eq(token, "d\{i}")
           _ => fail("expected TextDelta")
         }
       _ => fail("expected StreamChunkReceived at index \{i}")

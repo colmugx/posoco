@@ -1,0 +1,33 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "colmugx/posoco/internal/operation_guard"
+
+// Values
+
+// Errors
+pub suberror OperationBusy {
+  Busy(operation_id~ : String, session~ : String)
+}
+
+// Types and methods
+pub struct OperationGuard {
+  // private fields
+}
+pub fn OperationGuard::OperationGuard() -> Self
+pub fn OperationGuard::abort_admit(Self, String) -> Unit
+pub fn OperationGuard::begin_execution(Self, String) -> Unit
+pub fn OperationGuard::busy(Self) -> OperationBusy?
+pub fn OperationGuard::clear_current(Self, String) -> Bool
+pub fn OperationGuard::current_id(Self) -> String?
+pub fn OperationGuard::current_session(Self) -> String?
+pub fn OperationGuard::has_current(Self) -> Bool
+pub fn OperationGuard::has_execution(Self) -> Bool
+pub fn OperationGuard::register_cancel(Self, String, () -> Unit) -> Unit
+pub fn OperationGuard::request_cancel(Self) -> Unit
+pub fn OperationGuard::settle_execution(Self, String) -> Unit
+pub fn OperationGuard::straggler_detail(Self) -> String
+pub fn OperationGuard::try_admit(Self, String, String, String) -> Unit raise OperationBusy
+pub async fn OperationGuard::wait_settled(Self, Int32) -> Bool
+
+// Type aliases
+
+// Traits

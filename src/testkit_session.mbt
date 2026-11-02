@@ -117,12 +117,16 @@ pub fn RecordingSessionPort::ops(
           },
         )
       OpSave(id~, metadata~, result~) =>
-        OpSave(id~, metadata=snapshot_metadata(metadata), result~)
+        OpSave(
+          id~,
+          metadata=@message_snapshot.snapshot_metadata(metadata),
+          result~,
+        )
       OpAppend(id~, from_index~, messages~, result~) =>
         OpAppend(
           id~,
           from_index~,
-          messages=snapshot_messages(messages),
+          messages=@message_snapshot.snapshot_messages(messages),
           result~,
         )
       OpCheckpoint(id~, checkpoint~, result~) =>
@@ -130,9 +134,9 @@ pub fn RecordingSessionPort::ops(
           id~,
           checkpoint={
             from_index: checkpoint.from_index,
-            messages: snapshot_messages(checkpoint.messages),
+            messages: @message_snapshot.snapshot_messages(checkpoint.messages),
             metadata: match checkpoint.metadata {
-              Some(value) => Some(snapshot_metadata(value))
+              Some(value) => Some(@message_snapshot.snapshot_metadata(value))
               None => None
             },
           },
@@ -152,7 +156,8 @@ pub fn RecordingSessionPort::save_snapshots(
   let out : Array[(String, Map[String, Json])] = []
   for op in self.ops {
     match op {
-      OpSave(id~, metadata~, ..) => out.push((id, snapshot_metadata(metadata)))
+      OpSave(id~, metadata~, ..) =>
+        out.push((id, @message_snapshot.snapshot_metadata(metadata)))
       _ => ()
     }
   }
@@ -223,7 +228,7 @@ pub impl @port.SessionPort for RecordingSessionPort with fn save(
   id : String,
   session : @types.Session,
 ) -> Unit raise @error.SessionError {
-  let meta_copy = snapshot_metadata(session.metadata)
+  let meta_copy = @message_snapshot.snapshot_metadata(session.metadata)
   let result : Result[Unit, @error.SessionError] = match self.guard_save(id) {
     Some(e) => Err(e)
     None => {
@@ -241,7 +246,7 @@ pub impl @port.SessionPort for RecordingSessionPort with fn append_messages(
   from_index : Int32,
   messages : ArrayView[@kernel.Message],
 ) -> Unit raise @error.SessionError {
-  let msg_copy = snapshot_messages(messages.to_owned())
+  let msg_copy = @message_snapshot.snapshot_messages(messages.to_owned())
   let result : Result[Unit, @error.SessionError] = match self.guard_save(id) {
     Some(e) => Err(e)
     None => {
@@ -297,9 +302,9 @@ pub impl @port.SessionPort for RecordingSessionPort with fn checkpoint(
 ) -> Unit raise @error.SessionError {
   let checkpoint_copy : @port.SessionCheckpoint = {
     from_index: checkpoint.from_index,
-    messages: snapshot_messages(checkpoint.messages),
+    messages: @message_snapshot.snapshot_messages(checkpoint.messages),
     metadata: match checkpoint.metadata {
-      Some(value) => Some(snapshot_metadata(value))
+      Some(value) => Some(@message_snapshot.snapshot_metadata(value))
       None => None
     },
   }
@@ -312,10 +317,10 @@ pub impl @port.SessionPort for RecordingSessionPort with fn checkpoint(
       }
       let merged = session.messages.copy()
       for message in checkpoint.messages {
-        merged.push(snapshot_message(message))
+        merged.push(@message_snapshot.snapshot_message(message))
       }
       let metadata = match checkpoint.metadata {
-        Some(value) => snapshot_metadata(value)
+        Some(value) => @message_snapshot.snapshot_metadata(value)
         None => session.metadata
       }
       self.store[id] = { messages: merged, metadata, }

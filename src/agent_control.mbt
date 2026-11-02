@@ -85,7 +85,7 @@ pub fn AgentControl::enqueue_follow_up(
         Err(error) =>
           return @runtime.RejectedQueueFailure(
             reason="follow_up queue write failed: " +
-              safe_error_label(error.to_string()),
+              @diagnostic.safe_error_label(error.to_string()),
           )
         Ok(false) =>
           return @runtime.RejectedQueueFull(depth=self.follow_up_depth)
@@ -107,7 +107,8 @@ fn AgentControl::take_follow_up(
     error =>
       raise @error.AgentError::Runtime(
         @error.RuntimeError::InvocationFailed(
-          "follow_up queue read failed: " + safe_error_label(error.to_string()),
+          "follow_up queue read failed: " +
+          @diagnostic.safe_error_label(error.to_string()),
         ),
       )
   }

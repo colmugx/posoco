@@ -434,7 +434,7 @@ async fn AgentWakeupRuntime::pump_loop(
 /// `]` delimiters can no longer appear unescaped inside the value, so the
 /// header closes exactly once no matter what the tag contains.
 fn wakeup_envelope_field(value : String, cap : Int32) -> String {
-  Json::string(bounded_error_label(value, cap))
+  Json::string(@diagnostic.bounded_error_label(value, cap))
   .stringify()
   .replace(old="[", new="\\u005b")
   .replace(old="]", new="\\u005d")

@@ -70,38 +70,6 @@ priv struct OperationAdmission {
 }
 
 ///|
-priv struct AgentOperations {
-  mut current : OperationAdmission?
-  /// Agent-owned execution record of the admitted operation. Carries the
-  /// cancellation request flag plus the worker's cancellation closure, so a
-  /// shutdown-side request landing between admission and the eager spawn is
-  /// still delivered: the registration recheck replays the flag to the
-  /// freshly spawned worker. Cleared only in `release_operation`, and only
-  /// for the matching admission.
-  mut execution : OperationExecution?
-}
-
-///|
-fn AgentOperations::AgentOperations() -> AgentOperations {
-  { current: None, execution: None, }
-}
-
-///|
-/// Type-erased handle to the admitted operation's worker task. Cancellation
-/// is cooperative: it unwinds the worker through its ordinary lifecycle so
-/// the guard, follow-up drain and foreground task cleanup all settle for
-/// real — the guard is never cleared while the worker is alive.
-priv struct OperationExecution {
-  operation_id : String
-  mut cancel_requested : Bool
-  /// Cancellation closure of the spawned worker; None until registration.
-  mut cancel_worker : (() -> Unit)?
-  /// Wakes bounded shutdown waits when the operation truly settles.
-  settle : @async.CondVar
-  mut settled : Bool
-}
-
-///|
 /// Register the spawned worker under the admitted operation's execution record
 /// and replay an already-requested cancellation to it, covering the eager-spawn
 /// race where shutdown asks for cancellation between admission and this
@@ -111,15 +79,9 @@ fn[X] AgentRuntime::register_operation_execution(
   admission : OperationAdmission,
   worker : @async.Task[X],
 ) -> Unit {
-  match self.operations.execution {
-    Some(execution) if execution.operation_id == admission.operation_id => {
-      execution.cancel_worker = Some(fn() { worker.cancel() })
-      if execution.cancel_requested {
-        worker.cancel()
-      }
-    }
-    _ => ()
-  }
+  self.operations.register_cancel(admission.operation_id, fn() {
+    worker.cancel()
+  })
 }
 
 ///|
@@ -231,7 +193,8 @@ async fn[X] AgentRuntime::execute_operation(
             Err(
               @error.AgentError::Runtime(
                 @error.RuntimeError::InvocationFailed(
-                  "operation worker: " + safe_error_label(error.to_string()),
+                  "operation worker: " +
+                  @diagnostic.safe_error_label(error.to_string()),
                 ),
               ),
             )
@@ -246,7 +209,8 @@ async fn[X] AgentRuntime::execute_operation(
         Err(
           @error.AgentError::Runtime(
             @error.RuntimeError::InvocationFailed(
-              "operation group: " + safe_error_label(error.to_string()),
+              "operation group: " +
+              @diagnostic.safe_error_label(error.to_string()),
             ),
           ),
         )
@@ -261,7 +225,8 @@ async fn[X] AgentRuntime::execute_operation(
         Err(
           @error.AgentError::Runtime(
             @error.RuntimeError::InvocationFailed(
-              "operation boundary: " + safe_error_label(error.to_string()),
+              "operation boundary: " +
+              @diagnostic.safe_error_label(error.to_string()),
             ),
           ),
         ),
@@ -294,16 +259,7 @@ async fn[X] AgentRuntime::execute_operation(
 /// reaches an already-registered one. This never clears `current` and never
 /// fakes a settled outcome — the worker's own unwind performs the release.
 fn AgentRuntime::cancel_operation_execution(self : AgentRuntime) -> Unit {
-  match self.operations.execution {
-    Some(execution) => {
-      execution.cancel_requested = true
-      match execution.cancel_worker {
-        Some(cancel_worker) => cancel_worker()
-        None => ()
-      }
-    }
-    None => ()
-  }
+  self.operations.request_cancel()
 }
 
 ///|
@@ -318,39 +274,10 @@ let operation_shutdown_grace_ms : Int32 = 5_000
 let operation_cancel_settle_ms : Int32 = 5_000
 
 ///|
-/// Wait bounded for the operation to settle; False when the deadline
-/// expires first. The `release_operation` broadcast ends the wait early on
-/// real settlement.
-async fn OperationExecution::wait_settled(
-  self : OperationExecution,
-  timeout_ms : Int32,
-) -> Bool raise @error.AgentError {
-  let waited = @async.with_timeout_opt(timeout_ms, async fn() {
-    while !self.settled {
-      self.settle.wait()
-    }
-  }) catch {
-    // Ordinary observation errors become the contextual runtime error; a
-    // raw cancellation of the waiter bypasses this catch and stays raw.
-    error =>
-      raise @error.AgentError::Runtime(
-        @error.RuntimeError::InvocationFailed(
-          "operation settle observation: " + safe_error_label(error.to_string()),
-        ),
-      )
-  }
-  waited is Some(_)
-}
-
-///|
 /// Straggler detail for the bounded-shutdown diagnostic: names the
 /// operation that outlived its cancellation budget.
 fn AgentRuntime::operation_straggler_detail(self : AgentRuntime) -> String {
-  match self.operations.current {
-    Some(active) =>
-      "operation_id=\{active.operation_id} session=\{active.session_id} origin=\{active.origin.label()}"
-    None => "no active operation"
-  }
+  self.operations.straggler_detail()
 }
 
 ///|
@@ -364,27 +291,39 @@ fn AgentRuntime::operation_straggler_detail(self : AgentRuntime) -> String {
 async fn AgentRuntime::settle_operation_for_shutdown(
   self : AgentRuntime,
 ) -> Unit raise @error.AgentError {
-  match self.operations.execution {
-    None => ()
-    Some(execution) => {
-      let graceful = execution.wait_settled(operation_shutdown_grace_ms)
-      if !graceful {
-        self.cancel_operation_execution()
-        let settled = execution.wait_settled(operation_cancel_settle_ms)
-        if !settled {
-          raise @error.AgentError::Runtime(
-            @error.RuntimeError::InvocationFailed(
-              "operation shutdown deadline exceeded: " +
-              self.operation_straggler_detail(),
-            ),
-          )
-        }
-      }
+  if !self.operations.has_execution() {
+    return
+  }
+  let graceful = self.operations.wait_settled(operation_shutdown_grace_ms) catch {
+    error =>
+      raise @error.AgentError::Runtime(
+        @error.RuntimeError::InvocationFailed(
+          "operation settle observation: " +
+          @diagnostic.safe_error_label(error.to_string()),
+        ),
+      )
+  }
+  if !graceful {
+    self.cancel_operation_execution()
+    let settled = self.operations.wait_settled(operation_cancel_settle_ms) catch {
+      error =>
+        raise @error.AgentError::Runtime(
+          @error.RuntimeError::InvocationFailed(
+            "operation settle observation: " +
+            @diagnostic.safe_error_label(error.to_string()),
+          ),
+        )
+    }
+    if !settled {
+      raise @error.AgentError::Runtime(
+        @error.RuntimeError::InvocationFailed(
+          "operation shutdown deadline exceeded: " +
+          self.operation_straggler_detail(),
+        ),
+      )
     }
   }
 }
-
-///|
 
 ///|
 /// Emit a core-owned `Custom` projection to every observer. Operation-level
@@ -403,7 +342,7 @@ fn emit_custom_event(
     data=Json::object(Map::from_array(fields)),
   )
   for observer in observers {
-    observer.on_event(scope, snapshot_turn_event(event))
+    observer.on_event(scope, @event_snapshot.snapshot_turn_event(event))
   }
 }
 
@@ -419,11 +358,15 @@ fn AgentRuntime::admit_operation(
   origin : OperationOrigin,
   operation_label~ : String? = None,
 ) -> OperationAdmission raise @error.AgentError {
-  match self.operations.current {
-    Some(active) =>
+  match self.operations.busy() {
+    Some(busy) =>
       raise @error.AgentError::Busy(
-        operation_id=active.operation_id,
-        session=active.session_id,
+        operation_id=match busy {
+          Busy(operation_id~, ..) => operation_id
+        },
+        session=match busy {
+          Busy(session~, ..) => session
+        },
       )
     None => ()
   }
@@ -444,10 +387,18 @@ fn AgentRuntime::admit_operation(
     identity,
     session_id,
   }
-  self.operations.current = Some(admission)
-  errdefer {
-    self.operations.current = None
+  self.operations.try_admit(operation_id, session_id, origin.label()) catch {
+    error =>
+      raise @error.AgentError::Busy(
+        operation_id=match error {
+          Busy(operation_id~, ..) => operation_id
+        },
+        session=match error {
+          Busy(session~, ..) => session
+        },
+      )
   }
+  errdefer self.operations.abort_admit(operation_id)
   // Startup may publish dynamic tools asynchronously. Its first operation
   // holds this guard, then captures once after startup; later admissions
   // keep their synchronous pre-await capture.
@@ -459,13 +410,7 @@ fn AgentRuntime::admit_operation(
   }
   self.acquire_operation_versions()
   self.turn_active = true
-  self.operations.execution = Some({
-    operation_id: admission.operation_id,
-    settle: @async.CondVar::Cond(),
-    settled: false,
-    cancel_requested: false,
-    cancel_worker: None,
-  })
+  self.operations.begin_execution(admission.operation_id)
   emit_custom_event(
     self.observers,
     None,
@@ -491,39 +436,29 @@ fn AgentRuntime::release_operation(
   admission : OperationAdmission,
   outcome : OperationOutcome,
 ) -> Unit {
-  match self.operations.current {
-    Some(active) if active.operation_id == admission.operation_id => {
-      self.turn_active = false
-      self.operations.current = None
-      // Fallback for unwind paths that never reached the managed settle step:
-      // the lease is always given back (or retained for unknown executions).
-      self.release_operation_versions()
-      match self.operations.execution {
-        Some(execution) if execution.operation_id == admission.operation_id => {
-          // The worker fully unwound before this release ran; mark settled
-          // and wake any bounded shutdown wait before dropping the record.
-          execution.settled = true
-          execution.settle.broadcast()
-          self.operations.execution = None
-        }
-        _ => ()
-      }
-      emit_custom_event(
-        self.observers,
-        None,
-        "posoco.operation",
-        "operation_settled",
-        [
-          ("operation_id", Json::string(admission.operation_id)),
-          ("session", Json::string(admission.session_id)),
-          ("origin", Json::string(admission.origin.label())),
-          ("outcome", Json::string(outcome.label())),
-        ],
-      )
-      // The wakeup pump waits for this notification when a host operation
-      // holds the guard; wake it so a deferred wakeup ticket re-arms.
-      self.wakeup.notify_operation_settled()
+  if self.operations.current_id() == Some(admission.operation_id) {
+    self.turn_active = false
+    if !self.operations.clear_current(admission.operation_id) {
+      return
     }
-    _ => ()
+    // Fallback for unwind paths that never reached the managed settle step:
+    // the lease is always given back (or retained for unknown executions).
+    self.release_operation_versions()
+    self.operations.settle_execution(admission.operation_id)
+    emit_custom_event(
+      self.observers,
+      None,
+      "posoco.operation",
+      "operation_settled",
+      [
+        ("operation_id", Json::string(admission.operation_id)),
+        ("session", Json::string(admission.session_id)),
+        ("origin", Json::string(admission.origin.label())),
+        ("outcome", Json::string(outcome.label())),
+      ],
+    )
+    // The wakeup pump waits for this notification when a host operation
+    // holds the guard; wake it so a deferred wakeup ticket re-arms.
+    self.wakeup.notify_operation_settled()
   }
 }

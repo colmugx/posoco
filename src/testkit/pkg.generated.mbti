@@ -1,0 +1,40 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "colmugx/posoco/testkit"
+
+import {
+  "colmugx/posoco/error",
+  "colmugx/posoco/port",
+  "colmugx/posoco/types",
+}
+
+// Values
+pub fn assert_events_contain(Array[@types.TurnEvent], Array[@types.TurnEvent]) -> Unit
+
+pub fn assert_events_eq(Array[@types.TurnEvent], Array[@types.TurnEvent]) -> Unit
+
+pub fn event_trace_mismatch(Array[@types.TurnEvent], Array[@types.TurnEvent]) -> String?
+
+// Errors
+
+// Types and methods
+pub(all) struct RecordingUiPort {
+  mut rendered : Array[@port.UiRender]
+  mut scripted_responses : Array[@port.UiResponse]
+  mut unsupported_mode : Bool
+  mut descriptor : @port.UiDescriptor
+}
+pub fn RecordingUiPort::RecordingUiPort(responses? : Array[@port.UiResponse]) -> Self
+pub fn RecordingUiPort::new_unsupported() -> Self
+pub fn RecordingUiPort::render(Self, @port.UiRender) -> Unit
+pub fn RecordingUiPort::render_count(Self) -> Int32
+pub fn RecordingUiPort::rendered_in_slot(Self, @port.UiSlot) -> Array[@port.UiRender]
+pub fn RecordingUiPort::rendered_intents(Self) -> Array[@port.UiRender]
+pub async fn RecordingUiPort::request(Self, @port.UiRequest) -> @port.UiResponse raise @error.UiError
+pub fn RecordingUiPort::set_descriptor(Self, @port.UiDescriptor) -> Unit
+pub fn RecordingUiPort::ui_descriptor(Self) -> @port.UiDescriptor
+pub fn RecordingUiPort::unconsumed_response_count(Self) -> Int32
+pub impl @port.UiPort for RecordingUiPort
+
+// Type aliases
+
+// Traits

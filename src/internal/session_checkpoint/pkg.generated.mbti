@@ -1,0 +1,26 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "colmugx/posoco/internal/session_checkpoint"
+
+import {
+  "colmugx/posoco/internal/puppetry",
+  "colmugx/posoco/internal/session_state",
+  "colmugx/posoco/port",
+}
+
+// Values
+
+// Errors
+
+// Types and methods
+pub struct SessionCheckpointSubscriber {
+  // private fields
+}
+pub fn SessionCheckpointSubscriber::SessionCheckpointSubscriber(Array[&@port.SessionPort], @session_state.SessionProgress) -> Self
+pub async fn SessionCheckpointSubscriber::on_event(Self, @puppetry.EventEnvelope) -> Unit raise @puppetry.SubscriberError
+pub fn SessionCheckpointSubscriber::provenance(Self) -> String
+pub fn SessionCheckpointSubscriber::subscriber_id(Self) -> String
+pub impl @puppetry.EventSubscriber for SessionCheckpointSubscriber
+
+// Type aliases
+
+// Traits

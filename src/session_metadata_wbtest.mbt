@@ -266,7 +266,7 @@ fn json_has_poison(value : Json) -> Bool {
 /// and tool_calls). For SystemMessage/UserMessage we mutate content only.
 /// For ToolMessage this helper leaves the payload alone; its `ToolOutcome`
 /// does carry mutable structured JSON and attachment arrays, covered by the
-/// dedicated `snapshot_message/tool_*` boundary tests below.
+/// dedicated `@message_snapshot.snapshot_message/tool_*` boundary tests below.
 fn poison_first_message(
   messages : Array[@kernel.Message],
   label : String,
@@ -677,9 +677,9 @@ fn tool_message_snapshot_fields(
 }
 
 ///|
-test "snapshot_message/tool_outcome_input_aliases_are_copied" {
+test "@message_snapshot.snapshot_message/tool_outcome_input_aliases_are_copied" {
   let (message, structured, attachments) = tool_message_with_nested_outcome()
-  let snapshot = snapshot_message(message)
+  let snapshot = @message_snapshot.snapshot_message(message)
   // Mutate the inputs at every level after the snapshot was taken.
   poison_json(structured, "poison")
   attachments.push(Text("poison"))
@@ -691,9 +691,9 @@ test "snapshot_message/tool_outcome_input_aliases_are_copied" {
 }
 
 ///|
-test "snapshot_message/tool_outcome_output_aliases_stay_isolated" {
+test "@message_snapshot.snapshot_message/tool_outcome_output_aliases_stay_isolated" {
   let (message, structured, attachments) = tool_message_with_nested_outcome()
-  let snapshot = snapshot_message(message)
+  let snapshot = @message_snapshot.snapshot_message(message)
   let (snapshot_structured, snapshot_attachments) = tool_message_snapshot_fields(
     snapshot,
   )
@@ -740,9 +740,9 @@ fn tool_reported_error_snapshot_structured(
 }
 
 ///|
-test "snapshot_message/tool_reported_error_input_structured_is_copied" {
+test "@message_snapshot.snapshot_message/tool_reported_error_input_structured_is_copied" {
   let (message, structured) = tool_reported_error_message_with_nested_structured()
-  let snapshot = snapshot_message(message)
+  let snapshot = @message_snapshot.snapshot_message(message)
   poison_json(structured, "poison")
   assert_false(
     json_has_poison(tool_reported_error_snapshot_structured(snapshot)),
@@ -750,9 +750,9 @@ test "snapshot_message/tool_reported_error_input_structured_is_copied" {
 }
 
 ///|
-test "snapshot_message/tool_reported_error_output_structured_stays_isolated" {
+test "@message_snapshot.snapshot_message/tool_reported_error_output_structured_stays_isolated" {
   let (message, structured) = tool_reported_error_message_with_nested_structured()
-  let snapshot = snapshot_message(message)
+  let snapshot = @message_snapshot.snapshot_message(message)
   poison_json(tool_reported_error_snapshot_structured(snapshot), "poison")
   assert_false(json_has_poison(structured))
 }

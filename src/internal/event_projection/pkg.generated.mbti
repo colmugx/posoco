@@ -1,0 +1,29 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "colmugx/posoco/internal/event_projection"
+
+import {
+  "colmugx/posoco/internal/chunk_dispatch",
+  "colmugx/posoco/internal/puppetry",
+  "colmugx/posoco/port",
+  "colmugx/posoco/types",
+  "moonbitlang/core/ref",
+}
+
+// Values
+
+// Errors
+
+// Types and methods
+pub struct EventProjection {
+  // private fields
+}
+pub fn EventProjection::EventProjection(Array[&@port.Observer], @ref.Ref[@chunk_dispatch.ChunkDispatcher?], context_state_of? : @ref.Ref[((String) -> @types.ContextState?)?]) -> Self
+pub fn EventProjection::drain_pending(Self, @types.EventScope?, String) -> Unit
+pub async fn EventProjection::on_event(Self, @puppetry.EventEnvelope) -> Unit raise @puppetry.SubscriberError
+pub fn EventProjection::provenance(Self) -> String
+pub fn EventProjection::subscriber_id(Self) -> String
+pub impl @puppetry.EventSubscriber for EventProjection
+
+// Type aliases
+
+// Traits

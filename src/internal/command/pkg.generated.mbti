@@ -1,0 +1,34 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "colmugx/posoco/internal/command"
+
+import {
+  "colmugx/posoco/error",
+  "colmugx/posoco/internal/puppetry",
+  "colmugx/posoco/port",
+  "colmugx/posoco/types",
+  "moonbitlang/core/ref",
+}
+
+// Values
+pub fn compose_agent_commands(Array[&@port.CommandPort], BuiltinCommandPort) -> Array[&@port.CommandPort]
+
+pub fn parse_fork_index(Json) -> Int32
+
+// Errors
+
+// Types and methods
+pub struct BuiltinCommandPort {
+  mailbox : &@puppetry.Mailbox
+  idle_compact : @ref.Ref[(async (String) -> Result[@types.CompactOutcome, @error.AgentError])?]
+  mut seq : Int32
+  mut compact_enabled : Bool
+  mut fork_enabled : Bool
+}
+pub fn BuiltinCommandPort::BuiltinCommandPort(&@puppetry.Mailbox) -> Self
+pub fn BuiltinCommandPort::commands(Self) -> Array[@port.CommandDef]
+pub async fn BuiltinCommandPort::invoke(Self, String, Json) -> @port.CommandOutcome raise @error.CommandError
+pub impl @port.CommandPort for BuiltinCommandPort
+
+// Type aliases
+
+// Traits

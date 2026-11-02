@@ -1,0 +1,6 @@
+import {
+  "colmugx/posoco/kernel",
+  "colmugx/posoco/types",
+  "colmugx/posoco/internal/message_snapshot",
+  "colmugx/posoco/internal/diagnostic",
+}

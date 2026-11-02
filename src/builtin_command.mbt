@@ -3,7 +3,7 @@
 using @command {
   type BuiltinCommandPort,
   compose_agent_commands,
-  parse_fork_index,
+// parse_fork_index,
 }
 
 ///|

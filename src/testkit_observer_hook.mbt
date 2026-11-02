@@ -19,7 +19,7 @@ pub fn RecordingObserver::RecordingObserver() -> RecordingObserver {
 pub fn RecordingObserver::events(
   self : RecordingObserver,
 ) -> Array[@types.TurnEvent] {
-  self.events.map(testkit_snapshot_event)
+  self.events.map(@event_snapshot.snapshot_turn_event)
 }
 
 ///|
@@ -31,7 +31,7 @@ pub impl @port.Observer for RecordingObserver with fn on_event(
   _scope,
   event,
 ) {
-  self.events.push(testkit_snapshot_event(event))
+  self.events.push(@event_snapshot.snapshot_turn_event(event))
 }
 
 // ---------------------------------------------------------------------------

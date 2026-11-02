@@ -1,0 +1,21 @@
+import {
+  "colmugx/posoco/kernel",
+  "colmugx/posoco/port",
+  "colmugx/posoco/error",
+  "colmugx/posoco/internal/puppetry",
+  "colmugx/posoco/internal/message_snapshot",
+  "colmugx/posoco/internal/diagnostic",
+  "colmugx/posoco/internal/session_state",
+  "moonbitlang/async",
+}
+
+import {
+  "colmugx/posoco/kernel",
+  "colmugx/posoco/port",
+  "colmugx/posoco/error",
+  "colmugx/posoco/types",
+  "colmugx/posoco/internal/kernel_exec",
+  "colmugx/posoco/internal/puppetry",
+  "colmugx/posoco/internal/session_state",
+  "moonbitlang/async",
+} for "wbtest"

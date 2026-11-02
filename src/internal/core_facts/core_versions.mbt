@@ -135,8 +135,8 @@ fn CoreVersionStore::record_full(
   self.sessions[sid] = {
     versions: [
       {
-        body: Full(messages=snapshot_messages(messages)),
-        metadata: snapshot_metadata(metadata),
+        body: Full(messages=@message_snapshot.snapshot_messages(messages)),
+        metadata: @message_snapshot.snapshot_metadata(metadata),
         length: messages.length(),
         source: None,
       },
@@ -167,8 +167,8 @@ fn CoreVersionStore::record_derived_content(
   self.sessions[sid] = {
     versions: [
       {
-        body: Full(messages=snapshot_messages(messages)),
-        metadata: snapshot_metadata(metadata),
+        body: Full(messages=@message_snapshot.snapshot_messages(messages)),
+        metadata: @message_snapshot.snapshot_metadata(metadata),
         length: messages.length(),
         source: Some(source),
       },
@@ -193,8 +193,8 @@ fn CoreVersionStore::append(
   let previous = lineage.versions[lineage.versions.length() - 1]
   let version = lineage.versions.length()
   lineage.versions.push({
-    body: Append(tail=snapshot_messages(messages)),
-    metadata: snapshot_metadata(metadata),
+    body: Append(tail=@message_snapshot.snapshot_messages(messages)),
+    metadata: @message_snapshot.snapshot_metadata(metadata),
     length: previous.length + messages.length(),
     source: previous.source,
   })
@@ -218,8 +218,8 @@ fn CoreVersionStore::rewrite(
   let previous = lineage.versions[lineage.versions.length() - 1]
   let version = lineage.versions.length()
   lineage.versions.push({
-    body: Full(messages=snapshot_messages(messages)),
-    metadata: snapshot_metadata(metadata),
+    body: Full(messages=@message_snapshot.snapshot_messages(messages)),
+    metadata: @message_snapshot.snapshot_metadata(metadata),
     length: messages.length(),
     source: previous.source,
   })
@@ -273,10 +273,15 @@ fn CoreVersionStore::materialize(
   let messages : Array[@kernel.Message] = []
   for i in (chunks.length() - 1)>=..0 {
     for message in chunks[i] {
-      messages.push(snapshot_message(message))
+      messages.push(@message_snapshot.snapshot_message(message))
     }
   }
-  { messages, metadata: snapshot_metadata(lineage.versions[version].metadata), }
+  {
+    messages,
+    metadata: @message_snapshot.snapshot_metadata(
+      lineage.versions[version].metadata,
+    ),
+  }
 }
 
 ///|
@@ -296,8 +301,8 @@ fn CoreVersionStore::record_source_snapshot(
   self.source_seq.val = self.source_seq.val + 1
   self.source_snapshots[core_source_snapshot_key(sid, version)] = {
     sid,
-    messages: snapshot_messages(messages),
-    metadata: snapshot_metadata(metadata),
+    messages: @message_snapshot.snapshot_messages(messages),
+    metadata: @message_snapshot.snapshot_metadata(metadata),
   }
   version
 }
@@ -382,11 +387,11 @@ fn CoreVersionStore::resolve_source(
     }
     let windowed : Array[@kernel.Message] = []
     for message in snapshot.messages[0:source.prefix].to_owned() {
-      windowed.push(snapshot_message(message))
+      windowed.push(@message_snapshot.snapshot_message(message))
     }
     return {
       messages: windowed,
-      metadata: snapshot_metadata(snapshot.metadata),
+      metadata: @message_snapshot.snapshot_metadata(snapshot.metadata),
     }
   }
   let full = self.materialize(source.sid, source.version)

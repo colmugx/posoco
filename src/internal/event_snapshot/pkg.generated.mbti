@@ -1,0 +1,17 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "colmugx/posoco/internal/event_snapshot"
+
+import {
+  "colmugx/posoco/types",
+}
+
+// Values
+pub fn snapshot_turn_event(@types.TurnEvent) -> @types.TurnEvent
+
+// Errors
+
+// Types and methods
+
+// Type aliases
+
+// Traits

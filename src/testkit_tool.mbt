@@ -42,7 +42,8 @@ fn testkit_snapshot_tool_outcome(
   outcome : ScriptedToolOutcome,
 ) -> ScriptedToolOutcome {
   match outcome {
-    OutcomeOk(value) => OutcomeOk(snapshot_tool_outcome(value))
+    OutcomeOk(value) =>
+      OutcomeOk(@message_snapshot.snapshot_tool_outcome(value))
     OutcomeErr(error) => OutcomeErr(error)
   }
 }
@@ -95,7 +96,7 @@ pub fn RecordingToolProvider::exec_records(
       requested_name: record.requested_name,
       call_id: record.call_id,
       tool_name: record.tool_name,
-      arguments: snapshot_json(record.arguments),
+      arguments: @message_snapshot.snapshot_json(record.arguments),
       outcome: testkit_snapshot_tool_outcome(record.outcome),
     }
   })
@@ -110,7 +111,10 @@ pub fn RecordingToolProvider::ops(
     match op {
       ListTools => ListTools
       ExecuteTool(requested_name~, call~) =>
-        ExecuteTool(requested_name~, call=snapshot_tool_call(call))
+        ExecuteTool(
+          requested_name~,
+          call=@message_snapshot.snapshot_tool_call(call),
+        )
     }
   })
 }
@@ -177,16 +181,21 @@ pub impl @port.ToolProvider for RecordingToolProvider with fn execute(
         UnknownTool("recording_tool: no outcome configured for '\{key}'"),
       )
   }
-  self.ops.push(ExecuteTool(requested_name=name, call=snapshot_tool_call(call)))
+  self.ops.push(
+    ExecuteTool(
+      requested_name=name,
+      call=@message_snapshot.snapshot_tool_call(call),
+    ),
+  )
   self.exec_records.push({
     requested_name: name,
     call_id: call.call_id.to_string(),
     tool_name: call.name.to_string(),
-    arguments: snapshot_json(call.arguments),
+    arguments: @message_snapshot.snapshot_json(call.arguments),
     outcome: testkit_snapshot_tool_outcome(outcome),
   })
   match outcome {
-    OutcomeOk(value) => snapshot_tool_outcome(value)
+    OutcomeOk(value) => @message_snapshot.snapshot_tool_outcome(value)
     OutcomeErr(e) => raise e
   }
 }
