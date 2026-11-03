@@ -49,3 +49,5 @@ import {
   "moonbitlang/core/quickcheck" @qc,
   "colmugx/posoco/tests/support",
 } for "wbtest"
+
+options("allow-experimental-packages": ["moonbitlang/core/async"])
