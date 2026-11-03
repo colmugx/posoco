@@ -38,12 +38,13 @@ pub impl Show for SchedulingError with fn to_string(self : SchedulingError) -> S
 /// is determined by the execution policies of adjacent calls; executor is
 /// free to run them in any order, but the reducer places outcomes back in
 /// source order regardless of completion order (ADR §2.8).
+#derive(Eq, Debug)
 pub(all) struct ExecutionWave {
   /// Calls in this wave, in source order.
   calls : Array[@kernel.ToolCall]
   /// Policies for diagnostics; not used for ordering at execution time.
   policies : Array[@kernel.ExecutionPolicy]
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend ExecutionWave with Eq::{not_equal, equal}
@@ -67,9 +68,10 @@ pub fn ExecutionWave::calls(self : ExecutionWave) -> Array[@kernel.ToolCall] {
 
 ///|
 /// Result of scheduling. Waves are in execution order; each MAY run in parallel.
+#derive(Eq, Debug)
 pub(all) struct ExecutionPlan {
   waves : Array[ExecutionWave]
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend ExecutionPlan with Eq::{not_equal, equal}

@@ -32,6 +32,7 @@
 /// - Terminalizing → Idle     (terminal event dispatched + cleanup)
 /// - Idle/Suspended/Active → ShuttingDown  (host shutdown call; Active defers)
 /// - ShuttingDown → Shutdown  (lifecycle rollback complete)
+#derive(Eq, Debug)
 pub(all) enum PuppetPhase {
   Idle
   Active
@@ -39,7 +40,7 @@ pub(all) enum PuppetPhase {
   Terminalizing
   ShuttingDown
   Shutdown
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend PuppetPhase with Eq::{not_equal, equal}
@@ -95,6 +96,7 @@ pub fn PuppetPhase::is_accepting(self : PuppetPhase) -> Bool {
 /// reserves a `Structural` slot (branch/compact/retry); no structural
 /// operation is implemented yet, but the gate already knows how to reject them
 /// outside `Idle`.
+#derive(Eq, Debug)
 pub(all) enum OperationClass {
   /// `prompt`, `continue`, `resume` — start or continue a Run.
   Prompt
@@ -102,7 +104,7 @@ pub(all) enum OperationClass {
   InFlight
   /// Reserved: branch, compact, retry. Always rejected outside Idle.
   Structural
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend OperationClass with Eq::{not_equal, equal}
@@ -131,6 +133,7 @@ pub impl Show for OperationClass with fn to_string(self : OperationClass) -> Str
 /// Acquired by `prompt`/`continue`/`resume`; released on terminal outcome,
 /// abort, or shutdown. Records the owner operation id and the phase at which
 /// the lease was acquired so release can validate provenance.
+#derive(Eq, Debug)
 pub(all) struct OperationLease {
   /// Stable identifier for the operation that acquired the lease. Typically
   /// the `command_id` of the prompt/resume.
@@ -143,7 +146,7 @@ pub(all) struct OperationLease {
   run_id : RunId
   /// Turn id the lease is bound to. Empty for non-Prompt leases.
   turn_id : TurnId
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend OperationLease with Eq::{not_equal, equal}
@@ -286,6 +289,7 @@ pub(all) suberror PuppetError {
 
 ///|
 /// Why a savepoint failed (ADR §5 failure handling).
+#derive(Eq, Debug)
 pub(all) enum SavepointFailureCause {
   /// Contributor raised or returned Err.
   ContributorRaised(contributor_id~ : String, detail~ : String)
@@ -293,7 +297,7 @@ pub(all) enum SavepointFailureCause {
   ValidationFailed(detail~ : String)
   /// Journal append or durability barrier failed.
   BarrierFailed(detail~ : String)
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend SavepointFailureCause with Eq::{not_equal, equal}

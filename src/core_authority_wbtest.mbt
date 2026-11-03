@@ -320,7 +320,7 @@ async test "core_authority/task_outcome_and_applied_ids_fail_atomic_output_once"
       _ => fail("expected the committed core after terminal failure")
     }
     assert_eq(core_authority_task_marker_count(current.messages, marker), 1)
-    match current.metadata.get(task_outcomes_applied_metadata_key) {
+    match current.metadata.get("posoco.task.applied_ids") {
       Some(Json::Array(ids)) =>
         assert_true(ids.contains(Json::string(handle.receipt().id)))
       _ => fail("core is missing applied task ids")
@@ -331,16 +331,14 @@ async test "core_authority/task_outcome_and_applied_ids_fail_atomic_output_once"
     assert_eq(core_authority_task_marker_count(retry_prompt, marker), 1)
     let saved = store.inner.store["task-output-fail"]
     assert_eq(core_authority_task_marker_count(saved.messages, marker), 1)
-    match saved.metadata.get(task_outcomes_applied_metadata_key) {
+    match saved.metadata.get("posoco.task.applied_ids") {
       Some(Json::Array(ids)) =>
         assert_true(ids.contains(Json::string(handle.receipt().id)))
       _ => fail("store is missing applied task ids")
     }
-    assert_false(
-      agent.runtime.task_runtime.outcomes.contains("task-output-fail"),
-    )
-    assert_false(
-      agent.runtime.task_runtime.inflight.contains("task-output-fail"),
+    assert_false(agent.runtime.task_runtime.has_inflight("task-output-fail"))
+    assert_true(
+      agent.runtime.task_runtime.peek_outcomes("task-output-fail").is_empty(),
     )
   })
 }
@@ -438,7 +436,7 @@ async test "core_authority/task_outcome_cancel_at_terminal_output_once" {
         _ => fail("expected core outcome before terminal output")
       }
       assert_eq(core_authority_task_marker_count(current.messages, marker), 1)
-      match current.metadata.get(task_outcomes_applied_metadata_key) {
+      match current.metadata.get("posoco.task.applied_ids") {
         Some(Json::Array(ids)) =>
           assert_true(ids.contains(Json::string(handle.receipt().id)))
         _ => fail("core is missing applied task ids")
@@ -461,13 +459,14 @@ async test "core_authority/task_outcome_cancel_at_terminal_output_once" {
     assert_eq(core_authority_task_marker_count(retry_prompt, marker), 1)
     let saved = store.inner.store["task-output-cancel"]
     assert_eq(core_authority_task_marker_count(saved.messages, marker), 1)
-    match saved.metadata.get(task_outcomes_applied_metadata_key) {
+    match saved.metadata.get("posoco.task.applied_ids") {
       Some(Json::Array(ids)) =>
         assert_true(ids.contains(Json::string(handle.receipt().id)))
       _ => fail("store is missing applied task ids")
     }
-    assert_false(
-      agent.runtime.task_runtime.outcomes.contains("task-output-cancel"),
+    assert_false(agent.runtime.task_runtime.has_inflight("task-output-cancel"))
+    assert_true(
+      agent.runtime.task_runtime.peek_outcomes("task-output-cancel").is_empty(),
     )
   })
 }

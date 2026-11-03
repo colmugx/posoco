@@ -47,6 +47,7 @@ pub impl Show for HookAbort with fn to_string(self : HookAbort) -> String {
 /// schema, owner, and execution policy. Consent binds to the exact
 /// `call_id`, name, and arguments returned by that consent decision; a later
 /// mutation cannot reuse it, and `call_id` is never rewriteable.
+#derive(Debug)
 pub(all) enum ToolDecision {
   /// Execute the tool, possibly with a rewritten call. Rewrites are finalized
   /// and validated after every hook has run.
@@ -68,7 +69,7 @@ pub(all) enum ToolDecision {
   /// model step. Raising stays terminal; another hook's
   /// `ApproveAfterConsent` overrides this.
   Reject(reason~ : String)
-} derive(Debug)
+}
 
 ///|
 pub extend ToolDecision with Debug::{to_repr}
@@ -91,6 +92,7 @@ pub impl Show for ToolDecision with fn to_string(self : ToolDecision) -> String 
 
 ///|
 /// Describes what just completed, delivered after the effect is committed.
+#derive(Debug)
 pub(all) enum HookStage {
   /// Model call completed successfully.
   ModelCompleted(completion~ : @kernel.Completion)
@@ -100,7 +102,7 @@ pub(all) enum HookStage {
   ToolFailed(call~ : @kernel.ToolCall, reason~ : String)
   /// Model call failed at the adapter level.
   ModelFailed(failure~ : @kernel.ModelFailure)
-} derive(Debug)
+}
 
 ///|
 pub extend HookStage with Debug::{to_repr}

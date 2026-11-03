@@ -17,11 +17,12 @@
 /// Result of a single `reduce(state, input)` call.
 /// `next_state` is the new RunState, `effects` are effects to execute, `events` are domain events to publish.
 /// Terminal events appear at most once per Run. Invariant violations become a typed `Terminal(Failed)` transition.
+#derive(Eq, Debug)
 pub(all) struct ReduceOutput {
   next_state : RunState
   effects : Array[Effect]
   events : Array[KernelEvent]
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend ReduceOutput with Eq::{not_equal, equal}

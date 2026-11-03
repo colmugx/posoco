@@ -6,10 +6,11 @@
 ///
 /// `messages` carries canonical `@kernel.Message` values directly — the
 /// kernel ADT is the single protocol.
+#derive(Eq, Debug)
 pub(all) struct Session {
   messages : Array[@kernel.Message]
   metadata : Map[String, Json]
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend Session with Eq::{not_equal, equal}
@@ -40,11 +41,12 @@ pub const CONTEXT_STATE_METADATA_KEY = "posoco.context_state"
 pub const SESSION_TITLE_METADATA_KEY = "posoco.title"
 
 ///|
+#derive(Eq, Debug)
 pub(all) enum ContextReadingSource {
   Measured
   Estimated
   Unknown
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend ContextReadingSource with Eq::{not_equal, equal}
@@ -67,6 +69,7 @@ pub impl Show for ContextReadingSource with fn to_string(
 }
 
 ///|
+#derive(Eq, Debug)
 pub(all) struct ContextState {
   session_id : String
   model_id : String
@@ -77,7 +80,7 @@ pub(all) struct ContextState {
   compact_threshold : Double
   source : ContextReadingSource
   reading_message_count : Int32
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend ContextState with Eq::{not_equal, equal}
@@ -196,11 +199,12 @@ pub fn ContextState::from_metadata(
 }
 
 ///|
+#derive(Eq)
 pub(all) struct CompactOutcome {
   final_session_id : String
   mode : @kernel.CompactMode
   messages_after : Int32
-} derive(Eq)
+}
 
 ///|
 pub extend CompactOutcome with Eq::{not_equal, equal}
@@ -234,11 +238,12 @@ pub fn Session::with_parent_thread_id(
 /// transcript. Scope answers "which run does this belong to"; it does not
 /// carry effect identity (`ToolCall.call_id` already correlates tool
 /// events).
+#derive(Eq, Debug)
 pub(all) struct EventScope {
   session_id : @kernel.SessionId
   run_id : @kernel.RunId
   turn_id : @kernel.TurnId
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend EventScope with Eq::{not_equal, equal}
@@ -250,6 +255,7 @@ pub extend EventScope with Debug::{to_repr}
 /// Which Agent-owned tool-catalog fact `ToolCatalogChanged` reports. These are
 /// composition/publication facts, not reducer-journal facts: the default
 /// `InMemoryJournal` does not persist them.
+#derive(Eq, Debug)
 pub(all) enum ToolCatalogChange {
   /// An owner published or replaced its contributed group.
   Published
@@ -259,7 +265,7 @@ pub(all) enum ToolCatalogChange {
   Captured
   /// A superseded version's retire callback failed; cleanup stays pending.
   CleanupFailed
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend ToolCatalogChange with Eq::{not_equal, equal}
@@ -287,6 +293,7 @@ pub impl Show for ToolCatalogChange with fn to_string(self : ToolCatalogChange) 
 /// separate numbers. `operation_id` names the admitting operation for
 /// `Captured` facts. The payload never carries provider objects, credentials,
 /// arguments or connection details.
+#derive(Eq, Debug)
 pub(all) struct ToolCatalogChangedPayload {
   change : ToolCatalogChange
   /// Contributing manifest id; empty for Agent-wide capture facts.
@@ -301,7 +308,7 @@ pub(all) struct ToolCatalogChangedPayload {
   operation_id : String?
   /// Bounded cleanup failure detail; never raw payload text.
   detail : String?
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend ToolCatalogChangedPayload with Eq::{not_equal, equal}
@@ -329,6 +336,7 @@ pub extend ToolCatalogChangedPayload with Debug::{to_repr}
 /// Pre-pass validation rejects (unknown tool / schema mismatch) surface as
 /// `ToolCallRejected` directly — the call never entered the pipeline, so no
 /// `ToolCallPending` precedes them.
+#derive(Eq, Debug)
 pub(all) enum TurnEvent {
   TurnStarted
   /// The kernel declared the next model-step effect: the request is about
@@ -415,7 +423,7 @@ pub(all) enum TurnEvent {
   /// produced), "cancelled" (user dismissed), "unsupported" (no contributor
   /// could service it), or "failed" (transport/IO error).
   UserRequestFinished(kind~ : String, outcome~ : String)
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend TurnEvent with Show::{to_string, output}
@@ -480,11 +488,12 @@ pub impl Show for TurnEvent with fn to_string(self : TurnEvent) -> String {
 
 ///|
 /// Return value of `Agent::run_turn`.
+#derive(Eq, Debug)
 pub(all) struct TurnResult {
   message : @kernel.Message
   tool_results : Array[@kernel.ToolOutcome]
   final_session_id : String
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend TurnResult with Eq::{not_equal, equal}

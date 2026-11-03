@@ -1,6 +1,20 @@
 ///|
+/// Deep-copy a session so the fake never aliases caller-owned messages or
+/// metadata.
+fn snapshot_session(
+  messages : Array[@kernel.Message],
+  metadata : Map[String, Json],
+) -> @types.Session {
+  {
+    messages: @message_snapshot.snapshot_messages(messages),
+    metadata: @message_snapshot.snapshot_metadata(metadata),
+  }
+}
+
+///|
 /// A recorded session operation. Constructors are prefixed with `Op` to avoid
 /// ambiguity with `SessionError::Load`/`SessionError::Save`.
+#derive(Debug)
 pub(all) enum SessionOp {
   OpLoad(id~ : String, result~ : Result[@types.Session, @error.SessionError])
   OpSave(
@@ -24,7 +38,7 @@ pub(all) enum SessionOp {
     from_index~ : Int32,
     result~ : Result[Unit, @error.SessionError]
   )
-} derive(Debug)
+}
 
 ///|
 pub extend SessionOp with Debug::{to_repr}
@@ -192,6 +206,8 @@ fn[T] RecordingSessionPort::record(
 
 ///|
 pub extend RecordingSessionPort with @port.SessionPort::{
+  load,
+  save,
   append_messages,
   checkpoint,
   truncate,

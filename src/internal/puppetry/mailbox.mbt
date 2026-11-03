@@ -58,6 +58,7 @@ pub struct ControlMailbox {
 /// Typed quiescent status returned by `wait_idle`. Distinct from
 /// `PuppetPhase` because it carries suspension details and the terminal
 /// outcome (ADR §6.7).
+#derive(Eq, Debug)
 pub(all) enum QuiescentStatus {
   /// No run was active.
   Idle
@@ -71,7 +72,7 @@ pub(all) enum QuiescentStatus {
   Terminal(outcome~ : RunOutcome)
   /// Puppet has shut down. No further commands will be accepted.
   Shutdown
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend QuiescentStatus with Eq::{not_equal, equal}

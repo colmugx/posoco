@@ -12,8 +12,8 @@
 /// messages when `processed_messages` is empty. See
 /// `PortRuntime::call_model` for the substitution logic.
 pub fn tk_stop_response(text : String) -> @kernel.ModelCallResult {
-  let completion : @kernel.Completion = Completion(
-    content=[Text(text)],
+  let completion : @kernel.Completion = @kernel.Completion(
+    content=[@kernel.Text(text)],
     tool_calls=[],
     reasoning=None,
     finish_reason=Stop,
@@ -34,7 +34,7 @@ pub fn tk_tool_call_response(
     name: @kernel.ToolName::unchecked(tool_name),
     arguments: args,
   }
-  let completion : @kernel.Completion = Completion(
+  let completion : @kernel.Completion = @kernel.Completion(
     content=[],
     tool_calls=[call],
     reasoning=None,
@@ -47,7 +47,7 @@ pub fn tk_tool_call_response(
 ///|
 /// Build a user message.
 pub fn tk_user_msg(text : String) -> @kernel.Message {
-  UserMessage(content=[Text(text)])
+  UserMessage(content=[@kernel.Text(text)])
 }
 
 ///|
@@ -56,7 +56,7 @@ pub fn tk_user_msg(text : String) -> @kernel.Message {
 /// Policy is `Parallel` (the declared default; composition honors it
 /// as-is). Provenance is `None`.
 pub fn tk_tool_def(name : String, description : String) -> @kernel.ToolDef {
-  ToolDef(
+  @kernel.ToolDef(
     name=@kernel.ToolName::unchecked(name),
     description~,
     input_schema=Json::object(Map::from_array([])),
@@ -86,12 +86,6 @@ pub fn tk_ok_attachments_result(
 /// the model should see, but the run continues).
 pub fn tk_error_result(content : String) -> @kernel.ToolOutcome {
   ToolReportedError(content~, structured=None)
-}
-
-///|
-/// Build a default universal AgentConfig for scripted tests.
-pub fn tk_config() -> AgentConfig {
-  agent_config(max_tool_rounds=Some(10))
 }
 
 ///|
@@ -231,7 +225,12 @@ pub fn ScriptedMemoryPort::received_searches(
 }
 
 ///|
-pub extend ScriptedMemoryPort with @port.MemoryPort::{search, delete, store}
+pub extend ScriptedMemoryPort with @port.MemoryPort::{
+  inbound,
+  search,
+  delete,
+  store,
+}
 
 ///|
 pub impl @port.MemoryPort for ScriptedMemoryPort with fn inbound(
@@ -307,7 +306,7 @@ pub impl @port.MemoryPort for ScriptedMemoryPort with fn delete(
 ///     tk_ext("tools", tools=[tools]),
 ///     tk_ext("io", sessions=[store], observers=[observer]),
 ///   ],
-///   config=tk_config(),
+///   config=@posoco.agent_config(max_tool_rounds=Some(10)),
 /// )
 /// ```
 pub fn tk_ext(

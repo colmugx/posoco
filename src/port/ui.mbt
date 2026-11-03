@@ -8,11 +8,12 @@
 
 ///|
 /// Where a render intent lands: Status (single-line bar), Notice (transient toast), Widget (persistent region).
+#derive(Eq, Debug)
 pub(all) enum UiSlot {
   Status
   Notice
   Widget
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend UiSlot with Eq::{not_equal, equal}
@@ -34,6 +35,7 @@ pub impl Show for UiSlot with fn to_string(self) -> String {
 
 ///|
 /// Structured payload a render intent carries. Host decides layout and color.
+#derive(Debug)
 pub(all) enum UiBody {
   Text(String)
   Lines(Array[String])
@@ -44,7 +46,7 @@ pub(all) enum UiBody {
   Entries(Array[UiEntry])
   Progress(Double)
   Markdown(String)
-} derive(Debug)
+}
 
 ///|
 pub extend UiBody with Debug::{to_repr}
@@ -74,17 +76,19 @@ pub impl Show for UiBody with fn to_string(self) -> String {
 ///|
 /// One keyed entry of an `Entries` body. `color` carries a semantic role
 /// name from the host-negotiated vocabulary, never a raw color value.
+#derive(Debug)
 pub(all) struct UiEntry {
   key : String
   value : String
   color : String?
-} derive(Debug)
+}
 
 ///|
 pub extend UiEntry with Debug::{to_repr}
 
 ///|
 /// One render intent. Same `key` replaces a prior intent in the same `UiSlot`.
+#derive(Debug)
 pub(all) struct UiRender {
   slot : UiSlot
   key : String
@@ -92,7 +96,7 @@ pub(all) struct UiRender {
   body : UiBody
   /// Visibility hint in milliseconds. `None` = persistent; hosts may ignore.
   ttl_ms : Int32?
-} derive(Debug)
+}
 
 ///|
 pub extend UiRender with Debug::{to_repr}
@@ -120,24 +124,26 @@ pub impl Show for UiRender with fn to_string(self) -> String {
 // Autocomplete descriptor
 
 ///|
+#derive(Debug)
 pub(all) struct AutocompleteItem {
   label : String
   insert_text : String
   detail : String?
   kind : String
-} derive(Debug)
+}
 
 ///|
 pub extend AutocompleteItem with Debug::{to_repr}
 
 ///|
 /// A source of autocomplete suggestions tied to a trigger character.
+#derive(Debug)
 pub(all) struct AutocompleteSource {
   trigger : String
   kind : String
   /// Given text typed so far (excluding trigger), return matching items.
   fetch : (String) -> Array[AutocompleteItem]
-} derive(Debug)
+}
 
 ///|
 pub extend AutocompleteSource with Debug::{to_repr}
@@ -145,9 +151,10 @@ pub extend AutocompleteSource with Debug::{to_repr}
 ///|
 /// Collected at composition time: the host aggregates every UiPort's
 /// descriptors to know which autocomplete triggers to honor.
+#derive(Debug)
 pub(all) struct UiDescriptor {
   autocomplete_sources : Array[AutocompleteSource]
-} derive(Debug)
+}
 
 ///|
 pub extend UiDescriptor with Debug::{to_repr}
@@ -163,6 +170,7 @@ pub fn UiDescriptor::empty() -> UiDescriptor {
 ///|
 /// User interaction primitives. Hosts that lack a variant raise
 /// `UiError::Unsupported`.
+#derive(Debug)
 pub(all) enum UiRequest {
   /// Free-form text input, with optional pre-fill.
   Input(prompt~ : String, default~ : String?)
@@ -170,7 +178,7 @@ pub(all) enum UiRequest {
   Confirm(prompt~ : String)
   /// Choose one option. `default` is the pre-select index.
   Select(prompt~ : String, options~ : Array[String], default~ : Int32?)
-} derive(Debug)
+}
 
 ///|
 pub extend UiRequest with Debug::{to_repr}
@@ -217,13 +225,14 @@ fn int_default_label(d : Int32?) -> String {
 
 ///|
 /// Response to a UiRequest. `Cancelled` = user dismissed; no UI = `UiError::Unsupported`.
+#derive(Eq, Debug)
 pub(all) enum UiResponse {
   Text(String)
   Yes
   No
   Selected(Int32)
   Cancelled
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend UiResponse with Eq::{not_equal, equal}

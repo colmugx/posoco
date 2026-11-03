@@ -6,10 +6,11 @@
 
 ///|
 /// One named alternative for a `Choice` question.
+#derive(Eq, Debug)
 pub(all) struct DecisionOption {
   id : String
   description : Json?
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend DecisionOption with Eq::{not_equal, equal}
@@ -19,6 +20,7 @@ pub extend DecisionOption with Debug::{to_repr}
 
 ///|
 /// Typed question understood by a `DecisionPort`.
+#derive(Eq, Debug)
 pub(all) enum DecisionQuestion {
   /// Probability that the proposition is true. Criteria are optional outcome
   /// descriptions, not policy thresholds.
@@ -34,7 +36,7 @@ pub(all) enum DecisionQuestion {
   /// Score against an ordered rubric. Level index is the score coordinate;
   /// at least two levels are required by conforming adapters.
   Score(id~ : String, instructions~ : Json, levels~ : Array[Json])
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend DecisionQuestion with Eq::{not_equal, equal}
@@ -44,10 +46,11 @@ pub extend DecisionQuestion with Debug::{to_repr}
 
 ///|
 /// Structured state plus a non-empty set of independent semantic questions.
+#derive(Eq, Debug)
 pub(all) struct DecisionRequest {
   state : Json
   questions : Array[DecisionQuestion]
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend DecisionRequest with Eq::{not_equal, equal}
@@ -57,10 +60,11 @@ pub extend DecisionRequest with Debug::{to_repr}
 
 ///|
 /// One named probability in a choice distribution.
+#derive(Eq, Debug)
 pub(all) struct DecisionNamedProbability {
   id : String
   probability : Double
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend DecisionNamedProbability with Eq::{not_equal, equal}
@@ -71,6 +75,7 @@ pub extend DecisionNamedProbability with Debug::{to_repr}
 ///|
 /// Provider-neutral typed answer. The question id is repeated so adapters can
 /// be validated without relying on response ordering.
+#derive(Eq, Debug)
 pub(all) enum DecisionAnswer {
   BooleanAnswer(id~ : String, probability_true~ : Double)
   ChoiceAnswer(
@@ -85,7 +90,7 @@ pub(all) enum DecisionAnswer {
     probabilities~ : Array[Double],
     confidence~ : Double?
   )
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend DecisionAnswer with Eq::{not_equal, equal}
@@ -95,10 +100,11 @@ pub extend DecisionAnswer with Debug::{to_repr}
 
 ///|
 /// Optional token accounting supplied by decision providers.
+#derive(Eq, Debug)
 pub(all) struct DecisionUsage {
   input_tokens : Int32?
   output_tokens : Int32?
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend DecisionUsage with Eq::{not_equal, equal}
@@ -110,11 +116,12 @@ pub extend DecisionUsage with Debug::{to_repr}
 /// Typed answers plus provider-reported model/usage metadata. `model` is
 /// descriptive observability only; consumers must not branch policy on a
 /// provider identity hidden behind this port.
+#derive(Eq, Debug)
 pub(all) struct DecisionResult {
   answers : Array[DecisionAnswer]
   model : String?
   usage : DecisionUsage?
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend DecisionResult with Eq::{not_equal, equal}
@@ -138,11 +145,12 @@ pub(open) trait DecisionPort {
 /// Consumer-declared failure handling for a contextual call. Diagnostics and
 /// attribution only: the actual policy (which fallback, whether to close) is
 /// executed by the consuming extension, never by this port.
+#derive(Eq, Debug)
 pub(all) enum DecisionFailureMode {
   Fallback
   FailClosed
   Propagate
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend DecisionFailureMode with Eq::{not_equal, equal}
@@ -155,9 +163,10 @@ pub extend DecisionFailureMode with Debug::{to_repr}
 /// task belongs to when the caller actually knows it). Unknown scope is
 /// expressed as `None` by the caller; this port never infers scope from the
 /// active run or background-task ownership.
+#derive(Eq, Debug)
 pub(all) struct DecisionScope {
   session : String
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend DecisionScope with Eq::{not_equal, equal}
@@ -168,12 +177,13 @@ pub extend DecisionScope with Debug::{to_repr}
 ///|
 /// Per-call context for `DecisionPort::evaluate`. Build with
 /// `DecisionCallContext::make`; every field except `purpose` is optional.
+#derive(Eq, Debug)
 pub(all) struct DecisionCallContext {
   purpose : String
   scope : DecisionScope?
   timeout_ms : Int32?
   failure_mode : DecisionFailureMode
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend DecisionCallContext with Eq::{not_equal, equal}

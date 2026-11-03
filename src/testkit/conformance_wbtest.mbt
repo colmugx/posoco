@@ -1,13 +1,13 @@
 ///|
-fn tk_opts() -> ChatOptions {
+fn tk_opts() -> @types.ChatOptions {
   { temperature: None, max_output_tokens: None, }
 }
 
 ///|
-fn tk_call(id : String, name : String) -> ToolCall {
+fn tk_call(id : String, name : String) -> @kernel.ToolCall {
   {
-    call_id: CallId::unchecked(id),
-    name: ToolName::unchecked(name),
+    call_id: @kernel.CallId::unchecked(id),
+    name: @kernel.ToolName::unchecked(name),
     arguments: Json::null(),
   }
 }
@@ -55,7 +55,7 @@ async test "tk_model_records_received_messages_and_tools" {
 ///|
 async test "tk_model_records_chat_options_exactly" {
   let model = ScriptedModel([Respond(tk_stop_response("ok"))])
-  let options : ChatOptions = {
+  let options : @types.ChatOptions = {
     temperature: Some(0.25),
     max_output_tokens: Some(512),
   }
@@ -67,7 +67,7 @@ async test "tk_model_records_chat_options_exactly" {
 
 ///|
 async test "tk_model_stream_replays_exact_chunks_in_order" {
-  let chunks : Array[StreamChunk] = [
+  let chunks : Array[@types.StreamChunk] = [
     ReasoningDelta(token="think"),
     TextDelta(token="hello "),
     TextDelta(token="world"),
@@ -77,7 +77,7 @@ async test "tk_model_stream_replays_exact_chunks_in_order" {
   let model = ScriptedModel([Stream(chunks~, response~)])
   // chat_streaming_direct drives chat with NoStream — to actually
   // observe chunks, drive chat with StreamMode::Stream directly.
-  let observed : Array[StreamChunk] = []
+  let observed : Array[@types.StreamChunk] = []
   let _ = (model as &@port.ModelPort).chat(
     tk_scope(),
     [],
@@ -240,9 +240,9 @@ async test "tk_tool_unified_trace_preserves_list_execute_order" {
   ])
   let provider = RecordingToolProvider([tk_tool_def("lookup", "")], outcomes)
   let _ = provider.list_tools()
-  let call = ToolCall::{
-    call_id: CallId::unchecked("tc_order"),
-    name: ToolName::unchecked("lookup"),
+  let call = @kernel.ToolCall::{
+    call_id: @kernel.CallId::unchecked("tc_order"),
+    name: @kernel.ToolName::unchecked("lookup"),
     arguments: Json::object(Map::from_array([("query", Json::string("x"))])),
   }
   let _ = provider.execute_direct(call)
@@ -280,9 +280,9 @@ async test "tk_tool_records_are_recursive_json_snapshots" {
   let argument_map : Map[String, Json] = Map::from_array([
     ("query", Json::string("original")),
   ])
-  let call : ToolCall = {
-    call_id: CallId::unchecked("tc_snapshot"),
-    name: ToolName::unchecked("lookup"),
+  let call : @kernel.ToolCall = {
+    call_id: @kernel.CallId::unchecked("tc_snapshot"),
+    name: @kernel.ToolName::unchecked("lookup"),
     arguments: Json::object(argument_map),
   }
   let result = provider.execute_direct(call)
@@ -311,7 +311,7 @@ async test "tk_store_records_save_metadata_snapshot" {
     ("user_role", Json::string("admin")),
     ("turn_count", Json::number(3.0)),
   ])
-  let session : Session = { messages: [], metadata: meta, }
+  let session : @types.Session = { messages: [], metadata: meta, }
   let _ = store.save("s1", session)
   let snaps = store.save_snapshots()
   assert_eq(snaps.length(), 1)
@@ -336,7 +336,7 @@ async test "tk_store_load_unknown_returns_empty_session" {
 ///|
 async test "tk_store_load_and_seed_are_snapshot_isolated" {
   let store = RecordingSessionPort()
-  let seeded : Session = {
+  let seeded : @types.Session = {
     messages: [tk_user_msg("seed")],
     metadata: Map::from_array([("owner", Json::string("original"))]),
   }
@@ -365,14 +365,14 @@ async test "tk_store_snapshots_nested_json_and_tool_arguments" {
   let argument_object : Map[String, Json] = Map::from_array([
     ("value", Json::string("argument-original")),
   ])
-  let session : Session = {
+  let session : @types.Session = {
     messages: [
       AssistantMessage(
         content=[],
         tool_calls=[
           {
-            call_id: CallId::unchecked("tc_nested"),
-            name: ToolName::unchecked("nested"),
+            call_id: @kernel.CallId::unchecked("tc_nested"),
+            name: @kernel.ToolName::unchecked("nested"),
             arguments: Json::object(argument_object),
           },
         ],
@@ -495,8 +495,8 @@ async test "tk_observer_event_accessor_is_deep_snapshot" {
   // Pick an AssistantMessage whose content array is mutable so we
   // can still prove the observer took a deep copy (SystemMessage/UserMessage
   // also have mutable content arrays; either works the same way).
-  let message : Message = AssistantMessage(
-    content=[Text("original")],
+  let message : @kernel.Message = AssistantMessage(
+    content=[@kernel.Text("original")],
     tool_calls=[],
     reasoning=None,
     finish_reason=Stop,
@@ -505,7 +505,8 @@ async test "tk_observer_event_accessor_is_deep_snapshot" {
   // Mutate the caller-side content array AFTER handing the message off.
   // The recorded event must not see this mutation.
   match message {
-    AssistantMessage(content~, ..) => content.push(Text("outside mutation"))
+    AssistantMessage(content~, ..) =>
+      content.push(@kernel.Text("outside mutation"))
     _ => fail("expected AssistantMessage")
   }
   let first = obs.events()
@@ -513,7 +514,7 @@ async test "tk_observer_event_accessor_is_deep_snapshot" {
     ModelResponseReceived(message~, ..) =>
       match message {
         AssistantMessage(content~, ..) =>
-          content.push(Text("accessor mutation"))
+          content.push(@kernel.Text("accessor mutation"))
         _ => fail("expected AssistantMessage in recorded event")
       }
     _ => fail("expected model response event")
@@ -524,7 +525,7 @@ async test "tk_observer_event_accessor_is_deep_snapshot" {
       match message {
         AssistantMessage(content~, ..) => {
           assert_eq(content.length(), 1)
-          assert_true(content[0] == Text("original"))
+          assert_true(content[0] == @kernel.Text("original"))
         }
         _ => fail("expected second AssistantMessage")
       }
@@ -582,7 +583,7 @@ async test "tk_hook_records_stage_and_configured_deferral" {
 ///|
 async test "tk_hook_records_pass_through_outcome" {
   let hook = RecordingHook()
-  let msgs = [@kernel.Message::UserMessage(content=[Text("hello")])]
+  let msgs = [@kernel.Message::UserMessage(content=[@kernel.Text("hello")])]
   let returned = hook.before_model(msgs)
   assert_eq(returned.length(), 1)
   let records = hook.records()
@@ -597,7 +598,7 @@ async test "tk_hook_records_pass_through_outcome" {
 ///|
 async test "tk_hook_record_accessor_is_deep_snapshot" {
   let hook = RecordingHook()
-  let msg = @kernel.Message::UserMessage(content=[Text("original")])
+  let msg = @kernel.Message::UserMessage(content=[@kernel.Text("original")])
   let _ = hook.before_model([msg])
   let first = hook.records()
   assert_eq(first[0].label, "before_model")
@@ -618,19 +619,19 @@ async test "tk_hook_record_accessor_is_deep_snapshot" {
 
 ///|
 async test "tk_assert_events_eq_passes_on_match" {
-  let expected : Array[TurnEvent] = [TurnStarted, TurnCompleted]
-  let actual : Array[TurnEvent] = [TurnStarted, TurnCompleted]
+  let expected : Array[@types.TurnEvent] = [TurnStarted, TurnCompleted]
+  let actual : Array[@types.TurnEvent] = [TurnStarted, TurnCompleted]
   assert_events_eq(expected, actual)
 }
 
 ///|
 async test "tk_assert_events_contain_finds_subsequence" {
-  let hay : Array[TurnEvent] = [
+  let hay : Array[@types.TurnEvent] = [
     TurnStarted,
     ToolCallPending(tk_call("c1", "t")),
     TurnCompleted,
   ]
-  let needle : Array[TurnEvent] = [
+  let needle : Array[@types.TurnEvent] = [
     ToolCallPending(tk_call("c1", "t")),
     TurnCompleted,
   ]

@@ -12,11 +12,12 @@
 /// machine code for the verdict when available (for example z.ai `"1308"`,
 /// OpenAI `"usage_limit_reached"`). `message` is a bounded excerpt of the
 /// provider message, safe to display.
+#derive(Eq, Debug)
 pub(all) struct RateLimitInfo {
   message : String
   reset_at_ms : Int64?
   provider_code : String?
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend RateLimitInfo with Eq::{not_equal, equal}
@@ -47,6 +48,7 @@ fn bounded_rate_limit_message(message : String) -> String {
 }
 
 ///|
+#derive(Debug)
 pub(all) suberror ModelError {
   RequestBuild(String)
   Transport(String)
@@ -55,7 +57,7 @@ pub(all) suberror ModelError {
   /// serving the request. Distinct from `Transport` throttles so a host can
   /// decide between waiting for `reset_at_ms` and failing fast.
   RateLimited(RateLimitInfo)
-} derive(Debug)
+}
 
 ///|
 pub extend ModelError with Debug::{to_repr}
@@ -86,6 +88,7 @@ pub impl Show for ModelError with fn to_string(self) -> String {
 ///|
 /// Errors raised by `DecisionPort::evaluate`. Provider adapters normalize
 /// transport/protocol failures into this bounded provider-neutral surface.
+#derive(Debug)
 pub(all) suberror DecisionError {
   InvalidRequest(String)
   RequestBuild(String)
@@ -93,7 +96,7 @@ pub(all) suberror DecisionError {
   ResponseParse(String)
   RateLimited(RateLimitInfo)
   TimedOut(timeout_ms~ : Int32)
-} derive(Debug)
+}
 
 ///|
 pub extend DecisionError with Show::{to_string, output}
@@ -126,12 +129,13 @@ pub impl Show for DecisionError with fn to_string(self) -> String {
 ///|
 /// Errors raised by LogPort implementations. Logging failures stay explicit:
 /// each consumer decides whether a failed write is best-effort or fatal.
+#derive(Debug)
 pub(all) suberror LogError {
   InvalidRecord(String)
   Write(String)
   Flush(String)
   Unavailable(String)
-} derive(Debug)
+}
 
 ///|
 pub extend LogError with Show::{to_string, output}
@@ -150,11 +154,12 @@ pub impl Show for LogError with fn to_string(self) -> String {
 }
 
 ///|
+#derive(Debug)
 pub(all) suberror SessionError {
   Load(String)
   Save(String)
   Conflict(String)
-} derive(Debug)
+}
 
 ///|
 pub extend SessionError with Show::{output}
@@ -172,13 +177,14 @@ pub impl Show for SessionError with fn to_string(self : SessionError) -> String 
 }
 
 ///|
+#derive(Debug)
 pub(all) suberror RuntimeError {
   UnknownTool(String)
   InvocationFailed(String)
   Transport(String)
   /// `ToolRegistry::register_strict` rejected a duplicate tool name.
   ToolAlreadyRegistered(String)
-} derive(Debug)
+}
 
 ///|
 pub extend RuntimeError with Show::{output}
@@ -197,6 +203,7 @@ pub impl Show for RuntimeError with fn to_string(self) -> String {
 }
 
 ///|
+#derive(Debug)
 pub(all) suberror AgentError {
   Model(String)
   Session(SessionError)
@@ -213,7 +220,7 @@ pub(all) suberror AgentError {
   PipelineAborted(String)
   Cancelled(String)
   AutoCompactFailed(String)
-} derive(Debug)
+}
 
 ///|
 pub extend AgentError with Show::{to_string, output}
@@ -238,12 +245,13 @@ pub impl Show for AgentError with fn to_string(self : AgentError) -> String {
 }
 
 ///|
+#derive(Debug)
 pub(all) suberror MemoryError {
   Inbound(String)
   Store(String)
   Search(String)
   Delete(String)
-} derive(Debug)
+}
 
 ///|
 pub extend MemoryError with Show::{to_string, output}
@@ -267,6 +275,7 @@ pub impl Show for MemoryError with fn to_string(self) -> String {
 /// Every variant that involves a specific extension carries `manifest_id` so
 /// callers can locate the offending extension without guessing. Multi-party
 /// collisions carry the list of involved manifest ids.
+#derive(Debug)
 pub(all) suberror CompositionError {
   /// Two extensions declared a tool with the same name. Fail-fast; no
   /// last-wins routing. First arg is the tool name, second is a diagnostic
@@ -295,7 +304,7 @@ pub(all) suberror CompositionError {
   /// when a capability they need reads `None` in the `CompositionView`
   /// (typically because it was not declared in `requires`).
   ExtensionComposeFailed(manifest_id~ : String, detail~ : String)
-} derive(Debug)
+}
 
 ///|
 pub extend CompositionError with Show::{to_string, output}
@@ -329,6 +338,7 @@ pub impl Show for CompositionError with fn to_string(self) -> String {
 /// Errors raised by UiPort implementations. `UiPort::request` MUST raise one
 /// of these typed variants instead of an untyped error, so that callers can
 /// distinguish "user cancelled" from "this UI doesn't support requests".
+#derive(Debug)
 pub(all) suberror UiError {
   /// The UiPort does not support interactive requests at all (e.g. NoopUiPort,
   /// or a headless host). Distinct from Cancelled (which means the request
@@ -341,7 +351,7 @@ pub(all) suberror UiError {
   InvalidRequest(detail~ : String)
   /// The host reported a transport/IO failure while servicing the request.
   IoFailure(detail~ : String)
-} derive(Debug)
+}
 
 ///|
 pub extend UiError with Show::{to_string, output}
@@ -362,11 +372,12 @@ pub impl Show for UiError with fn to_string(self) -> String {
 ///|
 /// Errors raised by CommandPort.invoke: unknown command id, invalid args,
 /// or execution failure.
+#derive(Debug)
 pub(all) suberror CommandError {
   NotFound(String)
   InvalidArgs(reason~ : String)
   ExecutionFailed(String)
-} derive(Debug)
+}
 
 ///|
 pub extend CommandError with Show::{to_string, output}

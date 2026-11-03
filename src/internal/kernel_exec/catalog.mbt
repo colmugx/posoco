@@ -56,12 +56,13 @@ pub impl Show for CatalogCompositionError with fn to_string(
 /// Internal entry: bundles a `ToolDef` with its position in the
 /// catalog (for stable enumeration). The snapshot exposes read-only
 /// accessors; callers cannot mutate entries.
+#derive(Eq, Debug)
 pub(all) struct CatalogEntry {
   /// Stable 0-based position in declaration order. Used by the scheduler
   /// (T06) to preserve source order across execution waves.
   position : Int32
   definition : @kernel.ToolDef
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend CatalogEntry with Eq::{not_equal, equal}
@@ -98,11 +99,12 @@ pub impl Eq for ToolCatalogSnapshot with fn equal(
 ///|
 /// Debug projection: the declared catalog only. Rendered through a plain
 /// derivable record because `@json-schema.Schema` plans are opaque.
+#derive(Debug)
 priv struct SnapshotRepr {
   version : CatalogVersion
   entries : Array[CatalogEntry]
   by_name : Map[String, CatalogEntry]
-} derive(Debug)
+}
 
 ///|
 pub impl Debug for ToolCatalogSnapshot with fn to_repr(

@@ -43,6 +43,7 @@ fn explain_compile_error(error : @json-schema.CompileError) -> String {
       "unsupported keyword \{keyword} at \{path}"
     UnsupportedPattern(path~, pattern~, ..) =>
       "unsupported pattern \{pattern} at \{path}"
+    NumericBudget(path~) => "numeric budget \{path}"
   }
 }
 

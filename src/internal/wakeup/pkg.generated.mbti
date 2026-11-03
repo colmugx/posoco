@@ -1,0 +1,46 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "colmugx/posoco/internal/wakeup"
+
+import {
+  "colmugx/posoco/error",
+  "colmugx/posoco/internal/puppetry",
+  "colmugx/posoco/kernel",
+  "colmugx/posoco/port",
+  "moonbitlang/async",
+}
+
+// Values
+
+// Errors
+
+// Types and methods
+pub struct WakeupCutoffSubscriber {
+  // private fields
+}
+pub fn WakeupCutoffSubscriber::WakeupCutoffSubscriber(WakeupRuntime) -> Self
+pub async fn WakeupCutoffSubscriber::on_event(Self, @puppetry.EventEnvelope) -> Unit raise @puppetry.SubscriberError
+pub fn WakeupCutoffSubscriber::provenance(Self) -> String
+pub fn WakeupCutoffSubscriber::subscriber_id(Self) -> String
+pub impl @puppetry.EventSubscriber for WakeupCutoffSubscriber
+
+pub struct WakeupRuntime {
+  // private fields
+}
+pub fn WakeupRuntime::WakeupRuntime(observers~ : Array[&@port.Observer]) -> Self
+pub fn WakeupRuntime::activate(Self) -> Unit raise @error.AgentError
+pub fn WakeupRuntime::arm_cutoff(Self, String, String, String) -> Unit
+pub fn WakeupRuntime::begin_shutdown(Self) -> Unit
+pub fn WakeupRuntime::capability(Self, String) -> @port.WakeupPort
+pub fn WakeupRuntime::disarm_cutoff(Self, String) -> Unit
+pub fn WakeupRuntime::drop_pending(Self) -> Unit
+pub fn WakeupRuntime::notify_operation_settled(Self) -> Unit
+pub fn WakeupRuntime::set_active_session(Self, String?) -> Unit
+pub fn[G] WakeupRuntime::start_pump(Self, @async.TaskGroup[G], &WakeupHost) -> Unit
+
+// Type aliases
+
+// Traits
+pub(open) trait WakeupHost {
+  fn wakeup_idle(Self) -> Bool
+  async fn run_wakeup_turn(Self, @kernel.Message, String, String, () -> Unit) -> Unit raise @error.AgentError
+}

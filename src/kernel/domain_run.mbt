@@ -12,9 +12,10 @@
 ///|
 /// Stable identifier for a single Run. Supplied by the host in the `Start`
 /// input and carried through every state.
+#derive(Eq, Hash, Debug)
 pub(all) struct RunId {
   value : String
-} derive(Eq, Hash, Debug)
+}
 
 ///|
 pub extend RunId with Eq::{not_equal, equal}
@@ -56,9 +57,10 @@ pub impl Show for RunId with fn to_string(self : RunId) -> String {
 /// Identifier for a single turn within a Run. A Run may contain multiple
 /// turns (initial prompt + follow-ups); turns never outlive their Run.
 /// follow_up allocates a new TurnId under the same RunId.
+#derive(Eq, Hash, Debug)
 pub(all) struct TurnId {
   value : String
-} derive(Eq, Hash, Debug)
+}
 
 ///|
 pub extend TurnId with Eq::{not_equal, equal}
@@ -100,9 +102,10 @@ pub impl Show for TurnId with fn to_string(self : TurnId) -> String {
 /// Stable identifier for a product session. The Kernel never opens or
 /// materializes session storage; it carries this identity through effects,
 /// journal entries, and committed event envelopes.
+#derive(Eq, Hash, Debug)
 pub(all) struct SessionId {
   value : String
-} derive(Eq, Hash, Debug)
+}
 
 ///|
 pub extend SessionId with Eq::{not_equal, equal}
@@ -136,9 +139,10 @@ pub fn SessionId::to_string(self : SessionId) -> String {
 /// Identifier for a single declared Effect. Monotonic per Run. Each completion
 /// input must correlate to a pending effect with this id; a mismatch is
 /// `InvariantViolation::StaleCorrelation`.
+#derive(Eq, Hash, Debug)
 pub(all) struct EffectId {
   value : Int32
-} derive(Eq, Hash, Debug)
+}
 
 ///|
 pub extend EffectId with Eq::{not_equal, equal}
@@ -192,9 +196,10 @@ pub impl Show for EffectId with fn to_string(self : EffectId) -> String {
 /// executor correlate `CallModel` and `ExecuteTool` effects back to the exact
 /// snapshot version the model was prompted against; a mismatch is a kernel
 /// invariant failure (`InvariantViolation::StaleSnapshot`).
+#derive(Eq, Debug)
 pub(all) struct CatalogVersion {
   value : Int32
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend CatalogVersion with Eq::{not_equal, equal}
@@ -233,12 +238,13 @@ pub impl Show for CatalogVersion with fn to_string(self : CatalogVersion) -> Str
 
 ///|
 /// Why a Run was cancelled.
+#derive(Eq, Debug)
 pub(all) enum CancelReason {
   /// Host explicitly cancelled.
   HostRequested(detail~ : String?)
   /// Adapter/host observed the deadline.
   DeadlineReached
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend CancelReason with Eq::{not_equal, equal}
@@ -268,6 +274,7 @@ pub impl Show for CancelReason with fn to_string(self : CancelReason) -> String 
 ///|
 /// What an adapter reports after a `CancelOutstanding` effect. The reducer
 /// never waits for this.
+#derive(Eq, Debug)
 pub(all) enum CancelDisposition {
   /// Cancel signal propagated; execution may still be running.
   Propagated
@@ -278,7 +285,7 @@ pub(all) enum CancelDisposition {
   NotPropagated
   /// Effect already settled before cancel arrived.
   AlreadySettled
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend CancelDisposition with Eq::{not_equal, equal}
@@ -319,12 +326,13 @@ pub impl Show for CancelDisposition with fn to_string(self : CancelDisposition) 
 ///   mirroring the tool side's `EffectContext.effect_id`.
 /// - `pressure` is `Some` only where posoco has a reading worth sharing
 ///   (the compact path); ports treat it as advisory read-only input.
+#derive(Eq, Debug)
 pub(all) struct InvocationScope {
   session_id : SessionId
   run_id : RunId
   effect_id : EffectId?
   pressure : ContextPressure?
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend InvocationScope with Eq::{not_equal, equal}

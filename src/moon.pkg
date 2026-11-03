@@ -12,8 +12,8 @@ import {
   "colmugx/posoco/internal/event_snapshot",
   "colmugx/posoco/internal/event_projection",
   "colmugx/posoco/internal/command",
-  "colmugx/posoco/testkit",
-  "colmugx/fuwaroid",
+  "colmugx/posoco/internal/wakeup",
+  "colmugx/posoco/internal/task_runtime" @task,
   "colmugx/posoco/port",
   "colmugx/posoco/types",
   "colmugx/posoco/kernel",
@@ -23,7 +23,6 @@ import {
   "colmugx/posoco/internal/puppetry",
   "colmugx/posoco/internal/tool_directory" @directory,
   "colmugx/posoco/internal/runtime_bridge" @bridge,
-  "moonbitlang/core/env",
   "moonbitlang/async",
   "moonbitlang/async/aqueue",
 }
@@ -33,6 +32,7 @@ import {
   "colmugx/posoco/types",
   "colmugx/posoco/kernel",
   "colmugx/posoco/error",
+  "colmugx/posoco/testkit",
   "moonbitlang/async",
 } for "test"
 
@@ -42,6 +42,8 @@ import {
   "colmugx/posoco/runtime",
   "colmugx/posoco/internal/kernel_exec",
   "colmugx/posoco/internal/puppetry",
+  "colmugx/posoco/internal/task_runtime" @task,
+  "colmugx/posoco/testkit",
   "moonbitlang/async",
   "moonbitlang/async/aqueue",
   "moonbitlang/core/quickcheck" @qc,

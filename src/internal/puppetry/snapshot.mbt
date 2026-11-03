@@ -31,6 +31,7 @@
 /// Immutable capture of a turn's configuration. Constructed once via
 /// `TurnSnapshot::capture`; the struct fields are read-only and the inner
 /// Arrays/Maps are owned by the snapshot (caller cannot mutate them).
+#derive(Eq, Debug)
 pub struct TurnSnapshot {
   run_id : RunId
   turn_id : TurnId
@@ -56,7 +57,7 @@ pub struct TurnSnapshot {
   /// Equal fingerprints imply byte-equal snapshots (excluding mutable
   /// backing arrays, which we have already copied).
   fingerprint : String
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend TurnSnapshot with Eq::{not_equal, equal}
@@ -72,6 +73,7 @@ pub extend TurnSnapshot with Debug::{to_repr}
 /// Policy that may vary between prompts on the same long-lived Puppet.
 /// `TurnSnapshot::capture` validates this value and recursively copies its
 /// `call_options`.
+#derive(Eq, Debug)
 pub(all) struct RunPolicy {
   model_id : String
   call_options : Json
@@ -80,7 +82,7 @@ pub(all) struct RunPolicy {
   context_window : Int32?
   /// Fraction of `context_window` at which auto-compact fires.
   compact_threshold : Double
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend RunPolicy with Eq::{not_equal, equal}
@@ -92,6 +94,7 @@ pub extend RunPolicy with Debug::{to_repr}
 /// Inputs to `TurnSnapshot::capture`. Kept separate from the snapshot struct
 /// so callers cannot accidentally construct a snapshot with un-validated
 /// fields; they go through `capture`, which copies and fingerprints.
+#derive(Eq, Debug)
 pub(all) struct TurnSnapshotInput {
   run_id : RunId
   turn_id : TurnId
@@ -102,7 +105,7 @@ pub(all) struct TurnSnapshotInput {
   hook_provenance : Array[String]
   lifecycle_provenance : Array[String]
   subscriber_provenance : Array[String]
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend TurnSnapshotInput with Eq::{not_equal, equal}

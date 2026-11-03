@@ -24,6 +24,7 @@
 /// A KernelEvent wrapped with run/session identity, monotonic sequence
 /// number, and the journal revision at which the event's savepoint
 /// committed. Subscribers receive envelopes, never raw KernelEvents.
+#derive(Eq, Debug)
 pub(all) struct EventEnvelope {
   run_id : RunId
   turn_id : TurnId
@@ -34,7 +35,7 @@ pub(all) struct EventEnvelope {
   /// Subscribers can correlate events to journal entries via this.
   committed_revision : Int32
   event : KernelEvent
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend EventEnvelope with Eq::{not_equal, equal}

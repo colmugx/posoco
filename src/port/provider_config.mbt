@@ -2,6 +2,7 @@
 /// ProviderConfig: modelport's self-description of accepted config values.
 /// A String array (not typed enum) because each provider has its own
 /// vocabulary for e.g. reasoning_effort values.
+#derive(Eq, Debug)
 pub(all) struct ProviderConfig {
   /// Accepted reasoning_effort values. Empty = not supported.
   reasoning_effort_values : Array[String]
@@ -11,7 +12,7 @@ pub(all) struct ProviderConfig {
   /// Provider-reported fraction of the context window at which auto-compact
   /// fires, in (0, 1]. `None` = the host/default threshold applies.
   compact_threshold : Double?
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend ProviderConfig with Eq::{not_equal, equal}

@@ -17,11 +17,12 @@
 /// `Sequential` is the safe default. Products opt into `Parallel` only for
 /// tools whose effects are independently safe, and use `Exclusive` at a
 /// visible side-effect boundary.
+#derive(Eq, Debug)
 pub(all) enum ExecutionPolicy {
   Sequential
   Parallel
   Exclusive
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend ExecutionPolicy with Eq::{not_equal, equal}
@@ -45,9 +46,10 @@ pub impl Show for ExecutionPolicy with fn to_string(self : ExecutionPolicy) -> S
 /// Stable identifier for the provider that owns a tool. The Kernel uses this
 /// only for owner lookup in the runtime registry; it does not call into the
 /// owner through this type.
+#derive(Eq, Hash, Debug)
 pub(all) struct OwnerId {
   value : String
-} derive(Eq, Hash, Debug)
+}
 
 ///|
 pub extend OwnerId with Eq::{not_equal, equal}
@@ -79,11 +81,12 @@ pub fn OwnerId::to_string(self : OwnerId) -> String {
 
 ///|
 /// Exposure is captured once per operation. Hooks may only narrow it.
+#derive(Eq, Debug)
 pub(all) enum ToolExposure {
   Direct
   Deferred
   Disabled
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend ToolExposure with Eq::{equal, not_equal}
@@ -106,6 +109,7 @@ pub fn ToolExposure::narrow(
 ///|
 /// A single tool's definition as the model and the executor see it. Owned by
 /// the catalog snapshot (T05), not by individual providers.
+#derive(Eq, Debug)
 pub(all) struct ToolDef {
   name : ToolName
   description : String
@@ -116,7 +120,7 @@ pub(all) struct ToolDef {
   /// Optional provenance label (e.g. provider name, MCP server id). Included
   /// in collision diagnostics; never used for routing decisions.
   provenance : String?
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend ToolDef with Eq::{not_equal, equal}
@@ -158,11 +162,12 @@ pub impl Show for ToolDef with fn to_string(self : ToolDef) -> String {
 /// The diagnostic deliberately excludes the raw argument payload; it reports
 /// only a JSON path and a type expectation, so that prompts and tool arguments
 /// never leak into logs.
+#derive(Eq, Debug)
 pub(all) struct SchemaDiagnostic {
   json_path : String
   expected : String
   actual : String
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend SchemaDiagnostic with Eq::{not_equal, equal}

@@ -15,13 +15,13 @@ pub(all) enum ScriptedModelStep {
 }
 
 ///|
-fn testkit_snapshot_model_step(step : ScriptedModelStep) -> ScriptedModelStep {
+fn snapshot_model_step(step : ScriptedModelStep) -> ScriptedModelStep {
   match step {
-    Respond(result) => Respond(testkit_snapshot_model_call_result(result))
+    Respond(result) => Respond(snapshot_model_call_result(result))
     Stream(chunks~, response~) =>
       Stream(
         chunks=chunks.copy(),
-        response=testkit_snapshot_model_call_result(response),
+        response=snapshot_model_call_result(response),
       )
     StreamParked(chunks~) => StreamParked(chunks=chunks.copy())
     Fail(error) => Fail(error)
@@ -37,7 +37,7 @@ fn testkit_snapshot_model_step(step : ScriptedModelStep) -> ScriptedModelStep {
 }
 
 ///|
-fn testkit_is_chat_step(step : ScriptedModelStep) -> Bool {
+fn is_chat_step(step : ScriptedModelStep) -> Bool {
   match step {
     Compact(_) | CompactFail(_) => false
     _ => true
@@ -45,7 +45,7 @@ fn testkit_is_chat_step(step : ScriptedModelStep) -> Bool {
 }
 
 ///|
-fn testkit_is_compact_step(step : ScriptedModelStep) -> Bool {
+fn is_compact_step(step : ScriptedModelStep) -> Bool {
   match step {
     Compact(_) | CompactFail(_) => true
     _ => false
@@ -78,7 +78,7 @@ pub fn ScriptedModel::ScriptedModel(
   steps : Array[ScriptedModelStep],
 ) -> ScriptedModel {
   {
-    steps: steps.map(testkit_snapshot_model_step),
+    steps: steps.map(snapshot_model_step),
     index: 0,
     calls: 0,
     received_messages: [],
@@ -190,7 +190,7 @@ fn ScriptedModel::record_chat_call(
   self.received_messages.push(
     @message_snapshot.snapshot_messages(messages.to_owned()),
   )
-  self.received_tools.push(tools.map(testkit_snapshot_tool_def))
+  self.received_tools.push(tools.map(snapshot_tool_def))
   self.received_options.push(options)
 }
 
@@ -207,8 +207,8 @@ pub impl @port.ModelPort for ScriptedModel with fn chat(
   stream : @types.StreamMode,
 ) -> @kernel.ModelCallResult raise @error.ModelError {
   self.record_chat_call(messages, tools, options)
-  match self.take_matching_step(testkit_is_chat_step, "chat") {
-    Respond(result) => testkit_snapshot_model_call_result(result)
+  match self.take_matching_step(is_chat_step, "chat") {
+    Respond(result) => snapshot_model_call_result(result)
     Stream(chunks~, response~) => {
       match stream {
         Stream(cb) =>
@@ -218,7 +218,7 @@ pub impl @port.ModelPort for ScriptedModel with fn chat(
           }
         NoStream => ()
       }
-      testkit_snapshot_model_call_result(response)
+      snapshot_model_call_result(response)
     }
     StreamParked(chunks~) => {
       match stream {
@@ -257,12 +257,12 @@ pub impl @port.ModelPort for ScriptedModel with fn chat(
     }
     Fail(e) => raise e
     Compact(result~) =>
-      // Unreachable: take_matching_step filtered on testkit_is_chat_step.
+      // Unreachable: take_matching_step filtered on is_chat_step.
       raise Transport(
         "scripted_model internal error: compact step reached chat (mode=\{result.mode.to_string()})",
       )
     CompactFail(error~) =>
-      // Unreachable: take_matching_step filtered on testkit_is_chat_step.
+      // Unreachable: take_matching_step filtered on is_chat_step.
       raise error
   }
 }
@@ -277,11 +277,11 @@ pub impl @port.ModelPort for ScriptedModel with fn compact(
   trigger : @kernel.CompactTrigger,
 ) -> @kernel.CompactResult raise @error.ModelError {
   self.compact_calls = self.compact_calls + 1
-  self.received_compact_tools.push(tools.map(testkit_snapshot_tool_def))
+  self.received_compact_tools.push(tools.map(snapshot_tool_def))
   self.received_compacts.push(
     (@message_snapshot.snapshot_messages(messages.to_owned()), trigger),
   )
-  match self.take_matching_step(testkit_is_compact_step, "compact") {
+  match self.take_matching_step(is_compact_step, "compact") {
     Compact(result~) =>
       {
         compacted_messages: @message_snapshot.snapshot_messages(
@@ -290,7 +290,7 @@ pub impl @port.ModelPort for ScriptedModel with fn compact(
         mode: result.mode,
       }
     CompactFail(error~) => raise error
-    // Unreachable: take_matching_step filtered on testkit_is_compact_step.
+    // Unreachable: take_matching_step filtered on is_compact_step.
     _ =>
       raise Transport(
         "scripted_model internal error: chat step reached compact",

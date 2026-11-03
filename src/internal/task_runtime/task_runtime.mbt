@@ -34,43 +34,51 @@ fn next_task_runtime_identity() -> String raise @error.AgentError {
 }
 
 ///|
-priv struct AgentTaskOperation {
+priv struct TaskOperation {
   session_id : String
   run_id : @kernel.RunId
   turn_id : @kernel.TurnId
 }
 
 ///|
-priv struct AgentTaskRecord {
+priv struct TaskRecord {
   receipt : @port.TaskReceipt
   task : @fuwaroid.SupervisedTask[@port.TaskOutcome]
-  operation : AgentTaskOperation?
+  operation : TaskOperation?
 }
 
 ///|
-priv struct AgentTaskRuntime {
-  mut supervisor : @fuwaroid.Supervisor[@port.TaskOutcome]?
-  mut scope_active : Bool
-  mut closed : Bool
-  mut runtime_id : String?
-  mut next_id : Int32
-  mut active_operation : AgentTaskOperation?
+pub struct TaskRuntime {
+  priv mut supervisor : @fuwaroid.Supervisor[@port.TaskOutcome]?
+  priv mut scope_active : Bool
+  priv mut closed : Bool
+  priv mut runtime_id : String?
+  priv mut next_id : Int32
+  priv mut active_operation : TaskOperation?
   /// Core-owned `background_outcome_ready` projection, installed at
   /// composition. Called only after a background outcome is successfully
   /// enqueued into its session inbox; carries no outcome payload.
-  mut ready_notifier : ((@port.TaskOutcome) -> Unit)?
-  foreground_settle_timeout_ms : Int32
-  shutdown_settle_timeout_ms : Int32
-  tasks : Map[String, AgentTaskRecord]
-  outcomes : Map[String, Array[@port.TaskOutcome]]
-  inflight : Map[String, Array[String]]
+  priv mut ready_notifier : ((@port.TaskOutcome) -> Unit)?
+  priv foreground_settle_timeout_ms : Int32
+  priv shutdown_settle_timeout_ms : Int32
+  priv tasks : Map[String, TaskRecord]
+  priv outcomes : Map[String, Array[@port.TaskOutcome]]
+  priv inflight : Map[String, Array[String]]
 }
 
 ///|
-fn AgentTaskRuntime::AgentTaskRuntime(
+pub fn TaskRuntime::set_ready_notifier(
+  self : TaskRuntime,
+  notifier : (@port.TaskOutcome) -> Unit,
+) -> Unit {
+  self.ready_notifier = Some(notifier)
+}
+
+///|
+pub fn TaskRuntime::TaskRuntime(
   foreground_settle_timeout_ms~ : Int32 = foreground_task_settle_timeout_ms,
   shutdown_settle_timeout_ms~ : Int32 = managed_task_shutdown_settle_timeout_ms,
-) -> AgentTaskRuntime {
+) -> TaskRuntime {
   {
     supervisor: None,
     scope_active: false,
@@ -88,16 +96,16 @@ fn AgentTaskRuntime::AgentTaskRuntime(
 }
 
 ///|
-fn AgentTaskRuntime::capability(
-  self : AgentTaskRuntime,
+pub fn TaskRuntime::capability(
+  self : TaskRuntime,
   extension_id : String,
 ) -> @port.Tasks {
   @port.Tasks::from_submit(submit=fn(spec) { self.submit(extension_id, spec) })
 }
 
 ///|
-fn[G] AgentTaskRuntime::activate(
-  self : AgentTaskRuntime,
+pub fn[G] TaskRuntime::activate(
+  self : TaskRuntime,
   group : @async.TaskGroup[G],
 ) -> Unit raise @error.AgentError {
   if self.closed {
@@ -116,14 +124,14 @@ fn[G] AgentTaskRuntime::activate(
 }
 
 ///|
-fn AgentTaskRuntime::scope_available(self : AgentTaskRuntime) -> Bool {
+pub fn TaskRuntime::scope_available(self : TaskRuntime) -> Bool {
   !self.closed && !self.scope_active
 }
 
 ///|
 fn agent_task_operation_equal(
-  left : AgentTaskOperation,
-  right : AgentTaskOperation,
+  left : TaskOperation,
+  right : TaskOperation,
 ) -> Bool {
   left.session_id == right.session_id &&
   left.run_id == right.run_id &&
@@ -131,10 +139,10 @@ fn agent_task_operation_equal(
 }
 
 ///|
-fn AgentTaskRuntime::record_matches_operation(
-  _self : AgentTaskRuntime,
-  record : AgentTaskRecord,
-  operation : AgentTaskOperation,
+fn TaskRuntime::record_matches_operation(
+  _self : TaskRuntime,
+  record : TaskRecord,
+  operation : TaskOperation,
 ) -> Bool {
   match record.receipt.mode {
     @port.TaskMode::Foreground =>
@@ -158,7 +166,7 @@ fn supervised_task_terminal(status : @fuwaroid.SupervisedTaskStatus) -> Bool {
 }
 
 ///|
-fn AgentTaskRuntime::refresh_active_operation(self : AgentTaskRuntime) -> Unit {
+fn TaskRuntime::refresh_active_operation(self : TaskRuntime) -> Unit {
   match self.active_operation {
     None => ()
     Some(operation) => {
@@ -184,8 +192,8 @@ fn AgentTaskRuntime::refresh_active_operation(self : AgentTaskRuntime) -> Unit {
 }
 
 ///|
-fn AgentTaskRuntime::begin_operation(
-  self : AgentTaskRuntime,
+pub fn TaskRuntime::begin_operation(
+  self : TaskRuntime,
   session_id : String,
   run_id : @kernel.RunId,
   turn_id : @kernel.TurnId,
@@ -202,8 +210,8 @@ fn AgentTaskRuntime::begin_operation(
 }
 
 ///|
-fn AgentTaskRuntime::next_receipt(
-  self : AgentTaskRuntime,
+fn TaskRuntime::next_receipt(
+  self : TaskRuntime,
   extension_id : String,
   spec : @port.TaskSpec,
 ) -> @port.TaskReceipt {
@@ -223,8 +231,8 @@ fn AgentTaskRuntime::next_receipt(
 }
 
 ///|
-fn AgentTaskRuntime::submit(
-  self : AgentTaskRuntime,
+fn TaskRuntime::submit(
+  self : TaskRuntime,
   extension_id : String,
   spec : @port.TaskSpec,
 ) -> Result[@port.TaskHandle, @port.TaskSubmitError] {
@@ -304,7 +312,7 @@ fn AgentTaskRuntime::submit(
 /// Authoritative status word for the ready projection: completed / failed /
 /// timed_out / cancelled. Observers schedule work from it; the outcome body
 /// stays in the session inbox only.
-fn task_outcome_status_label(status : @port.TaskStatus) -> String {
+pub fn task_outcome_status_label(status : @port.TaskStatus) -> String {
   match status {
     @port.TaskStatus::Completed(..) => "completed"
     @port.TaskStatus::Failed(..) => "failed"
@@ -318,8 +326,8 @@ fn task_outcome_status_label(status : @port.TaskStatus) -> String {
 /// successfully enqueued. The notification precedes any wakeup turn's input
 /// read for the session (the outcome is already in the inbox); core does not
 /// auto-request from it — deciding to request stays with the extension.
-fn AgentTaskRuntime::notify_background_outcome_ready(
-  self : AgentTaskRuntime,
+fn TaskRuntime::notify_background_outcome_ready(
+  self : TaskRuntime,
   outcome : @port.TaskOutcome,
 ) -> Unit {
   match self.ready_notifier {
@@ -330,11 +338,11 @@ fn AgentTaskRuntime::notify_background_outcome_ready(
 
 ///|
 #warnings("-fragile_catch_all")
-async fn AgentTaskRuntime::execute(
-  self : AgentTaskRuntime,
+async fn TaskRuntime::execute(
+  self : TaskRuntime,
   spec : @port.TaskSpec,
   receipt : @port.TaskReceipt,
-  _operation : AgentTaskOperation?,
+  _operation : TaskOperation?,
 ) -> @port.TaskOutcome {
   let guarded : async () -> @kernel.Message = async fn() {
     let message = (spec.run)() catch {
@@ -396,14 +404,14 @@ async fn AgentTaskRuntime::execute(
 }
 
 ///|
-fn AgentTaskRuntime::reap(self : AgentTaskRuntime, receipt_id : String) -> Unit {
+fn TaskRuntime::reap(self : TaskRuntime, receipt_id : String) -> Unit {
   self.tasks.remove(receipt_id)
 }
 
 ///|
-fn AgentTaskRuntime::cancel_foreground(
-  self : AgentTaskRuntime,
-  operation : AgentTaskOperation,
+fn TaskRuntime::cancel_foreground(
+  self : TaskRuntime,
+  operation : TaskOperation,
 ) -> Unit {
   for record in self.tasks.values() {
     if self.record_matches_operation(record, operation) {
@@ -413,8 +421,8 @@ fn AgentTaskRuntime::cancel_foreground(
 }
 
 ///|
-fn AgentTaskRuntime::cancel_foreground_for_run(
-  self : AgentTaskRuntime,
+pub fn TaskRuntime::cancel_foreground_for_run(
+  self : TaskRuntime,
   run_id : @kernel.RunId,
 ) -> Unit {
   match self.active_operation {
@@ -425,8 +433,8 @@ fn AgentTaskRuntime::cancel_foreground_for_run(
 }
 
 ///|
-async fn AgentTaskRuntime::finish_active_operation(
-  self : AgentTaskRuntime,
+pub async fn TaskRuntime::finish_active_operation(
+  self : TaskRuntime,
 ) -> Unit raise @error.AgentError {
   let operation = match self.active_operation {
     None => return
@@ -497,8 +505,8 @@ async fn AgentTaskRuntime::finish_active_operation(
 }
 
 ///|
-fn AgentTaskRuntime::enqueue_outcome(
-  self : AgentTaskRuntime,
+fn TaskRuntime::enqueue_outcome(
+  self : TaskRuntime,
   outcome : @port.TaskOutcome,
 ) -> Unit {
   let session_id = outcome.receipt.session_id
@@ -513,8 +521,8 @@ fn AgentTaskRuntime::enqueue_outcome(
 }
 
 ///|
-fn AgentTaskRuntime::has_inflight(
-  self : AgentTaskRuntime,
+pub fn TaskRuntime::has_inflight(
+  self : TaskRuntime,
   session_id : String,
 ) -> Bool {
   match self.inflight.get(session_id) {
@@ -524,8 +532,8 @@ fn AgentTaskRuntime::has_inflight(
 }
 
 ///|
-fn AgentTaskRuntime::metadata_with_applied_outcomes(
-  self : AgentTaskRuntime,
+pub fn TaskRuntime::metadata_with_applied_outcomes(
+  self : TaskRuntime,
   session_id : String,
   metadata : Map[String, Json],
 ) -> Map[String, Json] raise @error.AgentError {
@@ -551,7 +559,7 @@ fn AgentTaskRuntime::metadata_with_applied_outcomes(
 /// Parse the Agent-owned applied-outcome metadata once at each session
 /// admission. Any malformed value is a runtime error before the turn can
 /// perform model, memory, or task-outcome side effects.
-fn parse_task_applied_ids(
+pub fn parse_task_applied_ids(
   metadata : Map[String, Json],
 ) -> Array[String] raise @error.AgentError {
   match metadata.get(task_outcomes_applied_metadata_key) {
@@ -581,7 +589,7 @@ fn parse_task_applied_ids(
 }
 
 ///|
-fn task_outcome_is_applied(
+pub fn task_outcome_is_applied(
   applied_ids : Array[String],
   outcome : @port.TaskOutcome,
 ) -> Bool {
@@ -589,8 +597,8 @@ fn task_outcome_is_applied(
 }
 
 ///|
-fn AgentTaskRuntime::peek_outcomes(
-  self : AgentTaskRuntime,
+pub fn TaskRuntime::peek_outcomes(
+  self : TaskRuntime,
   session_id : String,
 ) -> Array[@port.TaskOutcome] {
   let pending : Array[@port.TaskOutcome] = match self.outcomes.get(session_id) {
@@ -618,8 +626,8 @@ fn snapshot_task_outcome(outcome : @port.TaskOutcome) -> @port.TaskOutcome {
 }
 
 ///|
-fn AgentTaskRuntime::commit_outcomes(
-  self : AgentTaskRuntime,
+pub fn TaskRuntime::commit_outcomes(
+  self : TaskRuntime,
   session_id : String,
 ) -> Unit {
   let committed : Array[String] = match self.inflight.get(session_id) {
@@ -672,7 +680,7 @@ fn task_outcome_marker(outcome : @port.TaskOutcome) -> String {
 /// Outcomes enter the transcript as user/context data. This prevents a task
 /// completion from gaining system or tool authority merely because it came
 /// from an Agent-owned worker.
-fn task_outcome_message(outcome : @port.TaskOutcome) -> @kernel.Message {
+pub fn task_outcome_message(outcome : @port.TaskOutcome) -> @kernel.Message {
   let marker = task_outcome_marker(outcome)
   let detail = match outcome.status {
     @port.TaskStatus::Completed(message~) => task_message_text(message)
@@ -688,9 +696,7 @@ fn task_outcome_message(outcome : @port.TaskOutcome) -> @kernel.Message {
 }
 
 ///|
-fn AgentTaskRuntime::shutdown_straggler_detail(
-  self : AgentTaskRuntime,
-) -> String {
+pub fn TaskRuntime::shutdown_straggler_detail(self : TaskRuntime) -> String {
   let details : Array[String] = []
   for record in self.tasks.values() {
     let snapshot = record.task.snapshot()
@@ -719,8 +725,8 @@ fn AgentTaskRuntime::shutdown_straggler_detail(
 /// remain children of the owning async TaskGroup, so a worker that ignores
 /// cooperative cancellation can still keep the structured scope alive after
 /// this method reports the offending task.
-async fn AgentTaskRuntime::shutdown(
-  self : AgentTaskRuntime,
+pub async fn TaskRuntime::shutdown(
+  self : TaskRuntime,
 ) -> Unit raise @error.AgentError {
   if !self.closed {
     self.closed = true
@@ -751,9 +757,7 @@ async fn AgentTaskRuntime::shutdown(
   }
   match outcome {
     @fuwaroid.Settled => {
-      let records : Array[AgentTaskRecord] = Array::from_iter(
-        self.tasks.values(),
-      )
+      let records : Array[TaskRecord] = Array::from_iter(self.tasks.values())
       for record in records {
         self.reap(record.receipt.id)
       }
@@ -767,5 +771,29 @@ async fn AgentTaskRuntime::shutdown(
           self.shutdown_straggler_detail(),
         ),
       )
+  }
+}
+
+///|
+pub fn emit_managed_task_shutdown_failure(
+  observers : Array[&@port.Observer],
+  error : String,
+  stragglers : String,
+) -> Unit {
+  let event : @types.TurnEvent = Custom(
+    source="posoco.core",
+    label="secondary_failure",
+    data=Json::object(
+      Map::from_array([
+        ("hook_point", Json::string("managed_task_shutdown")),
+        ("error", Json::string(@diagnostic.safe_error_label(error))),
+        // Core-generated task identity/status, not worker error text: keep it
+        // intact so late supervisor status is not lost to the error-label cap.
+        ("stragglers", Json::string(stragglers)),
+      ]),
+    ),
+  )
+  for observer in observers {
+    observer.on_event(None, @event_snapshot.snapshot_turn_event(event))
   }
 }

@@ -11,6 +11,7 @@
 /// populates the `CompositionView` delivered at `Lifecycle::on_compose` — the
 /// view gates on this declaration, so an undeclared capability reads as
 /// `None`. Extensible by adding variants; existing manifests are unaffected.
+#derive(Eq, Debug)
 pub(all) enum Capability {
   /// The single composed ModelPort (post cardinality gate, source-agnostic).
   Model
@@ -28,7 +29,7 @@ pub(all) enum Capability {
   /// The Agent-owned dynamic tool contribution capability, bound to the
   /// declaring manifest's owner id.
   ToolContribution
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend Capability with Eq::{not_equal, equal}

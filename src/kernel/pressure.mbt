@@ -6,6 +6,7 @@
 /// `InvocationScope` instead of leaving modelports to re-estimate from
 /// characters. Read-only for ports; absent dimensions are genuinely unknown
 /// and must not be guessed.
+#derive(Eq, Debug)
 pub(all) struct ContextPressure {
   /// Resolved token budget ceiling for the active model. None = unknown.
   window_tokens : Int32?
@@ -14,7 +15,7 @@ pub(all) struct ContextPressure {
   occupancy_tokens : Int32?
   /// Resolved auto-compact trigger point as a fraction of the window.
   compact_threshold : Double
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend ContextPressure with Eq::{not_equal, equal}

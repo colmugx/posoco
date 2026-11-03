@@ -3,10 +3,11 @@
 /// effort, top_p, frequency_penalty, ...) belongs on the modelport's own
 /// config struct, not on this shared bag — that way adding a new provider
 /// never bloats the common type.
+#derive(Eq, Debug)
 pub(all) struct ChatOptions {
   temperature : Double?
   max_output_tokens : Int32?
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend ChatOptions with Eq::{not_equal, equal}
@@ -22,10 +23,11 @@ pub extend ChatOptions with Debug::{to_repr}
 /// to `cb` as a `StreamChunk`. The ADR §2.11 rationale still holds — streaming
 /// is a host/telemetry concern, not a transcript fact — but the chunk contract
 /// is now the canonical `StreamChunk` type, not a private JSON shape.
+#derive(Debug)
 pub(all) enum StreamMode {
   NoStream
   Stream((StreamChunk) -> Unit)
-} derive(Debug)
+}
 
 ///|
 pub extend StreamMode with Debug::{to_repr}

@@ -83,6 +83,7 @@ priv struct CoreSource {
 /// Private failure surface for this slice. No public error variant is added;
 /// an unknown session/version, a duplicate first snapshot, or an out-of-range
 /// prefix fails loudly instead of degrading to an empty value.
+#derive(Debug)
 priv suberror CoreVersionError {
   UnknownSession(sid~ : String)
   SessionExists(sid~ : String)
@@ -93,7 +94,7 @@ priv suberror CoreVersionError {
     prefix~ : Int32,
     available~ : Int32
   )
-} derive(Debug)
+}
 
 ///|
 /// Current view of a session: which version is current and its materialized

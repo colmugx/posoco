@@ -7,10 +7,11 @@
 /// Canonical content block. `Text` is the common case; `Image` carries a
 /// stable media-type identifier plus opaque payload data (base64, URL, or an
 /// adapter-managed handle — the Kernel does not interpret it).
+#derive(Eq, Debug)
 pub(all) enum Content {
   Text(String)
   Image(media_type~ : String, data~ : String)
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend Content with Eq::{not_equal, equal}
@@ -34,9 +35,10 @@ pub impl Show for Content with fn to_string(self) -> String {
 /// Stable identifier for a single tool call requested by the assistant. The
 /// reducer and scheduler only ever compare/store this string; it is opaque to
 /// the Kernel and is produced by the model adapter or by the host.
+#derive(Eq, Hash, Debug)
 pub(all) struct CallId {
   value : String
-} derive(Eq, Hash, Debug)
+}
 
 ///|
 pub extend CallId with Eq::{not_equal, equal}
@@ -76,9 +78,10 @@ pub fn CallId::to_string(self : CallId) -> String {
 /// A tool name as it appears in the catalog (call-visible name). The Kernel
 /// uses this only for lookup in the catalog snapshot; it never re-parses or
 /// re-normalizes it.
+#derive(Eq, Hash, Debug)
 pub(all) struct ToolName {
   value : String
-} derive(Eq, Hash, Debug)
+}
 
 ///|
 pub extend ToolName with Eq::{not_equal, equal}
@@ -115,11 +118,12 @@ pub fn ToolName::to_string(self : ToolName) -> String {
 /// any `ToolCall` reaching the scheduler has well-formed arguments,
 /// but the arguments may still fail the catalog schema (handled separately as
 /// `NotExecuted(SchemaMismatch)`).
+#derive(Eq, Debug)
 pub(all) struct ToolCall {
   call_id : CallId
   name : ToolName
   arguments : Json
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend ToolCall with Eq::{not_equal, equal}
@@ -152,10 +156,11 @@ pub impl Show for ToolCall with fn to_string(self) -> String {
 /// stores the raw items here. The kernel never interprets it; providers that
 /// replay plain `content` text (DeepSeek, Kimi, OpenAI-compatible) leave it
 /// `None`.
+#derive(Eq, Debug)
 pub(all) struct Reasoning {
   content : String
   raw : Json?
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend Reasoning with Eq::{not_equal, equal}
@@ -184,6 +189,7 @@ pub impl Show for Reasoning with fn to_string(self : Reasoning) -> String {
 // Proof-side token model: no contract inspects message internals; the int
 // mapping is a trusted opaque bridge. A future spec that reasons about
 // message order or contents needs a real sequence model here first.
+#derive(Eq, Debug)
 #proof_external("int.Int", "int")
 pub(all) enum Message {
   SystemMessage(content~ : Array[Content])
@@ -195,7 +201,7 @@ pub(all) enum Message {
     finish_reason~ : FinishReason
   )
   ToolMessage(call_id~ : CallId, tool_name~ : ToolName, outcome~ : ToolOutcome)
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend Message with Eq::{not_equal, equal}
@@ -210,12 +216,13 @@ pub extend Message with Debug::{to_repr}
 /// `Length` is preserved as a distinct variant because the reducer must NOT
 /// emit `ExecuteTool` effects after a length-truncated completion, even if the
 /// provider tried to stream partial tool calls.
+#derive(Eq, Debug)
 pub(all) enum FinishReason {
   Stop
   Length
   ToolCalls
   Other(String)
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend FinishReason with Eq::{not_equal, equal}
@@ -261,6 +268,7 @@ pub impl Show for FinishReason with fn to_string(self : FinishReason) -> String 
 ///
 /// Malformed-argument cases never reach this variant — they are
 /// `ModelParseFailure` at the reducer boundary (ADR §2.4).
+#derive(Eq, Debug)
 pub(all) enum NotExecutedReason {
   UnknownTool
   NotOffered
@@ -270,7 +278,7 @@ pub(all) enum NotExecutedReason {
   Revoked
   SchemaMismatch(json_path~ : String, expected~ : String, actual~ : String)
   RejectedByHook(reason~ : String)
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend NotExecutedReason with Eq::{not_equal, equal}
@@ -322,6 +330,7 @@ pub impl Show for NotExecutedReason with fn to_string(self : NotExecutedReason) 
 ///
 /// There is deliberately no boolean `is_error` field here. The variant tag IS
 /// the error status.
+#derive(Eq, Debug)
 pub(all) enum ToolOutcome {
   Success(content~ : String, structured~ : Json?)
   SuccessWithAttachments(
@@ -332,7 +341,7 @@ pub(all) enum ToolOutcome {
   ToolReportedError(content~ : String, structured~ : Json?)
   RuntimeFailure(error_category~ : String, message~ : String)
   NotExecuted(reason~ : NotExecutedReason, original_call_id~ : CallId)
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend ToolOutcome with Eq::{not_equal, equal}
@@ -389,10 +398,11 @@ pub impl Show for ToolOutcome with fn to_string(self : ToolOutcome) -> String {
 /// a business-level error reported by the tool itself (fed back to the
 /// model as a normal tool message) versus an adapter/runtime failure
 /// (the tool did not run to completion).
+#derive(Eq, Debug)
 pub(all) enum ToolFailure {
   ReportedError(content~ : String, structured~ : Json?)
   Runtime(category~ : String, message~ : String)
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend ToolFailure with Eq::{not_equal, equal}
@@ -449,10 +459,11 @@ fn safe_outcome_label(value : String) -> String {
 /// the only writer.
 // Proof-side token model: phase_inv carries the transcript opaquely; the
 // int mapping is a trusted opaque bridge (see state_proof.mbtp).
+#derive(Eq, Debug)
 #proof_external("int.Int", "int")
 pub(all) struct Transcript {
   messages : Array[Message]
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend Transcript with Eq::{not_equal, equal}

@@ -9,6 +9,7 @@
 ///
 /// The pump ALWAYS replaces the transcript body with `processed_messages`,
 /// then appends `completion` as the new assistant entry.
+#derive(Eq)
 pub(all) struct ModelCallResult {
   /// The assistant completion returned by the provider.
   completion : Completion
@@ -17,7 +18,7 @@ pub(all) struct ModelCallResult {
   /// removal). Always present — when the modelport performed no preprocessing
   /// it returns the input messages unchanged.
   processed_messages : Array[Message]
-} derive(Eq)
+}
 
 ///|
 pub extend ModelCallResult with Eq::{not_equal, equal}
@@ -32,12 +33,13 @@ pub impl Show for ModelCallResult with fn to_string(self : ModelCallResult) -> S
 
 ///|
 /// How posoco applies the result of `ModelPort::compact`.
+#derive(Eq)
 pub(all) enum CompactMode {
   /// New thread with `parent_thread_id` lineage; original thread preserved.
   NewThread
   /// Replace current session body in place; no new session created.
   Replace
-} derive(Eq)
+}
 
 ///|
 pub extend CompactMode with Eq::{not_equal, equal}
@@ -55,10 +57,11 @@ pub impl Show for CompactMode with fn to_string(self : CompactMode) -> String {
 
 ///|
 /// Return value of `ModelPort::compact`.
+#derive(Eq)
 pub(all) struct CompactResult {
   compacted_messages : Array[Message]
   mode : CompactMode
-} derive(Eq)
+}
 
 ///|
 pub extend CompactResult with Eq::{not_equal, equal}
@@ -73,10 +76,11 @@ pub impl Show for CompactResult with fn to_string(self : CompactResult) -> Strin
 
 ///|
 /// What triggered a compact. Advisory — modelport may ignore.
+#derive(Eq, Debug)
 pub(all) enum CompactTrigger {
   Auto
   Manual
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend CompactTrigger with Eq::{not_equal, equal}

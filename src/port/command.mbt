@@ -2,13 +2,14 @@
 /// Semantic command type. Determines how a panel renders the control
 /// (button / toggle / dropdown / input / multi-step form) and how a slash
 /// parser expects arguments.
+#derive(Eq, Debug)
 pub(all) enum CommandType {
   Action
   Toggle
   Select
   Input
   MultiStep
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend CommandType with Eq::{not_equal, equal}
@@ -19,12 +20,13 @@ pub extend CommandType with Debug::{to_repr}
 ///|
 /// Value type of a command parameter. Human-friendly (unlike JSON Schema which
 /// targets LLMs). Panel/slash consumers render and parse directly from this.
+#derive(Eq, Debug)
 pub(all) enum ParamType {
   Str
   Int
   Bool
   Strs
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend ParamType with Eq::{not_equal, equal}
@@ -35,6 +37,7 @@ pub extend ParamType with Debug::{to_repr}
 ///|
 /// A single command parameter. Explicit and human-facing, in contrast to
 /// ToolDef.input_schema (which is JSON Schema for LLM consumption).
+#derive(Eq, Debug)
 pub(all) struct CommandParam {
   name : String
   label : String
@@ -44,7 +47,7 @@ pub(all) struct CommandParam {
   default : Json?
   choices : Array[String]?
   positional : Bool
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend CommandParam with Eq::{not_equal, equal}
@@ -57,6 +60,7 @@ pub extend CommandParam with Debug::{to_repr}
 /// (panel form) and parsing (slash). Redundant fields (aliases/shortcut/icon/
 /// visible/metadata) are deliberate "escape hatches" for ext authors to use
 /// without changing the trait — meta does not define their semantics.
+#derive(Eq, Debug)
 pub(all) struct CommandDef {
   id : String
   label : String
@@ -69,7 +73,7 @@ pub(all) struct CommandDef {
   icon : String?
   visible : Bool
   metadata : Json?
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend CommandDef with Eq::{not_equal, equal}
@@ -81,13 +85,14 @@ pub extend CommandDef with Debug::{to_repr}
 /// Hint to a panel consumer about what UI action to take after invoke.
 /// Slash consumers ignore this. Fixed enum + None fallback; ext long-tail
 /// needs go through CommandDef.metadata.
+#derive(Eq, Debug)
 pub(all) enum UiHint {
   RefreshModelList
   RefreshSettings
   ClosePanel
   Toast
   None
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend UiHint with Eq::{not_equal, equal}
@@ -99,11 +104,12 @@ pub extend UiHint with Debug::{to_repr}
 /// Outcome of invoking a command. `feedback` is for slash (print directly);
 /// `structured` + `ui_hint` are for panel (deep render + UI action).
 /// `NeedsInput` supports multi-step commands.
+#derive(Eq, Debug)
 pub(all) enum CommandOutcome {
   Success(feedback~ : String, structured~ : Json?, ui_hint~ : UiHint?)
   Failure(reason~ : String)
   NeedsInput(prompt~ : String)
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend CommandOutcome with Eq::{not_equal, equal}

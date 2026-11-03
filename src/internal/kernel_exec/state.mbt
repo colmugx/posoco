@@ -4,6 +4,7 @@
 /// Phase invariants: Initializing/ReadyForModel/AwaitingModel/AwaitingTools/Suspended/Terminal.
 
 ///|
+#derive(Eq, Debug)
 pub(all) enum Phase {
   Initializing
   ReadyForModel
@@ -11,7 +12,7 @@ pub(all) enum Phase {
   AwaitingTools
   Suspended
   Terminal
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend Phase with Eq::{not_equal, equal}
@@ -36,6 +37,7 @@ pub impl Show for Phase with fn to_string(self : Phase) -> String {
 
 ///|
 /// Terminal outcome of a Run (ADR §2.3). Exactly one per Run.
+#derive(Eq, Debug)
 pub(all) enum RunOutcome {
   Completed(
     final_message~ : @kernel.Message,
@@ -43,7 +45,7 @@ pub(all) enum RunOutcome {
   )
   Failed(reason~ : FailureReason)
   Cancelled(reason~ : CancelReason)
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend RunOutcome with Eq::{not_equal, equal}
@@ -66,6 +68,7 @@ pub impl Show for RunOutcome with fn to_string(self : RunOutcome) -> String {
 ///|
 /// The Run's full state. Field visibility is `priv` so callers cannot construct illegal combinations.
 /// MoonBit struct fields default to package-private; constructors enforce invariants.
+#derive(Eq, Debug)
 pub struct RunState {
   /// Run id. Survives suspend/resume.
   run_id : RunId
@@ -109,7 +112,7 @@ pub struct RunState {
   tool_call_positions : Map[String, Int32]
   /// Suspension requirement. `None` outside `Suspended`.
   suspension_requirement : SuspensionRequirement?
-} derive(Eq, Debug)
+}
 
 ///|
 /// Construct the initial `Initializing` state. Accepts only `Start` input.

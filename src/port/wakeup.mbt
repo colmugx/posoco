@@ -17,12 +17,13 @@
 /// observation timestamp read from the async runtime's timer clock, for
 /// display and diagnostics only — it is never part of ticket identity or
 /// correctness, and carries no monotonicity guarantee.
+#derive(Eq, Debug)
 pub(all) struct WakeupTicket {
   id : String
   session : String
   tag : String
   enqueued_at : Int64
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend WakeupTicket with Eq::{not_equal, equal}
@@ -33,6 +34,7 @@ pub extend WakeupTicket with Debug::{to_repr}
 ///|
 /// Admission failures are explicit so an extension cannot mistake a closed
 /// scope, a malformed tag, or an invalid session for accepted work.
+#derive(Eq, Debug)
 pub(all) enum WakeupError {
   /// No live `run_scoped`, or the Agent already shut down. Wakeups are
   /// scope-scoped; a closed admission never reopens.
@@ -43,7 +45,7 @@ pub(all) enum WakeupError {
   /// the currently bound active window session. A request never binds the
   /// active session itself.
   InvalidSession(reason~ : String)
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend WakeupError with Eq::{not_equal, equal}

@@ -32,21 +32,23 @@ pub impl @port.Observer for RecordingObserver with fn on_event(
 
 ///|
 /// The exact decision made by a RecordingHook invocation.
+#derive(Debug)
 pub(all) enum RecordedHookOutcome {
   PassedThrough
   AbortedWith(String)
   DeferredWith(String)
-} derive(Debug)
+}
 
 ///|
 pub extend RecordedHookOutcome with Debug::{to_repr}
 
 ///|
 /// A recorded hook invocation: which hook function ran and its decision.
+#derive(Debug)
 pub(all) struct HookRecord {
   label : String
   outcome : RecordedHookOutcome
-} derive(Debug)
+}
 
 ///|
 pub extend HookRecord with Debug::{to_repr}
@@ -95,6 +97,8 @@ pub fn RecordingHook::records(self : RecordingHook) -> Array[HookRecord] {
 
 ///|
 pub extend RecordingHook with @port.PipelineHook::{
+  before_model,
+  before_tool,
   tool_exposure,
   on_turn_begin,
   on_post_event,

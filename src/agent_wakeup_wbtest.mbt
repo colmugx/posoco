@@ -247,7 +247,7 @@ async test "tasks/ready notification covers all four terminals without payloads"
       guard event_status is Some(word) else {
         fail("no ready event status for label \{label}")
       }
-      assert_eq(word, task_outcome_status_label(outcome.status))
+      assert_eq(word, @task.task_outcome_status_label(outcome.status))
     }
   })
 }

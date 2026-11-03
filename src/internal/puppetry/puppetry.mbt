@@ -25,6 +25,7 @@
 /// Complete input for one prompt on a long-lived Puppet. Composition-static
 /// ports and catalog wiring remain in `PuppetConfig`; every value that may
 /// differ from one turn to the next travels through this request.
+#derive(Eq, Debug)
 pub(all) struct PromptRequest {
   run_id : RunId
   turn_id : TurnId
@@ -32,7 +33,7 @@ pub(all) struct PromptRequest {
   initial_messages : Array[Message]
   operation_id : String
   policy : RunPolicy
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend PromptRequest with Eq::{not_equal, equal}

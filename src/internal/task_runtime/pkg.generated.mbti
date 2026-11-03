@@ -1,0 +1,45 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "colmugx/posoco/internal/task_runtime"
+
+import {
+  "colmugx/posoco/error",
+  "colmugx/posoco/kernel",
+  "colmugx/posoco/port",
+  "moonbitlang/async",
+}
+
+// Values
+pub fn emit_managed_task_shutdown_failure(Array[&@port.Observer], String, String) -> Unit
+
+pub fn parse_task_applied_ids(Map[String, Json]) -> Array[String] raise @error.AgentError
+
+pub fn task_outcome_is_applied(Array[String], @port.TaskOutcome) -> Bool
+
+pub fn task_outcome_message(@port.TaskOutcome) -> @kernel.Message
+
+pub fn task_outcome_status_label(@port.TaskStatus) -> String
+
+// Errors
+
+// Types and methods
+pub struct TaskRuntime {
+  // private fields
+}
+pub fn TaskRuntime::TaskRuntime(foreground_settle_timeout_ms? : Int32, shutdown_settle_timeout_ms? : Int32) -> Self
+pub fn[G] TaskRuntime::activate(Self, @async.TaskGroup[G]) -> Unit raise @error.AgentError
+pub fn TaskRuntime::begin_operation(Self, String, @kernel.RunId, @kernel.TurnId) -> Unit raise @error.AgentError
+pub fn TaskRuntime::cancel_foreground_for_run(Self, @kernel.RunId) -> Unit
+pub fn TaskRuntime::capability(Self, String) -> @port.Tasks
+pub fn TaskRuntime::commit_outcomes(Self, String) -> Unit
+pub async fn TaskRuntime::finish_active_operation(Self) -> Unit raise @error.AgentError
+pub fn TaskRuntime::has_inflight(Self, String) -> Bool
+pub fn TaskRuntime::metadata_with_applied_outcomes(Self, String, Map[String, Json]) -> Map[String, Json] raise @error.AgentError
+pub fn TaskRuntime::peek_outcomes(Self, String) -> Array[@port.TaskOutcome]
+pub fn TaskRuntime::scope_available(Self) -> Bool
+pub fn TaskRuntime::set_ready_notifier(Self, (@port.TaskOutcome) -> Unit) -> Unit
+pub async fn TaskRuntime::shutdown(Self) -> Unit raise @error.AgentError
+pub fn TaskRuntime::shutdown_straggler_detail(Self) -> String
+
+// Type aliases
+
+// Traits

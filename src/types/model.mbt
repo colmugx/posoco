@@ -5,6 +5,7 @@
 ///
 /// Streaming remains a host/telemetry concern, not a transcript fact
 /// (ADR §2.11).
+#derive(Eq, Debug)
 pub(all) enum StreamChunk {
   TextDelta(token~ : String)
   ReasoningDelta(token~ : String)
@@ -22,7 +23,7 @@ pub(all) enum StreamChunk {
     uncached_input_tokens~ : Int32?
   )
   Finish(reason~ : String)
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend StreamChunk with Eq::{not_equal, equal}
@@ -71,11 +72,12 @@ pub fn StreamChunk::validate(self : StreamChunk) -> Result[Unit, String] {
 /// streamed tool calls. Each streamed `ToolCallDelta` targets an `index`;
 /// the builder records the first non-empty `id` / `name` / `arguments_json()`
 /// it sees for that index.
+#derive(Debug)
 pub(all) struct ToolCallBuilder {
   mut id : String
   mut name : String
   mut arguments_buf : StringBuilder
-} derive(Debug)
+}
 
 ///|
 pub extend ToolCallBuilder with Debug::{to_repr}
@@ -92,11 +94,12 @@ pub fn ToolCallBuilder::arguments_json(self : ToolCallBuilder) -> String {
 
 ///|
 /// Immutable point-in-time snapshot of one accumulated streamed tool call.
+#derive(Eq, Debug)
 pub struct ToolCallSnapshot {
   id : String
   name : String
   arguments_json : String
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend ToolCallSnapshot with Eq::{not_equal, equal}
@@ -114,6 +117,7 @@ pub extend ToolCallSnapshot with Debug::{to_repr}
 ///
 /// `to_completion() -> @kernel.Completion` is the terminal read: `chat`
 /// returns a `ModelCallResult` whose `completion` field holds it.
+#derive(Debug)
 pub struct StreamAccumulator {
   priv text_buf : StringBuilder
   priv reasoning_buf : StringBuilder
@@ -124,7 +128,7 @@ pub struct StreamAccumulator {
   priv mut usage_uncached : Int32?
   priv mut usage_output : Int32?
   priv mut usage_total : Int32?
-} derive(Debug)
+}
 
 ///|
 pub extend StreamAccumulator with Debug::{to_repr}

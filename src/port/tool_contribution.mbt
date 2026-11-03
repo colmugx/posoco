@@ -33,13 +33,14 @@
 
 ///|
 /// What a withdraw request means for still-live versions of the owner.
+#derive(Eq, Debug)
 pub(all) enum ToolWithdrawMode {
   /// Hide the group from future operations. Admitted operations keep working.
   Soft
   /// Hide the group and revoke every live version: no operation may start a
   /// new call through them, and affected in-flight effects are cancelled.
   Hard
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend ToolWithdrawMode with Eq::{not_equal, equal}
@@ -60,6 +61,7 @@ pub impl Show for ToolWithdrawMode with fn to_string(self : ToolWithdrawMode) ->
 
 ///|
 /// Directory state of one owner slot, as reported by an ACK or a query.
+#derive(Eq, Debug)
 pub(all) enum ToolContributionState {
   /// The owner's group is part of the captured directory.
   Active
@@ -68,7 +70,7 @@ pub(all) enum ToolContributionState {
   Withdrawn
   /// The Agent shut down; contribution handles are closed.
   Closed
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend ToolContributionState with Eq::{not_equal, equal}
@@ -103,11 +105,12 @@ pub type ToolRetire = async () -> Result[Unit, String]
 /// core-owned and monotonic per owner; it is distinct from the catalog
 /// version an operation captures at admission. `state` is the owner slot's
 /// state after the commit.
+#derive(Eq, Debug)
 pub(all) struct ToolContributionCommit {
   owner : String
   revision : Int32
   state : ToolContributionState
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend ToolContributionCommit with Eq::{not_equal, equal}
@@ -116,6 +119,7 @@ pub extend ToolContributionCommit with Eq::{not_equal, equal}
 pub extend ToolContributionCommit with Debug::{to_repr}
 
 ///|
+#derive(Eq, Debug)
 pub(all) enum ToolContributionError {
   /// The Agent is shut down; contribution handles are closed.
   Closed
@@ -133,7 +137,7 @@ pub(all) enum ToolContributionError {
     state~ : ToolContributionState,
     detail~ : String
   )
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend ToolContributionError with Eq::{not_equal, equal}

@@ -9,13 +9,14 @@ fn qc_letters(seed : Int32) -> String {
 }
 
 ///|
+#derive(Debug)
 struct QcSlot {
   name : String
   ptype : @port.ParamType
   raw : String
   expected : Json
   included : Bool
-} derive(Debug)
+}
 
 ///|
 pub extend QcSlot with Debug::{to_repr}

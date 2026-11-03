@@ -19,9 +19,10 @@
 /// Identifier for a single model step within a Run. Monotonic per Run; the
 /// reducer allocates these (the reducer is allowed to do arithmetic, just not
 /// IO/time). Each `CallModel` effect carries the model-step id it belongs to.
+#derive(Eq, Debug)
 pub(all) struct ModelStepId {
   value : Int32
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend ModelStepId with Eq::{not_equal, equal}
@@ -72,9 +73,10 @@ pub impl Show for ModelStepId with fn to_string(self : ModelStepId) -> String {
 
 ///|
 /// Monotonic sequence counter for KernelEvents. Allocated by the reducer.
+#derive(Eq, Debug)
 pub(all) struct EventSequence {
   value : Int32
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend EventSequence with Eq::{not_equal, equal}
@@ -117,6 +119,7 @@ pub fn EventSequence::to_int(
 ///|
 /// Budget dimensions tracked per Run (ADR §2.9). `Int?` → `None` means unbounded.
 /// The reducer increments consumed counters as it declares effects.
+#derive(Eq, Debug)
 pub(all) struct Budget {
   /// Limit. `None` = unbounded.
   max_model_steps : Int32?
@@ -126,7 +129,7 @@ pub(all) struct Budget {
   max_tool_calls : Int32?
   /// Limit. `None` = unbounded.
   max_total_tokens : Int32?
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend Budget with Eq::{not_equal, equal}
@@ -165,6 +168,7 @@ pub fn Budget::bounded(
 
 ///|
 /// Per-Run consumed counters. Incremented by the reducer as it declares effects.
+#derive(Eq, Debug)
 pub(all) struct BudgetConsumed {
   /// `CallModel` effects declared so far.
   model_steps : Int32
@@ -184,7 +188,7 @@ pub(all) struct BudgetConsumed {
   /// auto-compact compares only this latest occupancy against the window, so
   /// several large-but-far-from-full calls cannot sum into a false trigger.
   last_context_tokens : Int32?
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend BudgetConsumed with Eq::{not_equal, equal}
@@ -249,12 +253,13 @@ pub fn BudgetConsumed::exceeded(
 }
 
 ///|
+#derive(Eq, Debug)
 pub enum BudgetState {
   WithinBudget
   Exceeded(BudgetDimension)
   /// Budget exists but no verified observation. Reducer MUST NOT terminate on this.
   UnknownUsage(BudgetDimension)
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend BudgetState with Eq::{not_equal, equal}
@@ -275,12 +280,13 @@ pub impl Show for BudgetState with fn to_string(self : BudgetState) -> String {
 }
 
 ///|
+#derive(Eq, Debug)
 pub(all) enum BudgetDimension {
   ModelSteps
   ToolRounds
   ToolCalls
   TotalTokens
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend BudgetDimension with Eq::{not_equal, equal}

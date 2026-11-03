@@ -24,6 +24,7 @@
 /// The savepoint kind an entry belongs to. Each savepoint commits atomically:
 /// all entries with the same (run_id, savepoint_id, kind) either all commit
 /// or none do.
+#derive(Eq, Debug)
 pub(all) enum SavepointKind {
   /// Turn start: user/control entry accepted before any model effect.
   InputAccepted
@@ -35,7 +36,7 @@ pub(all) enum SavepointKind {
   RunSuspended
   /// Reducer entered Terminal (final savepoint for the run).
   RunTerminal
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend SavepointKind with Eq::{not_equal, equal}
@@ -64,6 +65,7 @@ pub impl Show for SavepointKind with fn to_string(self : SavepointKind) -> Strin
 ///|
 /// Stable identifier for a journal entry. The (run_id, savepoint_id,
 /// entry_seq) triple uniquely locates an entry within the journal.
+#derive(Eq, Debug)
 pub(all) struct JournalEntryIdentity {
   run_id : RunId
   turn_id : TurnId
@@ -73,7 +75,7 @@ pub(all) struct JournalEntryIdentity {
   /// the pending batch.
   entry_seq : Int32
   kind : SavepointKind
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend JournalEntryIdentity with Eq::{not_equal, equal}
@@ -102,6 +104,7 @@ pub impl Show for JournalEntryIdentity with fn to_string(
 ///
 /// Payload size is bounded; oversize entries fail validation at the
 /// coordinator (pre-write).
+#derive(Eq, Debug)
 pub(all) struct JournalEntry {
   identity : JournalEntryIdentity
   /// Revision assigned at commit time. Monotonic across the whole journal.
@@ -111,7 +114,7 @@ pub(all) struct JournalEntry {
   summary : String
   /// Opaque canonical payload. The journal does not interpret this.
   payload : Json
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend JournalEntry with Eq::{not_equal, equal}

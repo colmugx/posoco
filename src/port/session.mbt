@@ -15,11 +15,12 @@
 /// Keeping message and metadata deltas in one operation prevents callers from
 /// committing transcript progress while silently dropping session state such
 /// as an automatic title, context state, or task bookkeeping.
+#derive(Eq, Debug)
 pub(all) struct SessionCheckpoint {
   from_index : Int32
   messages : Array[@kernel.Message]
   metadata : Map[String, Json]?
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend SessionCheckpoint with Eq::{not_equal, equal}

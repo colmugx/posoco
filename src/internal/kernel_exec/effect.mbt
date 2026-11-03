@@ -14,6 +14,7 @@
 /// detected at completion correlation.
 // Proof-side token model: contracts only tag-match `Effect` variants and
 // never read payload fields; the int mapping is a trusted opaque bridge.
+#derive(Eq, Debug)
 #proof_external("int.Int", "int")
 pub(all) struct CallModelPayload {
   model_step_id : ModelStepId
@@ -27,7 +28,7 @@ pub(all) struct CallModelPayload {
   /// Opaque provider-call options (temperature, max_tokens, etc.) — carried
   /// verbatim from the host; the Kernel does not interpret them.
   call_options : Json
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend CallModelPayload with Eq::{not_equal, equal}
@@ -40,6 +41,7 @@ pub extend CallModelPayload with Debug::{to_repr}
 /// `catalog_version`+`owner` in the runtime registry; if either is missing,
 /// the executor returns a typed `ToolFailed` input carrying an
 /// `InvariantCategory::MissingOwner`/`StaleSnapshot` (ADR §2.5).
+#derive(Eq, Debug)
 #proof_external("int.Int", "int")
 pub(all) struct ExecuteToolPayload {
   model_step_id : ModelStepId
@@ -53,7 +55,7 @@ pub(all) struct ExecuteToolPayload {
   catalog_version : CatalogVersion
   /// None for model calls; child identity is allocated by the reducer.
   parent : (EffectId, EffectId, Int32)?
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend ExecuteToolPayload with Eq::{not_equal, equal}
@@ -66,6 +68,7 @@ pub extend ExecuteToolPayload with Debug::{to_repr}
 /// wants the executor to stop; the executor records a `CancelDisposition`
 /// per id (fake executors report `Propagated`; a real adapter may report
 /// `NotPropagated`).
+#derive(Eq, Debug)
 #proof_external("int.Int", "int")
 pub(all) struct CancelOutstandingPayload {
   /// Effect ids that should be cancelled. May be empty (the executor should
@@ -76,7 +79,7 @@ pub(all) struct CancelOutstandingPayload {
   /// Why the cancel was issued. Mirrors the terminal CancelReason for
   /// observability — the reducer does not branch on this.
   reason : CancelReason
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend CancelOutstandingPayload with Eq::{not_equal, equal}
@@ -90,11 +93,12 @@ pub extend CancelOutstandingPayload with Debug::{to_repr}
 /// a time and returns exactly one completion Input (ADR §2.5).
 ///
 /// `effect_id` is unique per Run and allocated by the reducer.
+#derive(Eq, Debug)
 pub(all) enum Effect {
   CallModel(effect_id~ : EffectId, payload~ : CallModelPayload)
   ExecuteTool(effect_id~ : EffectId, payload~ : ExecuteToolPayload)
   CancelOutstanding(effect_id~ : EffectId, payload~ : CancelOutstandingPayload)
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend Effect with Eq::{not_equal, equal}

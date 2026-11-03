@@ -107,11 +107,11 @@ priv struct AgentRuntime {
   commands : Array[&@port.CommandPort]
   builtin_command_port : BuiltinCommandPort
   control : AgentControl
-  task_runtime : AgentTaskRuntime
+  task_runtime : @task.TaskRuntime
   /// Centralized single-operation admission/settlement state.
   operations : @operation_guard.OperationGuard
   /// Agent-owned wakeup ledger and pump.
-  wakeup : AgentWakeupRuntime
+  wakeup : @wakeup.WakeupRuntime
   config : AgentConfig
   mut next_catalog_version : Int32
   /// Agent-owned dynamic tool contributions (one owner-bound group per
@@ -356,11 +356,11 @@ fn AgentRuntime::compose(
   let journal = @puppetry.InMemoryJournal()
   let chunk_dispatcher_ref : Ref[@chunk_dispatch.ChunkDispatcher?] = Ref(None)
   let context_state_of : Ref[((String) -> @types.ContextState?)?] = Ref(None)
-  let task_runtime = AgentTaskRuntime::AgentTaskRuntime()
+  let task_runtime = @task.TaskRuntime::TaskRuntime()
   // Core-owned ready projection after a background outcome is
   // successfully enqueued into its session inbox. No outcome payload —
   // receipt identity, attribution, and authoritative status only.
-  task_runtime.ready_notifier = Some(fn(outcome) {
+  task_runtime.set_ready_notifier(fn(outcome) {
     emit_custom_event(
       agg.observers,
       None,
@@ -371,7 +371,10 @@ fn AgentRuntime::compose(
         ("session", Json::string(outcome.receipt.session_id)),
         ("extension_id", Json::string(outcome.receipt.extension_id)),
         ("label", Json::string(outcome.receipt.label)),
-        ("status", Json::string(task_outcome_status_label(outcome.status))),
+        (
+          "status",
+          Json::string(@task.task_outcome_status_label(outcome.status)),
+        ),
       ],
     )
   })
@@ -379,7 +382,7 @@ fn AgentRuntime::compose(
   // extensions receive a fully constructed capability; the pump joins at
   // run_scoped startup. No runtime backfill is needed — the ledger owns its
   // admission state, and execution goes through the completed Agent.
-  let wakeup = AgentWakeupRuntime::AgentWakeupRuntime(observers=agg.observers)
+  let wakeup = @wakeup.WakeupRuntime::WakeupRuntime(observers=agg.observers)
   let operations = @operation_guard.OperationGuard::OperationGuard()
   let control = AgentControl(mailbox_ref)
   control.set_abort_hook(fn(run_id) {
@@ -400,7 +403,9 @@ fn AgentRuntime::compose(
   // committed RunStarted. Registered before any turn can arm, after the
   // checkpoint subscriber and before the observer projection, so externally
   // notified RunStarted events see the coverage already updated.
-  let wakeup_cutoff_subscriber = WakeupCutoffSubscriber(wakeup)
+  let wakeup_cutoff_subscriber = @wakeup.WakeupCutoffSubscriber::WakeupCutoffSubscriber(
+    wakeup,
+  )
   let puppet_config : @puppetry.PuppetConfig = {
     host,
     catalog,
@@ -669,7 +674,7 @@ async fn AgentRuntime::shutdown(self : AgentRuntime) -> Unit {
     Ok(_) => ()
     Err(error) => {
       self.wakeup.drop_pending()
-      emit_managed_task_shutdown_failure(
+      @task.emit_managed_task_shutdown_failure(
         self.observers,
         error.to_string(),
         self.task_runtime.shutdown_straggler_detail(),
@@ -821,31 +826,6 @@ fn emit_secondary_failure(
   for observer in observers {
     // Secondary failures are emitted from hook closures and refresh paths
     // that hold no run identity — scope is None by design.
-    observer.on_event(None, @event_snapshot.snapshot_turn_event(event))
-  }
-}
-
-///|
-fn emit_managed_task_shutdown_failure(
-  observers : Array[&@port.Observer],
-  error : String,
-  stragglers : String,
-) -> Unit {
-  let event : @types.TurnEvent = Custom(
-    source="posoco.core",
-    label="secondary_failure",
-    data=Json::object(
-      Map::from_array([
-        ("hook_point", Json::string("managed_task_shutdown")),
-        ("error", Json::string(@diagnostic.safe_error_label(error))),
-        // This value is core-generated task identity/status metadata, not
-        // arbitrary worker error text. Keep it intact so late fields such
-        // as supervisor status are not lost to the short error-label cap.
-        ("stragglers", Json::string(stragglers)),
-      ]),
-    ),
-  )
-  for observer in observers {
     observer.on_event(None, @event_snapshot.snapshot_turn_event(event))
   }
 }

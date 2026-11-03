@@ -12,9 +12,10 @@
 ///|
 /// Identifier for a model binding, carried so telemetry/events can name the
 /// model behind a completion. The Kernel reducer only ever sees model step ids.
+#derive(Eq, Hash, Debug)
 pub(all) struct ModelId {
   value : String
-} derive(Eq, Hash, Debug)
+}
 
 ///|
 pub extend ModelId with Eq::{not_equal, equal}

@@ -6,15 +6,3 @@
 
 ///|
 pub extend NoopCommandPort with @port.CommandPort::{commands, invoke}
-
-///|
-pub extend RecordingHook with @port.PipelineHook::{before_model, before_tool}
-
-///|
-pub extend RecordingSessionPort with @port.SessionPort::{load, save}
-
-///|
-pub extend ScriptedMemoryPort with @port.MemoryPort::{inbound}
-
-///|
-pub extend RecordingToolProvider with @port.ToolProvider::{list_tools}

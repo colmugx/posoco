@@ -1,8 +1,9 @@
 ///|
+#derive(Eq, Debug)
 pub(all) struct RecordedLogWrite {
   record : @port.LogRecord
   durability : @port.LogDurability
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend RecordedLogWrite with Eq::{not_equal, equal}

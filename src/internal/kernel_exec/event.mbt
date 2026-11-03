@@ -10,10 +10,11 @@
 /// `Start` input). The `RunStarted` event is non-terminal.
 ///
 /// `RunStarted` is the product's sole start event.
+#derive(Eq, Debug)
 pub(all) struct StartedDetails {
   run_id : RunId
   session_id : SessionId
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend StartedDetails with Eq::{not_equal, equal}
@@ -25,6 +26,7 @@ pub extend StartedDetails with Debug::{to_repr}
 /// Suspension requirement — what the host must satisfy before sending
 /// `Resume`. Only in-process resume is exercised; cross-process durability
 /// is out of scope. The Kernel never interprets the payload.
+#derive(Eq, Debug)
 pub(all) struct SuspensionRequirement {
   /// Human/typed label identifying what the suspension is waiting for
   /// (e.g. "approval", "user_input", "checkpoint").
@@ -32,7 +34,7 @@ pub(all) struct SuspensionRequirement {
   /// Opaque payload carried across the suspension boundary. The Kernel
   /// does not interpret this; the durable encoding is out of scope.
   payload : Json
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend SuspensionRequirement with Eq::{not_equal, equal}
@@ -45,6 +47,7 @@ pub extend SuspensionRequirement with Debug::{to_repr}
 ///|
 /// A single domain event declared by the reducer. EventEnvelopes are built
 /// by the Puppet/Interpreter outside the reducer.
+#derive(Eq, Debug)
 pub(all) enum KernelEvent {
   /// Emitted on the Start input. Exactly once per Run.
   RunStarted(details~ : StartedDetails)
@@ -155,7 +158,7 @@ pub(all) enum KernelEvent {
   RunFailed(reason~ : FailureReason)
   /// Cancelled termination. Exactly once per Run.
   RunCancelled(reason~ : CancelReason)
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend KernelEvent with Show::{output}

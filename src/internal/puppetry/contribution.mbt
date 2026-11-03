@@ -29,6 +29,7 @@
 /// The context carries NO mutable references and NO journal writer. A
 /// contributor that needs to add a domain entry must return it via
 /// JournalContribution; it cannot reach into the journal directly.
+#derive(Eq, Debug)
 pub(all) struct PreCommitContext {
   run_id : RunId
   turn_id : TurnId
@@ -42,7 +43,7 @@ pub(all) struct PreCommitContext {
   current_revision : Int32
   /// Catalog version active for this run. Read-only.
   catalog_version : CatalogVersion
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend PreCommitContext with Eq::{not_equal, equal}
@@ -62,11 +63,12 @@ pub extend PreCommitContext with Debug::{to_repr}
 ///
 /// The contributor does NOT specify the committed revision (the coordinator
 /// assigns it). It does NOT mark entries as committed (the journal does).
+#derive(Eq, Debug)
 pub(all) struct JournalContribution {
   contributor_id : String
   provenance : String
   proposed_entries : Array[JournalEntry]
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend JournalContribution with Eq::{not_equal, equal}
@@ -205,6 +207,7 @@ pub impl JournalContributor for NoopContributor with fn contribute(
 /// batch commits. If the journal has advanced past this revision (e.g.
 /// concurrent commit elsewhere — impossible with the single-writer journal
 /// today, but the check stays), the commit fails with `BarrierFailed`.
+#derive(Eq, Debug)
 pub(all) struct FrozenBatch {
   savepoint_id : String
   savepoint_kind : SavepointKind
@@ -213,7 +216,7 @@ pub(all) struct FrozenBatch {
   /// Set of entry dedup keys, captured at freeze time. Used to detect
   /// post-freeze mutation of the underlying arrays.
   frozen_entry_keys : Array[String]
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend FrozenBatch with Eq::{not_equal, equal}

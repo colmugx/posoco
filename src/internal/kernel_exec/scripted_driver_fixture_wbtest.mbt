@@ -59,11 +59,12 @@ pub fn ScriptedExecutor::lookup(
 
 ///|
 /// Single step in the driver's mechanical execution log for conformance goldens.
+#derive(Eq, Debug)
 pub(all) struct DriverStep {
   effect_id : EffectId
   effect_kind : String
   input_kind : String
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend DriverStep with Eq::{not_equal, equal}
@@ -80,11 +81,12 @@ pub impl Show for DriverStep with fn to_string(self : DriverStep) -> String {
 }
 
 ///|
+#derive(Debug)
 pub(all) struct DriverTrace {
   steps : Array[DriverStep]
   events : Array[KernelEvent]
   final_state : RunState
-} derive(Debug)
+}
 
 ///|
 pub extend DriverTrace with Debug::{to_repr}

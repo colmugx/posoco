@@ -9,13 +9,14 @@
 /// sequence numbers, rotation, integrity metadata, and physical layout.
 
 ///|
+#derive(Eq, Debug)
 pub(all) enum LogLevel {
   Trace
   Debug
   Info
   Warn
   Error
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend LogLevel with Eq::{not_equal, equal}
@@ -29,11 +30,12 @@ pub extend LogLevel with Debug::{to_repr}
 /// - Buffered: the sink accepted the record; it may still live only in memory.
 /// - Written: the sink completed its normal write path.
 /// - Durable: the sink crossed its durability barrier before returning.
+#derive(Eq, Debug)
 pub(all) enum LogDurability {
   Buffered
   Written
   Durable
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend LogDurability with Eq::{not_equal, equal}
@@ -48,6 +50,7 @@ pub extend LogDurability with Debug::{to_repr}
 /// message is optional human-readable context. scope attributes records to a
 /// Posoco session/run/turn when one exists. data is producer-owned JSON;
 /// sinks must not inspect it to infer secrets or policy.
+#derive(Eq, Debug)
 pub(all) struct LogRecord {
   level : LogLevel
   source : String
@@ -56,7 +59,7 @@ pub(all) struct LogRecord {
   message : String?
   scope : @types.EventScope?
   data : Json
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend LogRecord with Eq::{not_equal, equal}

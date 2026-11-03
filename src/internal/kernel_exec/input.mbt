@@ -10,10 +10,11 @@
 /// The initial input that drives a Run out of `Initializing`. Carries the
 /// initial transcript seed (system prompt, user message, etc.) and the
 /// catalog version to use.
+#derive(Eq, Debug)
 pub(all) struct StartPayload {
   initial_messages : Array[@kernel.Message]
   catalog_version : CatalogVersion
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend StartPayload with Eq::{not_equal, equal}
@@ -24,12 +25,13 @@ pub extend StartPayload with Debug::{to_repr}
 ///|
 /// A successful model step completion. Correlates to pending `CallModel` via `effect_id`.
 /// `processed_messages` carries the transcript actually sent to the provider so the pump can write it back at commit boundary.
+#derive(Eq, Debug)
 pub(all) struct ModelCompletedPayload {
   effect_id : EffectId
   model_step_id : ModelStepId
   completion : @kernel.Completion
   processed_messages : Array[@kernel.Message]
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend ModelCompletedPayload with Eq::{not_equal, equal}
@@ -39,11 +41,12 @@ pub extend ModelCompletedPayload with Debug::{to_repr}
 
 ///|
 /// A failed model step. The reducer transitions to `Terminal(Failed)`.
+#derive(Eq, Debug)
 pub(all) struct ModelFailedPayload {
   effect_id : EffectId
   model_step_id : ModelStepId
   failure : @kernel.ModelFailure
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend ModelFailedPayload with Eq::{not_equal, equal}
@@ -54,13 +57,14 @@ pub extend ModelFailedPayload with Debug::{to_repr}
 ///|
 /// A successful or business-failed tool outcome. Runtime failures arrive as `ToolFailed`.
 /// Correlates to pending `ExecuteTool` via `effect_id`; `call_id` must match.
+#derive(Eq, Debug)
 pub(all) struct ToolCompletedPayload {
   effect_id : EffectId
   call_id : @kernel.CallId
   tool_name : @kernel.ToolName
   arguments : Json
   outcome : @kernel.ToolOutcome
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend ToolCompletedPayload with Eq::{not_equal, equal}
@@ -71,6 +75,7 @@ pub extend ToolCompletedPayload with Debug::{to_repr}
 ///|
 /// Adapter runtime failure or kernel-invariant failure. Runtime → `ToolOutcome::RuntimeFailure`
 /// and continues; invariant → `Terminal(Failed)`.
+#derive(Eq, Debug)
 pub(all) struct ToolFailedPayload {
   effect_id : EffectId
   call_id : @kernel.CallId
@@ -81,7 +86,7 @@ pub(all) struct ToolFailedPayload {
   runtime : @kernel.ModelFailure?
   /// Invariant → transitions to `Terminal(Failed)`.
   invariant_failure : InvariantCategory?
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend ToolFailedPayload with Eq::{not_equal, equal}
@@ -91,9 +96,10 @@ pub extend ToolFailedPayload with Debug::{to_repr}
 
 ///|
 /// Host or adapter requested cancellation. ADR §2.5 race rules apply.
+#derive(Eq, Debug)
 pub(all) struct CancelRequestedPayload {
   detail : String?
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend CancelRequestedPayload with Eq::{not_equal, equal}
@@ -103,9 +109,10 @@ pub extend CancelRequestedPayload with Debug::{to_repr}
 
 ///|
 /// Deadline reached. Wins against queued completions (ADR §2.5 rule 2).
+#derive(Eq, Debug)
 pub(all) struct DeadlineReachedPayload {
   detail : String
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend DeadlineReachedPayload with Eq::{not_equal, equal}
@@ -115,11 +122,12 @@ pub extend DeadlineReachedPayload with Debug::{to_repr}
 
 ///|
 /// External observation that a budget dimension was crossed.
+#derive(Eq, Debug)
 pub(all) struct BudgetExhaustedPayload {
   dimension : BudgetDimension
   consumed : Int32
   limit : Int32
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend BudgetExhaustedPayload with Eq::{not_equal, equal}
@@ -130,9 +138,10 @@ pub extend BudgetExhaustedPayload with Debug::{to_repr}
 ///|
 /// Suspend requested. Only legal from `AwaitingModel` with a single pending `CallModel` (ADR §2.6).
 /// Drops the pending effect, emits `CancelOutstanding`, enters `Suspended`.
+#derive(Eq, Debug)
 pub(all) struct SuspendRequestedPayload {
   requirement : SuspensionRequirement
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend SuspendRequestedPayload with Eq::{not_equal, equal}
@@ -142,10 +151,11 @@ pub extend SuspendRequestedPayload with Debug::{to_repr}
 
 ///|
 /// Resume. Only legal from `Suspended`. Emits `RunResumed`, transitions to `ReadyForModel`.
+#derive(Eq, Debug)
 pub(all) struct ResumePayload {
   /// Opaque payload the host injects after resume.
   payload : Json
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend ResumePayload with Eq::{not_equal, equal}
@@ -160,10 +170,11 @@ pub extend ResumePayload with Debug::{to_repr}
 /// the reducer commits them with a `TranscriptRewritten` event so the journal
 /// records the fact. `reason` identifies the producer; current producers are
 /// "pre_model_hook", "compact_replace" and "compact_append".
+#derive(Eq, Debug)
 pub(all) struct TranscriptRewritePayload {
   rewritten_messages : Array[@kernel.Message]
   reason : String
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend TranscriptRewritePayload with Eq::{not_equal, equal}
@@ -174,6 +185,7 @@ pub extend TranscriptRewritePayload with Debug::{to_repr}
 ///|
 /// Discriminator for RunInput variants. The reducer pattern-matches on this
 /// in `reduce(state, input)`.
+#derive(Eq, Debug)
 pub(all) enum RunInput {
   Start(payload~ : StartPayload)
   ModelCompleted(payload~ : ModelCompletedPayload)
@@ -186,7 +198,7 @@ pub(all) enum RunInput {
   SuspendRequested(payload~ : SuspendRequestedPayload)
   Resume(payload~ : ResumePayload)
   TranscriptRewrite(payload~ : TranscriptRewritePayload)
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend RunInput with Eq::{not_equal, equal}

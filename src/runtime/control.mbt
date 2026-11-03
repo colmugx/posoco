@@ -1,5 +1,6 @@
 ///|
 /// Pure result returned by Agent-owned host control operations.
+#derive(Eq, Debug)
 pub(all) enum EnqueueOutcome {
   /// Command accepted; carries the command id for diagnostics/correlation.
   Accepted(command_id~ : String)
@@ -11,7 +12,7 @@ pub(all) enum EnqueueOutcome {
   AbortAlreadyRequested
   /// A queue operation failed for a reason other than queue capacity.
   RejectedQueueFailure(reason~ : String)
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend EnqueueOutcome with Eq::{not_equal, equal}

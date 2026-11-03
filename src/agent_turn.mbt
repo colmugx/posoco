@@ -190,7 +190,7 @@ async fn AgentRuntime::run_turn_via_puppet(
   operation_id : String,
 ) -> @types.TurnResult raise @error.AgentError {
   let session = self.load_session_for_operation(session_id)
-  let applied_task_ids = parse_task_applied_ids(session.metadata)
+  let applied_task_ids = @task.parse_task_applied_ids(session.metadata)
   match @types.ContextState::from_metadata(session.metadata) {
     Some(state) =>
       match self.puppet.session_context_state(session_id) {
@@ -229,8 +229,8 @@ async fn AgentRuntime::run_turn_via_puppet(
     let pending = self.task_runtime.peek_outcomes(session_id)
     has_peeked_task_outcomes = !pending.is_empty()
     for outcome in pending {
-      if !task_outcome_is_applied(applied_task_ids, outcome) {
-        messages.push(task_outcome_message(outcome))
+      if !@task.task_outcome_is_applied(applied_task_ids, outcome) {
+        messages.push(@task.task_outcome_message(outcome))
       }
     }
   }

@@ -9,6 +9,7 @@
 /// Token usage reported by the model for a single step. The Kernel only counts
 /// what is actually reported; absent dimensions are `None`, **never** silently
 /// coerced to 0 (ADR §2.9 — unknown usage is never reported as 0).
+#derive(Eq, Debug)
 pub(all) struct Usage {
   input_tokens : Int32?
   output_tokens : Int32?
@@ -24,7 +25,7 @@ pub(all) struct Usage {
   /// that report hit and miss as a pair spare consumers the subtraction
   /// (`uncached = input - cached`); this field is never synthesized.
   uncached_input_tokens : Int32?
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend Usage with Eq::{not_equal, equal}
@@ -81,10 +82,11 @@ pub impl Show for Usage with fn to_string(self : Usage) -> String {
 /// Construction note: do NOT build this by hand in production code. The
 /// `from_assistant_message` constructor enforces the invariant that the message
 /// payload is consistent (assistant role, no `ToolMessage` shape, etc.).
+#derive(Eq, Debug)
 pub(all) struct Completion {
   message : CompletionPayload
   usage : Usage?
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend Completion with Eq::{not_equal, equal}
@@ -99,12 +101,13 @@ pub extend Completion with Debug::{to_repr}
 /// transcript entry, while the `usage` lives at the completion level. This
 /// struct mirrors only the fields that travel together as the assistant's
 /// contribution to a single step.
+#derive(Eq, Debug)
 pub(all) struct CompletionPayload {
   content : Array[Content]
   tool_calls : Array[ToolCall]
   reasoning : Reasoning?
   finish_reason : FinishReason
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend CompletionPayload with Eq::{not_equal, equal}
@@ -157,6 +160,7 @@ pub fn Completion::finish_reason(self : Completion) -> FinishReason {
 /// Categorises why a model step failed (ADR §2.4). The reducer maps this to a
 /// `FailureReason::Model*` variant. Each variant carries a safe bounded label,
 /// never a raw provider payload.
+#derive(Eq, Debug)
 pub(all) enum ModelFailure {
   RequestBuild(reason~ : String)
   Transport(reason~ : String)
@@ -174,7 +178,7 @@ pub(all) enum ModelFailure {
   /// package's `RateLimitInfo`) because the kernel sits below the error
   /// package in the dependency order.
   RateLimited(reason~ : String, reset_at_ms~ : Int64?, provider_code~ : String?)
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend ModelFailure with Eq::{not_equal, equal}

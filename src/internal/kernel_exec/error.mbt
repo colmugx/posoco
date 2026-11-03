@@ -7,6 +7,7 @@
 /// Why the reducer (or constructor) declared a kernel invariant failure.
 /// Each variant carries enough context (phase, effect id, call id) to
 /// diagnose the violation without leaking raw prompt/tool payloads.
+#derive(Eq, Debug)
 pub(all) enum InvariantCategory {
   /// `ToolCompleted` or `ModelCompleted` arrived for an effect id that is not
   /// in the pending set (or has already been resolved).
@@ -32,7 +33,7 @@ pub(all) enum InvariantCategory {
   /// from `IllegalInputForPhase` so conformance tests can assert post-terminal
   /// rejection precisely.
   PostTerminal(input_kind~ : String)
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend InvariantCategory with Eq::{not_equal, equal}
@@ -69,6 +70,7 @@ pub impl Show for InvariantCategory with fn to_string(self : InvariantCategory) 
 ///
 /// `Cancelled` is a separate outcome (`RunOutcome::Cancelled`) and uses
 /// `CancelReason`, never `FailureReason`.
+#derive(Eq, Debug)
 pub(all) enum FailureReason {
   ModelParseFailure(detail~ : String)
   ModelTransport(detail~ : String)
@@ -90,7 +92,7 @@ pub(all) enum FailureReason {
   InvariantViolation(category~ : InvariantCategory)
   BudgetExhausted(dimension~ : BudgetDimension)
   DeadlineReached
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend FailureReason with Eq::{not_equal, equal}

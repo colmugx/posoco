@@ -2,41 +2,42 @@
 /// Configurable outcome for a tool call: success outcome, or raised runtime
 /// error. Constructors are prefixed with `Outcome` to avoid ambiguity with
 /// `Result::Ok`/`Result::Err` at unqualified call sites.
+#derive(Debug)
 pub(all) enum ScriptedToolOutcome {
   OutcomeOk(@kernel.ToolOutcome)
   OutcomeErr(@error.RuntimeError)
-} derive(Debug)
+}
 
 ///|
 pub extend ScriptedToolOutcome with Debug::{to_repr}
 
 ///|
 /// A recorded tool execution: call id, tool name, and outcome.
+#derive(Debug)
 pub(all) struct ToolExecRecord {
   requested_name : String
   call_id : String
   tool_name : String
   arguments : Json
   outcome : ScriptedToolOutcome
-} derive(Debug)
+}
 
 ///|
 pub extend ToolExecRecord with Debug::{to_repr}
 
 ///|
 /// Unified provider operation trace, preserving list/execute interleaving.
+#derive(Debug)
 pub(all) enum ToolProviderOp {
   ListTools
   ExecuteTool(requested_name~ : String, call~ : @kernel.ToolCall)
-} derive(Debug)
+}
 
 ///|
 pub extend ToolProviderOp with Debug::{to_repr}
 
 ///|
-fn testkit_snapshot_tool_outcome(
-  outcome : ScriptedToolOutcome,
-) -> ScriptedToolOutcome {
+fn snapshot_tool_outcome(outcome : ScriptedToolOutcome) -> ScriptedToolOutcome {
   match outcome {
     OutcomeOk(value) =>
       OutcomeOk(@message_snapshot.snapshot_tool_outcome(value))
@@ -63,10 +64,10 @@ pub fn RecordingToolProvider::RecordingToolProvider(
 ) -> RecordingToolProvider {
   let copied_outcomes : Map[String, ScriptedToolOutcome] = Map::from_array([])
   for key in outcomes.keys() {
-    copied_outcomes[key] = testkit_snapshot_tool_outcome(outcomes[key])
+    copied_outcomes[key] = snapshot_tool_outcome(outcomes[key])
   }
   {
-    tool_defs: tool_defs.map(testkit_snapshot_tool_def),
+    tool_defs: tool_defs.map(snapshot_tool_def),
     outcomes: copied_outcomes,
     list_calls: 0,
     exec_records: [],
@@ -93,7 +94,7 @@ pub fn RecordingToolProvider::exec_records(
       call_id: record.call_id,
       tool_name: record.tool_name,
       arguments: @message_snapshot.snapshot_json(record.arguments),
-      outcome: testkit_snapshot_tool_outcome(record.outcome),
+      outcome: snapshot_tool_outcome(record.outcome),
     }
   })
 }
@@ -149,13 +150,13 @@ pub async fn RecordingToolProvider::execute_direct(
 }
 
 ///|
-pub extend RecordingToolProvider with @port.ToolProvider::{execute}
+pub extend RecordingToolProvider with @port.ToolProvider::{list_tools, execute}
 
 ///|
 pub impl @port.ToolProvider for RecordingToolProvider with fn list_tools(self) {
   self.list_calls = self.list_calls + 1
   self.ops.push(ListTools)
-  self.tool_defs.map(testkit_snapshot_tool_def)
+  self.tool_defs.map(snapshot_tool_def)
 }
 
 ///|
@@ -188,7 +189,7 @@ pub impl @port.ToolProvider for RecordingToolProvider with fn execute(
     call_id: call.call_id.to_string(),
     tool_name: call.name.to_string(),
     arguments: @message_snapshot.snapshot_json(call.arguments),
-    outcome: testkit_snapshot_tool_outcome(outcome),
+    outcome: snapshot_tool_outcome(outcome),
   })
   match outcome {
     OutcomeOk(value) => @message_snapshot.snapshot_tool_outcome(value)

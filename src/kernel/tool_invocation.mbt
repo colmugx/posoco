@@ -1,6 +1,7 @@
 ///|
 /// Child invocation results do not conflate an interrupted scope with a
 /// completed business outcome. A propagated cancel is not proof of rollback.
+#derive(Eq, Debug)
 pub(all) enum InvocationResult {
   Completed(ToolOutcome)
   Interrupted(
@@ -8,7 +9,7 @@ pub(all) enum InvocationResult {
     cancellation~ : CancelDisposition,
     side_effects_possible~ : Bool
   )
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend InvocationResult with Eq::{equal, not_equal}

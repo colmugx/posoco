@@ -26,9 +26,10 @@
 /// Stable identifier for a control command. Used in diagnostics and in
 /// the queue's FIFO ordering (frozen at enqueue, consumed in command_id
 /// order within a safe point).
+#derive(Eq, Hash, Debug)
 pub(all) struct CommandId {
   value : String
-} derive(Eq, Hash, Debug)
+}
 
 ///|
 pub extend CommandId with Eq::{not_equal, equal}
@@ -72,6 +73,7 @@ pub impl Show for CommandId with fn to_string(self : CommandId) -> String {
 
 ///|
 /// How a mailbox consumes its queue at a single safe point.
+#derive(Eq, Debug)
 pub(all) enum QueuePolicy {
   /// Consume all queued commands at once (e.g. all pending steers at one
   /// tool-batch boundary).
@@ -79,7 +81,7 @@ pub(all) enum QueuePolicy {
   /// Consume exactly one command per safe point (e.g. one follow-up per
   /// turn boundary).
   OneAtATime
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend QueuePolicy with Eq::{not_equal, equal}
@@ -106,6 +108,7 @@ pub impl Show for QueuePolicy with fn to_string(self : QueuePolicy) -> String {
 /// A steer command. Carries run/turn/batch/model-step IDs observed at
 /// enqueue; consumed only if they match the active run's state at the
 /// safe point.
+#derive(Eq, Debug)
 pub(all) struct SteerCommand {
   command_id : CommandId
   target_run_id : RunId
@@ -119,7 +122,7 @@ pub(all) struct SteerCommand {
   /// does not interpret this; the Puppet converts it to a RunInput at
   /// consume time.
   payload : Json
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend SteerCommand with Eq::{not_equal, equal}
@@ -130,12 +133,13 @@ pub extend SteerCommand with Debug::{to_repr}
 ///|
 /// A follow-up command. Creates a new turn under the same run_id at a
 /// turn boundary.
+#derive(Eq, Debug)
 pub(all) struct FollowUpCommand {
   command_id : CommandId
   target_run_id : RunId
   source_turn_id : TurnId
   payload : Json
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend FollowUpCommand with Eq::{not_equal, equal}
@@ -145,13 +149,14 @@ pub extend FollowUpCommand with Debug::{to_repr}
 
 ///|
 /// A resume command. Targets a specific suspension under a specific run.
+#derive(Eq, Debug)
 pub(all) struct ResumeCommand {
   command_id : CommandId
   target_run_id : RunId
   suspension_id : String
   /// Payload that must satisfy the SuspensionRequirement's `kind`.
   payload : Json
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend ResumeCommand with Eq::{not_equal, equal}
@@ -163,11 +168,12 @@ pub extend ResumeCommand with Debug::{to_repr}
 /// An abort command. Idempotent: the first call converts to
 /// `RunInput::CancelRequested`; subsequent calls return
 /// `AbortAlreadyRequested`.
+#derive(Eq, Debug)
 pub(all) struct AbortCommand {
   command_id : CommandId
   target_run_id : RunId
   detail : String?
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend AbortCommand with Eq::{not_equal, equal}
@@ -190,12 +196,13 @@ pub extend AbortCommand with Debug::{to_repr}
 /// new session (carrying `parent_thread_id` lineage), and returns
 /// `PromptResult::ForkCompleted`. The current turn then continues on the
 /// original thread.
+#derive(Eq, Debug)
 pub(all) struct ForkCommand {
   command_id : CommandId
   target_run_id : RunId
   target_turn_id : TurnId
   fork_index : Int32
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend ForkCommand with Eq::{not_equal, equal}
@@ -217,12 +224,13 @@ pub fn ForkCommand::fork_index(self : ForkCommand) -> Int32 {
 /// User-or-pump request to compact the current thread. `trigger` tells the
 /// modelport whether this is an automatic (context-window pressure) or
 /// manual (`/compact`) compact, so the modelport can pick a strategy.
+#derive(Eq, Debug)
 pub(all) struct CompactCommand {
   command_id : CommandId
   target_run_id : RunId
   target_turn_id : TurnId
   trigger : @kernel.CompactTrigger
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend CompactCommand with Eq::{not_equal, equal}
@@ -246,6 +254,7 @@ pub fn CompactCommand::trigger(self : CompactCommand) -> @kernel.CompactTrigger 
 
 ///|
 /// Result of enqueuing a control command.
+#derive(Eq, Debug)
 pub(all) enum EnqueueResult {
   /// Command accepted; carries the command_id for correlation.
   Accepted(command_id~ : CommandId)
@@ -257,7 +266,7 @@ pub(all) enum EnqueueResult {
   /// Abort command that arrived after the run was already terminal OR
   /// after a previous abort already fired.
   AbortAlreadyRequested(command_id~ : CommandId)
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend EnqueueResult with Eq::{not_equal, equal}
