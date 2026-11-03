@@ -137,8 +137,8 @@ priv struct AgentRuntime {
   /// for each turn.
   chunk_dispatcher : Ref[@chunk_dispatch.ChunkDispatcher?]
   /// Persisted-prefix bookkeeping (cursor + rewrite-dirty) shared with the
-  /// committed-event checkpoint subscriber; see `SessionProgress`.
-  progress : SessionProgress
+  /// committed-event checkpoint subscriber; see `@session_state.SessionProgress`.
+  progress : @session_state.SessionProgress
   /// Shadow core facts shared with the checkpoint subscriber. It never feeds
   /// the production load path; compact/fork/rewrite are not mirrored here.
   core_facts : @core_facts.CoreFacts
@@ -216,7 +216,7 @@ fn compose_tool_catalog(
 ) -> (@kernel_exec.ToolCatalogSnapshot, Array[ToolEntry]) raise @error.CompositionError {
   let entries = agg.tools.copy()
   if !agg.memory.is_empty() {
-    let provider : &@port.ToolProvider = MemoryToolProvider(
+    let provider : &@port.ToolProvider = @memory.MemoryToolProvider(
       sources=agg.memory,
       on_failure=reason => {
         emit_secondary_failure(agg.observers, "memory_search", reason)
@@ -270,6 +270,23 @@ fn compose_hook_chain(
     composed_hooks.push(ui_hook as &@port.PipelineHook)
   }
   composed_hooks
+}
+
+///|
+fn create_agent_stream_callback(
+  observers : Array[&@port.Observer],
+  dispatcher_ref : Ref[@chunk_dispatch.ChunkDispatcher?],
+) -> @kernel_exec.HostChunkCallback? {
+  if observers.is_empty() {
+    return None
+  }
+  let cb = fn(chunk : @types.StreamChunk) {
+    match dispatcher_ref.val {
+      Some(dispatcher) => dispatcher.enqueue(chunk)
+      None => ()
+    }
+  }
+  Some(cb)
 }
 
 ///|
@@ -377,7 +394,7 @@ fn AgentRuntime::compose(
   control.set_abort_hook(fn(run_id) {
     task_runtime.cancel_foreground_for_run(run_id)
   })
-  let progress = SessionProgress::SessionProgress()
+  let progress = @session_state.SessionProgress::SessionProgress()
   let core_facts = @core_facts.CoreFacts::CoreFacts()
   let checkpoint_subscriber = @session_checkpoint.SessionCheckpointSubscriber::SessionCheckpointSubscriber(
     agg.sessions,

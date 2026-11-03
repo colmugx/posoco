@@ -155,7 +155,7 @@ async fn AgentRuntime::inject_memory_inbound(
       }
       _ => ""
     }
-    let bodies = collect_memory_inbound(
+    let bodies = @memory.collect_memory_inbound(
       self.memory,
       session_id,
       request,
@@ -165,7 +165,7 @@ async fn AgentRuntime::inject_memory_inbound(
       },
     )
     if !bodies.is_empty() {
-      messages.push(memory_inbound_message(bodies))
+      messages.push(@memory.memory_inbound_message(bodies))
     }
   }
 }

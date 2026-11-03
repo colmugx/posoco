@@ -195,7 +195,7 @@ fn tk_memory_call(
 
 ///|
 async fn exec_memory_tool(
-  provider : MemoryToolProvider,
+  provider : @memory.MemoryToolProvider,
   tool : String,
   args : Array[(String, Json)],
 ) -> @kernel.ToolOutcome {
@@ -735,7 +735,7 @@ async test "m38_memory/search_merges_sources_in_order" {
     Some("hit-b"),
   ])
   let empty = @test_support.ScriptedMemoryPort(inbounds=[])
-  let provider = MemoryToolProvider(
+  let provider = @memory.MemoryToolProvider(
     sources=[
       ("a", a as &@port.MemoryPort),
       ("b", b as &@port.MemoryPort),
@@ -759,7 +759,7 @@ async test "m38_memory/search_merges_sources_in_order" {
 async test "m38_memory/search_all_empty_reports_no_match" {
   let a = @test_support.ScriptedMemoryPort(inbounds=[])
   let b = @test_support.ScriptedMemoryPort(inbounds=[])
-  let provider = MemoryToolProvider(
+  let provider = @memory.MemoryToolProvider(
     sources=[("a", a as &@port.MemoryPort), ("b", b as &@port.MemoryPort)],
     on_failure=fn(_reason) { () },
   )
@@ -780,7 +780,7 @@ async test "m38_memory/search_failure_skips_source_and_names_it" {
     Some("hit-b"),
   ])
   let reasons : Array[String] = []
-  let provider = MemoryToolProvider(
+  let provider = @memory.MemoryToolProvider(
     sources=[("bad", bad), ("good", good as &@port.MemoryPort)],
     on_failure=fn(reason) { reasons.push(reason) },
   )
@@ -800,7 +800,7 @@ async test "m38_memory/search_failure_skips_source_and_names_it" {
 async test "m38_memory/search_all_failed_reports_failures_not_miss" {
   let bad : &@port.MemoryPort = FailingInboundPort::{ _dummy: (), }
   let reasons : Array[String] = []
-  let provider = MemoryToolProvider(sources=[("bad", bad)], on_failure=fn(
+  let provider = @memory.MemoryToolProvider(sources=[("bad", bad)], on_failure=fn(
     reason,
   ) {
     reasons.push(reason)
@@ -822,7 +822,7 @@ async test "m38_memory/search_all_failed_reports_failures_not_miss" {
 async test "m38_memory/search_failure_with_clean_miss_reports_failure" {
   let bad : &@port.MemoryPort = FailingInboundPort::{ _dummy: (), }
   let miss = @test_support.ScriptedMemoryPort(inbounds=[], search_script=[None])
-  let provider = MemoryToolProvider(
+  let provider = @memory.MemoryToolProvider(
     sources=[("bad", bad), ("miss", miss as &@port.MemoryPort)],
     on_failure=fn(_reason) { () },
   )
@@ -842,7 +842,7 @@ async test "m38_memory/search_failure_with_clean_miss_reports_failure" {
 async test "m38_memory/add_writes_all_sources_with_receipts" {
   let a = @test_support.ScriptedMemoryPort(inbounds=[])
   let b = @test_support.ScriptedMemoryPort(inbounds=[])
-  let provider = MemoryToolProvider(
+  let provider = @memory.MemoryToolProvider(
     sources=[("a", a as &@port.MemoryPort), ("b", b as &@port.MemoryPort)],
     on_failure=fn(_reason) { () },
   )
@@ -867,7 +867,7 @@ async test "m38_memory/add_writes_all_sources_with_receipts" {
 async test "m38_memory/add_targeted_source_routes_to_one" {
   let a = @test_support.ScriptedMemoryPort(inbounds=[])
   let b = @test_support.ScriptedMemoryPort(inbounds=[])
-  let provider = MemoryToolProvider(
+  let provider = @memory.MemoryToolProvider(
     sources=[("a", a as &@port.MemoryPort), ("b", b as &@port.MemoryPort)],
     on_failure=fn(_reason) { () },
   )
@@ -886,11 +886,10 @@ async test "m38_memory/add_targeted_source_routes_to_one" {
 ///|
 async test "m38_memory/add_rejects_unknown_source_and_empty_content" {
   let a = @test_support.ScriptedMemoryPort(inbounds=[])
-  let provider = MemoryToolProvider(sources=[("a", a as &@port.MemoryPort)], on_failure=fn(
-    _reason,
-  ) {
-    ()
-  })
+  let provider = @memory.MemoryToolProvider(
+    sources=[("a", a as &@port.MemoryPort)],
+    on_failure=fn(_reason) { () },
+  )
   let unknown = exec_memory_tool(provider, "memory_add", [
     ("content", Json::string("x")),
     ("source", Json::string("zz")),
