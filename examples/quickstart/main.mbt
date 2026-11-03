@@ -87,7 +87,7 @@ pub impl @posoco.SessionPort for QuickstartSessionPort with fn save(
 
 ///|
 /// Production extensions self-report their public port contributions through
-/// one manifest. No testkit or internal runtime type is needed here.
+/// one manifest. No test support or internal runtime type is needed here.
 struct QuickstartExtension {
   model : QuickstartModel
   sessions : QuickstartSessionPort
