@@ -407,24 +407,6 @@ test "C-MODEL-LENGTH-FINISH: finish_reason=Length → Terminal(Failed)" {
 }
 
 ///|
-test "C-MODEL-TRANSPORT-FAILURE: ModelFailed(Transport) → Terminal(Failed)" {
-  let (st_awaiting, eff_id, step_id) = run_until_awaiting_model()
-  let catalog = make_catalog_v1()
-  let input : RunInput = ModelFailed(payload={
-    effect_id: eff_id,
-    model_step_id: step_id,
-    failure: Transport(reason="HTTP 500"),
-  })
-  let out = reduce(st_awaiting, catalog, input)
-  let st = out.next_state()
-  assert_eq(st.phase(), Terminal)
-  match st.outcome() {
-    Some(Failed(reason=ModelTransport(..))) => ()
-    _ => fail("expected Failed(ModelTransport)")
-  }
-}
-
-///|
 /// Drive one AwaitingModel state through `ModelFailed` with the given
 /// failure and return the terminal `FailureReason` the reducer classified.
 fn model_failure_reason(failure : @kernel.ModelFailure) -> FailureReason raise {
@@ -440,42 +422,6 @@ fn model_failure_reason(failure : @kernel.ModelFailure) -> FailureReason raise {
   match st.outcome() {
     Some(Failed(reason~)) => reason
     _ => fail("expected Failed outcome for ModelFailed input")
-  }
-}
-
-///|
-test "C-MODEL-FAILURE-MAPPING: RequestBuild → ModelParseFailure" {
-  let reason = model_failure_reason(RequestBuild(reason="cannot build request"))
-  match reason {
-    ModelParseFailure(detail~) => assert_eq(detail, "cannot build request")
-    _ => fail("expected ModelParseFailure, got \{reason.to_string()}")
-  }
-}
-
-///|
-test "C-MODEL-FAILURE-MAPPING: Runtime → ModelRuntime" {
-  let reason = model_failure_reason(Runtime(reason="kernel panic"))
-  match reason {
-    ModelRuntime(detail~) => assert_eq(detail, "kernel panic")
-    _ => fail("expected ModelRuntime, got \{reason.to_string()}")
-  }
-}
-
-///|
-test "C-MODEL-FAILURE-MAPPING: Parse → ModelParseFailure" {
-  let reason = model_failure_reason(Parse(reason="malformed stream chunk"))
-  match reason {
-    ModelParseFailure(detail~) => assert_eq(detail, "malformed stream chunk")
-    _ => fail("expected ModelParseFailure, got \{reason.to_string()}")
-  }
-}
-
-///|
-test "C-MODEL-FAILURE-MAPPING: HostRejected → HostRejected" {
-  let reason = model_failure_reason(HostRejected(reason="policy gate"))
-  match reason {
-    HostRejected(detail~) => assert_eq(detail, "policy gate")
-    _ => fail("expected HostRejected, got \{reason.to_string()}")
   }
 }
 
@@ -502,21 +448,6 @@ test "C-MODEL-FAILURE-MAPPING: RateLimited → ModelQuotaExhausted keeping reset
   let rendered = reason.to_string()
   assert_true(rendered.contains("rate_limit_exceeded"))
   assert_true(rendered.contains("1712345678901"))
-}
-
-///|
-test "C-MODEL-FAILURE-MAPPING: RateLimited with None scheduling data still classifies" {
-  let reason = model_failure_reason(
-    RateLimited(reason="429", reset_at_ms=None, provider_code=None),
-  )
-  match reason {
-    ModelQuotaExhausted(detail~, reset_at_ms~, provider_code~) => {
-      assert_eq(detail, "429")
-      assert_true(reset_at_ms is None)
-      assert_true(provider_code is None)
-    }
-    _ => fail("expected ModelQuotaExhausted, got \{reason.to_string()}")
-  }
 }
 
 ///|

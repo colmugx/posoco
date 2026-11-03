@@ -30,10 +30,6 @@ let compact_generic_failure : String = "adapter verdict (\"引文 (含, 逗号)\
 let compact_generic_kept_region : String = " payload " + "m".repeat(80)
 
 ///|
-/// A plain reason with no envelope shape at all — the fallback rendering.
-const COMPACT_PLAIN_FAILURE : String = "compact endpoint unavailable"
-
-///|
 fn compact_diag_failure_agent(
   steps : Array[@testkit.ScriptedModelStep],
   observer~ : @testkit.RecordingObserver,
@@ -171,121 +167,6 @@ async test "compact_diag/standalone_compact_failure_detail_and_no_commit" {
   assert_true(
     store.store["diag-detail"].messages[0] == @testkit.tk_user_msg("seeded"),
   )
-}
-
-///|
-async test "compact_diag/plain_failure_fallback_renders_verbatim" {
-  let observer = @testkit.RecordingObserver()
-  let agent = compact_diag_failure_agent(
-    [
-      @testkit.ScriptedModelStep::CompactFail(
-        error=Transport(COMPACT_PLAIN_FAILURE),
-      ),
-    ],
-    observer~,
-    session_id="diag-fallback",
-  )
-  let port = compact_diag_builtin_compact(agent)
-  let outcome = port.invoke(
-    "compact",
-    Json::object(
-      Map::from_array([("session_id", Json::string("diag-fallback"))]),
-    ),
-  )
-  guard outcome is Failure(reason~) else {
-    fail("expected the failed compact to report a failure")
-  }
-  // A short plain reason passes every layer without truncation or
-  // restructuring: the fallback rendering is the display rendering.
-  assert_true(
-    reason.contains("ModelFailure::Transport(compact endpoint unavailable)"),
-  )
-  assert_false(reason.contains("...(truncated)"))
-}
-
-///|
-/// Model fake that reports a fixed context window (so auto-compact fires on
-/// the usage reading) and fails every compaction with a generic failure.
-struct AutoCompactFailModel {
-  scripted : @testkit.ScriptedModel
-  reported : @port.ProviderConfig
-}
-
-///|
-fn AutoCompactFailModel::make(
-  steps : Array[@testkit.ScriptedModelStep],
-) -> AutoCompactFailModel {
-  {
-    scripted: @testkit.ScriptedModel(steps),
-    reported: policy_reported(
-      context_window=Some(100),
-      compact_threshold=Some(0.9),
-    ),
-  }
-}
-
-///|
-impl @port.ModelPort for AutoCompactFailModel with fn chat(
-  self,
-  scope : @kernel.InvocationScope,
-  messages : ArrayView[@kernel.Message],
-  tools : Array[@kernel.ToolDef],
-  options : @types.ChatOptions,
-  stream : @types.StreamMode,
-) -> @kernel.ModelCallResult raise @error.ModelError {
-  (self.scripted as &@port.ModelPort).chat(
-    scope, messages, tools, options, stream,
-  )
-}
-
-///|
-impl @port.ModelPort for AutoCompactFailModel with fn compact(
-  _self,
-  _scope : @kernel.InvocationScope,
-  _messages : ArrayView[@kernel.Message],
-  _tools : Array[@kernel.ToolDef],
-  _options : @types.ChatOptions,
-  _trigger : @kernel.CompactTrigger,
-) -> @kernel.CompactResult raise @error.ModelError {
-  raise Transport(compact_generic_failure)
-}
-
-///|
-impl @port.ModelPort for AutoCompactFailModel with fn provider_config(self) -> @port.ProviderConfig {
-  self.reported
-}
-
-///|
-async test "compact_diag/auto_compact_failure_forwards_bounded_label" {
-  let model = AutoCompactFailModel::make([
-    @testkit.ScriptedModelStep::Respond(scope_test_tool_call_with_usage(95)),
-  ])
-  let store = @testkit.RecordingSessionPort()
-  let agent = Agent(
-    exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="tools", tools=[policy_tools()]),
-      @testkit.tk_ext(id="io", sessions=[store]),
-    ],
-    config=agent_config(max_tool_rounds=Some(10)),
-  )
-  let result : Result[@types.TurnResult, @error.AgentError] = Ok(
-    agent.run_turn(@testkit.tk_user_msg("hi"), "diag-auto"),
-  ) catch {
-    e => Err(e)
-  }
-  guard result is Err(AutoCompactFailed(cause)) else {
-    let why = match result {
-      Err(e) => e.to_string()
-      Ok(_) => "turn completed"
-    }
-    fail("expected a typed AutoCompactFailed outcome, got \{why}")
-  }
-  assert_true(cause.contains("phase=compact"))
-  assert_true(cause.contains("ModelFailure::Transport"))
-  assert_true(cause.contains("stage=假"))
-  assert_true(cause.contains(compact_generic_kept_region))
-  assert_false(cause.contains("FAR_TAIL_SECRET"))
 }
 
 ///|

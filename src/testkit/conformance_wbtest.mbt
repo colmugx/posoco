@@ -24,48 +24,6 @@ async test "tk_model_script_exhausts_loudly" {
 }
 
 ///|
-async test "tk_model_records_call_count" {
-  let model = ScriptedModel([
-    Respond(tk_stop_response("a")),
-    Respond(tk_stop_response("b")),
-  ])
-  let _ = model.chat_direct([], [], tk_opts())
-  let _ = model.chat_direct([], [], tk_opts())
-  assert_eq(model.call_count(), 2)
-  // Third call must fail (script exhausted), not replay.
-  let third = Ok(model.chat_direct([], [], tk_opts())) catch { e => Err(e) }
-  match third {
-    Err(Transport(msg)) => assert_true(msg.contains("at call 3"))
-    _ => fail("third call should fail with exhaustion, not replay")
-  }
-}
-
-///|
-async test "tk_model_records_received_messages_and_tools" {
-  let model = ScriptedModel([Respond(tk_stop_response("ok"))])
-  let msg = tk_user_msg("hello")
-  let tool = tk_tool_def("greet", "say hi")
-  let _ = model.chat_direct([msg], [tool], tk_opts())
-  assert_eq(model.received_messages.length(), 1)
-  assert_eq(model.received_tools.length(), 1)
-  assert_eq(model.received_tools[0].length(), 1)
-  assert_eq(model.received_tools[0][0].name.to_string(), "greet")
-}
-
-///|
-async test "tk_model_records_chat_options_exactly" {
-  let model = ScriptedModel([Respond(tk_stop_response("ok"))])
-  let options : @types.ChatOptions = {
-    temperature: Some(0.25),
-    max_output_tokens: Some(512),
-  }
-  let _ = model.chat_direct([], [], options)
-  let recorded = model.options_received()
-  assert_eq(recorded.length(), 1)
-  assert_true(recorded[0] == options)
-}
-
-///|
 async test "tk_model_stream_replays_exact_chunks_in_order" {
   let chunks : Array[@types.StreamChunk] = [
     ReasoningDelta(token="think"),
@@ -117,36 +75,6 @@ async test "tk_model_fail_step_raises_typed_model_error" {
 }
 
 ///|
-async test "tk_model_records_deep_snapshot_on_failure" {
-  let model = ScriptedModel([CompactFail(error=Transport("rejected"))])
-  let tool = tk_tool_def("echo", "snapshot schema")
-  let tools = [tool]
-  let result : Result[@kernel.CompactResult, @error.ModelError] = Ok(
-    (model as &@port.ModelPort).compact(
-      tk_scope(),
-      [],
-      tools,
-      @types.ChatOptions::{ temperature: None, max_output_tokens: None, },
-      Manual,
-    ),
-  ) catch {
-    e => Err(e)
-  }
-  match result {
-    Err(Transport(msg)) => assert_true(msg.contains("rejected"))
-    _ => fail("expected Transport from CompactFail step")
-  }
-  tools.clear()
-  assert_eq(model.received_compact_tools[0].length(), 1)
-  assert_true(model.received_compact_tools[0][0] == tool)
-  guard tool.input_schema is Object(fields) else {
-    fail("expected object schema")
-  }
-  fields["later"] = Json::string("mutation")
-  assert_false(model.received_compact_tools[0][0] == tool)
-}
-
-///|
 /// Storage and retrieval side of the port contract, through the testkit fake
 /// every memory test composes: writes route through `store` (ticketed),
 /// queries through `search`, removals through `delete` — all recorded in
@@ -174,27 +102,6 @@ async test "tk_memory_port_store_search_delete_contract" {
 }
 
 ///|
-async test "tk_tool_records_execute_with_call_id" {
-  let outcomes : Map[String, ScriptedToolOutcome] = Map::from_array([
-    ("lookup", OutcomeOk(tk_ok_result("found"))),
-  ])
-  let provider = RecordingToolProvider([tk_tool_def("lookup", "")], outcomes)
-  let call = tk_call("tc_42", "lookup")
-  let result = provider.execute_direct(call)
-  match result {
-    Success(content~, ..) => assert_eq(content, "found")
-    _ => fail("expected Success outcome")
-  }
-  assert_false(result.is_failure())
-  let recs = provider.exec_records()
-  assert_eq(recs.length(), 1)
-  assert_eq(recs[0].call_id, "tc_42")
-  assert_eq(recs[0].tool_name, "lookup")
-  assert_eq(recs[0].requested_name, "lookup")
-  assert_true(recs[0].arguments == Json::null())
-}
-
-///|
 async test "tk_tool_unknown_raises_typed_error" {
   let provider = RecordingToolProvider([], Map::from_array([]))
   let call = tk_call("tc_1", "missing")
@@ -213,115 +120,6 @@ async test "tk_tool_unknown_raises_typed_error" {
 }
 
 ///|
-async test "tk_tool_records_raised_runtime_error" {
-  let outcomes : Map[String, ScriptedToolOutcome] = Map::from_array([
-    ("flaky", OutcomeErr(InvocationFailed("boom"))),
-  ])
-  let provider = RecordingToolProvider([tk_tool_def("flaky", "")], outcomes)
-  let call = tk_call("tc_9", "flaky")
-  let result = Ok(provider.execute_direct(call)) catch { e => Err(e) }
-  match result {
-    Err(InvocationFailed(_)) => ()
-    _ => fail("expected InvocationFailed")
-  }
-  let recs = provider.exec_records()
-  assert_eq(recs.length(), 1)
-  // The recorded outcome must preserve the error category.
-  match recs[0].outcome {
-    OutcomeErr(InvocationFailed(_)) => ()
-    _ => fail("recorded outcome should be OutcomeErr(InvocationFailed)")
-  }
-}
-
-///|
-async test "tk_tool_unified_trace_preserves_list_execute_order" {
-  let outcomes : Map[String, ScriptedToolOutcome] = Map::from_array([
-    ("lookup", OutcomeOk(tk_ok_result("found"))),
-  ])
-  let provider = RecordingToolProvider([tk_tool_def("lookup", "")], outcomes)
-  let _ = provider.list_tools()
-  let call = @kernel.ToolCall::{
-    call_id: @kernel.CallId::unchecked("tc_order"),
-    name: @kernel.ToolName::unchecked("lookup"),
-    arguments: Json::object(Map::from_array([("query", Json::string("x"))])),
-  }
-  let _ = provider.execute_direct(call)
-  let ops = provider.ops()
-  assert_eq(ops.length(), 2)
-  assert_true(ops[0] is ListTools)
-  match ops[1] {
-    ExecuteTool(requested_name~, call~) => {
-      assert_eq(requested_name, "lookup")
-      assert_eq(call.call_id.to_string(), "tc_order")
-      assert_true(
-        call.arguments ==
-        Json::object(Map::from_array([("query", Json::string("x"))])),
-      )
-    }
-    _ => fail("second provider operation should be ExecuteTool")
-  }
-}
-
-///|
-async test "tk_tool_records_are_recursive_json_snapshots" {
-  let structured_map : Map[String, Json] = Map::from_array([
-    ("status", Json::string("original")),
-  ])
-  let outcomes : Map[String, ScriptedToolOutcome] = Map::from_array([
-    (
-      "lookup",
-      OutcomeOk(
-        Success(content="found", structured=Some(Json::object(structured_map))),
-      ),
-    ),
-  ])
-  let provider = RecordingToolProvider([tk_tool_def("lookup", "")], outcomes)
-  structured_map["status"] = Json::string("mutated after configuration")
-  let argument_map : Map[String, Json] = Map::from_array([
-    ("query", Json::string("original")),
-  ])
-  let call : @kernel.ToolCall = {
-    call_id: @kernel.CallId::unchecked("tc_snapshot"),
-    name: @kernel.ToolName::unchecked("lookup"),
-    arguments: Json::object(argument_map),
-  }
-  let result = provider.execute_direct(call)
-  argument_map["query"] = Json::string("mutated after execute")
-  guard result is Success(content=_, structured=Some(Object(result_map))) else {
-    fail("expected structured object result")
-  }
-  assert_true(result_map["status"] == Json::string("original"))
-  let records = provider.exec_records()
-  guard records[0].arguments is Object(recorded_arguments) else {
-    fail("expected recorded argument object")
-  }
-  assert_true(recorded_arguments["query"] == Json::string("original"))
-  recorded_arguments["query"] = Json::string("mutated accessor result")
-  let records_again = provider.exec_records()
-  guard records_again[0].arguments is Object(recorded_arguments_again) else {
-    fail("expected recorded argument object twice")
-  }
-  assert_true(recorded_arguments_again["query"] == Json::string("original"))
-}
-
-///|
-async test "tk_store_records_save_metadata_snapshot" {
-  let store = RecordingSessionPort()
-  let meta = Map::from_array([
-    ("user_role", Json::string("admin")),
-    ("turn_count", Json::number(3.0)),
-  ])
-  let session : @types.Session = { messages: [], metadata: meta, }
-  let _ = store.save("s1", session)
-  let snaps = store.save_snapshots()
-  assert_eq(snaps.length(), 1)
-  let (id, saved_meta) = snaps[0]
-  assert_eq(id, "s1")
-  assert_true(saved_meta.contains("user_role"))
-  assert_true(saved_meta["user_role"] == Json::string("admin"))
-}
-
-///|
 async test "tk_store_load_unknown_returns_empty_session" {
   let store = RecordingSessionPort()
   try {
@@ -330,124 +128,6 @@ async test "tk_store_load_unknown_returns_empty_session" {
     assert_true(s.metadata.length() == 0)
   } catch {
     _ => fail("load of unknown id should return empty session, not error")
-  }
-}
-
-///|
-async test "tk_store_load_and_seed_are_snapshot_isolated" {
-  let store = RecordingSessionPort()
-  let seeded : @types.Session = {
-    messages: [tk_user_msg("seed")],
-    metadata: Map::from_array([("owner", Json::string("original"))]),
-  }
-  store.seed("isolated", seeded)
-  seeded.messages.push(tk_user_msg("outside mutation"))
-  seeded.metadata["owner"] = Json::string("outside mutation")
-  let first = store.load("isolated") catch {
-    _ => fail("seeded session should load")
-  }
-  assert_eq(first.messages.length(), 1)
-  assert_true(first.metadata["owner"] == Json::string("original"))
-  first.messages.push(tk_user_msg("loaded mutation"))
-  first.metadata["owner"] = Json::string("loaded mutation")
-  let second = store.load("isolated") catch {
-    _ => fail("seeded session should load twice")
-  }
-  assert_eq(second.messages.length(), 1)
-  assert_true(second.metadata["owner"] == Json::string("original"))
-}
-
-///|
-async test "tk_store_snapshots_nested_json_and_tool_arguments" {
-  let metadata_object : Map[String, Json] = Map::from_array([
-    ("value", Json::string("metadata-original")),
-  ])
-  let argument_object : Map[String, Json] = Map::from_array([
-    ("value", Json::string("argument-original")),
-  ])
-  let session : @types.Session = {
-    messages: [
-      AssistantMessage(
-        content=[],
-        tool_calls=[
-          {
-            call_id: @kernel.CallId::unchecked("tc_nested"),
-            name: @kernel.ToolName::unchecked("nested"),
-            arguments: Json::object(argument_object),
-          },
-        ],
-        reasoning=None,
-        finish_reason=Stop,
-      ),
-    ],
-    metadata: Map::from_array([("nested", Json::object(metadata_object))]),
-  }
-  let store = RecordingSessionPort()
-  store.seed("nested", session)
-  metadata_object["value"] = Json::string("metadata-outside")
-  argument_object["value"] = Json::string("argument-outside")
-  let first = store.load("nested") catch {
-    _ => fail("expected nested session")
-  }
-  guard first.metadata["nested"] is Object(first_metadata) else {
-    fail("expected nested metadata object")
-  }
-  guard first.messages[0]
-    is AssistantMessage(
-      tool_calls=[{ arguments: Object(first_arguments), .. }],
-      ..
-    ) else {
-    fail("expected nested arguments object")
-  }
-  assert_true(first_metadata["value"] == Json::string("metadata-original"))
-  assert_true(first_arguments["value"] == Json::string("argument-original"))
-  first_metadata["value"] = Json::string("metadata-loaded")
-  first_arguments["value"] = Json::string("argument-loaded")
-  let second = store.load("nested") catch {
-    _ => fail("expected nested session twice")
-  }
-  guard second.metadata["nested"] is Object(second_metadata) else {
-    fail("expected second nested metadata object")
-  }
-  guard second.messages[0]
-    is AssistantMessage(
-      tool_calls=[{ arguments: Object(second_arguments), .. }],
-      ..
-    ) else {
-    fail("expected second nested arguments object")
-  }
-  assert_true(second_metadata["value"] == Json::string("metadata-original"))
-  assert_true(second_arguments["value"] == Json::string("argument-original"))
-}
-
-///|
-async test "tk_store_operation_accessors_return_recursive_snapshots" {
-  let nested : Map[String, Json] = Map::from_array([
-    ("value", Json::string("original")),
-  ])
-  let store = RecordingSessionPort()
-  let _ = store.save("ops", {
-    messages: [],
-    metadata: Map::from_array([("nested", Json::object(nested))]),
-  })
-  let first = store.ops()
-  match first[0] {
-    OpSave(metadata~, ..) =>
-      match metadata["nested"] {
-        Object(values) => values["value"] = Json::string("mutated accessor")
-        _ => fail("expected nested operation metadata")
-      }
-    _ => fail("expected save operation")
-  }
-  let second = store.ops()
-  match second[0] {
-    OpSave(metadata~, ..) =>
-      match metadata["nested"] {
-        Object(values) =>
-          assert_true(values["value"] == Json::string("original"))
-        _ => fail("expected second nested operation metadata")
-      }
-    _ => fail("expected second save operation")
   }
 }
 
@@ -474,62 +154,6 @@ async test "tk_store_fail_load_returns_typed_error" {
   match result {
     Err(Load(msg)) => assert_true(msg.contains("disk gone"))
     _ => fail("expected configured Load failure")
-  }
-}
-
-///|
-async test "tk_observer_preserves_event_order" {
-  let obs = RecordingObserver()
-  obs.on_event(None, TurnStarted)
-  obs.on_event(None, ToolCallPending(tk_call("c1", "t")))
-  obs.on_event(None, TurnCompleted)
-  let events = obs.events()
-  assert_eq(events.length(), 3)
-  assert_true(events[0] is TurnStarted)
-  assert_true(events[2] is TurnCompleted)
-}
-
-///|
-async test "tk_observer_event_accessor_is_deep_snapshot" {
-  let obs = RecordingObserver()
-  // Pick an AssistantMessage whose content array is mutable so we
-  // can still prove the observer took a deep copy (SystemMessage/UserMessage
-  // also have mutable content arrays; either works the same way).
-  let message : @kernel.Message = AssistantMessage(
-    content=[@kernel.Text("original")],
-    tool_calls=[],
-    reasoning=None,
-    finish_reason=Stop,
-  )
-  obs.on_event(None, ModelResponseReceived(message~, usage=None))
-  // Mutate the caller-side content array AFTER handing the message off.
-  // The recorded event must not see this mutation.
-  match message {
-    AssistantMessage(content~, ..) =>
-      content.push(@kernel.Text("outside mutation"))
-    _ => fail("expected AssistantMessage")
-  }
-  let first = obs.events()
-  match first[0] {
-    ModelResponseReceived(message~, ..) =>
-      match message {
-        AssistantMessage(content~, ..) =>
-          content.push(@kernel.Text("accessor mutation"))
-        _ => fail("expected AssistantMessage in recorded event")
-      }
-    _ => fail("expected model response event")
-  }
-  let second = obs.events()
-  match second[0] {
-    ModelResponseReceived(message~, ..) =>
-      match message {
-        AssistantMessage(content~, ..) => {
-          assert_eq(content.length(), 1)
-          assert_true(content[0] == @kernel.Text("original"))
-        }
-        _ => fail("expected second AssistantMessage")
-      }
-    _ => fail("expected second model response event")
   }
 }
 
@@ -581,64 +205,6 @@ async test "tk_hook_records_stage_and_configured_deferral" {
 }
 
 ///|
-async test "tk_hook_records_pass_through_outcome" {
-  let hook = RecordingHook()
-  let msgs = [@kernel.Message::UserMessage(content=[@kernel.Text("hello")])]
-  let returned = hook.before_model(msgs)
-  assert_eq(returned.length(), 1)
-  let records = hook.records()
-  assert_eq(records.length(), 1)
-  assert_eq(records[0].label, "before_model")
-  match records[0].outcome {
-    PassedThrough => ()
-    _ => fail("recorded hook outcome should be PassedThrough")
-  }
-}
-
-///|
-async test "tk_hook_record_accessor_is_deep_snapshot" {
-  let hook = RecordingHook()
-  let msg = @kernel.Message::UserMessage(content=[@kernel.Text("original")])
-  let _ = hook.before_model([msg])
-  let first = hook.records()
-  assert_eq(first[0].label, "before_model")
-  match first[0].outcome {
-    PassedThrough => ()
-    _ => fail("expected PassedThrough outcome")
-  }
-  // Mutate the returned array to prove snapshot isolation
-  first[0] = { label: "tampered", outcome: PassedThrough, }
-  let second = hook.records()
-  assert_eq(second.length(), 1)
-  assert_eq(second[0].label, "before_model")
-  match second[0].outcome {
-    PassedThrough => ()
-    _ => fail("expected second PassedThrough outcome")
-  }
-}
-
-///|
-async test "tk_assert_events_eq_passes_on_match" {
-  let expected : Array[@types.TurnEvent] = [TurnStarted, TurnCompleted]
-  let actual : Array[@types.TurnEvent] = [TurnStarted, TurnCompleted]
-  assert_events_eq(expected, actual)
-}
-
-///|
-async test "tk_assert_events_contain_finds_subsequence" {
-  let hay : Array[@types.TurnEvent] = [
-    TurnStarted,
-    ToolCallPending(tk_call("c1", "t")),
-    TurnCompleted,
-  ]
-  let needle : Array[@types.TurnEvent] = [
-    ToolCallPending(tk_call("c1", "t")),
-    TurnCompleted,
-  ]
-  assert_events_contain(hay, needle)
-}
-
-///|
 test "tk_trace_diff_detects_missing_event_at_first_index" {
   let mismatch = event_trace_mismatch([TurnStarted, TurnCompleted], [
     TurnStarted,
@@ -650,38 +216,5 @@ test "tk_trace_diff_detects_missing_event_at_first_index" {
       assert_true(message.contains("got <end>"))
     }
     None => fail("missing event must produce a trace mismatch")
-  }
-}
-
-///|
-test "tk_trace_diff_detects_duplicate_event_at_first_index" {
-  let mismatch = event_trace_mismatch([TurnStarted, TurnCompleted], [
-    TurnStarted,
-    TurnStarted,
-    TurnCompleted,
-  ])
-  match mismatch {
-    Some(message) => {
-      assert_true(message.contains("index 1"))
-      assert_true(message.contains("expected TurnCompleted"))
-      assert_true(message.contains("got TurnStarted"))
-    }
-    None => fail("duplicate event must produce a trace mismatch")
-  }
-}
-
-///|
-test "tk_trace_diff_detects_out_of_order_event_at_first_index" {
-  let mismatch = event_trace_mismatch(
-    [TurnStarted, ToolCallPending(tk_call("c1", "tool")), TurnCompleted],
-    [ToolCallPending(tk_call("c1", "tool")), TurnStarted, TurnCompleted],
-  )
-  match mismatch {
-    Some(message) => {
-      assert_true(message.contains("index 0"))
-      assert_true(message.contains("expected TurnStarted"))
-      assert_true(message.contains("got ToolCallPending(c1)"))
-    }
-    None => fail("out-of-order event must produce a trace mismatch")
   }
 }

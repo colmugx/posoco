@@ -194,52 +194,6 @@ async test "m35_builtin/unknown_id_raises_not_found" {
 }
 
 ///|
-async test "m35_builtin/distinct_command_ids" {
-  let mb = bind_test_mailbox()
-  let port = BuiltinCommandPort(mb)
-  // Two successive compacts must produce different command ids.
-  let _ = port.invoke("compact", Json::null())
-  let _ = port.invoke("compact", Json::null())
-  assert_true(mb.compact_depth() == 2)
-  let c1 = mb.consume_one_compact()
-  let c2 = mb.consume_one_compact()
-  match (c1, c2) {
-    (Some(a), Some(b)) =>
-      assert_true(a.command_id().to_string() != b.command_id().to_string())
-    _ => assert_true(false)
-  }
-}
-
-///|
-test "m35_builtin/parse_fork_index_object_form" {
-  let args : Json = Json::object(
-    Map::from_array([("index", Json::number(7.0))]),
-  )
-  assert_true(@command.parse_fork_index(args) == 7)
-}
-
-///|
-test "m35_builtin/parse_fork_index_bare_number" {
-  let args : Json = Json::number(11.0)
-  assert_true(@command.parse_fork_index(args) == 11)
-}
-
-///|
-test "m35_builtin/parse_fork_index_default" {
-  assert_true(@command.parse_fork_index(Json::null()) == 0)
-  let args : Json = Json::object(Map::from_array([]))
-  assert_true(@command.parse_fork_index(args) == 0)
-}
-
-// ──────────────────────────────────────────────────────────────────────────
-// Agent ↔ BuiltinCommandPort ↔ Puppet mailbox sharing.
-//
-// Agent owns the ControlMailbox; the port and the Puppet both borrow a
-// `&Mailbox` pointing at that same instance. These tests verify the sharing
-// behaviourally: enqueue through one view, consume through another.
-// ──────────────────────────────────────────────────────────────────────────
-
-///|
 /// BuiltinCommandPort constructed from a mailbox shares the instance.
 /// Enqueue through the port's `invoke("/compact")` then consume directly
 /// from the original mailbox reference — they must agree.

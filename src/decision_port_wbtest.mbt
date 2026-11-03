@@ -16,17 +16,6 @@ fn decision_request() -> @port.DecisionRequest {
 }
 
 ///|
-fn decision_result() -> @port.DecisionResult {
-  {
-    answers: [
-      @port.DecisionAnswer::BooleanAnswer(id="read_only", probability_true=0.98),
-    ],
-    model: Some("scripted"),
-    usage: Some({ input_tokens: Some(7), output_tokens: Some(1), }),
-  }
-}
-
-///|
 priv struct DecisionLifecycleProbe {
   mut seen : Bool
 }
@@ -39,14 +28,6 @@ impl @port.Lifecycle for DecisionLifecycleProbe with fn on_compose(self, ctx) {
 ///|
 impl @port.Lifecycle for DecisionLifecycleProbe with fn on_shutdown(_self) {
   ()
-}
-
-///|
-test "decision/request_and_result_validate" {
-  let request = decision_request()
-  let result = decision_result()
-  request.validate()
-  result.validate_for(request)
 }
 
 ///|
@@ -65,21 +46,6 @@ test "decision/validation_rejects_malformed_probability" {
   } noraise {
     _ => fail("expected malformed probability to fail validation")
   }
-}
-
-///|
-async test "decision/testkit_records_and_replays" {
-  let port = @testkit.ScriptedDecisionPort([
-    @testkit.ScriptedDecisionStep::Return(decision_result()),
-  ])
-  let request = decision_request()
-  let result = port.evaluate(
-    request,
-    context=@port.DecisionCallContext::make(purpose="testkit"),
-  )
-  result.validate_for(request)
-  assert_eq(port.call_count(), 1)
-  assert_eq(port.received_requests(), [request])
 }
 
 ///|

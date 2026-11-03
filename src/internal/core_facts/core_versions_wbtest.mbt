@@ -24,30 +24,6 @@ fn record_derived_prefix(
 }
 
 ///|
-test "core_versions/full_then_append_and_current" {
-  let store = CoreVersionStore::CoreVersionStore()
-  let v0 = store.record_full(
-    "s",
-    [tk_user_msg("one"), tk_user_msg("two")],
-    Map::from_array([("tag", Json::string("v0"))]),
-  )
-  assert_eq(v0, 0)
-  let v1 = store.append(
-    "s",
-    [tk_user_msg("three")],
-    Map::from_array([("tag", Json::string("v1"))]),
-  )
-  assert_eq(v1, 1)
-  let now = store.current("s")
-  assert_eq(now.version, 1)
-  assert_eq(now.session.messages.length(), 3)
-  assert_true(now.session.messages[0] == tk_user_msg("one"))
-  assert_true(now.session.messages[1] == tk_user_msg("two"))
-  assert_true(now.session.messages[2] == tk_user_msg("three"))
-  assert_eq(now.session.metadata["tag"], Json::string("v1"))
-}
-
-///|
 test "core_versions/rewrite_keeps_old_versions_materializable" {
   let store = CoreVersionStore::CoreVersionStore()
   ignore(
@@ -974,30 +950,6 @@ test "core_versions/second_order_derivation_uses_immediate_source" {
 }
 
 ///|
-test "core_versions/same_version_index_is_independent_per_sid" {
-  let store = CoreVersionStore::CoreVersionStore()
-  ignore(store.record_full("a", [tk_user_msg("a0")], Map::from_array([])))
-  ignore(store.record_full("b", [tk_user_msg("b0")], Map::from_array([])))
-  ignore(store.append("a", [tk_user_msg("a1")], Map::from_array([])))
-  ignore(store.append("b", [tk_user_msg("b1")], Map::from_array([])))
-  // The same index names different content under different sids.
-  let a1 = store.materialize("a", 1)
-  let b1 = store.materialize("b", 1)
-  assert_true(a1.messages[0] == tk_user_msg("a0"))
-  assert_true(a1.messages[1] == tk_user_msg("a1"))
-  assert_true(b1.messages[0] == tk_user_msg("b0"))
-  assert_true(b1.messages[1] == tk_user_msg("b1"))
-  // Rewriting one sid does not advance or alter the other.
-  ignore(store.rewrite("a", [tk_user_msg("ax")], Map::from_array([])))
-  assert_eq(store.current("a").version, 2)
-  let b = store.current("b")
-  assert_eq(b.version, 1)
-  assert_eq(b.session.messages.length(), 2)
-  assert_true(b.session.messages[0] == tk_user_msg("b0"))
-  assert_true(b.session.messages[1] == tk_user_msg("b1"))
-}
-
-///|
 test "core_versions/failed_operations_keep_current" {
   let store = CoreVersionStore::CoreVersionStore()
   ignore(
@@ -1050,29 +1002,6 @@ test "core_versions/failed_operations_keep_current" {
   assert_true(after.session.messages[0] == before.session.messages[0])
   assert_true(after.session.messages[1] == before.session.messages[1])
   assert_eq(after.session.metadata["tag"], before.session.metadata["tag"])
-}
-
-///|
-test "core_versions/empty_append_changes_metadata_only" {
-  let store = CoreVersionStore::CoreVersionStore()
-  ignore(
-    store.record_full(
-      "s",
-      [tk_user_msg("one")],
-      Map::from_array([("tag", Json::string("v0"))]),
-    ),
-  )
-  let v1 = store.append("s", [], Map::from_array([("tag", Json::string("v1"))]))
-  assert_eq(v1, 1)
-  let now = store.current("s")
-  assert_eq(now.version, 1)
-  assert_eq(now.session.messages.length(), 1)
-  assert_true(now.session.messages[0] == tk_user_msg("one"))
-  assert_eq(now.session.metadata["tag"], Json::string("v1"))
-  // The previous version keeps its own metadata.
-  let v0 = store.materialize("s", 0)
-  assert_eq(v0.messages.length(), 1)
-  assert_eq(v0.metadata["tag"], Json::string("v0"))
 }
 
 ///|

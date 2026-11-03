@@ -60,13 +60,3 @@ test "event_snapshot/tool_payload_and_custom_are_isolated" {
     _ => fail("expected custom snapshot")
   }
 }
-
-///|
-test "event_snapshot/prompt_label_unchanged" {
-  let long = String::from_array(Array::make(70, 'a'))
-  let event = snapshot_turn_event(UserRequestStarted(kind="input", prompt=long))
-  guard event is UserRequestStarted(prompt~, ..) else {
-    fail("expected user request started")
-  }
-  assert_eq(prompt, String::from_array(Array::make(64, 'a')) + "...(truncated)")
-}

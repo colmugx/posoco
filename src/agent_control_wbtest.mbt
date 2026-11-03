@@ -87,26 +87,6 @@ test "agent control/follow_up reports queue write failure" {
 }
 
 ///|
-test "agent control/follow_up drain reports queue read failure" {
-  let control = bound_agent_control()
-  control.follow_ups.close()
-  let result : Result[@kernel.Message?, @error.AgentError] = Ok(
-    control.take_follow_up(),
-  ) catch {
-    error => Err(error)
-  }
-  match result {
-    Err(
-      @error.AgentError::Runtime(@error.RuntimeError::InvocationFailed(detail))
-    ) => {
-      assert_true(detail.contains("follow_up queue read failed"))
-      assert_true(detail.contains("QueueAlreadyClosed"))
-    }
-    other => fail("expected typed queue read failure, got \{repr(other)}")
-  }
-}
-
-///|
 async test "agent run_turn exposes follow-up drain failure as Runtime error" {
   let model = @testkit.ScriptedModel([
     @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),

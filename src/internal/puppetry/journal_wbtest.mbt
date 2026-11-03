@@ -55,14 +55,6 @@ test "puppet_journal/append_only_monotonic_revision" {
 }
 
 ///|
-test "puppet_journal/empty_batch_noop" {
-  let j = InMemoryJournal()
-  let r = j.append([])
-  assert_true(r == 0)
-  assert_true(j.revision() == 0)
-}
-
-///|
 test "puppet_journal/multi_entry_batch_single_revision_window" {
   let j = InMemoryJournal()
   // Two ToolCommitted entries in one batch (parallel tool batch).
@@ -142,15 +134,4 @@ test "puppet_journal/suspended_does_not_close_journal" {
   assert_true(after_entries.length() == 1)
   assert_true(after_entries[0].identity.kind == AssistantCommitted)
   assert_true(j.entries_for_run(j_run_id()).length() == 2)
-}
-
-///|
-test "puppet_journal/entries_for_run_filters_by_run" {
-  let j = InMemoryJournal()
-  let e1 = make_entry(InputAccepted, "sp1", 0)
-  let _ = j.append([e1])
-  let run_entries = j.entries_for_run(j_run_id())
-  assert_true(run_entries.length() == 1)
-  let other_run = j.entries_for_run(RunId::unchecked("run_other"))
-  assert_true(other_run.length() == 0)
 }

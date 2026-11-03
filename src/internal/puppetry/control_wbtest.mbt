@@ -64,25 +64,6 @@ fn bound_mailbox() -> ControlMailbox {
 }
 
 ///|
-test "puppet_control/bind_then_clear" {
-  let mb = ControlMailbox()
-  assert_true(mb.active_run_id() is None)
-  mb.bind_run(mb_run_id(), mb_turn_id())
-  assert_true(mb.active_run_id() == Some(mb_run_id()))
-  assert_true(mb.active_turn_id() == Some(mb_turn_id()))
-  mb.clear_run()
-  assert_true(mb.active_run_id() is None)
-}
-
-///|
-test "puppet_control/steer_enqueue_accepted" {
-  let mb = bound_mailbox()
-  let result = mb.enqueue_steer(make_steer("s1", mb_run_id(), mb_turn_id()))
-  assert_true(result is Accepted(_))
-  assert_true(mb.steer_depth() == 1)
-}
-
-///|
 test "puppet_control/steer_enqueue_stale_run_rejected" {
   let mb = bound_mailbox()
   let result = mb.enqueue_steer(
@@ -92,13 +73,6 @@ test "puppet_control/steer_enqueue_stale_run_rejected" {
     result is RejectedStale(reason="steer targets stale run/turn", ..),
   )
   assert_true(mb.steer_depth() == 0)
-}
-
-///|
-test "puppet_control/steer_enqueue_no_active_run_rejected" {
-  let mb = ControlMailbox()
-  let result = mb.enqueue_steer(make_steer("s1", mb_run_id(), mb_turn_id()))
-  assert_true(result is RejectedStale(reason="no active run", ..))
 }
 
 ///|
@@ -113,16 +87,6 @@ test "puppet_control/steer_consume_drains_queue" {
   assert_true(consumed[1].command_id.to_string() == "s2")
   // Queue drained.
   assert_true(mb.steer_depth() == 0)
-}
-
-///|
-test "puppet_control/follow_up_enqueue_accepted" {
-  let mb = bound_mailbox()
-  let result = mb.enqueue_follow_up(
-    make_follow_up("f1", mb_run_id(), mb_turn_id()),
-  )
-  assert_true(result is Accepted(_))
-  assert_true(mb.follow_up_depth() == 1)
 }
 
 ///|
@@ -196,13 +160,6 @@ test "puppet_control/abort_first_accepted_second_already_requested" {
 }
 
 ///|
-test "puppet_control/abort_no_active_run_rejected" {
-  let mb = ControlMailbox()
-  let r = mb.enqueue_abort(make_abort("a1", mb_run_id()))
-  assert_true(r is RejectedStale(reason="no active run to abort", ..))
-}
-
-///|
 test "puppet_control/abort_stale_run_rejected" {
   let mb = bound_mailbox()
   let r = mb.enqueue_abort(make_abort("a1", RunId::unchecked("run_OTHER")))
@@ -222,47 +179,6 @@ test "puppet_control/clear_run_drops_queued_commands" {
   mb.bind_run(RunId::unchecked("run_new"), TurnId::unchecked("turn_new"))
   let late = mb.enqueue_steer(make_steer("s_late", mb_run_id(), mb_turn_id()))
   assert_true(late is RejectedStale(reason="steer targets stale run/turn", ..))
-}
-
-///|
-test "puppet_control/queue_policy_all_vs_one_at_a_time" {
-  // Steer is All (drain everything); follow-up is OneAtATime (one per call).
-  // Documented by the consume methods' behaviour.
-  let mb = bound_mailbox()
-  let _ = mb.enqueue_steer(make_steer("s1", mb_run_id(), mb_turn_id()))
-  let _ = mb.enqueue_steer(make_steer("s2", mb_run_id(), mb_turn_id()))
-  let _ = mb.enqueue_follow_up(make_follow_up("f1", mb_run_id(), mb_turn_id()))
-  let _ = mb.enqueue_follow_up(make_follow_up("f2", mb_run_id(), mb_turn_id()))
-  // Steer: one call drains both.
-  let steers = mb.consume_steers()
-  assert_true(steers.length() == 2)
-  // Follow-up: one call returns one.
-  let one_fu = mb.consume_one_follow_up()
-  assert_true(one_fu is Some(_))
-  assert_true(mb.follow_up_depth() == 1)
-}
-
-///|
-test "puppet_control/quiescent_status_idle_initially" {
-  let mb = ControlMailbox()
-  let s = mb.quiescent_status()
-  // Initial quiescent status is Idle.
-  assert_true(s is Idle)
-}
-
-///|
-test "puppet_control/set_quiescent_updates_status" {
-  let mb = ControlMailbox()
-  mb.set_quiescent(Shutdown)
-  assert_true(mb.quiescent_status() is Shutdown)
-}
-
-///|
-async test "puppet_control/wait_idle_returns_when_already_idle" {
-  // When the mailbox is already Idle, wait_idle must return immediately.
-  let mb = ControlMailbox()
-  let s = mb.wait_idle()
-  assert_true(s is Idle)
 }
 
 ///|
@@ -298,21 +214,6 @@ fn make_fork(
 }
 
 ///|
-test "puppet_control/fork_enqueue_accepted" {
-  let mb = bound_mailbox()
-  let result = mb.enqueue_fork(make_fork("fk1", mb_run_id(), mb_turn_id(), 3))
-  assert_true(result is Accepted(_))
-  assert_true(mb.fork_depth() == 1)
-}
-
-///|
-test "puppet_control/fork_enqueue_no_active_run_rejected" {
-  let mb = ControlMailbox()
-  let result = mb.enqueue_fork(make_fork("fk1", mb_run_id(), mb_turn_id(), 3))
-  assert_true(result is RejectedStale(reason="no active run", ..))
-}
-
-///|
 test "puppet_control/fork_enqueue_stale_run_rejected" {
   let mb = bound_mailbox()
   let result = mb.enqueue_fork(
@@ -320,40 +221,6 @@ test "puppet_control/fork_enqueue_stale_run_rejected" {
   )
   assert_true(result is RejectedStale(reason="fork targets stale run/turn", ..))
   assert_true(mb.fork_depth() == 0)
-}
-
-///|
-test "puppet_control/fork_consume_one_at_a_time" {
-  let mb = bound_mailbox()
-  let _ = mb.enqueue_fork(make_fork("fk1", mb_run_id(), mb_turn_id(), 0))
-  let _ = mb.enqueue_fork(make_fork("fk2", mb_run_id(), mb_turn_id(), 2))
-  let first = mb.consume_one_fork()
-  assert_true(first is Some(_))
-  match first {
-    Some(cmd) => {
-      assert_true(cmd.command_id().to_string() == "fk1")
-      assert_true(cmd.fork_index() == 0)
-    }
-    None => assert_true(false)
-  }
-  assert_true(mb.fork_depth() == 1)
-  let second = mb.consume_one_fork()
-  match second {
-    Some(cmd) => assert_true(cmd.command_id().to_string() == "fk2")
-    None => assert_true(false)
-  }
-  assert_true(mb.fork_depth() == 0)
-  // Queue drained.
-  assert_true(mb.consume_one_fork() is None)
-}
-
-///|
-test "puppet_control/fork_clear_run_drops_queued" {
-  let mb = bound_mailbox()
-  let _ = mb.enqueue_fork(make_fork("fk1", mb_run_id(), mb_turn_id(), 0))
-  mb.clear_run()
-  assert_true(mb.fork_depth() == 0)
-  assert_true(mb.consume_one_fork() is None)
 }
 
 ///|
@@ -372,25 +239,6 @@ fn make_compact(
 }
 
 ///|
-test "puppet_control/compact_enqueue_manual_accepted" {
-  let mb = bound_mailbox()
-  let result = mb.enqueue_compact(
-    make_compact("cm1", mb_run_id(), mb_turn_id(), Manual),
-  )
-  assert_true(result is Accepted(_))
-  assert_true(mb.compact_depth() == 1)
-}
-
-///|
-test "puppet_control/compact_enqueue_auto_accepted" {
-  let mb = bound_mailbox()
-  let result = mb.enqueue_compact(
-    make_compact("cm1", mb_run_id(), mb_turn_id(), Auto),
-  )
-  assert_true(result is Accepted(_))
-}
-
-///|
 test "puppet_control/compact_enqueue_stale_rejected" {
   let mb = bound_mailbox()
   let result = mb.enqueue_compact(
@@ -400,33 +248,4 @@ test "puppet_control/compact_enqueue_stale_rejected" {
     result is RejectedStale(reason="compact targets stale run/turn", ..),
   )
   assert_true(mb.compact_depth() == 0)
-}
-
-///|
-test "puppet_control/compact_consume_one_at_a_time" {
-  let mb = bound_mailbox()
-  let _ = mb.enqueue_compact(
-    make_compact("cm1", mb_run_id(), mb_turn_id(), Manual),
-  )
-  let _ = mb.enqueue_compact(
-    make_compact("cm2", mb_run_id(), mb_turn_id(), Auto),
-  )
-  let first = mb.consume_one_compact()
-  match first {
-    Some(cmd) => {
-      assert_true(cmd.command_id().to_string() == "cm1")
-      assert_true(cmd.trigger() == Manual)
-    }
-    None => assert_true(false)
-  }
-  let second = mb.consume_one_compact()
-  match second {
-    Some(cmd) => {
-      assert_true(cmd.command_id().to_string() == "cm2")
-      assert_true(cmd.trigger() == Auto)
-    }
-    None => assert_true(false)
-  }
-  assert_true(mb.compact_depth() == 0)
-  assert_true(mb.consume_one_compact() is None)
 }

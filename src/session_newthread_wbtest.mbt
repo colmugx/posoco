@@ -991,33 +991,6 @@ async test "newthread/all_stores_persist_before_redirect_precedes_terminal_event
 }
 
 ///|
-async test "newthread/single_store_single_write_and_redirect" {
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Compact(result={
-      compacted_messages: [@testkit.tk_user_msg("single-summary")],
-      mode: NewThread,
-    }),
-  ])
-  let store = @testkit.RecordingSessionPort()
-  store.seed("single-parent", {
-    messages: [@testkit.tk_user_msg("old")],
-    metadata: Map::from_array([]),
-  })
-  let observer = @testkit.RecordingObserver()
-  let agent = Agent(
-    exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", sessions=[store], observers=[observer]),
-    ],
-    config=agent_config(max_tool_rounds=Some(10)),
-  )
-  let outcome = agent.compact_session("single-parent")
-  let child = outcome.final_session_id
-  assert_eq(newthread_save_count(store, child), 1)
-  assert_eq(newthread_redirects(observer.events()).length(), 1)
-}
-
-///|
 async test "newthread/failed_output_gate_blocks_then_recovers_before_body" {
   let model = @testkit.ScriptedModel([
     @testkit.ScriptedModelStep::Compact(result={

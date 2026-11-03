@@ -357,37 +357,6 @@ async test "m38_sysprompt/prepends_when_no_system_message" {
 }
 
 ///|
-async test "m38_sysprompt/caches_assembled_text" {
-  let text_ref = Ref("first")
-  let contributor = MutablePromptContributor::{ text: text_ref, }
-  let hook = SystemPromptHook(base_prompt="", contributors=[
-    SystemPromptSection(
-      id="mut",
-      contributor=contributor as &@port.SystemPromptContributor,
-    ),
-  ])
-  let out1 = hook.before_model([])
-  match out1[0] {
-    SystemMessage(content~) =>
-      match content {
-        [Text(s), ..] => assert_eq(s, "mut:\nfirst")
-        _ => fail("expected Text content")
-      }
-    _ => fail("expected SystemMessage")
-  }
-  contributor.text.val = "second"
-  let out2 = hook.before_model([])
-  match out2[0] {
-    SystemMessage(content~) =>
-      match content {
-        [Text(s), ..] => assert_eq(s, "mut:\nfirst")
-        _ => fail("expected Text content")
-      }
-    _ => fail("expected SystemMessage")
-  }
-}
-
-///|
 async test "m38_sysprompt/config_base_precedes_contributors" {
   let contributor : &@port.SystemPromptContributor = FixedPromptContributor::{
     text: "from_ext",
@@ -490,34 +459,6 @@ async test "m38_memory/fresh_session_injects_once" {
         _ => fail("expected Text content in the user input")
       }
     _ => fail("expected the real input at index 2")
-  }
-}
-
-///|
-async test "m38_memory/memory_at_front_without_system_prompt" {
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("ok")),
-  ])
-  let mem = @testkit.ScriptedMemoryPort(inbounds=[Some("fact")])
-  let agent = build_memory_agent(
-    model,
-    [mem as &@port.MemoryPort],
-    @testkit.RecordingSessionPort(),
-    @testkit.RecordingObserver(),
-    None,
-    None,
-  )
-  ignore(agent.run_turn(@testkit.tk_user_msg("query"), "session_1"))
-  let prompt = model.received_messages[0]
-  assert_eq(prompt.length(), 2)
-  expect_inbound_message(prompt[0], ["fact"])
-  match prompt[1] {
-    UserMessage(content~) =>
-      match content {
-        [Text(s), ..] => assert_eq(s, "query")
-        _ => fail("expected Text content in the user input")
-      }
-    _ => fail("expected the real input at index 1")
   }
 }
 

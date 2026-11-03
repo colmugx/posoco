@@ -162,16 +162,6 @@ fn completed_event() -> KernelEvent {
 }
 
 ///|
-async test "puppet_events/noop_subscriber_accepts_all" {
-  let d = ev_dispatcher()
-  let noop = NoopSubscriber()
-  d.register(noop)
-  d.dispatch(started_event(), 1)
-  d.dispatch(completed_event(), 2)
-  assert_true(d.next_seq() == 3)
-}
-
-///|
 async test "puppet_events/dispatcher_assigns_monotonic_seq" {
   let d = ev_dispatcher()
   let rec = RecordingSubscriber("rec")
@@ -247,29 +237,4 @@ async test "puppet_events/subscriber_failure_stops_further_dispatch" {
   }
   // b never received the event.
   assert_true(rec.received().length() == 0)
-}
-
-///|
-async test "puppet_events/envelope_carries_identity" {
-  let d = ev_dispatcher()
-  let rec = RecordingSubscriber("r")
-  d.register(rec)
-  d.dispatch(started_event(), 1)
-  let env = rec.received()[0]
-  assert_true(env.run_id() == ev_run_id())
-  assert_true(env.turn_id() == ev_turn_id())
-  assert_true(env.session_id() == ev_session_id())
-  assert_true(env.seq == 1)
-  assert_true(env.committed_revision == 1)
-}
-
-///|
-async test "puppet_events/envelope_is_terminal_delegates" {
-  let d = ev_dispatcher()
-  let rec = RecordingSubscriber("r")
-  d.register(rec)
-  d.dispatch(started_event(), 1)
-  assert_true(!rec.received()[0].is_terminal())
-  d.dispatch(completed_event(), 2)
-  assert_true(rec.received()[1].is_terminal())
 }

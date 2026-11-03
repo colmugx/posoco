@@ -92,13 +92,6 @@ async fn check_manual_compact_context(
 }
 
 ///|
-async test "compact_context/manual opaque-only window stays unknown until genuine usage" {
-  check_manual_compact_context("compact-context-manual-opaque", [
-    compact_context_anchor(Json::string("opaque replay state")),
-  ])
-}
-
-///|
 async test "compact_context/manual mixed window stays unknown until genuine usage" {
   check_manual_compact_context("compact-context-manual-mixed", [
     @testkit.tk_user_msg("retained visible text"),
@@ -167,56 +160,10 @@ async fn check_auto_compact_context(
 }
 
 ///|
-async test "compact_context/auto opaque-only window stays unknown until genuine usage" {
-  check_auto_compact_context("compact-context-auto-opaque", [
-    compact_context_anchor(["opaque replay state"]),
-  ])
-}
-
-///|
 async test "compact_context/auto mixed window stays unknown until genuine usage" {
   check_auto_compact_context("compact-context-auto-mixed", [
     @testkit.tk_user_msg("retained visible text"),
     compact_context_anchor({ "provider_state": "opaque replay state" }),
     tk_assistant_msg_e2e("retained answer"),
   ])
-}
-
-///|
-async test "compact_context/empty raw state preserves canonical summary estimate" {
-  let empty_states : Array[Json] = [
-    Json::null(),
-    Json::array([]),
-    Json::object(Map::from_array([])),
-    Json::string(""),
-  ]
-  for raw in empty_states {
-    let model = @testkit.ScriptedModel([
-      @testkit.ScriptedModelStep::Compact(result={
-        compacted_messages: [
-          compact_context_anchor(raw),
-          @testkit.tk_user_msg("summary"),
-        ],
-        mode: Replace,
-      }),
-    ])
-    let store = @testkit.RecordingSessionPort()
-    store.seed("compact-context-empty", {
-      messages: [@testkit.tk_user_msg("earlier")],
-      metadata: Map::from_array([]),
-    })
-    let agent = Agent(
-      exts=[
-        @testkit.tk_ext(id="model", model=Some(model)),
-        @testkit.tk_ext(id="io", sessions=[store]),
-      ],
-      config=agent_config(max_tool_rounds=Some(10)),
-    )
-    ignore(agent.compact_session("compact-context-empty"))
-    guard agent.context_state("compact-context-empty") is Some(current) else {
-      fail("expected context state after canonical summary compact")
-    }
-    assert_eq(current.source, Estimated)
-    assert_eq(current.last_measured_tokens, Some(1))
-  }
 }

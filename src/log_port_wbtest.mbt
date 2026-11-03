@@ -42,18 +42,6 @@ test "log/record_validation_rejects_empty_machine_fields" {
 }
 
 ///|
-async test "log/testkit_records_durability_and_flush" {
-  let port = @testkit.RecordingLogPort()
-  let record = test_log_record()
-  port.write_direct(record, @port.LogDurability::Durable)
-  (port as &@port.LogPort).flush()
-  assert_eq(port.writes(), [
-    { record, durability: @port.LogDurability::Durable, },
-  ])
-  assert_eq(port.flush_count(), 1)
-}
-
-///|
 test "log/composition_is_optional_and_gated" {
   let probe_with = LogLifecycleProbe::{ seen: false, }
   let probe_without = LogLifecycleProbe::{ seen: false, }

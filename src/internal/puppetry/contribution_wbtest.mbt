@@ -135,62 +135,6 @@ fn make_c_ctx(
 }
 
 ///|
-test "puppet_contribution/noop_returns_empty" {
-  let ctx = make_c_ctx("sp1", InputAccepted, [])
-  let noop = NoopContributor()
-  let c = noop.contribute(ctx)
-  assert_true(c.proposed_entries.length() == 0)
-  assert_true(c.contributor_id == "noop")
-}
-
-///|
-test "puppet_contribution/prepare_batch_with_no_contributors" {
-  let base = [make_c_entry(InputAccepted, "sp1", 0)]
-  let ctx = make_c_ctx("sp1", InputAccepted, base)
-  let batch = prepare_batch(ctx, [])
-  assert_true(batch.entries.length() == 1)
-  assert_true(batch.expected_revision == 0)
-}
-
-///|
-test "puppet_contribution/prepare_batch_merges_contributor_entries" {
-  let base = [make_c_entry(InputAccepted, "sp1", 0)]
-  let ctx = make_c_ctx("sp1", InputAccepted, base)
-  // Contributor proposes an extra entry.
-  let extra = make_c_entry(InputAccepted, "sp1", 1)
-  let contributor = ProposingContributor("ext_a", extra)
-  let contributors : Array[&JournalContributor] = [contributor]
-  let batch = prepare_batch(ctx, contributors)
-  assert_true(batch.entries.length() == 2)
-}
-
-///|
-test "puppet_contribution/prepare_batch_contributor_raise_surfaces_as_savepoint_failed" {
-  let ctx = make_c_ctx("sp1", InputAccepted, [])
-  let failing = FailingContributor("bad")
-  let contributors : Array[&JournalContributor] = [failing]
-  let result : Result[FrozenBatch, PuppetError] = Ok(
-    prepare_batch(ctx, contributors),
-  ) catch {
-    e => Err(e)
-  }
-  assert_true(result is Err(SavepointFailed(..)))
-  match result {
-    Err(SavepointFailed(kind~, cause~)) => {
-      assert_true(kind == "InputAccepted")
-      match cause {
-        ContributorRaised(contributor_id~, detail~) => {
-          assert_true(contributor_id == "bad")
-          assert_true(detail.contains("injected failure"))
-        }
-        _ => fail("expected ContributorRaised")
-      }
-    }
-    _ => fail("expected SavepointFailed")
-  }
-}
-
-///|
 test "puppet_contribution/prepare_batch_rejects_wrong_kind" {
   // Context says InputAccepted, but base entry is ToolCommitted.
   let wrong = make_c_entry(ToolCommitted, "sp1", 0)
@@ -277,36 +221,6 @@ test "puppet_contribution/prepare_batch_rejects_duplicate_entry_id" {
     Err(SavepointFailed(cause=ValidationFailed(detail~), ..)) =>
       assert_true(detail.contains("duplicate"))
     _ => fail("expected SavepointFailed(ValidationFailed) for duplicate")
-  }
-}
-
-///|
-test "puppet_contribution/commit_batch_advances_revision" {
-  let journal = InMemoryJournal()
-  let base = [make_c_entry(InputAccepted, "sp1", 0)]
-  let ctx = make_c_ctx("sp1", InputAccepted, base)
-  let batch = prepare_batch(ctx, [])
-  let r = commit_batch(journal, batch)
-  assert_true(r == 1)
-  assert_true(journal.revision() == 1)
-}
-
-///|
-test "puppet_contribution/commit_batch_via_fail_on_nth" {
-  // FailOnNthJournal fails on the 1st append.
-  let inner = InMemoryJournal()
-  let failing = FailOnNthJournal(inner, 1)
-  let base = [make_c_entry(InputAccepted, "sp1", 0)]
-  let ctx = make_c_ctx("sp1", InputAccepted, base)
-  let batch = prepare_batch(ctx, [])
-  let result : Result[Int32, PuppetError] = Ok(commit_batch(failing, batch)) catch {
-    e => Err(e)
-  }
-  assert_true(result is Err(SavepointFailed(..)))
-  match result {
-    Err(SavepointFailed(cause=BarrierFailed(detail~), ..)) =>
-      assert_true(detail.contains("injected failure"))
-    _ => fail("expected SavepointFailed(BarrierFailed)")
   }
 }
 

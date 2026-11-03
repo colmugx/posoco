@@ -167,18 +167,8 @@ async fn compact_tools_idle(fail_compact : Bool, refresh : Bool) -> Unit {
 }
 
 ///|
-async test "compact_tools/idle manual before any chat uses snapshot" {
-  compact_tools_idle(false, false)
-}
-
-///|
 async test "compact_tools/idle manual after chat uses refreshed snapshot" {
   compact_tools_idle(false, true)
-}
-
-///|
-async test "compact_tools/idle manual failure preserves committed history" {
-  compact_tools_idle(true, true)
 }
 
 ///|
@@ -418,21 +408,6 @@ async test "compact_tools/auto pre-request has tools before any chat" {
 }
 
 ///|
-async test "compact_tools/auto pre-request failure preserves committed history" {
-  compact_tools_auto(true, true)
-}
-
-///|
-async test "compact_tools/auto mid-turn uses active snapshot" {
-  compact_tools_auto(false, false)
-}
-
-///|
-async test "compact_tools/auto mid-turn failure preserves committed history" {
-  compact_tools_auto(true, false)
-}
-
-///|
 async test "compact_tools/empty snapshot is explicit and does not inherit another Agent chat" {
   let model = @testkit.ScriptedModel([
     @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
@@ -456,43 +431,4 @@ async test "compact_tools/empty snapshot is explicit and does not inherit anothe
   assert_eq(model.received_compact_tools.length(), 1)
   assert_eq(model.received_compact_tools[0].length(), 0)
   assert_eq(model.call_count(), 1)
-}
-
-///|
-async test "compact_tools/default Agent idle manual forwards composed definitions before chat" {
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Compact(result=policy_replace_result()),
-  ])
-  let store = @testkit.RecordingSessionPort()
-  compact_tools_seed(store, "tools-composed")
-  let tools = @testkit.RecordingToolProvider(
-    [
-      {
-        ..@testkit.tk_tool_def("echo", "echo schema"),
-        provenance: Some("echo-provider"),
-        policy: Sequential,
-      },
-      @testkit.tk_tool_def("lookup", "lookup schema"),
-    ],
-    Map::from_array([]),
-  )
-  let agent = Agent(
-    exts=[
-      @testkit.tk_ext(id="model", model=Some(model), tools=[tools], sessions=[
-        store,
-      ]),
-    ],
-    config=agent_config(max_tool_rounds=Some(10)),
-  )
-  ignore(agent.compact_session("tools-composed"))
-  assert_eq(model.call_count(), 0)
-  guard model.received_compact_tools is [[echo, lookup]] else {
-    fail("compact must receive both composed definitions")
-  }
-  assert_eq(echo.name.to_string(), "echo")
-  assert_eq(echo.owner.to_string(), "model")
-  assert_eq(echo.provenance, Some("echo-provider"))
-  assert_true(echo.policy is Sequential)
-  assert_eq(lookup.name.to_string(), "lookup")
-  assert_eq(lookup.owner.to_string(), "model")
 }

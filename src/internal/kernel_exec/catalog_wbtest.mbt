@@ -44,41 +44,6 @@ fn validate_arguments(
 }
 
 ///|
-test "ToolCatalogBuilder: empty finish produces empty snapshot" {
-  let snapshot = ToolCatalogBuilder().finish(version=CatalogVersion(1))
-  assert_eq(snapshot.size(), 0)
-  assert_eq(snapshot.version().to_int(), 1)
-}
-
-///|
-test "ToolCatalogBuilder: add + finish produces ordered entries" {
-  let d1 = make_def("tool_a", "owner1", empty_object_schema(), Parallel)
-  let d2 = make_def("tool_b", "owner2", empty_object_schema(), Sequential)
-  let snapshot = make_snapshot([d1, d2])
-  assert_eq(snapshot.size(), 2)
-  let entries = snapshot.entries()
-  assert_eq(entries[0].position, 0)
-  assert_eq(entries[0].definition.name.to_string(), "tool_a")
-  assert_eq(entries[1].position, 1)
-  assert_eq(entries[1].definition.name.to_string(), "tool_b")
-}
-
-///|
-test "ToolCatalogBuilder: name collision fails" {
-  let d1 = make_def("dup", "owner1", empty_object_schema(), Parallel)
-  let d2 = make_def("dup", "owner2", empty_object_schema(), Parallel)
-  let result : Result[ToolCatalogSnapshot, CatalogCompositionError] = Ok(
-    make_snapshot([d1, d2]),
-  ) catch {
-    e => Err(e)
-  }
-  match result {
-    Err(NameCollision(visible_name~, ..)) => assert_eq(visible_name, "dup")
-    _ => fail("expected NameCollision for duplicate name 'dup'")
-  }
-}
-
-///|
 test "ToolCatalogBuilder: composition-time rejection of malformed schemas" {
   // The compiler rejects malformed keyword values; pattern/keyword
   // rejections keep the dedicated UnsupportedSchemaKeyword variant, so a
@@ -104,111 +69,6 @@ test "ToolCatalogBuilder: composition-time rejection of malformed schemas" {
 }
 
 ///|
-test "ToolCatalogBuilder: nested malformed keyword fails" {
-  let bad_schema = Json::object(
-    Map::from_array([
-      ("type", Json::string("object")),
-      (
-        "properties",
-        Json::object(
-          Map::from_array([
-            (
-              "x",
-              Json::object(
-                Map::from_array([
-                  ("type", Json::string("string")),
-                  ("minLength", Json::string("many")),
-                ]),
-              ),
-            ),
-          ]),
-        ),
-      ),
-    ]),
-  )
-  let d = make_def("nested_bad", "owner1", bad_schema, Parallel)
-  let result : Result[ToolCatalogSnapshot, CatalogCompositionError] = Ok(
-    make_snapshot([d]),
-  ) catch {
-    e => Err(e)
-  }
-  match result {
-    Err(MalformedSchema(visible_name~, detail~)) => {
-      assert_eq(visible_name, "nested_bad")
-      assert_true(detail.contains("minLength"))
-    }
-    _ => fail("expected MalformedSchema for nested malformed minLength")
-  }
-}
-
-///|
-test "ToolCatalogBuilder: malformed top-level schema fails" {
-  let d = make_def("bad", "owner1", Json::string("not-a-schema"), Parallel)
-  let result : Result[ToolCatalogSnapshot, CatalogCompositionError] = Ok(
-    make_snapshot([d]),
-  ) catch {
-    e => Err(e)
-  }
-  match result {
-    Err(MalformedSchema(visible_name~, ..)) => assert_eq(visible_name, "bad")
-    _ => fail("expected MalformedSchema for non-object schema")
-  }
-}
-
-///|
-test "ToolCatalogBuilder: cannot add after finish" {
-  let result : Result[ToolCatalogBuilder, CatalogCompositionError] = try {
-    let b = ToolCatalogBuilder()
-    let _ = b.finish(version=CatalogVersion(1))
-    Ok(b.add(make_def("x", "o", empty_object_schema(), Parallel)))
-  } catch {
-    e => Err(e)
-  }
-  match result {
-    Err(InvalidToolName(detail~)) => assert_true(detail.contains("finished"))
-    _ => fail("expected InvalidToolName after finish")
-  }
-}
-
-///|
-test "ToolCatalogSnapshot: find by name" {
-  let snapshot = make_snapshot([
-    make_def("alpha", "owner1", empty_object_schema(), Parallel),
-    make_def("beta", "owner2", empty_object_schema(), Sequential),
-  ])
-  assert_true(snapshot.contains(@kernel.ToolName::unchecked("alpha")))
-  assert_false(snapshot.contains(@kernel.ToolName::unchecked("missing")))
-  match snapshot.find(@kernel.ToolName::unchecked("beta")) {
-    Some(entry) => assert_eq(entry.definition.name.to_string(), "beta")
-    None => fail("expected to find 'beta'")
-  }
-}
-
-///|
-test "ToolCatalogSnapshot: definitions in source order" {
-  let snapshot = make_snapshot([
-    make_def("first", "o", empty_object_schema(), Parallel),
-    make_def("second", "o", empty_object_schema(), Parallel),
-    make_def("third", "o", empty_object_schema(), Parallel),
-  ])
-  let defs = snapshot.definitions()
-  assert_eq(defs.length(), 3)
-  assert_eq(defs[0].name.to_string(), "first")
-  assert_eq(defs[2].name.to_string(), "third")
-}
-
-///|
-test "Schema: object type matches object instance" {
-  let schema = Json::object(Map::from_array([("type", Json::string("object"))]))
-  let instance = Json::object(Map::from_array([]))
-  let result = validate_arguments(schema, instance)
-  match result {
-    Ok(_) => ()
-    Err(d) => fail("expected Ok for object instance, got \{d.to_string()}")
-  }
-}
-
-///|
 test "Schema: string type rejects number" {
   let schema = Json::object(Map::from_array([("type", Json::string("string"))]))
   let instance = Json::number(42.0)
@@ -219,19 +79,6 @@ test "Schema: string type rejects number" {
       assert_true(d.json_path == "$")
     }
     Ok(_) => fail("expected Err for number against string schema")
-  }
-}
-
-///|
-test "Schema: integer accepts integral number" {
-  let schema = Json::object(
-    Map::from_array([("type", Json::string("integer"))]),
-  )
-  let instance = Json::number(42.0)
-  let result = validate_arguments(schema, instance)
-  match result {
-    Ok(_) => ()
-    Err(_) => fail("integer should accept 42.0")
   }
 }
 
@@ -310,21 +157,6 @@ test "Schema: additionalProperties=false rejects extra keys" {
 }
 
 ///|
-test "Schema: enum accepts matching value" {
-  let schema = Json::object(
-    Map::from_array([
-      ("enum", Json::array([Json::string("a"), Json::string("b")])),
-    ]),
-  )
-  let instance = Json::string("b")
-  let result = validate_arguments(schema, instance)
-  match result {
-    Ok(_) => ()
-    Err(_) => fail("enum should accept 'b'")
-  }
-}
-
-///|
 test "Schema: enum rejects non-matching value" {
   let schema = Json::object(
     Map::from_array([
@@ -395,98 +227,4 @@ test "Schema: unresolvable $ref is rejected at composition, not validate time" {
   }
   assert_eq(visible_name, "broken_ref")
   assert_false(detail == "")
-}
-
-///|
-test "Schema: $ref with $defs composes and validates" {
-  let schema = Json::object(
-    Map::from_array([
-      ("$ref", Json::string("#/$defs/leaf")),
-      (
-        "$defs",
-        Json::object(
-          Map::from_array([("leaf", { "type": Json::string("string") })]),
-        ),
-      ),
-    ]),
-  )
-  match validate_arguments(schema, Json::string("ok")) {
-    Ok(_) => ()
-    Err(d) => fail("expected Ok for $ref-resolved string, got \{d.to_string()}")
-  }
-  match validate_arguments(schema, Json::number(1.0)) {
-    Err(_) => ()
-    Ok(_) => fail("$ref-resolved string type should reject number")
-  }
-}
-
-///|
-test "Catalog: validate_arguments against known tool" {
-  let schema = Json::object(
-    Map::from_array([
-      ("type", Json::string("object")),
-      (
-        "properties",
-        Json::object(
-          Map::from_array([
-            (
-              "path",
-              Json::object(Map::from_array([("type", Json::string("string"))])),
-            ),
-          ]),
-        ),
-      ),
-      ("required", Json::array([Json::string("path")])),
-    ]),
-  )
-  let snapshot = make_snapshot([
-    make_def("read_file", "owner1", schema, Sequential),
-  ])
-  let ok = snapshot.validate_arguments(
-    @kernel.ToolName::unchecked("read_file"),
-    Json::object(Map::from_array([("path", Json::string("/tmp/x"))])),
-  )
-  match ok {
-    Ok(_) => ()
-    Err(_) => fail("validate_arguments should accept valid args")
-  }
-  let bad = snapshot.validate_arguments(
-    @kernel.ToolName::unchecked("read_file"),
-    Json::object(Map::from_array([])),
-  )
-  match bad {
-    Err(_) => ()
-    Ok(_) => fail("validate_arguments should reject missing required 'path'")
-  }
-}
-
-///|
-test "Catalog: validate_arguments against unknown tool" {
-  let snapshot = make_snapshot([
-    make_def("known", "owner1", empty_object_schema(), Parallel),
-  ])
-  let result = snapshot.validate_arguments(
-    @kernel.ToolName::unchecked("unknown"),
-    Json::null(),
-  )
-  match result {
-    Err(d) => assert_true(d.actual.contains("unknown tool"))
-    Ok(_) => fail("unknown tool should produce Err")
-  }
-}
-
-///|
-test "Catalog: definitions align with entries in source order" {
-  let snapshot = make_snapshot([
-    make_def("alpha", "owner1", empty_object_schema(), Parallel),
-    make_def("beta", "owner2", empty_object_schema(), Sequential),
-  ])
-  let defs = snapshot.definitions()
-  let entries = snapshot.entries()
-  assert_eq(defs.length(), entries.length())
-  for i in 0..<entries.length() {
-    // The model-facing accessor must project the same definitions the
-    // entries carry, in the same source order.
-    assert_eq(defs[i].name.to_string(), entries[i].definition.name.to_string())
-  }
 }

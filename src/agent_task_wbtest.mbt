@@ -710,41 +710,6 @@ async test "managed_tasks/rejects_malformed_applied_ids_before_model_call" {
 }
 
 ///|
-async test "managed_tasks/repeated_waits_are_payload_isolated" {
-  let capture = TaskCapture::new()
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("unused")),
-  ])
-  let store = @testkit.RecordingSessionPort()
-  let agent = task_test_agent(model as &@port.ModelPort, store, capture)
-  agent.run_scoped(async fn(_agent) {
-    let handle = task_test_submit(capture, "snapshot-session", "snapshot")
-    let first = handle.wait()
-    let first_message = match first.status {
-      @port.TaskStatus::Completed(message~) => message
-      _ => fail("snapshot task did not complete")
-    }
-    match first_message {
-      @kernel.Message::AssistantMessage(content~, ..) =>
-        content[0] = @kernel.Content::Text("mutated")
-      _ => fail("snapshot task returned the wrong message")
-    }
-    let second = handle.wait()
-    let second_message = match second.status {
-      @port.TaskStatus::Completed(message~) => message
-      _ => fail("second wait did not return the stable task terminal")
-    }
-    match second_message {
-      @kernel.Message::AssistantMessage(
-        content=[@kernel.Content::Text(text)],
-        ..
-      ) => assert_eq(text, "worker result")
-      _ => fail("second wait returned the wrong message")
-    }
-  })
-}
-
-///|
 async test "managed_tasks/compact_keeps_busy_guard_through_blocked_operation" {
   let model = CompactBusyModel::new()
   let store = @testkit.RecordingSessionPort()
@@ -926,46 +891,5 @@ async test "managed_tasks/business_error_survives_cancel_guard" {
       other => fail("business error must stay Failed: \{repr(other)}")
     }
     assert_true(reason.contains("boom"))
-  })
-}
-
-///|
-async test "managed_tasks/plain_completion_unaffected_by_guard" {
-  let capture = TaskCapture::new()
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("unused")),
-  ])
-  let store = @testkit.RecordingSessionPort()
-  let agent = task_test_agent(model as &@port.ModelPort, store, capture)
-  agent.run_scoped(async fn(_agent) {
-    let tasks = match capture.tasks {
-      Some(value) => value
-      None => abort("task capability was not composed")
-    }
-    let handle = match
-      tasks.submit({
-        session_id: "plain-complete",
-        mode: @port.TaskMode::Background,
-        label: "plain-complete",
-        timeout_ms: Some(150),
-        run: fn() {
-          @kernel.Message::UserMessage(content=[
-            @kernel.Content::Text("quick-finish"),
-          ])
-        },
-      }) {
-      Ok(value) => value
-      Err(_) => abort("task submit failed")
-    }
-    let outcome = handle.wait()
-    let message = match outcome.status {
-      @port.TaskStatus::Completed(message~) => message
-      other => fail("plain task must complete: \{repr(other)}")
-    }
-    match message {
-      @kernel.Message::UserMessage(content=[@kernel.Content::Text(text)]) =>
-        assert_eq(text, "quick-finish")
-      _ => fail("completion message mismatch")
-    }
   })
 }

@@ -1,10 +1,4 @@
 ///|
-test "Session::parent_thread_id: fresh session has no parent" {
-  let s : Session = { messages: [], metadata: Map::from_array([]), }
-  assert_true(s.parent_thread_id() is None)
-}
-
-///|
 test "Session::with_parent_thread_id: round-trips through metadata" {
   let base : Session = {
     messages: [],

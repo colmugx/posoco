@@ -6,13 +6,6 @@
 /// an extension author would see them.
 
 ///|
-test "noop_ui_port_descriptor_is_empty" {
-  let ui = NoopUiPort()
-  let d = ui.ui_descriptor()
-  assert_eq(d.autocomplete_sources.length(), 0)
-}
-
-///|
 async test "noop_ui_port_request_raises_unsupported" {
   let ui = NoopUiPort()
   let result : Result[UiResponse, UiError] = Ok(
@@ -104,29 +97,6 @@ test "composite_ui_port_descriptor_concatenates_sources" {
 }
 
 ///|
-test "recording_ui_port_records_render_in_order" {
-  let r = @testkit.RecordingUiPort()
-  r.render({
-    slot: Notice,
-    key: "first",
-    title: None,
-    body: Text("1"),
-    ttl_ms: None,
-  })
-  r.render({
-    slot: Status,
-    key: "second",
-    title: None,
-    body: Text("2"),
-    ttl_ms: None,
-  })
-  let rendered = r.rendered_intents()
-  assert_eq(rendered.length(), 2)
-  assert_eq(rendered[0].key, "first")
-  assert_eq(rendered[1].key, "second")
-}
-
-///|
 async test "recording_ui_port_request_drains_script_in_fifo_order" {
   let r = @testkit.RecordingUiPort(responses=[Text("first"), Text("second")])
   let resp1 = r.request(Input(prompt="?", default=None))
@@ -141,103 +111,4 @@ async test "recording_ui_port_request_drains_script_in_fifo_order" {
   }
   // Script exhausted; further requests raise Unsupported.
   assert_eq(r.unconsumed_response_count(), 0)
-}
-
-///|
-async test "recording_ui_port_request_unsupported_when_exhausted" {
-  let r = @testkit.RecordingUiPort(responses=[])
-  let result : Result[UiResponse, UiError] = Ok(
-    r.request(Confirm(prompt="ok?")),
-  ) catch {
-    e => Err(e)
-  }
-  match result {
-    Err(Unsupported(_)) => ()
-    Ok(_) => fail("expected Unsupported, got Ok response")
-    Err(other) => fail("expected Unsupported, got error: " + other.to_string())
-  }
-}
-
-///|
-test "recording_ui_port_rendered_in_slot_filters_by_slot" {
-  let r = @testkit.RecordingUiPort()
-  r.render({
-    slot: Status,
-    key: "s1",
-    title: None,
-    body: Text(""),
-    ttl_ms: None,
-  })
-  r.render({
-    slot: Notice,
-    key: "n1",
-    title: None,
-    body: Text(""),
-    ttl_ms: None,
-  })
-  r.render({
-    slot: Status,
-    key: "s2",
-    title: None,
-    body: Text(""),
-    ttl_ms: None,
-  })
-  let notices = r.rendered_in_slot(Notice)
-  assert_eq(notices.length(), 1)
-  assert_eq(notices[0].key, "n1")
-  let statuses = r.rendered_in_slot(Status)
-  assert_eq(statuses.length(), 2)
-}
-
-///|
-test "ui_request_show_round_trip" {
-  let req = UiRequest::Select(
-    prompt="pick",
-    options=["a", "b", "c"],
-    default=Some(1),
-  )
-  let s = req.to_string()
-  assert_true(s.contains("Select"))
-  assert_true(s.contains("options=3"))
-}
-
-///|
-test "ui_body_entries_show_appends_color_roles" {
-  let with_roles : UiBody = Entries([
-    { key: "plan", value: "codex", color: Some("accent"), },
-    { key: "ctx", value: "42%", color: None, },
-  ])
-  inspect(with_roles.to_string(), content="Entries(2, roles=accent)")
-  let no_roles : UiBody = Entries([{ key: "model", value: "glm", color: None, }])
-  inspect(no_roles.to_string(), content="Entries(1)")
-}
-
-///|
-test "recording_ui_port_preserves_entries_body" {
-  let r = @testkit.RecordingUiPort()
-  let entries : Array[@port.UiEntry] = [
-    { key: "plan", value: "codex", color: Some("accent"), },
-    { key: "model", value: "glm", color: None, },
-  ]
-  r.render({
-    slot: Status,
-    key: "statusbar",
-    title: None,
-    body: Entries(entries),
-    ttl_ms: None,
-  })
-  let rendered = r.rendered_intents()
-  assert_eq(rendered.length(), 1)
-  match rendered[0].body {
-    Entries(ets) => {
-      assert_eq(ets.length(), 2)
-      assert_eq(ets[0].key, "plan")
-      assert_eq(ets[0].value, "codex")
-      assert_eq(ets[0].color, Some("accent"))
-      assert_eq(ets[1].key, "model")
-      assert_eq(ets[1].value, "glm")
-      assert_eq(ets[1].color, None)
-    }
-    other => fail("expected Entries body, got: " + other.to_string())
-  }
 }

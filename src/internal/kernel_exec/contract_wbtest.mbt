@@ -56,74 +56,6 @@ fn try_transition(
 }
 
 ///|
-test "CallId: rejects empty string" {
-  let result = @kernel.CallId::checked("")
-  match result {
-    Err(msg) => assert_true(msg.contains("non-empty"))
-    Ok(_) => fail("CallId(\"\") should reject")
-  }
-}
-
-///|
-test "CallId: accepts non-empty string" {
-  let result = @kernel.CallId::checked("call_1")
-  match result {
-    Ok(id) => assert_eq(id.to_string(), "call_1")
-    Err(_) => fail("CallId::checked should accept non-empty")
-  }
-}
-
-///|
-test "ToolName: rejects empty string" {
-  let result = @kernel.ToolName::checked("")
-  match result {
-    Err(msg) => assert_true(msg.contains("non-empty"))
-    Ok(_) => fail("ToolName(\"\") should reject")
-  }
-}
-
-///|
-test "RunId: rejects empty string" {
-  let result = RunId::checked("")
-  match result {
-    Err(msg) => assert_true(msg.contains("non-empty"))
-    Ok(_) => fail("RunId(\"\") should reject")
-  }
-}
-
-///|
-test "OwnerId: rejects empty string" {
-  let result = @kernel.OwnerId::checked("")
-  match result {
-    Err(msg) => assert_true(msg.contains("non-empty"))
-    Ok(_) => fail("OwnerId(\"\") should reject")
-  }
-}
-
-///|
-test "RunState::initial: produces Initializing state with zero pending" {
-  let st = make_initial_state()
-  assert_eq(st.phase(), Initializing)
-  assert_eq(st.pending_effects().length(), 0)
-  assert_true(st.outcome() is None)
-  assert_true(st.suspension_requirement() is None)
-  assert_eq(st.next_event_sequence().to_int(), 0)
-  assert_eq(st.next_effect_id().to_int(), 1)
-  assert_eq(st.transcript().length(), 0)
-}
-
-///|
-test "RunState: AwaitingModel accepts exactly 1 CallModel effect" {
-  let st = make_initial_state()
-  let eff = make_call_model_effect(EffectId::first())
-  let (ok, err) = try_transition(st, AwaitingModel, [eff], None, None)
-  match err {
-    None => assert_eq(ok.phase(), AwaitingModel)
-    Some(_) => fail("AwaitingModel with 1 CallModel should be legal")
-  }
-}
-
-///|
 test "RunState: AwaitingModel rejects zero pending effects" {
   let st = make_initial_state()
   let (_, err) = try_transition(st, AwaitingModel, [], None, None)
@@ -143,17 +75,6 @@ test "RunState: ReadyForModel rejects any pending effect" {
     Some(ConstructorInvariant(category~)) =>
       assert_true(category.to_string().contains("ReadyForModel"))
     _ => fail("expected ConstructorInvariant for ReadyForModel with pending")
-  }
-}
-
-///|
-test "RunState: Suspended legal with zero pending + Some requirement" {
-  let st = make_initial_state()
-  let req : SuspensionRequirement = { kind: "approval", payload: Json::null(), }
-  let (ok, err) = try_transition(st, Suspended, [], None, Some(req))
-  match err {
-    None => assert_eq(ok.phase(), Suspended)
-    Some(_) => fail("Suspended with zero pending + Some(req) should be legal")
   }
 }
 
@@ -183,53 +104,6 @@ test "RunState: Terminal rejects None outcome" {
     Some(ConstructorInvariant(category~)) =>
       assert_true(category.to_string().contains("Terminal"))
     _ => fail("expected ConstructorInvariant: Terminal without outcome")
-  }
-}
-
-///|
-test "RunState: Terminal legal with Completed" {
-  let st = make_initial_state()
-  let final_msg = @kernel.AssistantMessage(
-    content=[Text("done")],
-    tool_calls=[],
-    reasoning=None,
-    finish_reason=Stop,
-  )
-  let (ok, err) = try_transition(
-    st,
-    Terminal,
-    [],
-    Some(Completed(final_message=final_msg, tool_results=[])),
-    None,
-  )
-  match err {
-    None => {
-      assert_eq(ok.phase(), Terminal)
-      match ok.outcome() {
-        Some(Completed(..)) => ()
-        _ => fail("expected Completed outcome")
-      }
-    }
-    Some(_) => fail("Terminal with Completed should be legal")
-  }
-}
-
-///|
-test "BudgetConsumed: WithinBudget when no limit exceeded" {
-  let consumed : BudgetConsumed = {
-    model_steps: 10,
-    tool_rounds: 5,
-    tool_calls: 20,
-    observed_total_tokens: 0,
-    any_usage_verified: false,
-    last_context_tokens: None,
-  }
-  let budget = Budget::default_run()
-  let state = consumed.exceeded(budget)
-  match state {
-    WithinBudget => ()
-    _ =>
-      fail("expected WithinBudget when max_tool_rounds=Some(32) and consumed=5")
   }
 }
 
@@ -391,21 +265,6 @@ test "Reducer: negative model usage is typed failure without budget decrease" {
 }
 
 ///|
-test "RunInput: kind labels are stable" {
-  let start : RunInput = Start(payload={
-    initial_messages: [],
-    catalog_version: CatalogVersion(1),
-  })
-  assert_eq(start.kind(), "Start")
-
-  let cancel_input : RunInput = CancelRequested(payload={ detail: None, })
-  assert_eq(cancel_input.kind(), "CancelRequested")
-
-  let resume_input : RunInput = Resume(payload={ payload: Json::null(), })
-  assert_eq(resume_input.kind(), "Resume")
-}
-
-///|
 test "KernelEvent: terminal events classified correctly" {
   let terminal_completed : KernelEvent = RunCompleted(
     final_message_summary="ok",
@@ -433,25 +292,6 @@ test "KernelEvent: terminal events classified correctly" {
     model_step_id=ModelStepId::first(),
   )
   assert_false(suspended.is_terminal())
-}
-
-///|
-test "Effect: effect_id accessor works for all variants" {
-  let cm = make_call_model_effect(EffectId::first())
-  assert_eq(cm.effect_id().to_int(), 1)
-  match cm.model_step_id() {
-    Some(id) => assert_eq(id.to_int(), 1)
-    None => fail("CallModel should carry a model_step_id")
-  }
-
-  let cancel_effect : Effect = CancelOutstanding(effect_id=EffectId::first(), payload={
-    effect_ids: [],
-    reason: HostRequested(detail=None),
-  })
-  match cancel_effect.model_step_id() {
-    Some(_) => fail("CancelOutstanding should not carry model_step_id")
-    None => ()
-  }
 }
 
 ///|

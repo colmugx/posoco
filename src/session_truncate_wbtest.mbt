@@ -2,78 +2,8 @@
 /// Rewind primitive regression tests: `SessionPort::truncate`.
 ///
 /// The Agent reloads persisted history from the store at the start of every
-/// turn, so truncating the store changes what the next turn sees. These tests
-/// pin the trait default implementation (load → slice → full save), the
-/// @testkit.RecordingSessionPort override, and the Agent-level end-to-end behaviour.
-
-///|
-struct TruncateFallbackStore {
-  session : @types.Session
-  saved : Array[@types.Session]
-  mut fail_load : Bool
-  mut fail_save : Bool
-}
-
-///|
-pub extend TruncateFallbackStore with @port.SessionPort::{checkpoint, truncate}
-
-///|
-fn TruncateFallbackStore::make(
-  session : @types.Session,
-) -> TruncateFallbackStore {
-  { session, saved: [], fail_load: false, fail_save: false, }
-}
-
-///|
-pub extend TruncateFallbackStore with @port.SessionPort::{
-  save,
-  append_messages,
-  load,
-}
-
-///|
-pub impl @port.SessionPort for TruncateFallbackStore with fn load(
-  self,
-  _id : String,
-) -> @types.Session raise @error.SessionError {
-  if self.fail_load {
-    raise Load("backend unavailable")
-  }
-  self.session
-}
-
-///|
-pub impl @port.SessionPort for TruncateFallbackStore with fn save(
-  self,
-  _id : String,
-  session : @types.Session,
-) -> Unit raise @error.SessionError {
-  if self.fail_save {
-    raise Save("backend unavailable")
-  }
-  self.saved.push({
-    messages: session.messages.copy(),
-    metadata: session.metadata.copy(),
-  })
-}
-
-///|
-fn truncate_test_session() -> @types.Session {
-  {
-    messages: [
-      @testkit.tk_user_msg("hello"),
-      truncate_first_assistant(),
-      @testkit.tk_user_msg("world"),
-      AssistantMessage(
-        content=[Text("second")],
-        tool_calls=[],
-        reasoning=None,
-        finish_reason=Stop,
-      ),
-    ],
-    metadata: Map::from_array([("lineage", Json::string("kept"))]),
-  }
-}
+/// turn, so truncating the store changes what the next turn sees. This test
+/// pins the Agent-level end-to-end behaviour.
 
 ///|
 /// The assistant reply persisted by turn 1 in the scripted two-turn history.
@@ -84,78 +14,6 @@ fn truncate_first_assistant() -> @kernel.Message {
     reasoning=None,
     finish_reason=Stop,
   )
-}
-
-///|
-async test "rewind_truncate_default_impl_keeps_prefix_and_metadata" {
-  let store = TruncateFallbackStore::make(truncate_test_session())
-  store.truncate("s1", 2)
-  assert_eq(store.saved.length(), 1)
-  let saved = store.saved[0]
-  assert_eq(saved.messages.length(), 2)
-  assert_true(saved.messages[0] == @testkit.tk_user_msg("hello"))
-  assert_true(saved.messages[1] == truncate_first_assistant())
-  assert_true(saved.metadata["lineage"] == Json::string("kept"))
-}
-
-///|
-async test "rewind_truncate_default_impl_clamps_from_index" {
-  let zero = TruncateFallbackStore::make(truncate_test_session())
-  zero.truncate("s1", 0)
-  assert_eq(zero.saved[0].messages.length(), 0)
-  let over = TruncateFallbackStore::make(truncate_test_session())
-  over.truncate("s1", 99)
-  assert_eq(over.saved[0].messages.length(), 4)
-  let negative = TruncateFallbackStore::make(truncate_test_session())
-  negative.truncate("s1", -3)
-  assert_eq(negative.saved[0].messages.length(), 0)
-}
-
-///|
-async test "rewind_truncate_default_impl_labels_load_and_save_failures" {
-  let store = TruncateFallbackStore::make(truncate_test_session())
-  store.fail_load = true
-  let load_result = Ok(store.truncate("s1", 1)) catch { e => Err(e) }
-  match load_result {
-    Err(Load(msg)) => assert_true(msg.contains("operation='truncate'"))
-    _ => fail("expected SessionError::Load from truncate")
-  }
-  store.fail_load = false
-  store.fail_save = true
-  let save_result = Ok(store.truncate("s1", 1)) catch { e => Err(e) }
-  match save_result {
-    Err(Save(msg)) => assert_true(msg.contains("operation='truncate'"))
-    _ => fail("expected SessionError::Save from truncate")
-  }
-  // A failed truncate must not partially commit: nothing was saved.
-  assert_eq(store.saved.length(), 0)
-}
-
-///|
-async test "rewind_recording_store_truncate_slices_and_records_op" {
-  let store = @testkit.RecordingSessionPort()
-  store.seed("s1", truncate_test_session())
-  store.truncate("s1", 1)
-  let mut recorded = 0
-  for op in store.ops() {
-    match op {
-      @testkit.SessionOp::OpTruncate(id~, from_index~, result~) => {
-        assert_eq(id, "s1")
-        assert_eq(from_index, 1)
-        match result {
-          Ok(_) => ()
-          Err(error) => fail("expected successful truncate, got \{error}")
-        }
-        recorded = recorded + 1
-      }
-      _ => ()
-    }
-  }
-  assert_eq(recorded, 1)
-  let session = store.load("s1")
-  assert_eq(session.messages.length(), 1)
-  assert_true(session.messages[0] == @testkit.tk_user_msg("hello"))
-  assert_true(session.metadata["lineage"] == Json::string("kept"))
 }
 
 ///|

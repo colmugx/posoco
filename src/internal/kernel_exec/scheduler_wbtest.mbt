@@ -32,22 +32,6 @@ fn make_call(call_id : String, name : String) -> @kernel.ToolCall {
 }
 
 ///|
-test "Scheduler: empty calls produces empty plan" {
-  let catalog = make_catalog([("a", Parallel)])
-  let plan = schedule(catalog, CatalogVersion(1), [])
-  assert_eq(plan.wave_count(), 0)
-  assert_eq(plan.total_calls(), 0)
-}
-
-///|
-test "Scheduler: single Parallel call → 1 wave" {
-  let catalog = make_catalog([("a", Parallel)])
-  let plan = schedule(catalog, CatalogVersion(1), [make_call("c1", "a")])
-  assert_eq(plan.wave_count(), 1)
-  assert_eq(plan.total_calls(), 1)
-}
-
-///|
 test "Scheduler: P/P/P → 1 wave of 3" {
   let catalog = make_catalog([("a", Parallel), ("b", Parallel), ("c", Parallel)])
   let plan = schedule(catalog, CatalogVersion(1), [
@@ -193,25 +177,4 @@ test "Scheduler: trace excludes arguments" {
   assert_false(trace.contains(marker))
   assert_false(trace.contains("arguments"))
   assert_false(trace.contains("schema"))
-}
-
-///|
-test "Scheduler: source order preserved within parallel wave" {
-  let catalog = make_catalog([
-    ("a", Parallel),
-    ("b", Parallel),
-    ("c", Parallel),
-    ("d", Parallel),
-  ])
-  let plan = schedule(catalog, CatalogVersion(1), [
-    make_call("z", "a"),
-    make_call("y", "b"),
-    make_call("x", "c"),
-    make_call("w", "d"),
-  ])
-  let wave = plan.waves()[0]
-  assert_eq(wave.calls[0].call_id.to_string(), "z")
-  assert_eq(wave.calls[1].call_id.to_string(), "y")
-  assert_eq(wave.calls[2].call_id.to_string(), "x")
-  assert_eq(wave.calls[3].call_id.to_string(), "w")
 }

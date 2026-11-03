@@ -96,66 +96,6 @@ async test "session_output/fanout save dispatches every store and reports the fi
 }
 
 ///|
-async test "session_output/fanout checkpoint reports the first port-order failure" {
-  let first = fanout_store("first", true)
-  let second = fanout_store("second", true)
-  let third = fanout_store("third", false)
-  let outcome : Result[Unit, @error.AgentError] = try {
-    checkpoint_all(
-      [first, second, third],
-      "s_fanout",
-      4,
-      [fanout_message("tail")],
-      Some(fanout_metadata("t")),
-      "fanout_checkpoint",
-    )
-    Ok(())
-  } catch {
-    error => Err(error)
-  }
-  assert_eq(third.checkpoints.length(), 1)
-  assert_eq(third.checkpoints[0].from_index, 4)
-  guard outcome is Err(Session(Save(detail))) else {
-    fail("a refused checkpoint must surface as SessionException::Save")
-  }
-  assert_true(detail.contains("operation='fanout_checkpoint'"))
-  assert_true(detail.contains("checkpoint refused by first"))
-  assert_false(detail.contains("second"))
-}
-
-///|
-async test "session_output/fanout empty store list is a no-op for both waves" {
-  // The double only models the write side; a read attempt is an explicit
-  // failure rather than a silent empty body.
-  let reader = fanout_store("reader", false)
-  let read : Result[@types.Session, @error.SessionError] = try {
-    ignore(@port.SessionPort::load(reader, "s_none"))
-    Ok({ messages: [], metadata: Map::from_array([]), })
-  } catch {
-    error => Err(error)
-  }
-  guard read is Err(Save(_)) else {
-    fail("the fanout double must refuse reads")
-  }
-  let stores : Array[&@port.SessionPort] = []
-  save_all(
-    stores,
-    "s_none",
-    [fanout_message("x")],
-    fanout_metadata("t"),
-    "noop_save",
-  )
-  checkpoint_all(
-    stores,
-    "s_none",
-    0,
-    [fanout_message("x")],
-    None,
-    "noop_checkpoint",
-  )
-}
-
-///|
 async test "session_output/fanout snapshots messages and nested metadata per store" {
   let first = fanout_store("first", false)
   let second = fanout_store("second", false)

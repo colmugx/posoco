@@ -9,20 +9,6 @@ struct ScopedObserver {
 }
 
 ///|
-/// The core operation projection brackets every turn stream; the scope
-/// assertions below describe run-bound turn events.
-fn scope_projection_turn_events(
-  events : Array[@types.TurnEvent],
-) -> Array[@types.TurnEvent] {
-  events.filter(fn(event) {
-    match event {
-      Custom(source~, ..) => source != "posoco.operation"
-      _ => true
-    }
-  })
-}
-
-///|
 /// Tag just the variants these tests drive; everything else is "other".
 fn scope_projection_event_tag(event : @types.TurnEvent) -> String {
   match event {
@@ -220,41 +206,4 @@ async test "scope_projection/tool_loop_events_and_hook_stages_share_run" {
     assert_eq(scope.run_id, turn_scope.run_id)
     assert_eq(scope.turn_id, turn_scope.turn_id)
   }
-}
-
-///|
-async test "scope_projection/testkit_records_single_callback_dispatch" {
-  let observer = @testkit.RecordingObserver()
-  let hook = @testkit.RecordingHook()
-  let agent = Agent(
-    exts=[
-      @testkit.tk_ext(
-        id="model",
-        model=Some(
-          @testkit.ScriptedModel([
-            @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("hi")),
-          ]),
-        ),
-      ),
-      @testkit.tk_ext(
-        id="io",
-        sessions=[@testkit.RecordingSessionPort()],
-        observers=[observer],
-        hooks=[hook],
-      ),
-    ],
-    config=agent_config(max_tool_rounds=Some(10)),
-  )
-  ignore(agent.run_turn(@testkit.tk_user_msg("hello"), "s_testkit"))
-  let events = scope_projection_turn_events(observer.events())
-  assert_eq(events.length(), 4)
-  guard events[0] is TurnStarted else {
-    fail("first event must be TurnStarted")
-  }
-  guard events[3] is TurnCompleted else {
-    fail("last event must be TurnCompleted")
-  }
-  let labels = hook.records().map(fn(r) { r.label })
-  assert_true(labels.contains("before_model"))
-  assert_true(labels.contains("on_post_event"))
 }

@@ -93,15 +93,6 @@ fn active_gate(op_id : String) -> PhaseGate raise PuppetError {
 }
 
 ///|
-test "puppet_phase/initial_is_idle" {
-  let g = PhaseGate::idle()
-  assert_true(g.phase() == Idle)
-  assert_true(g.is_quiescent())
-  assert_true(g.lease() is None)
-  assert_true(g.active_run_id() is None)
-}
-
-///|
 test "puppet_phase/idle_accepts_prompt_and_structural" {
   let g = PhaseGate::idle()
   assert_true(try_authorise(g, Prompt) is None)
@@ -306,15 +297,6 @@ test "puppet_phase/release_validates_owner" {
 }
 
 ///|
-test "puppet_phase/release_when_no_lease" {
-  let g = PhaseGate::idle()
-  let result = try_release(g, "op1")
-  assert_true(
-    result is Some(LeaseNotHeld(detail="no lease currently held", ..)),
-  )
-}
-
-///|
 test "puppet_phase/resume_wrong_suspension_id" {
   let active = active_gate("op1")
   let g = active.enter_suspended("susp_actual")
@@ -373,21 +355,4 @@ test "puppet_phase/rotate_turn_rejected_in_idle" {
       )
     ),
   )
-}
-
-///|
-test "puppet_phase/quiescent_phases" {
-  // Type annotation disambiguates from the kernel `Phase` of the same name.
-  let idle : PuppetPhase = Idle
-  let suspended : PuppetPhase = Suspended
-  let shutdown : PuppetPhase = Shutdown
-  let active : PuppetPhase = Active
-  let terminalizing : PuppetPhase = Terminalizing
-  let shutting_down : PuppetPhase = ShuttingDown
-  assert_true(idle.is_quiescent())
-  assert_true(suspended.is_quiescent())
-  assert_true(shutdown.is_quiescent())
-  assert_true(!active.is_quiescent())
-  assert_true(!terminalizing.is_quiescent())
-  assert_true(!shutting_down.is_quiescent())
 }

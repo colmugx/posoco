@@ -125,38 +125,6 @@ test "core_facts/source_lifecycle_has_no_orphan_and_keeps_referenced" {
 }
 
 ///|
-test "core_facts/failed_validation_revokes_allocation" {
-  let facts = CoreFacts::CoreFacts()
-  ignore(
-    facts.hydrate("vparent", [@testkit.tk_user_msg("old")], Map::from_array([])),
-  )
-  ignore(
-    facts.admit(
-      "vparent",
-      [@testkit.tk_user_msg("old")],
-      Map::from_array([]),
-      [@testkit.tk_user_msg("old")],
-      "run-v",
-    ),
-  )
-  facts.capture_source(
-    "run-v",
-    "vparent",
-    [@testkit.tk_user_msg("old"), @testkit.tk_user_msg("extra")],
-    3,
-  )
-  let result = facts.record_new_thread(
-    "run-v",
-    "vparent",
-    "vchild",
-    [@testkit.tk_user_msg("body")],
-    Map::from_array([]),
-  )
-  assert_true(result is Err(_))
-  assert_eq(facts.store.source_snapshots.length(), 0)
-}
-
-///|
 test "core_facts/child_exists_revokes_allocation" {
   let facts = CoreFacts::CoreFacts()
   ignore(

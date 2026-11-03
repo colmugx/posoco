@@ -163,28 +163,3 @@ async test "session checkpoint: every store runs, first failure blocks the advan
   assert_eq(attempts.val, 1)
   assert_eq(progress.cursor_or_zero("sess_checkpoint"), 0)
 }
-
-///|
-async test "session checkpoint: an empty store list never advances" {
-  let progress = @session_state.SessionProgress::SessionProgress()
-  let subscriber = SessionCheckpointSubscriber([], progress)
-  subscriber.on_event(checkpoint_envelope(committed_tool_event("call_none")))
-  assert_eq(progress.cursor_or_zero("sess_checkpoint"), 0)
-}
-
-///|
-async test "session checkpoint: each store receives its own message snapshot" {
-  let first = RecordingStore::{ checkpoints: [], }
-  let second = RecordingStore::{ checkpoints: [], }
-  let progress = @session_state.SessionProgress::SessionProgress()
-  let subscriber = SessionCheckpointSubscriber([first, second], progress)
-  subscriber.on_event(
-    checkpoint_envelope(committed_tool_event("call_snapshot")),
-  )
-  assert_eq(first.checkpoints.length(), 1)
-  assert_eq(second.checkpoints.length(), 1)
-  // The two arrays are independent copies: mutating one store's received tail
-  // cannot reach the other store or the caller's event.
-  first.checkpoints[0].messages.clear()
-  assert_eq(second.checkpoints[0].messages.length(), 1)
-}

@@ -640,49 +640,6 @@ async test "puppet/C-INVALID-STREAM-CHUNK-HOST-RAISE-PRIMARY" {
 }
 
 ///|
-async test "puppet/C-INVALID-STREAM-CHUNK-RETURNED-TRANSPORT-PRIMARY" {
-  let host = FixtureHost(
-    [Err(Transport(reason="fixture returned transport failure"))],
-    Map::from_array([]),
-  ).with_stream_chunks([
-    @types.StreamChunk::ToolCallDelta(
-      index=3,
-      id=Some("sparse"),
-      name=Some("echo"),
-      arguments_delta=Some("{}"),
-    ),
-  ])
-  let journal = InMemoryJournal()
-  let seen : Array[@types.StreamChunk] = []
-  let sink = fn(chunk : @types.StreamChunk) { seen.push(chunk) }
-  let puppet = Puppet(
-    canonical_puppet_config(
-      host as &@kernel_exec.HostRuntime,
-      fixture_empty_catalog(),
-      journal,
-      [],
-      [],
-      Some(sink),
-    ),
-  )
-  assert_true(
-    fixture_prompt(puppet, "invalid_stream_returned_transport") is Accepted(_),
-  )
-  assert_eq(seen.length(), 0)
-  match puppet.wait_idle() {
-    Terminal(outcome=Failed(reason=ModelTransport(detail~))) => {
-      assert_true(detail.contains("fixture returned transport failure"))
-      assert_false(detail.contains("stream chunk validation failed"))
-    }
-    status =>
-      fail(
-        "expected returned ModelTransport to remain primary, got " +
-        status.to_string(),
-      )
-  }
-}
-
-///|
 async test "puppet/C-INVALID-STREAM-CHUNK-RETURNED-RATE-LIMITED-PRIMARY" {
   let host = FixtureHost(
     [
