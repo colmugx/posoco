@@ -78,21 +78,25 @@ async test "scope_projection/turn_events_carry_one_run_identity" {
   let observer = ScopedObserver::{ records: [], }
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(
+      @test_support.tk_ext(
         id="model",
         model=Some(
-          @testkit.ScriptedModel([
-            @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("hi")),
+          @test_support.ScriptedModel([
+            @test_support.ScriptedModelStep::Respond(
+              @test_support.tk_stop_response("hi"),
+            ),
           ]),
         ),
       ),
-      @testkit.tk_ext(id="io", sessions=[@testkit.RecordingSessionPort()], observers=[
-        observer,
-      ]),
+      @test_support.tk_ext(
+        id="io",
+        sessions=[@test_support.RecordingSessionPort()],
+        observers=[observer],
+      ),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
-  ignore(agent.run_turn(@testkit.tk_user_msg("hello"), "s_scope"))
+  ignore(agent.run_turn(@test_support.tk_user_msg("hello"), "s_scope"))
   // The operation projection is deliberately out-of-run (scope None, session
   // in the payload); the run-bound invariants below cover the TURN events.
   let turn_records = observer.records.filter(fn(r) { r.0 != "other" })
@@ -115,21 +119,27 @@ async test "scope_projection/turn_events_carry_one_run_identity" {
 /// same session_id.
 async test "scope_projection/two_turns_distinct_runs_same_session" {
   let observer = ScopedObserver::{ records: [], }
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("a")),
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("b")),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("a"),
+    ),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("b"),
+    ),
   ])
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", sessions=[@testkit.RecordingSessionPort()], observers=[
-        observer,
-      ]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(
+        id="io",
+        sessions=[@test_support.RecordingSessionPort()],
+        observers=[observer],
+      ),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
-  ignore(agent.run_turn(@testkit.tk_user_msg("one"), "s_scope"))
-  ignore(agent.run_turn(@testkit.tk_user_msg("two"), "s_scope"))
+  ignore(agent.run_turn(@test_support.tk_user_msg("one"), "s_scope"))
+  ignore(agent.run_turn(@test_support.tk_user_msg("two"), "s_scope"))
   let started : Array[@types.EventScope] = []
   for record in observer.records {
     if record.0 == "turn_started" && record.1 is Some(scope) {
@@ -149,35 +159,39 @@ async test "scope_projection/two_turns_distinct_runs_same_session" {
 async test "scope_projection/tool_loop_events_and_hook_stages_share_run" {
   let observer = ScopedObserver::{ records: [], }
   let hook = ScopedHook::{ stages: [], }
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(
-      @testkit.tk_tool_call_response("echo", "call_1", Json::null()),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_tool_call_response("echo", "call_1", Json::null()),
     ),
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("done"),
+    ),
   ])
-  let tools = @testkit.RecordingToolProvider(
-    [@testkit.tk_tool_def("echo", "echo tool")],
+  let tools = @test_support.RecordingToolProvider(
+    [@test_support.tk_tool_def("echo", "echo tool")],
     Map::from_array([
       (
         "echo",
-        @testkit.ScriptedToolOutcome::OutcomeOk(@testkit.tk_ok_result("echoed")),
+        @test_support.ScriptedToolOutcome::OutcomeOk(
+          @test_support.tk_ok_result("echoed"),
+        ),
       ),
     ]),
   )
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(
         id="tools",
         tools=[tools],
-        sessions=[@testkit.RecordingSessionPort()],
+        sessions=[@test_support.RecordingSessionPort()],
         observers=[observer],
         hooks=[hook],
       ),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
-  ignore(agent.run_turn(@testkit.tk_user_msg("hi"), "s_loop"))
+  ignore(agent.run_turn(@test_support.tk_user_msg("hi"), "s_loop"))
   let tags = observer.records
     .filter(fn(r) { r.0 != "other" })
     .map(fn(r) { r.0 })

@@ -53,31 +53,33 @@ fn count_user_messages(messages : Array[@kernel.Message]) -> Int32 {
 ///|
 async test "turn path fixates dangling trailing tool calls into the next model window" {
   let call = turn_fixate_dangling_call("call_turn_fix")
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   store.seed("turn-fixate", {
     messages: [
-      @testkit.tk_user_msg("do the thing"),
+      @test_support.tk_user_msg("do the thing"),
       turn_fixate_dangling_assistant("working on it", call),
     ],
     metadata: Map::from_array([]),
   })
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(
-      @testkit.tk_stop_response("after repair"),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("after repair"),
     ),
   ])
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", sessions=[store]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store]),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
-  ignore(agent.run_turn(@testkit.tk_user_msg("next request"), "turn-fixate"))
+  ignore(
+    agent.run_turn(@test_support.tk_user_msg("next request"), "turn-fixate"),
+  )
   assert_eq(model.call_count(), 1)
   let window = model.received_messages[0]
   assert_eq(window.length(), 4)
-  assert_true(window[0] == @testkit.tk_user_msg("do the thing"))
+  assert_true(window[0] == @test_support.tk_user_msg("do the thing"))
   guard window[1] is AssistantMessage(tool_calls=[owner, ..], ..) else {
     fail("expected the dangling assistant message at index 1")
   }
@@ -96,7 +98,7 @@ async test "turn path fixates dangling trailing tool calls into the next model w
   assert_eq(
     message, "tool call was pending when the previous operation ended; recorded as interrupted",
   )
-  assert_true(window[3] == @testkit.tk_user_msg("next request"))
+  assert_true(window[3] == @test_support.tk_user_msg("next request"))
   // The trailing synthesis rides the appended tail, so the persisted session
   // is healed: the call is answered on disk and later loads synthesize
   // nothing.
@@ -108,24 +110,24 @@ async test "turn path fixates dangling trailing tool calls into the next model w
 ///|
 async test "resume over dangling calls replays the persisted trailing user once" {
   let call = turn_fixate_dangling_call("call_resume_fix")
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   store.seed("turn-resume", {
     messages: [
-      @testkit.tk_user_msg("do the thing"),
+      @test_support.tk_user_msg("do the thing"),
       turn_fixate_dangling_assistant("working on it", call),
-      @testkit.tk_user_msg("please continue"),
+      @test_support.tk_user_msg("please continue"),
     ],
     metadata: Map::from_array([]),
   })
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(
-      @testkit.tk_stop_response("resumed work"),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("resumed work"),
     ),
   ])
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", sessions=[store]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store]),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
@@ -133,7 +135,7 @@ async test "resume over dangling calls replays the persisted trailing user once"
   assert_eq(model.call_count(), 1)
   let window = model.received_messages[0]
   assert_eq(window.length(), 4)
-  assert_true(window[0] == @testkit.tk_user_msg("do the thing"))
+  assert_true(window[0] == @test_support.tk_user_msg("do the thing"))
   guard window[1] is AssistantMessage(tool_calls=[owner, ..], ..) else {
     fail("expected the dangling assistant message at index 1")
   }
@@ -148,7 +150,7 @@ async test "resume over dangling calls replays the persisted trailing user once"
   assert_true(synthesized_id == owner.call_id)
   assert_eq(error_category, "Interrupted")
   // The persisted user message is replayed exactly once, still last.
-  assert_true(window[3] == @testkit.tk_user_msg("please continue"))
+  assert_true(window[3] == @test_support.tk_user_msg("please continue"))
   assert_eq(count_user_messages(window), 2)
   // Append-save math must not re-persist the replayed user message.
   let persisted = store.store["turn-resume"]
@@ -159,7 +161,9 @@ async test "resume over dangling calls replays the persisted trailing user once"
     is ToolMessage(outcome=RuntimeFailure(error_category="Interrupted", ..), ..) else {
     fail("expected the persisted interrupted output at index 2")
   }
-  assert_true(persisted.messages[3] == @testkit.tk_user_msg("please continue"))
+  assert_true(
+    persisted.messages[3] == @test_support.tk_user_msg("please continue"),
+  )
   assert_eq(count_user_messages(persisted.messages), 2)
   assert_true(
     persisted.messages[4]
@@ -178,18 +182,18 @@ test "fixate inserts synthesized outputs immediately after the owning assistant"
     message="tool call was pending when the previous operation ended; recorded as interrupted",
   )
   let raw : Array[@kernel.Message] = [
-    @testkit.tk_user_msg("u1"),
+    @test_support.tk_user_msg("u1"),
     AssistantMessage(
       content=[Text("a1")],
       tool_calls=[c1a, c1b],
       reasoning=None,
       finish_reason=ToolCalls,
     ),
-    @testkit.tk_user_msg("u2"),
+    @test_support.tk_user_msg("u2"),
     ToolMessage(
       call_id=c1a.call_id,
       tool_name=c1a.name,
-      outcome=@testkit.tk_ok_result("late real answer"),
+      outcome=@test_support.tk_ok_result("late real answer"),
     ),
     AssistantMessage(
       content=[Text("a2")],
@@ -197,11 +201,11 @@ test "fixate inserts synthesized outputs immediately after the owning assistant"
       reasoning=None,
       finish_reason=ToolCalls,
     ),
-    @testkit.tk_user_msg("u3"),
+    @test_support.tk_user_msg("u3"),
   ]
   let fixated = fixate_pending_tool_calls(raw)
   let expected : Array[@kernel.Message] = [
-    @testkit.tk_user_msg("u1"),
+    @test_support.tk_user_msg("u1"),
     AssistantMessage(
       content=[Text("a1")],
       tool_calls=[c1a, c1b],
@@ -209,11 +213,11 @@ test "fixate inserts synthesized outputs immediately after the owning assistant"
       finish_reason=ToolCalls,
     ),
     ToolMessage(call_id=c1b.call_id, tool_name=c1b.name, outcome=interrupted),
-    @testkit.tk_user_msg("u2"),
+    @test_support.tk_user_msg("u2"),
     ToolMessage(
       call_id=c1a.call_id,
       tool_name=c1a.name,
-      outcome=@testkit.tk_ok_result("late real answer"),
+      outcome=@test_support.tk_ok_result("late real answer"),
     ),
     AssistantMessage(
       content=[Text("a2")],
@@ -223,7 +227,7 @@ test "fixate inserts synthesized outputs immediately after the owning assistant"
     ),
     ToolMessage(call_id=c2a.call_id, tool_name=c2a.name, outcome=interrupted),
     ToolMessage(call_id=c2b.call_id, tool_name=c2b.name, outcome=interrupted),
-    @testkit.tk_user_msg("u3"),
+    @test_support.tk_user_msg("u3"),
   ]
   assert_eq(fixated.length(), expected.length())
   for i in 0..<expected.length() {
@@ -237,27 +241,31 @@ test "fixate inserts synthesized outputs immediately after the owning assistant"
 ///|
 async test "consecutive turns keep exactly one interrupted output per dangling call" {
   let call = turn_fixate_dangling_call("call_stable")
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   store.seed("turn-stable", {
     messages: [
-      @testkit.tk_user_msg("do the thing"),
+      @test_support.tk_user_msg("do the thing"),
       turn_fixate_dangling_assistant("working on it", call),
     ],
     metadata: Map::from_array([]),
   })
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("first")),
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("second")),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("first"),
+    ),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("second"),
+    ),
   ])
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", sessions=[store]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store]),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
-  ignore(agent.run_turn(@testkit.tk_user_msg("second ask"), "turn-stable"))
-  ignore(agent.run_turn(@testkit.tk_user_msg("third ask"), "turn-stable"))
+  ignore(agent.run_turn(@test_support.tk_user_msg("second ask"), "turn-stable"))
+  ignore(agent.run_turn(@test_support.tk_user_msg("third ask"), "turn-stable"))
   assert_eq(model.call_count(), 2)
   let first_window = model.received_messages[0]
   let second_window = model.received_messages[1]

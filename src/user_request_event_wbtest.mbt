@@ -17,7 +17,7 @@ fn UiAskingTool::UiAskingTool() -> UiAskingTool {
 impl @port.ToolProvider for UiAskingTool with fn list_tools(
   _self : UiAskingTool,
 ) -> Array[@kernel.ToolDef] {
-  [@testkit.tk_tool_def("ask_ui", "asks the composed ui for a confirm")]
+  [@test_support.tk_tool_def("ask_ui", "asks the composed ui for a confirm")]
 }
 
 ///|
@@ -88,32 +88,36 @@ fn user_request_event_labels(events : Array[@types.TurnEvent]) -> Array[String] 
 ///|
 fn build_uireq_agent(
   tool : UiAskingTool,
-  observer : @testkit.RecordingObserver,
+  observer : @test_support.RecordingObserver,
   ui~ : Array[&@port.UiPort] = [],
   requires~ : Array[@port.Capability] = [],
 ) -> Agent raise @error.CompositionError {
   Agent(
     exts=[
-      @testkit.tk_ext(
+      @test_support.tk_ext(
         id="model",
         model=Some(
-          @testkit.ScriptedModel([
-            @testkit.ScriptedModelStep::Respond(
-              @testkit.tk_tool_call_response("ask_ui", "call_1", Json::null()),
+          @test_support.ScriptedModel([
+            @test_support.ScriptedModelStep::Respond(
+              @test_support.tk_tool_call_response(
+                "ask_ui",
+                "call_1",
+                Json::null(),
+              ),
             ),
-            @testkit.ScriptedModelStep::Respond(
-              @testkit.tk_stop_response("done"),
+            @test_support.ScriptedModelStep::Respond(
+              @test_support.tk_stop_response("done"),
             ),
           ]),
         ),
       ),
-      @testkit.tk_ext(
+      @test_support.tk_ext(
         id="uiask",
         tools=[tool],
         lifecycle=[tool],
         requires~,
         ui~,
-        sessions=[@testkit.RecordingSessionPort()],
+        sessions=[@test_support.RecordingSessionPort()],
         observers=[observer],
       ),
     ],
@@ -124,14 +128,14 @@ fn build_uireq_agent(
 ///|
 async test "composed ui request emits started/finished around the answer" {
   let tool = UiAskingTool::UiAskingTool()
-  let observer = @testkit.RecordingObserver()
+  let observer = @test_support.RecordingObserver()
   let agent = build_uireq_agent(
     tool,
     observer,
-    ui=[@testkit.RecordingUiPort(responses=[@port.UiResponse::Yes])],
+    ui=[@test_support.RecordingUiPort(responses=[@port.UiResponse::Yes])],
     requires=[@port.Capability::Ui],
   )
-  let result = agent.run_turn(@testkit.tk_user_msg("hi"), "session_uireq")
+  let result = agent.run_turn(@test_support.tk_user_msg("hi"), "session_uireq")
   assert_eq(result.final_session_id, "session_uireq")
   inspect(
     user_request_event_labels(observer.events()).join(" -> "),
@@ -142,15 +146,15 @@ async test "composed ui request emits started/finished around the answer" {
 ///|
 async test "all-unsupported contributors still close the request as unsupported" {
   let tool = UiAskingTool::UiAskingTool()
-  let observer = @testkit.RecordingObserver()
+  let observer = @test_support.RecordingObserver()
   let agent = build_uireq_agent(
     tool,
     observer,
-    ui=[@testkit.RecordingUiPort::new_unsupported()],
+    ui=[@test_support.RecordingUiPort::new_unsupported()],
     requires=[@port.Capability::Ui],
   )
   let _ = agent.run_turn(
-    @testkit.tk_user_msg("hi"),
+    @test_support.tk_user_msg("hi"),
     "session_uireq_unsupported",
   )
   inspect(
@@ -162,11 +166,11 @@ async test "all-unsupported contributors still close the request as unsupported"
 ///|
 async test "ui-less composition emits no user request events" {
   let tool = UiAskingTool::UiAskingTool()
-  let observer = @testkit.RecordingObserver()
+  let observer = @test_support.RecordingObserver()
   // No `ui` contributors: the aggregated port is the unwrapped NoopUiPort,
   // so the attempted request produces no events by design (a UI-less agent
   // never waits for a user).
   let agent = build_uireq_agent(tool, observer)
-  let _ = agent.run_turn(@testkit.tk_user_msg("hi"), "session_uireq_noui")
+  let _ = agent.run_turn(@test_support.tk_user_msg("hi"), "session_uireq_noui")
   inspect(user_request_event_labels(observer.events()).join(" -> "), content="")
 }

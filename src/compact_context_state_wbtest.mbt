@@ -22,19 +22,21 @@ async fn check_manual_compact_context(
   session_id : String,
   compacted : Array[@kernel.Message],
 ) -> Unit {
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Compact(result={
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Compact(result={
       compacted_messages: compacted,
       mode: Replace,
     }),
-    @testkit.ScriptedModelStep::Respond(
-      @testkit.tk_stop_response("no usage yet"),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("no usage yet"),
     ),
-    @testkit.ScriptedModelStep::Respond(wave3_stop_with_usage("measured", 37)),
+    @test_support.ScriptedModelStep::Respond(
+      wave3_stop_with_usage("measured", 37),
+    ),
   ])
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   store.seed(session_id, {
-    messages: [@testkit.tk_user_msg("earlier")],
+    messages: [@test_support.tk_user_msg("earlier")],
     metadata: policy_context_metadata(
       session_id~,
       measured=95,
@@ -42,11 +44,11 @@ async fn check_manual_compact_context(
       reading_count=1,
     ),
   })
-  let observer = @testkit.RecordingObserver()
+  let observer = @test_support.RecordingObserver()
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", sessions=[store], observers=[observer]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store], observers=[observer]),
     ],
     config={
       ..agent_config(max_tool_rounds=Some(10)),
@@ -76,12 +78,12 @@ async fn check_manual_compact_context(
     fail("expected context state event after manual compact")
   }
   assert_compact_context_unknown(updated)
-  ignore(agent.run_turn(@testkit.tk_user_msg("continue"), session_id))
+  ignore(agent.run_turn(@test_support.tk_user_msg("continue"), session_id))
   guard agent.context_state(session_id) is Some(unmeasured) else {
     fail("expected context state without new usage")
   }
   assert_compact_context_unknown(unmeasured)
-  ignore(agent.run_turn(@testkit.tk_user_msg("again"), session_id))
+  ignore(agent.run_turn(@test_support.tk_user_msg("again"), session_id))
   guard agent.context_state(session_id) is Some(measured) else {
     fail("expected context state after genuine model usage")
   }
@@ -94,7 +96,7 @@ async fn check_manual_compact_context(
 ///|
 async test "compact_context/manual mixed window stays unknown until genuine usage" {
   check_manual_compact_context("compact-context-manual-mixed", [
-    @testkit.tk_user_msg("retained visible text"),
+    @test_support.tk_user_msg("retained visible text"),
     compact_context_anchor({ "provider_state": ["opaque replay state"] }),
     tk_assistant_msg_e2e("retained answer"),
   ])
@@ -107,25 +109,29 @@ async fn check_auto_compact_context(
 ) -> Unit {
   let model = auto_compact_e2e_model(
     [
-      @testkit.ScriptedModelStep::Respond(scope_test_tool_call_with_usage(95)),
-      @testkit.ScriptedModelStep::Respond(
-        @testkit.tk_stop_response("no usage yet"),
+      @test_support.ScriptedModelStep::Respond(
+        scope_test_tool_call_with_usage(95),
       ),
-      @testkit.ScriptedModelStep::Respond(wave3_stop_with_usage("measured", 37)),
+      @test_support.ScriptedModelStep::Respond(
+        @test_support.tk_stop_response("no usage yet"),
+      ),
+      @test_support.ScriptedModelStep::Respond(
+        wave3_stop_with_usage("measured", 37),
+      ),
     ],
     compacted,
   )
-  let store = @testkit.RecordingSessionPort()
-  let observer = @testkit.RecordingObserver()
+  let store = @test_support.RecordingSessionPort()
+  let observer = @test_support.RecordingObserver()
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="tools", tools=[policy_tools()]),
-      @testkit.tk_ext(id="io", sessions=[store], observers=[observer]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="tools", tools=[policy_tools()]),
+      @test_support.tk_ext(id="io", sessions=[store], observers=[observer]),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
-  ignore(agent.run_turn(@testkit.tk_user_msg("start"), session_id))
+  ignore(agent.run_turn(@test_support.tk_user_msg("start"), session_id))
   assert_eq(model.compact_calls.val, 1)
   guard agent.context_state(session_id) is Some(current) else {
     fail("expected context state after automatic compact")
@@ -149,7 +155,7 @@ async fn check_auto_compact_context(
   }
   assert_compact_context_unknown(updated)
   assert_true(model.seen_chats()[1] == compacted)
-  ignore(agent.run_turn(@testkit.tk_user_msg("again"), session_id))
+  ignore(agent.run_turn(@test_support.tk_user_msg("again"), session_id))
   guard agent.context_state(session_id) is Some(measured) else {
     fail("expected context state after genuine model usage")
   }
@@ -162,7 +168,7 @@ async fn check_auto_compact_context(
 ///|
 async test "compact_context/auto mixed window stays unknown until genuine usage" {
   check_auto_compact_context("compact-context-auto-mixed", [
-    @testkit.tk_user_msg("retained visible text"),
+    @test_support.tk_user_msg("retained visible text"),
     compact_context_anchor({ "provider_state": "opaque replay state" }),
     tk_assistant_msg_e2e("retained answer"),
   ])

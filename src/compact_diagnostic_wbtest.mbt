@@ -31,20 +31,20 @@ let compact_generic_kept_region : String = " payload " + "m".repeat(80)
 
 ///|
 fn compact_diag_failure_agent(
-  steps : Array[@testkit.ScriptedModelStep],
-  observer~ : @testkit.RecordingObserver,
+  steps : Array[@test_support.ScriptedModelStep],
+  observer~ : @test_support.RecordingObserver,
   session_id~ : String,
 ) -> Agent raise {
-  let model = @testkit.ScriptedModel(steps)
-  let store = @testkit.RecordingSessionPort()
+  let model = @test_support.ScriptedModel(steps)
+  let store = @test_support.RecordingSessionPort()
   store.seed(session_id, {
-    messages: [@testkit.tk_user_msg("secret prompt")],
+    messages: [@test_support.tk_user_msg("secret prompt")],
     metadata: Map::from_array([]),
   })
   Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", sessions=[store], observers=[observer]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store], observers=[observer]),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
@@ -64,10 +64,10 @@ fn compact_diag_builtin_compact(agent : Agent) -> &@port.CommandPort raise {
 
 ///|
 async test "compact_diag/idle_compact_command_failure_forwards_bounded_label" {
-  let observer = @testkit.RecordingObserver()
+  let observer = @test_support.RecordingObserver()
   let agent = compact_diag_failure_agent(
     [
-      @testkit.ScriptedModelStep::CompactFail(
+      @test_support.ScriptedModelStep::CompactFail(
         error=Transport(compact_generic_failure),
       ),
     ],
@@ -109,20 +109,20 @@ async test "compact_diag/idle_compact_command_failure_forwards_bounded_label" {
 
 ///|
 async test "compact_diag/standalone_compact_failure_detail_and_no_commit" {
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::CompactFail(
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::CompactFail(
       error=Transport(compact_generic_failure),
     ),
   ])
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   store.seed("diag-detail", {
-    messages: [@testkit.tk_user_msg("seeded")],
+    messages: [@test_support.tk_user_msg("seeded")],
     metadata: Map::from_array([]),
   })
-  let observer = @testkit.RecordingObserver()
+  let observer = @test_support.RecordingObserver()
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model), sessions=[store], observers=[
+      @test_support.tk_ext(id="model", model=Some(model), sessions=[store], observers=[
         observer,
       ]),
     ],
@@ -165,7 +165,8 @@ async test "compact_diag/standalone_compact_failure_detail_and_no_commit" {
   // A failed compact commits nothing: the stored window is untouched.
   assert_eq(store.store["diag-detail"].messages.length(), 1)
   assert_true(
-    store.store["diag-detail"].messages[0] == @testkit.tk_user_msg("seeded"),
+    store.store["diag-detail"].messages[0] ==
+    @test_support.tk_user_msg("seeded"),
   )
 }
 
@@ -228,17 +229,19 @@ impl @runtime.Runtime for MidRunCompactRuntime with fn compact(
 
 ///|
 async test "compact_diag/midrun_manual_compact_failure_forwards_bounded_label" {
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(
-      @testkit.tk_tool_call_response("echo", "call_1", Json::null()),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_tool_call_response("echo", "call_1", Json::null()),
     ),
-    @testkit.ScriptedModelStep::CompactFail(
+    @test_support.ScriptedModelStep::CompactFail(
       error=Transport(compact_generic_failure),
     ),
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("done"),
+    ),
   ])
   let tools = policy_tools()
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   let port_runtime = @runtime.PortRuntime(model~)
   let probe = MidRunCompactRuntime::{
     inner: port_runtime as &@runtime.Runtime,
@@ -247,9 +250,9 @@ async test "compact_diag/midrun_manual_compact_failure_forwards_bounded_label" {
   }
   let agent = Agent::with_runtime(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="tools", tools=[tools]),
-      @testkit.tk_ext(id="io", sessions=[store]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="tools", tools=[tools]),
+      @test_support.tk_ext(id="io", sessions=[store]),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
     runtime=probe as &@runtime.Runtime,
@@ -260,7 +263,7 @@ async test "compact_diag/midrun_manual_compact_failure_forwards_bounded_label" {
   @async.with_task_group(async fn(group) {
     let task = group.spawn(async fn() {
       let r : Result[@types.TurnResult, @error.AgentError] = Ok(
-        agent.run_turn(@testkit.tk_user_msg("hi"), "diag-midrun"),
+        agent.run_turn(@test_support.tk_user_msg("hi"), "diag-midrun"),
       ) catch {
         e => Err(e)
       }
@@ -354,21 +357,21 @@ impl @runtime.Runtime for CompactParkingRuntime with fn compact(
 
 ///|
 async test "compact_diag/cancelled_compact_stays_a_cancelled_outcome" {
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Compact(result={
-      compacted_messages: [@testkit.tk_user_msg("summary")],
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Compact(result={
+      compacted_messages: [@test_support.tk_user_msg("summary")],
       mode: Replace,
     }),
-    @testkit.ScriptedModelStep::Respond(
-      @testkit.tk_stop_response("after retry"),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("after retry"),
     ),
   ])
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   store.seed("diag-cancel", {
-    messages: [@testkit.tk_user_msg("seeded")],
+    messages: [@test_support.tk_user_msg("seeded")],
     metadata: Map::from_array([]),
   })
-  let observer = @testkit.RecordingObserver()
+  let observer = @test_support.RecordingObserver()
   let port_runtime = @runtime.PortRuntime(model~)
   let probe = CompactParkingRuntime::{
     inner: port_runtime as &@runtime.Runtime,
@@ -376,7 +379,7 @@ async test "compact_diag/cancelled_compact_stays_a_cancelled_outcome" {
   }
   let agent = Agent::with_runtime(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model), sessions=[store], observers=[
+      @test_support.tk_ext(id="model", model=Some(model), sessions=[store], observers=[
         observer,
       ]),
     ],
@@ -420,7 +423,8 @@ async test "compact_diag/cancelled_compact_stays_a_cancelled_outcome" {
   // The committed window is untouched by the cancelled compact.
   assert_eq(store.store["diag-cancel"].messages.length(), 1)
   assert_true(
-    store.store["diag-cancel"].messages[0] == @testkit.tk_user_msg("seeded"),
+    store.store["diag-cancel"].messages[0] ==
+    @test_support.tk_user_msg("seeded"),
   )
   // W4: cancellation ends the operation, not the session — the same Agent
   // and session accept a retry compact immediately.
@@ -428,10 +432,11 @@ async test "compact_diag/cancelled_compact_stays_a_cancelled_outcome" {
   assert_true(retried.mode is Replace)
   assert_eq(retried.messages_after, 1)
   assert_true(
-    store.store["diag-cancel"].messages[0] == @testkit.tk_user_msg("summary"),
+    store.store["diag-cancel"].messages[0] ==
+    @test_support.tk_user_msg("summary"),
   )
   // …and an ordinary turn still runs on the same session afterwards.
-  let turn = agent.run_turn(@testkit.tk_user_msg("next"), "diag-cancel")
+  let turn = agent.run_turn(@test_support.tk_user_msg("next"), "diag-cancel")
   guard turn.message is AssistantMessage(content=[Text("after retry")], ..) else {
     fail("expected the post-retry turn to complete normally")
   }
@@ -439,16 +444,18 @@ async test "compact_diag/cancelled_compact_stays_a_cancelled_outcome" {
 
 ///|
 async test "compact_diag/busy_agent_rejects_compact_and_stays_usable" {
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
-    @testkit.ScriptedModelStep::Compact(result={
-      compacted_messages: [@testkit.tk_user_msg("summary")],
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("done"),
+    ),
+    @test_support.ScriptedModelStep::Compact(result={
+      compacted_messages: [@test_support.tk_user_msg("summary")],
       mode: Replace,
     }),
   ])
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   store.seed("diag-busy", {
-    messages: [@testkit.tk_user_msg("seeded")],
+    messages: [@test_support.tk_user_msg("seeded")],
     metadata: Map::from_array([]),
   })
   let port_runtime = @runtime.PortRuntime(model~)
@@ -458,13 +465,13 @@ async test "compact_diag/busy_agent_rejects_compact_and_stays_usable" {
     release: false,
   }
   let agent = Agent::with_runtime(
-    exts=[@testkit.tk_ext(id="model", model=Some(model), sessions=[store])],
+    exts=[@test_support.tk_ext(id="model", model=Some(model), sessions=[store])],
     config=agent_config(max_tool_rounds=Some(10)),
     runtime=probe as &@runtime.Runtime,
   )
   @async.with_task_group(async fn(group) {
     let task = group.spawn(async fn() {
-      agent.run_turn(@testkit.tk_user_msg("hi"), "diag-busy")
+      agent.run_turn(@test_support.tk_user_msg("hi"), "diag-busy")
     })
     while probe.model_calls == 0 {
       @async.pause()

@@ -10,12 +10,12 @@ fn core_authority_has_session(agent : Agent, session_id : String) -> Bool {
 
 ///|
 fn core_authority_file_load_count(
-  store : @testkit.RecordingSessionPort,
+  store : @test_support.RecordingSessionPort,
 ) -> Int32 {
   let mut count = 0
   for op in store.ops() {
     match op {
-      @testkit.SessionOp::OpLoad(..) => count = count + 1
+      @test_support.SessionOp::OpLoad(..) => count = count + 1
       _ => ()
     }
   }
@@ -24,25 +24,29 @@ fn core_authority_file_load_count(
 
 ///|
 async test "core_authority/failed_initial_load_is_not_cached" {
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   store.seed("retry-load", {
-    messages: [@testkit.tk_user_msg("seed")],
+    messages: [@test_support.tk_user_msg("seed")],
     metadata: Map::from_array([]),
   })
   store.fail_load("retry-load", Load("offline"))
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("first")),
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("next")),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("first"),
+    ),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("next"),
+    ),
   ])
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", sessions=[store]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store]),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
   let failed : Result[@types.TurnResult, @error.AgentError] = Ok(
-    agent.run_turn(@testkit.tk_user_msg("one"), "retry-load"),
+    agent.run_turn(@test_support.tk_user_msg("one"), "retry-load"),
   ) catch {
     error => Err(error)
   }
@@ -53,45 +57,53 @@ async test "core_authority/failed_initial_load_is_not_cached" {
   assert_false(core_authority_has_session(agent, "retry-load"))
   // Clearing the failure must let the SAME Agent retry initialization.
   store.load_failures.remove("retry-load")
-  ignore(agent.run_turn(@testkit.tk_user_msg("one"), "retry-load"))
+  ignore(agent.run_turn(@test_support.tk_user_msg("one"), "retry-load"))
   assert_eq(core_authority_file_load_count(store), 2)
   assert_eq(model.call_count(), 1)
   assert_true(core_authority_has_session(agent, "retry-load"))
   // The initialized session now reads core; no third store load.
-  ignore(agent.run_turn(@testkit.tk_user_msg("next"), "retry-load"))
+  ignore(agent.run_turn(@test_support.tk_user_msg("next"), "retry-load"))
   assert_eq(core_authority_file_load_count(store), 2)
   assert_eq(model.call_count(), 2)
-  assert_eq(model.received_messages[1][0], @testkit.tk_user_msg("seed"))
+  assert_eq(model.received_messages[1][0], @test_support.tk_user_msg("seed"))
 }
 
 ///|
 async test "core_authority/fresh_agent_recovers_child_with_only_parent_id" {
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   store.seed("parentless-child", {
-    messages: [@testkit.tk_user_msg("child-old")],
+    messages: [@test_support.tk_user_msg("child-old")],
     metadata: Map::from_array([
       (@types.PARENT_THREAD_ID_KEY, Json::string("absent-parent")),
     ]),
   })
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("child-ok")),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("child-ok"),
+    ),
   ])
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", sessions=[store]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store]),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
   let result = agent.run_turn(
-    @testkit.tk_user_msg("child-next"),
+    @test_support.tk_user_msg("child-next"),
     "parentless-child",
   )
   assert_eq(result.final_session_id, "parentless-child")
   assert_eq(model.call_count(), 1)
   assert_eq(model.received_messages[0].length(), 2)
-  assert_eq(model.received_messages[0][0], @testkit.tk_user_msg("child-old"))
-  assert_eq(model.received_messages[0][1], @testkit.tk_user_msg("child-next"))
+  assert_eq(
+    model.received_messages[0][0],
+    @test_support.tk_user_msg("child-old"),
+  )
+  assert_eq(
+    model.received_messages[0][1],
+    @test_support.tk_user_msg("child-next"),
+  )
   let persisted = store.store["parentless-child"]
   assert_eq(persisted.messages.length(), 3)
   assert_eq(
@@ -103,39 +115,43 @@ async test "core_authority/fresh_agent_recovers_child_with_only_parent_id" {
 
 ///|
 async test "core_authority/two_store_seed_uses_first_then_full_aligns_both" {
-  let first = @testkit.RecordingSessionPort()
-  let second = @testkit.RecordingSessionPort()
+  let first = @test_support.RecordingSessionPort()
+  let second = @test_support.RecordingSessionPort()
   first.seed("align-two", {
-    messages: [@testkit.tk_user_msg("a1"), @testkit.tk_user_msg("a2")],
+    messages: [@test_support.tk_user_msg("a1"), @test_support.tk_user_msg("a2")],
     metadata: Map::from_array([]),
   })
   second.seed("align-two", {
-    messages: [@testkit.tk_user_msg("stale")],
+    messages: [@test_support.tk_user_msg("stale")],
     metadata: Map::from_array([]),
   })
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("one")),
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("two")),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("one"),
+    ),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("two"),
+    ),
   ])
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", sessions=[first, second]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[first, second]),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
-  ignore(agent.run_turn(@testkit.tk_user_msg("new-one"), "align-two"))
+  ignore(agent.run_turn(@test_support.tk_user_msg("new-one"), "align-two"))
   assert_eq(core_authority_file_load_count(first), 1)
   assert_eq(core_authority_file_load_count(second), 0)
   // The first write is a full save of the complete core window, not an append
   // starting from the first store's old length.
   let first_ops = first.ops()
   let second_ops = second.ops()
-  let first_write_is_save = fn(ops : Array[@testkit.SessionOp]) -> Bool {
+  let first_write_is_save = fn(ops : Array[@test_support.SessionOp]) -> Bool {
     for op in ops {
       match op {
-        @testkit.SessionOp::OpLoad(..) => ()
-        @testkit.SessionOp::OpSave(id="align-two", ..) => return true
+        @test_support.SessionOp::OpLoad(..) => ()
+        @test_support.SessionOp::OpSave(id="align-two", ..) => return true
         _ => return false
       }
     }
@@ -147,11 +163,11 @@ async test "core_authority/two_store_seed_uses_first_then_full_aligns_both" {
   let second_saved = second.store["align-two"]
   assert_eq(first_saved.messages.length(), 4)
   assert_eq(second_saved.messages.length(), 4)
-  assert_true(first_saved.messages[0] == @testkit.tk_user_msg("a1"))
-  assert_true(first_saved.messages[1] == @testkit.tk_user_msg("a2"))
-  assert_true(second_saved.messages[0] == @testkit.tk_user_msg("a1"))
+  assert_true(first_saved.messages[0] == @test_support.tk_user_msg("a1"))
+  assert_true(first_saved.messages[1] == @test_support.tk_user_msg("a2"))
+  assert_true(second_saved.messages[0] == @test_support.tk_user_msg("a1"))
   // The next turn reads core and never reloads either store.
-  ignore(agent.run_turn(@testkit.tk_user_msg("new-two"), "align-two"))
+  ignore(agent.run_turn(@test_support.tk_user_msg("new-two"), "align-two"))
   assert_eq(core_authority_file_load_count(first), 1)
   assert_eq(core_authority_file_load_count(second), 0)
   assert_true(
@@ -164,20 +180,20 @@ async test "core_authority/two_store_seed_uses_first_then_full_aligns_both" {
 
 ///|
 async test "core_authority/real_terminal_mismatch_makes_core_unreadable" {
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   store.seed("unreadable", {
-    messages: [@testkit.tk_user_msg("stale-store")],
+    messages: [@test_support.tk_user_msg("stale-store")],
     metadata: Map::from_array([]),
   })
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(
-      @testkit.tk_stop_response("must-not-run"),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("must-not-run"),
     ),
   ])
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", sessions=[store]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store]),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
@@ -185,16 +201,16 @@ async test "core_authority/real_terminal_mismatch_makes_core_unreadable" {
   ignore(
     agent.runtime.core_facts.hydrate(
       "unreadable",
-      [@testkit.tk_user_msg("old")],
+      [@test_support.tk_user_msg("old")],
       Map::from_array([]),
     ),
   )
   ignore(
     agent.runtime.core_facts.admit(
       "unreadable",
-      [@testkit.tk_user_msg("old")],
+      [@test_support.tk_user_msg("old")],
       Map::from_array([]),
-      [@testkit.tk_user_msg("old")],
+      [@test_support.tk_user_msg("old")],
       "run-unreadable",
     ),
   )
@@ -205,7 +221,7 @@ async test "core_authority/real_terminal_mismatch_makes_core_unreadable" {
     "sp-unreadable",
     false,
     [
-      @testkit.tk_user_msg("old"),
+      @test_support.tk_user_msg("old"),
       AssistantMessage(
         content=[Text("committed")],
         tool_calls=[],
@@ -219,7 +235,7 @@ async test "core_authority/real_terminal_mismatch_makes_core_unreadable" {
       "unreadable",
       "run-unreadable",
       [
-        @testkit.tk_user_msg("old"),
+        @test_support.tk_user_msg("old"),
         AssistantMessage(
           content=[Text("different")],
           tool_calls=[],
@@ -232,7 +248,7 @@ async test "core_authority/real_terminal_mismatch_makes_core_unreadable" {
   )
   let loads_before = core_authority_file_load_count(store)
   let failed : Result[@types.TurnResult, @error.AgentError] = Ok(
-    agent.run_turn(@testkit.tk_user_msg("next"), "unreadable"),
+    agent.run_turn(@test_support.tk_user_msg("next"), "unreadable"),
   ) catch {
     error => Err(error)
   }
@@ -246,7 +262,7 @@ async test "core_authority/real_terminal_mismatch_makes_core_unreadable" {
 
 ///|
 struct NthSaveFailStore {
-  inner : @testkit.RecordingSessionPort
+  inner : @test_support.RecordingSessionPort
   mut fail_at : Int32
   mut saves : Int32
 }
@@ -299,21 +315,27 @@ fn core_authority_task_marker_count(
 async test "core_authority/task_outcome_and_applied_ids_fail_atomic_output_once" {
   let capture = TaskCapture::new()
   let store = NthSaveFailStore::{
-    inner: @testkit.RecordingSessionPort(),
+    inner: @test_support.RecordingSessionPort(),
     fail_at: 2,
     saves: 0,
   }
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("first")),
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("retry")),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("first"),
+    ),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("retry"),
+    ),
   ])
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", sessions=[store]),
-      @testkit.tk_ext(id="tasks", lifecycle=[capture as &@port.Lifecycle], requires=[
-        @port.Capability::Tasks,
-      ]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store]),
+      @test_support.tk_ext(
+        id="tasks",
+        lifecycle=[capture as &@port.Lifecycle],
+        requires=[@port.Capability::Tasks],
+      ),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
@@ -322,7 +344,7 @@ async test "core_authority/task_outcome_and_applied_ids_fail_atomic_output_once"
     let marker = "[posoco-task-outcome id=\{handle.receipt().id}]"
     ignore(handle.wait())
     let first : Result[@types.TurnResult, @error.AgentError] = Ok(
-      agent.run_turn(@testkit.tk_user_msg("first"), "task-output-fail"),
+      agent.run_turn(@test_support.tk_user_msg("first"), "task-output-fail"),
     ) catch {
       error => Err(error)
     }
@@ -337,7 +359,9 @@ async test "core_authority/task_outcome_and_applied_ids_fail_atomic_output_once"
       _ => fail("core is missing applied task ids")
     }
     store.fail_at = 0
-    ignore(agent.run_turn(@testkit.tk_user_msg("retry"), "task-output-fail"))
+    ignore(
+      agent.run_turn(@test_support.tk_user_msg("retry"), "task-output-fail"),
+    )
     let retry_prompt = model.received_messages[1]
     assert_eq(core_authority_task_marker_count(retry_prompt, marker), 1)
     let saved = store.inner.store["task-output-fail"]
@@ -356,7 +380,7 @@ async test "core_authority/task_outcome_and_applied_ids_fail_atomic_output_once"
 
 ///|
 struct TerminalGateStore {
-  inner : @testkit.RecordingSessionPort
+  inner : @test_support.RecordingSessionPort
   mut saves : Int32
   mut gated : Bool
   mut entered : Bool
@@ -409,23 +433,29 @@ async fn core_authority_wait_gate(store : TerminalGateStore) -> Unit {
 async test "core_authority/task_outcome_cancel_at_terminal_output_once" {
   let capture = TaskCapture::new()
   let store = TerminalGateStore::{
-    inner: @testkit.RecordingSessionPort(),
+    inner: @test_support.RecordingSessionPort(),
     saves: 0,
     gated: true,
     entered: false,
     gate: @async.CondVar::Cond(),
   }
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("first")),
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("retry")),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("first"),
+    ),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("retry"),
+    ),
   ])
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", sessions=[store]),
-      @testkit.tk_ext(id="tasks", lifecycle=[capture as &@port.Lifecycle], requires=[
-        @port.Capability::Tasks,
-      ]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store]),
+      @test_support.tk_ext(
+        id="tasks",
+        lifecycle=[capture as &@port.Lifecycle],
+        requires=[@port.Capability::Tasks],
+      ),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
@@ -436,7 +466,10 @@ async test "core_authority/task_outcome_cancel_at_terminal_output_once" {
     @async.with_task_group(async fn(group) {
       let running = group.spawn(() => {
         let r : Result[@types.TurnResult, @error.AgentError] = Ok(
-          agent.run_turn(@testkit.tk_user_msg("first"), "task-output-cancel"),
+          agent.run_turn(
+            @test_support.tk_user_msg("first"),
+            "task-output-cancel",
+          ),
         ) catch {
           error => Err(error)
         }
@@ -465,7 +498,9 @@ async test "core_authority/task_outcome_cancel_at_terminal_output_once" {
     // Release any residual gate waiter, then retry on the same Agent.
     store.gate.broadcast()
     store.gated = false
-    ignore(agent.run_turn(@testkit.tk_user_msg("retry"), "task-output-cancel"))
+    ignore(
+      agent.run_turn(@test_support.tk_user_msg("retry"), "task-output-cancel"),
+    )
     let retry_prompt = model.received_messages[1]
     assert_eq(core_authority_task_marker_count(retry_prompt, marker), 1)
     let saved = store.inner.store["task-output-cancel"]
@@ -484,7 +519,7 @@ async test "core_authority/task_outcome_cancel_at_terminal_output_once" {
 
 ///|
 async test "core_authority/title_and_context_core_metadata_survive_second_turn" {
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   let initial_context : @types.ContextState = {
     session_id: "title-context",
     model_id: "agent",
@@ -502,18 +537,24 @@ async test "core_authority/title_and_context_core_metadata_survive_second_turn" 
       (@types.CONTEXT_STATE_METADATA_KEY, initial_context.to_metadata_json()),
     ]),
   })
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("first")),
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("second")),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("first"),
+    ),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("second"),
+    ),
   ])
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", sessions=[store]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store]),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
-  ignore(agent.run_turn(@testkit.tk_user_msg("known title"), "title-context"))
+  ignore(
+    agent.run_turn(@test_support.tk_user_msg("known title"), "title-context"),
+  )
   let first = agent.runtime.core_facts.read_session("title-context") catch {
     _ => fail("expected core after first turn")
   }
@@ -528,7 +569,7 @@ async test "core_authority/title_and_context_core_metadata_survive_second_turn" 
   assert_eq(first_context.session_id, "title-context")
   assert_eq(first_context.model_id, "agent")
   assert_eq(first_context.window_tokens, Some(100))
-  ignore(agent.run_turn(@testkit.tk_user_msg("second"), "title-context"))
+  ignore(agent.run_turn(@test_support.tk_user_msg("second"), "title-context"))
   assert_eq(core_authority_file_load_count(store), 1)
   let second = agent.runtime.core_facts.read_session("title-context") catch {
     _ => fail("expected core after second turn")
@@ -546,5 +587,5 @@ async test "core_authority/title_and_context_core_metadata_survive_second_turn" 
   assert_eq(second_context.window_tokens, Some(100))
   let second_prompt = model.received_messages[1]
   assert_true(second_prompt.length() >= 3)
-  assert_eq(second_prompt[0], @testkit.tk_user_msg("known title"))
+  assert_eq(second_prompt[0], @test_support.tk_user_msg("known title"))
 }

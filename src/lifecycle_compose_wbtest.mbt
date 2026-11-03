@@ -38,7 +38,7 @@ impl @port.Lifecycle for LegacyLifecycle with fn on_shutdown(self) {
 
 ///|
 /// An observer writing a shared sequence log, for cross-component ordering
-/// assertions against @testkit.RecordingLifecycle entries.
+/// assertions against @test_support.RecordingLifecycle entries.
 priv struct LogObserver {
   log : Array[String]
 }
@@ -50,35 +50,40 @@ impl @port.Observer for LogObserver with fn on_event(self, _scope, event) {
 
 ///|
 fn scripted_model_ext(
-  steps : Array[@testkit.ScriptedModelStep],
-) -> @testkit.ManifestOnly {
-  @testkit.tk_ext(id="model", model=Some(@testkit.ScriptedModel(steps)))
+  steps : Array[@test_support.ScriptedModelStep],
+) -> @test_support.ManifestOnly {
+  @test_support.tk_ext(
+    id="model",
+    model=Some(@test_support.ScriptedModel(steps)),
+  )
 }
 
 ///|
-fn io_ext() -> @testkit.ManifestOnly {
-  @testkit.tk_ext(id="io", sessions=[@testkit.RecordingSessionPort()])
+fn io_ext() -> @test_support.ManifestOnly {
+  @test_support.tk_ext(id="io", sessions=[@test_support.RecordingSessionPort()])
 }
 
 ///|
 test "compose/view_gated_by_declared_requires" {
   let log : Array[String] = []
-  let both = @testkit.RecordingLifecycle(id="both", log~)
-  let none = @testkit.RecordingLifecycle(id="none", log~)
-  let model_only = @testkit.RecordingLifecycle(id="model_only", log~)
+  let both = @test_support.RecordingLifecycle(id="both", log~)
+  let none = @test_support.RecordingLifecycle(id="none", log~)
+  let model_only = @test_support.RecordingLifecycle(id="model_only", log~)
   ignore(
     Agent(
       exts=[
         scripted_model_ext([
-          @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("ok")),
+          @test_support.ScriptedModelStep::Respond(
+            @test_support.tk_stop_response("ok"),
+          ),
         ]),
         io_ext(),
-        @testkit.tk_ext(id="both", lifecycle=[both as &@port.Lifecycle], requires=[
+        @test_support.tk_ext(id="both", lifecycle=[both as &@port.Lifecycle], requires=[
           Model,
           Ui,
         ]),
-        @testkit.tk_ext(id="none", lifecycle=[none as &@port.Lifecycle]),
-        @testkit.tk_ext(
+        @test_support.tk_ext(id="none", lifecycle=[none as &@port.Lifecycle]),
+        @test_support.tk_ext(
           id="model_only",
           lifecycle=[model_only as &@port.Lifecycle],
           requires=[Model],
@@ -105,10 +110,12 @@ test "compose/extension_compose_failure_is_loud" {
     Agent(
       exts=[
         scripted_model_ext([
-          @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("ok")),
+          @test_support.ScriptedModelStep::Respond(
+            @test_support.tk_stop_response("ok"),
+          ),
         ]),
         io_ext(),
-        @testkit.tk_ext(id="bad_ext", lifecycle=[
+        @test_support.tk_ext(id="bad_ext", lifecycle=[
           FailCompose::{ id: "bad_ext", } as &@port.Lifecycle,
         ]),
       ],
@@ -126,30 +133,38 @@ test "compose/extension_compose_failure_is_loud" {
 ///|
 async test "compose/start_once_before_first_turn_started" {
   let log : Array[String] = []
-  let lc = @testkit.RecordingLifecycle(id="lc", log~)
+  let lc = @test_support.RecordingLifecycle(id="lc", log~)
   let legacy = LegacyLifecycle::{ log, }
   let obs = LogObserver::{ log, }
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("a")),
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("b")),
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("c")),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("a"),
+    ),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("b"),
+    ),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("c"),
+    ),
   ])
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", sessions=[@testkit.RecordingSessionPort()], observers=[
-        obs as &@port.Observer,
-      ]),
-      @testkit.tk_ext(id="lc", lifecycle=[
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(
+        id="io",
+        sessions=[@test_support.RecordingSessionPort()],
+        observers=[obs as &@port.Observer],
+      ),
+      @test_support.tk_ext(id="lc", lifecycle=[
         lc as &@port.Lifecycle,
         legacy as &@port.Lifecycle,
       ]),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
-  ignore(agent.run_turn(@testkit.tk_user_msg("one"), "s1"))
-  ignore(agent.run_turn(@testkit.tk_user_msg("two"), "s1"))
-  ignore(agent.run_turn(@testkit.tk_user_msg("three"), "s1"))
+  ignore(agent.run_turn(@test_support.tk_user_msg("one"), "s1"))
+  ignore(agent.run_turn(@test_support.tk_user_msg("two"), "s1"))
+  ignore(agent.run_turn(@test_support.tk_user_msg("three"), "s1"))
   // Compose delivery happened at construction; on_start fired exactly once,
   // after the first operation_started and before the first TurnStarted;
   // legacy defaults logged nothing.
@@ -171,12 +186,12 @@ async test "compose/start_once_before_first_turn_started" {
 
 ///|
 test "compose/tk_view_gates_like_composition" {
-  let model : &@port.ModelPort = @testkit.ScriptedModel([])
-  let ui : &@port.UiPort = @testkit.RecordingUiPort::new_unsupported()
-  let v = @testkit.tk_view(requires=[Model], model~, ui~)
+  let model : &@port.ModelPort = @test_support.ScriptedModel([])
+  let ui : &@port.UiPort = @test_support.RecordingUiPort::new_unsupported()
+  let v = @test_support.tk_view(requires=[Model], model~, ui~)
   assert_true(v.model() is Some(_))
   assert_true(v.ui() is None)
-  let v2 = @testkit.tk_view(requires=[], model~, ui~)
+  let v2 = @test_support.tk_view(requires=[], model~, ui~)
   assert_true(v2.model() is None)
   assert_true(v2.ui() is None)
 }

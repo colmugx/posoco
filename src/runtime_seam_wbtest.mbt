@@ -12,19 +12,23 @@ using @support {type FakeRuntime}
 /// asserts on.
 fn build_fake_runtime_agent(
   abort_on_tool~ : Bool,
-) -> (Agent, FakeRuntime, @testkit.ScriptedModel) raise @error.CompositionError {
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(
-      @testkit.tk_tool_call_response("echo", "call_1", Json::null()),
+) -> (Agent, FakeRuntime, @test_support.ScriptedModel) raise @error.CompositionError {
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_tool_call_response("echo", "call_1", Json::null()),
     ),
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("done"),
+    ),
   ])
-  let tools = @testkit.RecordingToolProvider(
-    [@testkit.tk_tool_def("echo", "echo tool")],
+  let tools = @test_support.RecordingToolProvider(
+    [@test_support.tk_tool_def("echo", "echo tool")],
     Map::from_array([
       (
         "echo",
-        @testkit.ScriptedToolOutcome::OutcomeOk(@testkit.tk_ok_result("echoed")),
+        @test_support.ScriptedToolOutcome::OutcomeOk(
+          @test_support.tk_ok_result("echoed"),
+        ),
       ),
     ]),
   )
@@ -33,9 +37,9 @@ fn build_fake_runtime_agent(
   fake.abort_on_tool = abort_on_tool
   let agent = Agent::with_runtime(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", tools=[tools], sessions=[
-        @testkit.RecordingSessionPort(),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", tools=[tools], sessions=[
+        @test_support.RecordingSessionPort(),
       ]),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
@@ -48,7 +52,10 @@ fn build_fake_runtime_agent(
 ///|
 async test "runtime seam/custom runtime receives full effect context" {
   let (agent, fake, model) = build_fake_runtime_agent(abort_on_tool=false)
-  let result = agent.run_turn(@testkit.tk_user_msg("hi"), "session_seam_ctx")
+  let result = agent.run_turn(
+    @test_support.tk_user_msg("hi"),
+    "session_seam_ctx",
+  )
   assert_eq(result.final_session_id, "session_seam_ctx")
   assert_eq(model.call_count(), 2)
   assert_eq(fake.seen_contexts.length(), 1)
@@ -75,7 +82,7 @@ async test "runtime seam/custom runtime receives full effect context" {
 async test "runtime seam/abort during execution propagates to cancel_effects" {
   let (agent, fake, model) = build_fake_runtime_agent(abort_on_tool=true)
   let result : Result[@types.TurnResult, @error.AgentError] = Ok(
-    agent.run_turn(@testkit.tk_user_msg("hi"), "session_seam_abort"),
+    agent.run_turn(@test_support.tk_user_msg("hi"), "session_seam_abort"),
   ) catch {
     error => Err(error)
   }
@@ -100,32 +107,36 @@ async test "runtime seam/abort during execution propagates to cancel_effects" {
 
 ///|
 async test "runtime seam/follow-up during turn drives a subsequent turn" {
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(
-      @testkit.tk_tool_call_response("echo", "call_1", Json::null()),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_tool_call_response("echo", "call_1", Json::null()),
     ),
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("first done")),
-    @testkit.ScriptedModelStep::Respond(
-      @testkit.tk_stop_response("follow-up done"),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("first done"),
+    ),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("follow-up done"),
     ),
   ])
-  let tools = @testkit.RecordingToolProvider(
-    [@testkit.tk_tool_def("echo", "echo tool")],
+  let tools = @test_support.RecordingToolProvider(
+    [@test_support.tk_tool_def("echo", "echo tool")],
     Map::from_array([
       (
         "echo",
-        @testkit.ScriptedToolOutcome::OutcomeOk(@testkit.tk_ok_result("echoed")),
+        @test_support.ScriptedToolOutcome::OutcomeOk(
+          @test_support.tk_ok_result("echoed"),
+        ),
       ),
     ]),
   )
   let port_runtime = @runtime.PortRuntime(model~)
   let fake = FakeRuntime(port_runtime)
   fake.follow_up_on_tool = true
-  let store = @testkit.RecordingSessionPort()
-  let observer = @testkit.RecordingObserver()
+  let store = @test_support.RecordingSessionPort()
+  let observer = @test_support.RecordingObserver()
   let agent = Agent::with_runtime(
     exts=[
-      @testkit.tk_ext(
+      @test_support.tk_ext(
         id="model",
         model=Some(model),
         tools=[tools],
@@ -138,7 +149,7 @@ async test "runtime seam/follow-up during turn drives a subsequent turn" {
   )
   fake.control = Some(agent.control())
   let result = agent.run_turn(
-    @testkit.tk_user_msg("hi"),
+    @test_support.tk_user_msg("hi"),
     "session_seam_followup",
   )
   // The follow-up drained into its own full turn on the same session: three
@@ -193,7 +204,7 @@ async test "runtime seam/follow-up during turn drives a subsequent turn" {
   // Once every turn has ended there is no active run; a late follow-up is
   // rejected at enqueue time rather than sneaking into a later run.
   assert_true(
-    agent.control().enqueue_follow_up(@testkit.tk_user_msg("too late"))
+    agent.control().enqueue_follow_up(@test_support.tk_user_msg("too late"))
     is RejectedStale(_),
   )
 }
@@ -201,7 +212,7 @@ async test "runtime seam/follow-up during turn drives a subsequent turn" {
 ///|
 /// Names of the tool definitions the scripted model saw at its n-th call.
 fn tool_names_seen(
-  model : @testkit.ScriptedModel,
+  model : @test_support.ScriptedModel,
   call : Int32,
 ) -> Array[String] {
   model.received_tools[call].map(fn(def) { def.name.to_string() })
@@ -209,73 +220,87 @@ fn tool_names_seen(
 
 ///|
 async test "runtime seam/publication applies at the next operation boundary" {
-  let echo = @testkit.tk_tool_def("echo", "echo tool")
-  let web = @testkit.tk_tool_def("web", "web tool")
-  let publisher = ToolPublisher(@testkit.RecordingToolProvider([echo], Map([])))
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("one")),
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("two")),
+  let echo = @test_support.tk_tool_def("echo", "echo tool")
+  let web = @test_support.tk_tool_def("web", "web tool")
+  let publisher = ToolPublisher(
+    @test_support.RecordingToolProvider([echo], Map([])),
+  )
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("one"),
+    ),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("two"),
+    ),
   ])
   let agent = Agent::with_runtime(
-    exts=[@testkit.tk_ext(id="model", model=Some(model)), publisher],
+    exts=[@test_support.tk_ext(id="model", model=Some(model)), publisher],
     config=agent_config(max_tool_rounds=Some(10)),
     runtime=FakeRuntime(@runtime.PortRuntime(model~)),
   )
-  ignore(agent.run_turn(@testkit.tk_user_msg("one"), "seam-publish"))
+  ignore(agent.run_turn(@test_support.tk_user_msg("one"), "seam-publish"))
   assert_eq(tool_names_seen(model, 0), ["echo"])
-  publisher.publish(@testkit.RecordingToolProvider([echo, web], Map([])))
-  ignore(agent.run_turn(@testkit.tk_user_msg("two"), "seam-publish"))
+  publisher.publish(@test_support.RecordingToolProvider([echo, web], Map([])))
+  ignore(agent.run_turn(@test_support.tk_user_msg("two"), "seam-publish"))
   assert_eq(tool_names_seen(model, 1), ["echo", "web"])
   agent.shutdown()
 }
 
 ///|
 async test "runtime seam/publication mid-operation preserves captured execution" {
-  let echo = @testkit.tk_tool_def("echo", "echo tool")
-  let web = @testkit.tk_tool_def("web", "web tool")
-  let old = @testkit.RecordingToolProvider(
+  let echo = @test_support.tk_tool_def("echo", "echo tool")
+  let web = @test_support.tk_tool_def("web", "web tool")
+  let old = @test_support.RecordingToolProvider(
     [echo],
     Map([
       (
         "echo",
-        @testkit.ScriptedToolOutcome::OutcomeOk(@testkit.tk_ok_result("old")),
+        @test_support.ScriptedToolOutcome::OutcomeOk(
+          @test_support.tk_ok_result("old"),
+        ),
       ),
     ]),
   )
-  let next = @testkit.RecordingToolProvider(
+  let next = @test_support.RecordingToolProvider(
     [echo, web],
     Map([
       (
         "echo",
-        @testkit.ScriptedToolOutcome::OutcomeOk(@testkit.tk_ok_result("new")),
+        @test_support.ScriptedToolOutcome::OutcomeOk(
+          @test_support.tk_ok_result("new"),
+        ),
       ),
     ]),
   )
   let publisher = ToolPublisher(old)
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(
-      @testkit.tk_tool_call_response("echo", "call_1", Json::null()),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_tool_call_response("echo", "call_1", Json::null()),
     ),
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("one")),
-    @testkit.ScriptedModelStep::Respond(
-      @testkit.tk_tool_call_response("echo", "call_2", Json::null()),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("one"),
     ),
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("two")),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_tool_call_response("echo", "call_2", Json::null()),
+    ),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("two"),
+    ),
   ])
   let runtime = FakeRuntime(@runtime.PortRuntime(model~))
   runtime.on_first_execute = Some(() => publisher.publish(next))
   let agent = Agent::with_runtime(
-    exts=[@testkit.tk_ext(id="model", model=Some(model)), publisher],
+    exts=[@test_support.tk_ext(id="model", model=Some(model)), publisher],
     config=agent_config(max_tool_rounds=Some(10)),
     runtime~,
   )
-  let one = agent.run_turn(@testkit.tk_user_msg("one"), "seam-captured")
+  let one = agent.run_turn(@test_support.tk_user_msg("one"), "seam-captured")
   guard one.tool_results is [Success(content="old", ..)] else {
     fail("captured executor changed mid-operation")
   }
   assert_eq(tool_names_seen(model, 0), ["echo"])
   assert_eq(tool_names_seen(model, 1), ["echo"])
-  let two = agent.run_turn(@testkit.tk_user_msg("two"), "seam-captured")
+  let two = agent.run_turn(@test_support.tk_user_msg("two"), "seam-captured")
   guard two.tool_results is [Success(content="new", ..)] else {
     fail("next operation did not adopt executor")
   }
@@ -287,33 +312,41 @@ async test "runtime seam/publication mid-operation preserves captured execution"
 
 ///|
 async test "runtime seam/rejected publication retains the last valid group" {
-  let echo = @testkit.tk_tool_def("echo", "echo tool")
-  let web = @testkit.tk_tool_def("web", "web tool")
-  let publisher = ToolPublisher(@testkit.RecordingToolProvider([echo], Map([])))
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("one")),
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("two")),
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("three")),
+  let echo = @test_support.tk_tool_def("echo", "echo tool")
+  let web = @test_support.tk_tool_def("web", "web tool")
+  let publisher = ToolPublisher(
+    @test_support.RecordingToolProvider([echo], Map([])),
+  )
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("one"),
+    ),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("two"),
+    ),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("three"),
+    ),
   ])
   let agent = Agent::with_runtime(
-    exts=[@testkit.tk_ext(id="model", model=Some(model)), publisher],
+    exts=[@test_support.tk_ext(id="model", model=Some(model)), publisher],
     config=agent_config(max_tool_rounds=Some(10)),
     runtime=FakeRuntime(@runtime.PortRuntime(model~)),
   )
-  ignore(agent.run_turn(@testkit.tk_user_msg("one"), "seam-invalid"))
+  ignore(agent.run_turn(@test_support.tk_user_msg("one"), "seam-invalid"))
   assert_eq(tool_names_seen(model, 0), ["echo"])
-  let bad = @testkit.RecordingToolProvider(
-    [echo, @testkit.tk_tool_def("echo", "duplicate")],
+  let bad = @test_support.RecordingToolProvider(
+    [echo, @test_support.tk_tool_def("echo", "duplicate")],
     Map([]),
   )
   guard publisher.capability().replace(provider=bad) is Err(@port.Rejected(..)) else {
     fail("collision was accepted")
   }
   assert_eq(publisher.capability().revision(), Some(1))
-  ignore(agent.run_turn(@testkit.tk_user_msg("two"), "seam-invalid"))
+  ignore(agent.run_turn(@test_support.tk_user_msg("two"), "seam-invalid"))
   assert_eq(tool_names_seen(model, 1), ["echo"])
-  publisher.publish(@testkit.RecordingToolProvider([echo, web], Map([])))
-  ignore(agent.run_turn(@testkit.tk_user_msg("three"), "seam-invalid"))
+  publisher.publish(@test_support.RecordingToolProvider([echo, web], Map([])))
+  ignore(agent.run_turn(@test_support.tk_user_msg("three"), "seam-invalid"))
   assert_eq(tool_names_seen(model, 2), ["echo", "web"])
   agent.shutdown()
 }

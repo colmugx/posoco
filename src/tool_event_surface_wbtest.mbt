@@ -84,35 +84,39 @@ impl @port.PipelineHook for RaiseAllHook with fn before_tool(
 
 ///|
 async test "tool_event_surface/happy_path_pending_approved_started_succeeded" {
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(
-      @testkit.tk_tool_call_response("echo", "call_1", Json::null()),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_tool_call_response("echo", "call_1", Json::null()),
     ),
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("done"),
+    ),
   ])
-  let tools = @testkit.RecordingToolProvider(
-    [@testkit.tk_tool_def("echo", "echo tool")],
+  let tools = @test_support.RecordingToolProvider(
+    [@test_support.tk_tool_def("echo", "echo tool")],
     Map::from_array([
       (
         "echo",
-        @testkit.ScriptedToolOutcome::OutcomeOk(@testkit.tk_ok_result("ok")),
+        @test_support.ScriptedToolOutcome::OutcomeOk(
+          @test_support.tk_ok_result("ok"),
+        ),
       ),
     ]),
   )
-  let observer = @testkit.RecordingObserver()
+  let observer = @test_support.RecordingObserver()
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(
         id="tools",
         tools=[tools],
-        sessions=[@testkit.RecordingSessionPort()],
+        sessions=[@test_support.RecordingSessionPort()],
         observers=[observer],
       ),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
-  ignore(agent.run_turn(@testkit.tk_user_msg("hi"), "s_surface_happy"))
+  ignore(agent.run_turn(@test_support.tk_user_msg("hi"), "s_surface_happy"))
   assert_eq(turn_surface_events(observer.events()).map(event_surface_tag), [
     "TurnStarted", "ModelRequestStarted", "ModelResponseReceived", "ToolCallPending",
     "ToolCallApproved", "ToolCallStarted", "ToolCallSucceeded", "ModelRequestStarted",
@@ -128,36 +132,40 @@ async test "tool_event_surface/happy_path_pending_approved_started_succeeded" {
 
 ///|
 async test "tool_event_surface/hook_reject_surfaces_as_rejected_run_continues" {
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(
-      @testkit.tk_tool_call_response("echo", "call_rej", Json::null()),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_tool_call_response("echo", "call_rej", Json::null()),
     ),
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("recovered")),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("recovered"),
+    ),
   ])
-  let tools = @testkit.RecordingToolProvider(
-    [@testkit.tk_tool_def("echo", "echo tool")],
+  let tools = @test_support.RecordingToolProvider(
+    [@test_support.tk_tool_def("echo", "echo tool")],
     Map::from_array([
       (
         "echo",
-        @testkit.ScriptedToolOutcome::OutcomeOk(@testkit.tk_ok_result("ok")),
+        @test_support.ScriptedToolOutcome::OutcomeOk(
+          @test_support.tk_ok_result("ok"),
+        ),
       ),
     ]),
   )
-  let observer = @testkit.RecordingObserver()
+  let observer = @test_support.RecordingObserver()
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(
         id="tools",
         tools=[tools],
-        sessions=[@testkit.RecordingSessionPort()],
+        sessions=[@test_support.RecordingSessionPort()],
         observers=[observer],
         hooks=[RejectAllHook::{ reason: "not allowed", }],
       ),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
-  let turn = agent.run_turn(@testkit.tk_user_msg("hi"), "s_surface_reject")
+  let turn = agent.run_turn(@test_support.tk_user_msg("hi"), "s_surface_reject")
   // The provider never executed; the model got the rejection feedback.
   assert_eq(tools.exec_records().length(), 0)
   match turn.tool_results[0] {
@@ -178,36 +186,40 @@ async test "tool_event_surface/hook_reject_surfaces_as_rejected_run_continues" {
 
 ///|
 async test "tool_event_surface/consent_hook_approval_carries_scope" {
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(
-      @testkit.tk_tool_call_response("echo", "call_consent", Json::null()),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_tool_call_response("echo", "call_consent", Json::null()),
     ),
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("done"),
+    ),
   ])
-  let tools = @testkit.RecordingToolProvider(
-    [@testkit.tk_tool_def("echo", "echo tool")],
+  let tools = @test_support.RecordingToolProvider(
+    [@test_support.tk_tool_def("echo", "echo tool")],
     Map::from_array([
       (
         "echo",
-        @testkit.ScriptedToolOutcome::OutcomeOk(@testkit.tk_ok_result("ok")),
+        @test_support.ScriptedToolOutcome::OutcomeOk(
+          @test_support.tk_ok_result("ok"),
+        ),
       ),
     ]),
   )
-  let observer = @testkit.RecordingObserver()
+  let observer = @test_support.RecordingObserver()
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(
         id="tools",
         tools=[tools],
-        sessions=[@testkit.RecordingSessionPort()],
+        sessions=[@test_support.RecordingSessionPort()],
         observers=[observer],
         hooks=[ConsentAllHook::{ scope: "echo:read", }],
       ),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
-  ignore(agent.run_turn(@testkit.tk_user_msg("hi"), "s_surface_consent"))
+  ignore(agent.run_turn(@test_support.tk_user_msg("hi"), "s_surface_consent"))
   let mut saw_scoped_approval = false
   for event in observer.events() {
     if event is ToolCallApproved(call=_, consent_scope=Some(scope)) {
@@ -220,29 +232,33 @@ async test "tool_event_surface/consent_hook_approval_carries_scope" {
 
 ///|
 async test "tool_event_surface/hook_raise_abandons_pending_calls" {
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(
-      @testkit.tk_tool_call_response("echo", "call_boom", Json::null()),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_tool_call_response("echo", "call_boom", Json::null()),
     ),
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("unreached")),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("unreached"),
+    ),
   ])
-  let tools = @testkit.RecordingToolProvider(
-    [@testkit.tk_tool_def("echo", "echo tool")],
+  let tools = @test_support.RecordingToolProvider(
+    [@test_support.tk_tool_def("echo", "echo tool")],
     Map::from_array([
       (
         "echo",
-        @testkit.ScriptedToolOutcome::OutcomeOk(@testkit.tk_ok_result("ok")),
+        @test_support.ScriptedToolOutcome::OutcomeOk(
+          @test_support.tk_ok_result("ok"),
+        ),
       ),
     ]),
   )
-  let observer = @testkit.RecordingObserver()
+  let observer = @test_support.RecordingObserver()
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(
         id="tools",
         tools=[tools],
-        sessions=[@testkit.RecordingSessionPort()],
+        sessions=[@test_support.RecordingSessionPort()],
         observers=[observer],
         hooks=[RaiseAllHook::{ }],
       ),
@@ -250,7 +266,7 @@ async test "tool_event_surface/hook_raise_abandons_pending_calls" {
     config=agent_config(max_tool_rounds=Some(10)),
   )
   try {
-    ignore(agent.run_turn(@testkit.tk_user_msg("hi"), "s_surface_raise"))
+    ignore(agent.run_turn(@test_support.tk_user_msg("hi"), "s_surface_raise"))
     fail("expected the turn to fail with a hook defect")
   } catch {
     _ => ()
@@ -271,34 +287,36 @@ async test "tool_event_surface/hook_raise_abandons_pending_calls" {
 
 ///|
 async test "tool_event_surface/mid_wave_cancel_abandons_pending_calls" {
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(
-      @testkit.tk_tool_call_response(
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_tool_call_response(
         "slow_tool",
         "call_cancel",
         Json::object(Map::from_array([])),
       ),
     ),
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("after")),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("after"),
+    ),
   ])
-  let tools = @testkit.RecordingToolProvider(
-    [@testkit.tk_tool_def("slow_tool", "slow tool")],
+  let tools = @test_support.RecordingToolProvider(
+    [@test_support.tk_tool_def("slow_tool", "slow tool")],
     Map::from_array([]),
   )
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   store.seed("s_surface_cancel", {
     messages: [],
     metadata: Map::from_array([]),
   })
-  let observer = @testkit.RecordingObserver()
+  let observer = @test_support.RecordingObserver()
   let port_runtime = @runtime.PortRuntime(model~)
   let probe = MidEffectAbortRuntime(inner=port_runtime as &@runtime.Runtime, park_tool_names=[
     "slow_tool",
   ])
   let agent = Agent::with_runtime(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model), sessions=[store]),
-      @testkit.tk_ext(id="tools", tools=[tools], observers=[observer]),
+      @test_support.tk_ext(id="model", model=Some(model), sessions=[store]),
+      @test_support.tk_ext(id="tools", tools=[tools], observers=[observer]),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
     runtime=probe as &@runtime.Runtime,
@@ -310,7 +328,10 @@ async test "tool_event_surface/mid_wave_cancel_abandons_pending_calls" {
   @async.with_task_group(async fn(group) {
     let task = group.spawn(async fn() {
       let r : Result[@types.TurnResult, @error.AgentError] = Ok(
-        agent.run_turn(@testkit.tk_user_msg("run slow"), "s_surface_cancel"),
+        agent.run_turn(
+          @test_support.tk_user_msg("run slow"),
+          "s_surface_cancel",
+        ),
       ) catch {
         e => Err(e)
       }

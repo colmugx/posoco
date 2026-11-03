@@ -1,5 +1,5 @@
 ///|
-using @testkit {tk_tool_def, tk_ok_result}
+using @test_support {tk_tool_def, tk_ok_result}
 
 ///|
 /// Cancellable fake: registers its facet at execute start, then suspends on

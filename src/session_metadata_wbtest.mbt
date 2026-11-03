@@ -14,10 +14,12 @@ fn metadata_config() -> AgentConfig {
 async test "t05_metadata_roundtrip_preserves_unknown_keys" {
   // Seed a session with user-owned metadata. After a no-tool turn, the saved
   // session MUST still contain those keys with unchanged values.
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("done"),
+    ),
   ])
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   let initial_meta = Map::from_array([
     ("user_role", Json::string("admin")),
     ("turn_count", Json::number(5.0)),
@@ -25,12 +27,12 @@ async test "t05_metadata_roundtrip_preserves_unknown_keys" {
   store.seed("s1", { messages: [], metadata: initial_meta, })
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", sessions=[store]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store]),
     ],
     config=metadata_config(),
   )
-  let _ = agent.run_turn(@testkit.tk_user_msg("hello"), "s1")
+  let _ = agent.run_turn(@test_support.tk_user_msg("hello"), "s1")
   // The pure-append path calls append_messages; verify the persisted session
   // still carries the seeded metadata by loading it back.
   let persisted = store.load("s1") catch {
@@ -44,21 +46,23 @@ async test "t05_metadata_roundtrip_preserves_unknown_keys" {
 
 ///|
 async test "t05_save_failure_returns_session_error_no_turn_completed" {
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("done"),
+    ),
   ])
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   // Configure the session id to fail on save.
   store.fail_save("doomed")
-  let obs = @testkit.RecordingObserver()
+  let obs = @test_support.RecordingObserver()
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", sessions=[store], observers=[obs]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store], observers=[obs]),
     ],
     config=metadata_config(),
   )
-  let result = Ok(agent.run_turn(@testkit.tk_user_msg("hello"), "doomed")) catch {
+  let result = Ok(agent.run_turn(@test_support.tk_user_msg("hello"), "doomed")) catch {
     e => Err(e)
   }
   match result {
@@ -83,24 +87,24 @@ async test "t05_save_failure_returns_session_error_no_turn_completed" {
 
 ///|
 async test "t05_failed_turn_persists_progress_without_aliasing" {
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Fail(Transport("network down")),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Fail(Transport("network down")),
   ])
-  let store = @testkit.RecordingSessionPort()
-  let original_messages = [@testkit.tk_user_msg("already persisted")]
+  let store = @test_support.RecordingSessionPort()
+  let original_messages = [@test_support.tk_user_msg("already persisted")]
   store.seed("stable", {
     messages: original_messages,
     metadata: Map::from_array([]),
   })
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", sessions=[store]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store]),
     ],
     config=metadata_config(),
   )
   let result = Ok(
-    agent.run_turn(@testkit.tk_user_msg("must not leak"), "stable"),
+    agent.run_turn(@test_support.tk_user_msg("must not leak"), "stable"),
   ) catch {
     e => Err(e)
   }
@@ -109,16 +113,20 @@ async test "t05_failed_turn_persists_progress_without_aliasing" {
     _ => fail("expected model failure")
   }
   assert_eq(original_messages.length(), 1)
-  assert_true(original_messages[0] == @testkit.tk_user_msg("already persisted"))
+  assert_true(
+    original_messages[0] == @test_support.tk_user_msg("already persisted"),
+  )
   try {
     let persisted = store.load("stable")
     // The failed turn's user input must survive: the next turn rebuilds its
     // context from this store, so losing it makes the model forget the query.
     assert_eq(persisted.messages.length(), 2)
     assert_true(
-      persisted.messages[0] == @testkit.tk_user_msg("already persisted"),
+      persisted.messages[0] == @test_support.tk_user_msg("already persisted"),
     )
-    assert_true(persisted.messages[1] == @testkit.tk_user_msg("must not leak"))
+    assert_true(
+      persisted.messages[1] == @test_support.tk_user_msg("must not leak"),
+    )
   } catch {
     _ => fail("seeded session should remain loadable")
   }
@@ -126,18 +134,18 @@ async test "t05_failed_turn_persists_progress_without_aliasing" {
 
 ///|
 async test "t05_session_load_error_has_context_without_metadata" {
-  let model = @testkit.ScriptedModel([])
-  let store = @testkit.RecordingSessionPort()
+  let model = @test_support.ScriptedModel([])
+  let store = @test_support.RecordingSessionPort()
   store.fail_load("load-target", Load("backend unavailable"))
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", sessions=[store]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store]),
     ],
     config=metadata_config(),
   )
   let result = Ok(
-    agent.run_turn(@testkit.tk_user_msg("secret prompt"), "load-target"),
+    agent.run_turn(@test_support.tk_user_msg("secret prompt"), "load-target"),
   ) catch {
     e => Err(e)
   }
@@ -157,18 +165,18 @@ async test "t05_session_load_error_has_context_without_metadata" {
 ///|
 async test "t05_session_error_uses_bounded_single_line_id" {
   let raw_id = "line-one\n" + "x".repeat(100) + "TAIL_SESSION_SECRET"
-  let model = @testkit.ScriptedModel([])
-  let store = @testkit.RecordingSessionPort()
+  let model = @test_support.ScriptedModel([])
+  let store = @test_support.RecordingSessionPort()
   store.fail_load(raw_id, Load("backend unavailable"))
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", sessions=[store]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store]),
     ],
     config=metadata_config(),
   )
   let result = Ok(
-    agent.run_turn(@testkit.tk_user_msg("private prompt"), raw_id),
+    agent.run_turn(@test_support.tk_user_msg("private prompt"), raw_id),
   ) catch {
     error => Err(error)
   }
@@ -188,22 +196,24 @@ async test "t05_session_error_uses_bounded_single_line_id" {
 ///|
 async test "t05_session_save_cause_cannot_reexpand_raw_id" {
   let raw_id = "save-line\n" + "y".repeat(100) + "TAIL_SAVE_SECRET"
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("done"),
+    ),
   ])
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   // This fake includes the raw id in its underlying Save message, exercising
   // both the contextual id label and the bounded cause label.
   store.fail_save(raw_id)
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", sessions=[store]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store]),
     ],
     config=metadata_config(),
   )
   let result = Ok(
-    agent.run_turn(@testkit.tk_user_msg("private prompt"), raw_id),
+    agent.run_turn(@test_support.tk_user_msg("private prompt"), raw_id),
   ) catch {
     error => Err(error)
   }
@@ -449,18 +459,20 @@ pub impl @port.Observer for BoundaryMutatingObserver with fn on_event(
 ///|
 async test "t05_each_final_save_store_gets_independent_deep_snapshot" {
   let mutating_store = BoundaryMutatingStore::{ }
-  let recording_store = @testkit.RecordingSessionPort()
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
+  let recording_store = @test_support.RecordingSessionPort()
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("done"),
+    ),
   ])
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", sessions=[mutating_store, recording_store]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[mutating_store, recording_store]),
     ],
     config=metadata_config(),
   )
-  let _ = agent.run_turn(@testkit.tk_user_msg("hello"), "final-snapshot")
+  let _ = agent.run_turn(@test_support.tk_user_msg("hello"), "final-snapshot")
   try {
     let saved = recording_store.load("final-snapshot")
     assert_session_has_no_boundary_poison(saved)
@@ -485,7 +497,7 @@ pub extend BoundaryRecordingToolProvider with @port.ToolProvider::{
 pub impl @port.ToolProvider for BoundaryRecordingToolProvider with fn list_tools(
   _self,
 ) {
-  [@testkit.tk_tool_def("probe", "")]
+  [@test_support.tk_tool_def("probe", "")]
 }
 
 ///|
@@ -527,11 +539,13 @@ async test "t05_tool_ports_hooks_and_observers_get_json_snapshots" {
     content="clean result",
     structured=Some(provider_structured),
   )
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(
-      @testkit.tk_tool_call_response("probe", "tc-json", call_args),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_tool_call_response("probe", "tc-json", call_args),
     ),
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("done"),
+    ),
   ])
   let provider = BoundaryRecordingToolProvider::{
     result: provider_result,
@@ -539,12 +553,12 @@ async test "t05_tool_ports_hooks_and_observers_get_json_snapshots" {
   }
   let hook = BoundaryMutatingHook::{ }
   let mutating_observer = BoundaryMutatingObserver::{ }
-  let recording_observer = @testkit.RecordingObserver()
-  let store = @testkit.RecordingSessionPort()
+  let recording_observer = @test_support.RecordingObserver()
+  let store = @test_support.RecordingSessionPort()
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(
         id="io",
         tools=[provider],
         hooks=[hook],
@@ -555,7 +569,7 @@ async test "t05_tool_ports_hooks_and_observers_get_json_snapshots" {
     config=metadata_config(),
   )
   let result = agent.run_turn(
-    @testkit.tk_user_msg("run probe"),
+    @test_support.tk_user_msg("run probe"),
     "tool-boundaries",
   )
   assert_eq(result.tool_results.length(), 1)
@@ -591,24 +605,26 @@ async test "t05_tool_ports_hooks_and_observers_get_json_snapshots" {
 
 ///|
 async test "automatic title comes from admitted human input before memory injection" {
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("done"),
+    ),
   ])
-  let memory = @testkit.ScriptedMemoryPort(inbounds=[
+  let memory = @test_support.ScriptedMemoryPort(inbounds=[
     Some("the same injected memory appears in every fresh session"),
   ])
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="memory", memory=[memory]),
-      @testkit.tk_ext(id="io", sessions=[store]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="memory", memory=[memory]),
+      @test_support.tk_ext(id="io", sessions=[store]),
     ],
     config=metadata_config(),
   )
   ignore(
     agent.run_turn(
-      @testkit.tk_user_msg("  investigate   the login\n race condition  "),
+      @test_support.tk_user_msg("  investigate   the login\n race condition  "),
       "title-from-human",
     ),
   )
@@ -628,7 +644,7 @@ async test "automatic title comes from admitted human input before memory inject
   }
   assert_true(
     persisted.messages[1] ==
-    @testkit.tk_user_msg("  investigate   the login\n race condition  "),
+    @test_support.tk_user_msg("  investigate   the login\n race condition  "),
   )
 }
 
@@ -670,27 +686,35 @@ async test "t05_turn_result_tool_outcomes_do_not_alias_held_transcript_or_next_i
     structured=Some(structured),
     attachments~,
   )
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(
-      @testkit.tk_tool_call_response("probe", "tc-turn-result", Json::null()),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_tool_call_response(
+        "probe",
+        "tc-turn-result",
+        Json::null(),
+      ),
     ),
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("next")),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("done"),
+    ),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("next"),
+    ),
   ])
   let provider = BoundaryRecordingToolProvider::{
     result: provider_result,
     calls: [],
   }
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", tools=[provider], sessions=[store]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", tools=[provider], sessions=[store]),
     ],
     config=metadata_config(),
   )
   let first = agent.run_turn(
-    @testkit.tk_user_msg("run probe"),
+    @test_support.tk_user_msg("run probe"),
     "turn-result-alias",
   )
   assert_eq(first.tool_results.length(), 1)
@@ -724,7 +748,7 @@ async test "t05_turn_result_tool_outcomes_do_not_alias_held_transcript_or_next_i
   assert_eq(held_tool_count, 1)
   // The next turn is fed from that held transcript, so a leak also shows up
   // in the next model request.
-  ignore(agent.run_turn(@testkit.tk_user_msg("next"), "turn-result-alias"))
+  ignore(agent.run_turn(@test_support.tk_user_msg("next"), "turn-result-alias"))
   let mut next_tool_count = 0
   let mut next_poisoned = false
   for message in model.received_messages[2] {

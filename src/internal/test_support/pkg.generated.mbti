@@ -1,5 +1,5 @@
 // Generated using `moon info`, DON'T EDIT IT
-package "colmugx/posoco/testkit"
+package "colmugx/posoco/internal/test_support"
 
 import {
   "colmugx/posoco/error",

@@ -28,7 +28,12 @@ impl @port.Extension for InvokingTool with fn manifest(self) -> @port.ExtensionM
 impl @port.ToolProvider for InvokingTool with fn list_tools(_self) -> Array[
   @kernel.ToolDef,
 ] {
-  [{ ..@testkit.tk_tool_def("parent", "call a child"), policy: Exclusive, }]
+  [
+    {
+      ..@test_support.tk_tool_def("parent", "call a child"),
+      policy: Exclusive,
+    },
+  ]
 }
 
 ///|

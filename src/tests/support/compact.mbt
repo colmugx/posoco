@@ -1,5 +1,5 @@
 ///|
-using @testkit {type RecordingSessionPort, tk_user_msg}
+using @test_support {type RecordingSessionPort, tk_user_msg}
 
 ///|
 pub fn policy_replace_result() -> @kernel.CompactResult {

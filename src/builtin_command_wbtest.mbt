@@ -65,21 +65,24 @@ async test "m35_builtin/fork_here_default_index_zero" {
 
 ///|
 async test "m35_builtin/idle_compact_starts_compact_session_directly" {
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Compact(result={
-      compacted_messages: [@testkit.tk_user_msg("summary")],
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Compact(result={
+      compacted_messages: [@test_support.tk_user_msg("summary")],
       mode: Replace,
     }),
   ])
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   store.seed("idle-session", {
-    messages: [@testkit.tk_user_msg("hello"), @testkit.tk_user_msg("more")],
+    messages: [
+      @test_support.tk_user_msg("hello"),
+      @test_support.tk_user_msg("more"),
+    ],
     metadata: Map::from_array([]),
   })
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", sessions=[store]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store]),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
@@ -110,7 +113,7 @@ async test "m35_builtin/idle_compact_starts_compact_session_directly" {
   assert_eq(compacts[0].0.length(), 2)
   let persisted = store.store["idle-session"]
   assert_eq(persisted.messages.length(), 1)
-  assert_true(persisted.messages[0] == @testkit.tk_user_msg("summary"))
+  assert_true(persisted.messages[0] == @test_support.tk_user_msg("summary"))
 }
 
 ///|
@@ -126,20 +129,20 @@ async test "m35_builtin/idle_compact_requires_session_identity" {
 
 ///|
 async test "m35_builtin/idle_compact_reports_modelport_failure_not_locked_session" {
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::CompactFail(
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::CompactFail(
       error=ResponseParse("no compact endpoint"),
     ),
   ])
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   store.seed("fail-session", {
-    messages: [@testkit.tk_user_msg("hello")],
+    messages: [@test_support.tk_user_msg("hello")],
     metadata: Map::from_array([]),
   })
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", sessions=[store]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store]),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )

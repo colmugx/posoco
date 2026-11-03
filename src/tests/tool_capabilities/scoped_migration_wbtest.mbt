@@ -1,10 +1,10 @@
 ///|
 async test "tool_invoke/migrated_scoped_calls_preserve_permission_and_schema_rejections" {
   let replies : Array[@kernel.InvocationResult] = []
-  let child = @testkit.RecordingToolProvider(
+  let child = @test_support.RecordingToolProvider(
     [
       {
-        ..@testkit.tk_tool_def("inspect", "Inspect"),
+        ..@test_support.tk_tool_def("inspect", "Inspect"),
         exposure: Deferred,
         input_schema: {
           "type": "object",
@@ -18,13 +18,13 @@ async test "tool_invoke/migrated_scoped_calls_preserve_permission_and_schema_rej
   let parent = InvocationFixture::{
     id: "parent",
     definitions: [
-      { ..@testkit.tk_tool_def("parent", "parent"), policy: Exclusive, },
+      { ..@test_support.tk_tool_def("parent", "parent"), policy: Exclusive, },
     ],
     owners: ["child"],
     action: async fn(ctx) {
       replies.push(ctx.invoke("inspect", { "path": "a" }))
       replies.push(ctx.invoke("inspect", { "path": 42 }))
-      @testkit.tk_ok_result("done")
+      @test_support.tk_ok_result("done")
     },
   }
   let hook = InvocationHook::{
@@ -38,26 +38,26 @@ async test "tool_invoke/migrated_scoped_calls_preserve_permission_and_schema_rej
   }
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(
+      @test_support.tk_ext(
         id="model",
         model=Some(
-          @testkit.ScriptedModel([
-            @testkit.ScriptedModelStep::Respond(
-              @testkit.tk_tool_call_response("parent", "p", Json::null()),
+          @test_support.ScriptedModel([
+            @test_support.ScriptedModelStep::Respond(
+              @test_support.tk_tool_call_response("parent", "p", Json::null()),
             ),
-            @testkit.ScriptedModelStep::Respond(
-              @testkit.tk_stop_response("done"),
+            @test_support.ScriptedModelStep::Respond(
+              @test_support.tk_stop_response("done"),
             ),
           ]),
         ),
         hooks=[hook],
       ),
       parent,
-      @testkit.tk_ext(id="child", tools=[child]),
+      @test_support.tk_ext(id="child", tools=[child]),
     ],
     config=@agent.agent_config(max_tool_rounds=Some(10)),
   )
-  ignore(agent.run_turn(@testkit.tk_user_msg("hello"), "scoped-migration"))
+  ignore(agent.run_turn(@test_support.tk_user_msg("hello"), "scoped-migration"))
   guard replies
     is [
       Completed(NotExecuted(reason=RejectedByHook(..), ..)),
@@ -72,13 +72,18 @@ async test "tool_invoke/migrated_scoped_calls_preserve_permission_and_schema_rej
 ///|
 async test "tool_invoke/program_names_use_owner_admission_instead_of_a_run_code_special_case" {
   let replies : Array[@kernel.InvocationResult] = []
-  let child = @testkit.RecordingToolProvider(
-    [{ ..@testkit.tk_tool_def("run_code", "program"), exposure: Deferred, }],
+  let child = @test_support.RecordingToolProvider(
+    [
+      {
+        ..@test_support.tk_tool_def("run_code", "program"),
+        exposure: Deferred,
+      },
+    ],
     Map([
       (
         "run_code",
-        @testkit.ScriptedToolOutcome::OutcomeOk(
-          @testkit.tk_ok_result("program result"),
+        @test_support.ScriptedToolOutcome::OutcomeOk(
+          @test_support.tk_ok_result("program result"),
         ),
       ),
     ]),
@@ -86,35 +91,37 @@ async test "tool_invoke/program_names_use_owner_admission_instead_of_a_run_code_
   let parent = InvocationFixture::{
     id: "parent",
     definitions: [
-      { ..@testkit.tk_tool_def("parent", "parent"), policy: Exclusive, },
+      { ..@test_support.tk_tool_def("parent", "parent"), policy: Exclusive, },
     ],
     owners: [],
     action: async fn(ctx) {
       replies.push(ctx.invoke("run_code", Json::null()))
-      @testkit.tk_ok_result("done")
+      @test_support.tk_ok_result("done")
     },
   }
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(
+      @test_support.tk_ext(
         id="model",
         model=Some(
-          @testkit.ScriptedModel([
-            @testkit.ScriptedModelStep::Respond(
-              @testkit.tk_tool_call_response("parent", "p", Json::null()),
+          @test_support.ScriptedModel([
+            @test_support.ScriptedModelStep::Respond(
+              @test_support.tk_tool_call_response("parent", "p", Json::null()),
             ),
-            @testkit.ScriptedModelStep::Respond(
-              @testkit.tk_stop_response("done"),
+            @test_support.ScriptedModelStep::Respond(
+              @test_support.tk_stop_response("done"),
             ),
           ]),
         ),
       ),
       parent,
-      @testkit.tk_ext(id="child", tools=[child]),
+      @test_support.tk_ext(id="child", tools=[child]),
     ],
     config=@agent.agent_config(max_tool_rounds=Some(10)),
   )
-  ignore(agent.run_turn(@testkit.tk_user_msg("hello"), "program-admission"))
+  ignore(
+    agent.run_turn(@test_support.tk_user_msg("hello"), "program-admission"),
+  )
   guard replies is [Completed(NotExecuted(reason=OwnerNotAllowed, ..))] else {
     fail("program invocation must use the same owner admission as every tool")
   }

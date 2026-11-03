@@ -29,7 +29,7 @@ async test "perf guard: stream accumulator text push is sub-quadratic" {
 async test "perf guard: multi-wave tool commit is linear in transcript" {
   let waves = 8
   let tools_per_wave = 4
-  let steps : Array[@testkit.ScriptedModelStep] = []
+  let steps : Array[@test_support.ScriptedModelStep] = []
   for wave in 0..<waves {
     let calls : Array[@kernel.ToolCall] = []
     for i in 0..<tools_per_wave {
@@ -48,38 +48,44 @@ async test "perf guard: multi-wave tool commit is linear in transcript" {
       usage=None,
     )
     steps.push(
-      @testkit.ScriptedModelStep::Respond({
+      @test_support.ScriptedModelStep::Respond({
         completion,
         processed_messages: [],
       }),
     )
   }
   steps.push(
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("done"),
+    ),
   )
 
-  let outcomes : Map[String, @testkit.ScriptedToolOutcome] = Map::from_array([])
-  outcomes["echo"] = @testkit.ScriptedToolOutcome::OutcomeOk(
-    @testkit.tk_ok_result("ok"),
+  let outcomes : Map[String, @test_support.ScriptedToolOutcome] = Map::from_array([],
   )
-  let provider = @testkit.RecordingToolProvider(
-    [@testkit.tk_tool_def("echo", "echo tool")],
+  outcomes["echo"] = @test_support.ScriptedToolOutcome::OutcomeOk(
+    @test_support.tk_ok_result("ok"),
+  )
+  let provider = @test_support.RecordingToolProvider(
+    [@test_support.tk_tool_def("echo", "echo tool")],
     outcomes,
   )
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   let config : @posoco.AgentConfig = @posoco.agent_config(
     max_tool_rounds=Some(waves + 2),
   )
   let agent = @posoco.Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(@testkit.ScriptedModel(steps))),
-      @testkit.tk_ext(id="io", tools=[provider], sessions=[store]),
+      @test_support.tk_ext(
+        id="model",
+        model=Some(@test_support.ScriptedModel(steps)),
+      ),
+      @test_support.tk_ext(id="io", tools=[provider], sessions=[store]),
     ],
     config~,
   )
 
   let t0 = @async.now()
-  let result = agent.run_turn(@testkit.tk_user_msg("go"), "perf_wave")
+  let result = agent.run_turn(@test_support.tk_user_msg("go"), "perf_wave")
   let dt = @async.now() - t0
   ignore(result)
   assert_true(
@@ -89,7 +95,7 @@ async test "perf guard: multi-wave tool commit is linear in transcript" {
 }
 
 ///|
-/// Streaming turn: 50k chunks through a @testkit.ScriptedModel+@testkit.RecordingObserver agent
+/// Streaming turn: 50k chunks through a @test_support.ScriptedModel+@test_support.RecordingObserver agent
 /// turn must complete < 5s. Catches accidental synchronous fan-out or
 /// per-chunk persistence recurrence. Telemetry is intentionally lossy under
 /// overload; this guard checks wall time, not event counts.
@@ -99,24 +105,24 @@ async test "perf guard: streaming turn drains 50k chunks fast" {
   for _i in 0..<n {
     chunks.push(TextDelta(token="abcd"))
   }
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Stream(
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Stream(
       chunks~,
-      response=@testkit.tk_stop_response("ok"),
+      response=@test_support.tk_stop_response("ok"),
     ),
   ])
-  let store = @testkit.RecordingSessionPort()
-  let observer = @testkit.RecordingObserver()
+  let store = @test_support.RecordingSessionPort()
+  let observer = @test_support.RecordingObserver()
   let agent = @posoco.Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", sessions=[store], observers=[observer]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store], observers=[observer]),
     ],
     config=@posoco.agent_config(max_tool_rounds=Some(10)),
   )
 
   let t0 = @async.now()
-  let result = agent.run_turn(@testkit.tk_user_msg("hello"), "s2")
+  let result = agent.run_turn(@test_support.tk_user_msg("hello"), "s2")
   let dt = @async.now() - t0
   ignore(result)
   assert_true(

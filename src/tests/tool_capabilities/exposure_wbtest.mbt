@@ -24,7 +24,7 @@ impl @port.PipelineHook for ExposureSwitch with fn before_tool(
   if !self.disabled {
     self.disabled = true
     if self.control is Some(control) {
-      guard control.enqueue_follow_up(@testkit.tk_user_msg("follow up"))
+      guard control.enqueue_follow_up(@test_support.tk_user_msg("follow up"))
         is @runtime.Accepted(..) else {
         abort("follow up rejected")
       }
@@ -36,40 +36,48 @@ impl @port.PipelineHook for ExposureSwitch with fn before_tool(
 ///|
 async test "tool_exposure/rules_are_frozen_for_followups_and_recomputed_for_next_operation" {
   let hook = ExposureSwitch::{ disabled: false, control: None, }
-  let provider = @testkit.RecordingToolProvider(
-    [@testkit.tk_tool_def("echo", "echo")],
+  let provider = @test_support.RecordingToolProvider(
+    [@test_support.tk_tool_def("echo", "echo")],
     Map::from_array([
       (
         "echo",
-        @testkit.ScriptedToolOutcome::OutcomeOk(@testkit.tk_ok_result("ok")),
+        @test_support.ScriptedToolOutcome::OutcomeOk(
+          @test_support.tk_ok_result("ok"),
+        ),
       ),
     ]),
   )
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(
-      @testkit.tk_tool_call_response("echo", "a1", Json::null()),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_tool_call_response("echo", "a1", Json::null()),
     ),
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("a1 done")),
-    @testkit.ScriptedModelStep::Respond(
-      @testkit.tk_tool_call_response("echo", "a2", Json::null()),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("a1 done"),
     ),
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("a2 done")),
-    @testkit.ScriptedModelStep::Respond(
-      @testkit.tk_tool_call_response("echo", "b", Json::null()),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_tool_call_response("echo", "a2", Json::null()),
     ),
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("b done")),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("a2 done"),
+    ),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_tool_call_response("echo", "b", Json::null()),
+    ),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("b done"),
+    ),
   ])
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="tools", tools=[provider], hooks=[hook]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="tools", tools=[provider], hooks=[hook]),
     ],
     config=@agent.agent_config(max_tool_rounds=Some(10)),
   )
   hook.control = Some(agent.control())
-  ignore(agent.run_turn(@testkit.tk_user_msg("A"), "projection"))
+  ignore(agent.run_turn(@test_support.tk_user_msg("A"), "projection"))
   assert_eq(provider.exec_records().length(), 2)
-  let next = agent.run_turn(@testkit.tk_user_msg("B"), "projection")
+  let next = agent.run_turn(@test_support.tk_user_msg("B"), "projection")
   guard next.tool_results is [NotExecuted(reason=NotOffered, ..)] else {
     fail("next operation must use disabled projection")
   }
@@ -92,27 +100,37 @@ impl @port.PipelineHook for ExposureRewrite with fn before_tool(
 
 ///|
 async test "tool_exposure/hook_rewrite_cannot_enter_disabled_target" {
-  let provider = @testkit.RecordingToolProvider(
+  let provider = @test_support.RecordingToolProvider(
     [
-      @testkit.tk_tool_def("direct", "direct"),
-      { ..@testkit.tk_tool_def("disabled", "disabled"), exposure: Disabled, },
+      @test_support.tk_tool_def("direct", "direct"),
+      {
+        ..@test_support.tk_tool_def("disabled", "disabled"),
+        exposure: Disabled,
+      },
     ],
     Map::from_array([]),
   )
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(
-      @testkit.tk_tool_call_response("direct", "rewrite", Json::null()),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_tool_call_response("direct", "rewrite", Json::null()),
     ),
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("done"),
+    ),
   ])
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="tools", tools=[provider], hooks=[ExposureRewrite::{ }]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="tools", tools=[provider], hooks=[
+        ExposureRewrite::{ },
+      ]),
     ],
     config=@agent.agent_config(max_tool_rounds=Some(10)),
   )
-  let result = agent.run_turn(@testkit.tk_user_msg("hello"), "rewrite-exposure")
+  let result = agent.run_turn(
+    @test_support.tk_user_msg("hello"),
+    "rewrite-exposure",
+  )
   guard result.tool_results is [NotExecuted(reason=NotOffered, ..)] else {
     fail("rewrites must be checked against effective exposure")
   }
@@ -123,34 +141,36 @@ async test "tool_exposure/hook_rewrite_cannot_enter_disabled_target" {
 ///|
 async test "tool_exposure/deferred_tool_is_not_offered_and_guessing_is_rejected" {
   let deferred = {
-    ..@testkit.tk_tool_def("secret", "deferred"),
+    ..@test_support.tk_tool_def("secret", "deferred"),
     exposure: @kernel.ToolExposure::Deferred,
   }
-  let provider = @testkit.RecordingToolProvider(
+  let provider = @test_support.RecordingToolProvider(
     [deferred],
     Map::from_array([
       (
         "secret",
-        @testkit.ScriptedToolOutcome::OutcomeOk(
-          @testkit.tk_ok_result("must not execute"),
+        @test_support.ScriptedToolOutcome::OutcomeOk(
+          @test_support.tk_ok_result("must not execute"),
         ),
       ),
     ]),
   )
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(
-      @testkit.tk_tool_call_response("secret", "guess", Json::null()),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_tool_call_response("secret", "guess", Json::null()),
     ),
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("done"),
+    ),
   ])
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="owner", tools=[provider]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="owner", tools=[provider]),
     ],
     config=@agent.agent_config(max_tool_rounds=Some(10)),
   )
-  let result = agent.run_turn(@testkit.tk_user_msg("hello"), "exposure")
+  let result = agent.run_turn(@test_support.tk_user_msg("hello"), "exposure")
   assert_eq(model.received_tools[0].length(), 0)
   assert_eq(provider.exec_records().length(), 0)
   guard result.tool_results is [NotExecuted(reason=NotOffered, ..)] else {
@@ -160,23 +180,29 @@ async test "tool_exposure/deferred_tool_is_not_offered_and_guessing_is_rejected"
 
 ///|
 async test "tool_exposure/manual_compact_only_receives_direct_projection" {
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Compact(result=policy_replace_result()),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Compact(result=policy_replace_result()),
   ])
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   compact_tools_seed(store, "exposure-compact")
-  let provider = @testkit.RecordingToolProvider(
+  let provider = @test_support.RecordingToolProvider(
     [
-      { ..@testkit.tk_tool_def("deferred", "deferred"), exposure: Deferred, },
-      { ..@testkit.tk_tool_def("disabled", "disabled"), exposure: Disabled, },
-      @testkit.tk_tool_def("direct", "direct"),
+      {
+        ..@test_support.tk_tool_def("deferred", "deferred"),
+        exposure: Deferred,
+      },
+      {
+        ..@test_support.tk_tool_def("disabled", "disabled"),
+        exposure: Disabled,
+      },
+      @test_support.tk_tool_def("direct", "direct"),
     ],
     Map::from_array([]),
   )
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model), sessions=[store]),
-      @testkit.tk_ext(id="tools", tools=[provider]),
+      @test_support.tk_ext(id="model", model=Some(model), sessions=[store]),
+      @test_support.tk_ext(id="tools", tools=[provider]),
     ],
     config=@agent.agent_config(max_tool_rounds=Some(10)),
   )

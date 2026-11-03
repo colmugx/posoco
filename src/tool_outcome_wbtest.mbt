@@ -45,36 +45,37 @@ fn outcome_text(outcome : @kernel.ToolOutcome) -> String {
 async test "t06a_business_error_event_matches_result" {
   // Provider returns Ok(ToolReportedError). The emitted terminal event
   // MUST be ToolCallFailed carrying the same payload.
-  let first_response = @testkit.tk_tool_call_response(
+  let first_response = @test_support.tk_tool_call_response(
     "probe",
     "tc_1",
     Json::null(),
   )
-  let final_response = @testkit.tk_stop_response("after")
-  let business_result = @testkit.tk_error_result("denied")
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(first_response),
-    @testkit.ScriptedModelStep::Respond(final_response),
+  let final_response = @test_support.tk_stop_response("after")
+  let business_result = @test_support.tk_error_result("denied")
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(first_response),
+    @test_support.ScriptedModelStep::Respond(final_response),
   ])
-  let outcomes : Map[String, @testkit.ScriptedToolOutcome] = Map::from_array([
-    ("probe", @testkit.ScriptedToolOutcome::OutcomeOk(business_result)),
-  ])
-  let provider = @testkit.RecordingToolProvider(
-    [@testkit.tk_tool_def("probe", "")],
+  let outcomes : Map[String, @test_support.ScriptedToolOutcome] = Map::from_array([
+      ("probe", @test_support.ScriptedToolOutcome::OutcomeOk(business_result)),
+    ],
+  )
+  let provider = @test_support.RecordingToolProvider(
+    [@test_support.tk_tool_def("probe", "")],
     outcomes,
   )
-  let obs = @testkit.RecordingObserver()
-  let store = @testkit.RecordingSessionPort()
+  let obs = @test_support.RecordingObserver()
+  let store = @test_support.RecordingSessionPort()
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", tools=[provider], sessions=[store], observers=[
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", tools=[provider], sessions=[store], observers=[
         obs,
       ]),
     ],
     config=outcome_config(),
   )
-  let turn_result = agent.run_turn(@testkit.tk_user_msg("run probe"), "s1")
+  let turn_result = agent.run_turn(@test_support.tk_user_msg("run probe"), "s1")
   let events = obs.events()
   // Find the ToolCallFailed event for tc_1 (ToolReportedError shape).
   let mut event_failure : @kernel.ToolFailure? = None
@@ -123,36 +124,37 @@ async test "t06a_business_error_event_matches_result" {
 
 ///|
 async test "t06a_success_event_is_not_error" {
-  let first_response = @testkit.tk_tool_call_response(
+  let first_response = @test_support.tk_tool_call_response(
     "safe",
     "tc_2",
     Json::null(),
   )
-  let final_response = @testkit.tk_stop_response("done")
-  let success_result = @testkit.tk_ok_result("ok")
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(first_response),
-    @testkit.ScriptedModelStep::Respond(final_response),
+  let final_response = @test_support.tk_stop_response("done")
+  let success_result = @test_support.tk_ok_result("ok")
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(first_response),
+    @test_support.ScriptedModelStep::Respond(final_response),
   ])
-  let outcomes : Map[String, @testkit.ScriptedToolOutcome] = Map::from_array([
-    ("safe", @testkit.ScriptedToolOutcome::OutcomeOk(success_result)),
-  ])
-  let provider = @testkit.RecordingToolProvider(
-    [@testkit.tk_tool_def("safe", "")],
+  let outcomes : Map[String, @test_support.ScriptedToolOutcome] = Map::from_array([
+      ("safe", @test_support.ScriptedToolOutcome::OutcomeOk(success_result)),
+    ],
+  )
+  let provider = @test_support.RecordingToolProvider(
+    [@test_support.tk_tool_def("safe", "")],
     outcomes,
   )
-  let obs = @testkit.RecordingObserver()
-  let store = @testkit.RecordingSessionPort()
+  let obs = @test_support.RecordingObserver()
+  let store = @test_support.RecordingSessionPort()
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", tools=[provider], sessions=[store], observers=[
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", tools=[provider], sessions=[store], observers=[
         obs,
       ]),
     ],
     config=outcome_config(),
   )
-  let turn_result = agent.run_turn(@testkit.tk_user_msg("run safe"), "s1")
+  let turn_result = agent.run_turn(@test_support.tk_user_msg("run safe"), "s1")
   let events = obs.events()
   assert_eq(turn_result.tool_results.length(), 1)
   assert_true(turn_result.tool_results[0] == success_result)
@@ -171,36 +173,37 @@ async test "t06a_success_event_is_not_error" {
 
 ///|
 async test "t06a_runtime_error_event_is_runtime_failure" {
-  let first_response = @testkit.tk_tool_call_response(
+  let first_response = @test_support.tk_tool_call_response(
     "boom",
     "tc_3",
     Json::null(),
   )
-  let final_response = @testkit.tk_stop_response("after")
+  let final_response = @test_support.tk_stop_response("after")
   let raised_error : @error.RuntimeError = InvocationFailed("crash")
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(first_response),
-    @testkit.ScriptedModelStep::Respond(final_response),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(first_response),
+    @test_support.ScriptedModelStep::Respond(final_response),
   ])
-  let outcomes : Map[String, @testkit.ScriptedToolOutcome] = Map::from_array([
-    ("boom", @testkit.ScriptedToolOutcome::OutcomeErr(raised_error)),
-  ])
-  let provider = @testkit.RecordingToolProvider(
-    [@testkit.tk_tool_def("boom", "")],
+  let outcomes : Map[String, @test_support.ScriptedToolOutcome] = Map::from_array([
+      ("boom", @test_support.ScriptedToolOutcome::OutcomeErr(raised_error)),
+    ],
+  )
+  let provider = @test_support.RecordingToolProvider(
+    [@test_support.tk_tool_def("boom", "")],
     outcomes,
   )
-  let obs = @testkit.RecordingObserver()
-  let store = @testkit.RecordingSessionPort()
+  let obs = @test_support.RecordingObserver()
+  let store = @test_support.RecordingSessionPort()
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", tools=[provider], sessions=[store], observers=[
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", tools=[provider], sessions=[store], observers=[
         obs,
       ]),
     ],
     config=outcome_config(),
   )
-  let result = agent.run_turn(@testkit.tk_user_msg("run boom"), "s1")
+  let result = agent.run_turn(@test_support.tk_user_msg("run boom"), "s1")
   let events = obs.events()
   let mut seen_error_event = false
   for e in events {
@@ -267,7 +270,7 @@ pub impl @port.ToolProvider for SingleToolProvider with fn execute(
 async test "t06b_collision_fails_composition" {
   // Two providers register a tool named "shared". Agent::new MUST raise
   // CompositionError::ToolCollision (fail-fast), not silently pick the last.
-  let p1 = @testkit.RecordingToolProvider(
+  let p1 = @test_support.RecordingToolProvider(
     [
       ToolDef(
         name=@kernel.ToolName::unchecked("shared"),
@@ -280,7 +283,7 @@ async test "t06b_collision_fails_composition" {
     ],
     Map::from_array([]),
   )
-  let p2 = @testkit.RecordingToolProvider(
+  let p2 = @test_support.RecordingToolProvider(
     [
       ToolDef(
         name=@kernel.ToolName::unchecked("shared"),
@@ -293,13 +296,13 @@ async test "t06b_collision_fails_composition" {
     ],
     Map::from_array([]),
   )
-  let model = @testkit.ScriptedModel([])
-  let store = @testkit.RecordingSessionPort()
+  let model = @test_support.ScriptedModel([])
+  let store = @test_support.RecordingSessionPort()
   let composition_result = Ok(
     Agent(
       exts=[
-        @testkit.tk_ext(id="model", model=Some(model)),
-        @testkit.tk_ext(id="io", tools=[p1, p2], sessions=[store]),
+        @test_support.tk_ext(id="model", model=Some(model)),
+        @test_support.tk_ext(id="io", tools=[p1, p2], sessions=[store]),
       ],
       config=outcome_config(),
     ),
@@ -325,18 +328,18 @@ async test "t06b_collision_fails_composition" {
 ///|
 async test "t06b_missing_collision_provenance_is_actionable" {
   let p1 = SingleToolProvider::{
-    tool: @testkit.tk_tool_def("shared", "first"),
+    tool: @test_support.tk_tool_def("shared", "first"),
   }
   let p2 = SingleToolProvider::{
-    tool: @testkit.tk_tool_def("shared", "second"),
+    tool: @test_support.tk_tool_def("shared", "second"),
   }
-  let model = @testkit.ScriptedModel([])
-  let store = @testkit.RecordingSessionPort()
+  let model = @test_support.ScriptedModel([])
+  let store = @test_support.RecordingSessionPort()
   let composition_result = Ok(
     Agent(
       exts=[
-        @testkit.tk_ext(id="model", model=Some(model)),
-        @testkit.tk_ext(id="io", tools=[p1, p2], sessions=[store]),
+        @test_support.tk_ext(id="model", model=Some(model)),
+        @test_support.tk_ext(id="io", tools=[p1, p2], sessions=[store]),
       ],
       config=outcome_config(),
     ),
@@ -346,7 +349,7 @@ async test "t06b_missing_collision_provenance_is_actionable" {
   match composition_result {
     Err(ToolCollision(name, msg, ..)) => {
       assert_eq(name, "shared")
-      // @testkit.tk_tool_def sets provenance=None; the message must point to
+      // @test_support.tk_tool_def sets provenance=None; the message must point to
       // ToolDef.provenance as the actionable field.
       assert_true(msg.contains("ToolDef.provenance"))
       assert_eq(model.call_count(), 0)
@@ -357,42 +360,46 @@ async test "t06b_missing_collision_provenance_is_actionable" {
 
 ///|
 async test "attachments_outcome_flows_to_result_event_and_transcript" {
-  let first_response = @testkit.tk_tool_call_response(
+  let first_response = @test_support.tk_tool_call_response(
     "probe",
     "tc_att",
     Json::null(),
   )
-  let final_response = @testkit.tk_stop_response("seen")
+  let final_response = @test_support.tk_stop_response("seen")
   let image : @kernel.Content = @kernel.Content::Image(
     media_type="image/png",
     data="aGVsbG8=",
   )
-  let outcome = @testkit.tk_ok_attachments_result("captured", attachments=[
+  let outcome = @test_support.tk_ok_attachments_result("captured", attachments=[
     image,
   ])
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(first_response),
-    @testkit.ScriptedModelStep::Respond(final_response),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(first_response),
+    @test_support.ScriptedModelStep::Respond(final_response),
   ])
-  let outcomes : Map[String, @testkit.ScriptedToolOutcome] = Map::from_array([
-    ("probe", @testkit.ScriptedToolOutcome::OutcomeOk(outcome)),
-  ])
-  let provider = @testkit.RecordingToolProvider(
-    [@testkit.tk_tool_def("probe", "")],
+  let outcomes : Map[String, @test_support.ScriptedToolOutcome] = Map::from_array([
+      ("probe", @test_support.ScriptedToolOutcome::OutcomeOk(outcome)),
+    ],
+  )
+  let provider = @test_support.RecordingToolProvider(
+    [@test_support.tk_tool_def("probe", "")],
     outcomes,
   )
-  let obs = @testkit.RecordingObserver()
-  let store = @testkit.RecordingSessionPort()
+  let obs = @test_support.RecordingObserver()
+  let store = @test_support.RecordingSessionPort()
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", tools=[provider], sessions=[store], observers=[
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", tools=[provider], sessions=[store], observers=[
         obs,
       ]),
     ],
     config=outcome_config(),
   )
-  let turn_result = agent.run_turn(@testkit.tk_user_msg("capture"), "s_att")
+  let turn_result = agent.run_turn(
+    @test_support.tk_user_msg("capture"),
+    "s_att",
+  )
   // Turn result keeps the variant and the block.
   assert_eq(turn_result.tool_results.length(), 1)
   match turn_result.tool_results[0] {

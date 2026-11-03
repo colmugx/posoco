@@ -1,25 +1,27 @@
 ///|
 async test "rate-limit resume replays persisted user without duplicating transcript" {
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Fail(
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Fail(
       RateLimited({
         message: "quota exhausted",
         reset_at_ms: Some(1000L),
         provider_code: Some("429"),
       }),
     ),
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("resumed")),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("resumed"),
+    ),
   ])
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", sessions=[store]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store]),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
   let first = Ok(
-    agent.run_turn(@testkit.tk_user_msg("original task"), "resume-user"),
+    agent.run_turn(@test_support.tk_user_msg("original task"), "resume-user"),
   ) catch {
     error => Err(error)
   }
@@ -36,10 +38,12 @@ async test "rate-limit resume replays persisted user without duplicating transcr
   assert_eq(model.received_messages.length(), 2)
   let retried = model.received_messages[1]
   assert_eq(retried.length(), 1)
-  assert_true(retried[0] == @testkit.tk_user_msg("original task"))
+  assert_true(retried[0] == @test_support.tk_user_msg("original task"))
   let persisted = store.store["resume-user"]
   assert_eq(persisted.messages.length(), 2)
-  assert_true(persisted.messages[0] == @testkit.tk_user_msg("original task"))
+  assert_true(
+    persisted.messages[0] == @test_support.tk_user_msg("original task"),
+  )
   assert_true(
     persisted.messages[1] is AssistantMessage(content=[Text("resumed"), ..], ..),
   )
@@ -47,13 +51,15 @@ async test "rate-limit resume replays persisted user without duplicating transcr
 
 ///|
 async test "rate-limit resume appends literal continue after persisted progress" {
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("continued")),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("continued"),
+    ),
   ])
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   let seeded : Session = {
     messages: [
-      @testkit.tk_user_msg("original task"),
+      @test_support.tk_user_msg("original task"),
       AssistantMessage(
         content=[Content::Text("partial progress")],
         reasoning=None,
@@ -66,18 +72,18 @@ async test "rate-limit resume appends literal continue after persisted progress"
   store.seed("resume-progress", seeded)
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", sessions=[store]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store]),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
   ignore(agent.resume_turn("resume-progress"))
   let request = model.received_messages[0]
   assert_eq(request.length(), 3)
-  assert_true(request[2] == @testkit.tk_user_msg("continue"))
+  assert_true(request[2] == @test_support.tk_user_msg("continue"))
   let persisted = store.store["resume-progress"]
   assert_eq(persisted.messages.length(), 4)
-  assert_true(persisted.messages[2] == @testkit.tk_user_msg("continue"))
+  assert_true(persisted.messages[2] == @test_support.tk_user_msg("continue"))
   assert_true(
     persisted.messages[3]
     is AssistantMessage(content=[Text("continued"), ..], ..),
@@ -86,38 +92,42 @@ async test "rate-limit resume appends literal continue after persisted progress"
 
 ///|
 async test "rate-limit resume after tool progress appends continue" {
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(
-      @testkit.tk_tool_call_response("echo", "call_1", Json::null()),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_tool_call_response("echo", "call_1", Json::null()),
     ),
-    @testkit.ScriptedModelStep::Fail(
+    @test_support.ScriptedModelStep::Fail(
       RateLimited({
         message: "quota after tool progress",
         reset_at_ms: Some(2000L),
         provider_code: Some("429"),
       }),
     ),
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("finished")),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("finished"),
+    ),
   ])
-  let tools = @testkit.RecordingToolProvider(
-    [@testkit.tk_tool_def("echo", "echo")],
+  let tools = @test_support.RecordingToolProvider(
+    [@test_support.tk_tool_def("echo", "echo")],
     Map::from_array([
       (
         "echo",
-        @testkit.ScriptedToolOutcome::OutcomeOk(@testkit.tk_ok_result("echoed")),
+        @test_support.ScriptedToolOutcome::OutcomeOk(
+          @test_support.tk_ok_result("echoed"),
+        ),
       ),
     ]),
   )
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", tools=[tools], sessions=[store]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", tools=[tools], sessions=[store]),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
   let first = Ok(
-    agent.run_turn(@testkit.tk_user_msg("do work"), "resume-progress-real"),
+    agent.run_turn(@test_support.tk_user_msg("do work"), "resume-progress-real"),
   ) catch {
     error => Err(error)
   }
@@ -134,8 +144,8 @@ async test "rate-limit resume after tool progress appends continue" {
   ignore(agent.resume_turn("resume-progress-real"))
   let resumed_request = model.received_messages[2]
   assert_eq(resumed_request.length(), 4)
-  assert_true(resumed_request[0] == @testkit.tk_user_msg("do work"))
-  assert_true(resumed_request[3] == @testkit.tk_user_msg("continue"))
+  assert_true(resumed_request[0] == @test_support.tk_user_msg("do work"))
+  assert_true(resumed_request[3] == @test_support.tk_user_msg("continue"))
   let persisted = store.store["resume-progress-real"]
   assert_eq(persisted.messages.length(), 5)
   assert_true(
@@ -168,12 +178,14 @@ impl @port.SessionPort for SaveFailingStore with fn save(self, _id, _session) ->
 
 ///|
 async test "rate-limit failure persists best-effort and reports save failure as secondary" {
-  let model = @testkit.ScriptedModel([
+  let model = @test_support.ScriptedModel([
     // Usage on the completed step gives the Puppet a context reading, so the
     // failed turn's terminal save carries changed metadata (a real store
     // write) instead of collapsing into the incremental checkpoints.
-    @testkit.ScriptedModelStep::Respond(scope_test_tool_call_with_usage(10)),
-    @testkit.ScriptedModelStep::Fail(
+    @test_support.ScriptedModelStep::Respond(
+      scope_test_tool_call_with_usage(10),
+    ),
+    @test_support.ScriptedModelStep::Fail(
       RateLimited({
         message: "quota exhausted",
         reset_at_ms: Some(1000L),
@@ -181,22 +193,24 @@ async test "rate-limit failure persists best-effort and reports save failure as 
       }),
     ),
   ])
-  let tools = @testkit.RecordingToolProvider(
-    [@testkit.tk_tool_def("echo", "echo")],
+  let tools = @test_support.RecordingToolProvider(
+    [@test_support.tk_tool_def("echo", "echo")],
     Map::from_array([
       (
         "echo",
-        @testkit.ScriptedToolOutcome::OutcomeOk(@testkit.tk_ok_result("echoed")),
+        @test_support.ScriptedToolOutcome::OutcomeOk(
+          @test_support.tk_ok_result("echoed"),
+        ),
       ),
     ]),
   )
   let store = SaveFailingStore::{ saves: 0, fail_from: 4, }
-  let observer = @testkit.RecordingObserver()
+  let observer = @test_support.RecordingObserver()
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="tools", tools=[tools]),
-      @testkit.tk_ext(id="io", sessions=[store], observers=[observer]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="tools", tools=[tools]),
+      @test_support.tk_ext(id="io", sessions=[store], observers=[observer]),
     ],
     config=agent_config(
       max_tool_rounds=Some(10),
@@ -205,7 +219,7 @@ async test "rate-limit failure persists best-effort and reports save failure as 
     ),
   )
   let first = Ok(
-    agent.run_turn(@testkit.tk_user_msg("original task"), "failed-save"),
+    agent.run_turn(@test_support.tk_user_msg("original task"), "failed-save"),
   ) catch {
     error => Err(error)
   }

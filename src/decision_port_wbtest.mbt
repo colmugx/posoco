@@ -52,28 +52,30 @@ test "decision/validation_rejects_malformed_probability" {
 test "decision/composition_is_optional_and_gated" {
   let probe_with = DecisionLifecycleProbe::{ seen: false, }
   let probe_without = DecisionLifecycleProbe::{ seen: false, }
-  let decision = @testkit.ScriptedDecisionPort([])
+  let decision = @test_support.ScriptedDecisionPort([])
   ignore(
     Agent(
       exts=[
-        @testkit.tk_ext(
+        @test_support.tk_ext(
           id="model",
           model=Some(
-            @testkit.ScriptedModel([
-              @testkit.ScriptedModelStep::Respond(
-                @testkit.tk_stop_response("ok"),
+            @test_support.ScriptedModel([
+              @test_support.ScriptedModelStep::Respond(
+                @test_support.tk_stop_response("ok"),
               ),
             ]),
           ),
         ),
-        @testkit.tk_ext(id="io", sessions=[@testkit.RecordingSessionPort()]),
-        @testkit.tk_ext(id="decision", decision=Some(decision)),
-        @testkit.tk_ext(
+        @test_support.tk_ext(id="io", sessions=[
+          @test_support.RecordingSessionPort(),
+        ]),
+        @test_support.tk_ext(id="decision", decision=Some(decision)),
+        @test_support.tk_ext(
           id="consumer",
           lifecycle=[probe_with as &@port.Lifecycle],
           requires=[@port.Capability::Decision],
         ),
-        @testkit.tk_ext(id="undeclared", lifecycle=[
+        @test_support.tk_ext(id="undeclared", lifecycle=[
           probe_without as &@port.Lifecycle,
         ]),
       ],
@@ -82,9 +84,9 @@ test "decision/composition_is_optional_and_gated" {
   )
   assert_true(probe_with.seen)
   assert_false(probe_without.seen)
-  let model : &@port.ModelPort = @testkit.ScriptedModel([])
-  let ui : &@port.UiPort = @testkit.RecordingUiPort::new_unsupported()
-  let absent = @testkit.tk_view(
+  let model : &@port.ModelPort = @test_support.ScriptedModel([])
+  let ui : &@port.UiPort = @test_support.RecordingUiPort::new_unsupported()
+  let absent = @test_support.tk_view(
     requires=[@port.Capability::Decision],
     model~,
     ui~,
@@ -94,24 +96,26 @@ test "decision/composition_is_optional_and_gated" {
 
 ///|
 test "decision/composition_rejects_multiple_providers" {
-  let a = @testkit.ScriptedDecisionPort([])
-  let b = @testkit.ScriptedDecisionPort([])
+  let a = @test_support.ScriptedDecisionPort([])
+  let b = @test_support.ScriptedDecisionPort([])
   try
     Agent(
       exts=[
-        @testkit.tk_ext(
+        @test_support.tk_ext(
           id="model",
           model=Some(
-            @testkit.ScriptedModel([
-              @testkit.ScriptedModelStep::Respond(
-                @testkit.tk_stop_response("ok"),
+            @test_support.ScriptedModel([
+              @test_support.ScriptedModelStep::Respond(
+                @test_support.tk_stop_response("ok"),
               ),
             ]),
           ),
         ),
-        @testkit.tk_ext(id="io", sessions=[@testkit.RecordingSessionPort()]),
-        @testkit.tk_ext(id="decision-a", decision=Some(a)),
-        @testkit.tk_ext(id="decision-b", decision=Some(b)),
+        @test_support.tk_ext(id="io", sessions=[
+          @test_support.RecordingSessionPort(),
+        ]),
+        @test_support.tk_ext(id="decision-a", decision=Some(a)),
+        @test_support.tk_ext(id="decision-b", decision=Some(b)),
       ],
       config=agent_config(max_tool_rounds=Some(10)),
     )

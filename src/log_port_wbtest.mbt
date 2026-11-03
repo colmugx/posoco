@@ -45,28 +45,30 @@ test "log/record_validation_rejects_empty_machine_fields" {
 test "log/composition_is_optional_and_gated" {
   let probe_with = LogLifecycleProbe::{ seen: false, }
   let probe_without = LogLifecycleProbe::{ seen: false, }
-  let log = @testkit.RecordingLogPort()
+  let log = @test_support.RecordingLogPort()
   ignore(
     Agent(
       exts=[
-        @testkit.tk_ext(
+        @test_support.tk_ext(
           id="model",
           model=Some(
-            @testkit.ScriptedModel([
-              @testkit.ScriptedModelStep::Respond(
-                @testkit.tk_stop_response("ok"),
+            @test_support.ScriptedModel([
+              @test_support.ScriptedModelStep::Respond(
+                @test_support.tk_stop_response("ok"),
               ),
             ]),
           ),
         ),
-        @testkit.tk_ext(id="io", sessions=[@testkit.RecordingSessionPort()]),
-        @testkit.tk_ext(id="log", log=Some(log)),
-        @testkit.tk_ext(
+        @test_support.tk_ext(id="io", sessions=[
+          @test_support.RecordingSessionPort(),
+        ]),
+        @test_support.tk_ext(id="log", log=Some(log)),
+        @test_support.tk_ext(
           id="consumer",
           lifecycle=[probe_with as &@port.Lifecycle],
           requires=[@port.Capability::Log],
         ),
-        @testkit.tk_ext(id="undeclared", lifecycle=[
+        @test_support.tk_ext(id="undeclared", lifecycle=[
           probe_without as &@port.Lifecycle,
         ]),
       ],
@@ -75,32 +77,38 @@ test "log/composition_is_optional_and_gated" {
   )
   assert_true(probe_with.seen)
   assert_false(probe_without.seen)
-  let model : &@port.ModelPort = @testkit.ScriptedModel([])
-  let ui : &@port.UiPort = @testkit.RecordingUiPort::new_unsupported()
-  let absent = @testkit.tk_view(requires=[@port.Capability::Log], model~, ui~)
+  let model : &@port.ModelPort = @test_support.ScriptedModel([])
+  let ui : &@port.UiPort = @test_support.RecordingUiPort::new_unsupported()
+  let absent = @test_support.tk_view(
+    requires=[@port.Capability::Log],
+    model~,
+    ui~,
+  )
   assert_true(absent.log() is None)
 }
 
 ///|
 test "log/composition_rejects_multiple_providers" {
-  let a = @testkit.RecordingLogPort()
-  let b = @testkit.RecordingLogPort()
+  let a = @test_support.RecordingLogPort()
+  let b = @test_support.RecordingLogPort()
   try
     Agent(
       exts=[
-        @testkit.tk_ext(
+        @test_support.tk_ext(
           id="model",
           model=Some(
-            @testkit.ScriptedModel([
-              @testkit.ScriptedModelStep::Respond(
-                @testkit.tk_stop_response("ok"),
+            @test_support.ScriptedModel([
+              @test_support.ScriptedModelStep::Respond(
+                @test_support.tk_stop_response("ok"),
               ),
             ]),
           ),
         ),
-        @testkit.tk_ext(id="io", sessions=[@testkit.RecordingSessionPort()]),
-        @testkit.tk_ext(id="log-a", log=Some(a)),
-        @testkit.tk_ext(id="log-b", log=Some(b)),
+        @test_support.tk_ext(id="io", sessions=[
+          @test_support.RecordingSessionPort(),
+        ]),
+        @test_support.tk_ext(id="log-a", log=Some(a)),
+        @test_support.tk_ext(id="log-b", log=Some(b)),
       ],
       config=agent_config(max_tool_rounds=Some(10)),
     )

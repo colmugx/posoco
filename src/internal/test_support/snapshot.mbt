@@ -7,6 +7,19 @@
 /// snapshots, and fail loudly when a script is exhausted.
 
 ///|
+/// Deep-copy a session so a fake never aliases caller-owned messages or
+/// metadata.
+fn snapshot_session(
+  messages : Array[@kernel.Message],
+  metadata : Map[String, Json],
+) -> @types.Session {
+  {
+    messages: @message_snapshot.snapshot_messages(messages),
+    metadata: @message_snapshot.snapshot_metadata(metadata),
+  }
+}
+
+///|
 /// Deep-copy a `@kernel.ToolDef`.
 pub fn snapshot_tool_def(tool : @kernel.ToolDef) -> @kernel.ToolDef {
   @kernel.ToolDef(

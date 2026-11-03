@@ -1,9 +1,9 @@
 ///|
 async test "tool_catalog/events_distinguish_commits_captures_and_cleanup_without_error_payloads" {
   let publisher = ManualPublisher::new()
-  let observer = @testkit.RecordingObserver()
-  let provider = @testkit.RecordingToolProvider(
-    [@testkit.tk_tool_def("leaf", "leaf")],
+  let observer = @test_support.RecordingObserver()
+  let provider = @test_support.RecordingToolProvider(
+    [@test_support.tk_tool_def("leaf", "leaf")],
     Map([]),
   )
   let probe = RetireProbe::RetireProbe(
@@ -12,29 +12,29 @@ async test "tool_catalog/events_distinguish_commits_captures_and_cleanup_without
   )
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(
+      @test_support.tk_ext(
         id="model",
         model=Some(
-          @testkit.ScriptedModel([
-            @testkit.ScriptedModelStep::Respond(
-              @testkit.tk_stop_response("one"),
+          @test_support.ScriptedModel([
+            @test_support.ScriptedModelStep::Respond(
+              @test_support.tk_stop_response("one"),
             ),
-            @testkit.ScriptedModelStep::Respond(
-              @testkit.tk_stop_response("two"),
+            @test_support.ScriptedModelStep::Respond(
+              @test_support.tk_stop_response("two"),
             ),
           ]),
         ),
         observers=[observer],
       ),
-      @testkit.tk_ext(id="owner", lifecycle=[publisher], requires=[
+      @test_support.tk_ext(id="owner", lifecycle=[publisher], requires=[
         @port.ToolContribution,
       ]),
     ],
     config=@agent.agent_config(max_tool_rounds=Some(10)),
   )
   ignore(publisher.capability().replace(provider~, retire=probe.callback()))
-  ignore(agent.run_turn(@testkit.tk_user_msg("one"), "catalog-events"))
-  ignore(agent.run_turn(@testkit.tk_user_msg("two"), "catalog-events"))
+  ignore(agent.run_turn(@test_support.tk_user_msg("one"), "catalog-events"))
+  ignore(agent.run_turn(@test_support.tk_user_msg("two"), "catalog-events"))
   guard publisher.capability().withdraw() is Err(@port.CleanupPending(..)) else {
     fail("expected cleanup failure")
   }

@@ -33,7 +33,7 @@ priv struct ForegroundAbortModel {
 fn ForegroundAbortModel::new() -> ForegroundAbortModel {
   {
     release: Queue(kind=Unbounded),
-    response: @testkit.tk_tool_call_response(
+    response: @test_support.tk_tool_call_response(
       "abort-tool",
       "abort-call",
       Json::null(),
@@ -199,7 +199,7 @@ impl @port.ModelPort for CompactBusyModel with fn chat(
   _options : @types.ChatOptions,
   _stream : @types.StreamMode,
 ) -> @kernel.ModelCallResult raise @error.ModelError {
-  @testkit.tk_stop_response("turn must not enter while compact is busy")
+  @test_support.tk_stop_response("turn must not enter while compact is busy")
 }
 
 ///|
@@ -376,17 +376,21 @@ fn foreground_abort_tasks(
 ///|
 async test "managed_tasks/run_scoped_completes_and_waits" {
   let capture = TaskCapture::new()
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("ok")),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("ok"),
+    ),
   ])
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", sessions=[store]),
-      @testkit.tk_ext(id="tasks", lifecycle=[capture as &@port.Lifecycle], requires=[
-        @port.Capability::Tasks,
-      ]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store]),
+      @test_support.tk_ext(
+        id="tasks",
+        lifecycle=[capture as &@port.Lifecycle],
+        requires=[@port.Capability::Tasks],
+      ),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
@@ -427,16 +431,18 @@ async test "managed_tasks/run_scoped_completes_and_waits" {
 ///|
 fn task_test_agent(
   model : &@port.ModelPort,
-  store : @testkit.RecordingSessionPort,
+  store : @test_support.RecordingSessionPort,
   capture : TaskCapture,
 ) -> Agent raise @error.CompositionError {
   Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", sessions=[store]),
-      @testkit.tk_ext(id="tasks", lifecycle=[capture as &@port.Lifecycle], requires=[
-        @port.Capability::Tasks,
-      ]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store]),
+      @test_support.tk_ext(
+        id="tasks",
+        lifecycle=[capture as &@port.Lifecycle],
+        requires=[@port.Capability::Tasks],
+      ),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
@@ -496,11 +502,15 @@ fn task_test_has_marker(session : @types.Session, marker : String) -> Bool {
 ///|
 async test "managed_tasks/outcomes_route_to_fixed_session" {
   let capture = TaskCapture::new()
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("B")),
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("A")),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("B"),
+    ),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("A"),
+    ),
   ])
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   let agent = task_test_agent(model as &@port.ModelPort, store, capture)
   agent.run_scoped(async fn(agent) {
     let a = task_test_submit(capture, "session_a", "a")
@@ -509,11 +519,11 @@ async test "managed_tasks/outcomes_route_to_fixed_session" {
     let b_marker = "[posoco-task-outcome id=\{b.receipt().id}]"
     ignore(a.wait())
     ignore(b.wait())
-    ignore(agent.run_turn(@testkit.tk_user_msg("b input"), "session_b"))
+    ignore(agent.run_turn(@test_support.tk_user_msg("b input"), "session_b"))
     let b_session = store.store["session_b"]
     assert_true(task_test_has_marker(b_session, b_marker))
     assert_false(task_test_has_marker(b_session, a_marker))
-    ignore(agent.run_turn(@testkit.tk_user_msg("a input"), "session_a"))
+    ignore(agent.run_turn(@test_support.tk_user_msg("a input"), "session_a"))
     let a_session = store.store["session_a"]
     assert_true(task_test_has_marker(a_session, a_marker))
   })
@@ -522,16 +532,16 @@ async test "managed_tasks/outcomes_route_to_fixed_session" {
 ///|
 async test "managed_tasks/long_horizon_background_outcomes_are_exactly_once" {
   let capture = TaskCapture::new()
-  let steps : Array[@testkit.ScriptedModelStep] = []
+  let steps : Array[@test_support.ScriptedModelStep] = []
   for i = 0; i < 32; i = i + 1 {
     steps.push(
-      @testkit.ScriptedModelStep::Respond(
-        @testkit.tk_stop_response("turn-\{i}"),
+      @test_support.ScriptedModelStep::Respond(
+        @test_support.tk_stop_response("turn-\{i}"),
       ),
     )
   }
-  let model = @testkit.ScriptedModel(steps)
-  let store = @testkit.RecordingSessionPort()
+  let model = @test_support.ScriptedModel(steps)
+  let store = @test_support.RecordingSessionPort()
   let agent = task_test_agent(model as &@port.ModelPort, store, capture)
   let markers : Array[String] = []
   agent.run_scoped(async fn(agent) {
@@ -546,7 +556,10 @@ async test "managed_tasks/long_horizon_background_outcomes_are_exactly_once" {
         ignore(handle.wait())
       }
       ignore(
-        agent.run_turn(@testkit.tk_user_msg("turn-\{turn}"), "long_horizon"),
+        agent.run_turn(
+          @test_support.tk_user_msg("turn-\{turn}"),
+          "long_horizon",
+        ),
       )
     }
   })
@@ -575,11 +588,15 @@ async test "managed_tasks/long_horizon_background_outcomes_are_exactly_once" {
 ///|
 async test "managed_tasks/save_failure_retains_one_pending_outcome" {
   let capture = TaskCapture::new()
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("first")),
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("retry")),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("first"),
+    ),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("retry"),
+    ),
   ])
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   let agent = task_test_agent(model as &@port.ModelPort, store, capture)
   agent.run_scoped(async fn(agent) {
     let handle = task_test_submit(capture, "session_save", "save")
@@ -587,13 +604,13 @@ async test "managed_tasks/save_failure_retains_one_pending_outcome" {
     ignore(handle.wait())
     store.fail_save("session_save")
     let first : Result[@types.TurnResult, @error.AgentError] = Ok(
-      agent.run_turn(@testkit.tk_user_msg("first"), "session_save"),
+      agent.run_turn(@test_support.tk_user_msg("first"), "session_save"),
     ) catch {
       error => Err(error)
     }
     guard first is Err(_) else { fail("first save should fail") }
     store.heal_save("session_save")
-    ignore(agent.run_turn(@testkit.tk_user_msg("retry"), "session_save"))
+    ignore(agent.run_turn(@test_support.tk_user_msg("retry"), "session_save"))
     let saved = store.store["session_save"]
     let markers = saved.messages
       .iter()
@@ -611,22 +628,24 @@ async test "managed_tasks/save_failure_retains_one_pending_outcome" {
 async test "managed_tasks/abort_cancels_overlapping_foreground_and_keeps_background" {
   let model = ForegroundAbortModel::new()
   let probe = ForegroundAbortProbe::new()
-  let store = @testkit.RecordingSessionPort()
-  let tools = @testkit.RecordingToolProvider(
-    [@testkit.tk_tool_def("abort-tool", "abort test tool")],
+  let store = @test_support.RecordingSessionPort()
+  let tools = @test_support.RecordingToolProvider(
+    [@test_support.tk_tool_def("abort-tool", "abort test tool")],
     Map::from_array([
       (
         "abort-tool",
-        @testkit.ScriptedToolOutcome::OutcomeOk(@testkit.tk_ok_result("unused")),
+        @test_support.ScriptedToolOutcome::OutcomeOk(
+          @test_support.tk_ok_result("unused"),
+        ),
       ),
     ]),
   )
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="tools", tools=[tools]),
-      @testkit.tk_ext(id="io", sessions=[store]),
-      @testkit.tk_ext(
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="tools", tools=[tools]),
+      @test_support.tk_ext(id="io", sessions=[store]),
+      @test_support.tk_ext(
         id="task-probe",
         hooks=[probe as &@port.PipelineHook],
         lifecycle=[probe as &@port.Lifecycle],
@@ -640,7 +659,7 @@ async test "managed_tasks/abort_cancels_overlapping_foreground_and_keeps_backgro
     @async.with_task_group(async fn(group) {
       let turn = group.spawn(async fn() {
         let result : Result[@types.TurnResult, Error] = Ok(
-          agent.run_turn(@testkit.tk_user_msg("abort me"), "abort-session"),
+          agent.run_turn(@test_support.tk_user_msg("abort me"), "abort-session"),
         ) catch {
           error => Err(error)
         }
@@ -677,10 +696,12 @@ async test "managed_tasks/abort_cancels_overlapping_foreground_and_keeps_backgro
 
 ///|
 async test "managed_tasks/rejects_malformed_applied_ids_before_model_call" {
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("healed")),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("healed"),
+    ),
   ])
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   store.seed("malformed", {
     messages: [],
     metadata: Map::from_array([
@@ -689,13 +710,16 @@ async test "managed_tasks/rejects_malformed_applied_ids_before_model_call" {
   })
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", sessions=[store]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store]),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
   let result : Result[@types.TurnResult, @error.AgentError] = Ok(
-    agent.run_turn(@testkit.tk_user_msg("must fail before model"), "malformed"),
+    agent.run_turn(
+      @test_support.tk_user_msg("must fail before model"),
+      "malformed",
+    ),
   ) catch {
     error => Err(error)
   }
@@ -712,16 +736,16 @@ async test "managed_tasks/rejects_malformed_applied_ids_before_model_call" {
 ///|
 async test "managed_tasks/compact_keeps_busy_guard_through_blocked_operation" {
   let model = CompactBusyModel::new()
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(
+      @test_support.tk_ext(
         id="model",
         model=Some(model),
         lifecycle=[model as &@port.Lifecycle],
         requires=[@port.Capability::Tasks],
       ),
-      @testkit.tk_ext(id="io", sessions=[store]),
+      @test_support.tk_ext(id="io", sessions=[store]),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
@@ -740,7 +764,7 @@ async test "managed_tasks/compact_keeps_busy_guard_through_blocked_operation" {
       model.release()
       ignore(model.cleanup_started.get())
       let turn_result : Result[@types.TurnResult, Error] = Ok(
-        agent.run_turn(@testkit.tk_user_msg("busy turn"), "compact-busy"),
+        agent.run_turn(@test_support.tk_user_msg("busy turn"), "compact-busy"),
       ) catch {
         error => Err(error)
       }
@@ -755,7 +779,7 @@ async test "managed_tasks/compact_keeps_busy_guard_through_blocked_operation" {
       ignore(compact.wait())
     })
     let next = agent.run_turn(
-      @testkit.tk_user_msg("after compact"),
+      @test_support.tk_user_msg("after compact"),
       "compact-busy",
     )
     guard next.message
@@ -777,10 +801,12 @@ async test "managed_tasks/compact_keeps_busy_guard_through_blocked_operation" {
 ///|
 async test "managed_tasks/timeout_survives_masked_raise" {
   let capture = TaskCapture::new()
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("unused")),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("unused"),
+    ),
   ])
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   let agent = task_test_agent(model as &@port.ModelPort, store, capture)
   agent.run_scoped(async fn(_agent) {
     let tasks = match capture.tasks {
@@ -819,10 +845,12 @@ async test "managed_tasks/timeout_survives_masked_raise" {
 ///|
 async test "managed_tasks/timeout_survives_masked_return" {
   let capture = TaskCapture::new()
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("unused")),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("unused"),
+    ),
   ])
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   let agent = task_test_agent(model as &@port.ModelPort, store, capture)
   agent.run_scoped(async fn(_agent) {
     let tasks = match capture.tasks {
@@ -860,10 +888,12 @@ async test "managed_tasks/timeout_survives_masked_return" {
 ///|
 async test "managed_tasks/business_error_survives_cancel_guard" {
   let capture = TaskCapture::new()
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("unused")),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("unused"),
+    ),
   ])
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   let agent = task_test_agent(model as &@port.ModelPort, store, capture)
   agent.run_scoped(async fn(_agent) {
     let tasks = match capture.tasks {

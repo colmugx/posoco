@@ -1,8 +1,8 @@
 ///|
 /// Whitebox tests for the root package. All fixtures use canonical kernel
 /// types directly; the scripted/recording fakes come from the
-/// in-package testkit (@testkit.ScriptedModel, @testkit.RecordingToolProvider,
-/// @testkit.RecordingSessionPort, @testkit.RecordingObserver).
+/// in-package testkit (@test_support.ScriptedModel, @test_support.RecordingToolProvider,
+/// @test_support.RecordingSessionPort, @test_support.RecordingObserver).
 
 ///|
 struct PolicyRejectHook {}
@@ -92,18 +92,18 @@ fn make_tool_call(id : String, name : String) -> @kernel.ToolCall {
 
 ///|
 /// Helper: empty tool provider (no tools, no execution)
-fn empty_tools() -> @testkit.RecordingToolProvider {
-  @testkit.RecordingToolProvider([], Map::from_array([]))
+fn empty_tools() -> @test_support.RecordingToolProvider {
+  @test_support.RecordingToolProvider([], Map::from_array([]))
 }
 
 ///|
 async test "tool_failure_non_fatal" {
   let tc = make_tool_call("call_1", "bash")
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(tool_response([tc])),
-    @testkit.ScriptedModelStep::Respond(stop_response("error handled")),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(tool_response([tc])),
+    @test_support.ScriptedModelStep::Respond(stop_response("error handled")),
   ])
-  let tools = @testkit.RecordingToolProvider(
+  let tools = @test_support.RecordingToolProvider(
     [
       ToolDef(
         name=@kernel.ToolName::unchecked("bash"),
@@ -117,18 +117,18 @@ async test "tool_failure_non_fatal" {
     Map::from_array([
       (
         "bash",
-        @testkit.ScriptedToolOutcome::OutcomeErr(InvocationFailed("boom")),
+        @test_support.ScriptedToolOutcome::OutcomeErr(InvocationFailed("boom")),
       ),
     ]),
   )
-  let store = @testkit.RecordingSessionPort()
-  let observer = @testkit.RecordingObserver()
+  let store = @test_support.RecordingSessionPort()
+  let observer = @test_support.RecordingObserver()
   let config = make_config()
 
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", tools=[tools], sessions=[store], observers=[
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", tools=[tools], sessions=[store], observers=[
         observer,
       ]),
     ],
@@ -142,9 +142,9 @@ async test "tool_failure_non_fatal" {
 ///|
 async test "hook_reject_skips_tool_and_feeds_back" {
   let tc = make_tool_call("call_1", "bash")
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(tool_response([tc])),
-    @testkit.ScriptedModelStep::Respond(stop_response("adjusted")),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(tool_response([tc])),
+    @test_support.ScriptedModelStep::Respond(stop_response("adjusted")),
   ])
   let tools = RecordingExecProvider::{
     tools: [
@@ -162,15 +162,15 @@ async test "hook_reject_skips_tool_and_feeds_back" {
     ]),
     executed: [],
   }
-  let store = @testkit.RecordingSessionPort()
-  let observer = @testkit.RecordingObserver()
+  let store = @test_support.RecordingSessionPort()
+  let observer = @test_support.RecordingObserver()
   let config = make_config()
   let reject_hook = PolicyRejectHook::{ }
 
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(
         id="io",
         tools=[tools],
         hooks=[reject_hook],
@@ -215,28 +215,28 @@ impl @port.PipelineHook for GateByNameHook with fn before_tool(
 async test "hook_reject_steers_model_to_allowed_tool" {
   let bash_call = make_tool_call("call_1", "bash")
   let read_call = make_tool_call("call_2", "read")
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(tool_response([bash_call])),
-    @testkit.ScriptedModelStep::Respond(tool_response([read_call])),
-    @testkit.ScriptedModelStep::Respond(stop_response("done")),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(tool_response([bash_call])),
+    @test_support.ScriptedModelStep::Respond(tool_response([read_call])),
+    @test_support.ScriptedModelStep::Respond(stop_response("done")),
   ])
   let tools = RecordingExecProvider::{
     tools: [
-      @testkit.tk_tool_def("bash", "shell"),
-      @testkit.tk_tool_def("read", "read files"),
+      @test_support.tk_tool_def("bash", "shell"),
+      @test_support.tk_tool_def("read", "read files"),
     ],
     results: Map::from_array([
       ("read", Ok(Success(content="file contents", structured=None))),
     ]),
     executed: [],
   }
-  let store = @testkit.RecordingSessionPort()
-  let observer = @testkit.RecordingObserver()
+  let store = @test_support.RecordingSessionPort()
+  let observer = @test_support.RecordingObserver()
 
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(
         id="io",
         tools=[tools],
         hooks=[GateByNameHook::{ blocked: ["bash"], }],
@@ -265,22 +265,22 @@ async fn run_bash_with_hooks(
   hooks : Array[&@port.PipelineHook],
 ) -> (RecordingExecProvider, TurnResult) {
   let tc = make_tool_call("call_1", "bash")
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(tool_response([tc])),
-    @testkit.ScriptedModelStep::Respond(stop_response("done")),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(tool_response([tc])),
+    @test_support.ScriptedModelStep::Respond(stop_response("done")),
   ])
   let tools = RecordingExecProvider::{
-    tools: [@testkit.tk_tool_def("bash", "shell")],
+    tools: [@test_support.tk_tool_def("bash", "shell")],
     results: Map::from_array([
       ("bash", Ok(Success(content="ran", structured=None))),
     ]),
     executed: [],
   }
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", tools=[tools], hooks~, sessions=[store], observers=[]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", tools=[tools], hooks~, sessions=[store], observers=[]),
     ],
     config=make_config(),
   )
@@ -378,9 +378,9 @@ impl @port.PipelineHook for GateHook with fn before_tool(
 ///|
 async test "async_before_tool_gates_tool_wave" {
   let tc = make_tool_call("call_1", "echo")
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(tool_response([tc])),
-    @testkit.ScriptedModelStep::Respond(stop_response("done")),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(tool_response([tc])),
+    @test_support.ScriptedModelStep::Respond(stop_response("done")),
   ])
   let tools = RecordingExecProvider::{
     tools: [
@@ -398,14 +398,14 @@ async test "async_before_tool_gates_tool_wave" {
     ]),
     executed: [],
   }
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   let entered : @aqueue.Queue[Int32] = Queue(kind=Unbounded)
   let release : @aqueue.Queue[Int32] = Queue(kind=Unbounded)
   let gate_hook = GateHook::{ entered, release, }
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", tools=[tools], hooks=[gate_hook], sessions=[
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", tools=[tools], hooks=[gate_hook], sessions=[
         store,
       ]),
     ],
@@ -449,11 +449,11 @@ impl @port.PipelineHook for RaisingToolHook with fn before_tool(
 ///|
 async test "hook_before_tool_raise_aborts_run" {
   let tc = make_tool_call("call_1", "bash")
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(tool_response([tc])),
-    @testkit.ScriptedModelStep::Respond(stop_response("should not reach")),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(tool_response([tc])),
+    @test_support.ScriptedModelStep::Respond(stop_response("should not reach")),
   ])
-  let tools = @testkit.RecordingToolProvider(
+  let tools = @test_support.RecordingToolProvider(
     [
       ToolDef(
         name=@kernel.ToolName::unchecked("bash"),
@@ -467,19 +467,22 @@ async test "hook_before_tool_raise_aborts_run" {
     Map::from_array([
       (
         "bash",
-        @testkit.ScriptedToolOutcome::OutcomeOk(
+        @test_support.ScriptedToolOutcome::OutcomeOk(
           Success(content="ok", structured=None),
         ),
       ),
     ]),
   )
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", tools=[tools], hooks=[RaisingToolHook::{ }], sessions=[
-        store,
-      ]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(
+        id="io",
+        tools=[tools],
+        hooks=[RaisingToolHook::{ }],
+        sessions=[store],
+      ),
     ],
     config=make_config(),
   )
@@ -505,8 +508,8 @@ async test "reasoning_raw_replayed_verbatim_into_saved_session" {
       ]),
     ),
   ])
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond({
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond({
       completion: Completion(
         content=[Text("done")],
         tool_calls=[],
@@ -517,11 +520,11 @@ async test "reasoning_raw_replayed_verbatim_into_saved_session" {
       processed_messages: [],
     }),
   ])
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", sessions=[store]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store]),
     ],
     config=make_config(),
   )
@@ -549,40 +552,51 @@ async test "reasoning_raw_replayed_verbatim_into_saved_session" {
 /// ToolLoopExceeded.
 async test "unbounded_tool_rounds_complete_long_turn" {
   let rounds = 40
-  let steps : Array[@testkit.ScriptedModelStep] = []
+  let steps : Array[@test_support.ScriptedModelStep] = []
   for i in 0..<rounds {
     steps.push(
-      @testkit.ScriptedModelStep::Respond(
-        @testkit.tk_tool_call_response("probe", "unbounded_\{i}", Json::null()),
+      @test_support.ScriptedModelStep::Respond(
+        @test_support.tk_tool_call_response(
+          "probe",
+          "unbounded_\{i}",
+          Json::null(),
+        ),
       ),
     )
   }
   steps.push(
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("done"),
+    ),
   )
-  let model = @testkit.ScriptedModel(steps)
-  let tools = @testkit.RecordingToolProvider(
-    [@testkit.tk_tool_def("probe", "")],
+  let model = @test_support.ScriptedModel(steps)
+  let tools = @test_support.RecordingToolProvider(
+    [@test_support.tk_tool_def("probe", "")],
     Map::from_array([
       (
         "probe",
-        @testkit.ScriptedToolOutcome::OutcomeOk(@testkit.tk_ok_result("ok")),
+        @test_support.ScriptedToolOutcome::OutcomeOk(
+          @test_support.tk_ok_result("ok"),
+        ),
       ),
     ]),
   )
-  let store = @testkit.RecordingSessionPort()
-  let observer = @testkit.RecordingObserver()
+  let store = @test_support.RecordingSessionPort()
+  let observer = @test_support.RecordingObserver()
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", tools=[tools], sessions=[store], observers=[
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", tools=[tools], sessions=[store], observers=[
         observer,
       ]),
     ],
     config=agent_config(max_tool_rounds=None),
   )
   // Any raise (ToolLoopExceeded or otherwise) fails the test with the error.
-  let _ = agent.run_turn(@testkit.tk_user_msg("long loop"), "session_unbounded")
+  let _ = agent.run_turn(
+    @test_support.tk_user_msg("long loop"),
+    "session_unbounded",
+  )
   assert_eq(model.call_count(), rounds + 1)
   assert_eq(tools.exec_records().length(), rounds)
   let mut completions = 0
@@ -599,37 +613,43 @@ async test "unbounded_tool_rounds_complete_long_turn" {
 /// (n+1)-th batch is rejected atomically (never executed) and the error
 /// reports consumed/limit.
 async test "bounded_tool_rounds_allows_exactly_n_rounds" {
-  let steps : Array[@testkit.ScriptedModelStep] = []
+  let steps : Array[@test_support.ScriptedModelStep] = []
   for i in 0..<10 {
     steps.push(
-      @testkit.ScriptedModelStep::Respond(
-        @testkit.tk_tool_call_response("probe", "bounded_\{i}", Json::null()),
+      @test_support.ScriptedModelStep::Respond(
+        @test_support.tk_tool_call_response(
+          "probe",
+          "bounded_\{i}",
+          Json::null(),
+        ),
       ),
     )
   }
-  let model = @testkit.ScriptedModel(steps)
-  let tools = @testkit.RecordingToolProvider(
-    [@testkit.tk_tool_def("probe", "")],
+  let model = @test_support.ScriptedModel(steps)
+  let tools = @test_support.RecordingToolProvider(
+    [@test_support.tk_tool_def("probe", "")],
     Map::from_array([
       (
         "probe",
-        @testkit.ScriptedToolOutcome::OutcomeOk(@testkit.tk_ok_result("ok")),
+        @test_support.ScriptedToolOutcome::OutcomeOk(
+          @test_support.tk_ok_result("ok"),
+        ),
       ),
     ]),
   )
-  let store = @testkit.RecordingSessionPort()
-  let observer = @testkit.RecordingObserver()
+  let store = @test_support.RecordingSessionPort()
+  let observer = @test_support.RecordingObserver()
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", tools=[tools], sessions=[store], observers=[
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", tools=[tools], sessions=[store], observers=[
         observer,
       ]),
     ],
     config=agent_config(max_tool_rounds=Some(2)),
   )
   match
-    (Ok(agent.run_turn(@testkit.tk_user_msg("loop"), "session_bounded")) catch {
+    (Ok(agent.run_turn(@test_support.tk_user_msg("loop"), "session_bounded")) catch {
       e => Err(e)
     }) {
     Err(ToolLoopExceeded(consumed~, limit~)) => {
@@ -646,11 +666,11 @@ async test "bounded_tool_rounds_allows_exactly_n_rounds" {
 ///|
 async test "observer_event_sequence" {
   let tc = make_tool_call("call_1", "bash")
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(tool_response([tc])),
-    @testkit.ScriptedModelStep::Respond(stop_response("sequence done")),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(tool_response([tc])),
+    @test_support.ScriptedModelStep::Respond(stop_response("sequence done")),
   ])
-  let tools = @testkit.RecordingToolProvider(
+  let tools = @test_support.RecordingToolProvider(
     [
       ToolDef(
         name=@kernel.ToolName::unchecked("bash"),
@@ -664,20 +684,20 @@ async test "observer_event_sequence" {
     Map::from_array([
       (
         "bash",
-        @testkit.ScriptedToolOutcome::OutcomeOk(
+        @test_support.ScriptedToolOutcome::OutcomeOk(
           Success(content="seq", structured=None),
         ),
       ),
     ]),
   )
-  let store = @testkit.RecordingSessionPort()
-  let observer = @testkit.RecordingObserver()
+  let store = @test_support.RecordingSessionPort()
+  let observer = @test_support.RecordingObserver()
   let config = make_config()
 
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", tools=[tools], sessions=[store], observers=[
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", tools=[tools], sessions=[store], observers=[
         observer,
       ]),
     ],
@@ -742,17 +762,19 @@ impl @port.PipelineHook for RewriteModelHook with fn before_model(
 ///|
 /// Test: BeforeModel hook can modify messages
 async test "hook_rewrites_before_model_messages" {
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(stop_response("response after rewrite")),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      stop_response("response after rewrite"),
+    ),
   ])
-  let store = @testkit.RecordingSessionPort()
-  let observer = @testkit.RecordingObserver()
+  let store = @test_support.RecordingSessionPort()
+  let observer = @test_support.RecordingObserver()
   let rewriter = RewriteModelHook::{ }
   let config = make_config()
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(
         id="io",
         tools=[empty_tools()],
         hooks=[rewriter],
@@ -772,14 +794,14 @@ async test "hook_rewrites_before_model_messages" {
 ///|
 /// Test: one PipelineHook implementor receives every interception point through a
 /// single trait impl — before_model, before_tool and on_post_event all land
-/// on the same @testkit.RecordingHook instance in one turn.
+/// on the same @test_support.RecordingHook instance in one turn.
 async test "hook_single_impl_receives_all_points" {
   let tc = make_tool_call("call_1", "echo")
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(tool_response([tc])),
-    @testkit.ScriptedModelStep::Respond(stop_response("done")),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(tool_response([tc])),
+    @test_support.ScriptedModelStep::Respond(stop_response("done")),
   ])
-  let tools = @testkit.RecordingToolProvider(
+  let tools = @test_support.RecordingToolProvider(
     [
       ToolDef(
         name=@kernel.ToolName::unchecked("echo"),
@@ -793,18 +815,18 @@ async test "hook_single_impl_receives_all_points" {
     Map::from_array([
       (
         "echo",
-        @testkit.ScriptedToolOutcome::OutcomeOk(
+        @test_support.ScriptedToolOutcome::OutcomeOk(
           Success(content="echoed", structured=None),
         ),
       ),
     ]),
   )
-  let hook = @testkit.RecordingHook()
+  let hook = @test_support.RecordingHook()
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", tools=[tools], hooks=[hook], sessions=[
-        @testkit.RecordingSessionPort(),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", tools=[tools], hooks=[hook], sessions=[
+        @test_support.RecordingSessionPort(),
       ]),
     ],
     config=make_config(),
@@ -823,11 +845,11 @@ async test "hook_single_impl_receives_all_points" {
 async test "agent_routes_tools_to_correct_provider" {
   let tc_bash = make_tool_call("c1", "bash")
   let tc_mcp = make_tool_call("c2", "mcp__read")
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(tool_response([tc_bash, tc_mcp])),
-    @testkit.ScriptedModelStep::Respond(stop_response("both done")),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(tool_response([tc_bash, tc_mcp])),
+    @test_support.ScriptedModelStep::Respond(stop_response("both done")),
   ])
-  let shell_tools = @testkit.RecordingToolProvider(
+  let shell_tools = @test_support.RecordingToolProvider(
     [
       ToolDef(
         name=@kernel.ToolName::unchecked("bash"),
@@ -841,13 +863,13 @@ async test "agent_routes_tools_to_correct_provider" {
     Map::from_array([
       (
         "bash",
-        @testkit.ScriptedToolOutcome::OutcomeOk(
+        @test_support.ScriptedToolOutcome::OutcomeOk(
           Success(content="shell ok", structured=None),
         ),
       ),
     ]),
   )
-  let mcp_tools = @testkit.RecordingToolProvider(
+  let mcp_tools = @test_support.RecordingToolProvider(
     [
       ToolDef(
         name=@kernel.ToolName::unchecked("mcp__read"),
@@ -861,20 +883,20 @@ async test "agent_routes_tools_to_correct_provider" {
     Map::from_array([
       (
         "mcp__read",
-        @testkit.ScriptedToolOutcome::OutcomeOk(
+        @test_support.ScriptedToolOutcome::OutcomeOk(
           Success(content="mcp ok", structured=None),
         ),
       ),
     ]),
   )
-  let store = @testkit.RecordingSessionPort()
-  let observer = @testkit.RecordingObserver()
+  let store = @test_support.RecordingSessionPort()
+  let observer = @test_support.RecordingObserver()
   let config = make_config()
 
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(
         id="io",
         tools=[shell_tools, mcp_tools],
         sessions=[store],
@@ -900,7 +922,7 @@ async test "agent_routes_tools_to_correct_provider" {
 ///|
 /// Test: Agent detects tool name collisions across providers
 async test "agent_tool_collision_detection" {
-  let provider1 = @testkit.RecordingToolProvider(
+  let provider1 = @test_support.RecordingToolProvider(
     [
       ToolDef(
         name=@kernel.ToolName::unchecked("bash"),
@@ -913,7 +935,7 @@ async test "agent_tool_collision_detection" {
     ],
     Map::from_array([]),
   )
-  let provider2 = @testkit.RecordingToolProvider(
+  let provider2 = @test_support.RecordingToolProvider(
     [
       ToolDef(
         name=@kernel.ToolName::unchecked("bash"),
@@ -927,25 +949,25 @@ async test "agent_tool_collision_detection" {
     Map::from_array([
       (
         "bash",
-        @testkit.ScriptedToolOutcome::OutcomeOk(
+        @test_support.ScriptedToolOutcome::OutcomeOk(
           Success(content="v2 wins", structured=None),
         ),
       ),
     ]),
   )
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(stop_response("ok")),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(stop_response("ok")),
   ])
-  let store = @testkit.RecordingSessionPort()
-  let observer = @testkit.RecordingObserver()
+  let store = @test_support.RecordingSessionPort()
+  let observer = @test_support.RecordingObserver()
   let config = make_config()
 
   // T06-B: collision now fails composition (raise) rather than last-wins.
   let composition_result = Ok(
     Agent(
       exts=[
-        @testkit.tk_ext(id="model", model=Some(model)),
-        @testkit.tk_ext(
+        @test_support.tk_ext(id="model", model=Some(model)),
+        @test_support.tk_ext(
           id="io",
           tools=[provider1, provider2],
           sessions=[store],
@@ -978,17 +1000,17 @@ async test "streaming_events_emitted_during_chat" {
     Finish(reason="stop"),
   ]
   let final_response = stop_response("Hello world")
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Stream(chunks~, response=final_response),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Stream(chunks~, response=final_response),
   ])
-  let store = @testkit.RecordingSessionPort()
-  let observer = @testkit.RecordingObserver()
+  let store = @test_support.RecordingSessionPort()
+  let observer = @test_support.RecordingObserver()
   let config = make_config()
 
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", tools=[empty_tools()], sessions=[store], observers=[
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", tools=[empty_tools()], sessions=[store], observers=[
         observer,
       ]),
     ],
@@ -1065,18 +1087,18 @@ async test "stream_accumulator_assembles_completion" {
 ///|
 /// Test: Multiple observers all receive events (fan-out)
 async test "multiple_observers_fan_out" {
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(stop_response("fan-out")),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(stop_response("fan-out")),
   ])
-  let store = @testkit.RecordingSessionPort()
-  let obs1 = @testkit.RecordingObserver()
-  let obs2 = @testkit.RecordingObserver()
+  let store = @test_support.RecordingSessionPort()
+  let obs1 = @test_support.RecordingObserver()
+  let obs2 = @test_support.RecordingObserver()
   let config = make_config()
 
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", tools=[empty_tools()], sessions=[store], observers=[
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", tools=[empty_tools()], sessions=[store], observers=[
         obs1, obs2,
       ]),
     ],
@@ -1093,18 +1115,18 @@ async test "multiple_observers_fan_out" {
 ///|
 /// Test: Multiple session stores all receive writes
 async test "multiple_session_stores_write_all" {
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(stop_response("multi-store")),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(stop_response("multi-store")),
   ])
-  let store1 = @testkit.RecordingSessionPort()
-  let store2 = @testkit.RecordingSessionPort()
-  let observer = @testkit.RecordingObserver()
+  let store1 = @test_support.RecordingSessionPort()
+  let store2 = @test_support.RecordingSessionPort()
+  let observer = @test_support.RecordingObserver()
   let config = make_config()
 
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(
         id="io",
         tools=[empty_tools()],
         sessions=[store1, store2],
@@ -1144,16 +1166,16 @@ fn make_param(
 ///|
 /// After stages run hooks in reverse order: hooks[1] runs before hooks[0].
 async test "hook_turn_error_fires_on_model_error" {
-  let model = @testkit.ScriptedModel([])
-  let store = @testkit.RecordingSessionPort()
-  let observer = @testkit.RecordingObserver()
+  let model = @test_support.ScriptedModel([])
+  let store = @test_support.RecordingSessionPort()
+  let observer = @test_support.RecordingObserver()
   let log_hook = LogHook::{ seen: [], }
   let config = make_config()
 
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(
         id="io",
         tools=[empty_tools()],
         hooks=[log_hook],
@@ -1177,10 +1199,10 @@ async test "hook_turn_error_fires_on_model_error" {
 /// TurnError hook still fires before the error propagates.
 async test "hook_turn_error_fires_on_before_tool_abort" {
   let tc = make_tool_call("call_1", "bash")
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(tool_response([tc])),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(tool_response([tc])),
   ])
-  let tools = @testkit.RecordingToolProvider(
+  let tools = @test_support.RecordingToolProvider(
     [
       ToolDef(
         name=@kernel.ToolName::unchecked("bash"),
@@ -1193,8 +1215,8 @@ async test "hook_turn_error_fires_on_before_tool_abort" {
     ],
     Map::from_array([]),
   )
-  let store = @testkit.RecordingSessionPort()
-  let observer = @testkit.RecordingObserver()
+  let store = @test_support.RecordingSessionPort()
+  let observer = @test_support.RecordingObserver()
   // RaisingToolHook aborts the run from BeforeTool (raise, not Reject);
   // LogHook records post-stage events.
   let log_hook = LogHook::{ seen: [], }
@@ -1203,8 +1225,8 @@ async test "hook_turn_error_fires_on_before_tool_abort" {
 
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(
         id="io",
         tools=[tools],
         hooks=[log_hook, abort_hook],
@@ -1290,25 +1312,30 @@ fn assert_rejected_without_pending(
 /// `ToolCallRejected` event — the call never entered the pipeline, so no
 /// `ToolCallPending` precedes it.
 async test "all_rejected_wave_unknown_tool_completes_with_rejection_event" {
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(
-      @testkit.tk_tool_call_response("ghost_tool", "c_rej", Json::null()),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_tool_call_response("ghost_tool", "c_rej", Json::null()),
     ),
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("recovered")),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("recovered"),
+    ),
   ])
-  let tools = @testkit.RecordingToolProvider([], Map::from_array([]))
-  let store = @testkit.RecordingSessionPort()
-  let observer = @testkit.RecordingObserver()
+  let tools = @test_support.RecordingToolProvider([], Map::from_array([]))
+  let store = @test_support.RecordingSessionPort()
+  let observer = @test_support.RecordingObserver()
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", tools=[tools], sessions=[store], observers=[
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", tools=[tools], sessions=[store], observers=[
         observer,
       ]),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
-  let turn = agent.run_turn(@testkit.tk_user_msg("typo tool"), "session_reject")
+  let turn = agent.run_turn(
+    @test_support.tk_user_msg("typo tool"),
+    "session_reject",
+  )
   // The model's rejected call is in the transcript as a NotExecuted result.
   assert_eq(turn.tool_results.length(), 1)
   match turn.tool_results[0] {
@@ -1323,30 +1350,42 @@ async test "all_rejected_wave_unknown_tool_completes_with_rejection_event" {
 /// Regression: same rejection-node contract for the schema-mismatch path.
 async test "all_rejected_wave_schema_mismatch_completes_with_rejection_event" {
   let strict_def : @kernel.ToolDef = {
-    ..@testkit.tk_tool_def("strict", "requires an object"),
+    ..@test_support.tk_tool_def("strict", "requires an object"),
     input_schema: Json::object(
       Map::from_array([("type", Json::string("object"))]),
     ),
   }
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(
-      @testkit.tk_tool_call_response("strict", "c_schema", Json::string("nope")),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_tool_call_response(
+        "strict",
+        "c_schema",
+        Json::string("nope"),
+      ),
     ),
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("recovered")),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("recovered"),
+    ),
   ])
-  let tools = @testkit.RecordingToolProvider([strict_def], Map::from_array([]))
-  let store = @testkit.RecordingSessionPort()
-  let observer = @testkit.RecordingObserver()
+  let tools = @test_support.RecordingToolProvider(
+    [strict_def],
+    Map::from_array([]),
+  )
+  let store = @test_support.RecordingSessionPort()
+  let observer = @test_support.RecordingObserver()
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", tools=[tools], sessions=[store], observers=[
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", tools=[tools], sessions=[store], observers=[
         observer,
       ]),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
-  let turn = agent.run_turn(@testkit.tk_user_msg("bad args"), "session_schema")
+  let turn = agent.run_turn(
+    @test_support.tk_user_msg("bad args"),
+    "session_schema",
+  )
   assert_eq(turn.tool_results.length(), 1)
   match turn.tool_results[0] {
     NotExecuted(reason=SchemaMismatch(..), ..) => ()
@@ -1366,31 +1405,37 @@ async test "all_rejected_wave_schema_mismatch_completes_with_rejection_event" {
 async test "mixed_wave_pairs_executed_call_and_rejects_unknown_without_pending" {
   let probe_call = make_tool_call("c_probe", "probe")
   let ghost_call = make_tool_call("c_ghost", "ghost_tool")
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(tool_response([probe_call, ghost_call])),
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      tool_response([probe_call, ghost_call]),
+    ),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("done"),
+    ),
   ])
-  let tools = @testkit.RecordingToolProvider(
-    [@testkit.tk_tool_def("probe", "")],
+  let tools = @test_support.RecordingToolProvider(
+    [@test_support.tk_tool_def("probe", "")],
     Map::from_array([
       (
         "probe",
-        @testkit.ScriptedToolOutcome::OutcomeOk(@testkit.tk_ok_result("ok")),
+        @test_support.ScriptedToolOutcome::OutcomeOk(
+          @test_support.tk_ok_result("ok"),
+        ),
       ),
     ]),
   )
-  let store = @testkit.RecordingSessionPort()
-  let observer = @testkit.RecordingObserver()
+  let store = @test_support.RecordingSessionPort()
+  let observer = @test_support.RecordingObserver()
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", tools=[tools], sessions=[store], observers=[
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", tools=[tools], sessions=[store], observers=[
         observer,
       ]),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
-  let turn = agent.run_turn(@testkit.tk_user_msg("mixed"), "session_mixed")
+  let turn = agent.run_turn(@test_support.tk_user_msg("mixed"), "session_mixed")
   // The valid call executed once; the rejected call never reached a provider.
   assert_eq(tools.exec_records().length(), 1)
   // Exactly one tool result per call (no duplicated transcript entries).
@@ -1434,22 +1479,25 @@ fn wave3_stop_with_usage(
 
 ///|
 async test "wave3/compact_session/idle full chain without a chat request" {
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Compact(result={
-      compacted_messages: [@testkit.tk_user_msg("summary")],
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Compact(result={
+      compacted_messages: [@test_support.tk_user_msg("summary")],
       mode: Replace,
     }),
   ])
-  let observer = @testkit.RecordingObserver()
-  let store = @testkit.RecordingSessionPort()
+  let observer = @test_support.RecordingObserver()
+  let store = @test_support.RecordingSessionPort()
   store.seed("wave3-compact", {
-    messages: [@testkit.tk_user_msg("hello"), @testkit.tk_user_msg("more")],
+    messages: [
+      @test_support.tk_user_msg("hello"),
+      @test_support.tk_user_msg("more"),
+    ],
     metadata: Map::from_array([]),
   })
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", sessions=[store], observers=[observer]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store], observers=[observer]),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
@@ -1463,7 +1511,7 @@ async test "wave3/compact_session/idle full chain without a chat request" {
   assert_eq(model.received_compacts()[0].1, Manual)
   let persisted = store.store["wave3-compact"]
   assert_eq(persisted.messages.length(), 1)
-  assert_true(persisted.messages[0] == @testkit.tk_user_msg("summary"))
+  assert_true(persisted.messages[0] == @test_support.tk_user_msg("summary"))
   let mut saw_started = false
   let mut saw_finished = false
   let mut finalized = 0
@@ -1490,22 +1538,25 @@ async test "wave3/compact_session/idle full chain without a chat request" {
 
 ///|
 async test "wave3/compact_session/context state records the post-compact estimate" {
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Compact(result={
-      compacted_messages: [@testkit.tk_user_msg("summary")],
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Compact(result={
+      compacted_messages: [@test_support.tk_user_msg("summary")],
       mode: Replace,
     }),
   ])
-  let observer = @testkit.RecordingObserver()
-  let store = @testkit.RecordingSessionPort()
+  let observer = @test_support.RecordingObserver()
+  let store = @test_support.RecordingSessionPort()
   store.seed("wave3-compact-ctx", {
-    messages: [@testkit.tk_user_msg("hello"), @testkit.tk_user_msg("more")],
+    messages: [
+      @test_support.tk_user_msg("hello"),
+      @test_support.tk_user_msg("more"),
+    ],
     metadata: Map::from_array([]),
   })
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", sessions=[store], observers=[observer]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store], observers=[observer]),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
@@ -1546,16 +1597,16 @@ async test "wave3/compact_session/pending tools fixated as interrupted" {
     name: @kernel.ToolName::unchecked("echo"),
     arguments: Json::null(),
   }
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Compact(result={
-      compacted_messages: [@testkit.tk_user_msg("summary")],
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Compact(result={
+      compacted_messages: [@test_support.tk_user_msg("summary")],
       mode: Replace,
     }),
   ])
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   store.seed("wave3-fixate", {
     messages: [
-      @testkit.tk_user_msg("do the thing"),
+      @test_support.tk_user_msg("do the thing"),
       AssistantMessage(
         content=[Text("working on it")],
         tool_calls=[dangling_call],
@@ -1567,8 +1618,8 @@ async test "wave3/compact_session/pending tools fixated as interrupted" {
   })
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", sessions=[store]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store]),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
@@ -1594,27 +1645,29 @@ async test "wave3/compact_session/pending tools fixated as interrupted" {
 
 ///|
 async test "wave3/body recovery is scoped to the affected operation session" {
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Compact(result={
-      compacted_messages: [@testkit.tk_user_msg("summary-a")],
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Compact(result={
+      compacted_messages: [@test_support.tk_user_msg("summary-a")],
       mode: Replace,
     }),
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("b-done")),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("b-done"),
+    ),
   ])
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   store.seed("recover-a", {
-    messages: [@testkit.tk_user_msg("a-old")],
+    messages: [@test_support.tk_user_msg("a-old")],
     metadata: Map::from_array([]),
   })
   store.seed("recover-b", {
-    messages: [@testkit.tk_user_msg("b-old")],
+    messages: [@test_support.tk_user_msg("b-old")],
     metadata: Map::from_array([]),
   })
   store.fail_save("recover-a")
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", sessions=[store]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store]),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
@@ -1629,14 +1682,14 @@ async test "wave3/body recovery is scoped to the affected operation session" {
   }
   let a_saves_before = body_recovery_save_count(store, "recover-a")
   // B must run normally; its guard must not drain A's failed output.
-  let b = agent.run_turn(@testkit.tk_user_msg("b-next"), "recover-b")
+  let b = agent.run_turn(@test_support.tk_user_msg("b-next"), "recover-b")
   assert_eq(b.final_session_id, "recover-b")
   assert_eq(model.call_count(), 1)
   assert_eq(body_recovery_save_count(store, "recover-a"), a_saves_before)
   // A's own next operation is the only one that retries and fails at its
   // output gate, with no model call.
   let blocked : Result[@types.TurnResult, @error.AgentError] = Ok(
-    agent.run_turn(@testkit.tk_user_msg("a-next"), "recover-a"),
+    agent.run_turn(@test_support.tk_user_msg("a-next"), "recover-a"),
   ) catch {
     error => Err(error)
   }
@@ -1649,13 +1702,13 @@ async test "wave3/body recovery is scoped to the affected operation session" {
 
 ///|
 fn body_recovery_save_count(
-  store : @testkit.RecordingSessionPort,
+  store : @test_support.RecordingSessionPort,
   session_id : String,
 ) -> Int32 {
   let mut count = 0
   for op in store.ops() {
     match op {
-      @testkit.SessionOp::OpSave(id~, ..) =>
+      @test_support.SessionOp::OpSave(id~, ..) =>
         if id == session_id {
           count = count + 1
         }
@@ -1726,22 +1779,22 @@ impl @runtime.Runtime for Wave3ParkingRuntime with fn compact(
 
 ///|
 async test "wave3/cancellation/mid-stream cancel is structured and the session stays usable" {
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Compact(result={
-      compacted_messages: [@testkit.tk_user_msg("summary")],
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Compact(result={
+      compacted_messages: [@test_support.tk_user_msg("summary")],
       mode: Replace,
     }),
-    @testkit.ScriptedModelStep::Respond(
-      @testkit.tk_stop_response("first turn after cancel"),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("first turn after cancel"),
     ),
-    @testkit.ScriptedModelStep::Respond(
-      @testkit.tk_stop_response("second turn after late esc"),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("second turn after late esc"),
     ),
   ])
-  let observer = @testkit.RecordingObserver()
-  let store = @testkit.RecordingSessionPort()
+  let observer = @test_support.RecordingObserver()
+  let store = @test_support.RecordingSessionPort()
   store.seed("wave3-cancel", {
-    messages: [@testkit.tk_user_msg("seeded question")],
+    messages: [@test_support.tk_user_msg("seeded question")],
     metadata: Map::from_array([]),
   })
   let port_runtime = @runtime.PortRuntime(model~)
@@ -1753,7 +1806,7 @@ async test "wave3/cancellation/mid-stream cancel is structured and the session s
   let runtime : &@runtime.Runtime = parking as &@runtime.Runtime
   let agent = Agent::with_runtime(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model), sessions=[store], observers=[
+      @test_support.tk_ext(id="model", model=Some(model), sessions=[store], observers=[
         observer,
       ]),
     ],
@@ -1767,7 +1820,7 @@ async test "wave3/cancellation/mid-stream cancel is structured and the session s
   @async.with_task_group(async fn(group) {
     let task = group.spawn(async fn() {
       let r : Result[@types.TurnResult, @error.AgentError] = Ok(
-        agent.run_turn(@testkit.tk_user_msg("long task"), "wave3-cancel"),
+        agent.run_turn(@test_support.tk_user_msg("long task"), "wave3-cancel"),
       ) catch {
         e => Err(e)
       }
@@ -1784,7 +1837,7 @@ async test "wave3/cancellation/mid-stream cancel is structured and the session s
   let compacted = agent.compact_session("wave3-cancel")
   guard compacted.mode is Replace else { fail("expected Replace mode") }
   assert_eq(compacted.messages_after, 1)
-  let turn = agent.run_turn(@testkit.tk_user_msg("next"), "wave3-cancel")
+  let turn = agent.run_turn(@test_support.tk_user_msg("next"), "wave3-cancel")
   guard turn.message
     is AssistantMessage(content=[Text("first turn after cancel")], ..) else {
     fail("expected the post-cancel turn to complete normally")
@@ -1792,7 +1845,7 @@ async test "wave3/cancellation/mid-stream cancel is structured and the session s
   assert_true(
     control.abort_active(Some("late esc")) is @runtime.RejectedStale(_),
   )
-  let turn2 = agent.run_turn(@testkit.tk_user_msg("again"), "wave3-cancel")
+  let turn2 = agent.run_turn(@test_support.tk_user_msg("again"), "wave3-cancel")
   guard turn2.message
     is AssistantMessage(content=[Text("second turn after late esc")], ..) else {
     fail("expected the next turn to complete after a late abort request")
@@ -1812,9 +1865,9 @@ async test "wave3/cancellation/mid-stream cancel is structured and the session s
 
 ///|
 async test "wave3/context_state/retrievable at initial load and not cleared by TurnStarted" {
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   store.seed("wave3-ctx", {
-    messages: [@testkit.tk_user_msg("earlier")],
+    messages: [@test_support.tk_user_msg("earlier")],
     metadata: policy_context_metadata(
       session_id="wave3-ctx",
       measured=50,
@@ -1822,14 +1875,14 @@ async test "wave3/context_state/retrievable at initial load and not cleared by T
       reading_count=1,
     ),
   })
-  let observer = @testkit.RecordingObserver()
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(wave3_stop_with_usage("done", 30)),
+  let observer = @test_support.RecordingObserver()
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(wave3_stop_with_usage("done", 30)),
   ])
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", sessions=[store], observers=[observer]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store], observers=[observer]),
     ],
     config=agent_config(
       max_tool_rounds=Some(10),
@@ -1842,7 +1895,7 @@ async test "wave3/context_state/retrievable at initial load and not cleared by T
   }
   assert_eq(loaded.last_measured_tokens, Some(50))
   assert_eq(loaded.source, Measured)
-  ignore(agent.run_turn(@testkit.tk_user_msg("hi there"), "wave3-ctx"))
+  ignore(agent.run_turn(@test_support.tk_user_msg("hi there"), "wave3-ctx"))
   let events = observer.events()
   let mut turn_started_at = -1
   for i, event in events {

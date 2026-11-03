@@ -8,10 +8,10 @@ using @support {policy_replace_result}
 /// (observable skip, turn survives).
 
 ///|
-/// `@testkit.ScopeRecordingModel` wrapper whose provider_config reports fixed
+/// `@test_support.ScopeRecordingModel` wrapper whose provider_config reports fixed
 /// auto-compact metadata, so precedence can be exercised end to end.
 struct PolicyModel {
-  inner : @testkit.ScopeRecordingModel
+  inner : @test_support.ScopeRecordingModel
   reported : @port.ProviderConfig
 }
 
@@ -59,13 +59,15 @@ fn policy_reported(
 }
 
 ///|
-fn policy_tools() -> @testkit.RecordingToolProvider {
-  @testkit.RecordingToolProvider(
-    [@testkit.tk_tool_def("echo", "echo tool")],
+fn policy_tools() -> @test_support.RecordingToolProvider {
+  @test_support.RecordingToolProvider(
+    [@test_support.tk_tool_def("echo", "echo tool")],
     Map::from_array([
       (
         "echo",
-        @testkit.ScriptedToolOutcome::OutcomeOk(@testkit.tk_ok_result("echoed")),
+        @test_support.ScriptedToolOutcome::OutcomeOk(
+          @test_support.tk_ok_result("echoed"),
+        ),
       ),
     ]),
   )
@@ -74,10 +76,14 @@ fn policy_tools() -> @testkit.RecordingToolProvider {
 ///|
 async test "policy/provider-reported window enables auto-compact without host config" {
   let model = PolicyModel::{
-    inner: @testkit.ScopeRecordingModel(
+    inner: @test_support.ScopeRecordingModel(
       [
-        @testkit.ScriptedModelStep::Respond(scope_test_tool_call_with_usage(95)),
-        @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
+        @test_support.ScriptedModelStep::Respond(
+          scope_test_tool_call_with_usage(95),
+        ),
+        @test_support.ScriptedModelStep::Respond(
+          @test_support.tk_stop_response("done"),
+        ),
       ],
       compact_result=policy_replace_result(),
     ),
@@ -88,23 +94,29 @@ async test "policy/provider-reported window enables auto-compact without host co
   }
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="tools", tools=[policy_tools()]),
-      @testkit.tk_ext(id="io", sessions=[@testkit.RecordingSessionPort()]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="tools", tools=[policy_tools()]),
+      @test_support.tk_ext(id="io", sessions=[
+        @test_support.RecordingSessionPort(),
+      ]),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
-  ignore(agent.run_turn(@testkit.tk_user_msg("hi"), "session_live_window"))
+  ignore(agent.run_turn(@test_support.tk_user_msg("hi"), "session_live_window"))
   assert_eq(model.inner.compact_scopes().length(), 1)
 }
 
 ///|
 async test "policy/compact scope carries the resolved pressure reading" {
   let model = PolicyModel::{
-    inner: @testkit.ScopeRecordingModel(
+    inner: @test_support.ScopeRecordingModel(
       [
-        @testkit.ScriptedModelStep::Respond(scope_test_tool_call_with_usage(95)),
-        @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
+        @test_support.ScriptedModelStep::Respond(
+          scope_test_tool_call_with_usage(95),
+        ),
+        @test_support.ScriptedModelStep::Respond(
+          @test_support.tk_stop_response("done"),
+        ),
       ],
       compact_result=policy_replace_result(),
     ),
@@ -115,13 +127,17 @@ async test "policy/compact scope carries the resolved pressure reading" {
   }
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="tools", tools=[policy_tools()]),
-      @testkit.tk_ext(id="io", sessions=[@testkit.RecordingSessionPort()]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="tools", tools=[policy_tools()]),
+      @test_support.tk_ext(id="io", sessions=[
+        @test_support.RecordingSessionPort(),
+      ]),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
-  ignore(agent.run_turn(@testkit.tk_user_msg("hi"), "session_pressure_scope"))
+  ignore(
+    agent.run_turn(@test_support.tk_user_msg("hi"), "session_pressure_scope"),
+  )
   let scopes = model.inner.compact_scopes()
   assert_eq(scopes.length(), 1)
   guard scopes[0].pressure is Some(pressure) else {
@@ -135,10 +151,14 @@ async test "policy/compact scope carries the resolved pressure reading" {
 ///|
 async test "policy/host window overrides the provider report" {
   let model = PolicyModel::{
-    inner: @testkit.ScopeRecordingModel(
+    inner: @test_support.ScopeRecordingModel(
       [
-        @testkit.ScriptedModelStep::Respond(scope_test_tool_call_with_usage(95)),
-        @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
+        @test_support.ScriptedModelStep::Respond(
+          scope_test_tool_call_with_usage(95),
+        ),
+        @test_support.ScriptedModelStep::Respond(
+          @test_support.tk_stop_response("done"),
+        ),
       ],
       compact_result=policy_replace_result(),
     ),
@@ -149,16 +169,20 @@ async test "policy/host window overrides the provider report" {
   }
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="tools", tools=[policy_tools()]),
-      @testkit.tk_ext(id="io", sessions=[@testkit.RecordingSessionPort()]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="tools", tools=[policy_tools()]),
+      @test_support.tk_ext(id="io", sessions=[
+        @test_support.RecordingSessionPort(),
+      ]),
     ],
     config={
       ..agent_config(max_tool_rounds=Some(10)),
       model_context_window: Some(1000),
     },
   )
-  ignore(agent.run_turn(@testkit.tk_user_msg("hi"), "session_host_override"))
+  ignore(
+    agent.run_turn(@test_support.tk_user_msg("hi"), "session_host_override"),
+  )
   // 95 is far under 90% of the host's 1000-token override: no compact.
   assert_eq(model.inner.compact_scopes().length(), 0)
 }
@@ -166,10 +190,14 @@ async test "policy/host window overrides the provider report" {
 ///|
 async test "policy/core default threshold is 0.88 when nobody declares one" {
   let model = PolicyModel::{
-    inner: @testkit.ScopeRecordingModel(
+    inner: @test_support.ScopeRecordingModel(
       [
-        @testkit.ScriptedModelStep::Respond(scope_test_tool_call_with_usage(89)),
-        @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
+        @test_support.ScriptedModelStep::Respond(
+          scope_test_tool_call_with_usage(89),
+        ),
+        @test_support.ScriptedModelStep::Respond(
+          @test_support.tk_stop_response("done"),
+        ),
       ],
       compact_result=policy_replace_result(),
     ),
@@ -177,14 +205,16 @@ async test "policy/core default threshold is 0.88 when nobody declares one" {
   }
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="tools", tools=[policy_tools()]),
-      @testkit.tk_ext(id="io", sessions=[@testkit.RecordingSessionPort()]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="tools", tools=[policy_tools()]),
+      @test_support.tk_ext(id="io", sessions=[
+        @test_support.RecordingSessionPort(),
+      ]),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
   ignore(
-    agent.run_turn(@testkit.tk_user_msg("hi"), "session_default_threshold"),
+    agent.run_turn(@test_support.tk_user_msg("hi"), "session_default_threshold"),
   )
   // 89 >= 88% of 100 with the core default; the old 0.9 would NOT fire.
   assert_eq(model.inner.compact_scopes().length(), 1)
@@ -193,11 +223,17 @@ async test "policy/core default threshold is 0.88 when nobody declares one" {
 ///|
 async test "policy/cumulative usage does not trigger, latest occupancy does" {
   let model = PolicyModel::{
-    inner: @testkit.ScopeRecordingModel(
+    inner: @test_support.ScopeRecordingModel(
       [
-        @testkit.ScriptedModelStep::Respond(scope_test_tool_call_with_usage(60)),
-        @testkit.ScriptedModelStep::Respond(scope_test_tool_call_with_usage(60)),
-        @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
+        @test_support.ScriptedModelStep::Respond(
+          scope_test_tool_call_with_usage(60),
+        ),
+        @test_support.ScriptedModelStep::Respond(
+          scope_test_tool_call_with_usage(60),
+        ),
+        @test_support.ScriptedModelStep::Respond(
+          @test_support.tk_stop_response("done"),
+        ),
       ],
       compact_result=policy_replace_result(),
     ),
@@ -208,13 +244,15 @@ async test "policy/cumulative usage does not trigger, latest occupancy does" {
   }
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="tools", tools=[policy_tools()]),
-      @testkit.tk_ext(id="io", sessions=[@testkit.RecordingSessionPort()]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="tools", tools=[policy_tools()]),
+      @test_support.tk_ext(id="io", sessions=[
+        @test_support.RecordingSessionPort(),
+      ]),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
-  ignore(agent.run_turn(@testkit.tk_user_msg("hi"), "session_cumulative"))
+  ignore(agent.run_turn(@test_support.tk_user_msg("hi"), "session_cumulative"))
   // Two 60/100 calls sum to 120 but each call's own occupancy is 60: the
   // run-wide cumulative total must not fire the trigger.
   assert_eq(model.inner.compact_scopes().length(), 0)
@@ -223,11 +261,17 @@ async test "policy/cumulative usage does not trigger, latest occupancy does" {
 ///|
 async test "policy/same task crossing twice compacts twice" {
   let model = PolicyModel::{
-    inner: @testkit.ScopeRecordingModel(
+    inner: @test_support.ScopeRecordingModel(
       [
-        @testkit.ScriptedModelStep::Respond(scope_test_tool_call_with_usage(95)),
-        @testkit.ScriptedModelStep::Respond(scope_test_tool_call_with_usage(95)),
-        @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
+        @test_support.ScriptedModelStep::Respond(
+          scope_test_tool_call_with_usage(95),
+        ),
+        @test_support.ScriptedModelStep::Respond(
+          scope_test_tool_call_with_usage(95),
+        ),
+        @test_support.ScriptedModelStep::Respond(
+          @test_support.tk_stop_response("done"),
+        ),
       ],
       compact_result=policy_replace_result(),
     ),
@@ -238,42 +282,48 @@ async test "policy/same task crossing twice compacts twice" {
   }
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="tools", tools=[policy_tools()]),
-      @testkit.tk_ext(id="io", sessions=[@testkit.RecordingSessionPort()]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="tools", tools=[policy_tools()]),
+      @test_support.tk_ext(id="io", sessions=[
+        @test_support.RecordingSessionPort(),
+      ]),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
-  ignore(agent.run_turn(@testkit.tk_user_msg("hi"), "session_double_fire"))
+  ignore(agent.run_turn(@test_support.tk_user_msg("hi"), "session_double_fire"))
   assert_eq(model.inner.compact_scopes().length(), 2)
 }
 
 ///|
 async test "policy/auto-compact failure stops the turn immediately and is reported" {
-  let observer = @testkit.RecordingObserver()
-  // compact_result absent: @testkit.ScopeRecordingModel::compact raises, standing in
+  let observer = @test_support.RecordingObserver()
+  // compact_result absent: @test_support.ScopeRecordingModel::compact raises, standing in
   // for a modelport that does not implement compact.
   let model = PolicyModel::{
-    inner: @testkit.ScopeRecordingModel([
-      @testkit.ScriptedModelStep::Respond(scope_test_tool_call_with_usage(95)),
-      @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
+    inner: @test_support.ScopeRecordingModel([
+      @test_support.ScriptedModelStep::Respond(
+        scope_test_tool_call_with_usage(95),
+      ),
+      @test_support.ScriptedModelStep::Respond(
+        @test_support.tk_stop_response("done"),
+      ),
     ]),
     reported: policy_reported(
       context_window=Some(100),
       compact_threshold=Some(0.9),
     ),
   }
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="tools", tools=[policy_tools()]),
-      @testkit.tk_ext(id="io", sessions=[store], observers=[observer]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="tools", tools=[policy_tools()]),
+      @test_support.tk_ext(id="io", sessions=[store], observers=[observer]),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
   let result : Result[@types.TurnResult, @error.AgentError] = Ok(
-    agent.run_turn(@testkit.tk_user_msg("hi"), "session_failed_compact"),
+    agent.run_turn(@test_support.tk_user_msg("hi"), "session_failed_compact"),
   ) catch {
     error => Err(error)
   }
@@ -284,7 +334,7 @@ async test "policy/auto-compact failure stops the turn immediately and is report
   assert_eq(model.inner.chat_scopes().length(), 1)
   let persisted = store.store["session_failed_compact"]
   assert_eq(persisted.messages.length(), 3)
-  assert_true(persisted.messages[0] == @testkit.tk_user_msg("hi"))
+  assert_true(persisted.messages[0] == @test_support.tk_user_msg("hi"))
   assert_true(persisted.messages[2] is ToolMessage(..))
   let mut seen_failed = false
   for event in observer.events() {
@@ -303,7 +353,7 @@ async test "policy/auto-compact failure stops the turn immediately and is report
 /// PolicyModel variant that also records every `chat` message array, so the
 /// post-compact projection can be asserted exactly.
 struct AutoCompactE2EModel {
-  scripted : @testkit.ScriptedModel
+  scripted : @test_support.ScriptedModel
   compact_result : @kernel.CompactResult
   reported : @port.ProviderConfig
   seen : Array[Array[@kernel.Message]]
@@ -312,11 +362,11 @@ struct AutoCompactE2EModel {
 
 ///|
 fn auto_compact_e2e_model(
-  steps : Array[@testkit.ScriptedModelStep],
+  steps : Array[@test_support.ScriptedModelStep],
   compacted_messages : Array[@kernel.Message],
 ) -> AutoCompactE2EModel {
   {
-    scripted: @testkit.ScriptedModel(steps),
+    scripted: @test_support.ScriptedModel(steps),
     compact_result: { compacted_messages, mode: Replace, },
     reported: policy_reported(
       context_window=Some(100),
@@ -377,8 +427,8 @@ impl @port.ModelPort for AutoCompactE2EModel with fn provider_config(self) -> @p
 /// verbatim tail, exactly what `build_replace_result` produces.
 fn auto_compact_kit_shaped_compacted() -> Array[@kernel.Message] {
   [
-    @testkit.tk_user_msg("summary of the earlier conversation"),
-    @testkit.tk_user_msg("recent question"),
+    @test_support.tk_user_msg("summary of the earlier conversation"),
+    @test_support.tk_user_msg("recent question"),
     tk_assistant_msg_e2e("recent answer"),
   ]
 }
@@ -400,20 +450,28 @@ async test "policy/e2e compacted transcript is what the next model call sees" {
   let compacted = auto_compact_kit_shaped_compacted()
   let model = auto_compact_e2e_model(
     [
-      @testkit.ScriptedModelStep::Respond(scope_test_tool_call_with_usage(95)),
-      @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
+      @test_support.ScriptedModelStep::Respond(
+        scope_test_tool_call_with_usage(95),
+      ),
+      @test_support.ScriptedModelStep::Respond(
+        @test_support.tk_stop_response("done"),
+      ),
     ],
     compacted,
   )
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="tools", tools=[policy_tools()]),
-      @testkit.tk_ext(id="io", sessions=[@testkit.RecordingSessionPort()]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="tools", tools=[policy_tools()]),
+      @test_support.tk_ext(id="io", sessions=[
+        @test_support.RecordingSessionPort(),
+      ]),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
-  ignore(agent.run_turn(@testkit.tk_user_msg("hi"), "session_e2e_projection"))
+  ignore(
+    agent.run_turn(@test_support.tk_user_msg("hi"), "session_e2e_projection"),
+  )
   assert_eq(model.compact_calls.val, 1)
   // Two chats: the tool-call step (pre-compact) and the stop step
   // (post-compact). The second must see exactly the compacted transcript.
@@ -464,9 +522,9 @@ fn policy_context_metadata(
 
 ///|
 async test "policy/pre-request check compacts before the first request" {
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   store.seed("session_pre", {
-    messages: [@testkit.tk_user_msg("hello")],
+    messages: [@test_support.tk_user_msg("hello")],
     metadata: policy_context_metadata(
       session_id="session_pre",
       measured=95,
@@ -475,17 +533,21 @@ async test "policy/pre-request check compacts before the first request" {
     ),
   })
   let model = auto_compact_e2e_model(
-    [@testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done"))],
-    [@testkit.tk_user_msg("summary")],
+    [
+      @test_support.ScriptedModelStep::Respond(
+        @test_support.tk_stop_response("done"),
+      ),
+    ],
+    [@test_support.tk_user_msg("summary")],
   )
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", sessions=[store]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store]),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
-  ignore(agent.run_turn(@testkit.tk_user_msg("hi there"), "session_pre"))
+  ignore(agent.run_turn(@test_support.tk_user_msg("hi there"), "session_pre"))
   assert_eq(model.compact_calls.val, 1)
   let seen = model.seen_chats()
   assert_eq(seen.length(), 1)
@@ -498,9 +560,9 @@ async test "policy/pre-request check compacts before the first request" {
 
 ///|
 async test "policy/pre-request check stays quiet below the threshold" {
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   store.seed("session_pre_low", {
-    messages: [@testkit.tk_user_msg("hello")],
+    messages: [@test_support.tk_user_msg("hello")],
     metadata: policy_context_metadata(
       session_id="session_pre_low",
       measured=60,
@@ -509,17 +571,23 @@ async test "policy/pre-request check stays quiet below the threshold" {
     ),
   })
   let model = auto_compact_e2e_model(
-    [@testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done"))],
-    [@testkit.tk_user_msg("summary")],
+    [
+      @test_support.ScriptedModelStep::Respond(
+        @test_support.tk_stop_response("done"),
+      ),
+    ],
+    [@test_support.tk_user_msg("summary")],
   )
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", sessions=[store]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store]),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
-  ignore(agent.run_turn(@testkit.tk_user_msg("hi there"), "session_pre_low"))
+  ignore(
+    agent.run_turn(@test_support.tk_user_msg("hi there"), "session_pre_low"),
+  )
   assert_eq(model.compact_calls.val, 0)
   let seen = model.seen_chats()
   assert_eq(seen.length(), 1)
@@ -528,9 +596,9 @@ async test "policy/pre-request check stays quiet below the threshold" {
 
 ///|
 async test "policy/pre-request check ignores readings from another window" {
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   store.seed("session_pre_window", {
-    messages: [@testkit.tk_user_msg("hello")],
+    messages: [@test_support.tk_user_msg("hello")],
     metadata: policy_context_metadata(
       session_id="session_pre_window",
       measured=950,
@@ -539,17 +607,23 @@ async test "policy/pre-request check ignores readings from another window" {
     ),
   })
   let model = auto_compact_e2e_model(
-    [@testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done"))],
-    [@testkit.tk_user_msg("summary")],
+    [
+      @test_support.ScriptedModelStep::Respond(
+        @test_support.tk_stop_response("done"),
+      ),
+    ],
+    [@test_support.tk_user_msg("summary")],
   )
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", sessions=[store]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store]),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
-  ignore(agent.run_turn(@testkit.tk_user_msg("hi there"), "session_pre_window"))
+  ignore(
+    agent.run_turn(@test_support.tk_user_msg("hi there"), "session_pre_window"),
+  )
   assert_eq(model.compact_calls.val, 0)
   assert_eq(model.seen_chats().length(), 1)
 }
@@ -560,28 +634,35 @@ async test "policy/e2e compacted transcript persists into the next turn" {
   let model = auto_compact_e2e_model(
     [
       // Turn 1: cross the threshold, fire auto-compact, finish.
-      @testkit.ScriptedModelStep::Respond(scope_test_tool_call_with_usage(95)),
-      @testkit.ScriptedModelStep::Respond(
-        @testkit.tk_stop_response("turn1 done"),
+      @test_support.ScriptedModelStep::Respond(
+        scope_test_tool_call_with_usage(95),
+      ),
+      @test_support.ScriptedModelStep::Respond(
+        @test_support.tk_stop_response("turn1 done"),
       ),
       // Turn 2: a plain exchange on the same session.
-      @testkit.ScriptedModelStep::Respond(
-        @testkit.tk_stop_response("turn2 done"),
+      @test_support.ScriptedModelStep::Respond(
+        @test_support.tk_stop_response("turn2 done"),
       ),
     ],
     compacted,
   )
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="tools", tools=[policy_tools()]),
-      @testkit.tk_ext(id="io", sessions=[@testkit.RecordingSessionPort()]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="tools", tools=[policy_tools()]),
+      @test_support.tk_ext(id="io", sessions=[
+        @test_support.RecordingSessionPort(),
+      ]),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
-  ignore(agent.run_turn(@testkit.tk_user_msg("hi"), "session_e2e_persist"))
+  ignore(agent.run_turn(@test_support.tk_user_msg("hi"), "session_e2e_persist"))
   ignore(
-    agent.run_turn(@testkit.tk_user_msg("second turn"), "session_e2e_persist"),
+    agent.run_turn(
+      @test_support.tk_user_msg("second turn"),
+      "session_e2e_persist",
+    ),
   )
   assert_eq(model.compact_calls.val, 1)
   let seen = model.seen_chats()
@@ -613,10 +694,10 @@ async test "policy/e2e compacted transcript persists into the next turn" {
 
 ///|
 async test "policy/pre-request check covers the first request after resume" {
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   store.seed("session_pre_resume", {
     messages: [
-      @testkit.tk_user_msg("hello"),
+      @test_support.tk_user_msg("hello"),
       AssistantMessage(
         content=[Text("partial progress from the interrupted run")],
         reasoning=None,
@@ -632,13 +713,17 @@ async test "policy/pre-request check covers the first request after resume" {
     ),
   })
   let model = auto_compact_e2e_model(
-    [@testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("resumed"))],
-    [@testkit.tk_user_msg("summary")],
+    [
+      @test_support.ScriptedModelStep::Respond(
+        @test_support.tk_stop_response("resumed"),
+      ),
+    ],
+    [@test_support.tk_user_msg("summary")],
   )
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", sessions=[store]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store]),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )

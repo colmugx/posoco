@@ -88,21 +88,23 @@ test "agent control/follow_up reports queue write failure" {
 
 ///|
 async test "agent run_turn exposes follow-up drain failure as Runtime error" {
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("done"),
+    ),
   ])
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", sessions=[store]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store]),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
   let control = agent.control()
   control.follow_ups.close()
   let result : Result[@types.TurnResult, @error.AgentError] = Ok(
-    agent.run_turn(@testkit.tk_user_msg("hello"), "queue-read-fail"),
+    agent.run_turn(@test_support.tk_user_msg("hello"), "queue-read-fail"),
   ) catch {
     error => Err(error)
   }

@@ -1,18 +1,20 @@
 ///|
 async test "tool_retire/caller_cancellation_releases_the_operation_lease_and_retires_before_return" {
   let publisher = ManualPublisher::new()
-  let provider = @testkit.RecordingToolProvider(
-    [@testkit.tk_tool_def("leaf", "leaf")],
+  let provider = @test_support.RecordingToolProvider(
+    [@test_support.tk_tool_def("leaf", "leaf")],
     Map([]),
   )
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::StreamParked(chunks=[]),
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("retry")),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::StreamParked(chunks=[]),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("retry"),
+    ),
   ])
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="owner", lifecycle=[publisher], requires=[
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="owner", lifecycle=[publisher], requires=[
         @port.ToolContribution,
       ]),
     ],
@@ -30,7 +32,7 @@ async test "tool_retire/caller_cancellation_releases_the_operation_lease_and_ret
   )
   @async.with_task_group(async fn(group) {
     let turn = group.spawn(allow_failure=true, () => {
-      agent.run_turn(@testkit.tk_user_msg("hello"), "retire-cancel")
+      agent.run_turn(@test_support.tk_user_msg("hello"), "retire-cancel")
     })
     while model.parked_calls == 0 {
       @async.pause()
@@ -49,7 +51,7 @@ async test "tool_retire/caller_cancellation_releases_the_operation_lease_and_ret
     )
   })
   assert_true(retired.val)
-  ignore(agent.run_turn(@testkit.tk_user_msg("retry"), "retire-cancel"))
+  ignore(agent.run_turn(@test_support.tk_user_msg("retry"), "retire-cancel"))
   agent.shutdown()
 }
 
@@ -60,29 +62,29 @@ async test "tool_retire/unconfirmed_execution_keeps_resources_until_shutdown_con
   let entered = Ref(false)
   let provider = InvocationFixture::{
     id: "leaf",
-    definitions: [@testkit.tk_tool_def("leaf", "leaf")],
+    definitions: [@test_support.tk_tool_def("leaf", "leaf")],
     owners: [],
     action: async fn(ctx) {
       (ctx.register_cancel)(facet)
       entered.val = true
       @async.CondVar::Cond().wait()
-      @testkit.tk_ok_result("unreachable")
+      @test_support.tk_ok_result("unreachable")
     },
   }
   let probe = RetireProbe::RetireProbe()
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(
+      @test_support.tk_ext(
         id="model",
         model=Some(
-          @testkit.ScriptedModel([
-            @testkit.ScriptedModelStep::Respond(
-              @testkit.tk_tool_call_response("leaf", "call", Json::null()),
+          @test_support.ScriptedModel([
+            @test_support.ScriptedModelStep::Respond(
+              @test_support.tk_tool_call_response("leaf", "call", Json::null()),
             ),
           ]),
         ),
       ),
-      @testkit.tk_ext(id="owner", lifecycle=[publisher], requires=[
+      @test_support.tk_ext(id="owner", lifecycle=[publisher], requires=[
         @port.ToolContribution,
       ]),
     ],
@@ -91,7 +93,7 @@ async test "tool_retire/unconfirmed_execution_keeps_resources_until_shutdown_con
   ignore(publisher.capability().replace(provider~, retire=probe.callback()))
   @async.with_task_group(async fn(group) {
     let turn = group.spawn(allow_failure=true, () => {
-      agent.run_turn(@testkit.tk_user_msg("hello"), "unknown-execution")
+      agent.run_turn(@test_support.tk_user_msg("hello"), "unknown-execution")
     })
     while !entered.val {
       @async.pause()
@@ -110,7 +112,7 @@ async test "tool_retire/unconfirmed_execution_keeps_resources_until_shutdown_con
   })
   assert_eq(probe.attempts, 0)
   try
-    agent.run_turn(@testkit.tk_user_msg("unsafe"), "unknown-execution")
+    agent.run_turn(@test_support.tk_user_msg("unsafe"), "unknown-execution")
   catch {
     error =>
       assert_true(error.to_string().contains("unconfirmed tool execution"))

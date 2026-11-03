@@ -4,17 +4,17 @@ package "colmugx/posoco/tests/support"
 import {
   "colmugx/posoco",
   "colmugx/posoco/error",
+  "colmugx/posoco/internal/test_support",
   "colmugx/posoco/kernel",
   "colmugx/posoco/port",
   "colmugx/posoco/runtime",
-  "colmugx/posoco/testkit",
   "colmugx/posoco/types",
   "moonbitlang/async/aqueue",
   "moonbitlang/core/json",
 }
 
 // Values
-pub fn compact_tools_seed(@testkit.RecordingSessionPort, String) -> Unit
+pub fn compact_tools_seed(@test_support.RecordingSessionPort, String) -> Unit
 
 pub fn policy_replace_result() -> @kernel.CompactResult
 

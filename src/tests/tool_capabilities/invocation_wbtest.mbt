@@ -1,36 +1,38 @@
 ///|
 async test "tool_invoke/child_result_returns_to_parent_without_another_model_turn" {
   let parent = InvokingTool::{ seen_tools: [], }
-  let child = @testkit.RecordingToolProvider(
-    [{ ..@testkit.tk_tool_def("child", "child"), exposure: Deferred, }],
+  let child = @test_support.RecordingToolProvider(
+    [{ ..@test_support.tk_tool_def("child", "child"), exposure: Deferred, }],
     Map::from_array([
       (
         "child",
-        @testkit.ScriptedToolOutcome::OutcomeOk(
-          @testkit.tk_ok_result("child result"),
+        @test_support.ScriptedToolOutcome::OutcomeOk(
+          @test_support.tk_ok_result("child result"),
         ),
       ),
     ]),
   )
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(
-      @testkit.tk_tool_call_response("parent", "parent-call", Json::null()),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_tool_call_response("parent", "parent-call", Json::null()),
     ),
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("done"),
+    ),
   ])
-  let store = @testkit.RecordingSessionPort()
-  let observer = @testkit.RecordingObserver()
+  let store = @test_support.RecordingSessionPort()
+  let observer = @test_support.RecordingObserver()
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model), sessions=[store], observers=[
+      @test_support.tk_ext(id="model", model=Some(model), sessions=[store], observers=[
         observer,
       ]),
       parent,
-      @testkit.tk_ext(id="child", tools=[child]),
+      @test_support.tk_ext(id="child", tools=[child]),
     ],
     config=@agent.agent_config(max_tool_rounds=Some(10)),
   )
-  let result = agent.run_turn(@testkit.tk_user_msg("hello"), "nested")
+  let result = agent.run_turn(@test_support.tk_user_msg("hello"), "nested")
   assert_eq(contribution_result_texts(result.tool_results), ["child result"])
   assert_eq(child.exec_records().length(), 1)
   assert_eq(model.call_count(), 2)
@@ -100,12 +102,15 @@ async test "tool_invoke/admission_denials_do_not_reach_the_child_provider" {
     let parent = InvocationFixture::{
       id: "parent",
       definitions: [
-        { ..@testkit.tk_tool_def("parent", "parent"), policy: parent_policy, },
+        {
+          ..@test_support.tk_tool_def("parent", "parent"),
+          policy: parent_policy,
+        },
       ],
       owners,
       action: async fn(ctx) {
         replies.push(ctx.invoke("child", Json::null()))
-        @testkit.tk_ok_result("parent")
+        @test_support.tk_ok_result("parent")
       },
     }
     let child = InvocationFixture::{
@@ -113,31 +118,33 @@ async test "tool_invoke/admission_denials_do_not_reach_the_child_provider" {
       owners: [],
       definitions: [
         {
-          ..@testkit.tk_tool_def("child", "child"),
+          ..@test_support.tk_tool_def("child", "child"),
           policy: child_policy,
           exposure,
         },
       ],
       action: _ctx => {
         started.val += 1
-        @testkit.tk_ok_result("unexpected")
+        @test_support.tk_ok_result("unexpected")
       },
     }
-    let model = @testkit.ScriptedModel([
-      @testkit.ScriptedModelStep::Respond(
-        @testkit.tk_tool_call_response("parent", "p", Json::null()),
+    let model = @test_support.ScriptedModel([
+      @test_support.ScriptedModelStep::Respond(
+        @test_support.tk_tool_call_response("parent", "p", Json::null()),
       ),
-      @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
+      @test_support.ScriptedModelStep::Respond(
+        @test_support.tk_stop_response("done"),
+      ),
     ])
     let agent = Agent(
-      exts=[@testkit.tk_ext(id="model", model=Some(model)), parent, child],
+      exts=[@test_support.tk_ext(id="model", model=Some(model)), parent, child],
       config=@agent.agent_config(
         max_tool_rounds=@agent.agent_config(max_tool_rounds=Some(10)).max_tool_rounds,
         max_tool_calls=max_calls,
         max_tool_depth=max_depth,
       ),
     )
-    let _ = agent.run_turn(@testkit.tk_user_msg("hello"), "rejected-child")
+    let _ = agent.run_turn(@test_support.tk_user_msg("hello"), "rejected-child")
     guard replies is [Completed(NotExecuted(reason=actual, ..))] else {
       fail("expected a structured admission rejection")
     }
@@ -155,7 +162,7 @@ async test "tool_invoke/recursion_uses_the_shared_call_budget_without_an_extra_m
     owners: ["recursive"],
     definitions: [
       {
-        ..@testkit.tk_tool_def("recurse", "recursive composition"),
+        ..@test_support.tk_tool_def("recurse", "recursive composition"),
         policy: Exclusive,
       },
     ],
@@ -163,17 +170,19 @@ async test "tool_invoke/recursion_uses_the_shared_call_budget_without_an_extra_m
       calls.val += 1
       let result = ctx.invoke("recurse", Json::null())
       replies.push(result)
-      @testkit.tk_ok_result("returned")
+      @test_support.tk_ok_result("returned")
     },
   }
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(
-      @testkit.tk_tool_call_response("recurse", "root", Json::null()),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_tool_call_response("recurse", "root", Json::null()),
     ),
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("done"),
+    ),
   ])
   let agent = Agent(
-    exts=[@testkit.tk_ext(id="model", model=Some(model)), recursive],
+    exts=[@test_support.tk_ext(id="model", model=Some(model)), recursive],
     config=@agent.agent_config(
       max_tool_rounds=@agent.agent_config(max_tool_rounds=Some(10)).max_tool_rounds,
       max_tool_calls=Some(3),
@@ -181,7 +190,7 @@ async test "tool_invoke/recursion_uses_the_shared_call_budget_without_an_extra_m
     ),
   )
   let result = @async.with_timeout(2000, async fn() {
-    agent.run_turn(@testkit.tk_user_msg("hello"), "recursive")
+    agent.run_turn(@test_support.tk_user_msg("hello"), "recursive")
   })
   assert_eq(calls.val, 3)
   assert_eq(model.call_count(), 2)
@@ -197,32 +206,34 @@ async test "tool_invoke/a_saved_context_loses_discovery_and_invocation" {
   let saved : Ref[@port.ToolCallContext?] = Ref(None)
   let parent = InvocationFixture::{
     id: "parent",
-    definitions: [@testkit.tk_tool_def("parent", "parent")],
+    definitions: [@test_support.tk_tool_def("parent", "parent")],
     owners: ["child"],
     action: ctx => {
       saved.val = Some(ctx)
-      @testkit.tk_ok_result("parent")
+      @test_support.tk_ok_result("parent")
     },
   }
-  let child = @testkit.RecordingToolProvider(
-    [@testkit.tk_tool_def("child", "child")],
+  let child = @test_support.RecordingToolProvider(
+    [@test_support.tk_tool_def("child", "child")],
     Map::from_array([]),
   )
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(
-      @testkit.tk_tool_call_response("parent", "p", Json::null()),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_tool_call_response("parent", "p", Json::null()),
     ),
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("done"),
+    ),
   ])
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="model", model=Some(model)),
       parent,
-      @testkit.tk_ext(id="child", tools=[child]),
+      @test_support.tk_ext(id="child", tools=[child]),
     ],
     config=@agent.agent_config(max_tool_rounds=Some(10)),
   )
-  let _ = agent.run_turn(@testkit.tk_user_msg("hello"), "saved-context")
+  let _ = agent.run_turn(@test_support.tk_user_msg("hello"), "saved-context")
   let ctx = saved.val.unwrap()
   assert_eq(ctx.tools().length(), 0)
   guard ctx.invoke("child", Json::null())
@@ -234,34 +245,39 @@ async test "tool_invoke/a_saved_context_loses_discovery_and_invocation" {
 
 ///|
 async test "tool_invoke/custom_runtime_forwards_mandatory_child_bindings" {
-  let child = @testkit.RecordingToolProvider(
-    [{ ..@testkit.tk_tool_def("child", "child"), exposure: Deferred, }],
+  let child = @test_support.RecordingToolProvider(
+    [{ ..@test_support.tk_tool_def("child", "child"), exposure: Deferred, }],
     Map::from_array([
       (
         "child",
-        @testkit.ScriptedToolOutcome::OutcomeOk(
-          @testkit.tk_ok_result("child result"),
+        @test_support.ScriptedToolOutcome::OutcomeOk(
+          @test_support.tk_ok_result("child result"),
         ),
       ),
     ]),
   )
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(
-      @testkit.tk_tool_call_response("parent", "parent-call", Json::null()),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_tool_call_response("parent", "parent-call", Json::null()),
     ),
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("done"),
+    ),
   ])
   let runtime = FakeRuntime(@runtime.PortRuntime(model~))
   let agent = Agent::with_runtime(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="model", model=Some(model)),
       InvokingTool::{ seen_tools: [], },
-      @testkit.tk_ext(id="child", tools=[child]),
+      @test_support.tk_ext(id="child", tools=[child]),
     ],
     config=@agent.agent_config(max_tool_rounds=Some(10)),
     runtime~,
   )
-  let result = agent.run_turn(@testkit.tk_user_msg("invoke"), "bound-child")
+  let result = agent.run_turn(
+    @test_support.tk_user_msg("invoke"),
+    "bound-child",
+  )
   assert_eq(contribution_result_texts(result.tool_results), ["child result"])
   assert_eq(child.exec_records().length(), 1)
   assert_eq(runtime.seen_contexts.map(ctx => ctx.owner.to_string()), [
@@ -275,9 +291,12 @@ test "tool_invoke/duplicate_owner_cannot_silently_widen_its_child_scope" {
   try
     Agent(
       exts=[
-        @testkit.tk_ext(id="model", model=Some(@testkit.ScriptedModel([]))),
+        @test_support.tk_ext(
+          id="model",
+          model=Some(@test_support.ScriptedModel([])),
+        ),
         parent,
-        @testkit.tk_ext(id="parent"),
+        @test_support.tk_ext(id="parent"),
       ],
       config=@agent.agent_config(max_tool_rounds=Some(10)),
     )
@@ -294,7 +313,7 @@ test "tool_invoke/duplicate_owner_cannot_silently_widen_its_child_scope" {
 
 ///|
 priv struct CollidingCallModel {
-  inner : @testkit.ScriptedModel
+  inner : @test_support.ScriptedModel
 }
 
 ///|
@@ -339,39 +358,41 @@ impl @port.ModelPort for CollidingCallModel with fn compact(
 ///|
 async test "tool_invoke/model_call_ids_cannot_collide_with_kernel_child_ids" {
   let model = CollidingCallModel::{
-    inner: @testkit.ScriptedModel([
-      @testkit.ScriptedModelStep::Respond(
-        @testkit.tk_tool_call_response(
+    inner: @test_support.ScriptedModel([
+      @test_support.ScriptedModelStep::Respond(
+        @test_support.tk_tool_call_response(
           "parent",
           "will be rewritten",
           Json::null(),
         ),
       ),
-      @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
+      @test_support.ScriptedModelStep::Respond(
+        @test_support.tk_stop_response("done"),
+      ),
     ]),
   }
-  let child = @testkit.RecordingToolProvider(
-    [{ ..@testkit.tk_tool_def("child", "child"), exposure: Deferred, }],
+  let child = @test_support.RecordingToolProvider(
+    [{ ..@test_support.tk_tool_def("child", "child"), exposure: Deferred, }],
     Map::from_array([
       (
         "child",
-        @testkit.ScriptedToolOutcome::OutcomeOk(
-          @testkit.tk_ok_result("child result"),
+        @test_support.ScriptedToolOutcome::OutcomeOk(
+          @test_support.tk_ok_result("child result"),
         ),
       ),
     ]),
   )
-  let observer = @testkit.RecordingObserver()
+  let observer = @test_support.RecordingObserver()
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model), observers=[observer]),
+      @test_support.tk_ext(id="model", model=Some(model), observers=[observer]),
       InvokingTool::{ seen_tools: [], },
-      @testkit.tk_ext(id="child", tools=[child]),
+      @test_support.tk_ext(id="child", tools=[child]),
     ],
     config=@agent.agent_config(max_tool_rounds=Some(10)),
   )
   let result = agent.run_turn(
-    @testkit.tk_user_msg("hello"),
+    @test_support.tk_user_msg("hello"),
     "colliding-child-id",
   )
   assert_eq(contribution_result_texts(result.tool_results), ["child result"])

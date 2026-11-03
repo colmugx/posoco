@@ -3,13 +3,13 @@ test "core_facts/h2_missing_provenance_not_revived_by_rewrite" {
   let shadow = CoreFacts::CoreFacts()
   shadow.mark_missing_provenance("missing-child")
   shadow.record_boundary("run-1", "missing-child", 1, "sp-1", false, [
-    @testkit.tk_user_msg("rewritten"),
+    @test_support.tk_user_msg("rewritten"),
   ])
   match
     shadow.record_terminal(
       "missing-child",
       "run-1",
-      [@testkit.tk_user_msg("terminal")],
+      [@test_support.tk_user_msg("terminal")],
       Map::from_array([]),
     ) {
     Ok(_) => ()
@@ -28,7 +28,7 @@ test "core_facts/late_run_terminal_is_rejected" {
   match
     shadow.hydrate(
       "late-parent",
-      [@testkit.tk_user_msg("old")],
+      [@test_support.tk_user_msg("old")],
       Map::from_array([]),
     ) {
     Ok(_) => ()
@@ -37,9 +37,9 @@ test "core_facts/late_run_terminal_is_rejected" {
   match
     shadow.admit(
       "late-parent",
-      [@testkit.tk_user_msg("old")],
+      [@test_support.tk_user_msg("old")],
       Map::from_array([]),
-      [@testkit.tk_user_msg("old")],
+      [@test_support.tk_user_msg("old")],
       "run-1",
     ) {
     Ok(_) => ()
@@ -48,7 +48,7 @@ test "core_facts/late_run_terminal_is_rejected" {
   let late = shadow.record_terminal(
     "late-parent",
     "run-2",
-    [@testkit.tk_user_msg("late")],
+    [@test_support.tk_user_msg("late")],
     Map::from_array([]),
   )
   match late {
@@ -58,19 +58,19 @@ test "core_facts/late_run_terminal_is_rejected" {
   let current = shadow.store.current("late-parent") catch {
     _ => fail("expected the original core body")
   }
-  assert_true(current.session.messages[0] == @testkit.tk_user_msg("old"))
+  assert_true(current.session.messages[0] == @test_support.tk_user_msg("old"))
   match shadow.state.get("late-parent") {
     Some(Tracking(run_id~)) => assert_eq(run_id, "run-1")
     _ => fail("expected the original run to remain tracking")
   }
   shadow.record_boundary("run-1", "late-parent", 1, "sp-1", true, [
-    @testkit.tk_user_msg("done"),
+    @test_support.tk_user_msg("done"),
   ])
   match
     shadow.record_terminal(
       "late-parent",
       "run-1",
-      [@testkit.tk_user_msg("done")],
+      [@test_support.tk_user_msg("done")],
       Map::from_array([]),
     ) {
     Ok(_) => ()
@@ -79,7 +79,7 @@ test "core_facts/late_run_terminal_is_rejected" {
   let done = shadow.store.current("late-parent") catch {
     _ => fail("expected the terminal core body")
   }
-  assert_true(done.session.messages[0] == @testkit.tk_user_msg("done"))
+  assert_true(done.session.messages[0] == @test_support.tk_user_msg("done"))
   match shadow.store.sessions["late-parent"].versions[2].body {
     Append(tail~) => assert_eq(tail.length(), 0)
     Full(..) => fail("terminal metadata update must not create a Full body")
@@ -92,7 +92,7 @@ test "core_facts/duplicate_boundary_is_ignored" {
   match
     shadow.hydrate(
       "boundary-parent",
-      [@testkit.tk_user_msg("seed")],
+      [@test_support.tk_user_msg("seed")],
       Map::from_array([]),
     ) {
     Ok(_) => ()
@@ -101,17 +101,17 @@ test "core_facts/duplicate_boundary_is_ignored" {
   match
     shadow.admit(
       "boundary-parent",
-      [@testkit.tk_user_msg("seed")],
+      [@test_support.tk_user_msg("seed")],
       Map::from_array([]),
-      [@testkit.tk_user_msg("seed")],
+      [@test_support.tk_user_msg("seed")],
       "run-1",
     ) {
     Ok(_) => ()
     Err(detail) => fail(detail)
   }
   shadow.record_boundary("run-1", "boundary-parent", 1, "sp-1", false, [
-    @testkit.tk_user_msg("seed"),
-    @testkit.tk_user_msg("one"),
+    @test_support.tk_user_msg("seed"),
+    @test_support.tk_user_msg("one"),
   ])
   let first = shadow.store.current("boundary-parent") catch {
     _ => fail("expected the first committed boundary")
@@ -122,18 +122,18 @@ test "core_facts/duplicate_boundary_is_ignored" {
     Full(..) => fail("prefix growth must use Append, not Full")
   }
   shadow.record_boundary("run-1", "boundary-parent", 1, "sp-1", false, [
-    @testkit.tk_user_msg("seed"),
-    @testkit.tk_user_msg("poison"),
+    @test_support.tk_user_msg("seed"),
+    @test_support.tk_user_msg("poison"),
   ])
   let duplicate = shadow.store.current("boundary-parent") catch {
     _ => fail("expected the duplicate boundary")
   }
   assert_eq(duplicate.version, 1)
-  assert_true(duplicate.session.messages[1] == @testkit.tk_user_msg("one"))
+  assert_true(duplicate.session.messages[1] == @test_support.tk_user_msg("one"))
   shadow.record_boundary("run-1", "boundary-parent", 2, "sp-2", true, [
-    @testkit.tk_user_msg("seed"),
-    @testkit.tk_user_msg("one"),
-    @testkit.tk_user_msg("two"),
+    @test_support.tk_user_msg("seed"),
+    @test_support.tk_user_msg("one"),
+    @test_support.tk_user_msg("two"),
   ])
   let terminal = shadow.store.current("boundary-parent") catch {
     _ => fail("expected the terminal boundary")
@@ -157,7 +157,7 @@ test "core_facts/terminal_body_mismatch_is_rejected_without_overwrite" {
   match
     shadow.hydrate(
       "terminal-mismatch",
-      [@testkit.tk_user_msg("seed")],
+      [@test_support.tk_user_msg("seed")],
       Map::from_array([]),
     ) {
     Ok(_) => ()
@@ -166,23 +166,23 @@ test "core_facts/terminal_body_mismatch_is_rejected_without_overwrite" {
   match
     shadow.admit(
       "terminal-mismatch",
-      [@testkit.tk_user_msg("seed")],
+      [@test_support.tk_user_msg("seed")],
       Map::from_array([]),
-      [@testkit.tk_user_msg("seed")],
+      [@test_support.tk_user_msg("seed")],
       "run-1",
     ) {
     Ok(_) => ()
     Err(detail) => fail(detail)
   }
   shadow.record_boundary("run-1", "terminal-mismatch", 1, "sp-1", true, [
-    @testkit.tk_user_msg("seed"),
-    @testkit.tk_user_msg("committed"),
+    @test_support.tk_user_msg("seed"),
+    @test_support.tk_user_msg("committed"),
   ])
   match
     shadow.record_terminal(
       "terminal-mismatch",
       "run-1",
-      [@testkit.tk_user_msg("forged")],
+      [@test_support.tk_user_msg("forged")],
       Map::from_array([]),
     ) {
     Err(_) => ()
@@ -192,7 +192,9 @@ test "core_facts/terminal_body_mismatch_is_rejected_without_overwrite" {
     _ => fail("expected the committed body")
   }
   assert_eq(current.session.messages.length(), 2)
-  assert_true(current.session.messages[1] == @testkit.tk_user_msg("committed"))
+  assert_true(
+    current.session.messages[1] == @test_support.tk_user_msg("committed"),
+  )
   match shadow.state.get("terminal-mismatch") {
     Some(Stopped(reason~, ..)) => assert_eq(reason, "terminal_body_mismatch")
     _ => fail("expected the mismatch to stop shadow completion")

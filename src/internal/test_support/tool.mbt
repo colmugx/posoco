@@ -37,7 +37,9 @@ pub(all) enum ToolProviderOp {
 pub extend ToolProviderOp with Debug::{to_repr}
 
 ///|
-fn snapshot_tool_outcome(outcome : ScriptedToolOutcome) -> ScriptedToolOutcome {
+fn snapshot_scripted_outcome(
+  outcome : ScriptedToolOutcome,
+) -> ScriptedToolOutcome {
   match outcome {
     OutcomeOk(value) =>
       OutcomeOk(@message_snapshot.snapshot_tool_outcome(value))
@@ -64,7 +66,7 @@ pub fn RecordingToolProvider::RecordingToolProvider(
 ) -> RecordingToolProvider {
   let copied_outcomes : Map[String, ScriptedToolOutcome] = Map::from_array([])
   for key in outcomes.keys() {
-    copied_outcomes[key] = snapshot_tool_outcome(outcomes[key])
+    copied_outcomes[key] = snapshot_scripted_outcome(outcomes[key])
   }
   {
     tool_defs: tool_defs.map(snapshot_tool_def),
@@ -94,7 +96,7 @@ pub fn RecordingToolProvider::exec_records(
       call_id: record.call_id,
       tool_name: record.tool_name,
       arguments: @message_snapshot.snapshot_json(record.arguments),
-      outcome: snapshot_tool_outcome(record.outcome),
+      outcome: snapshot_scripted_outcome(record.outcome),
     }
   })
 }
@@ -189,7 +191,7 @@ pub impl @port.ToolProvider for RecordingToolProvider with fn execute(
     call_id: call.call_id.to_string(),
     tool_name: call.name.to_string(),
     arguments: @message_snapshot.snapshot_json(call.arguments),
-    outcome: snapshot_tool_outcome(outcome),
+    outcome: snapshot_scripted_outcome(outcome),
   })
   match outcome {
     OutcomeOk(value) => @message_snapshot.snapshot_tool_outcome(value)

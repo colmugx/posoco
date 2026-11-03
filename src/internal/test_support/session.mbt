@@ -1,17 +1,4 @@
 ///|
-/// Deep-copy a session so the fake never aliases caller-owned messages or
-/// metadata.
-fn snapshot_session(
-  messages : Array[@kernel.Message],
-  metadata : Map[String, Json],
-) -> @types.Session {
-  {
-    messages: @message_snapshot.snapshot_messages(messages),
-    metadata: @message_snapshot.snapshot_metadata(metadata),
-  }
-}
-
-///|
 /// A recorded session operation. Constructors are prefixed with `Op` to avoid
 /// ambiguity with `SessionError::Load`/`SessionError::Save`.
 #derive(Debug)

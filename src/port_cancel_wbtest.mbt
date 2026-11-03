@@ -13,7 +13,7 @@ using @support {type CancellableProbe}
 
 ///|
 async test "port cancel/registered facet routes while effect in flight" {
-  let model = @testkit.ScriptedModel([])
+  let model = @test_support.ScriptedModel([])
   let probe = CancellableProbe()
   let port_runtime = @runtime.PortRuntime(model~)
   @async.with_task_group(group => {
@@ -51,7 +51,7 @@ async test "port cancel/registered facet routes while effect in flight" {
 
 ///|
 async test "port cancel/settled effect drops its registration" {
-  let model = @testkit.ScriptedModel([])
+  let model = @test_support.ScriptedModel([])
   let probe = CancellableProbe()
   let port_runtime = @runtime.PortRuntime(model~)
   // Pre-loaded release: execute runs to completion, the effect settles, and
@@ -75,13 +75,15 @@ async test "port cancel/settled effect drops its registration" {
 
 ///|
 async test "port cancel/plain provider and unknown ids stay not propagated" {
-  let model = @testkit.ScriptedModel([])
-  let tools = @testkit.RecordingToolProvider(
-    [@testkit.tk_tool_def("plain", "")],
+  let model = @test_support.ScriptedModel([])
+  let tools = @test_support.RecordingToolProvider(
+    [@test_support.tk_tool_def("plain", "")],
     Map::from_array([
       (
         "plain",
-        @testkit.ScriptedToolOutcome::OutcomeOk(@testkit.tk_ok_result("ok")),
+        @test_support.ScriptedToolOutcome::OutcomeOk(
+          @test_support.tk_ok_result("ok"),
+        ),
       ),
     ]),
   )

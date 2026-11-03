@@ -107,7 +107,7 @@ impl @port.ModelPort for GatedModel with fn chat(
   } else {
     self.responses[(self.calls - 1) % self.responses.length()]
   }
-  @testkit.tk_stop_response(text)
+  @test_support.tk_stop_response(text)
 }
 
 ///|
@@ -154,7 +154,7 @@ impl @port.Observer for FollowUpInjector with fn on_event(
     self.injected.val = true
     match self.control.val {
       Some(handle) =>
-        ignore(handle.enqueue_follow_up(@testkit.tk_user_msg("follow up")))
+        ignore(handle.enqueue_follow_up(@test_support.tk_user_msg("follow up")))
       None => ()
     }
   }
@@ -162,19 +162,25 @@ impl @port.Observer for FollowUpInjector with fn on_event(
 
 ///|
 async test "operation/started_settled fire exactly once across the follow-up drain" {
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("one")),
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("two")),
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("again")),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("one"),
+    ),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("two"),
+    ),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("again"),
+    ),
   ])
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   let observer = SignalObserver::SignalObserver()
   let control_ref : Ref[AgentControl?] = Ref(None)
   let injector = FollowUpInjector::FollowUpInjector(control_ref)
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", sessions=[store], observers=[
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store], observers=[
         observer,
         injector as &@port.Observer,
       ]),
@@ -182,7 +188,7 @@ async test "operation/started_settled fire exactly once across the follow-up dra
     config=agent_config(max_tool_rounds=Some(10)),
   )
   control_ref.val = Some(agent.control())
-  let result = agent.run_turn(@testkit.tk_user_msg("hello"), "op-drain")
+  let result = agent.run_turn(@test_support.tk_user_msg("hello"), "op-drain")
   guard result.message
     is @kernel.Message::AssistantMessage(
       content=[@kernel.Content::Text("two")],
@@ -214,7 +220,7 @@ async test "operation/started_settled fire exactly once across the follow-up dra
   assert_eq(turn_started, 2)
   assert_eq(turn_completed, 2)
   // Settled implies the guard is gone: the next admission is immediate.
-  let next = agent.run_turn(@testkit.tk_user_msg("again"), "op-drain")
+  let next = agent.run_turn(@test_support.tk_user_msg("again"), "op-drain")
   guard next.message is @kernel.Message::AssistantMessage(..) else {
     fail("the Agent must admit the next operation after settled")
   }
@@ -223,19 +229,19 @@ async test "operation/started_settled fire exactly once across the follow-up dra
 ///|
 async test "operation/busy names the incumbent and the loser leaves no trace" {
   let model = GatedModel::GatedModel(responses=["held"])
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   let observer = SignalObserver::SignalObserver()
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", sessions=[store], observers=[observer]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store], observers=[observer]),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
   @async.with_task_group(async fn(group) {
     let holder = group.spawn(async fn() {
       let r : Result[@types.TurnResult, @error.AgentError] = Ok(
-        agent.run_turn(@testkit.tk_user_msg("hold"), "op-busy"),
+        agent.run_turn(@test_support.tk_user_msg("hold"), "op-busy"),
       ) catch {
         e => Err(e)
       }
@@ -243,7 +249,7 @@ async test "operation/busy names the incumbent and the loser leaves no trace" {
     })
     ignore(model.entered.get())
     let loser : Result[@types.TurnResult, @error.AgentError] = Ok(
-      agent.run_turn(@testkit.tk_user_msg("race"), "op-busy"),
+      agent.run_turn(@test_support.tk_user_msg("race"), "op-busy"),
     ) catch {
       e => Err(e)
     }
@@ -261,7 +267,7 @@ async test "operation/busy names the incumbent and the loser leaves no trace" {
   })
   // The Agent accepts new work immediately after settled.
   model.gate.put(1)
-  let next = agent.run_turn(@testkit.tk_user_msg("after"), "op-busy")
+  let next = agent.run_turn(@test_support.tk_user_msg("after"), "op-busy")
   guard next.message is @kernel.Message::AssistantMessage(..) else {
     fail("post-settled admission failed")
   }
@@ -269,23 +275,25 @@ async test "operation/busy names the incumbent and the loser leaves no trace" {
 
 ///|
 async test "operation/compact settles with the compact origin and outcome" {
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Compact(result={
-      compacted_messages: [@testkit.tk_user_msg("summary")],
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Compact(result={
+      compacted_messages: [@test_support.tk_user_msg("summary")],
       mode: Replace,
     }),
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("unused")),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("unused"),
+    ),
   ])
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   store.seed("op-compact", {
-    messages: [@testkit.tk_user_msg("seeded")],
+    messages: [@test_support.tk_user_msg("seeded")],
     metadata: Map::from_array([]),
   })
   let observer = SignalObserver::SignalObserver()
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", sessions=[store], observers=[observer]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store], observers=[observer]),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
@@ -304,7 +312,10 @@ async test "operation/compact settles with the compact origin and outcome" {
   assert_true(operation_id.has_prefix("agent_compact_session_"))
   fail_unless_custom(settled[0], "outcome", "completed")
   // The same session admits an ordinary turn afterwards.
-  let turn = agent.run_turn(@testkit.tk_user_msg("after compact"), "op-compact")
+  let turn = agent.run_turn(
+    @test_support.tk_user_msg("after compact"),
+    "op-compact",
+  )
   guard turn.message is @kernel.Message::AssistantMessage(..) else {
     fail("post-compact admission failed")
   }
@@ -312,20 +323,24 @@ async test "operation/compact settles with the compact origin and outcome" {
 
 ///|
 async test "operation/resume carries the resume origin" {
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("resumed")),
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("woken")),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("resumed"),
+    ),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("woken"),
+    ),
   ])
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   store.seed("op-resume", {
-    messages: [@testkit.tk_user_msg("persisted")],
+    messages: [@test_support.tk_user_msg("persisted")],
     metadata: Map::from_array([]),
   })
   let observer = SignalObserver::SignalObserver()
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", sessions=[store], observers=[observer]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store], observers=[observer]),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
@@ -333,27 +348,29 @@ async test "operation/resume carries the resume origin" {
   let started = operation_events(observer, "operation_started")
   assert_eq(started.length(), 1)
   fail_unless_custom(started[0], "origin", "resume")
-  ignore(agent.run_turn(@testkit.tk_user_msg("next"), "op-resume"))
+  ignore(agent.run_turn(@test_support.tk_user_msg("next"), "op-resume"))
   assert_eq(operation_events(observer, "operation_settled").length(), 2)
 }
 
 ///|
 async test "operation/model failure settles failed and stays reusable" {
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Fail(@error.ModelError::Transport("down")),
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("recovered")),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Fail(@error.ModelError::Transport("down")),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("recovered"),
+    ),
   ])
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   let observer = SignalObserver::SignalObserver()
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", sessions=[store], observers=[observer]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store], observers=[observer]),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
   let first : Result[@types.TurnResult, @error.AgentError] = Ok(
-    agent.run_turn(@testkit.tk_user_msg("boom"), "op-fail"),
+    agent.run_turn(@test_support.tk_user_msg("boom"), "op-fail"),
   ) catch {
     e => Err(e)
   }
@@ -363,7 +380,7 @@ async test "operation/model failure settles failed and stays reusable" {
   let settled = operation_events(observer, "operation_settled")
   assert_eq(settled.length(), 1)
   fail_unless_custom(settled[0], "outcome", "failed")
-  let second = agent.run_turn(@testkit.tk_user_msg("retry"), "op-fail")
+  let second = agent.run_turn(@test_support.tk_user_msg("retry"), "op-fail")
   guard second.message
     is @kernel.Message::AssistantMessage(
       content=[@kernel.Content::Text("recovered")],

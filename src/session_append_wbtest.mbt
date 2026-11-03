@@ -12,27 +12,32 @@ fn append_config() -> AgentConfig {
 
 ///|
 async test "t06_sequential_turns_use_append_not_full_save" {
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("first")),
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("second")),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("first"),
+    ),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("second"),
+    ),
   ])
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", sessions=[store]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store]),
     ],
     config=append_config(),
   )
-  let _ = agent.run_turn(@testkit.tk_user_msg("hello"), "s1")
-  let _ = agent.run_turn(@testkit.tk_user_msg("world"), "s1")
+  let _ = agent.run_turn(@test_support.tk_user_msg("hello"), "s1")
+  let _ = agent.run_turn(@test_support.tk_user_msg("world"), "s1")
   let ops = store.ops()
   let mut save_count = 0
   let mut checkpoint_count = 0
   for op in ops {
     match op {
-      @testkit.SessionOp::OpSave(id="s1", ..) => save_count = save_count + 1
-      @testkit.SessionOp::OpCheckpoint(id="s1", ..) =>
+      @test_support.SessionOp::OpSave(id="s1", ..) =>
+        save_count = save_count + 1
+      @test_support.SessionOp::OpCheckpoint(id="s1", ..) =>
         checkpoint_count = checkpoint_count + 1
       _ => ()
     }
@@ -47,7 +52,7 @@ async test "t06_sequential_turns_use_append_not_full_save" {
 fn compact_trigger_response(total_tokens : Int32) -> @kernel.ModelCallResult {
   // Tool-calls response keeps the pump in ReadyForModel so the auto-compact
   // safe-point is reached; the tool outcome is ignored by the test.
-  let base = @testkit.tk_tool_call_response("echo", "call_1", Json::null())
+  let base = @test_support.tk_tool_call_response("echo", "call_1", Json::null())
   let completion : @kernel.Completion = Completion(
     content=[],
     tool_calls=base.completion.tool_calls(),
@@ -66,31 +71,37 @@ fn compact_trigger_response(total_tokens : Int32) -> @kernel.ModelCallResult {
 
 ///|
 async test "t06_compact_turn_uses_full_save_not_append" {
-  let model = @testkit.ScopeRecordingModel(
+  let model = @test_support.ScopeRecordingModel(
     [
-      @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("first")),
-      @testkit.ScriptedModelStep::Respond(compact_trigger_response(95)),
-      @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
+      @test_support.ScriptedModelStep::Respond(
+        @test_support.tk_stop_response("first"),
+      ),
+      @test_support.ScriptedModelStep::Respond(compact_trigger_response(95)),
+      @test_support.ScriptedModelStep::Respond(
+        @test_support.tk_stop_response("done"),
+      ),
     ],
     compact_result={
-      compacted_messages: [@testkit.tk_user_msg("summary")],
+      compacted_messages: [@test_support.tk_user_msg("summary")],
       mode: Replace,
     },
   )
-  let tools = @testkit.RecordingToolProvider(
-    [@testkit.tk_tool_def("echo", "echo tool")],
+  let tools = @test_support.RecordingToolProvider(
+    [@test_support.tk_tool_def("echo", "echo tool")],
     Map::from_array([
       (
         "echo",
-        @testkit.ScriptedToolOutcome::OutcomeOk(@testkit.tk_ok_result("echoed")),
+        @test_support.ScriptedToolOutcome::OutcomeOk(
+          @test_support.tk_ok_result("echoed"),
+        ),
       ),
     ]),
   )
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="tools", tools=[tools], sessions=[store]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="tools", tools=[tools], sessions=[store]),
     ],
     config={
       ..append_config(),
@@ -99,17 +110,18 @@ async test "t06_compact_turn_uses_full_save_not_append" {
     },
   )
   // First turn: small response, no compact, should append.
-  let _ = agent.run_turn(@testkit.tk_user_msg("hello"), "s2")
+  let _ = agent.run_turn(@test_support.tk_user_msg("hello"), "s2")
   // Second turn: response reports 95 tokens (> 90 threshold), triggers
   // compact Replace, which must fall back to full save.
-  let _ = agent.run_turn(@testkit.tk_user_msg("world"), "s2")
+  let _ = agent.run_turn(@test_support.tk_user_msg("world"), "s2")
   let ops = store.ops()
   let mut save_count = 0
   let mut checkpoint_count = 0
   for op in ops {
     match op {
-      @testkit.SessionOp::OpSave(id="s2", ..) => save_count = save_count + 1
-      @testkit.SessionOp::OpCheckpoint(id="s2", ..) =>
+      @test_support.SessionOp::OpSave(id="s2", ..) =>
+        save_count = save_count + 1
+      @test_support.SessionOp::OpCheckpoint(id="s2", ..) =>
         checkpoint_count = checkpoint_count + 1
       _ => ()
     }
@@ -121,36 +133,46 @@ async test "t06_compact_turn_uses_full_save_not_append" {
 
 ///|
 async test "committed model and tool steps advance the durable cursor" {
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(
-      @testkit.tk_tool_call_response("echo", "checkpoint-call", Json::null()),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_tool_call_response(
+        "echo",
+        "checkpoint-call",
+        Json::null(),
+      ),
     ),
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("done"),
+    ),
   ])
-  let tools = @testkit.RecordingToolProvider(
-    [@testkit.tk_tool_def("echo", "echo")],
+  let tools = @test_support.RecordingToolProvider(
+    [@test_support.tk_tool_def("echo", "echo")],
     Map::from_array([
       (
         "echo",
-        @testkit.ScriptedToolOutcome::OutcomeOk(
-          @testkit.tk_ok_result("tool-ok"),
+        @test_support.ScriptedToolOutcome::OutcomeOk(
+          @test_support.tk_ok_result("tool-ok"),
         ),
       ),
     ]),
   )
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", tools=[tools], sessions=[store]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", tools=[tools], sessions=[store]),
     ],
     config=append_config(),
   )
-  ignore(agent.run_turn(@testkit.tk_user_msg("run it"), "step-checkpoint"))
+  ignore(agent.run_turn(@test_support.tk_user_msg("run it"), "step-checkpoint"))
   let cursors : Array[Int32] = []
   for op in store.ops() {
     match op {
-      @testkit.SessionOp::OpCheckpoint(id="step-checkpoint", checkpoint~, ..) if !checkpoint.messages.is_empty() =>
+      @test_support.SessionOp::OpCheckpoint(
+        id="step-checkpoint",
+        checkpoint~,
+        ..
+      ) if !checkpoint.messages.is_empty() =>
         cursors.push(checkpoint.from_index)
       _ => ()
     }

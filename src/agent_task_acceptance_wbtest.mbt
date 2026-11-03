@@ -265,14 +265,18 @@ fn acceptance_assert_closed(
 ///|
 async test "managed_tasks/background_routes_by_session_and_normalizes_result" {
   let capture = AcceptanceTaskCapture::new()
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("B complete")),
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("A complete")),
-    @testkit.ScriptedModelStep::Respond(
-      @testkit.tk_stop_response("A follow-up complete"),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("B complete"),
+    ),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("A complete"),
+    ),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("A follow-up complete"),
     ),
   ])
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   let gate = AcceptanceTurnGate::{
     entered: Queue(kind=Unbounded),
     release: Queue(kind=Unbounded),
@@ -280,11 +284,13 @@ async test "managed_tasks/background_routes_by_session_and_normalizes_result" {
   let a_release : @aqueue.Queue[Int32] = Queue(kind=Unbounded)
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", sessions=[store], hooks=[gate]),
-      @testkit.tk_ext(id="tasks", lifecycle=[capture as &@port.Lifecycle], requires=[
-        @port.Capability::Tasks,
-      ]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store], hooks=[gate]),
+      @test_support.tk_ext(
+        id="tasks",
+        lifecycle=[capture as &@port.Lifecycle],
+        requires=[@port.Capability::Tasks],
+      ),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
@@ -306,7 +312,7 @@ async test "managed_tasks/background_routes_by_session_and_normalizes_result" {
 
     @async.with_task_group(async fn(group) {
       let b_turn = group.spawn(async fn() {
-        agent.run_turn(@testkit.tk_user_msg("B turn"), "session_b")
+        agent.run_turn(@test_support.tk_user_msg("B turn"), "session_b")
       })
       ignore(gate.entered.get())
 
@@ -327,8 +333,10 @@ async test "managed_tasks/background_routes_by_session_and_normalizes_result" {
 
       // B must not consume A's inbox. The next A turn receives it as a user
       // message, and the following A turn must not append another copy.
-      ignore(agent.run_turn(@testkit.tk_user_msg("A turn"), "session_a"))
-      ignore(agent.run_turn(@testkit.tk_user_msg("A follow-up"), "session_a"))
+      ignore(agent.run_turn(@test_support.tk_user_msg("A turn"), "session_a"))
+      ignore(
+        agent.run_turn(@test_support.tk_user_msg("A follow-up"), "session_a"),
+      )
     })
 
     let b_prompt = model.received_messages[0]
@@ -346,22 +354,24 @@ async test "managed_tasks/background_routes_by_session_and_normalizes_result" {
 ///|
 async test "managed_tasks/background_outcome_survives_failed_save_and_heal" {
   let capture = AcceptanceTaskCapture::new()
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(
-      @testkit.tk_stop_response("first attempt"),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("first attempt"),
     ),
-    @testkit.ScriptedModelStep::Respond(
-      @testkit.tk_stop_response("healed attempt"),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("healed attempt"),
     ),
   ])
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", sessions=[store]),
-      @testkit.tk_ext(id="tasks", lifecycle=[capture as &@port.Lifecycle], requires=[
-        @port.Capability::Tasks,
-      ]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store]),
+      @test_support.tk_ext(
+        id="tasks",
+        lifecycle=[capture as &@port.Lifecycle],
+        requires=[@port.Capability::Tasks],
+      ),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
@@ -385,7 +395,10 @@ async test "managed_tasks/background_outcome_survives_failed_save_and_heal" {
 
     store.fail_save("retry-session")
     let first : Result[@types.TurnResult, @error.AgentError] = Ok(
-      agent.run_turn(@testkit.tk_user_msg("first attempt"), "retry-session"),
+      agent.run_turn(
+        @test_support.tk_user_msg("first attempt"),
+        "retry-session",
+      ),
     ) catch {
       error => Err(error)
     }
@@ -396,7 +409,10 @@ async test "managed_tasks/background_outcome_survives_failed_save_and_heal" {
 
     store.heal_save("retry-session")
     ignore(
-      agent.run_turn(@testkit.tk_user_msg("healed attempt"), "retry-session"),
+      agent.run_turn(
+        @test_support.tk_user_msg("healed attempt"),
+        "retry-session",
+      ),
     )
 
     let persisted = (store as &@port.SessionPort).load("retry-session")
@@ -413,21 +429,25 @@ async test "managed_tasks/background_outcome_survives_failed_save_and_heal" {
 ///|
 async test "managed_tasks/cancelled_waiter_does_not_cancel_background_and_late_waits_agree" {
   let capture = AcceptanceTaskCapture::new()
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("unused")),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("unused"),
+    ),
   ])
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   let waiter_started : @aqueue.Queue[Int32] = Queue(kind=Unbounded)
   let release : @aqueue.Queue[Int32] = Queue(kind=Unbounded)
   let late_one : Ref[@port.TaskOutcome?] = Ref(None)
   let late_two : Ref[@port.TaskOutcome?] = Ref(None)
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", sessions=[store]),
-      @testkit.tk_ext(id="tasks", lifecycle=[capture as &@port.Lifecycle], requires=[
-        @port.Capability::Tasks,
-      ]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store]),
+      @test_support.tk_ext(
+        id="tasks",
+        lifecycle=[capture as &@port.Lifecycle],
+        requires=[@port.Capability::Tasks],
+      ),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
@@ -490,19 +510,21 @@ async test "managed_tasks/cancelled_waiter_does_not_cancel_background_and_late_w
 ///|
 async test "managed_tasks/user_marker_does_not_suppress_first_task_outcome" {
   let capture = AcceptanceTaskCapture::new()
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(
-      @testkit.tk_stop_response("collision handled"),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("collision handled"),
     ),
   ])
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", sessions=[store]),
-      @testkit.tk_ext(id="tasks", lifecycle=[capture as &@port.Lifecycle], requires=[
-        @port.Capability::Tasks,
-      ]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store]),
+      @test_support.tk_ext(
+        id="tasks",
+        lifecycle=[capture as &@port.Lifecycle],
+        requires=[@port.Capability::Tasks],
+      ),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
@@ -522,7 +544,7 @@ async test "managed_tasks/user_marker_does_not_suppress_first_task_outcome" {
     // The persisted user text is not a receipt, even though it contains the
     // same marker spelling as the first task id in this fresh Agent.
     store.seed("collision-session", {
-      messages: [@testkit.tk_user_msg(marker)],
+      messages: [@test_support.tk_user_msg(marker)],
       metadata: Map::from_array([]),
     })
     guard handle.wait().status is @port.TaskStatus::Completed(_) else {
@@ -530,7 +552,7 @@ async test "managed_tasks/user_marker_does_not_suppress_first_task_outcome" {
     }
     ignore(
       agent.run_turn(
-        @testkit.tk_user_msg("deliver collision result"),
+        @test_support.tk_user_msg("deliver collision result"),
         "collision-session",
       ),
     )
@@ -546,19 +568,21 @@ async test "managed_tasks/user_marker_does_not_suppress_first_task_outcome" {
 ///|
 async test "managed_tasks/nested_scope_rejects_without_closing_outer_scope" {
   let capture = AcceptanceTaskCapture::new()
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(
-      @testkit.tk_stop_response("outer turn completed"),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("outer turn completed"),
     ),
   ])
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", sessions=[store]),
-      @testkit.tk_ext(id="tasks", lifecycle=[capture as &@port.Lifecycle], requires=[
-        @port.Capability::Tasks,
-      ]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store]),
+      @test_support.tk_ext(
+        id="tasks",
+        lifecycle=[capture as &@port.Lifecycle],
+        requires=[@port.Capability::Tasks],
+      ),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
@@ -597,7 +621,7 @@ async test "managed_tasks/nested_scope_rejects_without_closing_outer_scope" {
       fail("outer scope must still admit and complete work")
     }
     let turn = agent.run_turn(
-      @testkit.tk_user_msg("outer input"),
+      @test_support.tk_user_msg("outer input"),
       "nested-session",
     )
     assert_eq(turn.final_session_id, "nested-session")
@@ -609,13 +633,13 @@ async test "managed_tasks/scope_error_and_ambient_cancel_reap_background_work" {
   // Body-error exit: the scope error is preserved while shutdown cancels and
   // reaps the blocked worker. The handle remains a stable terminal capability.
   let error_capture = AcceptanceTaskCapture::new()
-  let error_model = @testkit.ScriptedModel([])
-  let error_store = @testkit.RecordingSessionPort()
+  let error_model = @test_support.ScriptedModel([])
+  let error_store = @test_support.RecordingSessionPort()
   let error_agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(error_model)),
-      @testkit.tk_ext(id="io", sessions=[error_store]),
-      @testkit.tk_ext(
+      @test_support.tk_ext(id="model", model=Some(error_model)),
+      @test_support.tk_ext(id="io", sessions=[error_store]),
+      @test_support.tk_ext(
         id="tasks",
         lifecycle=[error_capture as &@port.Lifecycle],
         requires=[@port.Capability::Tasks],
@@ -666,13 +690,13 @@ async test "managed_tasks/scope_error_and_ambient_cancel_reap_background_work" {
   // Ambient cancellation exit: cancel the task running run_scoped only after
   // its worker is blocked and its body has reached its own suspension point.
   let cancel_capture = AcceptanceTaskCapture::new()
-  let cancel_model = @testkit.ScriptedModel([])
-  let cancel_store = @testkit.RecordingSessionPort()
+  let cancel_model = @test_support.ScriptedModel([])
+  let cancel_store = @test_support.RecordingSessionPort()
   let cancel_agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(cancel_model)),
-      @testkit.tk_ext(id="io", sessions=[cancel_store]),
-      @testkit.tk_ext(
+      @test_support.tk_ext(id="model", model=Some(cancel_model)),
+      @test_support.tk_ext(id="io", sessions=[cancel_store]),
+      @test_support.tk_ext(
         id="tasks",
         lifecycle=[cancel_capture as &@port.Lifecycle],
         requires=[@port.Capability::Tasks],
@@ -736,9 +760,14 @@ async test "managed_tasks/shutdown_before_start_calls_lifecycle_once" {
   let probe = AcceptanceShutdownProbe::new()
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(@testkit.ScriptedModel([]))),
-      @testkit.tk_ext(id="io", sessions=[@testkit.RecordingSessionPort()]),
-      @testkit.tk_ext(id="probe", lifecycle=[probe as &@port.Lifecycle]),
+      @test_support.tk_ext(
+        id="model",
+        model=Some(@test_support.ScriptedModel([])),
+      ),
+      @test_support.tk_ext(id="io", sessions=[
+        @test_support.RecordingSessionPort(),
+      ]),
+      @test_support.tk_ext(id="probe", lifecycle=[probe as &@port.Lifecycle]),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
@@ -751,15 +780,17 @@ async test "managed_tasks/shutdown_before_start_calls_lifecycle_once" {
 ///|
 async test "managed_tasks/external_worker_message_mutation_does_not_rewrite_terminal" {
   let capture = AcceptanceTaskCapture::new()
-  let model = @testkit.ScriptedModel([])
-  let store = @testkit.RecordingSessionPort()
+  let model = @test_support.ScriptedModel([])
+  let store = @test_support.RecordingSessionPort()
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", sessions=[store]),
-      @testkit.tk_ext(id="tasks", lifecycle=[capture as &@port.Lifecycle], requires=[
-        @port.Capability::Tasks,
-      ]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store]),
+      @test_support.tk_ext(
+        id="tasks",
+        lifecycle=[capture as &@port.Lifecycle],
+        requires=[@port.Capability::Tasks],
+      ),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
@@ -793,19 +824,21 @@ async test "managed_tasks/external_worker_message_mutation_does_not_rewrite_term
 ///|
 async test "managed_tasks/wait_result_mutation_isolated_from_late_wait_and_delivery" {
   let capture = AcceptanceTaskCapture::new()
-  let model = @testkit.ScriptedModel([
-    @testkit.ScriptedModelStep::Respond(
-      @testkit.tk_stop_response("turn completed"),
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("turn completed"),
     ),
   ])
-  let store = @testkit.RecordingSessionPort()
+  let store = @test_support.RecordingSessionPort()
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(model)),
-      @testkit.tk_ext(id="io", sessions=[store]),
-      @testkit.tk_ext(id="tasks", lifecycle=[capture as &@port.Lifecycle], requires=[
-        @port.Capability::Tasks,
-      ]),
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store]),
+      @test_support.tk_ext(
+        id="tasks",
+        lifecycle=[capture as &@port.Lifecycle],
+        requires=[@port.Capability::Tasks],
+      ),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
@@ -837,7 +870,9 @@ async test "managed_tasks/wait_result_mutation_isolated_from_late_wait_and_deliv
         assert_eq(acceptance_message_text(message), "terminal-original")
       _ => fail("late wait did not preserve the returned terminal")
     }
-    ignore(agent.run_turn(@testkit.tk_user_msg("next"), "ownership-delivery"))
+    ignore(
+      agent.run_turn(@test_support.tk_user_msg("next"), "ownership-delivery"),
+    )
 
     let prompt = model.received_messages[0]
     assert_eq(acceptance_text_count(prompt, "terminal-original"), 1)
@@ -852,12 +887,19 @@ async test "managed_tasks/tasks_requires_gate_and_scope_admission" {
   let declared = AcceptanceTaskCapture::new()
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(@testkit.ScriptedModel([]))),
-      @testkit.tk_ext(id="io", sessions=[@testkit.RecordingSessionPort()]),
-      @testkit.tk_ext(id="hidden", lifecycle=[hidden as &@port.Lifecycle]),
-      @testkit.tk_ext(id="declared", lifecycle=[declared as &@port.Lifecycle], requires=[
-        @port.Capability::Tasks,
+      @test_support.tk_ext(
+        id="model",
+        model=Some(@test_support.ScriptedModel([])),
+      ),
+      @test_support.tk_ext(id="io", sessions=[
+        @test_support.RecordingSessionPort(),
       ]),
+      @test_support.tk_ext(id="hidden", lifecycle=[hidden as &@port.Lifecycle]),
+      @test_support.tk_ext(
+        id="declared",
+        lifecycle=[declared as &@port.Lifecycle],
+        requires=[@port.Capability::Tasks],
+      ),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
@@ -883,18 +925,20 @@ async test "managed_tasks/foreground_requires_operation_and_matching_session" {
   let probe = AcceptanceForegroundAdmissionProbe::new()
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(
+      @test_support.tk_ext(
         id="model",
         model=Some(
-          @testkit.ScriptedModel([
-            @testkit.ScriptedModelStep::Respond(
-              @testkit.tk_stop_response("foreground admission turn"),
+          @test_support.ScriptedModel([
+            @test_support.ScriptedModelStep::Respond(
+              @test_support.tk_stop_response("foreground admission turn"),
             ),
           ]),
         ),
       ),
-      @testkit.tk_ext(id="io", sessions=[@testkit.RecordingSessionPort()]),
-      @testkit.tk_ext(
+      @test_support.tk_ext(id="io", sessions=[
+        @test_support.RecordingSessionPort(),
+      ]),
+      @test_support.tk_ext(
         id="foreground-probe",
         hooks=[probe as &@port.PipelineHook],
         lifecycle=[probe as &@port.Lifecycle],
@@ -922,7 +966,7 @@ async test "managed_tasks/foreground_requires_operation_and_matching_session" {
     assert_true(no_operation is Err(@port.TaskSubmitError::Unavailable))
     ignore(
       agent.run_turn(
-        @testkit.tk_user_msg("foreground admission"),
+        @test_support.tk_user_msg("foreground admission"),
         "foreground-session",
       ),
     )
@@ -942,11 +986,18 @@ async test "managed_tasks/background_failure_timeout_and_immediate_cancel_are_st
   let capture = AcceptanceTaskCapture::new()
   let agent = Agent(
     exts=[
-      @testkit.tk_ext(id="model", model=Some(@testkit.ScriptedModel([]))),
-      @testkit.tk_ext(id="io", sessions=[@testkit.RecordingSessionPort()]),
-      @testkit.tk_ext(id="tasks", lifecycle=[capture as &@port.Lifecycle], requires=[
-        @port.Capability::Tasks,
+      @test_support.tk_ext(
+        id="model",
+        model=Some(@test_support.ScriptedModel([])),
+      ),
+      @test_support.tk_ext(id="io", sessions=[
+        @test_support.RecordingSessionPort(),
       ]),
+      @test_support.tk_ext(
+        id="tasks",
+        lifecycle=[capture as &@port.Lifecycle],
+        requires=[@port.Capability::Tasks],
+      ),
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
