@@ -50,4 +50,6 @@ import {
   "colmugx/posoco/tests/support",
 } for "wbtest"
 
-options("allow-experimental-packages": ["moonbitlang/core/async"])
+options(
+  "allow-experimental-packages": [ "moonbitlang/core/async" ],
+)
