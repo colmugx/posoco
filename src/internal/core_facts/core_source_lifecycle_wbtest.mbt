@@ -1,32 +1,39 @@
 ///|
 test "core_facts/source_lifecycle_has_no_orphan_and_keeps_referenced" {
   let facts = CoreFacts::CoreFacts()
-  ignore(facts.hydrate("parent", [tk_user_msg("old")], Map::from_array([])))
+  ignore(
+    facts.hydrate("parent", [@testkit.tk_user_msg("old")], Map::from_array([])),
+  )
   ignore(
     facts.admit(
       "parent",
-      [tk_user_msg("old")],
+      [@testkit.tk_user_msg("old")],
       Map::from_array([]),
-      [tk_user_msg("old")],
+      [@testkit.tk_user_msg("old")],
       "run-replace",
     ),
   )
-  facts.capture_source("run-replace", "parent", [tk_user_msg("old")], 1)
+  facts.capture_source(
+    "run-replace",
+    "parent",
+    [@testkit.tk_user_msg("old")],
+    1,
+  )
   facts.finish_run("parent", "run-replace", "replace")
   assert_eq(facts.store.source_snapshots.length(), 0)
   ignore(
     facts.admit(
       "parent",
-      [tk_user_msg("old")],
+      [@testkit.tk_user_msg("old")],
       Map::from_array([]),
-      [tk_user_msg("old")],
+      [@testkit.tk_user_msg("old")],
       "run-failure",
     ),
   )
   facts.capture_source(
     "run-failure",
     "parent",
-    [tk_user_msg("old"), tk_user_msg("failed")],
+    [@testkit.tk_user_msg("old"), @testkit.tk_user_msg("failed")],
     1,
   )
   facts.finish_run("parent", "run-failure", "failed")
@@ -34,16 +41,16 @@ test "core_facts/source_lifecycle_has_no_orphan_and_keeps_referenced" {
   ignore(
     facts.admit(
       "parent",
-      [tk_user_msg("old")],
+      [@testkit.tk_user_msg("old")],
       Map::from_array([]),
-      [tk_user_msg("old")],
+      [@testkit.tk_user_msg("old")],
       "run-cancel",
     ),
   )
   facts.capture_source(
     "run-cancel",
     "parent",
-    [tk_user_msg("old"), tk_user_msg("cancelled")],
+    [@testkit.tk_user_msg("old"), @testkit.tk_user_msg("cancelled")],
     1,
   )
   facts.finish_run("parent", "run-cancel", "cancelled")
@@ -52,16 +59,16 @@ test "core_facts/source_lifecycle_has_no_orphan_and_keeps_referenced" {
   ignore(
     facts.admit(
       "parent",
-      [tk_user_msg("old")],
+      [@testkit.tk_user_msg("old")],
       Map::from_array([]),
-      [tk_user_msg("old")],
+      [@testkit.tk_user_msg("old")],
       "run-child",
     ),
   )
   facts.capture_source(
     "run-child",
     "parent",
-    [tk_user_msg("old"), tk_user_msg("fixated")],
+    [@testkit.tk_user_msg("old"), @testkit.tk_user_msg("fixated")],
     1,
   )
   let child = match
@@ -69,7 +76,7 @@ test "core_facts/source_lifecycle_has_no_orphan_and_keeps_referenced" {
       "run-child",
       "parent",
       "child",
-      [tk_user_msg("child-body")],
+      [@testkit.tk_user_msg("child-body")],
       Map::from_array([]),
     ) {
     Ok(_) => "child"
@@ -83,7 +90,7 @@ test "core_facts/source_lifecycle_has_no_orphan_and_keeps_referenced" {
   ignore(
     facts.store.rewrite(
       "parent",
-      [tk_user_msg("parent-rewritten")],
+      [@testkit.tk_user_msg("parent-rewritten")],
       Map::from_array([]),
     ),
   )
@@ -91,56 +98,58 @@ test "core_facts/source_lifecycle_has_no_orphan_and_keeps_referenced" {
   guard after is Some(after) else {
     fail("expected source after parent rewrite")
   }
-  assert_eq(after.messages[0], tk_user_msg("old"))
+  assert_eq(after.messages[0], @testkit.tk_user_msg("old"))
   // A failed second child revokes only its own allocation.
   ignore(
     facts.admit(
       "parent",
-      [tk_user_msg("parent-rewritten")],
+      [@testkit.tk_user_msg("parent-rewritten")],
       Map::from_array([]),
-      [tk_user_msg("parent-rewritten")],
+      [@testkit.tk_user_msg("parent-rewritten")],
       "run-bad",
     ),
   )
-  facts.capture_source("run-bad", "parent", [tk_user_msg("other")], 2)
+  facts.capture_source("run-bad", "parent", [@testkit.tk_user_msg("other")], 2)
   let bad = facts.record_new_thread(
     "run-bad",
     "parent",
     "child-bad",
-    [tk_user_msg("bad")],
+    [@testkit.tk_user_msg("bad")],
     Map::from_array([]),
   )
   assert_true(bad is Err(_))
   assert_eq(facts.store.source_snapshots.length(), 1)
   let kept = facts.read_source(child)
   guard kept is Some(kept) else { fail("expected the referenced child source") }
-  assert_eq(kept.messages[0], tk_user_msg("old"))
+  assert_eq(kept.messages[0], @testkit.tk_user_msg("old"))
 }
 
 ///|
 test "core_facts/failed_validation_revokes_allocation" {
   let facts = CoreFacts::CoreFacts()
-  ignore(facts.hydrate("vparent", [tk_user_msg("old")], Map::from_array([])))
+  ignore(
+    facts.hydrate("vparent", [@testkit.tk_user_msg("old")], Map::from_array([])),
+  )
   ignore(
     facts.admit(
       "vparent",
-      [tk_user_msg("old")],
+      [@testkit.tk_user_msg("old")],
       Map::from_array([]),
-      [tk_user_msg("old")],
+      [@testkit.tk_user_msg("old")],
       "run-v",
     ),
   )
   facts.capture_source(
     "run-v",
     "vparent",
-    [tk_user_msg("old"), tk_user_msg("extra")],
+    [@testkit.tk_user_msg("old"), @testkit.tk_user_msg("extra")],
     3,
   )
   let result = facts.record_new_thread(
     "run-v",
     "vparent",
     "vchild",
-    [tk_user_msg("body")],
+    [@testkit.tk_user_msg("body")],
     Map::from_array([]),
   )
   assert_true(result is Err(_))
@@ -150,30 +159,36 @@ test "core_facts/failed_validation_revokes_allocation" {
 ///|
 test "core_facts/child_exists_revokes_allocation" {
   let facts = CoreFacts::CoreFacts()
-  ignore(facts.hydrate("eparent", [tk_user_msg("old")], Map::from_array([])))
   ignore(
-    facts.hydrate("echild", [tk_user_msg("existing")], Map::from_array([])),
+    facts.hydrate("eparent", [@testkit.tk_user_msg("old")], Map::from_array([])),
+  )
+  ignore(
+    facts.hydrate(
+      "echild",
+      [@testkit.tk_user_msg("existing")],
+      Map::from_array([]),
+    ),
   )
   ignore(
     facts.admit(
       "eparent",
-      [tk_user_msg("old")],
+      [@testkit.tk_user_msg("old")],
       Map::from_array([]),
-      [tk_user_msg("old")],
+      [@testkit.tk_user_msg("old")],
       "run-e",
     ),
   )
   facts.capture_source(
     "run-e",
     "eparent",
-    [tk_user_msg("old"), tk_user_msg("fixated")],
+    [@testkit.tk_user_msg("old"), @testkit.tk_user_msg("fixated")],
     1,
   )
   let result = facts.record_new_thread(
     "run-e",
     "eparent",
     "echild",
-    [tk_user_msg("body")],
+    [@testkit.tk_user_msg("body")],
     Map::from_array([]),
   )
   assert_true(result is Err(_))

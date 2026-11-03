@@ -74,17 +74,6 @@ fn AgentConfig::to_call_options_json(self : AgentConfig) -> Json {
 }
 
 ///|
-fn snapshot_session(
-  messages : Array[@kernel.Message],
-  metadata : Map[String, Json],
-) -> @types.Session {
-  {
-    messages: @message_snapshot.snapshot_messages(messages),
-    metadata: @message_snapshot.snapshot_metadata(metadata),
-  }
-}
-
-///|
 priv struct AgentRuntime {
   puppet : @puppetry.Puppet
   /// The aggregated ModelPort, queried per turn for the active model's

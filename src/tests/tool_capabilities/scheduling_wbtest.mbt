@@ -8,14 +8,16 @@ async test "tool_invoke/sequential_slot_includes_a_waiting_grandchild" {
   let parent = InvocationFixture::{
     id: "parent",
     owners: ["child"],
-    definitions: [{ ..tk_tool_def("parent", "parent"), policy: Exclusive, }],
+    definitions: [
+      { ..@testkit.tk_tool_def("parent", "parent"), policy: Exclusive, },
+    ],
     action: async fn(ctx) {
       let results = @async.all([
         async fn() { ctx.invoke("first", {}) },
         async fn() { ctx.invoke("second", {}) },
       ])
       if results.all(result => result is Completed(Success(..))) {
-        tk_ok_result("joined subtree")
+        @testkit.tk_ok_result("joined subtree")
       } else {
         RuntimeFailure(
           error_category="ChildFailed",
@@ -28,7 +30,7 @@ async test "tool_invoke/sequential_slot_includes_a_waiting_grandchild" {
     id: "child",
     owners: ["grandchild"],
     definitions: ["first", "second"].map(name => {
-      ..tk_tool_def(name, name),
+      ..@testkit.tk_tool_def(name, name),
       policy: Sequential,
       exposure: Deferred,
     }),
@@ -47,7 +49,7 @@ async test "tool_invoke/sequential_slot_includes_a_waiting_grandchild" {
             message="sibling overlapped the grandchild",
           )
         } else {
-          tk_ok_result("second")
+          @testkit.tk_ok_result("second")
         }
       }
     },
@@ -56,7 +58,10 @@ async test "tool_invoke/sequential_slot_includes_a_waiting_grandchild" {
     id: "grandchild",
     owners: [],
     definitions: [
-      { ..tk_tool_def("grandchild", "grandchild"), exposure: Deferred, },
+      {
+        ..@testkit.tk_tool_def("grandchild", "grandchild"),
+        exposure: Deferred,
+      },
     ],
     action: async fn(_ctx) {
       grandchild_running.val = true
@@ -65,7 +70,7 @@ async test "tool_invoke/sequential_slot_includes_a_waiting_grandchild" {
         signal.wait()
       }
       grandchild_running.val = false
-      tk_ok_result("grandchild")
+      @testkit.tk_ok_result("grandchild")
     },
   }
   let hook = InvocationHook::{
@@ -77,19 +82,21 @@ async test "tool_invoke/sequential_slot_includes_a_waiting_grandchild" {
       Approve(call~)
     },
   }
-  let model = ScriptedModel([
-    Respond(tk_tool_call_response("parent", "p", Json::null())),
-    Respond(tk_stop_response("done")),
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(
+      @testkit.tk_tool_call_response("parent", "p", Json::null()),
+    ),
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
   ])
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model), hooks=[hook]),
+      @testkit.tk_ext(id="model", model=Some(model), hooks=[hook]),
       parent,
       children,
       grandchild,
     ],
     config=@agent.agent_config(
-      max_tool_rounds=tk_config().max_tool_rounds,
+      max_tool_rounds=@agent.agent_config(max_tool_rounds=Some(10)).max_tool_rounds,
       max_tool_calls=Some(8),
       max_tool_depth=Some(4),
     ),
@@ -97,7 +104,7 @@ async test "tool_invoke/sequential_slot_includes_a_waiting_grandchild" {
   @async.with_timeout(2000, async fn() {
     @async.with_task_group(async fn(group) {
       let turn = group.spawn(async fn() {
-        agent.run_turn(tk_user_msg("hello"), "subtree-slot")
+        agent.run_turn(@testkit.tk_user_msg("hello"), "subtree-slot")
       })
       while !grandchild_running.val || !second_admitted.val {
         signal.wait()
@@ -121,7 +128,9 @@ async test "tool_invoke/sequential_siblings_keep_their_entire_execution_slot" {
   let order : Array[String] = []
   let parent = InvocationFixture::{
     id: "parent",
-    definitions: [{ ..tk_tool_def("parent", "parent"), policy: Exclusive, }],
+    definitions: [
+      { ..@testkit.tk_tool_def("parent", "parent"), policy: Exclusive, },
+    ],
     owners: ["child"],
     action: async fn(ctx) {
       let results = @async.all([
@@ -136,14 +145,14 @@ async test "tool_invoke/sequential_siblings_keep_their_entire_execution_slot" {
           message="expected both children",
         )
       }
-      tk_ok_result("joined")
+      @testkit.tk_ok_result("joined")
     },
   }
   let children = InvocationFixture::{
     id: "child",
     owners: [],
     definitions: ["first", "second"].map(name => {
-      ..tk_tool_def(name, name),
+      ..@testkit.tk_tool_def(name, name),
       policy: Sequential,
       exposure: Deferred,
     }),
@@ -155,18 +164,23 @@ async test "tool_invoke/sequential_siblings_keep_their_entire_execution_slot" {
       order.push(ctx.name.to_string())
       @async.sleep(5)
       running.val -= 1
-      tk_ok_result("child")
+      @testkit.tk_ok_result("child")
     },
   }
-  let model = ScriptedModel([
-    Respond(tk_tool_call_response("parent", "p", Json::null())),
-    Respond(tk_stop_response("done")),
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(
+      @testkit.tk_tool_call_response("parent", "p", Json::null()),
+    ),
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
   ])
   let agent = Agent(
-    exts=[tk_ext(id="model", model=Some(model)), parent, children],
-    config=tk_config(),
+    exts=[@testkit.tk_ext(id="model", model=Some(model)), parent, children],
+    config=@agent.agent_config(max_tool_rounds=Some(10)),
   )
-  let result = agent.run_turn(tk_user_msg("hello"), "sequential-children")
+  let result = agent.run_turn(
+    @testkit.tk_user_msg("hello"),
+    "sequential-children",
+  )
   assert_eq(contribution_result_texts(result.tool_results), ["joined"])
   assert_eq(maximum.val, 1)
   assert_eq(order, ["first", "second"])
@@ -178,7 +192,9 @@ async test "tool_invoke/parallel_siblings_can_overlap" {
   let gate = @async.CondVar::Cond()
   let parent = InvocationFixture::{
     id: "parent",
-    definitions: [{ ..tk_tool_def("parent", "parent"), policy: Exclusive, }],
+    definitions: [
+      { ..@testkit.tk_tool_def("parent", "parent"), policy: Exclusive, },
+    ],
     owners: ["child"],
     action: async fn(ctx) {
       let _ = @async.all([
@@ -187,14 +203,18 @@ async test "tool_invoke/parallel_siblings_can_overlap" {
       ]) catch {
         error => raise @error.RuntimeError::InvocationFailed(error.to_string())
       }
-      tk_ok_result("joined")
+      @testkit.tk_ok_result("joined")
     },
   }
   let children = InvocationFixture::{
     id: "child",
     owners: [],
     definitions: [
-      { ..tk_tool_def("child", "child"), policy: Parallel, exposure: Deferred, },
+      {
+        ..@testkit.tk_tool_def("child", "child"),
+        policy: Parallel,
+        exposure: Deferred,
+      },
     ],
     action: async fn(_ctx) {
       entered.val += 1
@@ -202,19 +222,21 @@ async test "tool_invoke/parallel_siblings_can_overlap" {
       while entered.val < 2 {
         gate.wait()
       }
-      tk_ok_result("child")
+      @testkit.tk_ok_result("child")
     },
   }
-  let model = ScriptedModel([
-    Respond(tk_tool_call_response("parent", "p", Json::null())),
-    Respond(tk_stop_response("done")),
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(
+      @testkit.tk_tool_call_response("parent", "p", Json::null()),
+    ),
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
   ])
   let agent = Agent(
-    exts=[tk_ext(id="model", model=Some(model)), parent, children],
-    config=tk_config(),
+    exts=[@testkit.tk_ext(id="model", model=Some(model)), parent, children],
+    config=@agent.agent_config(max_tool_rounds=Some(10)),
   )
   let result = @async.with_timeout(2000, async fn() {
-    agent.run_turn(tk_user_msg("hello"), "parallel-children")
+    agent.run_turn(@testkit.tk_user_msg("hello"), "parallel-children")
   })
   assert_eq(contribution_result_texts(result.tool_results), ["joined"])
   assert_eq(entered.val, 2)

@@ -4,6 +4,7 @@ import {
   "colmugx/posoco/error",
   "colmugx/posoco/types",
   "colmugx/posoco/kernel",
+  "colmugx/posoco/testkit",
 } for "test"
 
 options(

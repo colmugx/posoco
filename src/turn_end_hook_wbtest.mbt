@@ -64,18 +64,22 @@ async test "turn_begin/dispatched_after_turn_started_before_first_model" {
   let obs = TurnEndLogObserver::{ log, }
   let agent = Agent(
     exts=[
-      tk_ext(
+      @testkit.tk_ext(
         id="model",
-        model=Some(ScriptedModel([Respond(tk_stop_response("hi"))])),
+        model=Some(
+          @testkit.ScriptedModel([
+            @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("hi")),
+          ]),
+        ),
       ),
-      tk_ext(id="io", sessions=[RecordingSessionPort()], observers=[
+      @testkit.tk_ext(id="io", sessions=[@testkit.RecordingSessionPort()], observers=[
         obs as &@port.Observer,
       ]),
-      tk_ext(id="hooks", hooks=[hook as &@port.PipelineHook]),
+      @testkit.tk_ext(id="hooks", hooks=[hook as &@port.PipelineHook]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
-  ignore(agent.run_turn(tk_user_msg("hello"), "s1"))
+  ignore(agent.run_turn(@testkit.tk_user_msg("hello"), "s1"))
   assert_eq(log.filter(fn(e) { e == "hook:begin" }).length(), 1)
   // The operation projection lands at admission, before TurnStarted.
   assert_eq(
@@ -118,21 +122,25 @@ async test "turn_begin/raised_hook_is_secondary_failure_turn_proceeds" {
   let obs = TurnEndLogObserver::{ log, }
   let agent = Agent(
     exts=[
-      tk_ext(
+      @testkit.tk_ext(
         id="model",
-        model=Some(ScriptedModel([Respond(tk_stop_response("hi"))])),
+        model=Some(
+          @testkit.ScriptedModel([
+            @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("hi")),
+          ]),
+        ),
       ),
-      tk_ext(id="io", sessions=[RecordingSessionPort()], observers=[
+      @testkit.tk_ext(id="io", sessions=[@testkit.RecordingSessionPort()], observers=[
         obs as &@port.Observer,
       ]),
-      tk_ext(id="hooks", hooks=[
+      @testkit.tk_ext(id="hooks", hooks=[
         bad as &@port.PipelineHook,
         after as &@port.PipelineHook,
       ]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
-  let result = agent.run_turn(tk_user_msg("hello"), "s1")
+  let result = agent.run_turn(@testkit.tk_user_msg("hello"), "s1")
   // The raise never fails the turn; the model still answered.
   assert_eq(result.final_session_id, "s1")
   assert_eq(
@@ -165,18 +173,22 @@ async test "turn_end/completed_dispatched_once_after_turn_completed" {
   let obs = TurnEndLogObserver::{ log, }
   let agent = Agent(
     exts=[
-      tk_ext(
+      @testkit.tk_ext(
         id="model",
-        model=Some(ScriptedModel([Respond(tk_stop_response("hi"))])),
+        model=Some(
+          @testkit.ScriptedModel([
+            @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("hi")),
+          ]),
+        ),
       ),
-      tk_ext(id="io", sessions=[RecordingSessionPort()], observers=[
+      @testkit.tk_ext(id="io", sessions=[@testkit.RecordingSessionPort()], observers=[
         obs as &@port.Observer,
       ]),
-      tk_ext(id="hooks", hooks=[hook as &@port.PipelineHook]),
+      @testkit.tk_ext(id="hooks", hooks=[hook as &@port.PipelineHook]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
-  let result = agent.run_turn(tk_user_msg("hello"), "s1")
+  let result = agent.run_turn(@testkit.tk_user_msg("hello"), "s1")
   assert_eq(result.final_session_id, "s1")
   assert_eq(log.filter(fn(e) { e == "hook:only" }).length(), 1)
   assert_eq(log[log.length() - 3], "obs:TurnCompleted")
@@ -195,15 +207,22 @@ async test "turn_end/failed_path_also_dispatches_after_turn_failed" {
   let obs = TurnEndLogObserver::{ log, }
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(ScriptedModel([Fail(Transport("boom"))]))),
-      tk_ext(id="io", sessions=[RecordingSessionPort()], observers=[
+      @testkit.tk_ext(
+        id="model",
+        model=Some(
+          @testkit.ScriptedModel([
+            @testkit.ScriptedModelStep::Fail(Transport("boom")),
+          ]),
+        ),
+      ),
+      @testkit.tk_ext(id="io", sessions=[@testkit.RecordingSessionPort()], observers=[
         obs as &@port.Observer,
       ]),
-      tk_ext(id="hooks", hooks=[hook as &@port.PipelineHook]),
+      @testkit.tk_ext(id="hooks", hooks=[hook as &@port.PipelineHook]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
-  try agent.run_turn(tk_user_msg("hello"), "s1") catch {
+  try agent.run_turn(@testkit.tk_user_msg("hello"), "s1") catch {
     Model(_) => ()
     _ => fail("expected AgentError::Model from the failed script")
   } noraise {
@@ -228,19 +247,23 @@ async test "turn_end/hooks_dispatched_in_registration_order" {
   let second = TurnEndLogHook::{ id: "second", log, }
   let agent = Agent(
     exts=[
-      tk_ext(
+      @testkit.tk_ext(
         id="model",
-        model=Some(ScriptedModel([Respond(tk_stop_response("hi"))])),
+        model=Some(
+          @testkit.ScriptedModel([
+            @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("hi")),
+          ]),
+        ),
       ),
-      tk_ext(id="io", sessions=[RecordingSessionPort()]),
-      tk_ext(id="hooks", hooks=[
+      @testkit.tk_ext(id="io", sessions=[@testkit.RecordingSessionPort()]),
+      @testkit.tk_ext(id="hooks", hooks=[
         first as &@port.PipelineHook,
         second as &@port.PipelineHook,
       ]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
-  ignore(agent.run_turn(tk_user_msg("hello"), "s1"))
+  ignore(agent.run_turn(@testkit.tk_user_msg("hello"), "s1"))
   assert_eq(log[log.length() - 2], "hook:first")
   assert_eq(log[log.length() - 1], "hook:second")
 }
@@ -253,21 +276,25 @@ async test "turn_end/raised_hook_is_secondary_failure_not_turn_failure" {
   let obs = TurnEndLogObserver::{ log, }
   let agent = Agent(
     exts=[
-      tk_ext(
+      @testkit.tk_ext(
         id="model",
-        model=Some(ScriptedModel([Respond(tk_stop_response("hi"))])),
+        model=Some(
+          @testkit.ScriptedModel([
+            @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("hi")),
+          ]),
+        ),
       ),
-      tk_ext(id="io", sessions=[RecordingSessionPort()], observers=[
+      @testkit.tk_ext(id="io", sessions=[@testkit.RecordingSessionPort()], observers=[
         obs as &@port.Observer,
       ]),
-      tk_ext(id="hooks", hooks=[
+      @testkit.tk_ext(id="hooks", hooks=[
         bad as &@port.PipelineHook,
         good as &@port.PipelineHook,
       ]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
-  let result = agent.run_turn(tk_user_msg("hello"), "s1")
+  let result = agent.run_turn(@testkit.tk_user_msg("hello"), "s1")
   // The turn still completes; the raise never replaces the primary outcome.
   assert_eq(result.final_session_id, "s1")
   assert_eq(log.filter(fn(e) { e == "obs:TurnCompleted" }).length(), 1)

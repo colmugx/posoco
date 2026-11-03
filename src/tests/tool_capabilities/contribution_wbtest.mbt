@@ -7,25 +7,34 @@
 
 ///|
 async test "tool_contribution/published_group_is_executable_by_a_later_operation" {
-  let provider = RecordingToolProvider(
-    [tk_tool_def("dyn_echo", "dynamic echo")],
-    Map::from_array([("dyn_echo", OutcomeOk(tk_ok_result("echo-v1")))]),
+  let provider = @testkit.RecordingToolProvider(
+    [@testkit.tk_tool_def("dyn_echo", "dynamic echo")],
+    Map::from_array([
+      (
+        "dyn_echo",
+        @testkit.ScriptedToolOutcome::OutcomeOk(
+          @testkit.tk_ok_result("echo-v1"),
+        ),
+      ),
+    ]),
   )
   let publisher = ContributionPublisher::new(provider as &@port.ToolProvider)
-  let model = ScriptedModel([
-    Respond(tk_tool_call_response("dyn_echo", "call_1", Json::null())),
-    Respond(tk_stop_response("done")),
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(
+      @testkit.tk_tool_call_response("dyn_echo", "call_1", Json::null()),
+    ),
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
   ])
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="contrib", lifecycle=[publisher as &@port.Lifecycle], requires=[
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="contrib", lifecycle=[publisher as &@port.Lifecycle], requires=[
         @port.Capability::ToolContribution,
       ]),
     ],
-    config=tk_config(),
+    config=@agent.agent_config(max_tool_rounds=Some(10)),
   )
-  let result = agent.run_turn(tk_user_msg("hello"), "session_dynamic")
+  let result = agent.run_turn(@testkit.tk_user_msg("hello"), "session_dynamic")
   assert_eq(contribution_result_texts(result.tool_results), ["echo-v1"])
   assert_eq(provider.exec_records().length(), 1)
   match publisher.published {
@@ -101,7 +110,7 @@ impl @port.PipelineHook for ContributionMutator with fn before_tool(
     }
     match self.control {
       Some(control) =>
-        match control.enqueue_follow_up(tk_user_msg("follow up")) {
+        match control.enqueue_follow_up(@testkit.tk_user_msg("follow up")) {
           @runtime.Accepted(..) => ()
           _ => abort("follow-up was not enqueued during the tool call")
         }
@@ -113,42 +122,62 @@ impl @port.PipelineHook for ContributionMutator with fn before_tool(
 
 ///|
 async test "tool_contribution/mid_operation_replace_is_visible_only_to_the_next_operation" {
-  let v1 = RecordingToolProvider(
-    [tk_tool_def("dyn_echo", "dynamic echo")],
-    Map::from_array([("dyn_echo", OutcomeOk(tk_ok_result("echo-v1")))]),
+  let v1 = @testkit.RecordingToolProvider(
+    [@testkit.tk_tool_def("dyn_echo", "dynamic echo")],
+    Map::from_array([
+      (
+        "dyn_echo",
+        @testkit.ScriptedToolOutcome::OutcomeOk(
+          @testkit.tk_ok_result("echo-v1"),
+        ),
+      ),
+    ]),
   )
-  let v2 = RecordingToolProvider(
-    [tk_tool_def("dyn_echo", "dynamic echo")],
-    Map::from_array([("dyn_echo", OutcomeOk(tk_ok_result("echo-v2")))]),
+  let v2 = @testkit.RecordingToolProvider(
+    [@testkit.tk_tool_def("dyn_echo", "dynamic echo")],
+    Map::from_array([
+      (
+        "dyn_echo",
+        @testkit.ScriptedToolOutcome::OutcomeOk(
+          @testkit.tk_ok_result("echo-v2"),
+        ),
+      ),
+    ]),
   )
   let publisher = ContributionPublisher::new(v1 as &@port.ToolProvider)
   let mutator = ContributionMutator::new()
   mutator.pending = Some(Replace(v2 as &@port.ToolProvider))
-  let model = ScriptedModel([
+  let model = @testkit.ScriptedModel([
     // Operation A, first turn.
-    Respond(tk_tool_call_response("dyn_echo", "call_a1", Json::null())),
-    Respond(tk_stop_response("a1 done")),
+    @testkit.ScriptedModelStep::Respond(
+      @testkit.tk_tool_call_response("dyn_echo", "call_a1", Json::null()),
+    ),
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("a1 done")),
     // Operation A, follow-up drained by the same operation.
-    Respond(tk_tool_call_response("dyn_echo", "call_a2", Json::null())),
-    Respond(tk_stop_response("a2 done")),
+    @testkit.ScriptedModelStep::Respond(
+      @testkit.tk_tool_call_response("dyn_echo", "call_a2", Json::null()),
+    ),
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("a2 done")),
     // Operation B.
-    Respond(tk_tool_call_response("dyn_echo", "call_b1", Json::null())),
-    Respond(tk_stop_response("b done")),
+    @testkit.ScriptedModelStep::Respond(
+      @testkit.tk_tool_call_response("dyn_echo", "call_b1", Json::null()),
+    ),
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("b done")),
   ])
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(
         id="contrib",
         lifecycle=[publisher as &@port.Lifecycle, mutator as &@port.Lifecycle],
         hooks=[mutator as &@port.PipelineHook],
         requires=[@port.Capability::ToolContribution],
       ),
     ],
-    config=tk_config(),
+    config=@agent.agent_config(max_tool_rounds=Some(10)),
   )
   mutator.control = Some(agent.control())
-  let operation_a = agent.run_turn(tk_user_msg("A"), "session_replace")
+  let operation_a = agent.run_turn(@testkit.tk_user_msg("A"), "session_replace")
   // The follow-up turn belongs to the same operation, so it still executes
   // the executor bound at admission even though v2 was accepted mid-call.
   assert_eq(contribution_result_texts(operation_a.tool_results), ["echo-v1"])
@@ -159,7 +188,7 @@ async test "tool_contribution/mid_operation_replace_is_visible_only_to_the_next_
     None => fail("contribution capability was not composed")
   }
   // A later operation captures the accepted revision.
-  let operation_b = agent.run_turn(tk_user_msg("B"), "session_replace")
+  let operation_b = agent.run_turn(@testkit.tk_user_msg("B"), "session_replace")
   assert_eq(contribution_result_texts(operation_b.tool_results), ["echo-v2"])
   assert_eq(v2.exec_records().length(), 1)
   assert_eq(v1.exec_records().length(), 2)
@@ -167,43 +196,62 @@ async test "tool_contribution/mid_operation_replace_is_visible_only_to_the_next_
 
 ///|
 async test "tool_contribution/soft_withdraw_affects_future_operations_only" {
-  let v1 = RecordingToolProvider(
-    [tk_tool_def("dyn_echo", "dynamic echo")],
-    Map::from_array([("dyn_echo", OutcomeOk(tk_ok_result("echo-v1")))]),
+  let v1 = @testkit.RecordingToolProvider(
+    [@testkit.tk_tool_def("dyn_echo", "dynamic echo")],
+    Map::from_array([
+      (
+        "dyn_echo",
+        @testkit.ScriptedToolOutcome::OutcomeOk(
+          @testkit.tk_ok_result("echo-v1"),
+        ),
+      ),
+    ]),
   )
   let publisher = ContributionPublisher::new(v1 as &@port.ToolProvider)
   let mutator = ContributionMutator::new()
   mutator.pending = Some(Withdraw)
-  let model = ScriptedModel([
-    Respond(tk_tool_call_response("dyn_echo", "call_a1", Json::null())),
-    Respond(tk_stop_response("a1 done")),
-    Respond(tk_tool_call_response("dyn_echo", "call_a2", Json::null())),
-    Respond(tk_stop_response("a2 done")),
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(
+      @testkit.tk_tool_call_response("dyn_echo", "call_a1", Json::null()),
+    ),
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("a1 done")),
+    @testkit.ScriptedModelStep::Respond(
+      @testkit.tk_tool_call_response("dyn_echo", "call_a2", Json::null()),
+    ),
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("a2 done")),
     // Operation B asks for the withdrawn tool.
-    Respond(tk_tool_call_response("dyn_echo", "call_b1", Json::null())),
-    Respond(tk_stop_response("b done")),
+    @testkit.ScriptedModelStep::Respond(
+      @testkit.tk_tool_call_response("dyn_echo", "call_b1", Json::null()),
+    ),
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("b done")),
   ])
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(
         id="contrib",
         lifecycle=[publisher as &@port.Lifecycle, mutator as &@port.Lifecycle],
         hooks=[mutator as &@port.PipelineHook],
         requires=[@port.Capability::ToolContribution],
       ),
     ],
-    config=tk_config(),
+    config=@agent.agent_config(max_tool_rounds=Some(10)),
   )
   mutator.control = Some(agent.control())
-  let operation_a = agent.run_turn(tk_user_msg("A"), "session_withdraw")
+  let operation_a = agent.run_turn(
+    @testkit.tk_user_msg("A"),
+    "session_withdraw",
+  )
   assert_eq(contribution_result_texts(operation_a.tool_results), ["echo-v1"])
   assert_eq(v1.exec_records().length(), 2)
   match mutator.contributions {
     Some(contributions) => assert_eq(contributions.revision(), None)
     None => fail("contribution capability was not composed")
   }
-  let operation_b = agent.run_turn(tk_user_msg("B"), "session_withdraw")
+  let operation_b = agent.run_turn(
+    @testkit.tk_user_msg("B"),
+    "session_withdraw",
+  )
   match operation_b.tool_results {
     [NotExecuted(reason=UnknownTool, ..)] => ()
     other =>
@@ -218,40 +266,62 @@ async test "tool_contribution/soft_withdraw_affects_future_operations_only" {
 
 ///|
 async test "tool_contribution/rejected_group_keeps_the_accepted_revision" {
-  let static_provider = RecordingToolProvider(
-    [tk_tool_def("static_tool", "static tool")],
-    Map::from_array([("static_tool", OutcomeOk(tk_ok_result("static")))]),
+  let static_provider = @testkit.RecordingToolProvider(
+    [@testkit.tk_tool_def("static_tool", "static tool")],
+    Map::from_array([
+      (
+        "static_tool",
+        @testkit.ScriptedToolOutcome::OutcomeOk(@testkit.tk_ok_result("static")),
+      ),
+    ]),
   )
-  let v1 = RecordingToolProvider(
-    [tk_tool_def("dyn_echo", "dynamic echo")],
-    Map::from_array([("dyn_echo", OutcomeOk(tk_ok_result("echo-v1")))]),
+  let v1 = @testkit.RecordingToolProvider(
+    [@testkit.tk_tool_def("dyn_echo", "dynamic echo")],
+    Map::from_array([
+      (
+        "dyn_echo",
+        @testkit.ScriptedToolOutcome::OutcomeOk(
+          @testkit.tk_ok_result("echo-v1"),
+        ),
+      ),
+    ]),
   )
   // Collides with a static composition tool, so the whole group is rejected.
-  let conflicting = RecordingToolProvider(
+  let conflicting = @testkit.RecordingToolProvider(
     [
-      tk_tool_def("dyn_echo", "dynamic echo"),
-      tk_tool_def("static_tool", "shadow"),
+      @testkit.tk_tool_def("dyn_echo", "dynamic echo"),
+      @testkit.tk_tool_def("static_tool", "shadow"),
     ],
     Map::from_array([
-      ("dyn_echo", OutcomeOk(tk_ok_result("echo-v2"))),
-      ("static_tool", OutcomeOk(tk_ok_result("shadow"))),
+      (
+        "dyn_echo",
+        @testkit.ScriptedToolOutcome::OutcomeOk(
+          @testkit.tk_ok_result("echo-v2"),
+        ),
+      ),
+      (
+        "static_tool",
+        @testkit.ScriptedToolOutcome::OutcomeOk(@testkit.tk_ok_result("shadow")),
+      ),
     ]),
   )
   let publisher = ContributionPublisher::new(v1 as &@port.ToolProvider)
   publisher.publish_at_start = false
-  let model = ScriptedModel([
-    Respond(tk_tool_call_response("dyn_echo", "call_1", Json::null())),
-    Respond(tk_stop_response("done")),
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(
+      @testkit.tk_tool_call_response("dyn_echo", "call_1", Json::null()),
+    ),
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
   ])
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="static", tools=[static_provider]),
-      tk_ext(id="contrib", lifecycle=[publisher as &@port.Lifecycle], requires=[
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="static", tools=[static_provider]),
+      @testkit.tk_ext(id="contrib", lifecycle=[publisher as &@port.Lifecycle], requires=[
         @port.Capability::ToolContribution,
       ]),
     ],
-    config=tk_config(),
+    config=@agent.agent_config(max_tool_rounds=Some(10)),
   )
   ignore(publisher.publish(v1 as &@port.ToolProvider))
   guard publisher
@@ -262,84 +332,114 @@ async test "tool_contribution/rejected_group_keeps_the_accepted_revision" {
   }
   assert_true(reason.contains("dyn_echo") || reason.contains("static_tool"))
   assert_eq(publisher.capability().revision(), Some(1))
-  let result = agent.run_turn(tk_user_msg("hello"), "session_conflict")
+  let result = agent.run_turn(@testkit.tk_user_msg("hello"), "session_conflict")
   assert_eq(contribution_result_texts(result.tool_results), ["echo-v1"])
   assert_eq(conflicting.exec_records().length(), 0)
 }
 
 ///|
 async test "tool_contribution/custom_runtime_executes_captured_binding" {
-  let provider = RecordingToolProvider(
-    [tk_tool_def("dyn_echo", "dynamic echo")],
-    Map::from_array([("dyn_echo", OutcomeOk(tk_ok_result("echo-v1")))]),
+  let provider = @testkit.RecordingToolProvider(
+    [@testkit.tk_tool_def("dyn_echo", "dynamic echo")],
+    Map::from_array([
+      (
+        "dyn_echo",
+        @testkit.ScriptedToolOutcome::OutcomeOk(
+          @testkit.tk_ok_result("echo-v1"),
+        ),
+      ),
+    ]),
   )
   let publisher = ContributionPublisher::new(provider as &@port.ToolProvider)
-  let model = ScriptedModel([
-    Respond(tk_tool_call_response("dyn_echo", "call_1", Json::null())),
-    Respond(tk_stop_response("done")),
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(
+      @testkit.tk_tool_call_response("dyn_echo", "call_1", Json::null()),
+    ),
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
   ])
   let runtime = @runtime.PortRuntime(model=model as &@port.ModelPort)
   let agent = Agent::with_runtime(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="contrib", lifecycle=[publisher as &@port.Lifecycle], requires=[
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="contrib", lifecycle=[publisher as &@port.Lifecycle], requires=[
         @port.Capability::ToolContribution,
       ]),
     ],
-    config=tk_config(),
+    config=@agent.agent_config(max_tool_rounds=Some(10)),
     runtime=runtime as &@runtime.Runtime,
   )
-  let result = agent.run_turn(tk_user_msg("hello"), "bound_runtime")
+  let result = agent.run_turn(@testkit.tk_user_msg("hello"), "bound_runtime")
   assert_eq(contribution_result_texts(result.tool_results), ["echo-v1"])
   assert_eq(provider.exec_records().length(), 1)
 }
 
 ///|
 async test "tool_contribution/empty_static_directory_accepts_bound_contributions" {
-  let provider = RecordingToolProvider(
-    [tk_tool_def("dyn_echo", "dynamic echo")],
-    Map::from_array([("dyn_echo", OutcomeOk(tk_ok_result("echo-v1")))]),
+  let provider = @testkit.RecordingToolProvider(
+    [@testkit.tk_tool_def("dyn_echo", "dynamic echo")],
+    Map::from_array([
+      (
+        "dyn_echo",
+        @testkit.ScriptedToolOutcome::OutcomeOk(
+          @testkit.tk_ok_result("echo-v1"),
+        ),
+      ),
+    ]),
   )
   let publisher = ContributionPublisher::new(provider as &@port.ToolProvider)
-  let model = ScriptedModel([
-    Respond(tk_tool_call_response("dyn_echo", "call_1", Json::null())),
-    Respond(tk_stop_response("done")),
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(
+      @testkit.tk_tool_call_response("dyn_echo", "call_1", Json::null()),
+    ),
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
   ])
   let runtime = @runtime.PortRuntime(model=model as &@port.ModelPort)
   let agent = Agent::with_runtime(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="contrib", lifecycle=[publisher as &@port.Lifecycle], requires=[
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="contrib", lifecycle=[publisher as &@port.Lifecycle], requires=[
         @port.Capability::ToolContribution,
       ]),
     ],
-    config=tk_config(),
+    config=@agent.agent_config(max_tool_rounds=Some(10)),
     runtime=runtime as &@runtime.Runtime,
   )
-  let result = agent.run_turn(tk_user_msg("hello"), "source_and_contribution")
+  let result = agent.run_turn(
+    @testkit.tk_user_msg("hello"),
+    "source_and_contribution",
+  )
   assert_eq(contribution_result_texts(result.tool_results), ["echo-v1"])
   assert_eq(model.received_tools[0].map(t => t.name.to_string()), ["dyn_echo"])
 }
 
 ///|
 async test "tool_contribution/shutdown_closes_the_capability" {
-  let provider = RecordingToolProvider(
-    [tk_tool_def("dyn_echo", "dynamic echo")],
-    Map::from_array([("dyn_echo", OutcomeOk(tk_ok_result("echo-v1")))]),
+  let provider = @testkit.RecordingToolProvider(
+    [@testkit.tk_tool_def("dyn_echo", "dynamic echo")],
+    Map::from_array([
+      (
+        "dyn_echo",
+        @testkit.ScriptedToolOutcome::OutcomeOk(
+          @testkit.tk_ok_result("echo-v1"),
+        ),
+      ),
+    ]),
   )
   let publisher = ContributionPublisher::new(provider as &@port.ToolProvider)
-  let model = ScriptedModel([Respond(tk_stop_response("ok"))])
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("ok")),
+  ])
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="contrib", lifecycle=[publisher as &@port.Lifecycle], requires=[
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="contrib", lifecycle=[publisher as &@port.Lifecycle], requires=[
         @port.Capability::ToolContribution,
       ]),
     ],
-    config=tk_config(),
+    config=@agent.agent_config(max_tool_rounds=Some(10)),
   )
   agent.run_scoped(async fn(agent) {
-    ignore(agent.run_turn(tk_user_msg("hello"), "session_shutdown"))
+    ignore(agent.run_turn(@testkit.tk_user_msg("hello"), "session_shutdown"))
   })
   let contributions = publisher.capability()
   guard contributions.replace(provider=provider as &@port.ToolProvider)
@@ -381,9 +481,16 @@ impl @port.Lifecycle for StartupToolPublisher with fn on_start(self) {
 
 ///|
 async test "tool_catalog/first_operation_captures_after_managed_startup_and_holds_the_guard_while_waiting" {
-  let provider = RecordingToolProvider(
-    [tk_tool_def("initial", "published at startup")],
-    Map::from_array([("initial", OutcomeOk(tk_ok_result("startup tool")))]),
+  let provider = @testkit.RecordingToolProvider(
+    [@testkit.tk_tool_def("initial", "published at startup")],
+    Map::from_array([
+      (
+        "initial",
+        @testkit.ScriptedToolOutcome::OutcomeOk(
+          @testkit.tk_ok_result("startup tool"),
+        ),
+      ),
+    ]),
   )
   let publisher = StartupToolPublisher::{
     provider,
@@ -393,30 +500,32 @@ async test "tool_catalog/first_operation_captures_after_managed_startup_and_hold
     released: Ref(false),
     starts: 0,
   }
-  let model = ScriptedModel([
-    Respond(tk_tool_call_response("initial", "first", {})),
-    Respond(tk_stop_response("done")),
-    Respond(tk_stop_response("second")),
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(
+      @testkit.tk_tool_call_response("initial", "first", {}),
+    ),
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("second")),
   ])
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="publisher", lifecycle=[publisher], requires=[
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="publisher", lifecycle=[publisher], requires=[
         @port.ToolContribution,
       ]),
     ],
-    config=tk_config(),
+    config=@agent.agent_config(max_tool_rounds=Some(10)),
   )
   @async.with_timeout(3_000, async fn() {
     @async.with_task_group(group => {
       let first = group.spawn(() => {
-        agent.run_turn(tk_user_msg("hello"), "startup")
+        agent.run_turn(@testkit.tk_user_msg("hello"), "startup")
       })
       while !publisher.waiting.val {
         @async.pause()
       }
       assert_eq(model.call_count(), 0)
-      try agent.run_turn(tk_user_msg("concurrent"), "startup") catch {
+      try agent.run_turn(@testkit.tk_user_msg("concurrent"), "startup") catch {
         @error.AgentError::Busy(..) => ()
         error => fail("startup did not preserve Busy: " + error.to_string())
       } noraise {
@@ -428,7 +537,7 @@ async test "tool_catalog/first_operation_captures_after_managed_startup_and_hold
       assert_eq(contribution_result_texts(result.tool_results), ["startup tool"])
     })
   })
-  let _ = agent.run_turn(tk_user_msg("again"), "startup")
+  let _ = agent.run_turn(@testkit.tk_user_msg("again"), "startup")
   assert_eq(publisher.starts, 1)
   assert_eq(provider.exec_records().length(), 1)
 }

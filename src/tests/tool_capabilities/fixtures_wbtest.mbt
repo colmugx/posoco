@@ -1,20 +1,5 @@
 ///|
-using @agent {
-  type Agent,
-  type AgentControl,
-  type ScriptedModel,
-  type RecordingToolProvider,
-  type RecordingObserver,
-  type RecordingSessionPort,
-  type ScriptedMemoryPort,
-  tk_ext,
-  tk_config,
-  tk_tool_def,
-  tk_ok_result,
-  tk_tool_call_response,
-  tk_stop_response,
-  tk_user_msg,
-}
+using @agent {type Agent, type AgentControl}
 
 ///|
 using @support {
@@ -43,7 +28,7 @@ impl @port.Extension for InvokingTool with fn manifest(self) -> @port.ExtensionM
 impl @port.ToolProvider for InvokingTool with fn list_tools(_self) -> Array[
   @kernel.ToolDef,
 ] {
-  [{ ..tk_tool_def("parent", "call a child"), policy: Exclusive, }]
+  [{ ..@testkit.tk_tool_def("parent", "call a child"), policy: Exclusive, }]
 }
 
 ///|

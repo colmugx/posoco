@@ -31,19 +31,19 @@ impl @port.Lifecycle for WakeupCapture with fn on_shutdown(
 fn wakeup_capture_agent(
   capture : WakeupCapture,
   model : &@port.ModelPort,
-  store : RecordingSessionPort,
+  store : @testkit.RecordingSessionPort,
   observer : SignalObserver,
 ) -> Agent raise @error.CompositionError {
   Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", sessions=[store], observers=[observer]),
-      tk_ext(id="waker", lifecycle=[capture as &@port.Lifecycle], requires=[
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", sessions=[store], observers=[observer]),
+      @testkit.tk_ext(id="waker", lifecycle=[capture as &@port.Lifecycle], requires=[
         @port.Capability::Tasks,
         @port.Capability::Wakeup,
       ]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
 }
 
@@ -69,12 +69,12 @@ fn wakeup_events_ready(observer : SignalObserver) -> Array[@types.TurnEvent] {
 ///|
 async test "wakeup/request is scope-gated and validates session and tag" {
   let capture = WakeupCapture::WakeupCapture()
-  let model = ScriptedModel([])
+  let model = @testkit.ScriptedModel([])
   let observer = SignalObserver::SignalObserver()
   let agent = wakeup_capture_agent(
     capture,
     model,
-    RecordingSessionPort(),
+    @testkit.RecordingSessionPort(),
     observer,
   )
   let port = wakeup_capture_port(capture)
@@ -108,8 +108,8 @@ async test "tasks/ready notification covers all four terminals without payloads"
   let observer = SignalObserver::SignalObserver()
   let agent = wakeup_capture_agent(
     capture,
-    ScriptedModel([]),
-    RecordingSessionPort(),
+    @testkit.ScriptedModel([]),
+    @testkit.RecordingSessionPort(),
     observer,
   )
   agent.run_scoped(async fn(_agent) {
@@ -124,7 +124,7 @@ async test "tasks/ready notification covers all four terminals without payloads"
       while @async.is_being_cancelled() == false {
         @async.pause()
       }
-      tk_user_msg("never")
+      @testkit.tk_user_msg("never")
     }
     let completed = match
       tasks.submit({
@@ -132,7 +132,7 @@ async test "tasks/ready notification covers all four terminals without payloads"
         mode: @port.TaskMode::Background,
         label: "completed",
         timeout_ms: None,
-        run: fn() { tk_user_msg("done") },
+        run: fn() { @testkit.tk_user_msg("done") },
       }) {
       Ok(value) => value
       Err(error) => fail("submit failed: \{repr(error)}")
@@ -221,7 +221,7 @@ async test "tasks/ready notification covers all four terminals without payloads"
     guard outcomes[0].status is @port.TaskStatus::Completed(message~) else {
       fail("expected Completed, got \{outcomes[0].status.to_repr()}")
     }
-    assert_eq(message, tk_user_msg("done"))
+    assert_eq(message, @testkit.tk_user_msg("done"))
     assert_eq(outcomes[1].receipt.label, "failed")
     guard outcomes[1].status is @port.TaskStatus::Failed(reason~) else {
       fail("expected Failed, got \{outcomes[1].status.to_repr()}")

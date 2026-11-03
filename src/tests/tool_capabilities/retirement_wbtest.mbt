@@ -1,16 +1,19 @@
 ///|
 async test "tool_retire/failed_cleanup_preserves_the_committed_revision_and_retries_idempotently" {
   let publisher = ManualPublisher::new()
-  let provider = RecordingToolProvider([tk_tool_def("leaf", "leaf")], Map([]))
+  let provider = @testkit.RecordingToolProvider(
+    [@testkit.tk_tool_def("leaf", "leaf")],
+    Map([]),
+  )
   let probe = RetireProbe::RetireProbe(failures_left=1)
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(ScriptedModel([]))),
-      tk_ext(id="owner", lifecycle=[publisher], requires=[
+      @testkit.tk_ext(id="model", model=Some(@testkit.ScriptedModel([]))),
+      @testkit.tk_ext(id="owner", lifecycle=[publisher], requires=[
         @port.ToolContribution,
       ]),
     ],
-    config=tk_config(),
+    config=@agent.agent_config(max_tool_rounds=Some(10)),
   )
   let cap = publisher.capability()
   guard cap.replace(provider~, retire=probe.callback()) is Ok(_) else {
@@ -38,16 +41,19 @@ async test "tool_retire/failed_cleanup_preserves_the_committed_revision_and_retr
 ///|
 async test "tool_retire/shutdown_retries_failed_cleanup_without_repeating_successful_retire" {
   let publisher = ManualPublisher::new()
-  let provider = RecordingToolProvider([tk_tool_def("leaf", "leaf")], Map([]))
+  let provider = @testkit.RecordingToolProvider(
+    [@testkit.tk_tool_def("leaf", "leaf")],
+    Map([]),
+  )
   let probe = RetireProbe::RetireProbe(failures_left=1)
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(ScriptedModel([]))),
-      tk_ext(id="owner", lifecycle=[publisher], requires=[
+      @testkit.tk_ext(id="model", model=Some(@testkit.ScriptedModel([]))),
+      @testkit.tk_ext(id="owner", lifecycle=[publisher], requires=[
         @port.ToolContribution,
       ]),
     ],
-    config=tk_config(),
+    config=@agent.agent_config(max_tool_rounds=Some(10)),
   )
   guard publisher.capability().replace(provider~, retire=probe.callback())
     is Ok(_) else {
@@ -68,15 +74,18 @@ async test "tool_retire/shutdown_retries_failed_cleanup_without_repeating_succes
 ///|
 async test "tool_retire/shutdown_does_not_succeed_while_a_retire_is_in_progress" {
   let publisher = ManualPublisher::new()
-  let provider = RecordingToolProvider([tk_tool_def("leaf", "leaf")], Map([]))
+  let provider = @testkit.RecordingToolProvider(
+    [@testkit.tk_tool_def("leaf", "leaf")],
+    Map([]),
+  )
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(ScriptedModel([]))),
-      tk_ext(id="owner", lifecycle=[publisher], requires=[
+      @testkit.tk_ext(id="model", model=Some(@testkit.ScriptedModel([]))),
+      @testkit.tk_ext(id="owner", lifecycle=[publisher], requires=[
         @port.ToolContribution,
       ]),
     ],
-    config=tk_config(),
+    config=@agent.agent_config(max_tool_rounds=Some(10)),
   )
   let entered = Ref(false)
   let released = Ref(false)
@@ -113,15 +122,18 @@ async test "tool_retire/shutdown_does_not_succeed_while_a_retire_is_in_progress"
 async test "tool_retire/another_owners_cleanup_failure_does_not_fail_a_publication" {
   let a = ManualPublisher::new()
   let b = ManualPublisher::new()
-  let provider = RecordingToolProvider([tk_tool_def("leaf", "leaf")], Map([]))
+  let provider = @testkit.RecordingToolProvider(
+    [@testkit.tk_tool_def("leaf", "leaf")],
+    Map([]),
+  )
   let probe = RetireProbe::RetireProbe(failures_left=3)
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(ScriptedModel([]))),
-      tk_ext(id="a", lifecycle=[a], requires=[@port.ToolContribution]),
-      tk_ext(id="b", lifecycle=[b], requires=[@port.ToolContribution]),
+      @testkit.tk_ext(id="model", model=Some(@testkit.ScriptedModel([]))),
+      @testkit.tk_ext(id="a", lifecycle=[a], requires=[@port.ToolContribution]),
+      @testkit.tk_ext(id="b", lifecycle=[b], requires=[@port.ToolContribution]),
     ],
-    config=tk_config(),
+    config=@agent.agent_config(max_tool_rounds=Some(10)),
   )
   ignore(a.capability().replace(provider~, retire=probe.callback()))
   guard a.capability().withdraw() is Err(@port.CleanupPending(..)) else {
@@ -140,28 +152,39 @@ async test "tool_retire/another_owners_cleanup_failure_does_not_fail_a_publicati
 async test "tool_retire/revoking_an_old_owner_does_not_revoke_a_reused_tool_name" {
   let a = ManualPublisher::new()
   let b = ManualPublisher::new()
-  let provider = RecordingToolProvider(
-    [tk_tool_def("leaf", "leaf")],
-    Map([("leaf", OutcomeOk(tk_ok_result("b result")))]),
+  let provider = @testkit.RecordingToolProvider(
+    [@testkit.tk_tool_def("leaf", "leaf")],
+    Map([
+      (
+        "leaf",
+        @testkit.ScriptedToolOutcome::OutcomeOk(
+          @testkit.tk_ok_result("b result"),
+        ),
+      ),
+    ]),
   )
   let probe = RetireProbe::RetireProbe(failures_left=100)
   let hook = ConsentWaitHook::ConsentWaitHook()
   let agent = Agent(
     exts=[
-      tk_ext(
+      @testkit.tk_ext(
         id="model",
         model=Some(
-          ScriptedModel([
-            Respond(tk_tool_call_response("leaf", "call", Json::null())),
-            Respond(tk_stop_response("done")),
+          @testkit.ScriptedModel([
+            @testkit.ScriptedModelStep::Respond(
+              @testkit.tk_tool_call_response("leaf", "call", Json::null()),
+            ),
+            @testkit.ScriptedModelStep::Respond(
+              @testkit.tk_stop_response("done"),
+            ),
           ]),
         ),
         hooks=[hook],
       ),
-      tk_ext(id="a", lifecycle=[a], requires=[@port.ToolContribution]),
-      tk_ext(id="b", lifecycle=[b], requires=[@port.ToolContribution]),
+      @testkit.tk_ext(id="a", lifecycle=[a], requires=[@port.ToolContribution]),
+      @testkit.tk_ext(id="b", lifecycle=[b], requires=[@port.ToolContribution]),
     ],
-    config=tk_config(),
+    config=@agent.agent_config(max_tool_rounds=Some(10)),
   )
   ignore(a.capability().replace(provider~, retire=probe.callback()))
   ignore(a.capability().withdraw())
@@ -170,7 +193,7 @@ async test "tool_retire/revoking_an_old_owner_does_not_revoke_a_reused_tool_name
   }
   @async.with_task_group(async fn(group) {
     let turn = group.spawn(() => {
-      agent.run_turn(tk_user_msg("hello"), "reused-name")
+      agent.run_turn(@testkit.tk_user_msg("hello"), "reused-name")
     })
     while !hook.waiting.val {
       @async.pause()

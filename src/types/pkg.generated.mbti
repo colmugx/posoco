@@ -5,6 +5,7 @@ import {
   "colmugx/posoco/error",
   "colmugx/posoco/kernel",
   "moonbitlang/core/debug",
+  "moonbitlang/core/json",
 }
 
 // Values
@@ -17,27 +18,30 @@ pub const SESSION_TITLE_METADATA_KEY : String = "posoco.title"
 // Errors
 
 // Types and methods
+#derive(Eq, @debug.Debug)
 pub(all) struct ChatOptions {
   temperature : Double?
   max_output_tokens : Int32?
-} derive(Eq, @debug.Debug)
+}
 pub fn ChatOptions::equal(Self, Self) -> Bool
 pub fn ChatOptions::not_equal(Self, Self) -> Bool
 pub fn ChatOptions::to_repr(Self) -> @debug.Repr
 
+#derive(Eq)
 pub(all) struct CompactOutcome {
   final_session_id : String
   mode : @kernel.CompactMode
   messages_after : Int32
-} derive(Eq)
+}
 pub fn CompactOutcome::equal(Self, Self) -> Bool
 pub fn CompactOutcome::not_equal(Self, Self) -> Bool
 
+#derive(Eq, @debug.Debug)
 pub(all) enum ContextReadingSource {
   Measured
   Estimated
   Unknown
-} derive(Eq, @debug.Debug)
+}
 pub fn ContextReadingSource::equal(Self, Self) -> Bool
 pub fn ContextReadingSource::not_equal(Self, Self) -> Bool
 pub fn ContextReadingSource::output(Self, &Logger) -> Unit
@@ -45,6 +49,7 @@ pub fn ContextReadingSource::to_repr(Self) -> @debug.Repr
 pub fn ContextReadingSource::to_string(Self) -> String
 pub impl Show for ContextReadingSource
 
+#derive(Eq, @debug.Debug)
 pub(all) struct ContextState {
   session_id : String
   model_id : String
@@ -55,38 +60,41 @@ pub(all) struct ContextState {
   compact_threshold : Double
   source : ContextReadingSource
   reading_message_count : Int32
-} derive(Eq, @debug.Debug)
+}
 pub fn ContextState::equal(Self, Self) -> Bool
-pub fn ContextState::from_metadata(Map[String, Json]) -> Self?
+pub fn ContextState::from_metadata(Map[String, @json.Json]) -> Self?
 pub fn ContextState::not_equal(Self, Self) -> Bool
 pub fn ContextState::output(Self, &Logger) -> Unit
-pub fn ContextState::to_metadata_json(Self) -> Json
+pub fn ContextState::to_metadata_json(Self) -> @json.Json
 pub fn ContextState::to_repr(Self) -> @debug.Repr
 pub fn ContextState::to_string(Self) -> String
 pub impl Show for ContextState
 
+#derive(Eq, @debug.Debug)
 pub(all) struct EventScope {
   session_id : @kernel.SessionId
   run_id : @kernel.RunId
   turn_id : @kernel.TurnId
-} derive(Eq, @debug.Debug)
+}
 pub fn EventScope::equal(Self, Self) -> Bool
 pub fn EventScope::not_equal(Self, Self) -> Bool
 pub fn EventScope::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) struct Session {
   messages : Array[@kernel.Message]
-  metadata : Map[String, Json]
-} derive(Eq, @debug.Debug)
+  metadata : Map[String, @json.Json]
+}
 pub fn Session::equal(Self, Self) -> Bool
 pub fn Session::not_equal(Self, Self) -> Bool
 pub fn Session::parent_thread_id(Self) -> String?
 pub fn Session::to_repr(Self) -> @debug.Repr
 pub fn Session::with_parent_thread_id(Self, String) -> Self
 
+#derive(@debug.Debug)
 pub struct StreamAccumulator {
   // private fields
-} derive(@debug.Debug)
+}
 pub fn StreamAccumulator::StreamAccumulator() -> Self
 pub fn StreamAccumulator::push(Self, StreamChunk) -> Unit raise @error.ModelError
 pub fn StreamAccumulator::reasoning(Self) -> String
@@ -95,51 +103,56 @@ pub fn StreamAccumulator::to_completion(Self) -> @kernel.Completion raise @error
 pub fn StreamAccumulator::to_repr(Self) -> @debug.Repr
 pub fn StreamAccumulator::tool_calls(Self) -> Array[ToolCallSnapshot]
 
+#derive(Eq, @debug.Debug)
 pub(all) enum StreamChunk {
   TextDelta(token~ : String)
   ReasoningDelta(token~ : String)
   ToolCallDelta(index~ : Int32, id~ : String?, name~ : String?, arguments_delta~ : String?)
   Usage(input_tokens~ : Int32, output_tokens~ : Int32, total_tokens~ : Int32, cached_input_tokens~ : Int32?, uncached_input_tokens~ : Int32?)
   Finish(reason~ : String)
-} derive(Eq, @debug.Debug)
+}
 pub fn StreamChunk::equal(Self, Self) -> Bool
 pub fn StreamChunk::not_equal(Self, Self) -> Bool
 pub fn StreamChunk::to_repr(Self) -> @debug.Repr
 pub fn StreamChunk::validate(Self) -> Result[Unit, String]
 
+#derive(@debug.Debug)
 pub(all) enum StreamMode {
   NoStream
   Stream((StreamChunk) -> Unit)
-} derive(@debug.Debug)
+}
 pub fn StreamMode::output(Self, &Logger) -> Unit
 pub fn StreamMode::to_repr(Self) -> @debug.Repr
 pub fn StreamMode::to_string(Self) -> String
 pub impl Show for StreamMode
 
+#derive(@debug.Debug)
 pub(all) struct ToolCallBuilder {
   mut id : String
   mut name : String
   mut arguments_buf : StringBuilder
-} derive(@debug.Debug)
+}
 pub fn ToolCallBuilder::ToolCallBuilder() -> Self
 pub fn ToolCallBuilder::arguments_json(Self) -> String
 pub fn ToolCallBuilder::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub struct ToolCallSnapshot {
   id : String
   name : String
   arguments_json : String
-} derive(Eq, @debug.Debug)
+}
 pub fn ToolCallSnapshot::equal(Self, Self) -> Bool
 pub fn ToolCallSnapshot::not_equal(Self, Self) -> Bool
 pub fn ToolCallSnapshot::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) enum ToolCatalogChange {
   Published
   Withdrawn
   Captured
   CleanupFailed
-} derive(Eq, @debug.Debug)
+}
 pub fn ToolCatalogChange::equal(Self, Self) -> Bool
 pub fn ToolCatalogChange::not_equal(Self, Self) -> Bool
 pub fn ToolCatalogChange::output(Self, &Logger) -> Unit
@@ -147,6 +160,7 @@ pub fn ToolCatalogChange::to_repr(Self) -> @debug.Repr
 pub fn ToolCatalogChange::to_string(Self) -> String
 pub impl Show for ToolCatalogChange
 
+#derive(Eq, @debug.Debug)
 pub(all) struct ToolCatalogChangedPayload {
   change : ToolCatalogChange
   owner : String
@@ -155,11 +169,12 @@ pub(all) struct ToolCatalogChangedPayload {
   tool_count : Int32
   operation_id : String?
   detail : String?
-} derive(Eq, @debug.Debug)
+}
 pub fn ToolCatalogChangedPayload::equal(Self, Self) -> Bool
 pub fn ToolCatalogChangedPayload::not_equal(Self, Self) -> Bool
 pub fn ToolCatalogChangedPayload::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) enum TurnEvent {
   TurnStarted
   ModelRequestStarted
@@ -168,7 +183,7 @@ pub(all) enum TurnEvent {
   ToolCallPending(@kernel.ToolCall)
   ToolCallApproved(call~ : @kernel.ToolCall, consent_scope~ : String?)
   ToolCallStarted(call~ : @kernel.ToolCall)
-  ToolCallSucceeded(call~ : @kernel.ToolCall, content~ : String, structured~ : Json?, attachments~ : Array[@kernel.Content])
+  ToolCallSucceeded(call~ : @kernel.ToolCall, content~ : String, structured~ : @json.Json?, attachments~ : Array[@kernel.Content])
   ToolCallFailed(call~ : @kernel.ToolCall, failure~ : @kernel.ToolFailure)
   ToolCallRejected(call~ : @kernel.ToolCall, reason~ : @kernel.NotExecutedReason)
   ToolCallAbandoned(call~ : @kernel.ToolCall, reason~ : String)
@@ -184,10 +199,10 @@ pub(all) enum TurnEvent {
   CompactStarted(trigger~ : String)
   CompactFinished(trigger~ : String, mode~ : String, final_session_id~ : String, messages_after~ : Int32)
   OperationFinalized(operation~ : String, outcome~ : String, detail~ : String)
-  Custom(source~ : String, label~ : String, data~ : Json)
+  Custom(source~ : String, label~ : String, data~ : @json.Json)
   UserRequestStarted(kind~ : String, prompt~ : String)
   UserRequestFinished(kind~ : String, outcome~ : String)
-} derive(Eq, @debug.Debug)
+}
 pub fn TurnEvent::equal(Self, Self) -> Bool
 pub fn TurnEvent::not_equal(Self, Self) -> Bool
 pub fn TurnEvent::output(Self, &Logger) -> Unit
@@ -195,11 +210,12 @@ pub fn TurnEvent::to_repr(Self) -> @debug.Repr
 pub fn TurnEvent::to_string(Self) -> String
 pub impl Show for TurnEvent
 
+#derive(Eq, @debug.Debug)
 pub(all) struct TurnResult {
   message : @kernel.Message
   tool_results : Array[@kernel.ToolOutcome]
   final_session_id : String
-} derive(Eq, @debug.Debug)
+}
 pub fn TurnResult::equal(Self, Self) -> Bool
 pub fn TurnResult::not_equal(Self, Self) -> Bool
 pub fn TurnResult::to_repr(Self) -> @debug.Repr

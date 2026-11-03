@@ -9,6 +9,7 @@ import {
   "moonbitlang/async/aqueue",
   "moonbitlang/async/cond_var",
   "moonbitlang/core/debug",
+  "moonbitlang/core/json",
 }
 
 // Values
@@ -62,18 +63,20 @@ pub fn SubscriberError::to_string(Self) -> String
 pub impl Show for SubscriberError
 
 // Types and methods
+#derive(Eq, @debug.Debug)
 pub(all) struct AbortCommand {
   command_id : CommandId
   target_run_id : @kernel.RunId
   detail : String?
-} derive(Eq, @debug.Debug)
+}
 pub fn AbortCommand::equal(Self, Self) -> Bool
 pub fn AbortCommand::not_equal(Self, Self) -> Bool
 pub fn AbortCommand::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, Hash, @debug.Debug)
 pub(all) struct CommandId {
   value : String
-} derive(Eq, Hash, @debug.Debug)
+}
 pub fn CommandId::checked(String) -> Result[Self, String]
 pub fn CommandId::equal(Self, Self) -> Bool
 pub fn CommandId::hash(Self) -> Int32
@@ -85,12 +88,13 @@ pub fn CommandId::to_string(Self) -> String
 pub fn CommandId::unchecked(String) -> Self
 pub impl Show for CommandId
 
+#derive(Eq, @debug.Debug)
 pub(all) struct CompactCommand {
   command_id : CommandId
   target_run_id : @kernel.RunId
   target_turn_id : @kernel.TurnId
   trigger : @kernel.CompactTrigger
-} derive(Eq, @debug.Debug)
+}
 pub fn CompactCommand::command_id(Self) -> CommandId
 pub fn CompactCommand::equal(Self, Self) -> Bool
 pub fn CompactCommand::not_equal(Self, Self) -> Bool
@@ -150,12 +154,13 @@ pub(all) struct CoreFactCommit {
   messages : Array[@kernel.Message]
 }
 
+#derive(Eq, @debug.Debug)
 pub(all) enum EnqueueResult {
   Accepted(command_id~ : CommandId)
   RejectedStale(command_id~ : CommandId, reason~ : String)
   RejectedQueueFull(command_id~ : CommandId, depth~ : Int32)
   AbortAlreadyRequested(command_id~ : CommandId)
-} derive(Eq, @debug.Debug)
+}
 pub fn EnqueueResult::equal(Self, Self) -> Bool
 pub fn EnqueueResult::not_equal(Self, Self) -> Bool
 pub fn EnqueueResult::output(Self, &Logger) -> Unit
@@ -177,6 +182,7 @@ pub fn EventDispatcher::next_seq(Self) -> Int32
 pub fn EventDispatcher::register(Self, &EventSubscriber) -> Unit
 pub fn EventDispatcher::subscriber_count(Self) -> Int32
 
+#derive(Eq, @debug.Debug)
 pub(all) struct EventEnvelope {
   run_id : @kernel.RunId
   turn_id : @kernel.TurnId
@@ -184,7 +190,7 @@ pub(all) struct EventEnvelope {
   seq : Int32
   committed_revision : Int32
   event : @kernel_exec.KernelEvent
-} derive(Eq, @debug.Debug)
+}
 pub fn EventEnvelope::EventEnvelope(run_id~ : @kernel.RunId, turn_id~ : @kernel.TurnId, session_id~ : @kernel.SessionId, seq~ : Int32, committed_revision~ : Int32, event~ : @kernel_exec.KernelEvent) -> Self
 pub fn EventEnvelope::equal(Self, Self) -> Bool
 pub fn EventEnvelope::event(Self) -> @kernel_exec.KernelEvent
@@ -210,35 +216,38 @@ pub fn FailOnNthJournal::entries_for_savepoint(Self, @kernel.RunId, String) -> A
 pub fn FailOnNthJournal::revision(Self) -> Int32
 pub impl RunJournal for FailOnNthJournal
 
+#derive(Eq, @debug.Debug)
 pub(all) struct FollowUpCommand {
   command_id : CommandId
   target_run_id : @kernel.RunId
   source_turn_id : @kernel.TurnId
-  payload : Json
-} derive(Eq, @debug.Debug)
+  payload : @json.Json
+}
 pub fn FollowUpCommand::equal(Self, Self) -> Bool
 pub fn FollowUpCommand::not_equal(Self, Self) -> Bool
 pub fn FollowUpCommand::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) struct ForkCommand {
   command_id : CommandId
   target_run_id : @kernel.RunId
   target_turn_id : @kernel.TurnId
   fork_index : Int32
-} derive(Eq, @debug.Debug)
+}
 pub fn ForkCommand::command_id(Self) -> CommandId
 pub fn ForkCommand::equal(Self, Self) -> Bool
 pub fn ForkCommand::fork_index(Self) -> Int32
 pub fn ForkCommand::not_equal(Self, Self) -> Bool
 pub fn ForkCommand::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) struct FrozenBatch {
   savepoint_id : String
   savepoint_kind : SavepointKind
   expected_revision : Int32
   entries : Array[JournalEntry]
   frozen_entry_keys : Array[String]
-} derive(Eq, @debug.Debug)
+}
 pub fn FrozenBatch::equal(Self, Self) -> Bool
 pub fn FrozenBatch::not_equal(Self, Self) -> Bool
 pub fn FrozenBatch::to_repr(Self) -> @debug.Repr
@@ -257,27 +266,30 @@ pub fn InMemoryJournal::entries_for_savepoint(Self, @kernel.RunId, String) -> Ar
 pub fn InMemoryJournal::revision(Self) -> Int32
 pub impl RunJournal for InMemoryJournal
 
+#derive(Eq, @debug.Debug)
 pub(all) struct JournalContribution {
   contributor_id : String
   provenance : String
   proposed_entries : Array[JournalEntry]
-} derive(Eq, @debug.Debug)
+}
 pub fn JournalContribution::empty(String, String) -> Self
 pub fn JournalContribution::equal(Self, Self) -> Bool
 pub fn JournalContribution::not_equal(Self, Self) -> Bool
 pub fn JournalContribution::to_repr(Self) -> @debug.Repr
 pub fn JournalContribution::with_entries(String, String, Array[JournalEntry]) -> Self
 
+#derive(Eq, @debug.Debug)
 pub(all) struct JournalEntry {
   identity : JournalEntryIdentity
   revision : Int32
   summary : String
-  payload : Json
-} derive(Eq, @debug.Debug)
+  payload : @json.Json
+}
 pub fn JournalEntry::equal(Self, Self) -> Bool
 pub fn JournalEntry::not_equal(Self, Self) -> Bool
 pub fn JournalEntry::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) struct JournalEntryIdentity {
   run_id : @kernel.RunId
   turn_id : @kernel.TurnId
@@ -285,7 +297,7 @@ pub(all) struct JournalEntryIdentity {
   savepoint_id : String
   entry_seq : Int32
   kind : SavepointKind
-} derive(Eq, @debug.Debug)
+}
 pub fn JournalEntryIdentity::equal(Self, Self) -> Bool
 pub fn JournalEntryIdentity::not_equal(Self, Self) -> Bool
 pub fn JournalEntryIdentity::output(Self, &Logger) -> Unit
@@ -293,9 +305,10 @@ pub fn JournalEntryIdentity::to_repr(Self) -> @debug.Repr
 pub fn JournalEntryIdentity::to_string(Self) -> String
 pub impl Show for JournalEntryIdentity
 
+#derive(Eq, Hash, @debug.Debug)
 pub(all) struct ModelId {
   value : String
-} derive(Eq, Hash, @debug.Debug)
+}
 pub fn ModelId::checked(String) -> Result[Self, String]
 pub fn ModelId::equal(Self, Self) -> Bool
 pub fn ModelId::hash(Self) -> Int32
@@ -325,11 +338,12 @@ pub fn NoopSubscriber::subscriber_id(Self) -> String
 pub fn NoopSubscriber::with_id(String) -> Self
 pub impl EventSubscriber for NoopSubscriber
 
+#derive(Eq, @debug.Debug)
 pub(all) enum OperationClass {
   Prompt
   InFlight
   Structural
-} derive(Eq, @debug.Debug)
+}
 pub fn OperationClass::equal(Self, Self) -> Bool
 pub fn OperationClass::not_equal(Self, Self) -> Bool
 pub fn OperationClass::output(Self, &Logger) -> Unit
@@ -337,12 +351,13 @@ pub fn OperationClass::to_repr(Self) -> @debug.Repr
 pub fn OperationClass::to_string(Self) -> String
 pub impl Show for OperationClass
 
+#derive(Eq, @debug.Debug)
 pub(all) struct OperationLease {
   operation_id : String
   acquired_phase : PuppetPhase
   run_id : @kernel.RunId
   turn_id : @kernel.TurnId
-} derive(Eq, @debug.Debug)
+}
 pub fn OperationLease::acquired_phase(Self) -> PuppetPhase
 pub fn OperationLease::equal(Self, Self) -> Bool
 pub fn OperationLease::not_equal(Self, Self) -> Bool
@@ -376,6 +391,7 @@ pub fn PhaseGate::release(Self, String) -> Unit raise PuppetError
 pub fn PhaseGate::rotate_turn(Self, @kernel.TurnId) -> Self raise PuppetError
 pub fn PhaseGate::transition(Self, PuppetPhase) -> Self raise PuppetError
 
+#derive(Eq, @debug.Debug)
 pub(all) struct PreCommitContext {
   run_id : @kernel.RunId
   turn_id : @kernel.TurnId
@@ -385,11 +401,12 @@ pub(all) struct PreCommitContext {
   base_entries : Array[JournalEntry]
   current_revision : Int32
   catalog_version : @kernel.CatalogVersion
-} derive(Eq, @debug.Debug)
+}
 pub fn PreCommitContext::equal(Self, Self) -> Bool
 pub fn PreCommitContext::not_equal(Self, Self) -> Bool
 pub fn PreCommitContext::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) struct PromptRequest {
   run_id : @kernel.RunId
   turn_id : @kernel.TurnId
@@ -397,7 +414,7 @@ pub(all) struct PromptRequest {
   initial_messages : Array[@kernel.Message]
   operation_id : String
   policy : RunPolicy
-} derive(Eq, @debug.Debug)
+}
 pub fn PromptRequest::equal(Self, Self) -> Bool
 pub fn PromptRequest::not_equal(Self, Self) -> Bool
 pub fn PromptRequest::to_repr(Self) -> @debug.Repr
@@ -459,6 +476,7 @@ pub(all) struct PuppetConfig {
   mailbox : &Mailbox
 }
 
+#derive(Eq, @debug.Debug)
 pub(all) enum PuppetPhase {
   Idle
   Active
@@ -466,7 +484,7 @@ pub(all) enum PuppetPhase {
   Terminalizing
   ShuttingDown
   Shutdown
-} derive(Eq, @debug.Debug)
+}
 pub fn PuppetPhase::equal(Self, Self) -> Bool
 pub fn PuppetPhase::is_accepting(Self) -> Bool
 pub fn PuppetPhase::is_quiescent(Self) -> Bool
@@ -476,10 +494,11 @@ pub fn PuppetPhase::to_repr(Self) -> @debug.Repr
 pub fn PuppetPhase::to_string(Self) -> String
 pub impl Show for PuppetPhase
 
+#derive(Eq, @debug.Debug)
 pub(all) enum QueuePolicy {
   All
   OneAtATime
-} derive(Eq, @debug.Debug)
+}
 pub fn QueuePolicy::equal(Self, Self) -> Bool
 pub fn QueuePolicy::not_equal(Self, Self) -> Bool
 pub fn QueuePolicy::output(Self, &Logger) -> Unit
@@ -487,12 +506,13 @@ pub fn QueuePolicy::to_repr(Self) -> @debug.Repr
 pub fn QueuePolicy::to_string(Self) -> String
 pub impl Show for QueuePolicy
 
+#derive(Eq, @debug.Debug)
 pub(all) enum QuiescentStatus {
   Idle
   Suspended(run_id~ : @kernel.RunId, suspension_id~ : String, requirement_kind~ : String)
   Terminal(outcome~ : @kernel_exec.RunOutcome)
   Shutdown
-} derive(Eq, @debug.Debug)
+}
 pub fn QuiescentStatus::equal(Self, Self) -> Bool
 pub fn QuiescentStatus::not_equal(Self, Self) -> Bool
 pub fn QuiescentStatus::output(Self, &Logger) -> Unit
@@ -500,32 +520,35 @@ pub fn QuiescentStatus::to_repr(Self) -> @debug.Repr
 pub fn QuiescentStatus::to_string(Self) -> String
 pub impl Show for QuiescentStatus
 
+#derive(Eq, @debug.Debug)
 pub(all) struct ResumeCommand {
   command_id : CommandId
   target_run_id : @kernel.RunId
   suspension_id : String
-  payload : Json
-} derive(Eq, @debug.Debug)
+  payload : @json.Json
+}
 pub fn ResumeCommand::equal(Self, Self) -> Bool
 pub fn ResumeCommand::not_equal(Self, Self) -> Bool
 pub fn ResumeCommand::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) struct RunPolicy {
   model_id : String
-  call_options : Json
+  call_options : @json.Json
   budget : @kernel_exec.Budget
   context_window : Int32?
   compact_threshold : Double
-} derive(Eq, @debug.Debug)
+}
 pub fn RunPolicy::equal(Self, Self) -> Bool
 pub fn RunPolicy::not_equal(Self, Self) -> Bool
 pub fn RunPolicy::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) enum SavepointFailureCause {
   ContributorRaised(contributor_id~ : String, detail~ : String)
   ValidationFailed(detail~ : String)
   BarrierFailed(detail~ : String)
-} derive(Eq, @debug.Debug)
+}
 pub fn SavepointFailureCause::equal(Self, Self) -> Bool
 pub fn SavepointFailureCause::not_equal(Self, Self) -> Bool
 pub fn SavepointFailureCause::output(Self, &Logger) -> Unit
@@ -533,13 +556,14 @@ pub fn SavepointFailureCause::to_repr(Self) -> @debug.Repr
 pub fn SavepointFailureCause::to_string(Self) -> String
 pub impl Show for SavepointFailureCause
 
+#derive(Eq, @debug.Debug)
 pub(all) enum SavepointKind {
   InputAccepted
   AssistantCommitted
   ToolCommitted
   RunSuspended
   RunTerminal
-} derive(Eq, @debug.Debug)
+}
 pub fn SavepointKind::equal(Self, Self) -> Bool
 pub fn SavepointKind::not_equal(Self, Self) -> Bool
 pub fn SavepointKind::output(Self, &Logger) -> Unit
@@ -547,14 +571,15 @@ pub fn SavepointKind::to_repr(Self) -> @debug.Repr
 pub fn SavepointKind::to_string(Self) -> String
 pub impl Show for SavepointKind
 
+#derive(Eq, @debug.Debug)
 pub(all) struct SteerCommand {
   command_id : CommandId
   target_run_id : @kernel.RunId
   target_turn_id : @kernel.TurnId
   observed_tool_batch_id : String
   observed_model_step_id : @kernel_exec.ModelStepId
-  payload : Json
-} derive(Eq, @debug.Debug)
+  payload : @json.Json
+}
 pub fn SteerCommand::equal(Self, Self) -> Bool
 pub fn SteerCommand::not_equal(Self, Self) -> Bool
 pub fn SteerCommand::to_repr(Self) -> @debug.Repr
@@ -568,6 +593,7 @@ pub fn ToolRevocationFacts::generation(Self) -> Int32
 pub fn ToolRevocationFacts::is_revoked(Self, String) -> Bool
 pub fn ToolRevocationFacts::reset(Self) -> Unit
 
+#derive(Eq, @debug.Debug)
 pub struct TurnSnapshot {
   run_id : @kernel.RunId
   turn_id : @kernel.TurnId
@@ -580,9 +606,9 @@ pub struct TurnSnapshot {
   lifecycle_provenance : Array[String]
   subscriber_provenance : Array[String]
   fingerprint : String
-} derive(Eq, @debug.Debug)
+}
 pub fn TurnSnapshot::budget(Self) -> @kernel_exec.Budget
-pub fn TurnSnapshot::call_options(Self) -> Json
+pub fn TurnSnapshot::call_options(Self) -> @json.Json
 pub fn TurnSnapshot::capture(TurnSnapshotInput) -> Self raise PuppetError
 pub fn TurnSnapshot::catalog_version(Self) -> @kernel.CatalogVersion
 pub fn TurnSnapshot::compact_threshold(Self) -> Double
@@ -605,6 +631,7 @@ pub fn TurnSnapshot::tool_definitions(Self) -> Array[@kernel.ToolDef]
 pub fn TurnSnapshot::turn_id(Self) -> @kernel.TurnId
 pub impl Show for TurnSnapshot
 
+#derive(Eq, @debug.Debug)
 pub(all) struct TurnSnapshotInput {
   run_id : @kernel.RunId
   turn_id : @kernel.TurnId
@@ -615,7 +642,7 @@ pub(all) struct TurnSnapshotInput {
   hook_provenance : Array[String]
   lifecycle_provenance : Array[String]
   subscriber_provenance : Array[String]
-} derive(Eq, @debug.Debug)
+}
 pub fn TurnSnapshotInput::equal(Self, Self) -> Bool
 pub fn TurnSnapshotInput::not_equal(Self, Self) -> Bool
 pub fn TurnSnapshotInput::to_repr(Self) -> @debug.Repr

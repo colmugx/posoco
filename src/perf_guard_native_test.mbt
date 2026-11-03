@@ -29,7 +29,7 @@ async test "perf guard: stream accumulator text push is sub-quadratic" {
 async test "perf guard: multi-wave tool commit is linear in transcript" {
   let waves = 8
   let tools_per_wave = 4
-  let steps : Array[@posoco.ScriptedModelStep] = []
+  let steps : Array[@testkit.ScriptedModelStep] = []
   for wave in 0..<waves {
     let calls : Array[@kernel.ToolCall] = []
     for i in 0..<tools_per_wave {
@@ -47,30 +47,39 @@ async test "perf guard: multi-wave tool commit is linear in transcript" {
       finish_reason=ToolCalls,
       usage=None,
     )
-    steps.push(Respond({ completion, processed_messages: [], }))
+    steps.push(
+      @testkit.ScriptedModelStep::Respond({
+        completion,
+        processed_messages: [],
+      }),
+    )
   }
-  steps.push(Respond(@posoco.tk_stop_response("done")))
+  steps.push(
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
+  )
 
-  let outcomes : Map[String, @posoco.ScriptedToolOutcome] = Map::from_array([])
-  outcomes["echo"] = OutcomeOk(@posoco.tk_ok_result("ok"))
-  let provider = @posoco.RecordingToolProvider(
-    [@posoco.tk_tool_def("echo", "echo tool")],
+  let outcomes : Map[String, @testkit.ScriptedToolOutcome] = Map::from_array([])
+  outcomes["echo"] = @testkit.ScriptedToolOutcome::OutcomeOk(
+    @testkit.tk_ok_result("ok"),
+  )
+  let provider = @testkit.RecordingToolProvider(
+    [@testkit.tk_tool_def("echo", "echo tool")],
     outcomes,
   )
-  let store = @posoco.RecordingSessionPort()
+  let store = @testkit.RecordingSessionPort()
   let config : @posoco.AgentConfig = @posoco.agent_config(
     max_tool_rounds=Some(waves + 2),
   )
   let agent = @posoco.Agent(
     exts=[
-      @posoco.tk_ext(id="model", model=Some(@posoco.ScriptedModel(steps))),
-      @posoco.tk_ext(id="io", tools=[provider], sessions=[store]),
+      @testkit.tk_ext(id="model", model=Some(@testkit.ScriptedModel(steps))),
+      @testkit.tk_ext(id="io", tools=[provider], sessions=[store]),
     ],
     config~,
   )
 
   let t0 = @async.now()
-  let result = agent.run_turn(@posoco.tk_user_msg("go"), "perf_wave")
+  let result = agent.run_turn(@testkit.tk_user_msg("go"), "perf_wave")
   let dt = @async.now() - t0
   ignore(result)
   assert_true(
@@ -80,7 +89,7 @@ async test "perf guard: multi-wave tool commit is linear in transcript" {
 }
 
 ///|
-/// Streaming turn: 50k chunks through a ScriptedModel+RecordingObserver agent
+/// Streaming turn: 50k chunks through a @testkit.ScriptedModel+@testkit.RecordingObserver agent
 /// turn must complete < 5s. Catches accidental synchronous fan-out or
 /// per-chunk persistence recurrence. Telemetry is intentionally lossy under
 /// overload; this guard checks wall time, not event counts.
@@ -90,21 +99,24 @@ async test "perf guard: streaming turn drains 50k chunks fast" {
   for _i in 0..<n {
     chunks.push(TextDelta(token="abcd"))
   }
-  let model = @posoco.ScriptedModel([
-    Stream(chunks~, response=@posoco.tk_stop_response("ok")),
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Stream(
+      chunks~,
+      response=@testkit.tk_stop_response("ok"),
+    ),
   ])
-  let store = @posoco.RecordingSessionPort()
-  let observer = @posoco.RecordingObserver()
+  let store = @testkit.RecordingSessionPort()
+  let observer = @testkit.RecordingObserver()
   let agent = @posoco.Agent(
     exts=[
-      @posoco.tk_ext(id="model", model=Some(model)),
-      @posoco.tk_ext(id="io", sessions=[store], observers=[observer]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", sessions=[store], observers=[observer]),
     ],
-    config=@posoco.tk_config(),
+    config=@posoco.agent_config(max_tool_rounds=Some(10)),
   )
 
   let t0 = @async.now()
-  let result = agent.run_turn(@posoco.tk_user_msg("hello"), "s2")
+  let result = agent.run_turn(@testkit.tk_user_msg("hello"), "s2")
   let dt = @async.now() - t0
   ignore(result)
   assert_true(

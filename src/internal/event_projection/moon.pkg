@@ -15,4 +15,5 @@ import {
   "colmugx/posoco/internal/chunk_dispatch",
   "colmugx/posoco/internal/kernel_exec",
   "colmugx/posoco/internal/puppetry",
+  "moonbitlang/async",
 } for "wbtest"

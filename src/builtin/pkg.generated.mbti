@@ -6,12 +6,13 @@ import {
   "colmugx/posoco/kernel",
   "colmugx/posoco/port",
   "colmugx/posoco/types",
+  "moonbitlang/core/json",
 }
 
 // Values
-pub fn parse_slash_args(String, Array[@port.CommandParam]) -> Result[Json, String]
+pub fn parse_slash_args(String, Array[@port.CommandParam]) -> Result[@json.Json, String]
 
-pub fn validate_args(@port.CommandDef, Json) -> Result[Json, String]
+pub fn validate_args(@port.CommandDef, @json.Json) -> Result[@json.Json, String]
 
 // Errors
 

@@ -6,13 +6,14 @@ import {
   "colmugx/posoco/internal/puppetry",
   "colmugx/posoco/port",
   "colmugx/posoco/types",
+  "moonbitlang/core/json",
   "moonbitlang/core/ref",
 }
 
 // Values
 pub fn compose_agent_commands(Array[&@port.CommandPort], BuiltinCommandPort) -> Array[&@port.CommandPort]
 
-pub fn parse_fork_index(Json) -> Int32
+pub fn parse_fork_index(@json.Json) -> Int32
 
 // Errors
 
@@ -26,7 +27,7 @@ pub struct BuiltinCommandPort {
 }
 pub fn BuiltinCommandPort::BuiltinCommandPort(&@puppetry.Mailbox) -> Self
 pub fn BuiltinCommandPort::commands(Self) -> Array[@port.CommandDef]
-pub async fn BuiltinCommandPort::invoke(Self, String, Json) -> @port.CommandOutcome raise @error.CommandError
+pub async fn BuiltinCommandPort::invoke(Self, String, @json.Json) -> @port.CommandOutcome raise @error.CommandError
 pub impl @port.CommandPort for BuiltinCommandPort
 
 // Type aliases

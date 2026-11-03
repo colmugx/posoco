@@ -3,18 +3,19 @@ package "colmugx/posoco/internal/message_snapshot"
 
 import {
   "colmugx/posoco/kernel",
+  "moonbitlang/core/json",
 }
 
 // Values
 pub fn snapshot_content(@kernel.Content) -> @kernel.Content
 
-pub fn snapshot_json(Json) -> Json
+pub fn snapshot_json(@json.Json) -> @json.Json
 
 pub fn snapshot_message(@kernel.Message) -> @kernel.Message
 
 pub fn snapshot_messages(Array[@kernel.Message]) -> Array[@kernel.Message]
 
-pub fn snapshot_metadata(Map[String, Json]) -> Map[String, Json]
+pub fn snapshot_metadata(Map[String, @json.Json]) -> Map[String, @json.Json]
 
 pub fn snapshot_tool_call(@kernel.ToolCall) -> @kernel.ToolCall
 

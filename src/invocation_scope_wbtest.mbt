@@ -9,19 +9,19 @@
 /// call must be scoped to the session the product passed to `run_turn`, and
 /// each turn is its own run.
 async test "scope/chat_carries_caller_session_per_turn" {
-  let model = ScopeRecordingModel([
-    Respond(tk_stop_response("a")),
-    Respond(tk_stop_response("b")),
+  let model = @testkit.ScopeRecordingModel([
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("a")),
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("b")),
   ])
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", sessions=[RecordingSessionPort()]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", sessions=[@testkit.RecordingSessionPort()]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
-  ignore(agent.run_turn(tk_user_msg("hello"), "session_a"))
-  ignore(agent.run_turn(tk_user_msg("hello"), "session_b"))
+  ignore(agent.run_turn(@testkit.tk_user_msg("hello"), "session_a"))
+  ignore(agent.run_turn(@testkit.tk_user_msg("hello"), "session_b"))
   let scopes = model.chat_scopes()
   assert_eq(scopes.length(), 2)
   assert_eq(scopes[0].session_id.to_string(), "session_a")
@@ -39,22 +39,31 @@ async test "scope/chat_carries_caller_session_per_turn" {
 /// share the run/session identity, while effect ids are distinct and
 /// increasing (reducer allocation order).
 async test "scope/tool_loop_shares_run_effect_ids_increase" {
-  let model = ScopeRecordingModel([
-    Respond(tk_tool_call_response("echo", "call_1", Json::null())),
-    Respond(tk_stop_response("done")),
+  let model = @testkit.ScopeRecordingModel([
+    @testkit.ScriptedModelStep::Respond(
+      @testkit.tk_tool_call_response("echo", "call_1", Json::null()),
+    ),
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
   ])
-  let tools = RecordingToolProvider(
-    [tk_tool_def("echo", "echo tool")],
-    Map::from_array([("echo", OutcomeOk(tk_ok_result("echoed")))]),
+  let tools = @testkit.RecordingToolProvider(
+    [@testkit.tk_tool_def("echo", "echo tool")],
+    Map::from_array([
+      (
+        "echo",
+        @testkit.ScriptedToolOutcome::OutcomeOk(@testkit.tk_ok_result("echoed")),
+      ),
+    ]),
   )
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="tools", tools=[tools], sessions=[RecordingSessionPort()]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="tools", tools=[tools], sessions=[
+        @testkit.RecordingSessionPort(),
+      ]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
-  ignore(agent.run_turn(tk_user_msg("hi"), "session_loop"))
+  ignore(agent.run_turn(@testkit.tk_user_msg("hi"), "session_loop"))
   let scopes = model.chat_scopes()
   assert_eq(scopes.length(), 2)
   assert_eq(scopes[0].session_id, scopes[1].session_id)
@@ -69,7 +78,7 @@ async test "scope/tool_loop_shares_run_effect_ids_increase" {
 /// Build a tool-call result whose completion reports `total` observed tokens,
 /// so the auto-compact pump fires against a small context window.
 fn scope_test_tool_call_with_usage(total : Int32) -> @kernel.ModelCallResult {
-  let base = tk_tool_call_response("echo", "call_1", Json::null())
+  let base = @testkit.tk_tool_call_response("echo", "call_1", Json::null())
   let completion : @kernel.Completion = Completion(
     content=[],
     tool_calls=base.completion.tool_calls(),
@@ -92,28 +101,38 @@ fn scope_test_tool_call_with_usage(total : Int32) -> @kernel.ModelCallResult {
 /// after the first model step (usage 95 >= 90% of window 100).
 async test "scope/compact_scoped_to_run_without_effect_id" {
   let compacted : @kernel.CompactResult = {
-    compacted_messages: [tk_user_msg("summary")],
+    compacted_messages: [@testkit.tk_user_msg("summary")],
     mode: Replace,
   }
-  let model = ScopeRecordingModel(
+  let model = @testkit.ScopeRecordingModel(
     [
-      Respond(scope_test_tool_call_with_usage(95)),
-      Respond(tk_stop_response("done")),
+      @testkit.ScriptedModelStep::Respond(scope_test_tool_call_with_usage(95)),
+      @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
     ],
     compact_result=compacted,
   )
-  let tools = RecordingToolProvider(
-    [tk_tool_def("echo", "echo tool")],
-    Map::from_array([("echo", OutcomeOk(tk_ok_result("echoed")))]),
+  let tools = @testkit.RecordingToolProvider(
+    [@testkit.tk_tool_def("echo", "echo tool")],
+    Map::from_array([
+      (
+        "echo",
+        @testkit.ScriptedToolOutcome::OutcomeOk(@testkit.tk_ok_result("echoed")),
+      ),
+    ]),
   )
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="tools", tools=[tools], sessions=[RecordingSessionPort()]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="tools", tools=[tools], sessions=[
+        @testkit.RecordingSessionPort(),
+      ]),
     ],
-    config={ ..tk_config(), model_context_window: Some(100), },
+    config={
+      ..agent_config(max_tool_rounds=Some(10)),
+      model_context_window: Some(100),
+    },
   )
-  ignore(agent.run_turn(tk_user_msg("hi"), "session_compact"))
+  ignore(agent.run_turn(@testkit.tk_user_msg("hi"), "session_compact"))
   let chat_scopes = model.chat_scopes()
   let compact_scopes = model.compact_scopes()
   assert_eq(compact_scopes.length(), 1)

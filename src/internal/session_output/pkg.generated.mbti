@@ -6,14 +6,15 @@ import {
   "colmugx/posoco/kernel",
   "colmugx/posoco/port",
   "colmugx/posoco/types",
+  "moonbitlang/core/json",
 }
 
 // Values
-pub async fn checkpoint_all(Array[&@port.SessionPort], String, Int32, Array[@kernel.Message], Map[String, Json]?, String) -> Unit raise @error.AgentError
+pub async fn checkpoint_all(Array[&@port.SessionPort], String, Int32, Array[@kernel.Message], Map[String, @json.Json]?, String) -> Unit raise @error.AgentError
 
 pub fn contextualize_session_error(@error.SessionError, String, String) -> @error.AgentError
 
-pub async fn save_all(Array[&@port.SessionPort], String, Array[@kernel.Message], Map[String, Json], String) -> Unit raise @error.AgentError
+pub async fn save_all(Array[&@port.SessionPort], String, Array[@kernel.Message], Map[String, @json.Json], String) -> Unit raise @error.AgentError
 
 // Errors
 
@@ -23,7 +24,7 @@ pub struct NewThreadOutput {
   parent_session_id : String
   child_session_id : String
   messages : Array[@kernel.Message]
-  metadata : Map[String, Json]
+  metadata : Map[String, @json.Json]
   save_label : String
 }
 
@@ -35,7 +36,7 @@ pub async fn SessionOutput::execute_new_thread(Self, String, async (NewThreadOut
 pub async fn SessionOutput::recover_body(Self, String, async (@types.Session) -> Unit raise @error.AgentError) -> Unit raise @error.AgentError
 pub async fn SessionOutput::recover_new_threads(Self, async (NewThreadOutput) -> Unit raise @error.AgentError) -> Unit raise @error.AgentError
 pub fn SessionOutput::stage_body(Self, String, @types.Session) -> Unit
-pub fn SessionOutput::stage_new_thread(Self, @types.EventScope, String, String, Array[@kernel.Message], Map[String, Json], String) -> Unit
+pub fn SessionOutput::stage_new_thread(Self, @types.EventScope, String, String, Array[@kernel.Message], Map[String, @json.Json], String) -> Unit
 
 // Type aliases
 

@@ -8,7 +8,7 @@
 
 ///|
 /// Deep-copy a `@kernel.ToolDef`.
-fn snapshot_tool_def(tool : @kernel.ToolDef) -> @kernel.ToolDef {
+pub fn snapshot_tool_def(tool : @kernel.ToolDef) -> @kernel.ToolDef {
   @kernel.ToolDef(
     name=tool.name,
     description=tool.description,

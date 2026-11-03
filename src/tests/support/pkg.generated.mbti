@@ -7,12 +7,14 @@ import {
   "colmugx/posoco/kernel",
   "colmugx/posoco/port",
   "colmugx/posoco/runtime",
+  "colmugx/posoco/testkit",
   "colmugx/posoco/types",
   "moonbitlang/async/aqueue",
+  "moonbitlang/core/json",
 }
 
 // Values
-pub fn compact_tools_seed(@posoco.RecordingSessionPort, String) -> Unit
+pub fn compact_tools_seed(@testkit.RecordingSessionPort, String) -> Unit
 
 pub fn policy_replace_result() -> @kernel.CompactResult
 
@@ -51,9 +53,9 @@ pub(all) struct FakeRuntime {
   mut on_first_execute : (async () -> Unit)?
 }
 pub fn FakeRuntime::FakeRuntime(@runtime.PortRuntime) -> Self
-pub async fn FakeRuntime::call_model(Self, @kernel.InvocationScope, ArrayView[@kernel.Message], Array[@kernel.ToolDef], Json, ((@types.StreamChunk) -> Unit)?) -> Result[@kernel.ModelCallResult, @kernel.ModelFailure]
+pub async fn FakeRuntime::call_model(Self, @kernel.InvocationScope, ArrayView[@kernel.Message], Array[@kernel.ToolDef], @json.Json, ((@types.StreamChunk) -> Unit)?) -> Result[@kernel.ModelCallResult, @kernel.ModelFailure]
 pub async fn FakeRuntime::cancel_effects(Self, run_id~ : @kernel.RunId, Array[@kernel.EffectId], @kernel.CancelReason) -> Array[(@kernel.EffectId, @kernel.CancelDisposition)]
-pub async fn FakeRuntime::compact(Self, @kernel.InvocationScope, ArrayView[@kernel.Message], Array[@kernel.ToolDef], Json, @kernel.CompactTrigger) -> Result[@kernel.CompactResult, @kernel.ModelFailure]
+pub async fn FakeRuntime::compact(Self, @kernel.InvocationScope, ArrayView[@kernel.Message], Array[@kernel.ToolDef], @json.Json, @kernel.CompactTrigger) -> Result[@kernel.CompactResult, @kernel.ModelFailure]
 pub async fn FakeRuntime::execute_tool(Self, @runtime.EffectContext) -> @kernel.ToolOutcome
 pub impl @runtime.Runtime for FakeRuntime
 

@@ -13,13 +13,13 @@ pub impl @posoco.Lifecycle for FailingLifecycle with fn on_shutdown(_self) -> Un
 
 ///|
 async test "panic t07_shutdown_failure_is_not_swallowed" {
-  let model = @posoco.ScriptedModel([])
-  let store = @posoco.RecordingSessionPort()
+  let model = @testkit.ScriptedModel([])
+  let store = @testkit.RecordingSessionPort()
   let lifecycle = FailingLifecycle::{ }
   let agent = @posoco.Agent(
     exts=[
-      @posoco.tk_ext(id="model", model=Some(model)),
-      @posoco.tk_ext(id="io", sessions=[store], lifecycle=[lifecycle]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", sessions=[store], lifecycle=[lifecycle]),
     ],
     config=err_config(),
   )

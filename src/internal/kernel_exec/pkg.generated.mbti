@@ -6,18 +6,19 @@ import {
   "colmugx/posoco/kernel",
   "colmugx/posoco/types",
   "moonbitlang/core/debug",
+  "moonbitlang/core/json",
 }
 
 // Values
 pub fn classify_rejected_outcome(ToolCatalogSnapshot, @kernel.ToolCall, direct? : Bool) -> @kernel.ToolOutcome?
 
-pub fn declare_tool_child(RunState, ToolCatalogSnapshot, @kernel.EffectId, @kernel.ToolName, Json, Array[String], Int32?) -> (ReduceOutput, Effect, @kernel.ToolOutcome?) raise KernelError
+pub fn declare_tool_child(RunState, ToolCatalogSnapshot, @kernel.EffectId, @kernel.ToolName, @json.Json, Array[String], Int32?) -> (ReduceOutput, Effect, @kernel.ToolOutcome?) raise KernelError
 
 pub fn find_tool_effect(Array[Effect], @kernel.EffectId) -> ExecuteToolPayload?
 
 pub fn reduce(RunState, ToolCatalogSnapshot, RunInput) -> ReduceOutput raise KernelError
 
-pub fn run_model_step(RunState, ToolCatalogSnapshot, Json) -> ReduceOutput raise KernelError
+pub fn run_model_step(RunState, ToolCatalogSnapshot, @json.Json) -> ReduceOutput raise KernelError
 
 pub fn schedule(ToolCatalogSnapshot, @kernel.CatalogVersion, Array[@kernel.ToolCall]) -> ExecutionPlan raise SchedulingError
 
@@ -56,18 +57,20 @@ pub fn SchedulingError::to_string(Self) -> String
 pub impl Show for SchedulingError
 
 // Types and methods
+#derive(Eq, @debug.Debug)
 pub(all) struct Budget {
   max_model_steps : Int32?
   max_tool_rounds : Int32?
   max_tool_calls : Int32?
   max_total_tokens : Int32?
-} derive(Eq, @debug.Debug)
+}
 pub fn Budget::bounded(max_model_steps~ : Int32, max_tool_rounds~ : Int32, max_tool_calls~ : Int32, max_total_tokens~ : Int32) -> Self
 pub fn Budget::default_run() -> Self
 pub fn Budget::equal(Self, Self) -> Bool
 pub fn Budget::not_equal(Self, Self) -> Bool
 pub fn Budget::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) struct BudgetConsumed {
   model_steps : Int32
   tool_rounds : Int32
@@ -75,19 +78,20 @@ pub(all) struct BudgetConsumed {
   observed_total_tokens : Int32
   any_usage_verified : Bool
   last_context_tokens : Int32?
-} derive(Eq, @debug.Debug)
+}
 pub fn BudgetConsumed::equal(Self, Self) -> Bool
 pub fn BudgetConsumed::exceeded(Self, Budget) -> BudgetState
 pub fn BudgetConsumed::not_equal(Self, Self) -> Bool
 pub fn BudgetConsumed::to_repr(Self) -> @debug.Repr
 pub fn BudgetConsumed::zero() -> Self
 
+#derive(Eq, @debug.Debug)
 pub(all) enum BudgetDimension {
   ModelSteps
   ToolRounds
   ToolCalls
   TotalTokens
-} derive(Eq, @debug.Debug)
+}
 pub fn BudgetDimension::equal(Self, Self) -> Bool
 pub fn BudgetDimension::not_equal(Self, Self) -> Bool
 pub fn BudgetDimension::output(Self, &Logger) -> Unit
@@ -95,20 +99,22 @@ pub fn BudgetDimension::to_repr(Self) -> @debug.Repr
 pub fn BudgetDimension::to_string(Self) -> String
 pub impl Show for BudgetDimension
 
+#derive(Eq, @debug.Debug)
 pub(all) struct BudgetExhaustedPayload {
   dimension : BudgetDimension
   consumed : Int32
   limit : Int32
-} derive(Eq, @debug.Debug)
+}
 pub fn BudgetExhaustedPayload::equal(Self, Self) -> Bool
 pub fn BudgetExhaustedPayload::not_equal(Self, Self) -> Bool
 pub fn BudgetExhaustedPayload::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub enum BudgetState {
   WithinBudget
   Exceeded(BudgetDimension)
   UnknownUsage(BudgetDimension)
-} derive(Eq, @debug.Debug)
+}
 pub fn BudgetState::equal(Self, Self) -> Bool
 pub fn BudgetState::not_equal(Self, Self) -> Bool
 pub fn BudgetState::output(Self, &Logger) -> Unit
@@ -116,51 +122,57 @@ pub fn BudgetState::to_repr(Self) -> @debug.Repr
 pub fn BudgetState::to_string(Self) -> String
 pub impl Show for BudgetState
 
+#derive(Eq, @debug.Debug)
 pub(all) struct CallModelPayload {
   model_step_id : ModelStepId
   messages : FixedArray[@kernel.Message]
   catalog_version : @kernel.CatalogVersion
-  call_options : Json
-} derive(Eq, @debug.Debug)
+  call_options : @json.Json
+}
 pub fn CallModelPayload::equal(Self, Self) -> Bool
 pub fn CallModelPayload::not_equal(Self, Self) -> Bool
 pub fn CallModelPayload::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) struct CancelOutstandingPayload {
   effect_ids : FixedArray[@kernel.EffectId]
   reason : @kernel.CancelReason
-} derive(Eq, @debug.Debug)
+}
 pub fn CancelOutstandingPayload::equal(Self, Self) -> Bool
 pub fn CancelOutstandingPayload::not_equal(Self, Self) -> Bool
 pub fn CancelOutstandingPayload::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) struct CancelRequestedPayload {
   detail : String?
-} derive(Eq, @debug.Debug)
+}
 pub fn CancelRequestedPayload::equal(Self, Self) -> Bool
 pub fn CancelRequestedPayload::not_equal(Self, Self) -> Bool
 pub fn CancelRequestedPayload::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) struct CatalogEntry {
   position : Int32
   definition : @kernel.ToolDef
-} derive(Eq, @debug.Debug)
+}
 pub fn CatalogEntry::equal(Self, Self) -> Bool
 pub fn CatalogEntry::not_equal(Self, Self) -> Bool
 pub fn CatalogEntry::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) struct DeadlineReachedPayload {
   detail : String
-} derive(Eq, @debug.Debug)
+}
 pub fn DeadlineReachedPayload::equal(Self, Self) -> Bool
 pub fn DeadlineReachedPayload::not_equal(Self, Self) -> Bool
 pub fn DeadlineReachedPayload::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) enum Effect {
   CallModel(effect_id~ : @kernel.EffectId, payload~ : CallModelPayload)
   ExecuteTool(effect_id~ : @kernel.EffectId, payload~ : ExecuteToolPayload)
   CancelOutstanding(effect_id~ : @kernel.EffectId, payload~ : CancelOutstandingPayload)
-} derive(Eq, @debug.Debug)
+}
 pub fn Effect::effect_id(Self) -> @kernel.EffectId
 pub fn Effect::equal(Self, Self) -> Bool
 pub fn Effect::model_step_id(Self) -> ModelStepId?
@@ -170,9 +182,10 @@ pub fn Effect::to_repr(Self) -> @debug.Repr
 pub fn Effect::to_string(Self) -> String
 pub impl Show for Effect
 
+#derive(Eq, @debug.Debug)
 pub(all) struct EventSequence {
   value : Int32
-} derive(Eq, @debug.Debug)
+}
 pub fn EventSequence::equal(Self, Self) -> Bool
 pub fn EventSequence::initial() -> Self
 pub fn EventSequence::next(Self) -> Self
@@ -180,22 +193,24 @@ pub fn EventSequence::not_equal(Self, Self) -> Bool
 pub fn EventSequence::to_int(Self) -> Int32
 pub fn EventSequence::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) struct ExecuteToolPayload {
   model_step_id : ModelStepId
   call_id : @kernel.CallId
   tool_name : @kernel.ToolName
-  arguments : Json
+  arguments : @json.Json
   owner : @kernel.OwnerId
   catalog_version : @kernel.CatalogVersion
   parent : (@kernel.EffectId, @kernel.EffectId, Int32)?
-} derive(Eq, @debug.Debug)
+}
 pub fn ExecuteToolPayload::equal(Self, Self) -> Bool
 pub fn ExecuteToolPayload::not_equal(Self, Self) -> Bool
 pub fn ExecuteToolPayload::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) struct ExecutionPlan {
   waves : Array[ExecutionWave]
-} derive(Eq, @debug.Debug)
+}
 pub fn ExecutionPlan::equal(Self, Self) -> Bool
 pub fn ExecutionPlan::not_equal(Self, Self) -> Bool
 pub fn ExecutionPlan::output(Self, &Logger) -> Unit
@@ -207,10 +222,11 @@ pub fn ExecutionPlan::wave_count(Self) -> Int32
 pub fn ExecutionPlan::waves(Self) -> Array[ExecutionWave]
 pub impl Show for ExecutionPlan
 
+#derive(Eq, @debug.Debug)
 pub(all) struct ExecutionWave {
   calls : Array[@kernel.ToolCall]
   policies : Array[@kernel.ExecutionPolicy]
-} derive(Eq, @debug.Debug)
+}
 pub fn ExecutionWave::calls(Self) -> Array[@kernel.ToolCall]
 pub fn ExecutionWave::equal(Self, Self) -> Bool
 pub fn ExecutionWave::not_equal(Self, Self) -> Bool
@@ -219,6 +235,7 @@ pub fn ExecutionWave::to_repr(Self) -> @debug.Repr
 pub fn ExecutionWave::to_string(Self) -> String
 pub impl Show for ExecutionWave
 
+#derive(Eq, @debug.Debug)
 pub(all) enum FailureReason {
   ModelParseFailure(detail~ : String)
   ModelTransport(detail~ : String)
@@ -228,7 +245,7 @@ pub(all) enum FailureReason {
   InvariantViolation(category~ : InvariantCategory)
   BudgetExhausted(dimension~ : BudgetDimension)
   DeadlineReached
-} derive(Eq, @debug.Debug)
+}
 pub fn FailureReason::equal(Self, Self) -> Bool
 pub fn FailureReason::not_equal(Self, Self) -> Bool
 pub fn FailureReason::output(Self, &Logger) -> Unit
@@ -236,6 +253,7 @@ pub fn FailureReason::to_repr(Self) -> @debug.Repr
 pub fn FailureReason::to_string(Self) -> String
 pub impl Show for FailureReason
 
+#derive(Eq, @debug.Debug)
 pub(all) enum InvariantCategory {
   DuplicateCompletion(effect_id~ : @kernel.EffectId)
   StaleCorrelation(effect_id~ : @kernel.EffectId)
@@ -245,7 +263,7 @@ pub(all) enum InvariantCategory {
   IllegalPhase(phase~ : String, detail~ : String)
   IllegalInputForPhase(input_kind~ : String, phase~ : String)
   PostTerminal(input_kind~ : String)
-} derive(Eq, @debug.Debug)
+}
 pub fn InvariantCategory::equal(Self, Self) -> Bool
 pub fn InvariantCategory::not_equal(Self, Self) -> Bool
 pub fn InvariantCategory::output(Self, &Logger) -> Unit
@@ -253,6 +271,7 @@ pub fn InvariantCategory::to_repr(Self) -> @debug.Repr
 pub fn InvariantCategory::to_string(Self) -> String
 pub impl Show for InvariantCategory
 
+#derive(Eq, @debug.Debug)
 pub(all) enum KernelEvent {
   RunStarted(details~ : StartedDetails)
   ModelStepStarted(model_step_id~ : ModelStepId, effect_id~ : @kernel.EffectId)
@@ -273,7 +292,7 @@ pub(all) enum KernelEvent {
   RunCompleted(final_message_summary~ : String, model_steps~ : Int32, tool_calls~ : Int32)
   RunFailed(reason~ : FailureReason)
   RunCancelled(reason~ : @kernel.CancelReason)
-} derive(Eq, @debug.Debug)
+}
 pub fn KernelEvent::equal(Self, Self) -> Bool
 pub fn KernelEvent::is_terminal(Self) -> Bool
 pub fn KernelEvent::not_equal(Self, Self) -> Bool
@@ -282,28 +301,31 @@ pub fn KernelEvent::to_repr(Self) -> @debug.Repr
 pub fn KernelEvent::to_string(Self) -> String
 pub impl Show for KernelEvent
 
+#derive(Eq, @debug.Debug)
 pub(all) struct ModelCompletedPayload {
   effect_id : @kernel.EffectId
   model_step_id : ModelStepId
   completion : @kernel.Completion
   processed_messages : Array[@kernel.Message]
-} derive(Eq, @debug.Debug)
+}
 pub fn ModelCompletedPayload::equal(Self, Self) -> Bool
 pub fn ModelCompletedPayload::not_equal(Self, Self) -> Bool
 pub fn ModelCompletedPayload::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) struct ModelFailedPayload {
   effect_id : @kernel.EffectId
   model_step_id : ModelStepId
   failure : @kernel.ModelFailure
-} derive(Eq, @debug.Debug)
+}
 pub fn ModelFailedPayload::equal(Self, Self) -> Bool
 pub fn ModelFailedPayload::not_equal(Self, Self) -> Bool
 pub fn ModelFailedPayload::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) struct ModelStepId {
   value : Int32
-} derive(Eq, @debug.Debug)
+}
 pub fn ModelStepId::equal(Self, Self) -> Bool
 pub fn ModelStepId::first() -> Self
 pub fn ModelStepId::next(Self) -> Self
@@ -314,6 +336,7 @@ pub fn ModelStepId::to_repr(Self) -> @debug.Repr
 pub fn ModelStepId::to_string(Self) -> String
 pub impl Show for ModelStepId
 
+#derive(Eq, @debug.Debug)
 pub(all) enum Phase {
   Initializing
   ReadyForModel
@@ -321,7 +344,7 @@ pub(all) enum Phase {
   AwaitingTools
   Suspended
   Terminal
-} derive(Eq, @debug.Debug)
+}
 pub fn Phase::equal(Self, Self) -> Bool
 pub fn Phase::not_equal(Self, Self) -> Bool
 pub fn Phase::output(Self, &Logger) -> Unit
@@ -329,11 +352,12 @@ pub fn Phase::to_repr(Self) -> @debug.Repr
 pub fn Phase::to_string(Self) -> String
 pub impl Show for Phase
 
+#derive(Eq, @debug.Debug)
 pub(all) struct ReduceOutput {
   next_state : RunState
   effects : Array[Effect]
   events : Array[KernelEvent]
-} derive(Eq, @debug.Debug)
+}
 pub fn ReduceOutput::effects(Self) -> Array[Effect]
 pub fn ReduceOutput::equal(Self, Self) -> Bool
 pub fn ReduceOutput::events(Self) -> Array[KernelEvent]
@@ -344,13 +368,15 @@ pub fn ReduceOutput::to_repr(Self) -> @debug.Repr
 pub fn ReduceOutput::to_string(Self) -> String
 pub impl Show for ReduceOutput
 
+#derive(Eq, @debug.Debug)
 pub(all) struct ResumePayload {
-  payload : Json
-} derive(Eq, @debug.Debug)
+  payload : @json.Json
+}
 pub fn ResumePayload::equal(Self, Self) -> Bool
 pub fn ResumePayload::not_equal(Self, Self) -> Bool
 pub fn ResumePayload::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) enum RunInput {
   Start(payload~ : StartPayload)
   ModelCompleted(payload~ : ModelCompletedPayload)
@@ -363,7 +389,7 @@ pub(all) enum RunInput {
   SuspendRequested(payload~ : SuspendRequestedPayload)
   Resume(payload~ : ResumePayload)
   TranscriptRewrite(payload~ : TranscriptRewritePayload)
-} derive(Eq, @debug.Debug)
+}
 pub fn RunInput::equal(Self, Self) -> Bool
 pub fn RunInput::not_equal(Self, Self) -> Bool
 pub fn RunInput::output(Self, &Logger) -> Unit
@@ -371,11 +397,12 @@ pub fn RunInput::to_repr(Self) -> @debug.Repr
 pub fn RunInput::to_string(Self) -> String
 pub impl Show for RunInput
 
+#derive(Eq, @debug.Debug)
 pub(all) enum RunOutcome {
   Completed(final_message~ : @kernel.Message, tool_results~ : FixedArray[@kernel.ToolOutcome])
   Failed(reason~ : FailureReason)
   Cancelled(reason~ : @kernel.CancelReason)
-} derive(Eq, @debug.Debug)
+}
 pub fn RunOutcome::equal(Self, Self) -> Bool
 pub fn RunOutcome::not_equal(Self, Self) -> Bool
 pub fn RunOutcome::output(Self, &Logger) -> Unit
@@ -383,6 +410,7 @@ pub fn RunOutcome::to_repr(Self) -> @debug.Repr
 pub fn RunOutcome::to_string(Self) -> String
 pub impl Show for RunOutcome
 
+#derive(Eq, @debug.Debug)
 pub struct RunState {
   run_id : @kernel.RunId
   session_id : @kernel.SessionId
@@ -400,7 +428,7 @@ pub struct RunState {
   completed_tool_results : Map[String, (@kernel.ToolName, @kernel.ToolOutcome, Int32)]
   tool_call_positions : Map[String, Int32]
   suspension_requirement : SuspensionRequirement?
-} derive(Eq, @debug.Debug)
+}
 pub fn RunState::budget(Self) -> Budget
 pub fn RunState::budget_consumed(Self) -> BudgetConsumed
 pub fn RunState::catalog_version(Self) -> @kernel.CatalogVersion
@@ -423,33 +451,37 @@ pub fn RunState::transcript(Self) -> @kernel.Transcript
 pub fn RunState::transition(Self, phase~ : Phase, transcript~ : @kernel.Transcript, pending_effects~ : Array[Effect], next_event_sequence~ : EventSequence, next_effect_id~ : @kernel.EffectId, current_model_step_id~ : ModelStepId, catalog_version~ : @kernel.CatalogVersion?, budget_consumed~ : BudgetConsumed, outcome~ : RunOutcome?, completed_tool_results? : Map[String, (@kernel.ToolName, @kernel.ToolOutcome, Int32)], tool_call_positions? : Map[String, Int32], suspension_requirement~ : SuspensionRequirement?) -> Self raise KernelError
 pub impl Show for RunState
 
+#derive(Eq, @debug.Debug)
 pub(all) struct StartPayload {
   initial_messages : Array[@kernel.Message]
   catalog_version : @kernel.CatalogVersion
-} derive(Eq, @debug.Debug)
+}
 pub fn StartPayload::equal(Self, Self) -> Bool
 pub fn StartPayload::not_equal(Self, Self) -> Bool
 pub fn StartPayload::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) struct StartedDetails {
   run_id : @kernel.RunId
   session_id : @kernel.SessionId
-} derive(Eq, @debug.Debug)
+}
 pub fn StartedDetails::equal(Self, Self) -> Bool
 pub fn StartedDetails::not_equal(Self, Self) -> Bool
 pub fn StartedDetails::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) struct SuspendRequestedPayload {
   requirement : SuspensionRequirement
-} derive(Eq, @debug.Debug)
+}
 pub fn SuspendRequestedPayload::equal(Self, Self) -> Bool
 pub fn SuspendRequestedPayload::not_equal(Self, Self) -> Bool
 pub fn SuspendRequestedPayload::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) struct SuspensionRequirement {
   kind : String
-  payload : Json
-} derive(Eq, @debug.Debug)
+  payload : @json.Json
+}
 pub fn SuspensionRequirement::equal(Self, Self) -> Bool
 pub fn SuspensionRequirement::not_equal(Self, Self) -> Bool
 pub fn SuspensionRequirement::to_repr(Self) -> @debug.Repr
@@ -478,18 +510,19 @@ pub fn ToolCatalogSnapshot::find(Self, @kernel.ToolName) -> CatalogEntry?
 pub fn ToolCatalogSnapshot::not_equal(Self, Self) -> Bool
 pub fn ToolCatalogSnapshot::size(Self) -> Int32
 pub fn ToolCatalogSnapshot::to_repr(Self) -> @debug.Repr
-pub fn ToolCatalogSnapshot::validate_arguments(Self, @kernel.ToolName, Json) -> Result[Unit, @kernel.SchemaDiagnostic]
+pub fn ToolCatalogSnapshot::validate_arguments(Self, @kernel.ToolName, @json.Json) -> Result[Unit, @kernel.SchemaDiagnostic]
 pub fn ToolCatalogSnapshot::version(Self) -> @kernel.CatalogVersion
 pub impl Eq for ToolCatalogSnapshot
 pub impl @debug.Debug for ToolCatalogSnapshot
 
+#derive(Eq, @debug.Debug)
 pub(all) struct ToolCompletedPayload {
   effect_id : @kernel.EffectId
   call_id : @kernel.CallId
   tool_name : @kernel.ToolName
-  arguments : Json
+  arguments : @json.Json
   outcome : @kernel.ToolOutcome
-} derive(Eq, @debug.Debug)
+}
 pub fn ToolCompletedPayload::equal(Self, Self) -> Bool
 pub fn ToolCompletedPayload::not_equal(Self, Self) -> Bool
 pub fn ToolCompletedPayload::to_repr(Self) -> @debug.Repr
@@ -499,20 +532,21 @@ pub(all) struct ToolExecutionScope {
   parent_effect_id : @kernel.EffectId?
   root_effect_id : @kernel.EffectId
   tools : () -> Array[@kernel.ToolDef]
-  invoke : async (String, Json) -> @kernel.InvocationResult
+  invoke : async (String, @json.Json) -> @kernel.InvocationResult
   active : () -> Bool
   before_start : () -> @kernel.NotExecutedReason?
 }
 
+#derive(Eq, @debug.Debug)
 pub(all) struct ToolFailedPayload {
   effect_id : @kernel.EffectId
   call_id : @kernel.CallId
   tool_name : @kernel.ToolName
-  arguments : Json
+  arguments : @json.Json
   reason : String
   runtime : @kernel.ModelFailure?
   invariant_failure : InvariantCategory?
-} derive(Eq, @debug.Debug)
+}
 pub fn ToolFailedPayload::equal(Self, Self) -> Bool
 pub fn ToolFailedPayload::not_equal(Self, Self) -> Bool
 pub fn ToolFailedPayload::to_repr(Self) -> @debug.Repr
@@ -524,10 +558,11 @@ pub fn ToolLaunchGate::ToolLaunchGate() -> Self
 pub fn ToolLaunchGate::record_refusal(Self, String, Int32, @kernel.NotExecutedReason) -> Unit
 pub fn ToolLaunchGate::take_refusal(Self, String, Int32) -> @kernel.NotExecutedReason?
 
+#derive(Eq, @debug.Debug)
 pub(all) struct TranscriptRewritePayload {
   rewritten_messages : Array[@kernel.Message]
   reason : String
-} derive(Eq, @debug.Debug)
+}
 pub fn TranscriptRewritePayload::equal(Self, Self) -> Bool
 pub fn TranscriptRewritePayload::not_equal(Self, Self) -> Bool
 pub fn TranscriptRewritePayload::to_repr(Self) -> @debug.Repr
@@ -549,8 +584,8 @@ pub using @kernel {type SessionId}
 
 // Traits
 pub(open) trait HostRuntime {
-  async fn call_model(Self, @kernel.InvocationScope, ArrayView[@kernel.Message], Array[@kernel.ToolDef], Json, ((@types.StreamChunk) -> Unit)?) -> Result[@kernel.ModelCallResult, @kernel.ModelFailure]
-  async fn execute_tool(Self, @kernel.EffectId, @kernel.OwnerId, @kernel.CallId, @kernel.ToolName, Json, ToolExecutionScope) -> @kernel.ToolOutcome
+  async fn call_model(Self, @kernel.InvocationScope, ArrayView[@kernel.Message], Array[@kernel.ToolDef], @json.Json, ((@types.StreamChunk) -> Unit)?) -> Result[@kernel.ModelCallResult, @kernel.ModelFailure]
+  async fn execute_tool(Self, @kernel.EffectId, @kernel.OwnerId, @kernel.CallId, @kernel.ToolName, @json.Json, ToolExecutionScope) -> @kernel.ToolOutcome
   async fn cancel_effects(Self, run_id~ : @kernel.RunId, Array[@kernel.EffectId], @kernel.CancelReason) -> Array[(@kernel.EffectId, @kernel.CancelDisposition)]
-  async fn compact(Self, @kernel.InvocationScope, ArrayView[@kernel.Message], Array[@kernel.ToolDef], Json, @kernel.CompactTrigger) -> Result[@kernel.CompactResult, @kernel.ModelFailure]
+  async fn compact(Self, @kernel.InvocationScope, ArrayView[@kernel.Message], Array[@kernel.ToolDef], @json.Json, @kernel.CompactTrigger) -> Result[@kernel.CompactResult, @kernel.ModelFailure]
 }

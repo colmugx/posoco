@@ -1,10 +1,10 @@
 ///|
 async test "tool_recovery/resume_interrupts_the_old_call_and_uses_only_the_new_binding" {
-  let store = RecordingSessionPort()
-  let old = tk_tool_call_response("leaf", "old-call", Json::null()).completion.message
+  let store = @testkit.RecordingSessionPort()
+  let old = @testkit.tk_tool_call_response("leaf", "old-call", Json::null()).completion.message
   store.seed("resumed", {
     messages: [
-      tk_user_msg("old request"),
+      @testkit.tk_user_msg("old request"),
       AssistantMessage(
         content=old.content,
         tool_calls=old.tool_calls,
@@ -14,23 +14,32 @@ async test "tool_recovery/resume_interrupts_the_old_call_and_uses_only_the_new_b
     ],
     metadata: Map([]),
   })
-  let provider = RecordingToolProvider(
-    [tk_tool_def("leaf", "current binding")],
-    Map([("leaf", OutcomeOk(tk_ok_result("new result")))]),
+  let provider = @testkit.RecordingToolProvider(
+    [@testkit.tk_tool_def("leaf", "current binding")],
+    Map([
+      (
+        "leaf",
+        @testkit.ScriptedToolOutcome::OutcomeOk(
+          @testkit.tk_ok_result("new result"),
+        ),
+      ),
+    ]),
   )
   let publisher = ManualPublisher::new()
-  let model = ScriptedModel([
-    Respond(tk_tool_call_response("leaf", "new-call", Json::null())),
-    Respond(tk_stop_response("done")),
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(
+      @testkit.tk_tool_call_response("leaf", "new-call", Json::null()),
+    ),
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
   ])
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model), sessions=[store]),
-      tk_ext(id="current-owner", lifecycle=[publisher], requires=[
+      @testkit.tk_ext(id="model", model=Some(model), sessions=[store]),
+      @testkit.tk_ext(id="current-owner", lifecycle=[publisher], requires=[
         @port.ToolContribution,
       ]),
     ],
-    config=tk_config(),
+    config=@agent.agent_config(max_tool_rounds=Some(10)),
   )
   ignore(publisher.capability().replace(provider~))
   let result = agent.resume_turn("resumed")

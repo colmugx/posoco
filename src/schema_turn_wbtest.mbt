@@ -38,22 +38,29 @@ fn schema_call(id : String, arguments : Json) -> @kernel.ToolCall {
 ///|
 async test "oneOf tool composes through Agent and executes conforming call" {
   let tc = schema_call("call_1", { "code": "fn main { }" })
-  let model = ScriptedModel([
-    Respond(tool_response([tc])),
-    Respond(stop_response("done")),
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(tool_response([tc])),
+    @testkit.ScriptedModelStep::Respond(stop_response("done")),
   ])
-  let tools = RecordingToolProvider(
+  let tools = @testkit.RecordingToolProvider(
     [oneof_tool_def()],
     Map::from_array([
-      ("write_thing", OutcomeOk(Success(content="ok", structured=None))),
+      (
+        "write_thing",
+        @testkit.ScriptedToolOutcome::OutcomeOk(
+          Success(content="ok", structured=None),
+        ),
+      ),
     ]),
   )
-  let store = RecordingSessionPort()
-  let observer = RecordingObserver()
+  let store = @testkit.RecordingSessionPort()
+  let observer = @testkit.RecordingObserver()
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", tools=[tools], sessions=[store], observers=[observer]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", tools=[tools], sessions=[store], observers=[
+        observer,
+      ]),
     ],
     config=make_config(),
   )
@@ -69,18 +76,23 @@ async test "oneOf tool composes through Agent and executes conforming call" {
 async test "oneOf XOR violations are pre-pass rejected without execution" {
   let both = schema_call("call_both", { "code": "a", "source": "b" })
   let neither = schema_call("call_neither", { "description": "nope" })
-  let model = ScriptedModel([
-    Respond(tool_response([both])),
-    Respond(tool_response([neither])),
-    Respond(stop_response("done")),
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(tool_response([both])),
+    @testkit.ScriptedModelStep::Respond(tool_response([neither])),
+    @testkit.ScriptedModelStep::Respond(stop_response("done")),
   ])
-  let tools = RecordingToolProvider([oneof_tool_def()], Map::from_array([]))
-  let store = RecordingSessionPort()
-  let observer = RecordingObserver()
+  let tools = @testkit.RecordingToolProvider(
+    [oneof_tool_def()],
+    Map::from_array([]),
+  )
+  let store = @testkit.RecordingSessionPort()
+  let observer = @testkit.RecordingObserver()
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", tools=[tools], sessions=[store], observers=[observer]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", tools=[tools], sessions=[store], observers=[
+        observer,
+      ]),
     ],
     config=make_config(),
   )

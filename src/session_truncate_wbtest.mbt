@@ -4,7 +4,7 @@
 /// The Agent reloads persisted history from the store at the start of every
 /// turn, so truncating the store changes what the next turn sees. These tests
 /// pin the trait default implementation (load → slice → full save), the
-/// RecordingSessionPort override, and the Agent-level end-to-end behaviour.
+/// @testkit.RecordingSessionPort override, and the Agent-level end-to-end behaviour.
 
 ///|
 struct TruncateFallbackStore {
@@ -61,9 +61,9 @@ pub impl @port.SessionPort for TruncateFallbackStore with fn save(
 fn truncate_test_session() -> @types.Session {
   {
     messages: [
-      tk_user_msg("hello"),
+      @testkit.tk_user_msg("hello"),
       truncate_first_assistant(),
-      tk_user_msg("world"),
+      @testkit.tk_user_msg("world"),
       AssistantMessage(
         content=[Text("second")],
         tool_calls=[],
@@ -93,7 +93,7 @@ async test "rewind_truncate_default_impl_keeps_prefix_and_metadata" {
   assert_eq(store.saved.length(), 1)
   let saved = store.saved[0]
   assert_eq(saved.messages.length(), 2)
-  assert_true(saved.messages[0] == tk_user_msg("hello"))
+  assert_true(saved.messages[0] == @testkit.tk_user_msg("hello"))
   assert_true(saved.messages[1] == truncate_first_assistant())
   assert_true(saved.metadata["lineage"] == Json::string("kept"))
 }
@@ -133,13 +133,13 @@ async test "rewind_truncate_default_impl_labels_load_and_save_failures" {
 
 ///|
 async test "rewind_recording_store_truncate_slices_and_records_op" {
-  let store = RecordingSessionPort()
+  let store = @testkit.RecordingSessionPort()
   store.seed("s1", truncate_test_session())
   store.truncate("s1", 1)
   let mut recorded = 0
   for op in store.ops() {
     match op {
-      OpTruncate(id~, from_index~, result~) => {
+      @testkit.SessionOp::OpTruncate(id~, from_index~, result~) => {
         assert_eq(id, "s1")
         assert_eq(from_index, 1)
         match result {
@@ -154,51 +154,53 @@ async test "rewind_recording_store_truncate_slices_and_records_op" {
   assert_eq(recorded, 1)
   let session = store.load("s1")
   assert_eq(session.messages.length(), 1)
-  assert_true(session.messages[0] == tk_user_msg("hello"))
+  assert_true(session.messages[0] == @testkit.tk_user_msg("hello"))
   assert_true(session.metadata["lineage"] == Json::string("kept"))
 }
 
 ///|
 async test "rewind_truncate_changes_history_seen_by_next_agent_turn" {
-  let model = ScriptedModel([
-    Respond(tk_stop_response("first")),
-    Respond(tk_stop_response("second")),
-    Respond(tk_stop_response("third")),
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("first")),
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("second")),
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("third")),
   ])
-  let store = RecordingSessionPort()
+  let store = @testkit.RecordingSessionPort()
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", sessions=[store]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", sessions=[store]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
-  let _ = agent.run_turn(tk_user_msg("hello"), "s1")
-  let _ = agent.run_turn(tk_user_msg("world"), "s1")
+  let _ = agent.run_turn(@testkit.tk_user_msg("hello"), "s1")
+  let _ = agent.run_turn(@testkit.tk_user_msg("world"), "s1")
   // External rewind changes only the projection; the existing Agent keeps
   // its confirmed core history.
   store.truncate("s1", 2)
-  let fresh_model = ScriptedModel([Respond(tk_stop_response("fresh"))])
+  let fresh_model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("fresh")),
+  ])
   let fresh = Agent(
     exts=[
-      tk_ext(id="model", model=Some(fresh_model)),
-      tk_ext(id="io", sessions=[store]),
+      @testkit.tk_ext(id="model", model=Some(fresh_model)),
+      @testkit.tk_ext(id="io", sessions=[store]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
-  let _ = fresh.run_turn(tk_user_msg("new"), "s1")
+  let _ = fresh.run_turn(@testkit.tk_user_msg("new"), "s1")
   let fresh_prompt = fresh_model.received_messages[0]
   assert_eq(fresh_prompt.length(), 3)
-  assert_true(fresh_prompt[0] == tk_user_msg("hello"))
+  assert_true(fresh_prompt[0] == @testkit.tk_user_msg("hello"))
   assert_true(fresh_prompt[1] == truncate_first_assistant())
-  assert_true(fresh_prompt[2] == tk_user_msg("new"))
+  assert_true(fresh_prompt[2] == @testkit.tk_user_msg("new"))
   // The existing Agent still reads core, not the externally truncated store.
-  let _ = agent.run_turn(tk_user_msg("more"), "s1")
+  let _ = agent.run_turn(@testkit.tk_user_msg("more"), "s1")
   assert_eq(model.received_messages.length(), 3)
   let prompt = model.received_messages[2]
   assert_eq(prompt.length(), 5)
-  assert_true(prompt[0] == tk_user_msg("hello"))
+  assert_true(prompt[0] == @testkit.tk_user_msg("hello"))
   assert_true(prompt[1] == truncate_first_assistant())
-  assert_true(prompt[2] == tk_user_msg("world"))
-  assert_true(prompt[4] == tk_user_msg("more"))
+  assert_true(prompt[2] == @testkit.tk_user_msg("world"))
+  assert_true(prompt[4] == @testkit.tk_user_msg("more"))
 }

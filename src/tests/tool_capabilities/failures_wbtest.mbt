@@ -5,13 +5,13 @@ async test "tool_cleanup/malformed_runtime_receipts_do_not_release_unconfirmed_e
     let signal = @async.CondVar::Cond()
     let facet = CancellationProbe::{ disposition: Stopped, ids: [], }
     let replies : Array[@kernel.InvocationResult] = []
-    let observer = RecordingObserver()
+    let observer = @testkit.RecordingObserver()
     @async.with_timeout(3_000, async fn() {
       @async.with_task_group(group => {
         let parent = InvocationFixture::{
           id: "parent",
           definitions: [
-            { ..tk_tool_def("parent", "parent"), policy: Exclusive, },
+            { ..@testkit.tk_tool_def("parent", "parent"), policy: Exclusive, },
           ],
           owners: ["child"],
           action: async fn(ctx) {
@@ -22,13 +22,13 @@ async test "tool_cleanup/malformed_runtime_receipts_do_not_release_unconfirmed_e
             while !entered.val {
               signal.wait()
             }
-            tk_ok_result("must not succeed")
+            @testkit.tk_ok_result("must not succeed")
           },
         }
         let child = InvocationFixture::{
           id: "child",
           definitions: [
-            { ..tk_tool_def("child", "child"), exposure: Deferred, },
+            { ..@testkit.tk_tool_def("child", "child"), exposure: Deferred, },
           ],
           owners: [],
           action: async fn(ctx) {
@@ -37,11 +37,13 @@ async test "tool_cleanup/malformed_runtime_receipts_do_not_release_unconfirmed_e
             signal.broadcast()
             let never = @async.CondVar::Cond()
             never.wait()
-            tk_ok_result("unreachable")
+            @testkit.tk_ok_result("unreachable")
           },
         }
-        let model = ScriptedModel([
-          Respond(tk_tool_call_response("parent", "p", {})),
+        let model = @testkit.ScriptedModel([
+          @testkit.ScriptedModelStep::Respond(
+            @testkit.tk_tool_call_response("parent", "p", {}),
+          ),
         ])
         let runtime = FakeRuntime(@runtime.PortRuntime(model~))
         runtime.cancel_report = Some(ids => {
@@ -55,14 +57,16 @@ async test "tool_cleanup/malformed_runtime_receipts_do_not_release_unconfirmed_e
         })
         let agent = Agent::with_runtime(
           exts=[
-            tk_ext(id="model", model=Some(model), observers=[observer]),
+            @testkit.tk_ext(id="model", model=Some(model), observers=[observer]),
             parent,
             child,
           ],
-          config=tk_config(),
+          config=@agent.agent_config(max_tool_rounds=Some(10)),
           runtime~,
         )
-        try agent.run_turn(tk_user_msg("hello"), "bad-cancel-report") catch {
+        try
+          agent.run_turn(@testkit.tk_user_msg("hello"), "bad-cancel-report")
+        catch {
           error => {
             let detail = error.to_string()
             assert_true(detail.contains("joining"))
@@ -95,7 +99,10 @@ async test "tool_cleanup/malformed_runtime_receipts_do_not_release_unconfirmed_e
           1,
         )
         try
-          agent.run_turn(tk_user_msg("unsafe retry"), "bad-cancel-report")
+          agent.run_turn(
+            @testkit.tk_user_msg("unsafe retry"),
+            "bad-cancel-report",
+          )
         catch {
           error =>
             assert_true(
@@ -152,13 +159,13 @@ async test "tool_cleanup/primary_failure_and_cleanup_error_are_both_visible_and_
     }
     let entered = Ref(false)
     let signal = @async.CondVar::Cond()
-    let observer = RecordingObserver()
+    let observer = @testkit.RecordingObserver()
     @async.with_timeout(12_000, async fn() {
       @async.with_task_group(async fn(group) {
         let parent = InvocationFixture::{
           id: "parent",
           definitions: [
-            { ..tk_tool_def("parent", "parent"), policy: Exclusive, },
+            { ..@testkit.tk_tool_def("parent", "parent"), policy: Exclusive, },
           ],
           owners: ["child"],
           action: async fn(ctx) {
@@ -166,14 +173,14 @@ async test "tool_cleanup/primary_failure_and_cleanup_error_are_both_visible_and_
             while !entered.val {
               signal.wait()
             }
-            tk_ok_result("must not succeed")
+            @testkit.tk_ok_result("must not succeed")
           },
         }
         let child = InvocationFixture::{
           id: "child",
           owners: [],
           definitions: [
-            { ..tk_tool_def("child", "child"), exposure: Deferred, },
+            { ..@testkit.tk_tool_def("child", "child"), exposure: Deferred, },
           ],
           action: async fn(ctx) {
             (ctx.register_cancel)(facet)
@@ -181,21 +188,25 @@ async test "tool_cleanup/primary_failure_and_cleanup_error_are_both_visible_and_
             signal.broadcast()
             let never = @async.CondVar::Cond()
             never.wait()
-            tk_ok_result("unreachable")
+            @testkit.tk_ok_result("unreachable")
           },
         }
-        let model = ScriptedModel([
-          Respond(tk_tool_call_response("parent", "p", Json::null())),
+        let model = @testkit.ScriptedModel([
+          @testkit.ScriptedModelStep::Respond(
+            @testkit.tk_tool_call_response("parent", "p", Json::null()),
+          ),
         ])
         let agent = Agent(
           exts=[
-            tk_ext(id="model", model=Some(model), observers=[observer]),
+            @testkit.tk_ext(id="model", model=Some(model), observers=[observer]),
             parent,
             child,
           ],
-          config=tk_config(),
+          config=@agent.agent_config(max_tool_rounds=Some(10)),
         )
-        try agent.run_turn(tk_user_msg("hello"), "cleanup-error") catch {
+        try
+          agent.run_turn(@testkit.tk_user_msg("hello"), "cleanup-error")
+        catch {
           error => {
             let detail = error.to_string()
             assert_true(detail.contains("joining"))
@@ -217,7 +228,9 @@ async test "tool_cleanup/primary_failure_and_cleanup_error_are_both_visible_and_
             event is Custom(source="posoco.core", label="secondary_failure", ..)
           })
         assert_eq(diagnostics.length(), 1)
-        try agent.run_turn(tk_user_msg("unsafe retry"), "cleanup-error") catch {
+        try
+          agent.run_turn(@testkit.tk_user_msg("unsafe retry"), "cleanup-error")
+        catch {
           error =>
             assert_true(
               error.to_string().contains("unconfirmed tool execution"),
@@ -257,21 +270,25 @@ async test "tool_cleanup/child_hook_defer_and_error_end_waiters_without_starting
     let replies : Array[@kernel.InvocationResult] = []
     let signal = @async.CondVar::Cond()
     let parent_cancel = CancellationProbe::{ disposition: Stopped, ids: [], }
-    let child = RecordingToolProvider(
-      [{ ..tk_tool_def("child", "child"), exposure: Deferred, }],
+    let child = @testkit.RecordingToolProvider(
+      [{ ..@testkit.tk_tool_def("child", "child"), exposure: Deferred, }],
       Map::from_array([]),
     )
-    let model = ScriptedModel([
-      Respond(tk_tool_call_response("parent", "p", {})),
-      Respond(tk_stop_response("recovered")),
+    let model = @testkit.ScriptedModel([
+      @testkit.ScriptedModelStep::Respond(
+        @testkit.tk_tool_call_response("parent", "p", {}),
+      ),
+      @testkit.ScriptedModelStep::Respond(
+        @testkit.tk_stop_response("recovered"),
+      ),
     ])
-    let observer = RecordingObserver()
+    let observer = @testkit.RecordingObserver()
     @async.with_timeout(3_000, async fn() {
       @async.with_task_group(group => {
         let parent = InvocationFixture::{
           id: "parent",
           definitions: [
-            { ..tk_tool_def("parent", "parent"), policy: Exclusive, },
+            { ..@testkit.tk_tool_def("parent", "parent"), policy: Exclusive, },
           ],
           owners: ["child"],
           action: async fn(ctx) {
@@ -282,23 +299,25 @@ async test "tool_cleanup/child_hook_defer_and_error_end_waiters_without_starting
             })
             let never = @async.CondVar::Cond()
             never.wait()
-            tk_ok_result("unreachable")
+            @testkit.tk_ok_result("unreachable")
           },
         }
         let agent = Agent(
           exts=[
-            tk_ext(
+            @testkit.tk_ext(
               id="model",
               model=Some(model),
               hooks=[FailingChildHook::{ defer_call, }],
               observers=[observer],
             ),
             parent,
-            tk_ext(id="child", tools=[child]),
+            @testkit.tk_ext(id="child", tools=[child]),
           ],
-          config=tk_config(),
+          config=@agent.agent_config(max_tool_rounds=Some(10)),
         )
-        try agent.run_turn(tk_user_msg("hello"), "hook-failure") catch {
+        try
+          agent.run_turn(@testkit.tk_user_msg("hello"), "hook-failure")
+        catch {
           error => {
             let detail = error.to_string()
             if defer_call {
@@ -335,7 +354,7 @@ async test "tool_cleanup/child_hook_defer_and_error_end_waiters_without_starting
           .length(),
           1,
         )
-        let _ = agent.run_turn(tk_user_msg("retry"), "hook-failure")
+        let _ = agent.run_turn(@testkit.tk_user_msg("retry"), "hook-failure")
         assert_eq(model.call_count(), 2)
       })
     })
@@ -347,19 +366,25 @@ async test "tool_cleanup/runtime_dispatch_failure_ends_waiters_and_retains_unkno
   let replies : Array[@kernel.InvocationResult] = []
   let signal = @async.CondVar::Cond()
   let parent_cancel = CancellationProbe::{ disposition: Stopped, ids: [], }
-  let child = RecordingToolProvider(
-    [{ ..tk_tool_def("child", "child"), exposure: Deferred, }],
+  let child = @testkit.RecordingToolProvider(
+    [{ ..@testkit.tk_tool_def("child", "child"), exposure: Deferred, }],
     Map::from_array([]),
   )
-  let model = ScriptedModel([Respond(tk_tool_call_response("parent", "p", {}))])
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(
+      @testkit.tk_tool_call_response("parent", "p", {}),
+    ),
+  ])
   let runtime = FakeRuntime(@runtime.PortRuntime(model~))
   runtime.fail_tool = Some("child")
-  let observer = RecordingObserver()
+  let observer = @testkit.RecordingObserver()
   @async.with_timeout(3_000, async fn() {
     @async.with_task_group(group => {
       let parent = InvocationFixture::{
         id: "parent",
-        definitions: [{ ..tk_tool_def("parent", "parent"), policy: Exclusive, }],
+        definitions: [
+          { ..@testkit.tk_tool_def("parent", "parent"), policy: Exclusive, },
+        ],
         owners: ["child"],
         action: async fn(ctx) {
           (ctx.register_cancel)(parent_cancel)
@@ -369,19 +394,21 @@ async test "tool_cleanup/runtime_dispatch_failure_ends_waiters_and_retains_unkno
           })
           let never = @async.CondVar::Cond()
           never.wait()
-          tk_ok_result("unreachable")
+          @testkit.tk_ok_result("unreachable")
         },
       }
       let agent = Agent::with_runtime(
         exts=[
-          tk_ext(id="model", model=Some(model), observers=[observer]),
+          @testkit.tk_ext(id="model", model=Some(model), observers=[observer]),
           parent,
-          tk_ext(id="child", tools=[child]),
+          @testkit.tk_ext(id="child", tools=[child]),
         ],
-        config=tk_config(),
+        config=@agent.agent_config(max_tool_rounds=Some(10)),
         runtime~,
       )
-      try agent.run_turn(tk_user_msg("hello"), "dispatch-failure") catch {
+      try
+        agent.run_turn(@testkit.tk_user_msg("hello"), "dispatch-failure")
+      catch {
         error => {
           let detail = error.to_string()
           assert_true(detail.contains("child dispatch fault"), msg=detail)
@@ -414,7 +441,7 @@ async test "tool_cleanup/runtime_dispatch_failure_ends_waiters_and_retains_unkno
         1,
       )
       try
-        agent.run_turn(tk_user_msg("unsafe retry"), "dispatch-failure")
+        agent.run_turn(@testkit.tk_user_msg("unsafe retry"), "dispatch-failure")
       catch {
         error =>
           assert_true(error.to_string().contains("unconfirmed tool execution"))

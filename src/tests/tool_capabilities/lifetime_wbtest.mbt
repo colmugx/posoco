@@ -3,12 +3,14 @@ async test "tool_invoke/unjoined_parent_cannot_report_success_and_its_waiter_is_
   let entered = Ref(false)
   let signal = @async.CondVar::Cond()
   let replies : Array[@kernel.InvocationResult] = []
-  let observer = RecordingObserver()
+  let observer = @testkit.RecordingObserver()
   @async.with_timeout(2000, async fn() {
     @async.with_task_group(async fn(group) {
       let parent = InvocationFixture::{
         id: "parent",
-        definitions: [{ ..tk_tool_def("parent", "parent"), policy: Exclusive, }],
+        definitions: [
+          { ..@testkit.tk_tool_def("parent", "parent"), policy: Exclusive, },
+        ],
         owners: ["child"],
         action: async fn(ctx) {
           // Deliberately break structured use of ctx.invoke: its task is
@@ -20,33 +22,37 @@ async test "tool_invoke/unjoined_parent_cannot_report_success_and_its_waiter_is_
           while !entered.val {
             signal.wait()
           }
-          tk_ok_result("must not become success")
+          @testkit.tk_ok_result("must not become success")
         },
       }
       let child = InvocationFixture::{
         id: "child",
         owners: [],
-        definitions: [{ ..tk_tool_def("child", "child"), exposure: Deferred, }],
+        definitions: [
+          { ..@testkit.tk_tool_def("child", "child"), exposure: Deferred, },
+        ],
         action: async fn(_ctx) {
           entered.val = true
           signal.broadcast()
           let never = @async.CondVar::Cond()
           never.wait()
-          tk_ok_result("unreachable")
+          @testkit.tk_ok_result("unreachable")
         },
       }
-      let model = ScriptedModel([
-        Respond(tk_tool_call_response("parent", "p", Json::null())),
+      let model = @testkit.ScriptedModel([
+        @testkit.ScriptedModelStep::Respond(
+          @testkit.tk_tool_call_response("parent", "p", Json::null()),
+        ),
       ])
       let agent = Agent(
         exts=[
-          tk_ext(id="model", model=Some(model), observers=[observer]),
+          @testkit.tk_ext(id="model", model=Some(model), observers=[observer]),
           parent,
           child,
         ],
-        config=tk_config(),
+        config=@agent.agent_config(max_tool_rounds=Some(10)),
       )
-      try agent.run_turn(tk_user_msg("hello"), "unjoined") catch {
+      try agent.run_turn(@testkit.tk_user_msg("hello"), "unjoined") catch {
         error => assert_true(error.to_string().contains("joining"))
       } noraise {
         _ => fail("unjoined parent was reported as successful")
@@ -105,7 +111,7 @@ async test "tool_cleanup/unjoined_child_is_cancelled_and_only_confirmed_stop_all
         let parent = InvocationFixture::{
           id: "parent",
           definitions: [
-            { ..tk_tool_def("parent", "parent"), policy: Exclusive, },
+            { ..@testkit.tk_tool_def("parent", "parent"), policy: Exclusive, },
           ],
           owners: ["child"],
           action: async fn(ctx) {
@@ -116,14 +122,14 @@ async test "tool_cleanup/unjoined_child_is_cancelled_and_only_confirmed_stop_all
             while !entered.val {
               signal.wait()
             }
-            tk_ok_result("must not succeed")
+            @testkit.tk_ok_result("must not succeed")
           },
         }
         let child = InvocationFixture::{
           id: "child",
           owners: [],
           definitions: [
-            { ..tk_tool_def("child", "child"), exposure: Deferred, },
+            { ..@testkit.tk_tool_def("child", "child"), exposure: Deferred, },
           ],
           action: async fn(ctx) {
             (ctx.register_cancel)(probe)
@@ -131,18 +137,24 @@ async test "tool_cleanup/unjoined_child_is_cancelled_and_only_confirmed_stop_all
             signal.broadcast()
             let never = @async.CondVar::Cond()
             never.wait()
-            tk_ok_result("unreachable")
+            @testkit.tk_ok_result("unreachable")
           },
         }
-        let model = ScriptedModel([
-          Respond(tk_tool_call_response("parent", "p", Json::null())),
-          Respond(tk_stop_response("recovered")),
+        let model = @testkit.ScriptedModel([
+          @testkit.ScriptedModelStep::Respond(
+            @testkit.tk_tool_call_response("parent", "p", Json::null()),
+          ),
+          @testkit.ScriptedModelStep::Respond(
+            @testkit.tk_stop_response("recovered"),
+          ),
         ])
         let agent = Agent(
-          exts=[tk_ext(id="model", model=Some(model)), parent, child],
-          config=tk_config(),
+          exts=[@testkit.tk_ext(id="model", model=Some(model)), parent, child],
+          config=@agent.agent_config(max_tool_rounds=Some(10)),
         )
-        try agent.run_turn(tk_user_msg("hello"), "cleanup-reuse") catch {
+        try
+          agent.run_turn(@testkit.tk_user_msg("hello"), "cleanup-reuse")
+        catch {
           error => assert_true(error.to_string().contains("joining"))
         } noraise {
           _ => fail("parent returned success without joining")
@@ -157,11 +169,14 @@ async test "tool_cleanup/unjoined_child_is_cancelled_and_only_confirmed_stop_all
         }
         assert_eq(cancellation, disposition)
         if disposition is Stopped {
-          let _ = agent.run_turn(tk_user_msg("retry"), "cleanup-reuse")
+          let _ = agent.run_turn(@testkit.tk_user_msg("retry"), "cleanup-reuse")
           assert_eq(model.call_count(), 2)
         } else {
           try
-            agent.run_turn(tk_user_msg("unsafe retry"), "cleanup-reuse")
+            agent.run_turn(
+              @testkit.tk_user_msg("unsafe retry"),
+              "cleanup-reuse",
+            )
           catch {
             error =>
               assert_true(
@@ -212,7 +227,9 @@ async test "tool_cleanup/abort_cancels_a_child_confirmation_wait_and_keeps_the_s
   let parent_cancel = CancellationProbe::{ disposition: Stopped, ids: [], }
   let parent = InvocationFixture::{
     id: "parent",
-    definitions: [{ ..tk_tool_def("parent", "parent"), policy: Exclusive, }],
+    definitions: [
+      { ..@testkit.tk_tool_def("parent", "parent"), policy: Exclusive, },
+    ],
     owners: ["child"],
     action: async fn(ctx) {
       (ctx.register_cancel)(parent_cancel)
@@ -223,27 +240,33 @@ async test "tool_cleanup/abort_cancels_a_child_confirmation_wait_and_keeps_the_s
       }
     },
   }
-  let child = RecordingToolProvider(
-    [{ ..tk_tool_def("child", "child"), exposure: Deferred, }],
+  let child = @testkit.RecordingToolProvider(
+    [{ ..@testkit.tk_tool_def("child", "child"), exposure: Deferred, }],
     Map::from_array([]),
   )
-  let model = ScriptedModel([
-    Respond(tk_tool_call_response("parent", "p", Json::null())),
-    Respond(tk_stop_response("recovered")),
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(
+      @testkit.tk_tool_call_response("parent", "p", Json::null()),
+    ),
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("recovered")),
   ])
-  let observer = RecordingObserver()
+  let observer = @testkit.RecordingObserver()
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model), hooks=[hook], observers=[observer]),
+      @testkit.tk_ext(id="model", model=Some(model), hooks=[hook], observers=[
+        observer,
+      ]),
       parent,
-      tk_ext(id="child", tools=[child]),
+      @testkit.tk_ext(id="child", tools=[child]),
     ],
-    config=tk_config(),
+    config=@agent.agent_config(max_tool_rounds=Some(10)),
   )
   @async.with_timeout(2000, async fn() {
     @async.with_task_group(async fn(group) {
       let turn = group.spawn(async fn() {
-        try agent.run_turn(tk_user_msg("hello"), "confirmation-abort") catch {
+        try
+          agent.run_turn(@testkit.tk_user_msg("hello"), "confirmation-abort")
+        catch {
           error => assert_true(error is @error.AgentError::Cancelled(_))
         } noraise {
           _ => fail("aborted turn succeeded")
@@ -277,7 +300,7 @@ async test "tool_cleanup/abort_cancels_a_child_confirmation_wait_and_keeps_the_s
     .length(),
     0,
   )
-  let _ = agent.run_turn(tk_user_msg("retry"), "confirmation-abort")
+  let _ = agent.run_turn(@testkit.tk_user_msg("retry"), "confirmation-abort")
   assert_eq(model.call_count(), 2)
 }
 
@@ -318,7 +341,9 @@ async test "tool_cleanup/root_abort_cancels_the_live_subtree_after_provider_task
   let signal = @async.CondVar::Cond()
   let parent = InvocationFixture::{
     id: "parent",
-    definitions: [{ ..tk_tool_def("parent", "parent"), policy: Exclusive, }],
+    definitions: [
+      { ..@testkit.tk_tool_def("parent", "parent"), policy: Exclusive, },
+    ],
     owners: ["child"],
     action: async fn(ctx) {
       defer {
@@ -335,7 +360,9 @@ async test "tool_cleanup/root_abort_cancels_the_live_subtree_after_provider_task
   let child = InvocationFixture::{
     id: "child",
     owners: [],
-    definitions: [{ ..tk_tool_def("child", "child"), exposure: Deferred, }],
+    definitions: [
+      { ..@testkit.tk_tool_def("child", "child"), exposure: Deferred, },
+    ],
     action: async fn(ctx) {
       defer {
         child_stop.exited.val = true
@@ -345,26 +372,30 @@ async test "tool_cleanup/root_abort_cancels_the_live_subtree_after_provider_task
       signal.broadcast()
       let never = @async.CondVar::Cond()
       never.wait()
-      tk_ok_result("unreachable")
+      @testkit.tk_ok_result("unreachable")
     },
   }
-  let observer = RecordingObserver()
-  let model = ScriptedModel([
-    Respond(tk_tool_call_response("parent", "p", Json::null())),
-    Respond(tk_stop_response("recovered")),
+  let observer = @testkit.RecordingObserver()
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(
+      @testkit.tk_tool_call_response("parent", "p", Json::null()),
+    ),
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("recovered")),
   ])
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model), observers=[observer]),
+      @testkit.tk_ext(id="model", model=Some(model), observers=[observer]),
       parent,
       child,
     ],
-    config=tk_config(),
+    config=@agent.agent_config(max_tool_rounds=Some(10)),
   )
   @async.with_timeout(2000, async fn() {
     @async.with_task_group(async fn(group) {
       let turn = group.spawn(async fn() {
-        try agent.run_turn(tk_user_msg("hello"), "abort-subtree") catch {
+        try
+          agent.run_turn(@testkit.tk_user_msg("hello"), "abort-subtree")
+        catch {
           error => assert_true(error is @error.AgentError::Cancelled(_))
         } noraise {
           _ => fail("aborted subtree succeeded")
@@ -399,6 +430,6 @@ async test "tool_cleanup/root_abort_cancels_the_live_subtree_after_provider_task
     .length(),
     0,
   )
-  let _ = agent.run_turn(tk_user_msg("retry"), "abort-subtree")
+  let _ = agent.run_turn(@testkit.tk_user_msg("retry"), "abort-subtree")
   assert_eq(model.call_count(), 2)
 }

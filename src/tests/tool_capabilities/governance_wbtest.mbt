@@ -15,25 +15,27 @@ async test "tool_invoke/rewritten_child_rechecks_owner_and_schema_and_never_inhe
     let seen : Array[String] = []
     let parent = InvocationFixture::{
       id: "parent",
-      definitions: [{ ..tk_tool_def("parent", "parent"), policy: Exclusive, }],
+      definitions: [
+        { ..@testkit.tk_tool_def("parent", "parent"), policy: Exclusive, },
+      ],
       owners: ["child"],
       action: async fn(ctx) {
         replies.push(ctx.invoke("child", {}))
-        tk_ok_result("parent")
+        @testkit.tk_ok_result("parent")
       },
     }
-    let child = RecordingToolProvider(
+    let child = @testkit.RecordingToolProvider(
       [
         {
-          ..tk_tool_def("child", "child"),
+          ..@testkit.tk_tool_def("child", "child"),
           exposure: Deferred,
           input_schema: { "type": "object" },
         },
       ],
       Map::from_array([]),
     )
-    let outside = RecordingToolProvider(
-      [{ ..tk_tool_def("outside", "outside"), exposure: Deferred, }],
+    let outside = @testkit.RecordingToolProvider(
+      [{ ..@testkit.tk_tool_def("outside", "outside"), exposure: Deferred, }],
       Map::from_array([]),
     )
     let hook = InvocationHook::{
@@ -48,21 +50,25 @@ async test "tool_invoke/rewritten_child_rechecks_owner_and_schema_and_never_inhe
         }
       },
     }
-    let observer = RecordingObserver()
-    let model = ScriptedModel([
-      Respond(tk_tool_call_response("parent", "p", Json::null())),
-      Respond(tk_stop_response("done")),
+    let observer = @testkit.RecordingObserver()
+    let model = @testkit.ScriptedModel([
+      @testkit.ScriptedModelStep::Respond(
+        @testkit.tk_tool_call_response("parent", "p", Json::null()),
+      ),
+      @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
     ])
     let agent = Agent(
       exts=[
-        tk_ext(id="model", model=Some(model), hooks=[hook], observers=[observer]),
+        @testkit.tk_ext(id="model", model=Some(model), hooks=[hook], observers=[
+          observer,
+        ]),
         parent,
-        tk_ext(id="child", tools=[child]),
-        tk_ext(id="outside", tools=[outside]),
+        @testkit.tk_ext(id="child", tools=[child]),
+        @testkit.tk_ext(id="outside", tools=[outside]),
       ],
-      config=tk_config(),
+      config=@agent.agent_config(max_tool_rounds=Some(10)),
     )
-    let _ = agent.run_turn(tk_user_msg("hello"), "rewrite-child")
+    let _ = agent.run_turn(@testkit.tk_user_msg("hello"), "rewrite-child")
     guard replies is [Completed(NotExecuted(reason~, ..))] else {
       fail("rewritten child was not rejected")
     }
@@ -88,15 +94,17 @@ async test "tool_invoke/a_later_rewrite_invalidates_child_consent" {
   let replies : Array[@kernel.InvocationResult] = []
   let parent = InvocationFixture::{
     id: "parent",
-    definitions: [{ ..tk_tool_def("parent", "parent"), policy: Exclusive, }],
+    definitions: [
+      { ..@testkit.tk_tool_def("parent", "parent"), policy: Exclusive, },
+    ],
     owners: ["child"],
     action: async fn(ctx) {
       replies.push(ctx.invoke("child", {}))
-      tk_ok_result("parent")
+      @testkit.tk_ok_result("parent")
     },
   }
-  let child = RecordingToolProvider(
-    [{ ..tk_tool_def("child", "child"), exposure: Deferred, }],
+  let child = @testkit.RecordingToolProvider(
+    [{ ..@testkit.tk_tool_def("child", "child"), exposure: Deferred, }],
     Map::from_array([]),
   )
   let consent = InvocationHook::{
@@ -117,19 +125,21 @@ async test "tool_invoke/a_later_rewrite_invalidates_child_consent" {
       }
     },
   }
-  let model = ScriptedModel([
-    Respond(tk_tool_call_response("parent", "p", Json::null())),
-    Respond(tk_stop_response("done")),
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(
+      @testkit.tk_tool_call_response("parent", "p", Json::null()),
+    ),
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
   ])
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model), hooks=[consent, rewrite]),
+      @testkit.tk_ext(id="model", model=Some(model), hooks=[consent, rewrite]),
       parent,
-      tk_ext(id="child", tools=[child]),
+      @testkit.tk_ext(id="child", tools=[child]),
     ],
-    config=tk_config(),
+    config=@agent.agent_config(max_tool_rounds=Some(10)),
   )
-  let _ = agent.run_turn(tk_user_msg("hello"), "consent-child")
+  let _ = agent.run_turn(@testkit.tk_user_msg("hello"), "consent-child")
   guard replies is [Completed(NotExecuted(reason=RejectedByHook(reason~), ..))] else {
     fail("child reused stale consent")
   }
@@ -139,26 +149,35 @@ async test "tool_invoke/a_later_rewrite_invalidates_child_consent" {
 
 ///|
 async test "tool_invoke/child_crosses_the_same_binding_aware_runtime_decorator" {
-  let child = RecordingToolProvider(
-    [{ ..tk_tool_def("child", "child"), exposure: Deferred, }],
-    Map::from_array([("child", OutcomeOk(tk_ok_result("child result")))]),
+  let child = @testkit.RecordingToolProvider(
+    [{ ..@testkit.tk_tool_def("child", "child"), exposure: Deferred, }],
+    Map::from_array([
+      (
+        "child",
+        @testkit.ScriptedToolOutcome::OutcomeOk(
+          @testkit.tk_ok_result("child result"),
+        ),
+      ),
+    ]),
   )
   let parent = InvokingTool::{ seen_tools: [], }
-  let model = ScriptedModel([
-    Respond(tk_tool_call_response("parent", "p", Json::null())),
-    Respond(tk_stop_response("done")),
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(
+      @testkit.tk_tool_call_response("parent", "p", Json::null()),
+    ),
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
   ])
   let runtime = FakeRuntime(@runtime.PortRuntime(model~))
   let agent = Agent::with_runtime(
     exts=[
-      tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="model", model=Some(model)),
       parent,
-      tk_ext(id="child", tools=[child]),
+      @testkit.tk_ext(id="child", tools=[child]),
     ],
-    config=tk_config(),
+    config=@agent.agent_config(max_tool_rounds=Some(10)),
     runtime~,
   )
-  let result = agent.run_turn(tk_user_msg("hello"), "decorated-child")
+  let result = agent.run_turn(@testkit.tk_user_msg("hello"), "decorated-child")
   assert_eq(contribution_result_texts(result.tool_results), ["child result"])
   assert_eq(runtime.seen_contexts.map(ctx => ctx.owner.to_string()), [
     "parent", "child",
@@ -174,30 +193,39 @@ async test "tool_invoke/unregistered_target_cannot_be_invoked_by_name" {
   let replies : Array[@kernel.InvocationResult] = []
   let parent = InvocationFixture::{
     id: "parent",
-    definitions: [{ ..tk_tool_def("parent", "parent"), policy: Exclusive, }],
+    definitions: [
+      { ..@testkit.tk_tool_def("parent", "parent"), policy: Exclusive, },
+    ],
     owners: ["unregistered"],
     action: async fn(ctx) {
       replies.push(ctx.invoke("unregistered", {}))
-      tk_ok_result("parent")
+      @testkit.tk_ok_result("parent")
     },
   }
-  let unregistered = RecordingToolProvider(
-    [tk_tool_def("unregistered", "unregistered")],
+  let unregistered = @testkit.RecordingToolProvider(
+    [@testkit.tk_tool_def("unregistered", "unregistered")],
     Map::from_array([
-      ("unregistered", OutcomeOk(tk_ok_result("must not be called"))),
+      (
+        "unregistered",
+        @testkit.ScriptedToolOutcome::OutcomeOk(
+          @testkit.tk_ok_result("must not be called"),
+        ),
+      ),
     ]),
   )
-  let model = ScriptedModel([
-    Respond(tk_tool_call_response("parent", "p", Json::null())),
-    Respond(tk_stop_response("done")),
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(
+      @testkit.tk_tool_call_response("parent", "p", Json::null()),
+    ),
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
   ])
   let runtime = @runtime.PortRuntime(model~)
   let agent = Agent::with_runtime(
-    exts=[tk_ext(id="model", model=Some(model)), parent],
-    config=tk_config(),
+    exts=[@testkit.tk_ext(id="model", model=Some(model)), parent],
+    config=@agent.agent_config(max_tool_rounds=Some(10)),
     runtime~,
   )
-  let _ = agent.run_turn(tk_user_msg("hello"), "unregistered-child")
+  let _ = agent.run_turn(@testkit.tk_user_msg("hello"), "unregistered-child")
   guard replies is [Completed(NotExecuted(reason=UnknownTool, ..))] else {
     fail("unregistered child was treated as a fixed executor")
   }

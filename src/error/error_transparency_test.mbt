@@ -112,17 +112,19 @@ async test "t07_valid_tool_json_still_parses" {
 async test "t07_model_error_emits_turnfailed_not_turncompleted" {
   // When the model raises, the observer must see TurnFailed (from the model
   // error path) and MUST NOT see TurnCompleted.
-  let model = @posoco.ScriptedModel([Fail(Transport("network down"))])
-  let store = @posoco.RecordingSessionPort()
-  let obs = @posoco.RecordingObserver()
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Fail(Transport("network down")),
+  ])
+  let store = @testkit.RecordingSessionPort()
+  let obs = @testkit.RecordingObserver()
   let agent = @posoco.Agent(
     exts=[
-      @posoco.tk_ext(id="model", model=Some(model)),
-      @posoco.tk_ext(id="io", sessions=[store], observers=[obs]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", sessions=[store], observers=[obs]),
     ],
     config=err_config(),
   )
-  let result = Ok(agent.run_turn(@posoco.tk_user_msg("hello"), "s1")) catch {
+  let result = Ok(agent.run_turn(@testkit.tk_user_msg("hello"), "s1")) catch {
     e => Err(e)
   }
   // Must raise.
@@ -148,8 +150,8 @@ async test "t07_model_error_emits_turnfailed_not_turncompleted" {
 async test "t07_rate_limited_model_surfaces_quota_scheduling_data" {
   // A provider quota verdict must reach the caller with its provider code,
   // reset time, and message intact — never collapsed to a generic failure.
-  let model = @posoco.ScriptedModel([
-    Fail(
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Fail(
       RateLimited({
         message: "free quota exceeded",
         reset_at_ms: Some(1756400000000L),
@@ -157,16 +159,16 @@ async test "t07_rate_limited_model_surfaces_quota_scheduling_data" {
       }),
     ),
   ])
-  let store = @posoco.RecordingSessionPort()
-  let obs = @posoco.RecordingObserver()
+  let store = @testkit.RecordingSessionPort()
+  let obs = @testkit.RecordingObserver()
   let agent = @posoco.Agent(
     exts=[
-      @posoco.tk_ext(id="model", model=Some(model)),
-      @posoco.tk_ext(id="io", sessions=[store], observers=[obs]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", sessions=[store], observers=[obs]),
     ],
     config=err_config(),
   )
-  let result = Ok(agent.run_turn(@posoco.tk_user_msg("hello"), "s1")) catch {
+  let result = Ok(agent.run_turn(@testkit.tk_user_msg("hello"), "s1")) catch {
     e => Err(e)
   }
   match result {
@@ -203,18 +205,20 @@ fn count_terminal_events(events : Array[TurnEvent]) -> Int32 {
 
 ///|
 async test "t07_save_error_emits_exactly_one_turnfailed" {
-  let model = @posoco.ScriptedModel([Respond(@posoco.tk_stop_response("done"))])
-  let store = @posoco.RecordingSessionPort()
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
+  ])
+  let store = @testkit.RecordingSessionPort()
   store.fail_save("save-fail")
-  let obs = @posoco.RecordingObserver()
+  let obs = @testkit.RecordingObserver()
   let agent = @posoco.Agent(
     exts=[
-      @posoco.tk_ext(id="model", model=Some(model)),
-      @posoco.tk_ext(id="io", sessions=[store], observers=[obs]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", sessions=[store], observers=[obs]),
     ],
     config=err_config(),
   )
-  let result = Ok(agent.run_turn(@posoco.tk_user_msg("hello"), "save-fail")) catch {
+  let result = Ok(agent.run_turn(@testkit.tk_user_msg("hello"), "save-fail")) catch {
     e => Err(e)
   }
   match result {
@@ -228,19 +232,21 @@ async test "t07_save_error_emits_exactly_one_turnfailed" {
 
 ///|
 async test "t07_model_failure_keeps_primary_after_input_checkpoint" {
-  let model = @posoco.ScriptedModel([Fail(Transport("primary network failure"))])
-  let store = @posoco.RecordingSessionPort()
-  let obs = @posoco.RecordingObserver()
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Fail(Transport("primary network failure")),
+  ])
+  let store = @testkit.RecordingSessionPort()
+  let obs = @testkit.RecordingObserver()
   let agent = @posoco.Agent(
     exts=[
-      @posoco.tk_ext(id="model", model=Some(model)),
-      @posoco.tk_ext(id="io", sessions=[store], observers=[obs]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", sessions=[store], observers=[obs]),
     ],
     config=err_config(),
   )
   let result = Ok(
     agent.run_turn(
-      @posoco.tk_user_msg("private prompt with tool-secret"),
+      @testkit.tk_user_msg("private prompt with tool-secret"),
       "failed-model",
     ),
   ) catch {
@@ -256,7 +262,7 @@ async test "t07_model_failure_keeps_primary_after_input_checkpoint" {
   assert_eq(persisted.messages.length(), 1)
   assert_true(
     persisted.messages[0] ==
-    @posoco.tk_user_msg("private prompt with tool-secret"),
+    @testkit.tk_user_msg("private prompt with tool-secret"),
   )
   let events = obs.events()
   assert_eq(count_terminal_events(events), 1)
@@ -274,19 +280,19 @@ async test "t07_model_failure_keeps_primary_after_input_checkpoint" {
 
 ///|
 async test "t07_load_error_emits_one_safe_turnfailed" {
-  let model = @posoco.ScriptedModel([])
-  let store = @posoco.RecordingSessionPort()
+  let model = @testkit.ScriptedModel([])
+  let store = @testkit.RecordingSessionPort()
   store.fail_load("load-fail", Load("backend detail must stay with caller"))
-  let obs = @posoco.RecordingObserver()
+  let obs = @testkit.RecordingObserver()
   let agent = @posoco.Agent(
     exts=[
-      @posoco.tk_ext(id="model", model=Some(model)),
-      @posoco.tk_ext(id="io", sessions=[store], observers=[obs]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", sessions=[store], observers=[obs]),
     ],
     config=err_config(),
   )
   let result = Ok(
-    agent.run_turn(@posoco.tk_user_msg("private prompt"), "load-fail"),
+    agent.run_turn(@testkit.tk_user_msg("private prompt"), "load-fail"),
   ) catch {
     error => Err(error)
   }
@@ -315,20 +321,22 @@ async test "t07_afterturn_hook_failure_is_observable_but_nonfatal" {
   // raise). PipelineHook abort scenarios are now handled through PreModelHook.
   // This test verifies that a PreModelHook abort still emits exactly one
   // terminal event (TurnFailed).
-  let model = @posoco.ScriptedModel([Respond(@posoco.tk_stop_response("done"))])
-  let store = @posoco.RecordingSessionPort()
-  let obs = @posoco.RecordingObserver()
-  let hook = @posoco.RecordingHook()
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
+  ])
+  let store = @testkit.RecordingSessionPort()
+  let obs = @testkit.RecordingObserver()
+  let hook = @testkit.RecordingHook()
   hook.abort_when("before_model", "hook blocked the model call")
   let agent = @posoco.Agent(
     exts=[
-      @posoco.tk_ext(id="model", model=Some(model)),
-      @posoco.tk_ext(id="io", hooks=[hook], sessions=[store], observers=[obs]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", hooks=[hook], sessions=[store], observers=[obs]),
     ],
     config=err_config(),
   )
   let result = Ok(
-    agent.run_turn(@posoco.tk_user_msg("hello"), "hook-secondary"),
+    agent.run_turn(@testkit.tk_user_msg("hello"), "hook-secondary"),
   ) catch {
     e => Err(e)
   }
@@ -349,19 +357,23 @@ async test "t07_error_hook_failure_preserves_primary_and_is_observable" {
   // model would have failed but the hook aborts first, the primary error is
   // the PipelineAborted (not the model error). This test verifies the abort is
   // observable as PipelineAborted.
-  let model = @posoco.ScriptedModel([Fail(Transport("primary network failure"))])
-  let store = @posoco.RecordingSessionPort()
-  let obs = @posoco.RecordingObserver()
-  let hook = @posoco.RecordingHook()
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Fail(Transport("primary network failure")),
+  ])
+  let store = @testkit.RecordingSessionPort()
+  let obs = @testkit.RecordingObserver()
+  let hook = @testkit.RecordingHook()
   hook.abort_when("before_model", "hook aborted before model call")
   let agent = @posoco.Agent(
     exts=[
-      @posoco.tk_ext(id="model", model=Some(model)),
-      @posoco.tk_ext(id="io", hooks=[hook], sessions=[store], observers=[obs]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", hooks=[hook], sessions=[store], observers=[obs]),
     ],
     config=err_config(),
   )
-  let result = Ok(agent.run_turn(@posoco.tk_user_msg("hello"), "primary-error")) catch {
+  let result = Ok(
+    agent.run_turn(@testkit.tk_user_msg("hello"), "primary-error"),
+  ) catch {
     e => Err(e)
   }
   match result {
@@ -374,19 +386,21 @@ async test "t07_error_hook_failure_preserves_primary_and_is_observable" {
 
 ///|
 async test "t07_turnerror_hook_failure_preserves_primary_and_is_observable" {
-  let model = @posoco.ScriptedModel([Fail(Transport("primary network failure"))])
-  let store = @posoco.RecordingSessionPort()
-  let obs = @posoco.RecordingObserver()
-  let hook = @posoco.RecordingHook()
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Fail(Transport("primary network failure")),
+  ])
+  let store = @testkit.RecordingSessionPort()
+  let obs = @testkit.RecordingObserver()
+  let hook = @testkit.RecordingHook()
   hook.abort_when("before_model", "hook aborted before model call")
   let agent = @posoco.Agent(
     exts=[
-      @posoco.tk_ext(id="model", model=Some(model)),
-      @posoco.tk_ext(id="io", hooks=[hook], sessions=[store], observers=[obs]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", hooks=[hook], sessions=[store], observers=[obs]),
     ],
     config=err_config(),
   )
-  let result = Ok(agent.run_turn(@posoco.tk_user_msg("hello"), "turnerror")) catch {
+  let result = Ok(agent.run_turn(@testkit.tk_user_msg("hello"), "turnerror")) catch {
     e => Err(e)
   }
   match result {
@@ -402,24 +416,29 @@ async test "t07_aftertool_hook_failure_is_observable_but_nonfatal" {
   // Puppet path: tool execution is followed by PreModelHook in the next
   // pump iteration. A pre_model_hook abort before the second model call
   // surfaces as PipelineAborted.
-  let model = @posoco.ScriptedModel([
-    Respond(
-      @posoco.tk_tool_call_response("probe", "tc_secondary", Json::null()),
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(
+      @testkit.tk_tool_call_response("probe", "tc_secondary", Json::null()),
     ),
-    Respond(@posoco.tk_stop_response("done")),
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
   ])
-  let provider = @posoco.RecordingToolProvider(
-    [@posoco.tk_tool_def("probe", "")],
-    Map::from_array([("probe", OutcomeOk(@posoco.tk_ok_result("ok")))]),
+  let provider = @testkit.RecordingToolProvider(
+    [@testkit.tk_tool_def("probe", "")],
+    Map::from_array([
+      (
+        "probe",
+        @testkit.ScriptedToolOutcome::OutcomeOk(@testkit.tk_ok_result("ok")),
+      ),
+    ]),
   )
-  let store = @posoco.RecordingSessionPort()
-  let obs = @posoco.RecordingObserver()
-  let hook = @posoco.RecordingHook()
+  let store = @testkit.RecordingSessionPort()
+  let obs = @testkit.RecordingObserver()
+  let hook = @testkit.RecordingHook()
   hook.abort_when("before_model", "hook blocked after tool execution")
   let agent = @posoco.Agent(
     exts=[
-      @posoco.tk_ext(id="model", model=Some(model)),
-      @posoco.tk_ext(
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(
         id="io",
         tools=[provider],
         hooks=[hook],
@@ -429,7 +448,7 @@ async test "t07_aftertool_hook_failure_is_observable_but_nonfatal" {
     ],
     config=err_config(),
   )
-  let result = Ok(agent.run_turn(@posoco.tk_user_msg("run"), "aftertool")) catch {
+  let result = Ok(agent.run_turn(@testkit.tk_user_msg("run"), "aftertool")) catch {
     e => Err(e)
   }
   match result {
@@ -442,20 +461,20 @@ async test "t07_aftertool_hook_failure_is_observable_but_nonfatal" {
 
 ///|
 async test "t07_beforemodel_abort_emits_exactly_one_turnfailed" {
-  let model = @posoco.ScriptedModel([])
-  let store = @posoco.RecordingSessionPort()
-  let obs = @posoco.RecordingObserver()
-  let hook = @posoco.RecordingHook()
+  let model = @testkit.ScriptedModel([])
+  let store = @testkit.RecordingSessionPort()
+  let obs = @testkit.RecordingObserver()
+  let hook = @testkit.RecordingHook()
   hook.abort_when("before_model", "policy rejected model call")
   let agent = @posoco.Agent(
     exts=[
-      @posoco.tk_ext(id="model", model=Some(model)),
-      @posoco.tk_ext(id="io", hooks=[hook], sessions=[store], observers=[obs]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", hooks=[hook], sessions=[store], observers=[obs]),
     ],
     config=err_config(),
   )
   let result = Ok(
-    agent.run_turn(@posoco.tk_user_msg("private prompt"), "hook-abort"),
+    agent.run_turn(@testkit.tk_user_msg("private prompt"), "hook-abort"),
   ) catch {
     e => Err(e)
   }
@@ -479,20 +498,20 @@ async test "t07_beforemodel_abort_emits_exactly_one_turnfailed" {
 
 ///|
 async test "t07_premodel_abort_emits_turnstarted_and_one_terminal_event" {
-  let model = @posoco.ScriptedModel([])
-  let store = @posoco.RecordingSessionPort()
-  let obs = @posoco.RecordingObserver()
-  let hook = @posoco.RecordingHook()
+  let model = @testkit.ScriptedModel([])
+  let store = @testkit.RecordingSessionPort()
+  let obs = @testkit.RecordingObserver()
+  let hook = @testkit.RecordingHook()
   hook.abort_when("before_model", "turn rejected before start")
   let agent = @posoco.Agent(
     exts=[
-      @posoco.tk_ext(id="model", model=Some(model)),
-      @posoco.tk_ext(id="io", hooks=[hook], sessions=[store], observers=[obs]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", hooks=[hook], sessions=[store], observers=[obs]),
     ],
     config=err_config(),
   )
   let result = Ok(
-    agent.run_turn(@posoco.tk_user_msg("hello"), "premodel_abort"),
+    agent.run_turn(@testkit.tk_user_msg("hello"), "premodel_abort"),
   ) catch {
     e => Err(e)
   }
@@ -509,26 +528,33 @@ async test "t07_premodel_abort_emits_turnstarted_and_one_terminal_event" {
 
 ///|
 async test "t07_tool_loop_emits_exactly_one_turnfailed" {
-  let model = @posoco.ScriptedModel([
-    Respond(@posoco.tk_tool_call_response("probe", "tc_loop", Json::null())),
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(
+      @testkit.tk_tool_call_response("probe", "tc_loop", Json::null()),
+    ),
   ])
-  let provider = @posoco.RecordingToolProvider(
-    [@posoco.tk_tool_def("probe", "")],
-    Map::from_array([("probe", OutcomeOk(@posoco.tk_ok_result("ok")))]),
+  let provider = @testkit.RecordingToolProvider(
+    [@testkit.tk_tool_def("probe", "")],
+    Map::from_array([
+      (
+        "probe",
+        @testkit.ScriptedToolOutcome::OutcomeOk(@testkit.tk_ok_result("ok")),
+      ),
+    ]),
   )
-  let store = @posoco.RecordingSessionPort()
-  let obs = @posoco.RecordingObserver()
+  let store = @testkit.RecordingSessionPort()
+  let obs = @testkit.RecordingObserver()
   let config : AgentConfig = @posoco.agent_config(max_tool_rounds=Some(0))
   let agent = @posoco.Agent(
     exts=[
-      @posoco.tk_ext(id="model", model=Some(model)),
-      @posoco.tk_ext(id="io", tools=[provider], sessions=[store], observers=[
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", tools=[provider], sessions=[store], observers=[
         obs,
       ]),
     ],
     config~,
   )
-  let result = Ok(agent.run_turn(@posoco.tk_user_msg("loop"), "tool-loop")) catch {
+  let result = Ok(agent.run_turn(@testkit.tk_user_msg("loop"), "tool-loop")) catch {
     e => Err(e)
   }
   match result {

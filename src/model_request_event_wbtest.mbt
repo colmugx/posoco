@@ -5,31 +5,39 @@
 
 ///|
 async test "model_request_started/brackets_every_step_before_chunks" {
-  let model = ScriptedModel([
-    Stream(
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Stream(
       chunks=[@types.StreamChunk::TextDelta(token="plan")],
-      response=tk_tool_call_response("echo", "call_mr", Json::null()),
+      response=@testkit.tk_tool_call_response("echo", "call_mr", Json::null()),
     ),
-    Stream(
+    @testkit.ScriptedModelStep::Stream(
       chunks=[@types.StreamChunk::TextDelta(token="done")],
-      response=tk_stop_response("ok"),
+      response=@testkit.tk_stop_response("ok"),
     ),
   ])
-  let tools = RecordingToolProvider(
-    [tk_tool_def("echo", "echo tool")],
-    Map::from_array([("echo", OutcomeOk(tk_ok_result("ok")))]),
+  let tools = @testkit.RecordingToolProvider(
+    [@testkit.tk_tool_def("echo", "echo tool")],
+    Map::from_array([
+      (
+        "echo",
+        @testkit.ScriptedToolOutcome::OutcomeOk(@testkit.tk_ok_result("ok")),
+      ),
+    ]),
   )
-  let observer = RecordingObserver()
+  let observer = @testkit.RecordingObserver()
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="tools", tools=[tools], sessions=[RecordingSessionPort()], observers=[
-        observer,
-      ]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(
+        id="tools",
+        tools=[tools],
+        sessions=[@testkit.RecordingSessionPort()],
+        observers=[observer],
+      ),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
-  ignore(agent.run_turn(tk_user_msg("hi"), "s_request_anchor"))
+  ignore(agent.run_turn(@testkit.tk_user_msg("hi"), "s_request_anchor"))
   let events = observer.events()
   // One anchor per model step: before the turn's first chunk, and again
   // after the tool wave — never from the response boundary itself.

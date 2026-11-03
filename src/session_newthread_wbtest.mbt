@@ -78,11 +78,17 @@ fn newthread_finished_for(
 /// Count the full saves recorded for one session id. NewThread output is
 /// written once by the Agent; recovery may repeat a previously successful
 /// store, so failure tests assert the final state rather than exactly-once.
-fn newthread_save_count(store : RecordingSessionPort, target : String) -> Int32 {
+fn newthread_save_count(
+  store : @testkit.RecordingSessionPort,
+  target : String,
+) -> Int32 {
   let mut count = 0
   for op in store.ops() {
     match op {
-      OpSave(id~, ..) => if id == target { count = count + 1 }
+      @testkit.SessionOp::OpSave(id~, ..) =>
+        if id == target {
+          count = count + 1
+        }
       _ => ()
     }
   }
@@ -115,9 +121,9 @@ impl @port.ModelPort for GatedTurnModel with fn chat(
     while !self.released {
       @async.pause()
     }
-    tk_tool_call_response("leaf", "call_1", Json::null())
+    @testkit.tk_tool_call_response("leaf", "call_1", Json::null())
   } else {
-    tk_stop_response("done")
+    @testkit.tk_stop_response("done")
   }
 }
 
@@ -146,26 +152,33 @@ async test "newthread/fork_persists_sibling_with_lineage_and_emits_redirect" {
     calls: 0,
     compacted: [],
   }
-  let store = RecordingSessionPort()
+  let store = @testkit.RecordingSessionPort()
   store.seed("s1", {
-    messages: [tk_user_msg("one"), tk_user_msg("two")],
+    messages: [@testkit.tk_user_msg("one"), @testkit.tk_user_msg("two")],
     metadata: Map::from_array([]),
   })
-  let observer = RecordingObserver()
-  let tools = RecordingToolProvider(
-    [tk_tool_def("leaf", "leaf tool")],
-    Map::from_array([("leaf", OutcomeOk(tk_ok_result("ok")))]),
+  let observer = @testkit.RecordingObserver()
+  let tools = @testkit.RecordingToolProvider(
+    [@testkit.tk_tool_def("leaf", "leaf tool")],
+    Map::from_array([
+      (
+        "leaf",
+        @testkit.ScriptedToolOutcome::OutcomeOk(@testkit.tk_ok_result("ok")),
+      ),
+    ]),
   )
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="tools", tools=[tools]),
-      tk_ext(id="io", sessions=[store], observers=[observer]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="tools", tools=[tools]),
+      @testkit.tk_ext(id="io", sessions=[store], observers=[observer]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
   @async.with_task_group(async fn(group) {
-    let turn = group.spawn(() => agent.run_turn(tk_user_msg("go"), "s1"))
+    let turn = group.spawn(() => {
+      agent.run_turn(@testkit.tk_user_msg("go"), "s1")
+    })
     // The gate always opens when the bounded enqueue phase exits — success,
     // assertion failure, or timeout — so the parked turn never outlives the
     // phase that was supposed to release it.
@@ -225,8 +238,8 @@ async test "newthread/fork_persists_sibling_with_lineage_and_emits_redirect" {
       "expected the first two transcript messages, got \{sibling.messages.length()}",
     )
   }
-  assert_true(sibling.messages[0] == tk_user_msg("one"))
-  assert_true(sibling.messages[1] == tk_user_msg("two"))
+  assert_true(sibling.messages[0] == @testkit.tk_user_msg("one"))
+  assert_true(sibling.messages[1] == @testkit.tk_user_msg("two"))
   assert_eq(sibling.metadata[@types.PARENT_THREAD_ID_KEY], Json::string("s1"))
   // The sibling cursor advanced so the next turn appends instead of resaving.
   assert_eq(agent.runtime.progress.cursors.get(to), Some(2))
@@ -237,7 +250,7 @@ async test "newthread/fork_persists_sibling_with_lineage_and_emits_redirect" {
   let checkpoints : Array[(Int32, Int32)] = []
   for op in store.ops() {
     match op {
-      OpCheckpoint(id~, checkpoint~, ..) =>
+      @testkit.SessionOp::OpCheckpoint(id~, checkpoint~, ..) =>
         if id == "s1" {
           checkpoints.push(
             (
@@ -281,24 +294,24 @@ async test "newthread/fork_persists_sibling_with_lineage_and_emits_redirect" {
 
 ///|
 async test "newthread/compact_newthread_persists_sibling_with_lineage_and_emits_redirect" {
-  let model = ScriptedModel([
-    Compact(result={
-      compacted_messages: [tk_user_msg("summary")],
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Compact(result={
+      compacted_messages: [@testkit.tk_user_msg("summary")],
       mode: NewThread,
     }),
   ])
-  let store = RecordingSessionPort()
+  let store = @testkit.RecordingSessionPort()
   store.seed("c1", {
-    messages: [tk_user_msg("old-one"), tk_user_msg("old-two")],
+    messages: [@testkit.tk_user_msg("old-one"), @testkit.tk_user_msg("old-two")],
     metadata: Map::from_array([]),
   })
-  let observer = RecordingObserver()
+  let observer = @testkit.RecordingObserver()
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", sessions=[store], observers=[observer]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", sessions=[store], observers=[observer]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
   let outcome = agent.compact_session("c1")
   let to = outcome.final_session_id
@@ -318,12 +331,12 @@ async test "newthread/compact_newthread_persists_sibling_with_lineage_and_emits_
     e => fail("expected the compact sibling to persist: \{e}")
   }
   assert_eq(sibling.messages.length(), 1)
-  assert_true(sibling.messages[0] == tk_user_msg("summary"))
+  assert_true(sibling.messages[0] == @testkit.tk_user_msg("summary"))
   assert_eq(sibling.metadata[@types.PARENT_THREAD_ID_KEY], Json::string("c1"))
   assert_eq(agent.runtime.progress.cursors.get(to), Some(1))
   // Real alias isolation: mutate what load() handed out, then reload — the
   // persisted state must be untouched because saves carry deep snapshots.
-  sibling.messages.push(tk_user_msg("poison"))
+  sibling.messages.push(@testkit.tk_user_msg("poison"))
   sibling.metadata[@types.PARENT_THREAD_ID_KEY] = Json::string("hijacked")
   let reloaded = store.load(to) catch { e => fail("reload failed: \{e}") }
   assert_eq(reloaded.messages.length(), 1)
@@ -345,28 +358,35 @@ async test "newthread/midturn_compact_newthread_reaches_complete_compact_turn" {
     entered: false,
     released: false,
     calls: 0,
-    compacted: [tk_user_msg("mid-turn summary")],
+    compacted: [@testkit.tk_user_msg("mid-turn summary")],
   }
-  let store = RecordingSessionPort()
+  let store = @testkit.RecordingSessionPort()
   store.seed("m1", {
-    messages: [tk_user_msg("old-one"), tk_user_msg("old-two")],
+    messages: [@testkit.tk_user_msg("old-one"), @testkit.tk_user_msg("old-two")],
     metadata: Map::from_array([]),
   })
-  let observer = RecordingObserver()
-  let tools = RecordingToolProvider(
-    [tk_tool_def("leaf", "leaf tool")],
-    Map::from_array([("leaf", OutcomeOk(tk_ok_result("ok")))]),
+  let observer = @testkit.RecordingObserver()
+  let tools = @testkit.RecordingToolProvider(
+    [@testkit.tk_tool_def("leaf", "leaf tool")],
+    Map::from_array([
+      (
+        "leaf",
+        @testkit.ScriptedToolOutcome::OutcomeOk(@testkit.tk_ok_result("ok")),
+      ),
+    ]),
   )
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="tools", tools=[tools]),
-      tk_ext(id="io", sessions=[store], observers=[observer]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="tools", tools=[tools]),
+      @testkit.tk_ext(id="io", sessions=[store], observers=[observer]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
   let result = @async.with_task_group(async fn(group) {
-    let turn = group.spawn(() => agent.run_turn(tk_user_msg("go"), "m1"))
+    let turn = group.spawn(() => {
+      agent.run_turn(@testkit.tk_user_msg("go"), "m1")
+    })
     // Same bounded-gate contract as the fork test: the compact enqueue phase
     // always opens the gate on exit, before the turn is joined.
     let enqueued : Result[Bool, Error] = Ok(
@@ -420,7 +440,7 @@ async test "newthread/midturn_compact_newthread_reaches_complete_compact_turn" {
     e => fail("expected the compact sibling to persist: \{e}")
   }
   assert_eq(sibling.messages.length(), 1)
-  assert_true(sibling.messages[0] == tk_user_msg("mid-turn summary"))
+  assert_true(sibling.messages[0] == @testkit.tk_user_msg("mid-turn summary"))
   assert_eq(sibling.metadata[@types.PARENT_THREAD_ID_KEY], Json::string("m1"))
   assert_eq(agent.runtime.progress.cursors.get(to), Some(1))
   // Single writer on the mid-turn path as well.
@@ -457,13 +477,13 @@ impl @port.SessionPort for NewThreadFailStore with fn save(self, id, session) ->
 
 ///|
 async test "newthread/failed_output_recovers_and_old_terminal_stays" {
-  let model = ScriptedModel([
-    Compact(result={
-      compacted_messages: [tk_user_msg("summary-one")],
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Compact(result={
+      compacted_messages: [@testkit.tk_user_msg("summary-one")],
       mode: NewThread,
     }),
-    Compact(result={
-      compacted_messages: [tk_user_msg("summary-two")],
+    @testkit.ScriptedModelStep::Compact(result={
+      compacted_messages: [@testkit.tk_user_msg("summary-two")],
       mode: NewThread,
     }),
   ])
@@ -472,15 +492,15 @@ async test "newthread/failed_output_recovers_and_old_terminal_stays" {
     seen: Map::from_array([]),
     armed: true,
     fail_from: 1,
-    seeded: [tk_user_msg("old-one"), tk_user_msg("old-two")],
+    seeded: [@testkit.tk_user_msg("old-one"), @testkit.tk_user_msg("old-two")],
   }
-  let observer = RecordingObserver()
+  let observer = @testkit.RecordingObserver()
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", sessions=[store], observers=[observer]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", sessions=[store], observers=[observer]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
   let first_sid = "f1_compact_agent_compact_session_1"
   let outcome = Ok(agent.compact_session("f1")) catch { error => Err(error) }
@@ -518,7 +538,7 @@ async test "newthread/failed_output_recovers_and_old_terminal_stays" {
     fail("expected recovery to persist the failed attempt's child")
   }
   assert_eq(first_body.messages.length(), 1)
-  assert_true(first_body.messages[0] == tk_user_msg("summary-one"))
+  assert_true(first_body.messages[0] == @testkit.tk_user_msg("summary-one"))
   assert_eq(
     first_body.metadata.get(@types.PARENT_THREAD_ID_KEY),
     Some(Json::string("f1")),
@@ -527,7 +547,7 @@ async test "newthread/failed_output_recovers_and_old_terminal_stays" {
     fail("expected the retried sibling to persist")
   }
   assert_eq(second_body.messages.length(), 1)
-  assert_true(second_body.messages[0] == tk_user_msg("summary-two"))
+  assert_true(second_body.messages[0] == @testkit.tk_user_msg("summary-two"))
   assert_eq(
     second_body.metadata.get(@types.PARENT_THREAD_ID_KEY),
     Some(Json::string("f1")),
@@ -553,31 +573,36 @@ async test "newthread/fork_save_failure_recovers_pending_before_next_turn" {
     calls: 0,
     compacted: [],
   }
-  let store = RecordingSessionPort()
+  let store = @testkit.RecordingSessionPort()
   store.seed("s1", {
-    messages: [tk_user_msg("one"), tk_user_msg("two")],
+    messages: [@testkit.tk_user_msg("one"), @testkit.tk_user_msg("two")],
     metadata: Map::from_array([]),
   })
   // The first minted fork command id is `fork_1`, so the child sid is
   // deterministic.
   store.fail_save("s1_fork_fork_1")
-  let observer = RecordingObserver()
-  let tools = RecordingToolProvider(
-    [tk_tool_def("leaf", "leaf tool")],
-    Map::from_array([("leaf", OutcomeOk(tk_ok_result("ok")))]),
+  let observer = @testkit.RecordingObserver()
+  let tools = @testkit.RecordingToolProvider(
+    [@testkit.tk_tool_def("leaf", "leaf tool")],
+    Map::from_array([
+      (
+        "leaf",
+        @testkit.ScriptedToolOutcome::OutcomeOk(@testkit.tk_ok_result("ok")),
+      ),
+    ]),
   )
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="tools", tools=[tools]),
-      tk_ext(id="io", sessions=[store], observers=[observer]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="tools", tools=[tools]),
+      @testkit.tk_ext(id="io", sessions=[store], observers=[observer]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
   @async.with_task_group(async fn(group) {
     let turn_body : async () -> Result[@types.TurnResult, @error.AgentError] = () => {
       let r : Result[@types.TurnResult, @error.AgentError] = Ok(
-        agent.run_turn(tk_user_msg("go"), "s1"),
+        agent.run_turn(@testkit.tk_user_msg("go"), "s1"),
       ) catch {
         e => Err(e)
       }
@@ -639,19 +664,19 @@ async test "newthread/fork_save_failure_recovers_pending_before_next_turn" {
       "expected the parent's pre-fork state, got \{parent.messages.length()}",
     )
   }
-  assert_true(parent.messages[2] == tk_user_msg("go"))
+  assert_true(parent.messages[2] == @testkit.tk_user_msg("go"))
   assert_false(parent.metadata.contains(@types.PARENT_THREAD_ID_KEY))
   let old_failures = newthread_failure_terminals(observer.events())
   // Recovery precedes the next turn: old child first, then the new request.
   store.heal_save(child_sid)
-  let retried = agent.run_turn(tk_user_msg("again"), "s1")
+  let retried = agent.run_turn(@testkit.tk_user_msg("again"), "s1")
   assert_eq(retried.final_session_id, "s1")
   let child = store.load(child_sid) catch {
     e => fail("expected recovery to persist the fork child: \{e}")
   }
   assert_eq(child.messages.length(), 2)
-  assert_true(child.messages[0] == tk_user_msg("one"))
-  assert_true(child.messages[1] == tk_user_msg("two"))
+  assert_true(child.messages[0] == @testkit.tk_user_msg("one"))
+  assert_true(child.messages[1] == @testkit.tk_user_msg("two"))
   assert_eq(
     child.metadata.get(@types.PARENT_THREAD_ID_KEY),
     Some(Json::string("s1")),
@@ -707,12 +732,12 @@ fn OrderTape::save_indexes_for(self : OrderTape, sid : String) -> Array[Int32] {
 
 ///|
 /// Store wrapper that records every completed save on the shared tape. The
-/// wrapped RecordingSessionPort keeps the seeded state and the persisted
+/// wrapped @testkit.RecordingSessionPort keeps the seeded state and the persisted
 /// sessions; the marker is appended only after the inner save returned.
 priv struct TapeStore {
   name : String
   tape : OrderTape
-  inner : RecordingSessionPort
+  inner : @testkit.RecordingSessionPort
 }
 
 ///|
@@ -759,25 +784,25 @@ impl @port.Observer for TapeObserver with fn on_event(
 /// writes all stores in parallel; a partial success keeps the core fact and
 /// pending snapshot, and the next operation retries both stores.
 async test "newthread/partial_output_retry_repeats_store_without_exactly_once" {
-  let model = ScriptedModel([
-    Compact(result={
-      compacted_messages: [tk_user_msg("summary-one")],
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Compact(result={
+      compacted_messages: [@testkit.tk_user_msg("summary-one")],
       mode: NewThread,
     }),
-    Compact(result={
-      compacted_messages: [tk_user_msg("summary-two")],
+    @testkit.ScriptedModelStep::Compact(result={
+      compacted_messages: [@testkit.tk_user_msg("summary-two")],
       mode: NewThread,
     }),
   ])
-  let first = RecordingSessionPort()
-  let second = RecordingSessionPort()
-  let observer = RecordingObserver()
+  let first = @testkit.RecordingSessionPort()
+  let second = @testkit.RecordingSessionPort()
+  let observer = @testkit.RecordingObserver()
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", sessions=[first, second], observers=[observer]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", sessions=[first, second], observers=[observer]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
   let failed_sid = "p2_compact_agent_compact_session_1"
   second.fail_save(failed_sid)
@@ -807,7 +832,7 @@ async test "newthread/partial_output_retry_repeats_store_without_exactly_once" {
     e => fail("expected the successful store to retain the sibling: \{e}")
   }
   assert_eq(kept.messages.length(), 1)
-  assert_true(kept.messages[0] == tk_user_msg("summary-one"))
+  assert_true(kept.messages[0] == @testkit.tk_user_msg("summary-one"))
   assert_eq(
     kept.metadata.get(@types.PARENT_THREAD_ID_KEY),
     Some(Json::string("p2")),
@@ -854,7 +879,7 @@ async test "newthread/partial_output_retry_repeats_store_without_exactly_once" {
     e => fail("expected the recovered child in the second store: \{e}")
   }
   assert_eq(recovered.messages.length(), 1)
-  assert_true(recovered.messages[0] == tk_user_msg("summary-one"))
+  assert_true(recovered.messages[0] == @testkit.tk_user_msg("summary-one"))
   assert_eq(newthread_save_count(first, retry_sid), 1)
   assert_eq(newthread_save_count(second, retry_sid), 1)
   assert_eq(newthread_failure_terminals(observer.events()), old_failures)
@@ -870,27 +895,38 @@ async test "newthread/partial_output_retry_repeats_store_without_exactly_once" {
 /// relative order is deliberately not assumed.
 async test "newthread/all_stores_persist_before_redirect_precedes_terminal_events" {
   let tape = OrderTape::OrderTape()
-  let store_a = TapeStore::{ name: "A", tape, inner: RecordingSessionPort(), }
-  let store_b = TapeStore::{ name: "B", tape, inner: RecordingSessionPort(), }
+  let store_a = TapeStore::{
+    name: "A",
+    tape,
+    inner: @testkit.RecordingSessionPort(),
+  }
+  let store_b = TapeStore::{
+    name: "B",
+    tape,
+    inner: @testkit.RecordingSessionPort(),
+  }
   for wrapped in [store_a, store_b] {
     wrapped.inner.seed("w1", {
-      messages: [tk_user_msg("old-one"), tk_user_msg("old-two")],
+      messages: [
+        @testkit.tk_user_msg("old-one"),
+        @testkit.tk_user_msg("old-two"),
+      ],
       metadata: Map::from_array([]),
     })
   }
   let observer = TapeObserver::{ tape, }
-  let model = ScriptedModel([
-    Compact(result={
-      compacted_messages: [tk_user_msg("summary")],
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Compact(result={
+      compacted_messages: [@testkit.tk_user_msg("summary")],
       mode: NewThread,
     }),
   ])
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", sessions=[store_a, store_b], observers=[observer]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", sessions=[store_a, store_b], observers=[observer]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
   let outcome : Result[@types.CompactOutcome, @error.AgentError]? = @async.with_timeout_opt(
     250,
@@ -914,7 +950,7 @@ async test "newthread/all_stores_persist_before_redirect_precedes_terminal_event
       e => fail("expected store \{wrapped.name} to hold the sibling: \{e}")
     }
     assert_eq(session.messages.length(), 1)
-    assert_true(session.messages[0] == tk_user_msg("summary"))
+    assert_true(session.messages[0] == @testkit.tk_user_msg("summary"))
     assert_eq(
       session.metadata.get(@types.PARENT_THREAD_ID_KEY),
       Some(Json::string("w1")),
@@ -956,24 +992,24 @@ async test "newthread/all_stores_persist_before_redirect_precedes_terminal_event
 
 ///|
 async test "newthread/single_store_single_write_and_redirect" {
-  let model = ScriptedModel([
-    Compact(result={
-      compacted_messages: [tk_user_msg("single-summary")],
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Compact(result={
+      compacted_messages: [@testkit.tk_user_msg("single-summary")],
       mode: NewThread,
     }),
   ])
-  let store = RecordingSessionPort()
+  let store = @testkit.RecordingSessionPort()
   store.seed("single-parent", {
-    messages: [tk_user_msg("old")],
+    messages: [@testkit.tk_user_msg("old")],
     metadata: Map::from_array([]),
   })
-  let observer = RecordingObserver()
+  let observer = @testkit.RecordingObserver()
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", sessions=[store], observers=[observer]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", sessions=[store], observers=[observer]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
   let outcome = agent.compact_session("single-parent")
   let child = outcome.final_session_id
@@ -983,27 +1019,29 @@ async test "newthread/single_store_single_write_and_redirect" {
 
 ///|
 async test "newthread/failed_output_gate_blocks_then_recovers_before_body" {
-  let model = ScriptedModel([
-    Compact(result={
-      compacted_messages: [tk_user_msg("pending-summary")],
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Compact(result={
+      compacted_messages: [@testkit.tk_user_msg("pending-summary")],
       mode: NewThread,
     }),
-    Respond(tk_stop_response("new request")),
+    @testkit.ScriptedModelStep::Respond(
+      @testkit.tk_stop_response("new request"),
+    ),
   ])
-  let store = RecordingSessionPort()
+  let store = @testkit.RecordingSessionPort()
   store.seed("gate-parent", {
-    messages: [tk_user_msg("old")],
+    messages: [@testkit.tk_user_msg("old")],
     metadata: Map::from_array([]),
   })
   let child_sid = "gate-parent_compact_agent_compact_session_1"
   store.fail_save(child_sid)
-  let observer = RecordingObserver()
+  let observer = @testkit.RecordingObserver()
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", sessions=[store], observers=[observer]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", sessions=[store], observers=[observer]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
   let first : Result[@types.CompactOutcome, @error.AgentError] = Ok(
     agent.compact_session("gate-parent"),
@@ -1023,7 +1061,7 @@ async test "newthread/failed_output_gate_blocks_then_recovers_before_body" {
   // The pending output is not recovered yet: the gate must fail before any
   // new model request is dispatched.
   let blocked : Result[@types.TurnResult, @error.AgentError] = Ok(
-    agent.run_turn(tk_user_msg("next"), "gate-parent"),
+    agent.run_turn(@testkit.tk_user_msg("next"), "gate-parent"),
   ) catch {
     error => Err(error)
   }
@@ -1041,7 +1079,7 @@ async test "newthread/failed_output_gate_blocks_then_recovers_before_body" {
   // Healing the store lets the next operation recover the old output first,
   // then execute the new request.
   store.heal_save(child_sid)
-  let next = agent.run_turn(tk_user_msg("next"), "gate-parent")
+  let next = agent.run_turn(@testkit.tk_user_msg("next"), "gate-parent")
   assert_eq(next.final_session_id, "gate-parent")
   assert_eq(model.call_count(), 1)
   assert_eq(model.compact_call_count(), 1)
@@ -1055,36 +1093,36 @@ async test "newthread/failed_output_gate_blocks_then_recovers_before_body" {
   assert_eq(redirects[0].1, child_sid)
   let child = store.store[child_sid]
   assert_eq(child.messages.length(), 1)
-  assert_true(child.messages[0] == tk_user_msg("pending-summary"))
+  assert_true(child.messages[0] == @testkit.tk_user_msg("pending-summary"))
   assert_eq(agent.runtime.progress.cursors.get(child_sid), Some(1))
 }
 
 ///|
 async test "newthread/child_fact_failure_blocks_all_output" {
-  let model = ScriptedModel([
-    Compact(result={
-      compacted_messages: [tk_user_msg("must-not-save")],
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Compact(result={
+      compacted_messages: [@testkit.tk_user_msg("must-not-save")],
       mode: NewThread,
     }),
   ])
-  let store = RecordingSessionPort()
+  let store = @testkit.RecordingSessionPort()
   store.seed("fact-parent", {
-    messages: [tk_user_msg("old")],
+    messages: [@testkit.tk_user_msg("old")],
     metadata: Map::from_array([]),
   })
-  let observer = RecordingObserver()
+  let observer = @testkit.RecordingObserver()
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", sessions=[store], observers=[observer]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", sessions=[store], observers=[observer]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
   let child_sid = "fact-parent_compact_agent_compact_session_1"
   ignore(
     agent.runtime.core_facts.hydrate(
       child_sid,
-      [tk_user_msg("pre-existing")],
+      [@testkit.tk_user_msg("pre-existing")],
       Map::from_array([]),
     ),
   )
@@ -1123,16 +1161,18 @@ impl @port.Observer for ScopedRedirectObserver with fn on_event(
 
 ///|
 async test "newthread/recovery_preserves_parent_and_original_scope" {
-  let model = ScriptedModel([
-    Compact(result={
-      compacted_messages: [tk_user_msg("scope-summary")],
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Compact(result={
+      compacted_messages: [@testkit.tk_user_msg("scope-summary")],
       mode: NewThread,
     }),
-    Respond(tk_stop_response("other request")),
+    @testkit.ScriptedModelStep::Respond(
+      @testkit.tk_stop_response("other request"),
+    ),
   ])
-  let store = RecordingSessionPort()
+  let store = @testkit.RecordingSessionPort()
   store.seed("scope-parent", {
-    messages: [tk_user_msg("parent-old")],
+    messages: [@testkit.tk_user_msg("parent-old")],
     metadata: Map::from_array([("kept", Json::string("parent-meta"))]),
   })
   let child_sid = "scope-parent_compact_agent_compact_session_1"
@@ -1140,10 +1180,10 @@ async test "newthread/recovery_preserves_parent_and_original_scope" {
   let observer = ScopedRedirectObserver::{ redirects: [], }
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", sessions=[store], observers=[observer]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", sessions=[store], observers=[observer]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
   let first : Result[@types.CompactOutcome, @error.AgentError] = Ok(
     agent.compact_session("scope-parent"),
@@ -1165,7 +1205,7 @@ async test "newthread/recovery_preserves_parent_and_original_scope" {
   // Recover while executing a different request/session. The parent is not
   // part of the recovery write and must stay byte-for-byte unchanged.
   store.heal_save(child_sid)
-  let next = agent.run_turn(tk_user_msg("other"), "scope-other")
+  let next = agent.run_turn(@testkit.tk_user_msg("other"), "scope-other")
   assert_eq(next.final_session_id, "scope-other")
   assert_eq(model.call_count(), 1)
   assert_eq(model.compact_call_count(), 1)
@@ -1194,7 +1234,7 @@ async test "newthread/recovery_preserves_parent_and_original_scope" {
     e => fail("expected the recovered child: \{e}")
   }
   assert_eq(child.messages.length(), 1)
-  assert_true(child.messages[0] == tk_user_msg("scope-summary"))
+  assert_true(child.messages[0] == @testkit.tk_user_msg("scope-summary"))
   assert_false(child.metadata.contains("kept"))
   assert_eq(
     child.metadata.get(@types.PARENT_THREAD_ID_KEY),
@@ -1208,7 +1248,7 @@ async test "newthread/recovery_preserves_parent_and_original_scope" {
 /// snapshot exist; releasing the gate after cancellation lets the next
 /// operation prove it recovers the same child and body.
 priv struct CancelGateStore {
-  inner : RecordingSessionPort
+  inner : @testkit.RecordingSessionPort
   child_sid : String
   mut armed : Bool
   mut entered : Bool
@@ -1246,32 +1286,34 @@ impl @port.SessionPort for CancelGateStore with fn checkpoint(
 
 ///|
 async test "newthread/cancel_after_core_fact_keeps_pending_for_recovery" {
-  let model = ScriptedModel([
-    Compact(result={
-      compacted_messages: [tk_user_msg("cancel-summary")],
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Compact(result={
+      compacted_messages: [@testkit.tk_user_msg("cancel-summary")],
       mode: NewThread,
     }),
-    Respond(tk_stop_response("after cancel")),
+    @testkit.ScriptedModelStep::Respond(
+      @testkit.tk_stop_response("after cancel"),
+    ),
   ])
   let child_sid = "cancel-parent_compact_agent_compact_session_1"
   let store = CancelGateStore::{
-    inner: RecordingSessionPort(),
+    inner: @testkit.RecordingSessionPort(),
     child_sid,
     armed: true,
     entered: false,
     gate: @async.CondVar::Cond(),
   }
   store.inner.seed("cancel-parent", {
-    messages: [tk_user_msg("old")],
+    messages: [@testkit.tk_user_msg("old")],
     metadata: Map::from_array([]),
   })
-  let observer = RecordingObserver()
+  let observer = @testkit.RecordingObserver()
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", sessions=[store], observers=[observer]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", sessions=[store], observers=[observer]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
   @async.with_task_group(async fn(group) {
     let running = group.spawn(() => {
@@ -1308,7 +1350,7 @@ async test "newthread/cancel_after_core_fact_keeps_pending_for_recovery" {
   // Release the gate without changing the snapshot; the next operation
   // recovers the same child and body, then executes its own request.
   store.gate.broadcast()
-  let next = agent.run_turn(tk_user_msg("next"), "cancel-parent")
+  let next = agent.run_turn(@testkit.tk_user_msg("next"), "cancel-parent")
   assert_eq(next.final_session_id, "cancel-parent")
   assert_eq(model.call_count(), 1)
   assert_eq(model.compact_call_count(), 1)
@@ -1316,7 +1358,7 @@ async test "newthread/cancel_after_core_fact_keeps_pending_for_recovery" {
     e => fail("expected cancel recovery to persist the child: \{e}")
   }
   assert_eq(child.messages.length(), 1)
-  assert_true(child.messages[0] == tk_user_msg("cancel-summary"))
+  assert_true(child.messages[0] == @testkit.tk_user_msg("cancel-summary"))
   assert_eq(
     child.metadata.get(@types.PARENT_THREAD_ID_KEY),
     Some(Json::string("cancel-parent")),

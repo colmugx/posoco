@@ -17,7 +17,7 @@ fn UiAskingTool::UiAskingTool() -> UiAskingTool {
 impl @port.ToolProvider for UiAskingTool with fn list_tools(
   _self : UiAskingTool,
 ) -> Array[@kernel.ToolDef] {
-  [tk_tool_def("ask_ui", "asks the composed ui for a confirm")]
+  [@testkit.tk_tool_def("ask_ui", "asks the composed ui for a confirm")]
 }
 
 ///|
@@ -88,46 +88,50 @@ fn user_request_event_labels(events : Array[@types.TurnEvent]) -> Array[String] 
 ///|
 fn build_uireq_agent(
   tool : UiAskingTool,
-  observer : RecordingObserver,
+  observer : @testkit.RecordingObserver,
   ui~ : Array[&@port.UiPort] = [],
   requires~ : Array[@port.Capability] = [],
 ) -> Agent raise @error.CompositionError {
   Agent(
     exts=[
-      tk_ext(
+      @testkit.tk_ext(
         id="model",
         model=Some(
-          ScriptedModel([
-            Respond(tk_tool_call_response("ask_ui", "call_1", Json::null())),
-            Respond(tk_stop_response("done")),
+          @testkit.ScriptedModel([
+            @testkit.ScriptedModelStep::Respond(
+              @testkit.tk_tool_call_response("ask_ui", "call_1", Json::null()),
+            ),
+            @testkit.ScriptedModelStep::Respond(
+              @testkit.tk_stop_response("done"),
+            ),
           ]),
         ),
       ),
-      tk_ext(
+      @testkit.tk_ext(
         id="uiask",
         tools=[tool],
         lifecycle=[tool],
         requires~,
         ui~,
-        sessions=[RecordingSessionPort()],
+        sessions=[@testkit.RecordingSessionPort()],
         observers=[observer],
       ),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
 }
 
 ///|
 async test "composed ui request emits started/finished around the answer" {
   let tool = UiAskingTool::UiAskingTool()
-  let observer = RecordingObserver()
+  let observer = @testkit.RecordingObserver()
   let agent = build_uireq_agent(
     tool,
     observer,
-    ui=[RecordingUiPort(responses=[@port.UiResponse::Yes])],
+    ui=[@testkit.RecordingUiPort(responses=[@port.UiResponse::Yes])],
     requires=[@port.Capability::Ui],
   )
-  let result = agent.run_turn(tk_user_msg("hi"), "session_uireq")
+  let result = agent.run_turn(@testkit.tk_user_msg("hi"), "session_uireq")
   assert_eq(result.final_session_id, "session_uireq")
   inspect(
     user_request_event_labels(observer.events()).join(" -> "),
@@ -138,14 +142,17 @@ async test "composed ui request emits started/finished around the answer" {
 ///|
 async test "all-unsupported contributors still close the request as unsupported" {
   let tool = UiAskingTool::UiAskingTool()
-  let observer = RecordingObserver()
+  let observer = @testkit.RecordingObserver()
   let agent = build_uireq_agent(
     tool,
     observer,
-    ui=[RecordingUiPort::new_unsupported()],
+    ui=[@testkit.RecordingUiPort::new_unsupported()],
     requires=[@port.Capability::Ui],
   )
-  let _ = agent.run_turn(tk_user_msg("hi"), "session_uireq_unsupported")
+  let _ = agent.run_turn(
+    @testkit.tk_user_msg("hi"),
+    "session_uireq_unsupported",
+  )
   inspect(
     user_request_event_labels(observer.events()).join(" -> "),
     content="started(confirm, allow?) -> finished(confirm, unsupported)",
@@ -155,11 +162,11 @@ async test "all-unsupported contributors still close the request as unsupported"
 ///|
 async test "ui-less composition emits no user request events" {
   let tool = UiAskingTool::UiAskingTool()
-  let observer = RecordingObserver()
+  let observer = @testkit.RecordingObserver()
   // No `ui` contributors: the aggregated port is the unwrapped NoopUiPort,
   // so the attempted request produces no events by design (a UI-less agent
   // never waits for a user).
   let agent = build_uireq_agent(tool, observer)
-  let _ = agent.run_turn(tk_user_msg("hi"), "session_uireq_noui")
+  let _ = agent.run_turn(@testkit.tk_user_msg("hi"), "session_uireq_noui")
   inspect(user_request_event_labels(observer.events()).join(" -> "), content="")
 }

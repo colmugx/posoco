@@ -5,11 +5,11 @@ using @support {compact_tools_seed}
 /// Records compact inputs independently of chat, including the durable
 /// window at entry so failures can be checked for accidental rewrites.
 struct CompactToolsModel {
-  inner : ScriptedModel
+  inner : @testkit.ScriptedModel
   seen_tools : Array[Array[@kernel.ToolDef]]
   seen_triggers : Array[@kernel.CompactTrigger]
   committed_at_compact : Array[Array[@kernel.Message]]
-  store : RecordingSessionPort
+  store : @testkit.RecordingSessionPort
   fail_compact : Bool
   seen_messages : Array[Array[@kernel.Message]]
 }
@@ -35,7 +35,7 @@ impl @port.ModelPort for CompactToolsModel with fn compact(
   options : @types.ChatOptions,
   trigger : @kernel.CompactTrigger,
 ) -> @kernel.CompactResult raise @error.ModelError {
-  self.seen_tools.push(tools.map(testkit_snapshot_tool_def))
+  self.seen_tools.push(tools.map(@testkit.snapshot_tool_def))
   self.seen_triggers.push(trigger)
   self.committed_at_compact.push(
     @message_snapshot.snapshot_messages(
@@ -59,12 +59,12 @@ impl @port.ModelPort for CompactToolsModel with fn provider_config(_self) -> @po
 
 ///|
 fn compact_tools_model(
-  store : RecordingSessionPort,
+  store : @testkit.RecordingSessionPort,
   fail_compact : Bool,
-  chats : Array[ScriptedModelStep],
+  chats : Array[@testkit.ScriptedModelStep],
 ) -> CompactToolsModel {
   {
-    inner: ScriptedModel(chats),
+    inner: @testkit.ScriptedModel(chats),
     seen_tools: [],
     seen_triggers: [],
     committed_at_compact: [],
@@ -94,32 +94,42 @@ fn compact_tools_assert(
 ///|
 async fn compact_tools_idle(fail_compact : Bool, refresh : Bool) -> Unit {
   let id = "tools-idle"
-  let store = RecordingSessionPort()
+  let store = @testkit.RecordingSessionPort()
   compact_tools_seed(store, id)
   let model = compact_tools_model(store, fail_compact, [
-    Respond(tk_stop_response("old chat")),
-    Respond(tk_stop_response("refreshed chat")),
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("old chat")),
+    @testkit.ScriptedModelStep::Respond(
+      @testkit.tk_stop_response("refreshed chat"),
+    ),
   ])
-  let original = tk_tool_def("original", "previous chat tools")
-  let current = tk_tool_def("current", "current snapshot tools")
-  let pending = tk_tool_def("pending", "adopted at compact admission")
+  let original = @testkit.tk_tool_def("original", "previous chat tools")
+  let current = @testkit.tk_tool_def("current", "current snapshot tools")
+  let pending = @testkit.tk_tool_def("pending", "adopted at compact admission")
   let source = ToolPublisher(
-    RecordingToolProvider(
+    @testkit.RecordingToolProvider(
       [original],
-      Map([("echo", OutcomeOk(tk_ok_result("echo")))]),
+      Map([
+        (
+          "echo",
+          @testkit.ScriptedToolOutcome::OutcomeOk(@testkit.tk_ok_result("echo")),
+        ),
+      ]),
     ),
   )
   let agent = Agent::with_runtime(
-    exts=[tk_ext(id="model", model=Some(model), sessions=[store]), source],
-    config=tk_config(),
+    exts=[
+      @testkit.tk_ext(id="model", model=Some(model), sessions=[store]),
+      source,
+    ],
+    config=agent_config(max_tool_rounds=Some(10)),
     runtime=@runtime.PortRuntime(model~),
   )
   if refresh {
-    ignore(agent.run_turn(tk_user_msg("before refresh"), id))
-    source.publish(RecordingToolProvider([current], Map([])))
+    ignore(agent.run_turn(@testkit.tk_user_msg("before refresh"), id))
+    source.publish(@testkit.RecordingToolProvider([current], Map([])))
     // Published changes are adopted at the next operation boundary.
-    ignore(agent.run_turn(tk_user_msg("adopt refresh"), id))
-    source.publish(RecordingToolProvider([pending], Map([])))
+    ignore(agent.run_turn(@testkit.tk_user_msg("adopt refresh"), id))
+    source.publish(@testkit.RecordingToolProvider([pending], Map([])))
   }
   let before = @message_snapshot.snapshot_messages(store.store[id].messages)
   let result : Result[@types.CompactOutcome, @error.AgentError] = Ok(
@@ -230,17 +240,24 @@ impl @runtime.Runtime for CompactToolsRuntime with fn compact(
 ///|
 async fn compact_tools_midturn(fail_compact : Bool) -> Unit {
   let id = "tools-midturn"
-  let store = RecordingSessionPort()
+  let store = @testkit.RecordingSessionPort()
   compact_tools_seed(store, id)
   let model = compact_tools_model(store, fail_compact, [
-    Respond(tk_tool_call_response("echo", "call_1", Json::null())),
-    Respond(tk_stop_response("done")),
+    @testkit.ScriptedModelStep::Respond(
+      @testkit.tk_tool_call_response("echo", "call_1", Json::null()),
+    ),
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
   ])
-  let original = tk_tool_def("echo", "active snapshot tools")
+  let original = @testkit.tk_tool_def("echo", "active snapshot tools")
   let source = ToolPublisher(
-    RecordingToolProvider(
+    @testkit.RecordingToolProvider(
       [original],
-      Map([("echo", OutcomeOk(tk_ok_result("echo")))]),
+      Map([
+        (
+          "echo",
+          @testkit.ScriptedToolOutcome::OutcomeOk(@testkit.tk_ok_result("echo")),
+        ),
+      ]),
     ),
   )
   let runtime = CompactToolsRuntime::{
@@ -249,8 +266,11 @@ async fn compact_tools_midturn(fail_compact : Bool) -> Unit {
     release: false,
   }
   let agent = Agent::with_runtime(
-    exts=[tk_ext(id="model", model=Some(model), sessions=[store]), source],
-    config=tk_config(),
+    exts=[
+      @testkit.tk_ext(id="model", model=Some(model), sessions=[store]),
+      source,
+    ],
+    config=agent_config(max_tool_rounds=Some(10)),
     runtime~,
   )
   let outcome : Ref[Result[@types.TurnResult, @error.AgentError]] = Ref(
@@ -258,7 +278,7 @@ async fn compact_tools_midturn(fail_compact : Bool) -> Unit {
   )
   @async.with_task_group(async fn(group) {
     let task = group.spawn(async fn() {
-      outcome.val = Ok(agent.run_turn(tk_user_msg("hi"), id)) catch {
+      outcome.val = Ok(agent.run_turn(@testkit.tk_user_msg("hi"), id)) catch {
         e => Err(e)
       }
     })
@@ -266,8 +286,8 @@ async fn compact_tools_midturn(fail_compact : Bool) -> Unit {
       @async.pause()
     }
     source.publish(
-      RecordingToolProvider(
-        [tk_tool_def("next", "not in the active snapshot")],
+      @testkit.RecordingToolProvider(
+        [@testkit.tk_tool_def("next", "not in the active snapshot")],
         Map([]),
       ),
     )
@@ -313,11 +333,11 @@ async test "compact_tools/mid-turn manual failure preserves committed history" {
 ///|
 async fn compact_tools_auto(fail_compact : Bool, pre_request : Bool) -> Unit {
   let id = "tools-auto"
-  let store = RecordingSessionPort()
+  let store = @testkit.RecordingSessionPort()
   compact_tools_seed(store, id)
   if pre_request {
     store.seed(id, {
-      messages: [tk_user_msg("committed history")],
+      messages: [@testkit.tk_user_msg("committed history")],
       metadata: policy_context_metadata(
         session_id=id,
         measured=95,
@@ -330,37 +350,45 @@ async fn compact_tools_auto(fail_compact : Bool, pre_request : Bool) -> Unit {
     store,
     fail_compact,
     if pre_request {
-      [Respond(tk_stop_response("done"))]
+      [@testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done"))]
     } else {
       [
-        Respond(scope_test_tool_call_with_usage(95)),
-        Respond(tk_stop_response("done")),
+        @testkit.ScriptedModelStep::Respond(scope_test_tool_call_with_usage(95)),
+        @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
       ]
     },
   )
-  let original = tk_tool_def("echo", "auto snapshot tools")
+  let original = @testkit.tk_tool_def("echo", "auto snapshot tools")
   let source = ToolPublisher(
-    RecordingToolProvider(
+    @testkit.RecordingToolProvider(
       [original],
-      Map([("echo", OutcomeOk(tk_ok_result("echo")))]),
+      Map([
+        (
+          "echo",
+          @testkit.ScriptedToolOutcome::OutcomeOk(@testkit.tk_ok_result("echo")),
+        ),
+      ]),
     ),
   )
   let runtime = FakeRuntime(@runtime.PortRuntime(model~))
   runtime.on_first_execute = Some(() => {
     source.publish(
-      RecordingToolProvider(
-        [tk_tool_def("next", "not in active snapshot")],
+      @testkit.RecordingToolProvider(
+        [@testkit.tk_tool_def("next", "not in active snapshot")],
         Map([]),
       ),
     )
   })
   let agent = Agent::with_runtime(
-    exts=[tk_ext(id="model", model=Some(model), sessions=[store]), source],
-    config=tk_config(),
+    exts=[
+      @testkit.tk_ext(id="model", model=Some(model), sessions=[store]),
+      source,
+    ],
+    config=agent_config(max_tool_rounds=Some(10)),
     runtime~,
   )
   let result : Result[@types.TurnResult, @error.AgentError] = Ok(
-    agent.run_turn(tk_user_msg("hi"), id),
+    agent.run_turn(@testkit.tk_user_msg("hi"), id),
   ) catch {
     e => Err(e)
   }
@@ -376,7 +404,7 @@ async fn compact_tools_auto(fail_compact : Bool, pre_request : Bool) -> Unit {
     )
   } else {
     assert_true(result is Ok(_))
-    assert_true(store.store[id].messages[0] == tk_user_msg("summary"))
+    assert_true(store.store[id].messages[0] == @testkit.tk_user_msg("summary"))
   }
   compact_tools_assert(model, [original], Auto)
   if pre_request {
@@ -406,21 +434,23 @@ async test "compact_tools/auto mid-turn failure preserves committed history" {
 
 ///|
 async test "compact_tools/empty snapshot is explicit and does not inherit another Agent chat" {
-  let model = ScriptedModel([
-    Respond(tk_stop_response("done")),
-    Compact(result=policy_replace_result()),
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
+    @testkit.ScriptedModelStep::Compact(result=policy_replace_result()),
   ])
   let chat_agent = Agent(
-    exts=[tk_ext(id="model", model=Some(model), tools=[policy_tools()])],
-    config=tk_config(),
+    exts=[
+      @testkit.tk_ext(id="model", model=Some(model), tools=[policy_tools()]),
+    ],
+    config=agent_config(max_tool_rounds=Some(10)),
   )
-  ignore(chat_agent.run_turn(tk_user_msg("hi"), "tools-chat"))
+  ignore(chat_agent.run_turn(@testkit.tk_user_msg("hi"), "tools-chat"))
   assert_eq(model.received_tools[0].length(), 1)
-  let store = RecordingSessionPort()
+  let store = @testkit.RecordingSessionPort()
   compact_tools_seed(store, "tools-empty")
   let compact_agent = Agent(
-    exts=[tk_ext(id="model", model=Some(model), sessions=[store])],
-    config=tk_config(),
+    exts=[@testkit.tk_ext(id="model", model=Some(model), sessions=[store])],
+    config=agent_config(max_tool_rounds=Some(10)),
   )
   ignore(compact_agent.compact_session("tools-empty"))
   assert_eq(model.received_compact_tools.length(), 1)
@@ -430,25 +460,29 @@ async test "compact_tools/empty snapshot is explicit and does not inherit anothe
 
 ///|
 async test "compact_tools/default Agent idle manual forwards composed definitions before chat" {
-  let model = ScriptedModel([Compact(result=policy_replace_result())])
-  let store = RecordingSessionPort()
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Compact(result=policy_replace_result()),
+  ])
+  let store = @testkit.RecordingSessionPort()
   compact_tools_seed(store, "tools-composed")
-  let tools = RecordingToolProvider(
+  let tools = @testkit.RecordingToolProvider(
     [
       {
-        ..tk_tool_def("echo", "echo schema"),
+        ..@testkit.tk_tool_def("echo", "echo schema"),
         provenance: Some("echo-provider"),
         policy: Sequential,
       },
-      tk_tool_def("lookup", "lookup schema"),
+      @testkit.tk_tool_def("lookup", "lookup schema"),
     ],
     Map::from_array([]),
   )
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model), tools=[tools], sessions=[store]),
+      @testkit.tk_ext(id="model", model=Some(model), tools=[tools], sessions=[
+        store,
+      ]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
   ignore(agent.compact_session("tools-composed"))
   assert_eq(model.call_count(), 0)

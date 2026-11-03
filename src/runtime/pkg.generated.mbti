@@ -6,6 +6,7 @@ import {
   "colmugx/posoco/port",
   "colmugx/posoco/types",
   "moonbitlang/core/debug",
+  "moonbitlang/core/json",
 }
 
 // Values
@@ -19,18 +20,19 @@ pub struct EffectContext {
   owner : @kernel.OwnerId
   call_id : @kernel.CallId
   tool_name : @kernel.ToolName
-  arguments : Json
+  arguments : @json.Json
   // private fields
 }
-pub fn EffectContext::EffectContext(run_id~ : @kernel.RunId, effect_id~ : @kernel.EffectId, owner~ : @kernel.OwnerId, call_id~ : @kernel.CallId, tool_name~ : @kernel.ToolName, arguments~ : Json, bound_tool~ : &@port.ToolProvider, tool_context~ : ((&@port.ToolCancellable) -> Unit) -> @port.ToolCallContext) -> Self
+pub fn EffectContext::EffectContext(run_id~ : @kernel.RunId, effect_id~ : @kernel.EffectId, owner~ : @kernel.OwnerId, call_id~ : @kernel.CallId, tool_name~ : @kernel.ToolName, arguments~ : @json.Json, bound_tool~ : &@port.ToolProvider, tool_context~ : ((&@port.ToolCancellable) -> Unit) -> @port.ToolCallContext) -> Self
 
+#derive(Eq, @debug.Debug)
 pub(all) enum EnqueueOutcome {
   Accepted(command_id~ : String)
   RejectedStale(reason~ : String)
   RejectedQueueFull(depth~ : Int32)
   AbortAlreadyRequested
   RejectedQueueFailure(reason~ : String)
-} derive(Eq, @debug.Debug)
+}
 pub fn EnqueueOutcome::equal(Self, Self) -> Bool
 pub fn EnqueueOutcome::not_equal(Self, Self) -> Bool
 pub fn EnqueueOutcome::output(Self, &Logger) -> Unit
@@ -42,9 +44,9 @@ pub struct PortRuntime {
   // private fields
 }
 pub fn PortRuntime::PortRuntime(model~ : &@port.ModelPort) -> Self
-pub async fn PortRuntime::call_model(Self, @kernel.InvocationScope, ArrayView[@kernel.Message], Array[@kernel.ToolDef], Json, ((@types.StreamChunk) -> Unit)?) -> Result[@kernel.ModelCallResult, @kernel.ModelFailure]
+pub async fn PortRuntime::call_model(Self, @kernel.InvocationScope, ArrayView[@kernel.Message], Array[@kernel.ToolDef], @json.Json, ((@types.StreamChunk) -> Unit)?) -> Result[@kernel.ModelCallResult, @kernel.ModelFailure]
 pub async fn PortRuntime::cancel_effects(Self, run_id~ : @kernel.RunId, Array[@kernel.EffectId], @kernel.CancelReason) -> Array[(@kernel.EffectId, @kernel.CancelDisposition)]
-pub async fn PortRuntime::compact(Self, @kernel.InvocationScope, ArrayView[@kernel.Message], Array[@kernel.ToolDef], Json, @kernel.CompactTrigger) -> Result[@kernel.CompactResult, @kernel.ModelFailure]
+pub async fn PortRuntime::compact(Self, @kernel.InvocationScope, ArrayView[@kernel.Message], Array[@kernel.ToolDef], @json.Json, @kernel.CompactTrigger) -> Result[@kernel.CompactResult, @kernel.ModelFailure]
 pub async fn PortRuntime::execute_tool(Self, EffectContext) -> @kernel.ToolOutcome
 pub impl Runtime for PortRuntime
 
@@ -52,8 +54,8 @@ pub impl Runtime for PortRuntime
 
 // Traits
 pub(open) trait Runtime {
-  async fn call_model(Self, @kernel.InvocationScope, ArrayView[@kernel.Message], Array[@kernel.ToolDef], Json, ((@types.StreamChunk) -> Unit)?) -> Result[@kernel.ModelCallResult, @kernel.ModelFailure]
+  async fn call_model(Self, @kernel.InvocationScope, ArrayView[@kernel.Message], Array[@kernel.ToolDef], @json.Json, ((@types.StreamChunk) -> Unit)?) -> Result[@kernel.ModelCallResult, @kernel.ModelFailure]
   async fn execute_tool(Self, EffectContext) -> @kernel.ToolOutcome
   async fn cancel_effects(Self, run_id~ : @kernel.RunId, Array[@kernel.EffectId], @kernel.CancelReason) -> Array[(@kernel.EffectId, @kernel.CancelDisposition)]
-  async fn compact(Self, @kernel.InvocationScope, ArrayView[@kernel.Message], Array[@kernel.ToolDef], Json, @kernel.CompactTrigger) -> Result[@kernel.CompactResult, @kernel.ModelFailure]
+  async fn compact(Self, @kernel.InvocationScope, ArrayView[@kernel.Message], Array[@kernel.ToolDef], @json.Json, @kernel.CompactTrigger) -> Result[@kernel.CompactResult, @kernel.ModelFailure]
 }

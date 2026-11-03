@@ -112,22 +112,24 @@ async test "p2 concurrent run_turn rejects before side effects and preserves fir
     @types.TextDelta(token="p2-1"),
     @types.TextDelta(token="p2-2"),
   ]
-  let model = YieldingStreamModel(chunks, tk_stop_response("done"))
-  let store = RecordingSessionPort()
-  let observer = RecordingObserver()
+  let model = YieldingStreamModel(chunks, @testkit.tk_stop_response("done"))
+  let store = @testkit.RecordingSessionPort()
+  let observer = @testkit.RecordingObserver()
   let entered : @aqueue.Queue[Int32] = Queue(kind=Unbounded)
   let release : @aqueue.Queue[Int32] = Queue(kind=Unbounded)
   let gate = TurnLoopGate::{ entered, release, }
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", hooks=[gate], sessions=[store], observers=[observer]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", hooks=[gate], sessions=[store], observers=[
+        observer,
+      ]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
   @async.with_task_group(group => {
     let first = group.spawn(async fn() {
-      agent.run_turn(tk_user_msg("first"), "p2-session")
+      agent.run_turn(@testkit.tk_user_msg("first"), "p2-session")
     })
     // before_model runs after Puppet::prompt acquired its lease, so the
     // second invocation exercises the Agent guard rather than a race in the
@@ -137,7 +139,9 @@ async test "p2 concurrent run_turn rejects before side effects and preserves fir
 
     // The first task is suspended at the gate, so this direct call is a
     // concurrent invocation while retaining the typed AgentError result.
-    let second_result = Ok(agent.run_turn(tk_user_msg("second"), "p2-session")) catch {
+    let second_result = Ok(
+      agent.run_turn(@testkit.tk_user_msg("second"), "p2-session"),
+    ) catch {
       error => Err(error)
     }
     match second_result {
@@ -165,7 +169,7 @@ async test "p2 concurrent run_turn rejects before side effects and preserves fir
     let mut loads = 0
     for operation in store.ops() {
       match operation {
-        OpLoad(..) => loads = loads + 1
+        @testkit.SessionOp::OpLoad(..) => loads = loads + 1
         _ => ()
       }
     }
@@ -215,23 +219,27 @@ async test "p2 concurrent run_turn rejects before side effects and preserves fir
 /// withheld until the first task has been cancelled; the second turn uses the
 /// same Agent and gate to prove no stale `turn_active` bit remains.
 async test "p2 cancelled turn releases Agent guard for the next turn" {
-  let model = ScriptedModel([Respond(tk_stop_response("after-cancel"))])
-  let store = RecordingSessionPort()
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(
+      @testkit.tk_stop_response("after-cancel"),
+    ),
+  ])
+  let store = @testkit.RecordingSessionPort()
   let entered : @aqueue.Queue[Int32] = Queue(kind=Unbounded)
   let release : @aqueue.Queue[Int32] = Queue(kind=Unbounded)
   let gate = TurnLoopGate::{ entered, release, }
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", hooks=[gate], sessions=[store]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", hooks=[gate], sessions=[store]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
   @async.with_task_group(group => {
     let first = group.spawn(
       async fn() {
         let result : Result[@types.TurnResult, Error] = Ok(
-          agent.run_turn(tk_user_msg("cancel-me"), "p2-cancel"),
+          agent.run_turn(@testkit.tk_user_msg("cancel-me"), "p2-cancel"),
         ) catch {
           error => Err(error)
         }
@@ -252,7 +260,7 @@ async test "p2 cancelled turn releases Agent guard for the next turn" {
     // correctly released.
     release.put(1)
     let second_result : Result[@types.TurnResult, @error.AgentError] = Ok(
-      agent.run_turn(tk_user_msg("after-cancel"), "p2-cancel"),
+      agent.run_turn(@testkit.tk_user_msg("after-cancel"), "p2-cancel"),
     ) catch {
       error => Err(error)
     }
@@ -273,17 +281,22 @@ async test "chunk dispatch: streaming turn delivers chunks in order before TurnC
   for i in 0..<10 {
     chunks.push(@types.TextDelta(token="t\{i}"))
   }
-  let model = ScriptedModel([Stream(chunks~, response=tk_stop_response("ok"))])
-  let store = RecordingSessionPort()
-  let observer = RecordingObserver()
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Stream(
+      chunks~,
+      response=@testkit.tk_stop_response("ok"),
+    ),
+  ])
+  let store = @testkit.RecordingSessionPort()
+  let observer = @testkit.RecordingObserver()
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", sessions=[store], observers=[observer]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", sessions=[store], observers=[observer]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
-  let _ = agent.run_turn(tk_user_msg("hello"), "s1")
+  let _ = agent.run_turn(@testkit.tk_user_msg("hello"), "s1")
   let events = without_operation_events(observer.events())
   guard events[0] is TurnStarted else {
     fail("first event must be TurnStarted")
@@ -325,17 +338,22 @@ async test "chunk dispatch: overflow drops oldest and emits StreamChunksDropped"
   for i in 0..<total_chunks {
     chunks.push(@types.TextDelta(token="c\{i}"))
   }
-  let model = ScriptedModel([Stream(chunks~, response=tk_stop_response("ok"))])
-  let store = RecordingSessionPort()
-  let observer = RecordingObserver()
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Stream(
+      chunks~,
+      response=@testkit.tk_stop_response("ok"),
+    ),
+  ])
+  let store = @testkit.RecordingSessionPort()
+  let observer = @testkit.RecordingObserver()
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", sessions=[store], observers=[observer]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", sessions=[store], observers=[observer]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
-  let _ = agent.run_turn(tk_user_msg("hello"), "s1")
+  let _ = agent.run_turn(@testkit.tk_user_msg("hello"), "s1")
   let events = without_operation_events(observer.events())
   // Terminal event is last.
   guard events[events.length() - 1] is TurnCompleted else {
@@ -421,33 +439,38 @@ async test "chunk dispatch: flush drains chunks before TurnFailed" {
   for i in 0..<10 {
     chunks.push(@types.TextDelta(token="f\{i}"))
   }
-  let tool_def = tk_tool_def("noop", "no-op tool")
-  let tool = RecordingToolProvider(
+  let tool_def = @testkit.tk_tool_def("noop", "no-op tool")
+  let tool = @testkit.RecordingToolProvider(
     [tool_def],
-    Map::from_array([("noop", OutcomeOk(tk_ok_result("done")))]),
+    Map::from_array([
+      (
+        "noop",
+        @testkit.ScriptedToolOutcome::OutcomeOk(@testkit.tk_ok_result("done")),
+      ),
+    ]),
   )
-  let model = ScriptedModel([
-    Stream(
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Stream(
       chunks~,
-      response=tk_tool_call_response(
+      response=@testkit.tk_tool_call_response(
         "noop",
         "call_1",
         Json::object(Map::from_array([])),
       ),
     ),
-    Fail(Transport("boom")),
+    @testkit.ScriptedModelStep::Fail(Transport("boom")),
   ])
-  let store = RecordingSessionPort()
-  let observer = RecordingObserver()
+  let store = @testkit.RecordingSessionPort()
+  let observer = @testkit.RecordingObserver()
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="tools", tools=[tool]),
-      tk_ext(id="io", sessions=[store], observers=[observer]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="tools", tools=[tool]),
+      @testkit.tk_ext(id="io", sessions=[store], observers=[observer]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
-  let result = Ok(agent.run_turn(tk_user_msg("hello"), "s1")) catch {
+  let result = Ok(agent.run_turn(@testkit.tk_user_msg("hello"), "s1")) catch {
     e => Err(e)
   }
   // The turn should fail with the model transport error, not a swallowed one.
@@ -480,17 +503,22 @@ async test "chunk dispatch: adjacent identical tokens pass through 1:1 without d
   for token in sent {
     chunks.push(@types.TextDelta(token~))
   }
-  let model = ScriptedModel([Stream(chunks~, response=tk_stop_response("ok"))])
-  let store = RecordingSessionPort()
-  let observer = RecordingObserver()
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Stream(
+      chunks~,
+      response=@testkit.tk_stop_response("ok"),
+    ),
+  ])
+  let store = @testkit.RecordingSessionPort()
+  let observer = @testkit.RecordingObserver()
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", sessions=[store], observers=[observer]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", sessions=[store], observers=[observer]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
-  let _ = agent.run_turn(tk_user_msg("hello"), "s1")
+  let _ = agent.run_turn(@testkit.tk_user_msg("hello"), "s1")
   let chunk_events = observer
     .events()
     .filter(fn(e) { e is StreamChunkReceived(_) })

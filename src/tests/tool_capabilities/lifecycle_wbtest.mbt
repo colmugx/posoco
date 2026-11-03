@@ -67,13 +67,27 @@ impl @port.Lifecycle for ManualPublisher with fn on_compose(
 
 ///|
 async test "tool_lifecycle/publish_ack_reports_active_state_and_retires_the_superseded_version" {
-  let v1 = RecordingToolProvider(
-    [tk_tool_def("dyn_echo", "dynamic echo")],
-    Map::from_array([("dyn_echo", OutcomeOk(tk_ok_result("echo-v1")))]),
+  let v1 = @testkit.RecordingToolProvider(
+    [@testkit.tk_tool_def("dyn_echo", "dynamic echo")],
+    Map::from_array([
+      (
+        "dyn_echo",
+        @testkit.ScriptedToolOutcome::OutcomeOk(
+          @testkit.tk_ok_result("echo-v1"),
+        ),
+      ),
+    ]),
   )
-  let v2 = RecordingToolProvider(
-    [tk_tool_def("dyn_echo", "dynamic echo")],
-    Map::from_array([("dyn_echo", OutcomeOk(tk_ok_result("echo-v2")))]),
+  let v2 = @testkit.RecordingToolProvider(
+    [@testkit.tk_tool_def("dyn_echo", "dynamic echo")],
+    Map::from_array([
+      (
+        "dyn_echo",
+        @testkit.ScriptedToolOutcome::OutcomeOk(
+          @testkit.tk_ok_result("echo-v2"),
+        ),
+      ),
+    ]),
   )
   let publisher = ManualPublisher::new()
   // Each published version carries the cleanup callback for its own resources.
@@ -81,15 +95,19 @@ async test "tool_lifecycle/publish_ack_reports_active_state_and_retires_the_supe
   let v2_probe = RetireProbe::RetireProbe()
   let agent = Agent(
     exts=[
-      tk_ext(
+      @testkit.tk_ext(
         id="model",
-        model=Some(ScriptedModel([Respond(tk_stop_response("ok"))])),
+        model=Some(
+          @testkit.ScriptedModel([
+            @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("ok")),
+          ]),
+        ),
       ),
-      tk_ext(id="contrib", lifecycle=[publisher], requires=[
+      @testkit.tk_ext(id="contrib", lifecycle=[publisher], requires=[
         @port.ToolContribution,
       ]),
     ],
-    config=tk_config(),
+    config=@agent.agent_config(max_tool_rounds=Some(10)),
   )
   let capability = publisher.capability()
   let first = match
@@ -144,22 +162,33 @@ async test "tool_lifecycle/publish_ack_reports_active_state_and_retires_the_supe
 
 ///|
 async test "tool_lifecycle/soft_then_hard_withdraw_establishes_a_new_revocation_fact" {
-  let v1 = RecordingToolProvider(
-    [tk_tool_def("dyn_echo", "dynamic echo")],
-    Map::from_array([("dyn_echo", OutcomeOk(tk_ok_result("echo-v1")))]),
+  let v1 = @testkit.RecordingToolProvider(
+    [@testkit.tk_tool_def("dyn_echo", "dynamic echo")],
+    Map::from_array([
+      (
+        "dyn_echo",
+        @testkit.ScriptedToolOutcome::OutcomeOk(
+          @testkit.tk_ok_result("echo-v1"),
+        ),
+      ),
+    ]),
   )
   let publisher = ManualPublisher::new()
   let agent = Agent(
     exts=[
-      tk_ext(
+      @testkit.tk_ext(
         id="model",
-        model=Some(ScriptedModel([Respond(tk_stop_response("ok"))])),
+        model=Some(
+          @testkit.ScriptedModel([
+            @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("ok")),
+          ]),
+        ),
       ),
-      tk_ext(id="contrib", lifecycle=[publisher], requires=[
+      @testkit.tk_ext(id="contrib", lifecycle=[publisher], requires=[
         @port.ToolContribution,
       ]),
     ],
-    config=tk_config(),
+    config=@agent.agent_config(max_tool_rounds=Some(10)),
   )
   let capability = publisher.capability()
   ignore(capability.replace(provider=v1 as &@port.ToolProvider))
@@ -228,31 +257,40 @@ impl @port.PipelineHook for ConsentWaitHook with fn before_tool(
 
 ///|
 async test "tool_lifecycle/hard_withdraw_during_confirmation_never_starts_the_provider" {
-  let provider = RecordingToolProvider(
-    [tk_tool_def("dyn_echo", "dynamic echo")],
-    Map::from_array([("dyn_echo", OutcomeOk(tk_ok_result("echo-v1")))]),
+  let provider = @testkit.RecordingToolProvider(
+    [@testkit.tk_tool_def("dyn_echo", "dynamic echo")],
+    Map::from_array([
+      (
+        "dyn_echo",
+        @testkit.ScriptedToolOutcome::OutcomeOk(
+          @testkit.tk_ok_result("echo-v1"),
+        ),
+      ),
+    ]),
   )
   let publisher = ManualPublisher::new()
   let hook = ConsentWaitHook::ConsentWaitHook()
-  let model = ScriptedModel([
-    Respond(tk_tool_call_response("dyn_echo", "call_1", Json::null())),
-    Respond(tk_stop_response("done")),
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(
+      @testkit.tk_tool_call_response("dyn_echo", "call_1", Json::null()),
+    ),
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
   ])
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model), hooks=[hook]),
-      tk_ext(id="contrib", lifecycle=[publisher], requires=[
+      @testkit.tk_ext(id="model", model=Some(model), hooks=[hook]),
+      @testkit.tk_ext(id="contrib", lifecycle=[publisher], requires=[
         @port.ToolContribution,
       ]),
     ],
-    config=tk_config(),
+    config=@agent.agent_config(max_tool_rounds=Some(10)),
   )
   let capability = publisher.capability()
   ignore(capability.replace(provider=provider as &@port.ToolProvider))
   @async.with_timeout(5_000, async fn() {
     @async.with_task_group(async fn(group) {
       let turn = group.spawn(() => {
-        agent.run_turn(tk_user_msg("hello"), "consent-wait")
+        agent.run_turn(@testkit.tk_user_msg("hello"), "consent-wait")
       })
       while !hook.waiting.val {
         @async.pause()
@@ -370,26 +408,35 @@ impl @runtime.Runtime for AwaitingRuntime with fn compact(
 
 ///|
 async test "tool_lifecycle/hard_withdraw_while_a_runtime_decorator_awaits_is_refused_at_the_final_gate" {
-  let provider = RecordingToolProvider(
-    [tk_tool_def("dyn_echo", "dynamic echo")],
-    Map::from_array([("dyn_echo", OutcomeOk(tk_ok_result("echo-v1")))]),
+  let provider = @testkit.RecordingToolProvider(
+    [@testkit.tk_tool_def("dyn_echo", "dynamic echo")],
+    Map::from_array([
+      (
+        "dyn_echo",
+        @testkit.ScriptedToolOutcome::OutcomeOk(
+          @testkit.tk_ok_result("echo-v1"),
+        ),
+      ),
+    ]),
   )
   let publisher = ManualPublisher::new()
-  let model = ScriptedModel([
-    Respond(tk_tool_call_response("dyn_echo", "call_1", Json::null())),
-    Respond(tk_stop_response("done")),
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(
+      @testkit.tk_tool_call_response("dyn_echo", "call_1", Json::null()),
+    ),
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
   ])
   let inner = @runtime.PortRuntime(model=model as &@port.ModelPort)
   let runtime = AwaitingRuntime::AwaitingRuntime(inner)
-  let observer = RecordingObserver()
+  let observer = @testkit.RecordingObserver()
   let agent = Agent::with_runtime(
     exts=[
-      tk_ext(id="model", model=Some(model), observers=[observer]),
-      tk_ext(id="contrib", lifecycle=[publisher], requires=[
+      @testkit.tk_ext(id="model", model=Some(model), observers=[observer]),
+      @testkit.tk_ext(id="contrib", lifecycle=[publisher], requires=[
         @port.ToolContribution,
       ]),
     ],
-    config=tk_config(),
+    config=@agent.agent_config(max_tool_rounds=Some(10)),
     runtime=runtime as &@runtime.Runtime,
   )
   let capability = publisher.capability()
@@ -397,7 +444,7 @@ async test "tool_lifecycle/hard_withdraw_while_a_runtime_decorator_awaits_is_ref
   @async.with_timeout(5_000, async fn() {
     @async.with_task_group(async fn(group) {
       let turn = group.spawn(() => {
-        agent.run_turn(tk_user_msg("hello"), "decorator-wait")
+        agent.run_turn(@testkit.tk_user_msg("hello"), "decorator-wait")
       })
       while !runtime.entered.val {
         @async.pause()
@@ -458,7 +505,7 @@ fn CancellableProvider::CancellableProvider() -> CancellableProvider {
 impl @port.ToolProvider for CancellableProvider with fn list_tools(
   _self : CancellableProvider,
 ) -> Array[@kernel.ToolDef] {
-  [tk_tool_def("dyn_echo", "dynamic echo")]
+  [@testkit.tk_tool_def("dyn_echo", "dynamic echo")]
 }
 
 ///|
@@ -473,7 +520,7 @@ impl @port.ToolProvider for CancellableProvider with fn execute(
   while !self.stopped.val {
     self.wake.wait()
   }
-  tk_ok_result("provider stopped itself")
+  @testkit.tk_ok_result("provider stopped itself")
 }
 
 ///|
@@ -498,18 +545,20 @@ async test "tool_lifecycle/hard_withdraw_cancels_the_in_flight_effect_and_keeps_
   let provider = CancellableProvider::CancellableProvider()
   let publisher = ManualPublisher::new()
   let retire = RetireProbe::RetireProbe()
-  let model = ScriptedModel([
-    Respond(tk_tool_call_response("dyn_echo", "call_1", Json::null())),
-    Respond(tk_stop_response("done")),
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(
+      @testkit.tk_tool_call_response("dyn_echo", "call_1", Json::null()),
+    ),
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
   ])
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="contrib", lifecycle=[publisher], requires=[
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="contrib", lifecycle=[publisher], requires=[
         @port.ToolContribution,
       ]),
     ],
-    config=tk_config(),
+    config=@agent.agent_config(max_tool_rounds=Some(10)),
   )
   let capability = publisher.capability()
   ignore(
@@ -521,7 +570,7 @@ async test "tool_lifecycle/hard_withdraw_cancels_the_in_flight_effect_and_keeps_
   @async.with_timeout(8_000, async fn() {
     @async.with_task_group(async fn(group) {
       let turn = group.spawn(() => {
-        agent.run_turn(tk_user_msg("hello"), "in-flight-hard")
+        agent.run_turn(@testkit.tk_user_msg("hello"), "in-flight-hard")
       })
       while !provider.entered.val {
         @async.pause()
@@ -574,7 +623,7 @@ impl @port.Extension for RevokingParent with fn manifest(self : RevokingParent) 
 impl @port.ToolProvider for RevokingParent with fn list_tools(
   _self : RevokingParent,
 ) -> Array[@kernel.ToolDef] {
-  [{ ..tk_tool_def("parent", "call a child"), policy: Exclusive, }]
+  [{ ..@testkit.tk_tool_def("parent", "call a child"), policy: Exclusive, }]
 }
 
 ///|
@@ -591,7 +640,7 @@ impl @port.ToolProvider for RevokingParent with fn execute(
     Err(error) => abort("child hard withdraw rejected: " + error.to_string())
   }
   self.replies.push(_ctx.invoke("child", {}))
-  tk_ok_result("parent done")
+  @testkit.tk_ok_result("parent done")
 }
 
 ///|
@@ -610,25 +659,34 @@ impl @port.Lifecycle for ChildPublisher with fn on_compose(
 
 ///|
 async test "tool_lifecycle/hard_withdraw_refuses_a_child_of_a_captured_version" {
-  let child_provider = RecordingToolProvider(
-    [tk_tool_def("child", "child tool")],
-    Map::from_array([("child", OutcomeOk(tk_ok_result("child ran")))]),
+  let child_provider = @testkit.RecordingToolProvider(
+    [@testkit.tk_tool_def("child", "child tool")],
+    Map::from_array([
+      (
+        "child",
+        @testkit.ScriptedToolOutcome::OutcomeOk(
+          @testkit.tk_ok_result("child ran"),
+        ),
+      ),
+    ]),
   )
   let parent = RevokingParent::{ child_capability: None, replies: [], }
   let child_publisher = ChildPublisher::{ contributions: None, }
-  let model = ScriptedModel([
-    Respond(tk_tool_call_response("parent", "p", Json::null())),
-    Respond(tk_stop_response("done")),
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(
+      @testkit.tk_tool_call_response("parent", "p", Json::null()),
+    ),
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
   ])
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="model", model=Some(model)),
       parent,
-      tk_ext(id="child", lifecycle=[child_publisher], requires=[
+      @testkit.tk_ext(id="child", lifecycle=[child_publisher], requires=[
         @port.ToolContribution,
       ]),
     ],
-    config=tk_config(),
+    config=@agent.agent_config(max_tool_rounds=Some(10)),
   )
   let child_capability = match child_publisher.contributions {
     Some(value) => value
@@ -638,7 +696,7 @@ async test "tool_lifecycle/hard_withdraw_refuses_a_child_of_a_captured_version" 
     child_capability.replace(provider=child_provider as &@port.ToolProvider),
   )
   parent.child_capability = Some(child_capability)
-  let result = agent.run_turn(tk_user_msg("hello"), "child-revoked")
+  let result = agent.run_turn(@testkit.tk_user_msg("hello"), "child-revoked")
   guard parent.replies is [Completed(NotExecuted(reason=Revoked, ..))] else {
     fail("the child of a revoked version must settle Revoked")
   }
@@ -650,34 +708,50 @@ async test "tool_lifecycle/hard_withdraw_refuses_a_child_of_a_captured_version" 
 
 ///|
 async test "tool_lifecycle/hard_withdraw_is_repeatable_and_scoped_to_one_owner" {
-  let a_provider = RecordingToolProvider(
-    [tk_tool_def("a_tool", "owner a")],
-    Map::from_array([("a_tool", OutcomeOk(tk_ok_result("a")))]),
+  let a_provider = @testkit.RecordingToolProvider(
+    [@testkit.tk_tool_def("a_tool", "owner a")],
+    Map::from_array([
+      (
+        "a_tool",
+        @testkit.ScriptedToolOutcome::OutcomeOk(@testkit.tk_ok_result("a")),
+      ),
+    ]),
   )
-  let b_provider = RecordingToolProvider(
-    [tk_tool_def("b_tool", "owner b")],
-    Map::from_array([("b_tool", OutcomeOk(tk_ok_result("b")))]),
+  let b_provider = @testkit.RecordingToolProvider(
+    [@testkit.tk_tool_def("b_tool", "owner b")],
+    Map::from_array([
+      (
+        "b_tool",
+        @testkit.ScriptedToolOutcome::OutcomeOk(@testkit.tk_ok_result("b")),
+      ),
+    ]),
   )
   let a = ManualPublisher::new()
   let b = ManualPublisher::new()
-  let model = ScriptedModel([
-    Respond(tk_tool_call_response("a_tool", "a1", Json::null())),
-    Respond(tk_stop_response("first")),
-    Respond(tk_tool_call_response("a_tool", "a2", Json::null())),
-    Respond(tk_tool_call_response("b_tool", "b1", Json::null())),
-    Respond(tk_stop_response("second")),
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(
+      @testkit.tk_tool_call_response("a_tool", "a1", Json::null()),
+    ),
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("first")),
+    @testkit.ScriptedModelStep::Respond(
+      @testkit.tk_tool_call_response("a_tool", "a2", Json::null()),
+    ),
+    @testkit.ScriptedModelStep::Respond(
+      @testkit.tk_tool_call_response("b_tool", "b1", Json::null()),
+    ),
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("second")),
   ])
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="a", lifecycle=[a], requires=[@port.ToolContribution]),
-      tk_ext(id="b", lifecycle=[b], requires=[@port.ToolContribution]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="a", lifecycle=[a], requires=[@port.ToolContribution]),
+      @testkit.tk_ext(id="b", lifecycle=[b], requires=[@port.ToolContribution]),
     ],
-    config=tk_config(),
+    config=@agent.agent_config(max_tool_rounds=Some(10)),
   )
   ignore(a.capability().replace(provider=a_provider as &@port.ToolProvider))
   ignore(b.capability().replace(provider=b_provider as &@port.ToolProvider))
-  let first = agent.run_turn(tk_user_msg("hello"), "owner-isolation")
+  let first = agent.run_turn(@testkit.tk_user_msg("hello"), "owner-isolation")
   assert_eq(contribution_result_texts(first.tool_results), ["a"])
   let revoked = match
     a.capability().withdraw(mode=@port.ToolWithdrawMode::Hard) {
@@ -692,7 +766,7 @@ async test "tool_lifecycle/hard_withdraw_is_repeatable_and_scoped_to_one_owner" 
   assert_eq(b.capability().state().to_string(), "Active")
   // Same session, next operation: the revoked tool is gone from the directory,
   // the other owner's tool still runs.
-  let second = agent.run_turn(tk_user_msg("again"), "owner-isolation")
+  let second = agent.run_turn(@testkit.tk_user_msg("again"), "owner-isolation")
   guard second.tool_results
     is [NotExecuted(reason=UnknownTool, ..), Success(content="b", ..)] else {
     fail(
@@ -708,15 +782,18 @@ async test "tool_lifecycle/hard_withdraw_is_repeatable_and_scoped_to_one_owner" 
 ///|
 async test "tool_lifecycle/concurrent_publication_does_not_reenter_a_retiring_version" {
   let publisher = ManualPublisher::new()
-  let provider = RecordingToolProvider([tk_tool_def("leaf", "leaf")], Map([]))
+  let provider = @testkit.RecordingToolProvider(
+    [@testkit.tk_tool_def("leaf", "leaf")],
+    Map([]),
+  )
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(ScriptedModel([]))),
-      tk_ext(id="owner", lifecycle=[publisher], requires=[
+      @testkit.tk_ext(id="model", model=Some(@testkit.ScriptedModel([]))),
+      @testkit.tk_ext(id="owner", lifecycle=[publisher], requires=[
         @port.ToolContribution,
       ]),
     ],
-    config=tk_config(),
+    config=@agent.agent_config(max_tool_rounds=Some(10)),
   )
   let calls = Ref(0)
   let released = Ref(false)

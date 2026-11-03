@@ -124,12 +124,12 @@ impl @runtime.Runtime for MidEffectAbortRuntime with fn compact(
 
 ///|
 async test "abort/mid-model-call: structured Cancelled, cancel_effects delivered, prefix saved, agent reusable" {
-  let model = ScriptedModel([
+  let model = @testkit.ScriptedModel([
     // The parked first call never consumes a step; this serves the turn run
     // after the abort.
-    Respond(tk_stop_response("after esc")),
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("after esc")),
   ])
-  let store = RecordingSessionPort()
+  let store = @testkit.RecordingSessionPort()
   store.seed("abort-model", { messages: [], metadata: Map::from_array([]), })
   let port_runtime = @runtime.PortRuntime(model~)
   let probe = MidEffectAbortRuntime(
@@ -137,8 +137,8 @@ async test "abort/mid-model-call: structured Cancelled, cancel_effects delivered
     park_model=true,
   )
   let agent = Agent::with_runtime(
-    exts=[tk_ext(id="model", model=Some(model), sessions=[store])],
-    config=tk_config(),
+    exts=[@testkit.tk_ext(id="model", model=Some(model), sessions=[store])],
+    config=agent_config(max_tool_rounds=Some(10)),
     runtime=probe as &@runtime.Runtime,
   )
   let control = agent.control()
@@ -148,7 +148,7 @@ async test "abort/mid-model-call: structured Cancelled, cancel_effects delivered
   @async.with_task_group(async fn(group) {
     let task = group.spawn(async fn() {
       let r : Result[@types.TurnResult, @error.AgentError] = Ok(
-        agent.run_turn(tk_user_msg("long stream"), "abort-model"),
+        agent.run_turn(@testkit.tk_user_msg("long stream"), "abort-model"),
       ) catch {
         e => Err(e)
       }
@@ -171,9 +171,9 @@ async test "abort/mid-model-call: structured Cancelled, cancel_effects delivered
   // the interrupted turn must survive into the session store.
   let saved = store.store["abort-model"]
   assert_eq(saved.messages.length(), 1)
-  assert_true(saved.messages[0] == tk_user_msg("long stream"))
+  assert_true(saved.messages[0] == @testkit.tk_user_msg("long stream"))
   // Cancellation ends the operation, not the session.
-  let next = agent.run_turn(tk_user_msg("next"), "abort-model")
+  let next = agent.run_turn(@testkit.tk_user_msg("next"), "abort-model")
   guard next.message is AssistantMessage(content=[Text("after esc")], ..) else {
     fail("expected the post-abort turn to complete normally")
   }
@@ -181,21 +181,21 @@ async test "abort/mid-model-call: structured Cancelled, cancel_effects delivered
 
 ///|
 async test "abort/mid-tool-wave: structured Cancelled, tool effect cancelled, interrupted marker saved, agent reusable" {
-  let model = ScriptedModel([
-    Respond(
-      tk_tool_call_response(
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(
+      @testkit.tk_tool_call_response(
         "slow_tool",
         "call_slow",
         Json::object(Map::from_array([])),
       ),
     ),
-    Respond(tk_stop_response("after esc")),
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("after esc")),
   ])
-  let tools = RecordingToolProvider(
-    [tk_tool_def("slow_tool", "slow tool")],
+  let tools = @testkit.RecordingToolProvider(
+    [@testkit.tk_tool_def("slow_tool", "slow tool")],
     Map::from_array([]),
   )
-  let store = RecordingSessionPort()
+  let store = @testkit.RecordingSessionPort()
   store.seed("abort-tools", { messages: [], metadata: Map::from_array([]), })
   let port_runtime = @runtime.PortRuntime(model~)
   let probe = MidEffectAbortRuntime(inner=port_runtime as &@runtime.Runtime, park_tool_names=[
@@ -203,12 +203,12 @@ async test "abort/mid-tool-wave: structured Cancelled, tool effect cancelled, in
   ])
   let agent = Agent::with_runtime(
     exts=[
-      tk_ext(id="model", model=Some(model), sessions=[store]),
+      @testkit.tk_ext(id="model", model=Some(model), sessions=[store]),
       // The catalog must know the tool (manifest contribution); execution
       // still routes through the runtime override below.
-      tk_ext(id="tools", tools=[tools]),
+      @testkit.tk_ext(id="tools", tools=[tools]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
     runtime=probe as &@runtime.Runtime,
   )
   let control = agent.control()
@@ -218,7 +218,7 @@ async test "abort/mid-tool-wave: structured Cancelled, tool effect cancelled, in
   @async.with_task_group(async fn(group) {
     let task = group.spawn(async fn() {
       let r : Result[@types.TurnResult, @error.AgentError] = Ok(
-        agent.run_turn(tk_user_msg("run the slow tool"), "abort-tools"),
+        agent.run_turn(@testkit.tk_user_msg("run the slow tool"), "abort-tools"),
       ) catch {
         e => Err(e)
       }
@@ -240,7 +240,7 @@ async test "abort/mid-tool-wave: structured Cancelled, tool effect cancelled, in
   // fabricated success.
   let saved = store.store["abort-tools"]
   assert_eq(saved.messages.length(), 3)
-  assert_true(saved.messages[0] == tk_user_msg("run the slow tool"))
+  assert_true(saved.messages[0] == @testkit.tk_user_msg("run the slow tool"))
   guard saved.messages[1] is AssistantMessage(..) else {
     fail("expected assistant tool-call message")
   }
@@ -251,7 +251,7 @@ async test "abort/mid-tool-wave: structured Cancelled, tool effect cancelled, in
   guard outcome is RuntimeFailure(..) else {
     fail("expected interrupted marker for the cancelled tool")
   }
-  let next = agent.run_turn(tk_user_msg("next"), "abort-tools")
+  let next = agent.run_turn(@testkit.tk_user_msg("next"), "abort-tools")
   guard next.message is AssistantMessage(content=[Text("after esc")], ..) else {
     fail("expected the post-abort turn to complete normally")
   }

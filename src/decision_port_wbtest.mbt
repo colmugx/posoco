@@ -69,7 +69,9 @@ test "decision/validation_rejects_malformed_probability" {
 
 ///|
 async test "decision/testkit_records_and_replays" {
-  let port = ScriptedDecisionPort([Return(decision_result())])
+  let port = @testkit.ScriptedDecisionPort([
+    @testkit.ScriptedDecisionStep::Return(decision_result()),
+  ])
   let request = decision_request()
   let result = port.evaluate(
     request,
@@ -84,48 +86,68 @@ async test "decision/testkit_records_and_replays" {
 test "decision/composition_is_optional_and_gated" {
   let probe_with = DecisionLifecycleProbe::{ seen: false, }
   let probe_without = DecisionLifecycleProbe::{ seen: false, }
-  let decision = ScriptedDecisionPort([])
+  let decision = @testkit.ScriptedDecisionPort([])
   ignore(
     Agent(
       exts=[
-        tk_ext(
+        @testkit.tk_ext(
           id="model",
-          model=Some(ScriptedModel([Respond(tk_stop_response("ok"))])),
+          model=Some(
+            @testkit.ScriptedModel([
+              @testkit.ScriptedModelStep::Respond(
+                @testkit.tk_stop_response("ok"),
+              ),
+            ]),
+          ),
         ),
-        tk_ext(id="io", sessions=[RecordingSessionPort()]),
-        tk_ext(id="decision", decision=Some(decision)),
-        tk_ext(id="consumer", lifecycle=[probe_with as &@port.Lifecycle], requires=[
-          @port.Capability::Decision,
+        @testkit.tk_ext(id="io", sessions=[@testkit.RecordingSessionPort()]),
+        @testkit.tk_ext(id="decision", decision=Some(decision)),
+        @testkit.tk_ext(
+          id="consumer",
+          lifecycle=[probe_with as &@port.Lifecycle],
+          requires=[@port.Capability::Decision],
+        ),
+        @testkit.tk_ext(id="undeclared", lifecycle=[
+          probe_without as &@port.Lifecycle,
         ]),
-        tk_ext(id="undeclared", lifecycle=[probe_without as &@port.Lifecycle]),
       ],
-      config=tk_config(),
+      config=agent_config(max_tool_rounds=Some(10)),
     ),
   )
   assert_true(probe_with.seen)
   assert_false(probe_without.seen)
-  let model : &@port.ModelPort = ScriptedModel([])
-  let ui : &@port.UiPort = RecordingUiPort::new_unsupported()
-  let absent = tk_view(requires=[@port.Capability::Decision], model~, ui~)
+  let model : &@port.ModelPort = @testkit.ScriptedModel([])
+  let ui : &@port.UiPort = @testkit.RecordingUiPort::new_unsupported()
+  let absent = @testkit.tk_view(
+    requires=[@port.Capability::Decision],
+    model~,
+    ui~,
+  )
   assert_true(absent.decision() is None)
 }
 
 ///|
 test "decision/composition_rejects_multiple_providers" {
-  let a = ScriptedDecisionPort([])
-  let b = ScriptedDecisionPort([])
+  let a = @testkit.ScriptedDecisionPort([])
+  let b = @testkit.ScriptedDecisionPort([])
   try
     Agent(
       exts=[
-        tk_ext(
+        @testkit.tk_ext(
           id="model",
-          model=Some(ScriptedModel([Respond(tk_stop_response("ok"))])),
+          model=Some(
+            @testkit.ScriptedModel([
+              @testkit.ScriptedModelStep::Respond(
+                @testkit.tk_stop_response("ok"),
+              ),
+            ]),
+          ),
         ),
-        tk_ext(id="io", sessions=[RecordingSessionPort()]),
-        tk_ext(id="decision-a", decision=Some(a)),
-        tk_ext(id="decision-b", decision=Some(b)),
+        @testkit.tk_ext(id="io", sessions=[@testkit.RecordingSessionPort()]),
+        @testkit.tk_ext(id="decision-a", decision=Some(a)),
+        @testkit.tk_ext(id="decision-b", decision=Some(b)),
       ],
-      config=tk_config(),
+      config=agent_config(max_tool_rounds=Some(10)),
     )
   catch {
     @error.CompositionError::MultipleDecisions(manifests~) =>

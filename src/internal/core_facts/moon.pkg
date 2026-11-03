@@ -4,3 +4,8 @@ import {
   "colmugx/posoco/internal/message_snapshot",
   "colmugx/posoco/internal/diagnostic",
 }
+
+import {
+  "colmugx/posoco/kernel",
+  "colmugx/posoco/testkit",
+} for "wbtest"

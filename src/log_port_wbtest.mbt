@@ -43,7 +43,7 @@ test "log/record_validation_rejects_empty_machine_fields" {
 
 ///|
 async test "log/testkit_records_durability_and_flush" {
-  let port = RecordingLogPort()
+  let port = @testkit.RecordingLogPort()
   let record = test_log_record()
   port.write_direct(record, @port.LogDurability::Durable)
   (port as &@port.LogPort).flush()
@@ -57,48 +57,64 @@ async test "log/testkit_records_durability_and_flush" {
 test "log/composition_is_optional_and_gated" {
   let probe_with = LogLifecycleProbe::{ seen: false, }
   let probe_without = LogLifecycleProbe::{ seen: false, }
-  let log = RecordingLogPort()
+  let log = @testkit.RecordingLogPort()
   ignore(
     Agent(
       exts=[
-        tk_ext(
+        @testkit.tk_ext(
           id="model",
-          model=Some(ScriptedModel([Respond(tk_stop_response("ok"))])),
+          model=Some(
+            @testkit.ScriptedModel([
+              @testkit.ScriptedModelStep::Respond(
+                @testkit.tk_stop_response("ok"),
+              ),
+            ]),
+          ),
         ),
-        tk_ext(id="io", sessions=[RecordingSessionPort()]),
-        tk_ext(id="log", log=Some(log)),
-        tk_ext(id="consumer", lifecycle=[probe_with as &@port.Lifecycle], requires=[
-          @port.Capability::Log,
+        @testkit.tk_ext(id="io", sessions=[@testkit.RecordingSessionPort()]),
+        @testkit.tk_ext(id="log", log=Some(log)),
+        @testkit.tk_ext(
+          id="consumer",
+          lifecycle=[probe_with as &@port.Lifecycle],
+          requires=[@port.Capability::Log],
+        ),
+        @testkit.tk_ext(id="undeclared", lifecycle=[
+          probe_without as &@port.Lifecycle,
         ]),
-        tk_ext(id="undeclared", lifecycle=[probe_without as &@port.Lifecycle]),
       ],
-      config=tk_config(),
+      config=agent_config(max_tool_rounds=Some(10)),
     ),
   )
   assert_true(probe_with.seen)
   assert_false(probe_without.seen)
-  let model : &@port.ModelPort = ScriptedModel([])
-  let ui : &@port.UiPort = RecordingUiPort::new_unsupported()
-  let absent = tk_view(requires=[@port.Capability::Log], model~, ui~)
+  let model : &@port.ModelPort = @testkit.ScriptedModel([])
+  let ui : &@port.UiPort = @testkit.RecordingUiPort::new_unsupported()
+  let absent = @testkit.tk_view(requires=[@port.Capability::Log], model~, ui~)
   assert_true(absent.log() is None)
 }
 
 ///|
 test "log/composition_rejects_multiple_providers" {
-  let a = RecordingLogPort()
-  let b = RecordingLogPort()
+  let a = @testkit.RecordingLogPort()
+  let b = @testkit.RecordingLogPort()
   try
     Agent(
       exts=[
-        tk_ext(
+        @testkit.tk_ext(
           id="model",
-          model=Some(ScriptedModel([Respond(tk_stop_response("ok"))])),
+          model=Some(
+            @testkit.ScriptedModel([
+              @testkit.ScriptedModelStep::Respond(
+                @testkit.tk_stop_response("ok"),
+              ),
+            ]),
+          ),
         ),
-        tk_ext(id="io", sessions=[RecordingSessionPort()]),
-        tk_ext(id="log-a", log=Some(a)),
-        tk_ext(id="log-b", log=Some(b)),
+        @testkit.tk_ext(id="io", sessions=[@testkit.RecordingSessionPort()]),
+        @testkit.tk_ext(id="log-a", log=Some(a)),
+        @testkit.tk_ext(id="log-b", log=Some(b)),
       ],
-      config=tk_config(),
+      config=agent_config(max_tool_rounds=Some(10)),
     )
   catch {
     @error.CompositionError::MultipleLogs(manifests~) =>

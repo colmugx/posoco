@@ -7,6 +7,7 @@ import {
   "colmugx/posoco/port",
   "colmugx/posoco/types",
   "moonbitlang/core/debug",
+  "moonbitlang/core/json",
 }
 
 // Values
@@ -15,6 +16,8 @@ pub fn assert_events_contain(Array[@types.TurnEvent], Array[@types.TurnEvent]) -
 pub fn assert_events_eq(Array[@types.TurnEvent], Array[@types.TurnEvent]) -> Unit
 
 pub fn event_trace_mismatch(Array[@types.TurnEvent], Array[@types.TurnEvent]) -> String?
+
+pub fn snapshot_tool_def(@kernel.ToolDef) -> @kernel.ToolDef
 
 pub fn tk_error_result(String) -> @kernel.ToolOutcome
 
@@ -28,9 +31,9 @@ pub fn tk_scope(session_id? : String, run_id? : String, pressure? : @kernel.Cont
 
 pub fn tk_stop_response(String) -> @kernel.ModelCallResult
 
-pub fn tk_tool_call_ctx(name~ : String, arguments? : Json) -> @port.ToolCallContext
+pub fn tk_tool_call_ctx(name~ : String, arguments? : @json.Json) -> @port.ToolCallContext
 
-pub fn tk_tool_call_response(String, String, Json) -> @kernel.ModelCallResult
+pub fn tk_tool_call_response(String, String, @json.Json) -> @kernel.ModelCallResult
 
 pub fn tk_tool_def(String, String) -> @kernel.ToolDef
 
@@ -41,10 +44,11 @@ pub fn tk_view(requires~ : Array[@port.Capability], model~ : &@port.ModelPort, d
 // Errors
 
 // Types and methods
+#derive(@debug.Debug)
 pub(all) struct HookRecord {
   label : String
   outcome : RecordedHookOutcome
-} derive(@debug.Debug)
+}
 pub fn HookRecord::to_repr(Self) -> @debug.Repr
 
 pub(all) struct ManifestOnly {
@@ -55,17 +59,19 @@ pub fn ManifestOnly::extension_id(Self) -> String
 pub fn ManifestOnly::manifest(Self) -> @port.ExtensionManifest
 pub impl @port.Extension for ManifestOnly
 
+#derive(@debug.Debug)
 pub(all) enum RecordedHookOutcome {
   PassedThrough
   AbortedWith(String)
   DeferredWith(String)
-} derive(@debug.Debug)
+}
 pub fn RecordedHookOutcome::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) struct RecordedLogWrite {
   record : @port.LogRecord
   durability : @port.LogDurability
-} derive(Eq, @debug.Debug)
+}
 pub fn RecordedLogWrite::equal(Self, Self) -> Bool
 pub fn RecordedLogWrite::not_equal(Self, Self) -> Bool
 pub fn RecordedLogWrite::to_repr(Self) -> @debug.Repr
@@ -134,7 +140,7 @@ pub fn RecordingSessionPort::heal_save(Self, String) -> Unit
 pub async fn RecordingSessionPort::load(Self, String) -> @types.Session raise @error.SessionError
 pub fn RecordingSessionPort::ops(Self) -> Array[SessionOp]
 pub async fn RecordingSessionPort::save(Self, String, @types.Session) -> Unit raise @error.SessionError
-pub fn RecordingSessionPort::save_snapshots(Self) -> Array[(String, Map[String, Json])]
+pub fn RecordingSessionPort::save_snapshots(Self) -> Array[(String, Map[String, @json.Json])]
 pub fn RecordingSessionPort::seed(Self, String, @types.Session) -> Unit
 pub async fn RecordingSessionPort::truncate(Self, String, Int32) -> Unit raise @error.SessionError
 pub impl @port.SessionPort for RecordingSessionPort
@@ -209,7 +215,7 @@ pub(all) struct ScriptedMemoryPort {
   mut calls : Int32
   mut sessions : Array[String]
   mut requests : Array[String]
-  mut stored : Array[(String, Map[String, Json])]
+  mut stored : Array[(String, Map[String, @json.Json])]
   mut deleted : Array[String]
   search_script : Array[String?]
   mut search_index : Int32
@@ -224,9 +230,9 @@ pub fn ScriptedMemoryPort::received_deletes(Self) -> Array[String]
 pub fn ScriptedMemoryPort::received_requests(Self) -> Array[String]
 pub fn ScriptedMemoryPort::received_searches(Self) -> Array[(String, Int32?)]
 pub fn ScriptedMemoryPort::received_sessions(Self) -> Array[String]
-pub fn ScriptedMemoryPort::received_stores(Self) -> Array[(String, Map[String, Json])]
+pub fn ScriptedMemoryPort::received_stores(Self) -> Array[(String, Map[String, @json.Json])]
 pub async fn ScriptedMemoryPort::search(Self, query~ : String, top_k? : Int32) -> String? raise @error.MemoryError
-pub async fn ScriptedMemoryPort::store(Self, content~ : String, metadata~ : Map[String, Json]) -> String raise @error.MemoryError
+pub async fn ScriptedMemoryPort::store(Self, content~ : String, metadata~ : Map[String, @json.Json]) -> String raise @error.MemoryError
 pub impl @port.MemoryPort for ScriptedMemoryPort
 
 pub(all) struct ScriptedModel {
@@ -263,34 +269,38 @@ pub(all) enum ScriptedModelStep {
   CompactFail(error~ : @error.ModelError)
 }
 
+#derive(@debug.Debug)
 pub(all) enum ScriptedToolOutcome {
   OutcomeOk(@kernel.ToolOutcome)
   OutcomeErr(@error.RuntimeError)
-} derive(@debug.Debug)
+}
 pub fn ScriptedToolOutcome::to_repr(Self) -> @debug.Repr
 
+#derive(@debug.Debug)
 pub(all) enum SessionOp {
   OpLoad(id~ : String, result~ : Result[@types.Session, @error.SessionError])
-  OpSave(id~ : String, metadata~ : Map[String, Json], result~ : Result[Unit, @error.SessionError])
+  OpSave(id~ : String, metadata~ : Map[String, @json.Json], result~ : Result[Unit, @error.SessionError])
   OpAppend(id~ : String, from_index~ : Int32, messages~ : Array[@kernel.Message], result~ : Result[Unit, @error.SessionError])
   OpCheckpoint(id~ : String, checkpoint~ : @port.SessionCheckpoint, result~ : Result[Unit, @error.SessionError])
   OpTruncate(id~ : String, from_index~ : Int32, result~ : Result[Unit, @error.SessionError])
-} derive(@debug.Debug)
+}
 pub fn SessionOp::to_repr(Self) -> @debug.Repr
 
+#derive(@debug.Debug)
 pub(all) struct ToolExecRecord {
   requested_name : String
   call_id : String
   tool_name : String
-  arguments : Json
+  arguments : @json.Json
   outcome : ScriptedToolOutcome
-} derive(@debug.Debug)
+}
 pub fn ToolExecRecord::to_repr(Self) -> @debug.Repr
 
+#derive(@debug.Debug)
 pub(all) enum ToolProviderOp {
   ListTools
   ExecuteTool(requested_name~ : String, call~ : @kernel.ToolCall)
-} derive(@debug.Debug)
+}
 pub fn ToolProviderOp::to_repr(Self) -> @debug.Repr
 
 // Type aliases

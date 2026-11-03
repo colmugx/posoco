@@ -34,6 +34,18 @@ impl @port.SessionPort for CoreFactsCheckpointFailStore with fn checkpoint(
 }
 
 ///|
+/// Deep-copy a session so recorded saves cannot alias the live transcript.
+fn snapshot_session(
+  messages : Array[@kernel.Message],
+  metadata : Map[String, Json],
+) -> @types.Session {
+  {
+    messages: @message_snapshot.snapshot_messages(messages),
+    metadata: @message_snapshot.snapshot_metadata(metadata),
+  }
+}
+
+///|
 /// H1-specific store: records the one initial load, every full save, and every
 /// checkpoint body, while keeping the checkpoint failure at a fixed call.
 struct H1Store {
@@ -116,27 +128,34 @@ fn assert_core_messages_equal(
 
 ///|
 async test "core_shadow/no_store_records_committed_messages" {
-  let model = ScriptedModel([
-    Respond(tk_tool_call_response("probe", "tc-shadow", Json::null())),
-    Respond(tk_stop_response("done")),
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(
+      @testkit.tk_tool_call_response("probe", "tc-shadow", Json::null()),
+    ),
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
   ])
-  let provider = RecordingToolProvider(
-    [tk_tool_def("probe", "")],
+  let provider = @testkit.RecordingToolProvider(
+    [@testkit.tk_tool_def("probe", "")],
     Map::from_array([
-      ("probe", OutcomeOk(Success(content="ok", structured=None))),
+      (
+        "probe",
+        @testkit.ScriptedToolOutcome::OutcomeOk(
+          Success(content="ok", structured=None),
+        ),
+      ),
     ]),
   )
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="tools", tools=[provider]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="tools", tools=[provider]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
-  ignore(agent.run_turn(tk_user_msg("hello"), "shadow-nostore"))
+  ignore(agent.run_turn(@testkit.tk_user_msg("hello"), "shadow-nostore"))
   let core = core_facts_current(agent, "shadow-nostore")
   assert_eq(core.messages.length(), 4)
-  assert_true(core.messages[0] == tk_user_msg("hello"))
+  assert_true(core.messages[0] == @testkit.tk_user_msg("hello"))
   guard core.messages[1] is AssistantMessage(tool_calls=[call], ..) else {
     fail("expected the assistant tool call")
   }
@@ -152,27 +171,34 @@ async test "core_shadow/no_store_records_committed_messages" {
 
 ///|
 async test "core_shadow/new_session_with_store_matches_persisted" {
-  let model = ScriptedModel([
-    Respond(tk_tool_call_response("probe", "tc-shadow", Json::null())),
-    Respond(tk_stop_response("done")),
-    Respond(tk_stop_response("again")),
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(
+      @testkit.tk_tool_call_response("probe", "tc-shadow", Json::null()),
+    ),
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("again")),
   ])
-  let provider = RecordingToolProvider(
-    [tk_tool_def("probe", "")],
+  let provider = @testkit.RecordingToolProvider(
+    [@testkit.tk_tool_def("probe", "")],
     Map::from_array([
-      ("probe", OutcomeOk(Success(content="ok", structured=None))),
+      (
+        "probe",
+        @testkit.ScriptedToolOutcome::OutcomeOk(
+          Success(content="ok", structured=None),
+        ),
+      ),
     ]),
   )
-  let store = RecordingSessionPort()
+  let store = @testkit.RecordingSessionPort()
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="tools", tools=[provider]),
-      tk_ext(id="io", sessions=[store]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="tools", tools=[provider]),
+      @testkit.tk_ext(id="io", sessions=[store]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
-  ignore(agent.run_turn(tk_user_msg("hello"), "shadow-store"))
+  ignore(agent.run_turn(@testkit.tk_user_msg("hello"), "shadow-store"))
   let core = core_facts_current(agent, "shadow-store")
   let persisted = store.load("shadow-store") catch {
     _ => fail("expected the persisted session")
@@ -182,7 +208,7 @@ async test "core_shadow/new_session_with_store_matches_persisted" {
   // A second successful operation rehydrates from the persisted transcript
   // and continues the same shadow lineage instead of stopping on a false
   // conflict.
-  ignore(agent.run_turn(tk_user_msg("next"), "shadow-store"))
+  ignore(agent.run_turn(@testkit.tk_user_msg("next"), "shadow-store"))
   let after = core_facts_current(agent, "shadow-store")
   let persisted_after = store.load("shadow-store") catch {
     _ => fail("expected the persisted session after the second turn")
@@ -194,24 +220,26 @@ async test "core_shadow/new_session_with_store_matches_persisted" {
 
 ///|
 async test "core_shadow/hydrates_existing_store_before_new_boundaries" {
-  let store = RecordingSessionPort()
+  let store = @testkit.RecordingSessionPort()
   store.seed("shadow-seeded", {
-    messages: [tk_user_msg("old")],
+    messages: [@testkit.tk_user_msg("old")],
     metadata: Map::from_array([("seed", Json::string("kept"))]),
   })
-  let model = ScriptedModel([Respond(tk_stop_response("done"))])
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
+  ])
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", sessions=[store]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", sessions=[store]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
-  ignore(agent.run_turn(tk_user_msg("new"), "shadow-seeded"))
+  ignore(agent.run_turn(@testkit.tk_user_msg("new"), "shadow-seeded"))
   let core = core_facts_current(agent, "shadow-seeded")
   assert_eq(core.messages.length(), 3)
-  assert_true(core.messages[0] == tk_user_msg("old"))
-  assert_true(core.messages[1] == tk_user_msg("new"))
+  assert_true(core.messages[0] == @testkit.tk_user_msg("old"))
+  assert_true(core.messages[1] == @testkit.tk_user_msg("new"))
   guard core.messages[2] is AssistantMessage(content=[Text("done")], ..) else {
     fail("expected the terminal assistant message")
   }
@@ -227,28 +255,35 @@ async test "core_shadow/store_failure_keeps_recorded_core" {
     saves: [],
     checkpoint_bodies: [],
   }
-  let observer = RecordingObserver()
-  let model = ScriptedModel([
-    Respond(tk_tool_call_response("probe", "tc-shadow", Json::null())),
-    Respond(tk_stop_response("done")),
-    Respond(tk_stop_response("next")),
+  let observer = @testkit.RecordingObserver()
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(
+      @testkit.tk_tool_call_response("probe", "tc-shadow", Json::null()),
+    ),
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("next")),
   ])
-  let provider = RecordingToolProvider(
-    [tk_tool_def("probe", "")],
+  let provider = @testkit.RecordingToolProvider(
+    [@testkit.tk_tool_def("probe", "")],
     Map::from_array([
-      ("probe", OutcomeOk(Success(content="ok", structured=None))),
+      (
+        "probe",
+        @testkit.ScriptedToolOutcome::OutcomeOk(
+          Success(content="ok", structured=None),
+        ),
+      ),
     ]),
   )
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="tools", tools=[provider]),
-      tk_ext(id="io", sessions=[store], observers=[observer]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="tools", tools=[provider]),
+      @testkit.tk_ext(id="io", sessions=[store], observers=[observer]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
   let first : Result[@types.TurnResult, @error.AgentError] = Ok(
-    agent.run_turn(tk_user_msg("hello"), "shadow-fail"),
+    agent.run_turn(@testkit.tk_user_msg("hello"), "shadow-fail"),
   ) catch {
     error => Err(error)
   }
@@ -258,7 +293,7 @@ async test "core_shadow/store_failure_keeps_recorded_core" {
   }
   let core = core_facts_current(agent, "shadow-fail")
   assert_eq(core.messages.length(), 3)
-  assert_true(core.messages[0] == tk_user_msg("hello"))
+  assert_true(core.messages[0] == @testkit.tk_user_msg("hello"))
   guard core.messages[1] is AssistantMessage(tool_calls=[call], ..) else {
     fail("expected the committed assistant message before store I/O")
   }
@@ -267,14 +302,14 @@ async test "core_shadow/store_failure_keeps_recorded_core" {
     fail("expected the committed tool result before store I/O")
   }
   assert_eq(store.loads, 1)
-  ignore(agent.run_turn(tk_user_msg("next"), "shadow-fail"))
+  ignore(agent.run_turn(@testkit.tk_user_msg("next"), "shadow-fail"))
   assert_eq(store.loads, 1)
   let after = core_facts_current(agent, "shadow-fail")
   assert_eq(after.messages.length(), 5)
-  assert_true(after.messages[0] == tk_user_msg("hello"))
+  assert_true(after.messages[0] == @testkit.tk_user_msg("hello"))
   assert_true(after.messages[1] == core.messages[1])
   assert_true(after.messages[2] == core.messages[2])
-  assert_true(after.messages[3] == tk_user_msg("next"))
+  assert_true(after.messages[3] == @testkit.tk_user_msg("next"))
   guard after.messages[4] is AssistantMessage(content=[Text("done")], ..) else {
     fail("expected the next turn terminal from core")
   }
@@ -309,12 +344,12 @@ impl @port.ModelPort for ShadowGatedTurnModel with fn chat(
     }
   }
   if self.calls == 1 {
-    return tk_tool_call_response("leaf", "call_1", Json::null())
+    return @testkit.tk_tool_call_response("leaf", "call_1", Json::null())
   }
   if self.calls == 2 {
-    return tk_tool_call_response("leaf", "call_2", Json::null())
+    return @testkit.tk_tool_call_response("leaf", "call_2", Json::null())
   }
-  tk_stop_response("done")
+  @testkit.tk_stop_response("done")
 }
 
 ///|
@@ -408,27 +443,32 @@ async test "core_shadow/fork_pins_safe_point_source_after_assistant_commit" {
     compacted: [],
     compact_mode: NewThread,
   }
-  let store = RecordingSessionPort()
+  let store = @testkit.RecordingSessionPort()
   store.seed("fork-parent", {
-    messages: [tk_user_msg("old-one"), tk_user_msg("old-two")],
+    messages: [@testkit.tk_user_msg("old-one"), @testkit.tk_user_msg("old-two")],
     metadata: Map::from_array([]),
   })
-  let observer = RecordingObserver()
-  let tools = RecordingToolProvider(
-    [tk_tool_def("leaf", "leaf tool")],
-    Map::from_array([("leaf", OutcomeOk(tk_ok_result("ok")))]),
+  let observer = @testkit.RecordingObserver()
+  let tools = @testkit.RecordingToolProvider(
+    [@testkit.tk_tool_def("leaf", "leaf tool")],
+    Map::from_array([
+      (
+        "leaf",
+        @testkit.ScriptedToolOutcome::OutcomeOk(@testkit.tk_ok_result("ok")),
+      ),
+    ]),
   )
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="tools", tools=[tools]),
-      tk_ext(id="io", sessions=[store], observers=[observer]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="tools", tools=[tools]),
+      @testkit.tk_ext(id="io", sessions=[store], observers=[observer]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
   let turn = @async.with_task_group(async fn(group) {
     let running = group.spawn(() => {
-      agent.run_turn(tk_user_msg("go"), "fork-parent")
+      agent.run_turn(@testkit.tk_user_msg("go"), "fork-parent")
     })
     let enqueued : Result[Bool, Error] = Ok(
       @async.with_timeout(60, async fn() -> Bool {
@@ -466,9 +506,9 @@ async test "core_shadow/fork_pins_safe_point_source_after_assistant_commit" {
   assert_eq(call.call_id.to_string(), "call_1")
   let child_core = core_facts_current(agent, child_sid)
   assert_eq(child_core.messages.length(), 3)
-  assert_true(child_core.messages[0] == tk_user_msg("old-one"))
-  assert_true(child_core.messages[1] == tk_user_msg("old-two"))
-  assert_true(child_core.messages[2] == tk_user_msg("go"))
+  assert_true(child_core.messages[0] == @testkit.tk_user_msg("old-one"))
+  assert_true(child_core.messages[1] == @testkit.tk_user_msg("old-two"))
+  assert_true(child_core.messages[2] == @testkit.tk_user_msg("go"))
   assert_eq(
     child_core.metadata[@types.PARENT_THREAD_ID_KEY],
     Json::string("fork-parent"),
@@ -476,13 +516,13 @@ async test "core_shadow/fork_pins_safe_point_source_after_assistant_commit" {
   let source = core_facts_source_of(agent, child_sid)
   let resolved = core_facts_resolve_source(agent, source)
   assert_eq(resolved.messages.length(), 3)
-  assert_true(resolved.messages[2] == tk_user_msg("go"))
+  assert_true(resolved.messages[2] == @testkit.tk_user_msg("go"))
   // The pinned version is the full safe-point transcript (including the
   // assistant committed after admission); the child body trims it to the
   // requested prefix.
   let after_rewrite = core_facts_resolve_source(agent, source)
   assert_eq(after_rewrite.messages.length(), 3)
-  assert_true(after_rewrite.messages[2] == tk_user_msg("go"))
+  assert_true(after_rewrite.messages[2] == @testkit.tk_user_msg("go"))
 }
 
 ///|
@@ -492,30 +532,35 @@ async test "core_shadow/midturn_newthread_source_includes_tool_and_assistant" {
     calls: 0,
     entered: false,
     released: false,
-    compacted: [tk_user_msg("mid-turn summary")],
+    compacted: [@testkit.tk_user_msg("mid-turn summary")],
     compact_mode: NewThread,
   }
-  let store = RecordingSessionPort()
+  let store = @testkit.RecordingSessionPort()
   store.seed("mid-parent", {
-    messages: [tk_user_msg("old-one"), tk_user_msg("old-two")],
+    messages: [@testkit.tk_user_msg("old-one"), @testkit.tk_user_msg("old-two")],
     metadata: Map::from_array([]),
   })
-  let observer = RecordingObserver()
-  let tools = RecordingToolProvider(
-    [tk_tool_def("leaf", "leaf tool")],
-    Map::from_array([("leaf", OutcomeOk(tk_ok_result("ok")))]),
+  let observer = @testkit.RecordingObserver()
+  let tools = @testkit.RecordingToolProvider(
+    [@testkit.tk_tool_def("leaf", "leaf tool")],
+    Map::from_array([
+      (
+        "leaf",
+        @testkit.ScriptedToolOutcome::OutcomeOk(@testkit.tk_ok_result("ok")),
+      ),
+    ]),
   )
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="tools", tools=[tools]),
-      tk_ext(id="io", sessions=[store], observers=[observer]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="tools", tools=[tools]),
+      @testkit.tk_ext(id="io", sessions=[store], observers=[observer]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
   let turn = @async.with_task_group(async fn(group) {
     let running = group.spawn(() => {
-      agent.run_turn(tk_user_msg("go"), "mid-parent")
+      agent.run_turn(@testkit.tk_user_msg("go"), "mid-parent")
     })
     let enqueued : Result[Bool, Error] = Ok(
       @async.with_timeout(60, async fn() -> Bool {
@@ -550,7 +595,9 @@ async test "core_shadow/midturn_newthread_source_includes_tool_and_assistant" {
   assert_eq(call.call_id.to_string(), "call_2")
   let child_core = core_facts_current(agent, child_sid)
   assert_eq(child_core.messages.length(), 1)
-  assert_true(child_core.messages[0] == tk_user_msg("mid-turn summary"))
+  assert_true(
+    child_core.messages[0] == @testkit.tk_user_msg("mid-turn summary"),
+  )
   assert_eq(
     child_core.metadata[@types.PARENT_THREAD_ID_KEY],
     Json::string("mid-parent"),
@@ -567,73 +614,73 @@ async test "core_shadow/midturn_newthread_source_includes_tool_and_assistant" {
 
 ///|
 async test "core_shadow/idle_newthread_source_and_summary_stay_separate" {
-  let model = ScriptedModel([
-    Compact(result={
-      compacted_messages: [tk_user_msg("summary")],
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Compact(result={
+      compacted_messages: [@testkit.tk_user_msg("summary")],
       mode: NewThread,
     }),
-    Respond(tk_stop_response("child done")),
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("child done")),
   ])
-  let store = RecordingSessionPort()
+  let store = @testkit.RecordingSessionPort()
   store.seed("idle-parent", {
-    messages: [tk_user_msg("old-one"), tk_user_msg("old-two")],
+    messages: [@testkit.tk_user_msg("old-one"), @testkit.tk_user_msg("old-two")],
     metadata: Map::from_array([]),
   })
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", sessions=[store]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", sessions=[store]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
   let outcome = agent.compact_session("idle-parent")
   let child_sid = outcome.final_session_id
   let parent_core = core_facts_current(agent, "idle-parent")
   assert_eq(parent_core.messages.length(), 2)
-  assert_true(parent_core.messages[0] == tk_user_msg("old-one"))
+  assert_true(parent_core.messages[0] == @testkit.tk_user_msg("old-one"))
   let child_core = core_facts_current(agent, child_sid)
   assert_eq(child_core.messages.length(), 1)
-  assert_true(child_core.messages[0] == tk_user_msg("summary"))
+  assert_true(child_core.messages[0] == @testkit.tk_user_msg("summary"))
   let source = core_facts_source_of(agent, child_sid)
   let resolved = core_facts_resolve_source(agent, source)
   assert_eq(resolved.messages.length(), 2)
-  assert_true(resolved.messages[0] == tk_user_msg("old-one"))
-  assert_true(resolved.messages[1] == tk_user_msg("old-two"))
+  assert_true(resolved.messages[0] == @testkit.tk_user_msg("old-one"))
+  assert_true(resolved.messages[1] == @testkit.tk_user_msg("old-two"))
   // A later child turn terminal-rewrites the child body but must retain the
   // source captured at creation.
-  ignore(agent.run_turn(tk_user_msg("child-turn"), child_sid))
+  ignore(agent.run_turn(@testkit.tk_user_msg("child-turn"), child_sid))
   let after_child = core_facts_current(agent, child_sid)
   assert_eq(after_child.messages.length(), 3)
-  assert_true(after_child.messages[0] == tk_user_msg("summary"))
+  assert_true(after_child.messages[0] == @testkit.tk_user_msg("summary"))
   assert_true(core_facts_readable(agent, child_sid))
 }
 
 ///|
 async test "core_shadow/replace_compact_mirrors_terminal_without_child" {
-  let model = ScriptedModel([
-    Compact(result={
-      compacted_messages: [tk_user_msg("replacement")],
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Compact(result={
+      compacted_messages: [@testkit.tk_user_msg("replacement")],
       mode: Replace,
     }),
   ])
-  let store = RecordingSessionPort()
+  let store = @testkit.RecordingSessionPort()
   store.seed("replace-parent", {
-    messages: [tk_user_msg("old-one"), tk_user_msg("old-two")],
+    messages: [@testkit.tk_user_msg("old-one"), @testkit.tk_user_msg("old-two")],
     metadata: Map::from_array([]),
   })
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", sessions=[store]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", sessions=[store]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
   let outcome = agent.compact_session("replace-parent")
   assert_eq(outcome.final_session_id, "replace-parent")
   assert_true(core_facts_readable(agent, "replace-parent"))
   let core = core_facts_current(agent, "replace-parent")
   assert_eq(core.messages.length(), 1)
-  assert_true(core.messages[0] == tk_user_msg("replacement"))
+  assert_true(core.messages[0] == @testkit.tk_user_msg("replacement"))
 }
 
 ///|
@@ -650,7 +697,7 @@ impl @port.ModelPort for ShadowMutatingCompactModel with fn chat(
   _options : @types.ChatOptions,
   _stream : @types.StreamMode,
 ) -> @kernel.ModelCallResult raise @error.ModelError {
-  tk_stop_response("unused")
+  @testkit.tk_stop_response("unused")
 }
 
 ///|
@@ -666,7 +713,7 @@ impl @port.ModelPort for ShadowMutatingCompactModel with fn compact(
     UserMessage(content~) => content.push(Text("model-poison"))
     _ => ()
   }
-  { compacted_messages: [tk_user_msg("summary")], mode: NewThread, }
+  { compacted_messages: [@testkit.tk_user_msg("summary")], mode: NewThread, }
 }
 
 ///|
@@ -679,17 +726,17 @@ impl @port.ModelPort for ShadowMutatingCompactModel with fn provider_config(
 ///|
 async test "core_shadow/compact_source_frozen_before_model_mutation" {
   let model = ShadowMutatingCompactModel::{ }
-  let store = RecordingSessionPort()
+  let store = @testkit.RecordingSessionPort()
   store.seed("frozen-parent", {
-    messages: [tk_user_msg("old")],
+    messages: [@testkit.tk_user_msg("old")],
     metadata: Map::from_array([]),
   })
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", sessions=[store]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", sessions=[store]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
   let outcome = agent.compact_session("frozen-parent")
   let source = core_facts_source_of(agent, outcome.final_session_id)
@@ -723,17 +770,19 @@ impl @port.PipelineHook for ShadowRewriteHook with fn before_model(
 
 ///|
 async test "core_shadow/hook_rewrite_mirrors_terminal_transcript" {
-  let model = ScriptedModel([Respond(tk_stop_response("done"))])
-  let store = RecordingSessionPort()
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
+  ])
+  let store = @testkit.RecordingSessionPort()
   let hook = ShadowRewriteHook::{ }
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", sessions=[store], hooks=[hook]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", sessions=[store], hooks=[hook]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
-  ignore(agent.run_turn(tk_user_msg("hello"), "hook-parent"))
+  ignore(agent.run_turn(@testkit.tk_user_msg("hello"), "hook-parent"))
   let core = core_facts_current(agent, "hook-parent")
   let persisted = store.load("hook-parent") catch {
     _ => fail("expected the rewritten session to persist")
@@ -752,24 +801,24 @@ async test "core_shadow/hook_rewrite_mirrors_terminal_transcript" {
 
 ///|
 async test "core_shadow/terminal_mirror_survives_store_save_failure" {
-  let model = ScriptedModel([
-    Compact(result={
-      compacted_messages: [tk_user_msg("replacement")],
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Compact(result={
+      compacted_messages: [@testkit.tk_user_msg("replacement")],
       mode: Replace,
     }),
   ])
-  let store = RecordingSessionPort()
+  let store = @testkit.RecordingSessionPort()
   store.seed("save-fail", {
-    messages: [tk_user_msg("old-one"), tk_user_msg("old-two")],
+    messages: [@testkit.tk_user_msg("old-one"), @testkit.tk_user_msg("old-two")],
     metadata: Map::from_array([]),
   })
   store.fail_save("save-fail")
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", sessions=[store]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", sessions=[store]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
   let result : Result[@types.CompactOutcome, @error.AgentError] = Ok(
     agent.compact_session("save-fail"),
@@ -782,13 +831,13 @@ async test "core_shadow/terminal_mirror_survives_store_save_failure" {
   }
   let core = core_facts_current(agent, "save-fail")
   assert_eq(core.messages.length(), 1)
-  assert_true(core.messages[0] == tk_user_msg("replacement"))
+  assert_true(core.messages[0] == @testkit.tk_user_msg("replacement"))
   assert_true(core_facts_readable(agent, "save-fail"))
   let persisted = store.load("save-fail") catch {
     _ => fail("expected the old persisted body")
   }
   assert_eq(persisted.messages.length(), 2)
-  assert_true(persisted.messages[0] == tk_user_msg("old-one"))
+  assert_true(persisted.messages[0] == @testkit.tk_user_msg("old-one"))
 }
 
 ///|
@@ -801,24 +850,31 @@ async test "core_shadow/hook_rewrite_fork_pins_committed_source" {
     compacted: [],
     compact_mode: NewThread,
   }
-  let store = RecordingSessionPort()
-  let observer = RecordingObserver()
-  let tools = RecordingToolProvider(
-    [tk_tool_def("leaf", "leaf tool")],
-    Map::from_array([("leaf", OutcomeOk(tk_ok_result("ok")))]),
+  let store = @testkit.RecordingSessionPort()
+  let observer = @testkit.RecordingObserver()
+  let tools = @testkit.RecordingToolProvider(
+    [@testkit.tk_tool_def("leaf", "leaf tool")],
+    Map::from_array([
+      (
+        "leaf",
+        @testkit.ScriptedToolOutcome::OutcomeOk(@testkit.tk_ok_result("ok")),
+      ),
+    ]),
   )
   let hook = ShadowRewriteHook::{ }
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="tools", tools=[tools]),
-      tk_ext(id="io", sessions=[store], observers=[observer], hooks=[hook]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="tools", tools=[tools]),
+      @testkit.tk_ext(id="io", sessions=[store], observers=[observer], hooks=[
+        hook,
+      ]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
   let fork_turn = @async.with_task_group(async fn(group) {
     let running = group.spawn(() => {
-      agent.run_turn(tk_user_msg("go"), "hook-fork-parent")
+      agent.run_turn(@testkit.tk_user_msg("go"), "hook-fork-parent")
     })
     let enqueued : Result[Bool, Error] = Ok(
       @async.with_timeout(60, async fn() -> Bool {
@@ -856,7 +912,7 @@ async test "core_shadow/hook_rewrite_fork_pins_committed_source" {
   }
   // A child turn keeps the creation source while the terminal boundary is
   // captured synchronously.
-  ignore(agent.run_turn(tk_user_msg("child"), child_sid))
+  ignore(agent.run_turn(@testkit.tk_user_msg("child"), child_sid))
 }
 
 ///|
@@ -868,29 +924,34 @@ async test "core_shadow/h1_admission_conflict_not_revived_by_rewrite" {
     saves: [],
     checkpoint_bodies: [],
   }
-  let observer = RecordingObserver()
+  let observer = @testkit.RecordingObserver()
   let model = ShadowGatedTurnModel::{
     gate_calls: [2],
     calls: 0,
     entered: false,
     released: false,
-    compacted: [tk_user_msg("replacement")],
+    compacted: [@testkit.tk_user_msg("replacement")],
     compact_mode: Replace,
   }
-  let tools = RecordingToolProvider(
-    [tk_tool_def("leaf", "leaf tool")],
-    Map::from_array([("leaf", OutcomeOk(tk_ok_result("ok")))]),
+  let tools = @testkit.RecordingToolProvider(
+    [@testkit.tk_tool_def("leaf", "leaf tool")],
+    Map::from_array([
+      (
+        "leaf",
+        @testkit.ScriptedToolOutcome::OutcomeOk(@testkit.tk_ok_result("ok")),
+      ),
+    ]),
   )
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="tools", tools=[tools]),
-      tk_ext(id="io", sessions=[store], observers=[observer]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="tools", tools=[tools]),
+      @testkit.tk_ext(id="io", sessions=[store], observers=[observer]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
   let first : Result[@types.TurnResult, @error.AgentError] = Ok(
-    agent.run_turn(tk_user_msg("hello"), "h1-conflict"),
+    agent.run_turn(@testkit.tk_user_msg("hello"), "h1-conflict"),
   ) catch {
     error => Err(error)
   }
@@ -900,7 +961,7 @@ async test "core_shadow/h1_admission_conflict_not_revived_by_rewrite" {
   }
   let before = core_facts_current(agent, "h1-conflict")
   assert_eq(before.messages.length(), 3)
-  assert_true(before.messages[0] == tk_user_msg("hello"))
+  assert_true(before.messages[0] == @testkit.tk_user_msg("hello"))
   assert_eq(store.loads, 1)
   guard before.messages[1] is AssistantMessage(tool_calls=[call], ..) else {
     fail("expected the committed assistant before the failed checkpoint")
@@ -912,7 +973,7 @@ async test "core_shadow/h1_admission_conflict_not_revived_by_rewrite" {
   assert_eq(call_id.to_string(), "call_1")
   let second = @async.with_task_group(async fn(group) {
     let running = group.spawn(() => {
-      agent.run_turn(tk_user_msg("next"), "h1-conflict")
+      agent.run_turn(@testkit.tk_user_msg("next"), "h1-conflict")
     })
     let enqueued : Result[Bool, Error] = Ok(
       @async.with_timeout(60, async fn() -> Bool {
@@ -938,7 +999,7 @@ async test "core_shadow/h1_admission_conflict_not_revived_by_rewrite" {
   assert_eq(store.checkpoint_bodies.length(), 4)
   let after = core_facts_current(agent, "h1-conflict")
   assert_eq(after.messages.length(), 3)
-  assert_true(after.messages[0] == tk_user_msg("replacement"))
+  assert_true(after.messages[0] == @testkit.tk_user_msg("replacement"))
   guard after.messages[1]
     is ToolMessage(call_id~, outcome=Success(content="ok", ..), ..) else {
     fail("expected the continued tool result after Replace")
@@ -955,17 +1016,19 @@ async test "core_shadow/h1_admission_conflict_not_revived_by_rewrite" {
 ///|
 async test "core_shadow/dispatch_failure_keeps_synced_hook_rewrite_boundary" {
   let store = CoreFactsCheckpointFailStore::{ checkpoints: 0, fail_at: 1, }
-  let model = ScriptedModel([Respond(tk_stop_response("done"))])
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
+  ])
   let hook = ShadowRewriteHook::{ }
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", sessions=[store], hooks=[hook]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", sessions=[store], hooks=[hook]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
   let result : Result[@types.TurnResult, @error.AgentError] = Ok(
-    agent.run_turn(tk_user_msg("hello"), "synced-dispatch-fail"),
+    agent.run_turn(@testkit.tk_user_msg("hello"), "synced-dispatch-fail"),
   ) catch {
     error => Err(error)
   }
@@ -978,7 +1041,7 @@ async test "core_shadow/dispatch_failure_keeps_synced_hook_rewrite_boundary" {
   guard core.messages[0] is SystemMessage(content=[Text("rewritten")]) else {
     fail("expected the committed hook rewrite at the first message")
   }
-  assert_true(core.messages[1] == tk_user_msg("hello"))
+  assert_true(core.messages[1] == @testkit.tk_user_msg("hello"))
   guard core.messages[2] is AssistantMessage(content=[Text("done")], ..) else {
     fail("expected the committed assistant before subscriber dispatch")
   }
@@ -994,18 +1057,23 @@ async test "core_shadow/cancelled_terminal_is_synced" {
     compacted: [],
     compact_mode: NewThread,
   }
-  let store = RecordingSessionPort()
-  let tools = RecordingToolProvider(
-    [tk_tool_def("leaf", "leaf tool")],
-    Map::from_array([("leaf", OutcomeOk(tk_ok_result("ok")))]),
+  let store = @testkit.RecordingSessionPort()
+  let tools = @testkit.RecordingToolProvider(
+    [@testkit.tk_tool_def("leaf", "leaf tool")],
+    Map::from_array([
+      (
+        "leaf",
+        @testkit.ScriptedToolOutcome::OutcomeOk(@testkit.tk_ok_result("ok")),
+      ),
+    ]),
   )
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="tools", tools=[tools]),
-      tk_ext(id="io", sessions=[store]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="tools", tools=[tools]),
+      @testkit.tk_ext(id="io", sessions=[store]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
   let outcome : Ref[Result[@types.TurnResult, @error.AgentError]] = Ref(
     Err(Runtime(InvocationFailed("unset"))),
@@ -1013,7 +1081,7 @@ async test "core_shadow/cancelled_terminal_is_synced" {
   @async.with_task_group(async fn(group) {
     let running = group.spawn(async fn() {
       let r : Result[@types.TurnResult, @error.AgentError] = Ok(
-        agent.run_turn(tk_user_msg("abort me"), "synced-cancel"),
+        agent.run_turn(@testkit.tk_user_msg("abort me"), "synced-cancel"),
       ) catch {
         error => Err(error)
       }
@@ -1031,7 +1099,7 @@ async test "core_shadow/cancelled_terminal_is_synced" {
   }
   let core = core_facts_current(agent, "synced-cancel")
   assert_true(core.messages.length() >= 2)
-  assert_true(core.messages[0] == tk_user_msg("abort me"))
+  assert_true(core.messages[0] == @testkit.tk_user_msg("abort me"))
   guard core.messages[1] is AssistantMessage(tool_calls=[call], ..) else {
     fail("expected the committed assistant before cancellation")
   }
@@ -1046,17 +1114,19 @@ async test "core_shadow/cancelled_terminal_is_synced" {
 
 ///|
 async test "core_shadow/failed_terminal_is_synced" {
-  let model = ScriptedModel([Fail(Transport("network down"))])
-  let store = RecordingSessionPort()
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Fail(Transport("network down")),
+  ])
+  let store = @testkit.RecordingSessionPort()
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", sessions=[store]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", sessions=[store]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
   let result : Result[@types.TurnResult, @error.AgentError] = Ok(
-    agent.run_turn(tk_user_msg("fail"), "synced-failed-terminal"),
+    agent.run_turn(@testkit.tk_user_msg("fail"), "synced-failed-terminal"),
   ) catch {
     error => Err(error)
   }
@@ -1066,7 +1136,7 @@ async test "core_shadow/failed_terminal_is_synced" {
   }
   let core = core_facts_current(agent, "synced-failed-terminal")
   assert_eq(core.messages.length(), 1)
-  assert_true(core.messages[0] == tk_user_msg("fail"))
+  assert_true(core.messages[0] == @testkit.tk_user_msg("fail"))
   assert_true(core_facts_readable(agent, "synced-failed-terminal"))
 }
 
@@ -1083,24 +1153,26 @@ async test "core_shadow/standalone_newthread_source_keeps_fixated_tool" {
     reasoning=None,
     finish_reason=ToolCalls,
   )
-  let model = ScriptedModel([
-    Compact(result={
-      compacted_messages: [tk_user_msg("summary")],
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Compact(result={
+      compacted_messages: [@testkit.tk_user_msg("summary")],
       mode: NewThread,
     }),
-    Respond(tk_stop_response("after compact")),
+    @testkit.ScriptedModelStep::Respond(
+      @testkit.tk_stop_response("after compact"),
+    ),
   ])
-  let store = RecordingSessionPort()
+  let store = @testkit.RecordingSessionPort()
   store.seed("fixate-parent", {
     messages: [dangling],
     metadata: Map::from_array([]),
   })
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", sessions=[store]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", sessions=[store]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
   let outcome = agent.compact_session("fixate-parent")
   let child_sid = outcome.final_session_id
@@ -1113,13 +1185,13 @@ async test "core_shadow/standalone_newthread_source_keeps_fixated_tool" {
   }
   let child = core_facts_current(agent, child_sid)
   assert_eq(child.messages.length(), 1)
-  assert_true(child.messages[0] == tk_user_msg("summary"))
+  assert_true(child.messages[0] == @testkit.tk_user_msg("summary"))
   // The source snapshot must not become the parent's current committed fact.
   let parent = core_facts_current(agent, "fixate-parent")
   assert_eq(parent.messages.length(), 1)
   assert_true(parent.messages[0] == dangling)
   // The next real turn can continue from the raw parent body.
-  ignore(agent.run_turn(tk_user_msg("next"), "fixate-parent"))
+  ignore(agent.run_turn(@testkit.tk_user_msg("next"), "fixate-parent"))
   let after = core_facts_current(agent, "fixate-parent")
   assert_true(after.messages[0] == dangling)
   assert_true(after.messages.length() >= 2)
@@ -1138,21 +1210,23 @@ async test "core_shadow/standalone_newthread_model_failure_keeps_parent_current"
     reasoning=None,
     finish_reason=ToolCalls,
   )
-  let model = ScriptedModel([
-    CompactFail(error=Transport("compact failed")),
-    Respond(tk_stop_response("after compact")),
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::CompactFail(error=Transport("compact failed")),
+    @testkit.ScriptedModelStep::Respond(
+      @testkit.tk_stop_response("after compact"),
+    ),
   ])
-  let store = RecordingSessionPort()
+  let store = @testkit.RecordingSessionPort()
   store.seed("fixate-fail-parent", {
     messages: [dangling],
     metadata: Map::from_array([]),
   })
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", sessions=[store]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", sessions=[store]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
   let failed : Result[@types.CompactOutcome, @error.AgentError] = Ok(
     agent.compact_session("fixate-fail-parent"),
@@ -1166,7 +1240,7 @@ async test "core_shadow/standalone_newthread_model_failure_keeps_parent_current"
   let parent = core_facts_current(agent, "fixate-fail-parent")
   assert_eq(parent.messages.length(), 1)
   assert_true(parent.messages[0] == dangling)
-  ignore(agent.run_turn(tk_user_msg("next"), "fixate-fail-parent"))
+  ignore(agent.run_turn(@testkit.tk_user_msg("next"), "fixate-fail-parent"))
   let after = core_facts_current(agent, "fixate-fail-parent")
   assert_true(after.messages[0] == dangling)
   assert_true(after.messages.length() >= 2)
@@ -1186,7 +1260,7 @@ impl @port.ModelPort for ShadowParkingCompactModel with fn chat(
   _options : @types.ChatOptions,
   _stream : @types.StreamMode,
 ) -> @kernel.ModelCallResult raise @error.ModelError {
-  tk_stop_response("after cancel")
+  @testkit.tk_stop_response("after cancel")
 }
 
 ///|
@@ -1225,17 +1299,17 @@ async test "core_shadow/standalone_newthread_cancel_keeps_parent_current" {
     finish_reason=ToolCalls,
   )
   let model = ShadowParkingCompactModel::{ entered: false, }
-  let store = RecordingSessionPort()
+  let store = @testkit.RecordingSessionPort()
   store.seed("fixate-cancel-parent", {
     messages: [dangling],
     metadata: Map::from_array([]),
   })
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", sessions=[store]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", sessions=[store]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
   let outcome : Ref[Result[@types.CompactOutcome, @error.AgentError]] = Ref(
     Err(Runtime(InvocationFailed("unset"))),
@@ -1265,7 +1339,7 @@ async test "core_shadow/standalone_newthread_cancel_keeps_parent_current" {
   let parent = core_facts_current(agent, "fixate-cancel-parent")
   assert_eq(parent.messages.length(), 1)
   assert_true(parent.messages[0] == dangling)
-  ignore(agent.run_turn(tk_user_msg("next"), "fixate-cancel-parent"))
+  ignore(agent.run_turn(@testkit.tk_user_msg("next"), "fixate-cancel-parent"))
   let after = core_facts_current(agent, "fixate-cancel-parent")
   assert_true(after.messages[0] == dangling)
   assert_true(after.messages.length() >= 2)
@@ -1274,7 +1348,7 @@ async test "core_shadow/standalone_newthread_cancel_keeps_parent_current" {
 ///|
 async test "core_shadow/missing_provenance_survives_real_next_turn" {
   let store = CoreFactsCheckpointFailStore::{ checkpoints: 0, fail_at: 2, }
-  let observer = RecordingObserver()
+  let observer = @testkit.RecordingObserver()
   let model = ShadowGatedTurnModel::{
     gate_calls: [2],
     calls: 0,
@@ -1283,20 +1357,25 @@ async test "core_shadow/missing_provenance_survives_real_next_turn" {
     compacted: [],
     compact_mode: NewThread,
   }
-  let tools = RecordingToolProvider(
-    [tk_tool_def("leaf", "leaf tool")],
-    Map::from_array([("leaf", OutcomeOk(tk_ok_result("ok")))]),
+  let tools = @testkit.RecordingToolProvider(
+    [@testkit.tk_tool_def("leaf", "leaf tool")],
+    Map::from_array([
+      (
+        "leaf",
+        @testkit.ScriptedToolOutcome::OutcomeOk(@testkit.tk_ok_result("ok")),
+      ),
+    ]),
   )
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="tools", tools=[tools]),
-      tk_ext(id="io", sessions=[store], observers=[observer]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="tools", tools=[tools]),
+      @testkit.tk_ext(id="io", sessions=[store], observers=[observer]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
   let first : Result[@types.TurnResult, @error.AgentError] = Ok(
-    agent.run_turn(tk_user_msg("hello"), "missing-real-parent"),
+    agent.run_turn(@testkit.tk_user_msg("hello"), "missing-real-parent"),
   ) catch {
     error => Err(error)
   }
@@ -1309,7 +1388,7 @@ async test "core_shadow/missing_provenance_survives_real_next_turn" {
     ) {
       let turn_body : async () -> Result[@types.TurnResult, @error.AgentError] = () => {
         let r : Result[@types.TurnResult, @error.AgentError] = Ok(
-          agent.run_turn(tk_user_msg("fork"), "missing-real-parent"),
+          agent.run_turn(@testkit.tk_user_msg("fork"), "missing-real-parent"),
         ) catch {
           error => Err(error)
         }
@@ -1348,7 +1427,7 @@ async test "core_shadow/missing_provenance_survives_real_next_turn" {
   let missing_sid = "missing-real-runtime-child"
   agent.runtime.core_facts.mark_missing_provenance(missing_sid)
   let blocked : Result[@types.TurnResult, @error.AgentError] = Ok(
-    agent.run_turn(tk_user_msg("child"), missing_sid),
+    agent.run_turn(@testkit.tk_user_msg("child"), missing_sid),
   ) catch {
     error => Err(error)
   }
@@ -1377,37 +1456,39 @@ fn shadow_dangling_message() -> @kernel.Message {
 
 ///|
 async test "core_shadow/replace_compact_leaves_no_source_snapshot" {
-  let model = ScriptedModel([
-    Compact(result={
-      compacted_messages: [tk_user_msg("replacement")],
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Compact(result={
+      compacted_messages: [@testkit.tk_user_msg("replacement")],
       mode: Replace,
     }),
   ])
-  let store = RecordingSessionPort()
+  let store = @testkit.RecordingSessionPort()
   store.seed("no-orphan-replace", {
     messages: [shadow_dangling_message()],
     metadata: Map::from_array([]),
   })
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", sessions=[store]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", sessions=[store]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
   ignore(agent.compact_session("no-orphan-replace"))
   let core = core_facts_current(agent, "no-orphan-replace")
   assert_eq(core.messages.length(), 1)
-  assert_true(core.messages[0] == tk_user_msg("replacement"))
+  assert_true(core.messages[0] == @testkit.tk_user_msg("replacement"))
 }
 
 ///|
 async test "core_shadow/model_failure_leaves_no_source_snapshot" {
-  let model = ScriptedModel([
-    CompactFail(error=Transport("compact failed")),
-    Respond(tk_stop_response("after failure")),
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::CompactFail(error=Transport("compact failed")),
+    @testkit.ScriptedModelStep::Respond(
+      @testkit.tk_stop_response("after failure"),
+    ),
   ])
-  let store = RecordingSessionPort()
+  let store = @testkit.RecordingSessionPort()
   let dangling = shadow_dangling_message()
   store.seed("no-orphan-failure", {
     messages: [dangling],
@@ -1415,10 +1496,10 @@ async test "core_shadow/model_failure_leaves_no_source_snapshot" {
   })
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", sessions=[store]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", sessions=[store]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
   let failed : Result[@types.CompactOutcome, @error.AgentError] = Ok(
     agent.compact_session("no-orphan-failure"),
@@ -1432,13 +1513,13 @@ async test "core_shadow/model_failure_leaves_no_source_snapshot" {
   let parent = core_facts_current(agent, "no-orphan-failure")
   assert_eq(parent.messages.length(), 1)
   assert_true(parent.messages[0] == dangling)
-  ignore(agent.run_turn(tk_user_msg("next"), "no-orphan-failure"))
+  ignore(agent.run_turn(@testkit.tk_user_msg("next"), "no-orphan-failure"))
 }
 
 ///|
 async test "core_shadow/cancel_leaves_no_source_snapshot" {
   let model = ShadowParkingCompactModel::{ entered: false, }
-  let store = RecordingSessionPort()
+  let store = @testkit.RecordingSessionPort()
   let dangling = shadow_dangling_message()
   store.seed("no-orphan-cancel", {
     messages: [dangling],
@@ -1446,10 +1527,10 @@ async test "core_shadow/cancel_leaves_no_source_snapshot" {
   })
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", sessions=[store]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", sessions=[store]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
   @async.with_task_group(async fn(group) {
     let running = group.spawn(async fn() {
@@ -1472,18 +1553,18 @@ async test "core_shadow/cancel_leaves_no_source_snapshot" {
   let parent = core_facts_current(agent, "no-orphan-cancel")
   assert_eq(parent.messages.length(), 1)
   assert_true(parent.messages[0] == dangling)
-  ignore(agent.run_turn(tk_user_msg("next"), "no-orphan-cancel"))
+  ignore(agent.run_turn(@testkit.tk_user_msg("next"), "no-orphan-cancel"))
 }
 
 ///|
 async test "core_shadow/child_failure_revokes_source_snapshot" {
-  let model = ScriptedModel([
-    Compact(result={
-      compacted_messages: [tk_user_msg("summary")],
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Compact(result={
+      compacted_messages: [@testkit.tk_user_msg("summary")],
       mode: NewThread,
     }),
   ])
-  let store = RecordingSessionPort()
+  let store = @testkit.RecordingSessionPort()
   let dangling = shadow_dangling_message()
   store.seed("no-orphan-child", {
     messages: [dangling],
@@ -1491,16 +1572,16 @@ async test "core_shadow/child_failure_revokes_source_snapshot" {
   })
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", sessions=[store]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", sessions=[store]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
   let child_sid = "no-orphan-child_compact_agent_compact_session_1"
   ignore(
     agent.runtime.core_facts.hydrate(
       child_sid,
-      [tk_user_msg("pre-existing")],
+      [@testkit.tk_user_msg("pre-existing")],
       Map::from_array([]),
     ),
   )
@@ -1521,46 +1602,46 @@ async test "core_shadow/child_failure_revokes_source_snapshot" {
 
 ///|
 async test "core_shadow/replace_compact_saves_model_body_exactly" {
-  let model = ScriptedModel([
-    Compact(result={
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Compact(result={
       compacted_messages: [
-        tk_user_msg("summary-one"),
-        tk_user_msg("summary-two"),
+        @testkit.tk_user_msg("summary-one"),
+        @testkit.tk_user_msg("summary-two"),
       ],
       mode: Replace,
     }),
   ])
-  let store = RecordingSessionPort()
+  let store = @testkit.RecordingSessionPort()
   store.seed("replace-exact", {
-    messages: [tk_user_msg("old-one"), tk_user_msg("old-two")],
+    messages: [@testkit.tk_user_msg("old-one"), @testkit.tk_user_msg("old-two")],
     metadata: Map::from_array([]),
   })
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", sessions=[store]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", sessions=[store]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
   ignore(agent.compact_session("replace-exact"))
   let persisted = store.load("replace-exact") catch {
     _ => fail("expected the replaced session to persist")
   }
   assert_eq(persisted.messages.length(), 2)
-  assert_true(persisted.messages[0] == tk_user_msg("summary-one"))
-  assert_true(persisted.messages[1] == tk_user_msg("summary-two"))
+  assert_true(persisted.messages[0] == @testkit.tk_user_msg("summary-one"))
+  assert_true(persisted.messages[1] == @testkit.tk_user_msg("summary-two"))
   let core = core_facts_current(agent, "replace-exact")
   assert_eq(core.messages.length(), 2)
-  assert_true(core.messages[0] == tk_user_msg("summary-one"))
-  assert_true(core.messages[1] == tk_user_msg("summary-two"))
+  assert_true(core.messages[0] == @testkit.tk_user_msg("summary-one"))
+  assert_true(core.messages[1] == @testkit.tk_user_msg("summary-two"))
 }
 
 ///|
-fn core_authority_load_count(store : RecordingSessionPort) -> Int32 {
+fn core_authority_load_count(store : @testkit.RecordingSessionPort) -> Int32 {
   let mut count = 0
   for op in store.ops() {
     match op {
-      OpLoad(..) => count = count + 1
+      @testkit.SessionOp::OpLoad(..) => count = count + 1
       _ => ()
     }
   }
@@ -1569,91 +1650,95 @@ fn core_authority_load_count(store : RecordingSessionPort) -> Int32 {
 
 ///|
 async test "core_authority/store_seeded_once_then_core" {
-  let model = ScriptedModel([
-    Respond(tk_stop_response("first")),
-    Respond(tk_stop_response("second")),
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("first")),
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("second")),
   ])
-  let store = RecordingSessionPort()
+  let store = @testkit.RecordingSessionPort()
   store.seed("authority-once", {
-    messages: [tk_user_msg("seed")],
+    messages: [@testkit.tk_user_msg("seed")],
     metadata: Map::from_array([]),
   })
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", sessions=[store]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", sessions=[store]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
-  ignore(agent.run_turn(tk_user_msg("one"), "authority-once"))
-  ignore(agent.run_turn(tk_user_msg("two"), "authority-once"))
+  ignore(agent.run_turn(@testkit.tk_user_msg("one"), "authority-once"))
+  ignore(agent.run_turn(@testkit.tk_user_msg("two"), "authority-once"))
   assert_eq(core_authority_load_count(store), 1)
   assert_eq(model.call_count(), 2)
   let second_request = model.received_messages[1]
   assert_true(second_request.length() >= 4)
-  assert_true(second_request[0] == tk_user_msg("seed"))
-  assert_true(second_request[1] == tk_user_msg("one"))
+  assert_true(second_request[0] == @testkit.tk_user_msg("seed"))
+  assert_true(second_request[1] == @testkit.tk_user_msg("one"))
 }
 
 ///|
 async test "core_authority/no_store_multiturn_keeps_core_history" {
-  let model = ScriptedModel([
-    Respond(tk_stop_response("first")),
-    Respond(tk_stop_response("second")),
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("first")),
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("second")),
   ])
   let agent = Agent(
-    exts=[tk_ext(id="model", model=Some(model))],
-    config=tk_config(),
+    exts=[@testkit.tk_ext(id="model", model=Some(model))],
+    config=agent_config(max_tool_rounds=Some(10)),
   )
-  ignore(agent.run_turn(tk_user_msg("one"), "authority-ephemeral"))
-  ignore(agent.run_turn(tk_user_msg("two"), "authority-ephemeral"))
+  ignore(agent.run_turn(@testkit.tk_user_msg("one"), "authority-ephemeral"))
+  ignore(agent.run_turn(@testkit.tk_user_msg("two"), "authority-ephemeral"))
   assert_eq(model.call_count(), 2)
   let second_request = model.received_messages[1]
   assert_true(second_request.length() >= 3)
-  assert_true(second_request[0] == tk_user_msg("one"))
+  assert_true(second_request[0] == @testkit.tk_user_msg("one"))
 }
 
 ///|
 async test "core_authority/external_store_change_does_not_rewind_core" {
-  let model = ScriptedModel([
-    Respond(tk_stop_response("first")),
-    Respond(tk_stop_response("second")),
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("first")),
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("second")),
   ])
-  let store = RecordingSessionPort()
+  let store = @testkit.RecordingSessionPort()
   store.seed("authority-stable", {
-    messages: [tk_user_msg("seed")],
+    messages: [@testkit.tk_user_msg("seed")],
     metadata: Map::from_array([]),
   })
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", sessions=[store]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", sessions=[store]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
-  ignore(agent.run_turn(tk_user_msg("one"), "authority-stable"))
+  ignore(agent.run_turn(@testkit.tk_user_msg("one"), "authority-stable"))
   store.truncate("authority-stable", 1) catch {
     error => fail("expected truncate to succeed: \{error}")
   }
-  ignore(agent.run_turn(tk_user_msg("two"), "authority-stable"))
+  ignore(agent.run_turn(@testkit.tk_user_msg("two"), "authority-stable"))
   assert_eq(core_authority_load_count(store), 1)
   let second_request = model.received_messages[1]
   assert_true(second_request.length() >= 4)
-  assert_true(second_request[0] == tk_user_msg("seed"))
-  assert_true(second_request[1] == tk_user_msg("one"))
+  assert_true(second_request[0] == @testkit.tk_user_msg("seed"))
+  assert_true(second_request[1] == @testkit.tk_user_msg("one"))
 }
 
 ///|
 async test "core_authority/runtime_missing_provenance_is_not_washed_by_store" {
-  let model = ScriptedModel([Respond(tk_stop_response("must-not-run"))])
-  let store = RecordingSessionPort()
-  let observer = RecordingObserver()
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(
+      @testkit.tk_stop_response("must-not-run"),
+    ),
+  ])
+  let store = @testkit.RecordingSessionPort()
+  let observer = @testkit.RecordingObserver()
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", sessions=[store], observers=[observer]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", sessions=[store], observers=[observer]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
   let child_sid = "missing-wash-child"
   // Establish the runtime's known no-body capture failure before seeding the
@@ -1661,13 +1746,13 @@ async test "core_authority/runtime_missing_provenance_is_not_washed_by_store" {
   agent.runtime.core_facts.mark_missing_provenance(child_sid)
   // A store body must not wash away the runtime's known capture failure.
   store.seed(child_sid, {
-    messages: [tk_user_msg("store-washed")],
+    messages: [@testkit.tk_user_msg("store-washed")],
     metadata: Map::from_array([
       (@types.PARENT_THREAD_ID_KEY, Json::string("missing-wash-parent")),
     ]),
   })
   let next : Result[@types.TurnResult, @error.AgentError] = Ok(
-    agent.run_turn(tk_user_msg("child"), child_sid),
+    agent.run_turn(@testkit.tk_user_msg("child"), child_sid),
   ) catch {
     error => Err(error)
   }

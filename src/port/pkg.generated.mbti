@@ -6,6 +6,7 @@ import {
   "colmugx/posoco/kernel",
   "colmugx/posoco/types",
   "moonbitlang/core/debug",
+  "moonbitlang/core/json",
 }
 
 // Values
@@ -19,21 +20,24 @@ pub fn HookAbort::to_string(Self) -> String
 pub impl Show for HookAbort
 
 // Types and methods
+#derive(@debug.Debug)
 pub(all) struct AutocompleteItem {
   label : String
   insert_text : String
   detail : String?
   kind : String
-} derive(@debug.Debug)
+}
 pub fn AutocompleteItem::to_repr(Self) -> @debug.Repr
 
+#derive(@debug.Debug)
 pub(all) struct AutocompleteSource {
   trigger : String
   kind : String
   fetch : (String) -> Array[AutocompleteItem]
-} derive(@debug.Debug)
+}
 pub fn AutocompleteSource::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) enum Capability {
   Model
   Decision
@@ -42,11 +46,12 @@ pub(all) enum Capability {
   Tasks
   Wakeup
   ToolContribution
-} derive(Eq, @debug.Debug)
+}
 pub fn Capability::equal(Self, Self) -> Bool
 pub fn Capability::not_equal(Self, Self) -> Bool
 pub fn Capability::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) struct CommandDef {
   id : String
   label : String
@@ -58,42 +63,45 @@ pub(all) struct CommandDef {
   shortcut : String?
   icon : String?
   visible : Bool
-  metadata : Json?
-} derive(Eq, @debug.Debug)
+  metadata : @json.Json?
+}
 pub fn CommandDef::equal(Self, Self) -> Bool
 pub fn CommandDef::not_equal(Self, Self) -> Bool
 pub fn CommandDef::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) enum CommandOutcome {
-  Success(feedback~ : String, structured~ : Json?, ui_hint~ : UiHint?)
+  Success(feedback~ : String, structured~ : @json.Json?, ui_hint~ : UiHint?)
   Failure(reason~ : String)
   NeedsInput(prompt~ : String)
-} derive(Eq, @debug.Debug)
+}
 pub fn CommandOutcome::equal(Self, Self) -> Bool
 pub fn CommandOutcome::not_equal(Self, Self) -> Bool
 pub fn CommandOutcome::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) struct CommandParam {
   name : String
   label : String
   description : String
   ptype : ParamType
   required : Bool
-  default : Json?
+  default : @json.Json?
   choices : Array[String]?
   positional : Bool
-} derive(Eq, @debug.Debug)
+}
 pub fn CommandParam::equal(Self, Self) -> Bool
 pub fn CommandParam::not_equal(Self, Self) -> Bool
 pub fn CommandParam::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) enum CommandType {
   Action
   Toggle
   Select
   Input
   MultiStep
-} derive(Eq, @debug.Debug)
+}
 pub fn CommandType::equal(Self, Self) -> Bool
 pub fn CommandType::not_equal(Self, Self) -> Bool
 pub fn CommandType::to_repr(Self) -> @debug.Repr
@@ -110,90 +118,100 @@ pub fn CompositionView::tool_contributions(Self) -> ToolContributions?
 pub fn CompositionView::ui(Self) -> &UiPort?
 pub fn CompositionView::wakeup(Self) -> WakeupPort?
 
+#derive(Eq, @debug.Debug)
 pub(all) enum DecisionAnswer {
   BooleanAnswer(id~ : String, probability_true~ : Double)
   ChoiceAnswer(id~ : String, selected~ : String, probabilities~ : Array[DecisionNamedProbability], confidence~ : Double?)
   ScoreAnswer(id~ : String, score~ : Double, probabilities~ : Array[Double], confidence~ : Double?)
-} derive(Eq, @debug.Debug)
+}
 pub fn DecisionAnswer::equal(Self, Self) -> Bool
 pub fn DecisionAnswer::not_equal(Self, Self) -> Bool
 pub fn DecisionAnswer::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) struct DecisionCallContext {
   purpose : String
   scope : DecisionScope?
   timeout_ms : Int32?
   failure_mode : DecisionFailureMode
-} derive(Eq, @debug.Debug)
+}
 pub fn DecisionCallContext::equal(Self, Self) -> Bool
 pub fn DecisionCallContext::make(purpose~ : String, scope? : DecisionScope, timeout_ms? : Int32, failure_mode? : DecisionFailureMode) -> Self
 pub fn DecisionCallContext::not_equal(Self, Self) -> Bool
 pub fn DecisionCallContext::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) enum DecisionFailureMode {
   Fallback
   FailClosed
   Propagate
-} derive(Eq, @debug.Debug)
+}
 pub fn DecisionFailureMode::equal(Self, Self) -> Bool
 pub fn DecisionFailureMode::not_equal(Self, Self) -> Bool
 pub fn DecisionFailureMode::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) struct DecisionNamedProbability {
   id : String
   probability : Double
-} derive(Eq, @debug.Debug)
+}
 pub fn DecisionNamedProbability::equal(Self, Self) -> Bool
 pub fn DecisionNamedProbability::not_equal(Self, Self) -> Bool
 pub fn DecisionNamedProbability::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) struct DecisionOption {
   id : String
-  description : Json?
-} derive(Eq, @debug.Debug)
+  description : @json.Json?
+}
 pub fn DecisionOption::equal(Self, Self) -> Bool
 pub fn DecisionOption::not_equal(Self, Self) -> Bool
 pub fn DecisionOption::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) enum DecisionQuestion {
-  Boolean(id~ : String, instructions~ : Json, true_criteria~ : Json?, false_criteria~ : Json?)
-  Choice(id~ : String, instructions~ : Json, options~ : Array[DecisionOption])
-  Score(id~ : String, instructions~ : Json, levels~ : Array[Json])
-} derive(Eq, @debug.Debug)
+  Boolean(id~ : String, instructions~ : @json.Json, true_criteria~ : @json.Json?, false_criteria~ : @json.Json?)
+  Choice(id~ : String, instructions~ : @json.Json, options~ : Array[DecisionOption])
+  Score(id~ : String, instructions~ : @json.Json, levels~ : Array[@json.Json])
+}
 pub fn DecisionQuestion::equal(Self, Self) -> Bool
 pub fn DecisionQuestion::not_equal(Self, Self) -> Bool
 pub fn DecisionQuestion::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) struct DecisionRequest {
-  state : Json
+  state : @json.Json
   questions : Array[DecisionQuestion]
-} derive(Eq, @debug.Debug)
+}
 pub fn DecisionRequest::equal(Self, Self) -> Bool
 pub fn DecisionRequest::not_equal(Self, Self) -> Bool
 pub fn DecisionRequest::to_repr(Self) -> @debug.Repr
 pub fn DecisionRequest::validate(Self) -> Unit raise @error.DecisionError
 
+#derive(Eq, @debug.Debug)
 pub(all) struct DecisionResult {
   answers : Array[DecisionAnswer]
   model : String?
   usage : DecisionUsage?
-} derive(Eq, @debug.Debug)
+}
 pub fn DecisionResult::equal(Self, Self) -> Bool
 pub fn DecisionResult::not_equal(Self, Self) -> Bool
 pub fn DecisionResult::to_repr(Self) -> @debug.Repr
 pub fn DecisionResult::validate_for(Self, DecisionRequest) -> Unit raise @error.DecisionError
 
+#derive(Eq, @debug.Debug)
 pub(all) struct DecisionScope {
   session : String
-} derive(Eq, @debug.Debug)
+}
 pub fn DecisionScope::equal(Self, Self) -> Bool
 pub fn DecisionScope::not_equal(Self, Self) -> Bool
 pub fn DecisionScope::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) struct DecisionUsage {
   input_tokens : Int32?
   output_tokens : Int32?
-} derive(Eq, @debug.Debug)
+}
 pub fn DecisionUsage::equal(Self, Self) -> Bool
 pub fn DecisionUsage::not_equal(Self, Self) -> Bool
 pub fn DecisionUsage::to_repr(Self) -> @debug.Repr
@@ -218,37 +236,41 @@ pub(all) struct ExtensionManifest {
 pub fn ExtensionManifest::ExtensionManifest(id~ : String, models? : Array[&ModelPort], decisions? : Array[&DecisionPort], logs? : Array[&LogPort], tools? : Array[&ToolProvider], sessions? : Array[&SessionPort], observers? : Array[&Observer], hooks? : Array[&PipelineHook], memory? : Array[&MemoryPort], lifecycle? : Array[&Lifecycle], commands? : Array[&CommandPort], ui? : Array[&UiPort], prompt_contributors? : Array[&SystemPromptContributor], requires? : Array[Capability], tool_call_owners? : Array[String]) -> Self
 pub fn ExtensionManifest::default(id~ : String) -> Self
 
+#derive(@debug.Debug)
 pub(all) enum HookStage {
   ModelCompleted(completion~ : @kernel.Completion)
   ToolCompleted(call~ : @kernel.ToolCall, outcome~ : @kernel.ToolOutcome)
   ToolFailed(call~ : @kernel.ToolCall, reason~ : String)
   ModelFailed(failure~ : @kernel.ModelFailure)
-} derive(@debug.Debug)
+}
 pub fn HookStage::output(Self, &Logger) -> Unit
 pub fn HookStage::to_repr(Self) -> @debug.Repr
 pub fn HookStage::to_string(Self) -> String
 pub impl Show for HookStage
 
+#derive(Eq, @debug.Debug)
 pub(all) enum LogDurability {
   Buffered
   Written
   Durable
-} derive(Eq, @debug.Debug)
+}
 pub fn LogDurability::equal(Self, Self) -> Bool
 pub fn LogDurability::not_equal(Self, Self) -> Bool
 pub fn LogDurability::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) enum LogLevel {
   Trace
   Debug
   Info
   Warn
   Error
-} derive(Eq, @debug.Debug)
+}
 pub fn LogLevel::equal(Self, Self) -> Bool
 pub fn LogLevel::not_equal(Self, Self) -> Bool
 pub fn LogLevel::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) struct LogRecord {
   level : LogLevel
   source : String
@@ -256,28 +278,30 @@ pub(all) struct LogRecord {
   event : String
   message : String?
   scope : @types.EventScope?
-  data : Json
-} derive(Eq, @debug.Debug)
+  data : @json.Json
+}
 pub fn LogRecord::equal(Self, Self) -> Bool
 pub fn LogRecord::not_equal(Self, Self) -> Bool
 pub fn LogRecord::to_repr(Self) -> @debug.Repr
 pub fn LogRecord::validate(Self) -> Unit raise @error.LogError
 
+#derive(Eq, @debug.Debug)
 pub(all) enum ParamType {
   Str
   Int
   Bool
   Strs
-} derive(Eq, @debug.Debug)
+}
 pub fn ParamType::equal(Self, Self) -> Bool
 pub fn ParamType::not_equal(Self, Self) -> Bool
 pub fn ParamType::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) struct ProviderConfig {
   reasoning_effort_values : Array[String]
   context_window : Int32?
   compact_threshold : Double?
-} derive(Eq, @debug.Debug)
+}
 pub fn ProviderConfig::ProviderConfig(reasoning_effort_values~ : Array[String], context_window? : Int32?, compact_threshold? : Double?) -> Self
 pub fn ProviderConfig::accepts_reasoning_effort(Self, String) -> Bool
 pub fn ProviderConfig::empty() -> Self
@@ -288,11 +312,12 @@ pub fn ProviderConfig::to_repr(Self) -> @debug.Repr
 pub fn ProviderConfig::to_string(Self) -> String
 pub impl Show for ProviderConfig
 
+#derive(Eq, @debug.Debug)
 pub(all) struct SessionCheckpoint {
   from_index : Int32
   messages : Array[@kernel.Message]
-  metadata : Map[String, Json]?
-} derive(Eq, @debug.Debug)
+  metadata : Map[String, @json.Json]?
+}
 pub fn SessionCheckpoint::equal(Self, Self) -> Bool
 pub fn SessionCheckpoint::not_equal(Self, Self) -> Bool
 pub fn SessionCheckpoint::to_repr(Self) -> @debug.Repr
@@ -305,29 +330,32 @@ pub fn TaskHandle::from_callbacks(receipt~ : TaskReceipt, wait~ : async (TaskRec
 pub fn TaskHandle::receipt(Self) -> TaskReceipt
 pub async fn TaskHandle::wait(Self) -> TaskOutcome
 
+#derive(Eq, @debug.Debug)
 pub(all) enum TaskMode {
   Foreground
   Background
-} derive(Eq, @debug.Debug)
+}
 pub fn TaskMode::equal(Self, Self) -> Bool
 pub fn TaskMode::not_equal(Self, Self) -> Bool
 pub fn TaskMode::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) struct TaskOutcome {
   receipt : TaskReceipt
   status : TaskStatus
-} derive(Eq, @debug.Debug)
+}
 pub fn TaskOutcome::equal(Self, Self) -> Bool
 pub fn TaskOutcome::not_equal(Self, Self) -> Bool
 pub fn TaskOutcome::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) struct TaskReceipt {
   id : String
   session_id : String
   mode : TaskMode
   label : String
   extension_id : String
-} derive(Eq, @debug.Debug)
+}
 pub fn TaskReceipt::equal(Self, Self) -> Bool
 pub fn TaskReceipt::not_equal(Self, Self) -> Bool
 pub fn TaskReceipt::to_repr(Self) -> @debug.Repr
@@ -340,22 +368,24 @@ pub(all) struct TaskSpec {
   run : async () -> @kernel.Message
 }
 
+#derive(Eq, @debug.Debug)
 pub(all) enum TaskStatus {
   Completed(message~ : @kernel.Message)
   Failed(reason~ : String)
   TimedOut
   Cancelled(reason~ : String)
-} derive(Eq, @debug.Debug)
+}
 pub fn TaskStatus::equal(Self, Self) -> Bool
 pub fn TaskStatus::not_equal(Self, Self) -> Bool
 pub fn TaskStatus::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) enum TaskSubmitError {
   Unavailable
   Closed
   QueueFull
   InvalidSession(reason~ : String)
-} derive(Eq, @debug.Debug)
+}
 pub fn TaskSubmitError::equal(Self, Self) -> Bool
 pub fn TaskSubmitError::not_equal(Self, Self) -> Bool
 pub fn TaskSubmitError::to_repr(Self) -> @debug.Repr
@@ -370,32 +400,34 @@ pub struct ToolCallContext {
   effect_id : @kernel.EffectId
   call_id : @kernel.CallId
   name : @kernel.ToolName
-  arguments : Json
+  arguments : @json.Json
   register_cancel : (&ToolCancellable) -> Unit
   scope : @kernel.InvocationScope?
   parent_effect_id : @kernel.EffectId?
   root_effect_id : @kernel.EffectId
   // private fields
 }
-pub fn ToolCallContext::ToolCallContext(effect_id~ : @kernel.EffectId, call_id~ : @kernel.CallId, name~ : @kernel.ToolName, arguments~ : Json, register_cancel~ : (&ToolCancellable) -> Unit, scope? : @kernel.InvocationScope, parent_effect_id? : @kernel.EffectId, root_effect_id? : @kernel.EffectId, tools? : () -> Array[@kernel.ToolDef], invoke? : async (String, Json) -> @kernel.InvocationResult, active? : () -> Bool) -> Self
-pub async fn ToolCallContext::invoke(Self, String, Json) -> @kernel.InvocationResult raise @error.RuntimeError
+pub fn ToolCallContext::ToolCallContext(effect_id~ : @kernel.EffectId, call_id~ : @kernel.CallId, name~ : @kernel.ToolName, arguments~ : @json.Json, register_cancel~ : (&ToolCancellable) -> Unit, scope? : @kernel.InvocationScope, parent_effect_id? : @kernel.EffectId, root_effect_id? : @kernel.EffectId, tools? : () -> Array[@kernel.ToolDef], invoke? : async (String, @json.Json) -> @kernel.InvocationResult, active? : () -> Bool) -> Self
+pub async fn ToolCallContext::invoke(Self, String, @json.Json) -> @kernel.InvocationResult raise @error.RuntimeError
 pub fn ToolCallContext::tools(Self) -> Array[@kernel.ToolDef]
 
+#derive(Eq, @debug.Debug)
 pub(all) struct ToolContributionCommit {
   owner : String
   revision : Int32
   state : ToolContributionState
-} derive(Eq, @debug.Debug)
+}
 pub fn ToolContributionCommit::equal(Self, Self) -> Bool
 pub fn ToolContributionCommit::not_equal(Self, Self) -> Bool
 pub fn ToolContributionCommit::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) enum ToolContributionError {
   Closed
   NotContributed
   Rejected(reason~ : String)
   CleanupPending(revision~ : Int32, state~ : ToolContributionState, detail~ : String)
-} derive(Eq, @debug.Debug)
+}
 pub fn ToolContributionError::equal(Self, Self) -> Bool
 pub fn ToolContributionError::not_equal(Self, Self) -> Bool
 pub fn ToolContributionError::output(Self, &Logger) -> Unit
@@ -403,11 +435,12 @@ pub fn ToolContributionError::to_repr(Self) -> @debug.Repr
 pub fn ToolContributionError::to_string(Self) -> String
 pub impl Show for ToolContributionError
 
+#derive(Eq, @debug.Debug)
 pub(all) enum ToolContributionState {
   Active
   Withdrawn
   Closed
-} derive(Eq, @debug.Debug)
+}
 pub fn ToolContributionState::equal(Self, Self) -> Bool
 pub fn ToolContributionState::not_equal(Self, Self) -> Bool
 pub fn ToolContributionState::output(Self, &Logger) -> Unit
@@ -425,21 +458,23 @@ pub fn ToolContributions::revision(Self) -> Int32?
 pub fn ToolContributions::state(Self) -> ToolContributionState
 pub async fn ToolContributions::withdraw(Self, mode? : ToolWithdrawMode) -> Result[ToolContributionCommit, ToolContributionError] noraise
 
+#derive(@debug.Debug)
 pub(all) enum ToolDecision {
   Approve(call~ : @kernel.ToolCall)
   ApproveAfterConsent(call~ : @kernel.ToolCall, consent_scope~ : String)
   Defer(reason~ : String)
   Reject(reason~ : String)
-} derive(@debug.Debug)
+}
 pub fn ToolDecision::output(Self, &Logger) -> Unit
 pub fn ToolDecision::to_repr(Self) -> @debug.Repr
 pub fn ToolDecision::to_string(Self) -> String
 pub impl Show for ToolDecision
 
+#derive(Eq, @debug.Debug)
 pub(all) enum ToolWithdrawMode {
   Soft
   Hard
-} derive(Eq, @debug.Debug)
+}
 pub fn ToolWithdrawMode::equal(Self, Self) -> Bool
 pub fn ToolWithdrawMode::not_equal(Self, Self) -> Bool
 pub fn ToolWithdrawMode::output(Self, &Logger) -> Unit
@@ -447,6 +482,7 @@ pub fn ToolWithdrawMode::to_repr(Self) -> @debug.Repr
 pub fn ToolWithdrawMode::to_string(Self) -> String
 pub impl Show for ToolWithdrawMode
 
+#derive(@debug.Debug)
 pub(all) enum UiBody {
   Text(String)
   Lines(Array[String])
@@ -454,65 +490,71 @@ pub(all) enum UiBody {
   Entries(Array[UiEntry])
   Progress(Double)
   Markdown(String)
-} derive(@debug.Debug)
+}
 pub fn UiBody::output(Self, &Logger) -> Unit
 pub fn UiBody::to_repr(Self) -> @debug.Repr
 pub fn UiBody::to_string(Self) -> String
 pub impl Show for UiBody
 
+#derive(@debug.Debug)
 pub(all) struct UiDescriptor {
   autocomplete_sources : Array[AutocompleteSource]
-} derive(@debug.Debug)
+}
 pub fn UiDescriptor::empty() -> Self
 pub fn UiDescriptor::to_repr(Self) -> @debug.Repr
 
+#derive(@debug.Debug)
 pub(all) struct UiEntry {
   key : String
   value : String
   color : String?
-} derive(@debug.Debug)
+}
 pub fn UiEntry::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) enum UiHint {
   RefreshModelList
   RefreshSettings
   ClosePanel
   Toast
   None
-} derive(Eq, @debug.Debug)
+}
 pub fn UiHint::equal(Self, Self) -> Bool
 pub fn UiHint::not_equal(Self, Self) -> Bool
 pub fn UiHint::to_repr(Self) -> @debug.Repr
 
+#derive(@debug.Debug)
 pub(all) struct UiRender {
   slot : UiSlot
   key : String
   title : String?
   body : UiBody
   ttl_ms : Int32?
-} derive(@debug.Debug)
+}
 pub fn UiRender::output(Self, &Logger) -> Unit
 pub fn UiRender::to_repr(Self) -> @debug.Repr
 pub fn UiRender::to_string(Self) -> String
 pub impl Show for UiRender
 
+#derive(@debug.Debug)
 pub(all) enum UiRequest {
   Input(prompt~ : String, default~ : String?)
   Confirm(prompt~ : String)
   Select(prompt~ : String, options~ : Array[String], default~ : Int32?)
-} derive(@debug.Debug)
+}
 pub fn UiRequest::output(Self, &Logger) -> Unit
 pub fn UiRequest::to_repr(Self) -> @debug.Repr
 pub fn UiRequest::to_string(Self) -> String
 pub impl Show for UiRequest
 
+#derive(Eq, @debug.Debug)
 pub(all) enum UiResponse {
   Text(String)
   Yes
   No
   Selected(Int32)
   Cancelled
-} derive(Eq, @debug.Debug)
+}
 pub fn UiResponse::equal(Self, Self) -> Bool
 pub fn UiResponse::not_equal(Self, Self) -> Bool
 pub fn UiResponse::output(Self, &Logger) -> Unit
@@ -520,11 +562,12 @@ pub fn UiResponse::to_repr(Self) -> @debug.Repr
 pub fn UiResponse::to_string(Self) -> String
 pub impl Show for UiResponse
 
+#derive(Eq, @debug.Debug)
 pub(all) enum UiSlot {
   Status
   Notice
   Widget
-} derive(Eq, @debug.Debug)
+}
 pub fn UiSlot::equal(Self, Self) -> Bool
 pub fn UiSlot::not_equal(Self, Self) -> Bool
 pub fn UiSlot::output(Self, &Logger) -> Unit
@@ -532,11 +575,12 @@ pub fn UiSlot::to_repr(Self) -> @debug.Repr
 pub fn UiSlot::to_string(Self) -> String
 pub impl Show for UiSlot
 
+#derive(Eq, @debug.Debug)
 pub(all) enum WakeupError {
   ScopeInactive
   TagInvalid(reason~ : String)
   InvalidSession(reason~ : String)
-} derive(Eq, @debug.Debug)
+}
 pub fn WakeupError::equal(Self, Self) -> Bool
 pub fn WakeupError::not_equal(Self, Self) -> Bool
 pub fn WakeupError::to_repr(Self) -> @debug.Repr
@@ -547,12 +591,13 @@ pub struct WakeupPort {
 pub fn WakeupPort::from_request(request~ : (String, String, String) -> Result[WakeupTicket, WakeupError]) -> Self
 pub fn WakeupPort::request(Self, session~ : String, tag~ : String, note? : String) -> Result[WakeupTicket, WakeupError]
 
+#derive(Eq, @debug.Debug)
 pub(all) struct WakeupTicket {
   id : String
   session : String
   tag : String
   enqueued_at : Int64
-} derive(Eq, @debug.Debug)
+}
 pub fn WakeupTicket::equal(Self, Self) -> Bool
 pub fn WakeupTicket::not_equal(Self, Self) -> Bool
 pub fn WakeupTicket::to_repr(Self) -> @debug.Repr
@@ -563,7 +608,7 @@ pub type ToolRetire = async () -> Result[Unit, String]
 // Traits
 pub(open) trait CommandPort {
   fn commands(Self) -> Array[CommandDef]
-  async fn invoke(Self, String, Json) -> CommandOutcome raise @error.CommandError
+  async fn invoke(Self, String, @json.Json) -> CommandOutcome raise @error.CommandError
 }
 
 pub(open) trait DecisionPort {
@@ -588,7 +633,7 @@ pub(open) trait LogPort {
 
 pub(open) trait MemoryPort {
   async fn inbound(Self, session_id~ : String, request~ : String) -> String? raise @error.MemoryError
-  async fn store(Self, content~ : String, metadata~ : Map[String, Json]) -> String raise @error.MemoryError
+  async fn store(Self, content~ : String, metadata~ : Map[String, @json.Json]) -> String raise @error.MemoryError
   async fn search(Self, query~ : String, top_k? : Int32) -> String? raise @error.MemoryError
   async fn delete(Self, String) -> Unit raise @error.MemoryError
 }

@@ -134,8 +134,8 @@ async test "b1_simple_turn_no_tools" {
 
   let agent = @posoco.Agent(
     exts=[
-      @posoco.tk_ext(id="model", model=Some(model)),
-      @posoco.tk_ext(id="io", tools=[empty_tools()], sessions=[store], observers=[
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", tools=[empty_tools()], sessions=[store], observers=[
         observer,
       ]),
     ],
@@ -197,8 +197,8 @@ async test "b8_turn_event_lifecycle" {
 
   let agent = @posoco.Agent(
     exts=[
-      @posoco.tk_ext(id="model", model=Some(model)),
-      @posoco.tk_ext(id="io", tools=[empty_tools()], sessions=[store], observers=[
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", tools=[empty_tools()], sessions=[store], observers=[
         observer,
       ]),
     ],
@@ -245,8 +245,8 @@ async test "b9_model_error_aborts" {
 
   let agent = @posoco.Agent(
     exts=[
-      @posoco.tk_ext(id="model", model=Some(model)),
-      @posoco.tk_ext(id="io", tools=[empty_tools()], sessions=[store], observers=[
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", tools=[empty_tools()], sessions=[store], observers=[
         observer,
       ]),
     ],
@@ -269,8 +269,8 @@ async test "b10_agent_reuses_one_puppet_across_turns" {
   let observer = MockObserver::{ events: [], }
   let agent = @posoco.Agent(
     exts=[
-      @posoco.tk_ext(id="model", model=Some(model)),
-      @posoco.tk_ext(id="io", tools=[empty_tools()], sessions=[store], observers=[
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", tools=[empty_tools()], sessions=[store], observers=[
         observer,
       ]),
     ],
@@ -296,7 +296,7 @@ async test "b11_agent_runs_ephemerally_without_session_store" {
     index: 0,
   }
   let agent = @posoco.Agent(
-    exts=[@posoco.tk_ext(id="model", model=Some(model))],
+    exts=[@testkit.tk_ext(id="model", model=Some(model))],
     config=make_config(),
   )
   let result = agent.run_turn(user_msg("hello"), "ephemeral-session")

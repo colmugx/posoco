@@ -4,7 +4,7 @@ using @support {type CancellableProbe}
 ///|
 async test "port cancel/equal effect ids cancel only the specified run" {
   let probe = CancellableProbe()
-  let runtime = @runtime.PortRuntime(model=ScriptedModel([]))
+  let runtime = @runtime.PortRuntime(model=@testkit.ScriptedModel([]))
   @async.with_timeout(2000, () => {
     @async.with_task_group(group => {
       group.spawn_bg(() => {
@@ -37,7 +37,7 @@ async test "port cancel/equal effect ids cancel only the specified run" {
 ///|
 async test "port cancel/duplicate live run effect cannot replace its registration" {
   let probe = CancellableProbe()
-  let runtime = @runtime.PortRuntime(model=ScriptedModel([]))
+  let runtime = @runtime.PortRuntime(model=@testkit.ScriptedModel([]))
   @async.with_timeout(2000, () => {
     @async.with_task_group(group => {
       group.spawn_bg(() => {
@@ -72,7 +72,7 @@ async test "port cancel/duplicate live run effect cannot replace its registratio
 ///|
 async test "port cancel/run scoped registrations isolate unknown runs and reject duplicates" {
   let probe = CancellableProbe()
-  let runtime = @runtime.PortRuntime(model=ScriptedModel([]))
+  let runtime = @runtime.PortRuntime(model=@testkit.ScriptedModel([]))
   @async.with_timeout(5_000, async fn() {
     @async.with_task_group(group => {
       group.spawn_bg(() => {
@@ -115,14 +115,14 @@ async test "port cancel/registrar_expires_even_for_a_manually_constructed_contex
   let saved : Array[@port.ToolCallContext] = []
   let provider = InvocationFixture::{
     id: "probe_owner",
-    definitions: [tk_tool_def("probe", "probe")],
+    definitions: [@testkit.tk_tool_def("probe", "probe")],
     owners: [],
     action: ctx => {
       saved.push(ctx)
-      tk_ok_result("settled")
+      @testkit.tk_ok_result("settled")
     },
   }
-  let runtime = @runtime.PortRuntime(model=ScriptedModel([]))
+  let runtime = @runtime.PortRuntime(model=@testkit.ScriptedModel([]))
   ignore(runtime.execute_tool(probe_effect(7, provider~, run_id="settled")))
   let late = CancellationProbe::{ disposition: Stopped, ids: [], }
   (saved[0].register_cancel)(late)

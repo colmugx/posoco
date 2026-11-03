@@ -212,7 +212,7 @@ async fn exec_memory_tool(
 
 ///|
 fn secondary_failure_errors(
-  observer : RecordingObserver,
+  observer : @testkit.RecordingObserver,
   hook_point : String,
 ) -> Array[String] raise {
   let out : Array[String] = []
@@ -241,10 +241,10 @@ fn secondary_failure_errors(
 
 ///|
 fn build_memory_agent(
-  model : ScriptedModel,
+  model : @testkit.ScriptedModel,
   memory : Array[&@port.MemoryPort],
-  store : RecordingSessionPort,
-  observer : RecordingObserver,
+  store : @testkit.RecordingSessionPort,
+  observer : @testkit.RecordingObserver,
   system_prompt : String?,
   timeout_ms : Int32?,
 ) -> Agent raise @error.CompositionError {
@@ -255,9 +255,9 @@ fn build_memory_agent(
   )
   Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="memory", memory~),
-      tk_ext(id="io", sessions=[store], observers=[observer]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="memory", memory~),
+      @testkit.tk_ext(id="io", sessions=[store], observers=[observer]),
     ],
     config~,
   )
@@ -392,19 +392,21 @@ async test "m38_sysprompt/config_base_precedes_contributors" {
   let contributor : &@port.SystemPromptContributor = FixedPromptContributor::{
     text: "from_ext",
   }
-  let model = ScriptedModel([Respond(tk_stop_response("ok"))])
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("ok")),
+  ])
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="ext", prompt_contributors=[contributor]),
-      tk_ext(id="io", sessions=[RecordingSessionPort()]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="ext", prompt_contributors=[contributor]),
+      @testkit.tk_ext(id="io", sessions=[@testkit.RecordingSessionPort()]),
     ],
     config=agent_config(
       max_tool_rounds=Some(10),
       system_prompt=Some("host_base"),
     ),
   )
-  ignore(agent.run_turn(tk_user_msg("hi"), "session_base"))
+  ignore(agent.run_turn(@testkit.tk_user_msg("hi"), "session_base"))
   assert_true(model.received_messages.length() == 1)
   let prompt = model.received_messages[0]
   assert_true(prompt.length() >= 1)
@@ -423,20 +425,22 @@ async test "m38_sysprompt/lazy_assembly_reads_post_on_start" {
   let text_ref = Ref("before_start")
   let contributor = MutablePromptContributor::{ text: text_ref, }
   let starter : &@port.Lifecycle = StartSettingLifecycle::{ target: text_ref, }
-  let model = ScriptedModel([Respond(tk_stop_response("ok"))])
-  let store = RecordingSessionPort()
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("ok")),
+  ])
+  let store = @testkit.RecordingSessionPort()
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="lifecycle", lifecycle=[starter]),
-      tk_ext(id="ext", prompt_contributors=[
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="lifecycle", lifecycle=[starter]),
+      @testkit.tk_ext(id="ext", prompt_contributors=[
         contributor as &@port.SystemPromptContributor,
       ]),
-      tk_ext(id="io", sessions=[store]),
+      @testkit.tk_ext(id="io", sessions=[store]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
-  ignore(agent.run_turn(tk_user_msg("hi"), "session_lazy"))
+  ignore(agent.run_turn(@testkit.tk_user_msg("hi"), "session_lazy"))
   assert_true(model.received_messages.length() == 1)
   let prompt = model.received_messages[0]
   match prompt[0] {
@@ -451,17 +455,19 @@ async test "m38_sysprompt/lazy_assembly_reads_post_on_start" {
 
 ///|
 async test "m38_memory/fresh_session_injects_once" {
-  let model = ScriptedModel([Respond(tk_stop_response("ok"))])
-  let mem = ScriptedMemoryPort(inbounds=[Some("fact one")])
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("ok")),
+  ])
+  let mem = @testkit.ScriptedMemoryPort(inbounds=[Some("fact one")])
   let agent = build_memory_agent(
     model,
     [mem as &@port.MemoryPort],
-    RecordingSessionPort(),
-    RecordingObserver(),
+    @testkit.RecordingSessionPort(),
+    @testkit.RecordingObserver(),
     Some("SYS"),
     None,
   )
-  ignore(agent.run_turn(tk_user_msg("hello"), "session_1"))
+  ignore(agent.run_turn(@testkit.tk_user_msg("hello"), "session_1"))
   assert_eq(mem.call_count(), 1)
   assert_eq(mem.received_sessions(), ["session_1"])
   assert_eq(mem.received_requests(), ["hello"])
@@ -489,17 +495,19 @@ async test "m38_memory/fresh_session_injects_once" {
 
 ///|
 async test "m38_memory/memory_at_front_without_system_prompt" {
-  let model = ScriptedModel([Respond(tk_stop_response("ok"))])
-  let mem = ScriptedMemoryPort(inbounds=[Some("fact")])
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("ok")),
+  ])
+  let mem = @testkit.ScriptedMemoryPort(inbounds=[Some("fact")])
   let agent = build_memory_agent(
     model,
     [mem as &@port.MemoryPort],
-    RecordingSessionPort(),
-    RecordingObserver(),
+    @testkit.RecordingSessionPort(),
+    @testkit.RecordingObserver(),
     None,
     None,
   )
-  ignore(agent.run_turn(tk_user_msg("query"), "session_1"))
+  ignore(agent.run_turn(@testkit.tk_user_msg("query"), "session_1"))
   let prompt = model.received_messages[0]
   assert_eq(prompt.length(), 2)
   expect_inbound_message(prompt[0], ["fact"])
@@ -515,21 +523,21 @@ async test "m38_memory/memory_at_front_without_system_prompt" {
 
 ///|
 async test "m38_memory/second_turn_no_reread_prefix_stable" {
-  let model = ScriptedModel([
-    Respond(tk_stop_response("ok")),
-    Respond(tk_stop_response("ok")),
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("ok")),
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("ok")),
   ])
-  let mem = ScriptedMemoryPort(inbounds=[Some("fact")])
+  let mem = @testkit.ScriptedMemoryPort(inbounds=[Some("fact")])
   let agent = build_memory_agent(
     model,
     [mem as &@port.MemoryPort],
-    RecordingSessionPort(),
-    RecordingObserver(),
+    @testkit.RecordingSessionPort(),
+    @testkit.RecordingObserver(),
     Some("SYS"),
     None,
   )
-  ignore(agent.run_turn(tk_user_msg("hello"), "session_1"))
-  ignore(agent.run_turn(tk_user_msg("again"), "session_1"))
+  ignore(agent.run_turn(@testkit.tk_user_msg("hello"), "session_1"))
+  ignore(agent.run_turn(@testkit.tk_user_msg("again"), "session_1"))
   assert_eq(mem.call_count(), 1)
   let first = model.received_messages[0]
   let second = model.received_messages[1]
@@ -542,25 +550,28 @@ async test "m38_memory/second_turn_no_reread_prefix_stable" {
 
 ///|
 async test "m38_memory/empty_inbound_spends_attempt_per_session" {
-  let model = ScriptedModel([
-    Respond(tk_stop_response("ok")),
-    Respond(tk_stop_response("ok")),
-    Respond(tk_stop_response("ok")),
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("ok")),
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("ok")),
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("ok")),
   ])
-  let mem = ScriptedMemoryPort(inbounds=[None, Some("second session fact")])
-  let observer = RecordingObserver()
+  let mem = @testkit.ScriptedMemoryPort(inbounds=[
+    None,
+    Some("second session fact"),
+  ])
+  let observer = @testkit.RecordingObserver()
   let agent = build_memory_agent(
     model,
     [mem as &@port.MemoryPort],
-    RecordingSessionPort(),
+    @testkit.RecordingSessionPort(),
     observer,
     None,
     None,
   )
-  let first_turn = agent.run_turn(tk_user_msg("q1"), "session_1")
+  let first_turn = agent.run_turn(@testkit.tk_user_msg("q1"), "session_1")
   assert_eq(first_turn.final_session_id, "session_1")
   assert_eq(model.received_messages[0].length(), 1)
-  ignore(agent.run_turn(tk_user_msg("q2"), "session_1"))
+  ignore(agent.run_turn(@testkit.tk_user_msg("q2"), "session_1"))
   assert_eq(mem.call_count(), 1)
   assert_eq(model.received_messages[1].length(), 3)
   match model.received_messages[1][0] {
@@ -571,7 +582,7 @@ async test "m38_memory/empty_inbound_spends_attempt_per_session" {
       }
     _ => fail("expected history replay to start with the first input")
   }
-  ignore(agent.run_turn(tk_user_msg("q3"), "session_2"))
+  ignore(agent.run_turn(@testkit.tk_user_msg("q3"), "session_2"))
   assert_eq(mem.call_count(), 2)
   assert_eq(mem.received_sessions(), ["session_1", "session_2"])
   assert_eq(model.received_messages[2].length(), 2)
@@ -591,29 +602,33 @@ async test "m38_memory/empty_inbound_spends_attempt_per_session" {
 
 ///|
 async test "m38_memory/resume_skips_read_and_replays_prefix" {
-  let model1 = ScriptedModel([Respond(tk_stop_response("ok"))])
-  let mem1 = ScriptedMemoryPort(inbounds=[Some("fact")])
-  let store = RecordingSessionPort()
+  let model1 = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("ok")),
+  ])
+  let mem1 = @testkit.ScriptedMemoryPort(inbounds=[Some("fact")])
+  let store = @testkit.RecordingSessionPort()
   let agent1 = build_memory_agent(
     model1,
     [mem1 as &@port.MemoryPort],
     store,
-    RecordingObserver(),
+    @testkit.RecordingObserver(),
     Some("SYS"),
     None,
   )
-  ignore(agent1.run_turn(tk_user_msg("hello"), "session_1"))
-  let model2 = ScriptedModel([Respond(tk_stop_response("ok"))])
-  let mem2 = ScriptedMemoryPort(inbounds=[Some("CHANGED")])
+  ignore(agent1.run_turn(@testkit.tk_user_msg("hello"), "session_1"))
+  let model2 = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("ok")),
+  ])
+  let mem2 = @testkit.ScriptedMemoryPort(inbounds=[Some("CHANGED")])
   let agent2 = build_memory_agent(
     model2,
     [mem2 as &@port.MemoryPort],
     store,
-    RecordingObserver(),
+    @testkit.RecordingObserver(),
     Some("SYS"),
     None,
   )
-  ignore(agent2.run_turn(tk_user_msg("resume"), "session_1"))
+  ignore(agent2.run_turn(@testkit.tk_user_msg("resume"), "session_1"))
   assert_eq(mem2.call_count(), 0)
   let first = model1.received_messages[0]
   let second = model2.received_messages[0]
@@ -625,12 +640,14 @@ async test "m38_memory/resume_skips_read_and_replays_prefix" {
 
 ///|
 async test "m38_memory/preseeded_history_never_injects" {
-  let model = ScriptedModel([Respond(tk_stop_response("ok"))])
-  let mem = ScriptedMemoryPort(inbounds=[Some("must never be read")])
-  let store = RecordingSessionPort()
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("ok")),
+  ])
+  let mem = @testkit.ScriptedMemoryPort(inbounds=[Some("must never be read")])
+  let store = @testkit.RecordingSessionPort()
   store.seed("session_pre", {
     messages: [
-      tk_user_msg("old question"),
+      @testkit.tk_user_msg("old question"),
       AssistantMessage(
         content=[Text("old answer")],
         tool_calls=[],
@@ -644,11 +661,11 @@ async test "m38_memory/preseeded_history_never_injects" {
     model,
     [mem as &@port.MemoryPort],
     store,
-    RecordingObserver(),
+    @testkit.RecordingObserver(),
     None,
     None,
   )
-  ignore(agent.run_turn(tk_user_msg("new question"), "session_pre"))
+  ignore(agent.run_turn(@testkit.tk_user_msg("new question"), "session_pre"))
   assert_eq(mem.call_count(), 0)
   let prompt = model.received_messages[0]
   assert_eq(prompt.length(), 3)
@@ -664,18 +681,20 @@ async test "m38_memory/preseeded_history_never_injects" {
 
 ///|
 async test "m38_memory/two_providers_merge_into_one_message" {
-  let model = ScriptedModel([Respond(tk_stop_response("ok"))])
-  let notes = ScriptedMemoryPort(inbounds=[Some("notes fact")])
-  let book = ScriptedMemoryPort(inbounds=[Some("book fact")])
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("ok")),
+  ])
+  let notes = @testkit.ScriptedMemoryPort(inbounds=[Some("notes fact")])
+  let book = @testkit.ScriptedMemoryPort(inbounds=[Some("book fact")])
   let agent = build_memory_agent(
     model,
     [notes as &@port.MemoryPort, book as &@port.MemoryPort],
-    RecordingSessionPort(),
-    RecordingObserver(),
+    @testkit.RecordingSessionPort(),
+    @testkit.RecordingObserver(),
     None,
     None,
   )
-  ignore(agent.run_turn(tk_user_msg("query"), "session_1"))
+  ignore(agent.run_turn(@testkit.tk_user_msg("query"), "session_1"))
   assert_eq(notes.call_count(), 1)
   assert_eq(book.call_count(), 1)
   let prompt = model.received_messages[0]
@@ -685,19 +704,21 @@ async test "m38_memory/two_providers_merge_into_one_message" {
 
 ///|
 async test "m38_memory/failing_provider_does_not_mask_sibling" {
-  let model = ScriptedModel([Respond(tk_stop_response("ok"))])
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("ok")),
+  ])
   let failing : &@port.MemoryPort = FailingInboundPort::{ _dummy: (), }
-  let ok = ScriptedMemoryPort(inbounds=[Some("recovered")])
-  let observer = RecordingObserver()
+  let ok = @testkit.ScriptedMemoryPort(inbounds=[Some("recovered")])
+  let observer = @testkit.RecordingObserver()
   let agent = build_memory_agent(
     model,
     [failing, ok as &@port.MemoryPort],
-    RecordingSessionPort(),
+    @testkit.RecordingSessionPort(),
     observer,
     None,
     None,
   )
-  let result = agent.run_turn(tk_user_msg("query"), "session_1")
+  let result = agent.run_turn(@testkit.tk_user_msg("query"), "session_1")
   assert_eq(result.final_session_id, "session_1")
   let prompt = model.received_messages[0]
   assert_eq(prompt.length(), 2)
@@ -709,18 +730,20 @@ async test "m38_memory/failing_provider_does_not_mask_sibling" {
 
 ///|
 async test "m38_memory/inbound_timeout_emits_secondary_failure" {
-  let model = ScriptedModel([Respond(tk_stop_response("ok"))])
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("ok")),
+  ])
   let slow : &@port.MemoryPort = SlowInboundPort::{ _dummy: (), }
-  let observer = RecordingObserver()
+  let observer = @testkit.RecordingObserver()
   let agent = build_memory_agent(
     model,
     [slow],
-    RecordingSessionPort(),
+    @testkit.RecordingSessionPort(),
     observer,
     None,
     Some(1),
   )
-  let result = agent.run_turn(tk_user_msg("query"), "session_1")
+  let result = agent.run_turn(@testkit.tk_user_msg("query"), "session_1")
   assert_eq(result.final_session_id, "session_1")
   assert_eq(model.received_messages[0].length(), 1)
   let failures = secondary_failure_errors(observer, "memory_inbound")
@@ -730,9 +753,9 @@ async test "m38_memory/inbound_timeout_emits_secondary_failure" {
 
 ///|
 async test "m38_memory/search_merges_sources_in_order" {
-  let a = ScriptedMemoryPort(inbounds=[], search_script=[Some("hit-a")])
-  let b = ScriptedMemoryPort(inbounds=[], search_script=[Some("hit-b")])
-  let empty = ScriptedMemoryPort(inbounds=[])
+  let a = @testkit.ScriptedMemoryPort(inbounds=[], search_script=[Some("hit-a")])
+  let b = @testkit.ScriptedMemoryPort(inbounds=[], search_script=[Some("hit-b")])
+  let empty = @testkit.ScriptedMemoryPort(inbounds=[])
   let provider = MemoryToolProvider(
     sources=[
       ("a", a as &@port.MemoryPort),
@@ -755,8 +778,8 @@ async test "m38_memory/search_merges_sources_in_order" {
 
 ///|
 async test "m38_memory/search_all_empty_reports_no_match" {
-  let a = ScriptedMemoryPort(inbounds=[])
-  let b = ScriptedMemoryPort(inbounds=[])
+  let a = @testkit.ScriptedMemoryPort(inbounds=[])
+  let b = @testkit.ScriptedMemoryPort(inbounds=[])
   let provider = MemoryToolProvider(
     sources=[("a", a as &@port.MemoryPort), ("b", b as &@port.MemoryPort)],
     on_failure=fn(_reason) { () },
@@ -774,7 +797,9 @@ async test "m38_memory/search_all_empty_reports_no_match" {
 ///|
 async test "m38_memory/search_failure_skips_source_and_names_it" {
   let bad : &@port.MemoryPort = FailingInboundPort::{ _dummy: (), }
-  let good = ScriptedMemoryPort(inbounds=[], search_script=[Some("hit-b")])
+  let good = @testkit.ScriptedMemoryPort(inbounds=[], search_script=[
+    Some("hit-b"),
+  ])
   let reasons : Array[String] = []
   let provider = MemoryToolProvider(
     sources=[("bad", bad), ("good", good as &@port.MemoryPort)],
@@ -817,7 +842,7 @@ async test "m38_memory/search_all_failed_reports_failures_not_miss" {
 ///|
 async test "m38_memory/search_failure_with_clean_miss_reports_failure" {
   let bad : &@port.MemoryPort = FailingInboundPort::{ _dummy: (), }
-  let miss = ScriptedMemoryPort(inbounds=[], search_script=[None])
+  let miss = @testkit.ScriptedMemoryPort(inbounds=[], search_script=[None])
   let provider = MemoryToolProvider(
     sources=[("bad", bad), ("miss", miss as &@port.MemoryPort)],
     on_failure=fn(_reason) { () },
@@ -836,8 +861,8 @@ async test "m38_memory/search_failure_with_clean_miss_reports_failure" {
 
 ///|
 async test "m38_memory/add_writes_all_sources_with_receipts" {
-  let a = ScriptedMemoryPort(inbounds=[])
-  let b = ScriptedMemoryPort(inbounds=[])
+  let a = @testkit.ScriptedMemoryPort(inbounds=[])
+  let b = @testkit.ScriptedMemoryPort(inbounds=[])
   let provider = MemoryToolProvider(
     sources=[("a", a as &@port.MemoryPort), ("b", b as &@port.MemoryPort)],
     on_failure=fn(_reason) { () },
@@ -861,8 +886,8 @@ async test "m38_memory/add_writes_all_sources_with_receipts" {
 
 ///|
 async test "m38_memory/add_targeted_source_routes_to_one" {
-  let a = ScriptedMemoryPort(inbounds=[])
-  let b = ScriptedMemoryPort(inbounds=[])
+  let a = @testkit.ScriptedMemoryPort(inbounds=[])
+  let b = @testkit.ScriptedMemoryPort(inbounds=[])
   let provider = MemoryToolProvider(
     sources=[("a", a as &@port.MemoryPort), ("b", b as &@port.MemoryPort)],
     on_failure=fn(_reason) { () },
@@ -881,7 +906,7 @@ async test "m38_memory/add_targeted_source_routes_to_one" {
 
 ///|
 async test "m38_memory/add_rejects_unknown_source_and_empty_content" {
-  let a = ScriptedMemoryPort(inbounds=[])
+  let a = @testkit.ScriptedMemoryPort(inbounds=[])
   let provider = MemoryToolProvider(sources=[("a", a as &@port.MemoryPort)], on_failure=fn(
     _reason,
   ) {
@@ -919,52 +944,52 @@ async test "m38_memory/add_rejects_unknown_source_and_empty_content" {
 
 ///|
 async test "m38_memory/e2e_memory_search_tool_reaches_sources" {
-  let mem = ScriptedMemoryPort(inbounds=[Some("opening fact")], search_script=[
+  let mem = @testkit.ScriptedMemoryPort(inbounds=[Some("opening fact")], search_script=[
     Some("searched hit"),
   ])
-  let model = ScriptedModel([
-    Respond(
-      tk_tool_call_response(
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(
+      @testkit.tk_tool_call_response(
         "memory_search",
         "call_1",
         Json::object(Map::from_array([("query", Json::string("prefs"))])),
       ),
     ),
-    Respond(tk_stop_response("done")),
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
   ])
   let agent = build_memory_agent(
     model,
     [mem as &@port.MemoryPort],
-    RecordingSessionPort(),
-    RecordingObserver(),
+    @testkit.RecordingSessionPort(),
+    @testkit.RecordingObserver(),
     None,
     None,
   )
-  let result = agent.run_turn(tk_user_msg("query"), "session_1")
+  let result = agent.run_turn(@testkit.tk_user_msg("query"), "session_1")
   assert_eq(result.final_session_id, "session_1")
   assert_eq(mem.call_count(), 1)
   assert_eq(mem.received_searches(), [("prefs", None)])
-  assert_eq(result.tool_results, [tk_ok_result("searched hit")])
+  assert_eq(result.tool_results, [@testkit.tk_ok_result("searched hit")])
   assert_eq(model.received_messages[0].length(), 2)
   expect_inbound_message(model.received_messages[0][0], ["opening fact"])
 }
 
 ///|
 async test "m38_memory/memory_search_collision_at_composition" {
-  let tools = RecordingToolProvider(
-    [tk_tool_def("memory_search", "extension echo of the core tool")],
+  let tools = @testkit.RecordingToolProvider(
+    [@testkit.tk_tool_def("memory_search", "extension echo of the core tool")],
     Map::from_array([]),
   )
-  let mem = ScriptedMemoryPort(inbounds=[])
+  let mem = @testkit.ScriptedMemoryPort(inbounds=[])
   let composition_result = Ok(
     Agent(
       exts=[
-        tk_ext(id="model", model=Some(ScriptedModel([]))),
-        tk_ext(id="tools", tools=[tools]),
-        tk_ext(id="memory", memory=[mem as &@port.MemoryPort]),
-        tk_ext(id="io", sessions=[RecordingSessionPort()]),
+        @testkit.tk_ext(id="model", model=Some(@testkit.ScriptedModel([]))),
+        @testkit.tk_ext(id="tools", tools=[tools]),
+        @testkit.tk_ext(id="memory", memory=[mem as &@port.MemoryPort]),
+        @testkit.tk_ext(id="io", sessions=[@testkit.RecordingSessionPort()]),
       ],
-      config=tk_config(),
+      config=agent_config(max_tool_rounds=Some(10)),
     ),
   ) catch {
     e => Err(e)
@@ -1001,18 +1026,23 @@ pub impl @port.PipelineHook for SameLengthAgentHook with fn before_model(
 
 ///|
 async test "m38_hooks/same_length_rewrite_reaches_model" {
-  let model = ScriptedModel([Respond(tk_stop_response("ok"))])
-  let store = RecordingSessionPort()
-  let observer = RecordingObserver()
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("ok")),
+  ])
+  let store = @testkit.RecordingSessionPort()
+  let observer = @testkit.RecordingObserver()
   let agent = Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="hook", hooks=[SameLengthAgentHook::{ }]),
-      tk_ext(id="io", sessions=[store], observers=[observer]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="hook", hooks=[SameLengthAgentHook::{ }]),
+      @testkit.tk_ext(id="io", sessions=[store], observers=[observer]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
   )
-  let result = agent.run_turn(tk_user_msg("original"), "session_rewrite")
+  let result = agent.run_turn(
+    @testkit.tk_user_msg("original"),
+    "session_rewrite",
+  )
   ignore(result)
   assert_eq(model.received_messages.length(), 1)
   let received = model.received_messages[0]
@@ -1040,41 +1070,50 @@ async test "m38_hooks/same_length_rewrite_reaches_model" {
 
 ///|
 fn build_ui_agent(
-  ui : RecordingUiPort,
+  ui : @testkit.RecordingUiPort,
   ui_projection : Bool,
 ) -> Agent raise @error.CompositionError {
-  let model = ScriptedModel([
-    Respond(tk_tool_call_response("echo", "call_1", Json::null())),
-    Respond(tk_stop_response("done")),
+  let model = @testkit.ScriptedModel([
+    @testkit.ScriptedModelStep::Respond(
+      @testkit.tk_tool_call_response("echo", "call_1", Json::null()),
+    ),
+    @testkit.ScriptedModelStep::Respond(@testkit.tk_stop_response("done")),
   ])
-  let tools = RecordingToolProvider(
-    [tk_tool_def("echo", "echo tool")],
-    Map::from_array([("echo", OutcomeOk(tk_ok_result("echoed")))]),
+  let tools = @testkit.RecordingToolProvider(
+    [@testkit.tk_tool_def("echo", "echo tool")],
+    Map::from_array([
+      (
+        "echo",
+        @testkit.ScriptedToolOutcome::OutcomeOk(@testkit.tk_ok_result("echoed")),
+      ),
+    ]),
   )
   Agent(
     exts=[
-      tk_ext(id="model", model=Some(model)),
-      tk_ext(id="io", tools=[tools], ui=[ui], sessions=[RecordingSessionPort()]),
+      @testkit.tk_ext(id="model", model=Some(model)),
+      @testkit.tk_ext(id="io", tools=[tools], ui=[ui], sessions=[
+        @testkit.RecordingSessionPort(),
+      ]),
     ],
-    config=tk_config(),
+    config=agent_config(max_tool_rounds=Some(10)),
     ui_projection~,
   )
 }
 
 ///|
 async test "br5_ui_projection/default_off_renders_nothing" {
-  let ui = RecordingUiPort()
+  let ui = @testkit.RecordingUiPort()
   let agent = build_ui_agent(ui, false)
-  let result = agent.run_turn(tk_user_msg("hi"), "session_ui_off")
+  let result = agent.run_turn(@testkit.tk_user_msg("hi"), "session_ui_off")
   assert_eq(result.final_session_id, "session_ui_off")
   assert_eq(ui.render_count(), 0)
 }
 
 ///|
 async test "br5_ui_projection/opt_in_renders_tool_notice" {
-  let ui = RecordingUiPort()
+  let ui = @testkit.RecordingUiPort()
   let agent = build_ui_agent(ui, true)
-  let result = agent.run_turn(tk_user_msg("hi"), "session_ui_on")
+  let result = agent.run_turn(@testkit.tk_user_msg("hi"), "session_ui_on")
   assert_eq(result.final_session_id, "session_ui_on")
   assert_true(ui.render_count() > 0)
   let notices = ui.rendered_in_slot(Notice)
