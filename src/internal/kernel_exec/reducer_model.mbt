@@ -60,6 +60,10 @@ fn reduce_awaiting_model(
   // input is applied as it comes.
   match input {
     ModelCompleted(payload~) => reduce_model_completed(state, catalog, payload)
+    ModelCompletedWithSteering(payload~) =>
+      // Same completion payload, but a steer message was folded into this
+      // step: a no-tool completion must not end the run.
+      reduce_model_completed(state, catalog, payload, continue_turn=true)
     ModelFailed(payload~) => reduce_model_failed(state, payload)
     CancelRequested(payload~) =>
       reduce_cancel_with_pending(state, payload.detail)
@@ -70,6 +74,10 @@ fn reduce_awaiting_model(
     TranscriptRewrite(payload~) => reduce_transcript_rewrite(state, payload)
     Start(_) | Resume(_) | ToolCompleted(_) | ToolFailed(_) =>
       reject_input(state, input, "AwaitingModel: input not legal here")
+    SteerAppended(_) =>
+      reject_input(
+        state, input, "AwaitingModel: model step in flight; steer lands at the next step boundary",
+      )
   }
 }
 
@@ -78,6 +86,7 @@ fn reduce_model_completed(
   state : RunState,
   catalog : ToolCatalogSnapshot,
   payload : ModelCompletedPayload,
+  continue_turn~ : Bool = false,
 ) -> ReduceOutput raise KernelError {
   // Correlation: the effect_id must match the single pending CallModel.
   let pending = state.pending_effects()
@@ -167,6 +176,28 @@ fn reduce_model_completed(
     UnknownUsage(_) | WithinBudget => ()
   }
   if !completion.has_tool_calls() {
+    if continue_turn {
+      // The steer message accepted during this step re-opens the step
+      // boundary: commit the assistant completion and return to ReadyForModel
+      // so the next step sees the appended message. The run does not end, so
+      // no terminal event is emitted and the outcome stays unset. A Terminal
+      // run can never reach this fold (post-terminal rejection runs first).
+      let next_state = state.transition(
+        phase=ReadyForModel,
+        transcript~,
+        pending_effects=[],
+        next_event_sequence=advance_seq_by(state, 1),
+        next_effect_id=state.next_effect_id(),
+        current_model_step_id=payload.model_step_id.next(),
+        catalog_version=None,
+        budget_consumed=next_consumed,
+        outcome=None,
+        completed_tool_results=Map::from_array([]),
+        tool_call_positions=Map::from_array([]),
+        suspension_requirement=None,
+      )
+      return reduce_output(next_state, [], [step_completed])
+    }
     let final_msg = @kernel.AssistantMessage(
       content=completion.message.content.copy(),
       tool_calls=[],

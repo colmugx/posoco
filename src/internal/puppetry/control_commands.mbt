@@ -1,15 +1,11 @@
 ///|
-/// Control queues + idle barrier (ADR §6).
+/// Control commands + idle barrier (ADR §6).
 ///
-/// Three control mailboxes:
-/// - **Steer mailbox**: FIFO queue of `SteerCommand`. Consumed at the safe
-///   point after a complete tool batch commits and before the next
-///   model_step_id is allocated.
-/// - **Follow-up mailbox**: FIFO queue of `FollowUpCommand`. Consumed at a
-///   turn boundary (same run_id, new turn_id).
-/// - **Resume mailbox**: addressed by `(target_run_id, suspension_id)`.
-///   Only one resume per suspension; payload must satisfy the suspension
-///   requirement.
+/// Step and turn messages share the Agent-owned `MessageInbox`. The pump
+/// selects step messages at safe boundaries; Agent selects turn messages
+/// when starting a new turn with a new run/turn identity. Resume commands are
+/// separately addressed by `(target_run_id, suspension_id)` and must satisfy
+/// the suspension requirement.
 ///
 /// Plus an **idle barrier**: a `@cond_var.Cond` that `wait_idle` waits on,
 /// woken when the Puppet reaches a quiescent phase (Idle / Suspended /
@@ -105,23 +101,18 @@ pub impl Show for QueuePolicy with fn to_string(self : QueuePolicy) -> String {
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-/// A steer command. Carries run/turn/batch/model-step IDs observed at
-/// enqueue; consumed only if they match the active run's state at the
-/// safe point.
+/// A steer command: a message appended to the transcript at the next step
+/// boundary. Identity is validated against the active run/turn at enqueue
+/// time only — a steer is never stale at consume time, it is delivered at the
+/// next safe point or reported undelivered.
 #derive(Eq, Debug)
 pub(all) struct SteerCommand {
   command_id : CommandId
   target_run_id : RunId
   target_turn_id : TurnId
-  /// Observed tool_batch_id when the steer was enqueued. Must match the
-  /// batch that just completed at the consume point.
-  observed_tool_batch_id : String
-  /// Observed model_step_id when the steer was enqueued.
-  observed_model_step_id : ModelStepId
-  /// Opaque steer payload (e.g. additional system message). The Kernel
-  /// does not interpret this; the Puppet converts it to a RunInput at
-  /// consume time.
-  payload : Json
+  /// The user message to append. The Puppet converts it to a
+  /// `RunInput::SteerAppended` at consume time.
+  message : @kernel.Message
 }
 
 ///|
@@ -129,23 +120,6 @@ pub extend SteerCommand with Eq::{not_equal, equal}
 
 ///|
 pub extend SteerCommand with Debug::{to_repr}
-
-///|
-/// A follow-up command. Creates a new turn under the same run_id at a
-/// turn boundary.
-#derive(Eq, Debug)
-pub(all) struct FollowUpCommand {
-  command_id : CommandId
-  target_run_id : RunId
-  source_turn_id : TurnId
-  payload : Json
-}
-
-///|
-pub extend FollowUpCommand with Eq::{not_equal, equal}
-
-///|
-pub extend FollowUpCommand with Debug::{to_repr}
 
 ///|
 /// A resume command. Targets a specific suspension under a specific run.
@@ -300,6 +274,7 @@ pub impl Show for EnqueueResult with fn to_string(self : EnqueueResult) -> Strin
 /// Control-plane abstraction over the run's command queues and idle
 /// barrier.
 pub(open) trait Mailbox {
+  fn message_inbox(Self) -> MessageInbox
   // ── Run binding (pump owns; called at prompt / terminal boundaries) ──
   /// Bind the mailbox to a new active run/turn. Clears leftover state.
   fn bind_run(Self, run_id : RunId, turn_id : TurnId) -> Unit
@@ -320,17 +295,14 @@ pub(open) trait Mailbox {
 
   // ── Enqueue (product / sibling-task side; non-blocking) ──
   fn enqueue_steer(Self, cmd : SteerCommand) -> EnqueueResult
-  fn enqueue_follow_up(Self, cmd : FollowUpCommand) -> EnqueueResult
   fn enqueue_resume(Self, cmd : ResumeCommand) -> EnqueueResult
   fn enqueue_abort(Self, cmd : AbortCommand) -> EnqueueResult
   fn enqueue_fork(Self, cmd : ForkCommand) -> EnqueueResult
   fn enqueue_compact(Self, cmd : CompactCommand) -> EnqueueResult
 
   // ── Consume (pump side; called at safe points) ──
-  /// Consume all queued steer commands (All policy). FIFO order.
+  /// Select all queued step messages in FIFO order, retaining commit receipts.
   fn consume_steers(Self) -> Array[SteerCommand]
-  /// Consume one follow-up (OneAtATime). `None` if empty.
-  fn consume_one_follow_up(Self) -> FollowUpCommand?
   /// Consume one fork (OneAtATime). `None` if empty.
   fn consume_one_fork(Self) -> ForkCommand?
   /// Consume one compact (OneAtATime). `None` if empty.

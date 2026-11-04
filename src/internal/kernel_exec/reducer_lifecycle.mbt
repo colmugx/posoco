@@ -85,11 +85,16 @@ fn reduce_ready_for_model(
       reduce_terminal_fail(state, BudgetExhausted(dimension=payload.dimension))
     SuspendRequested(_) =>
       reject_input(state, input, "ReadyForModel: nothing to suspend")
-    ModelCompleted(_) | ModelFailed(_) | ToolCompleted(_) | ToolFailed(_) =>
+    ModelCompleted(_)
+    | ModelCompletedWithSteering(_)
+    | ModelFailed(_)
+    | ToolCompleted(_)
+    | ToolFailed(_) =>
       reject_input(state, input, "ReadyForModel: no pending effect to complete")
     Resume(_) => reject_input(state, input, "ReadyForModel: not suspended")
     Start(_) => reject_input(state, input, "ReadyForModel: already started")
     TranscriptRewrite(payload~) => reduce_transcript_rewrite(state, payload)
+    SteerAppended(payload~) => reduce_steer_appended(state, payload)
   }
 }
 
@@ -125,12 +130,17 @@ fn reduce_suspended(
     Start(_)
     | SuspendRequested(_)
     | ModelCompleted(_)
+    | ModelCompletedWithSteering(_)
     | ModelFailed(_)
     | ToolCompleted(_)
     | ToolFailed(_)
     | TranscriptRewrite(_) =>
       reject_input(
         state, input, "Suspended: only Resume/Cancel/Deadline/Budget legal",
+      )
+    SteerAppended(_) =>
+      reject_input(
+        state, input, "Suspended: run is not executing; steer lands at the next step boundary",
       )
   }
 }
@@ -448,6 +458,40 @@ fn reduce_transcript_rewrite(
     budget_consumed={ ..state.budget_consumed(), last_context_tokens: None, },
     outcome=state.outcome(),
     tool_call_positions=new_positions,
+    suspension_requirement=state.suspension_requirement(),
+  )
+  reduce_output(next_state, [], [event])
+}
+
+///|
+/// Fold a steer message into state: append it to the transcript and commit a
+/// `UserMessageAppended` event. Only `ReadyForModel` reaches this branch (the
+/// step boundary where no assistant/tool pairing can be broken); phase,
+/// pending effects and `model_step_id` are untouched, so the steer consumes
+/// neither a model step nor a step budget unit.
+fn reduce_steer_appended(
+  state : RunState,
+  payload : SteerAppendedPayload,
+) -> ReduceOutput raise KernelError {
+  let messages = state.transcript().messages_snapshot()
+  messages.push(payload.message)
+  let transcript = @kernel.Transcript::from_array(messages)
+  let event : KernelEvent = UserMessageAppended(
+    command_id=payload.command_id,
+    message=payload.message,
+  )
+  let next_state = state.transition(
+    phase=state.phase(),
+    transcript~,
+    pending_effects=state.pending_effects(),
+    next_event_sequence=next_seq(state),
+    next_effect_id=state.next_effect_id(),
+    current_model_step_id=state.current_model_step_id(),
+    catalog_version=None,
+    // The last context reading described a shorter transcript; auto-compact
+    // must not decide on a stale occupancy.
+    budget_consumed={ ..state.budget_consumed(), last_context_tokens: None, },
+    outcome=state.outcome(),
     suspension_requirement=state.suspension_requirement(),
   )
   reduce_output(next_state, [], [event])

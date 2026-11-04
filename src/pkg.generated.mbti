@@ -3,6 +3,7 @@ package "colmugx/posoco"
 
 import {
   "colmugx/posoco/error",
+  "colmugx/posoco/events",
   "colmugx/posoco/kernel",
   "colmugx/posoco/port",
   "colmugx/posoco/runtime",
@@ -41,6 +42,7 @@ pub async fn[X] Agent::run_scoped(Self, async (Self) -> X) -> X
 pub async fn Agent::run_turn(Self, @kernel.Message, String) -> @types.TurnResult raise @error.AgentError
 pub fn Agent::set_active_session(Self, String?) -> Unit
 pub async fn Agent::shutdown(Self) -> Unit
+pub fn Agent::subscribe_events(Self, (@events.EventEnvelope) -> Unit, namespace_? : @events.EventNamespace?) -> Result[@events.Subscription, @events.EventError]
 pub fn Agent::with_runtime(exts~ : Array[&@port.Extension], config~ : AgentConfig, runtime~ : &@runtime.Runtime, ui_projection? : Bool) -> Self raise @error.CompositionError
 
 pub struct AgentConfig {
@@ -61,8 +63,18 @@ pub struct AgentControl {
 pub fn AgentControl::abort_active(Self, String?) -> @runtime.EnqueueOutcome
 pub fn AgentControl::active_run_id(Self) -> @kernel.RunId?
 pub fn AgentControl::active_turn_id(Self) -> @kernel.TurnId?
-pub fn AgentControl::enqueue_follow_up(Self, @kernel.Message) -> @runtime.EnqueueOutcome
+pub fn AgentControl::current_message_target(Self) -> MessageTarget?
+pub fn AgentControl::enqueue_follow_up(Self, @kernel.Message, target? : MessageTarget?) -> @runtime.EnqueueOutcome
+pub fn AgentControl::enqueue_steer(Self, @kernel.Message, target? : MessageTarget?) -> @runtime.EnqueueOutcome
 pub fn AgentControl::pending_follow_ups(Self) -> Int32
+pub fn AgentControl::pending_steers(Self) -> Int32
+
+#derive(Eq)
+pub struct MessageTarget {
+  // private fields
+}
+pub fn MessageTarget::equal(Self, Self) -> Bool
+pub fn MessageTarget::not_equal(Self, Self) -> Bool
 
 pub(all) struct NoopCommandPort {
 }
@@ -135,7 +147,17 @@ pub using @port {type DecisionScope}
 
 pub using @port {type DecisionUsage}
 
+pub using @events {type Event}
+
+pub using @events {type EventEnvelope}
+
+pub using @events {type EventError}
+
+pub using @events {type EventNamespace}
+
 pub using @types {type EventScope}
+
+pub using @events {type Events}
 
 pub using @kernel {type ExecutionPolicy}
 
@@ -162,6 +184,8 @@ pub using @port {type LogRecord}
 pub using @error {type MemoryError}
 
 pub using @kernel {type Message}
+
+pub using @types {type MessageDeliveryKind}
 
 pub using @kernel {type ModelCallResult}
 
@@ -202,6 +226,8 @@ pub using @types {type StreamAccumulator}
 pub using @types {type StreamChunk}
 
 pub using @types {type StreamMode}
+
+pub using @events {type Subscription}
 
 pub using @colmugx/posoco/builtin {type SystemPromptHook}
 

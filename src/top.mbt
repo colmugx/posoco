@@ -17,10 +17,21 @@ pub using @types {
   type StreamAccumulator,
   type Session,
   type TurnEvent,
+  type MessageDeliveryKind,
   type ToolCatalogChange,
   type ToolCatalogChangedPayload,
   type TurnResult,
   type EventScope,
+}
+
+///|
+pub using @events {
+  type Event,
+  type EventNamespace,
+  type EventEnvelope,
+  type EventError,
+  type Events,
+  type Subscription,
 }
 
 ///|

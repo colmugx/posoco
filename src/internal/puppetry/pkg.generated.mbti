@@ -6,8 +6,8 @@ import {
   "colmugx/posoco/kernel",
   "colmugx/posoco/port",
   "colmugx/posoco/types",
-  "moonbitlang/async/aqueue",
-  "moonbitlang/async/cond_var",
+  "moonbitlang/core/async/aqueue",
+  "moonbitlang/core/async/cond_var",
   "moonbitlang/core/debug",
   "moonbitlang/core/json",
 }
@@ -102,10 +102,7 @@ pub fn CompactCommand::to_repr(Self) -> @debug.Repr
 pub fn CompactCommand::trigger(Self) -> @kernel.CompactTrigger
 
 pub struct ControlMailbox {
-  mut steer_queue : @aqueue.Queue[SteerCommand]
-  mut follow_up_queue : @aqueue.Queue[FollowUpCommand]
-  mut steer_depth : Int32
-  mut follow_up_depth : Int32
+  messages : MessageInbox
   mut fork_queue : @aqueue.Queue[ForkCommand]
   mut fork_depth : Int32
   mut compact_queue : @aqueue.Queue[CompactCommand]
@@ -126,17 +123,16 @@ pub fn ControlMailbox::bind_run(Self, @kernel.RunId, @kernel.TurnId) -> Unit
 pub fn ControlMailbox::clear_run(Self) -> Unit
 pub fn ControlMailbox::compact_depth(Self) -> Int32
 pub fn ControlMailbox::consume_one_compact(Self) -> CompactCommand?
-pub fn ControlMailbox::consume_one_follow_up(Self) -> FollowUpCommand?
 pub fn ControlMailbox::consume_one_fork(Self) -> ForkCommand?
 pub fn ControlMailbox::consume_steers(Self) -> Array[SteerCommand]
 pub fn ControlMailbox::enqueue_abort(Self, AbortCommand) -> EnqueueResult
 pub fn ControlMailbox::enqueue_compact(Self, CompactCommand) -> EnqueueResult
-pub fn ControlMailbox::enqueue_follow_up(Self, FollowUpCommand) -> EnqueueResult
 pub fn ControlMailbox::enqueue_fork(Self, ForkCommand) -> EnqueueResult
 pub fn ControlMailbox::enqueue_resume(Self, ResumeCommand) -> EnqueueResult
 pub fn ControlMailbox::enqueue_steer(Self, SteerCommand) -> EnqueueResult
 pub fn ControlMailbox::follow_up_depth(Self) -> Int32
 pub fn ControlMailbox::fork_depth(Self) -> Int32
+pub fn ControlMailbox::message_inbox(Self) -> MessageInbox
 pub fn ControlMailbox::quiescent_status(Self) -> QuiescentStatus
 pub fn ControlMailbox::set_quiescent(Self, QuiescentStatus) -> Unit
 pub fn ControlMailbox::steer_depth(Self) -> Int32
@@ -217,17 +213,6 @@ pub fn FailOnNthJournal::revision(Self) -> Int32
 pub impl RunJournal for FailOnNthJournal
 
 #derive(Eq, @debug.Debug)
-pub(all) struct FollowUpCommand {
-  command_id : CommandId
-  target_run_id : @kernel.RunId
-  source_turn_id : @kernel.TurnId
-  payload : @json.Json
-}
-pub fn FollowUpCommand::equal(Self, Self) -> Bool
-pub fn FollowUpCommand::not_equal(Self, Self) -> Bool
-pub fn FollowUpCommand::to_repr(Self) -> @debug.Repr
-
-#derive(Eq, @debug.Debug)
 pub(all) struct ForkCommand {
   command_id : CommandId
   target_run_id : @kernel.RunId
@@ -304,6 +289,45 @@ pub fn JournalEntryIdentity::output(Self, &Logger) -> Unit
 pub fn JournalEntryIdentity::to_repr(Self) -> @debug.Repr
 pub fn JournalEntryIdentity::to_string(Self) -> String
 pub impl Show for JournalEntryIdentity
+
+#derive(Eq, @debug.Debug)
+pub(all) struct MessageAddress {
+  owner_id : Int32
+  operation_id : String
+  session_id : String
+  run_id : @kernel.RunId
+  turn_id : @kernel.TurnId
+}
+pub fn MessageAddress::equal(Self, Self) -> Bool
+pub fn MessageAddress::not_equal(Self, Self) -> Bool
+pub fn MessageAddress::to_repr(Self) -> @debug.Repr
+
+pub struct MessageInbox {
+  // private fields
+}
+pub fn MessageInbox::MessageInbox() -> Self
+pub fn MessageInbox::acknowledge_step_delivery(Self, String) -> Unit
+pub fn MessageInbox::begin_operation(Self, String, String) -> Unit
+pub fn MessageInbox::bind_turn(Self, @kernel.RunId, @kernel.TurnId) -> Unit
+pub fn MessageInbox::close_step(Self) -> Unit
+pub fn MessageInbox::close_turn(Self) -> Unit
+pub fn MessageInbox::confirm(Self, String) -> Unit
+pub fn MessageInbox::confirm_initial(Self) -> Unit
+pub fn MessageInbox::current_address(Self) -> MessageAddress?
+pub fn MessageInbox::discard(Self, String, String) -> Unit
+pub fn MessageInbox::enqueue(Self, CommandId, @types.MessageDeliveryKind, @kernel.Message, expected? : MessageAddress?) -> EnqueueResult
+pub fn MessageInbox::finish_operation(Self) -> Array[QueuedMessage]
+pub fn MessageInbox::finish_turn(Self, @kernel.RunId, @kernel.TurnId) -> Array[QueuedMessage]
+pub fn MessageInbox::flush_step_deliveries(Self) -> Unit
+pub fn MessageInbox::follow_up_depth(Self) -> Int32
+pub fn MessageInbox::initial_command(Self) -> String?
+pub fn MessageInbox::pending_steer_messages(Self) -> Array[@kernel.Message]
+pub fn MessageInbox::select_follow_up(Self) -> QueuedMessage?
+pub fn MessageInbox::select_steers(Self) -> Array[QueuedMessage]
+pub fn MessageInbox::set_follow_up_callback(Self, (QueuedMessage, MessageAddress) -> Unit) -> Unit
+pub fn MessageInbox::set_initial_command(Self, String) -> Unit
+pub fn MessageInbox::set_step_delivery_callback(Self, (QueuedMessage, String?) -> Unit) -> Unit
+pub fn MessageInbox::steer_depth(Self) -> Int32
 
 #derive(Eq, Hash, @debug.Debug)
 pub(all) struct ModelId {
@@ -506,6 +530,13 @@ pub fn QueuePolicy::to_repr(Self) -> @debug.Repr
 pub fn QueuePolicy::to_string(Self) -> String
 pub impl Show for QueuePolicy
 
+pub(all) struct QueuedMessage {
+  command_id : CommandId
+  address : MessageAddress
+  delivery : @types.MessageDeliveryKind
+  message : @kernel.Message
+}
+
 #derive(Eq, @debug.Debug)
 pub(all) enum QuiescentStatus {
   Idle
@@ -576,9 +607,7 @@ pub(all) struct SteerCommand {
   command_id : CommandId
   target_run_id : @kernel.RunId
   target_turn_id : @kernel.TurnId
-  observed_tool_batch_id : String
-  observed_model_step_id : @kernel_exec.ModelStepId
-  payload : @json.Json
+  message : @kernel.Message
 }
 pub fn SteerCommand::equal(Self, Self) -> Bool
 pub fn SteerCommand::not_equal(Self, Self) -> Bool
@@ -663,6 +692,7 @@ pub(open) trait JournalContributor {
 }
 
 pub(open) trait Mailbox {
+  fn message_inbox(Self) -> MessageInbox
   fn bind_run(Self, @kernel.RunId, @kernel.TurnId) -> Unit
   fn clear_run(Self) -> Unit
   fn active_run_id(Self) -> @kernel.RunId?
@@ -673,13 +703,11 @@ pub(open) trait Mailbox {
   fn fork_depth(Self) -> Int32
   fn compact_depth(Self) -> Int32
   fn enqueue_steer(Self, SteerCommand) -> EnqueueResult
-  fn enqueue_follow_up(Self, FollowUpCommand) -> EnqueueResult
   fn enqueue_resume(Self, ResumeCommand) -> EnqueueResult
   fn enqueue_abort(Self, AbortCommand) -> EnqueueResult
   fn enqueue_fork(Self, ForkCommand) -> EnqueueResult
   fn enqueue_compact(Self, CompactCommand) -> EnqueueResult
   fn consume_steers(Self) -> Array[SteerCommand]
-  fn consume_one_follow_up(Self) -> FollowUpCommand?
   fn consume_one_fork(Self) -> ForkCommand?
   fn consume_one_compact(Self) -> CompactCommand?
   fn take_resume(Self, String) -> ResumeCommand?

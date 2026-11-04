@@ -9,7 +9,8 @@ import {
   "colmugx/posoco/internal/session_output",
   "colmugx/posoco/internal/session_checkpoint",
   "colmugx/posoco/internal/chunk_dispatch",
-  "colmugx/posoco/internal/event_snapshot",
+  "colmugx/posoco/events",
+  "colmugx/posoco/internal/event_runtime",
   "colmugx/posoco/internal/event_projection",
   "colmugx/posoco/internal/command",
   "colmugx/posoco/internal/wakeup",
@@ -24,7 +25,6 @@ import {
   "colmugx/posoco/internal/tool_directory" @directory,
   "colmugx/posoco/internal/runtime_bridge" @bridge,
   "moonbitlang/async",
-  "moonbitlang/async/aqueue",
 }
 
 import {

@@ -75,8 +75,10 @@ async fn Puppet::drive_run(
   }
   let initial_events : Array[KernelEvent] = out0.events()
   let mut pre_compact_fired = false
+  let prospective = seeded_messages.copy()
+  prospective.append(self.mailbox.message_inbox().pending_steer_messages())
   let pre_compact_state : RunState = match
-    self.check_auto_compact_pre_request(session_id, seeded_messages, snap) {
+    self.check_auto_compact_pre_request(session_id, prospective, snap) {
     Some(compact_cmd) => {
       pre_compact_fired = true
       match
@@ -107,8 +109,21 @@ async fn Puppet::drive_run(
     }
     None => out0.next_state()
   }
+  // The first step consumes steers too: the initial declaration below is the
+  // last point before the first model request, so a steer accepted while the
+  // hooks or the pre-request compact ran must land here rather than wait for
+  // the first response.
+  let steered : Result[RunState, PuppetError] = Ok(
+    self.consume_into_state(pre_compact_state, initial_events),
+  ) catch {
+    error => Err(error)
+  }
+  let state_after_steer = match steered {
+    Err(error) => return self.finalize_rejected(error~)
+    Ok(value) => value
+  }
   let (initial_state, initial_boundary_events) = declare_model_effect_if_ready(
-    pre_compact_state,
+    state_after_steer,
     initial_events,
     self.config.catalog,
     snap.call_options(),
@@ -134,7 +149,10 @@ async fn Puppet::drive_run(
   match commit_result {
     Err(e) => return self.finalize_rejected(error=e)
     Ok(_) =>
-      if pre_compact_fired {
+      if pre_compact_fired ||
+        initial_boundary_events.any(fn(event) {
+          event is UserMessageAppended(..)
+        }) {
         self.record_context_estimate(
           session_id,
           initial_state.transcript().messages_snapshot(),
@@ -309,11 +327,17 @@ async fn Puppet::pump_abort(
         Err(error) => return StopWith(self.finalize_rejected(error~))
         Ok(_) => ()
       }
+      // The abort ends the run before the next delivery point, so queued
+      // steers are reported in this same `RunTerminal` boundary rather than
+      // dropped by `clear_run`. Only the undelivered half runs here: nothing
+      // may be appended to a transcript whose terminal state already committed.
+      let terminal_events = out.events()
+      self.drain_undelivered(terminal_events, "run aborted before delivery")
       let cr : Result[Unit, PuppetError] = Ok(
         self.commit_boundary(
           state,
           RunTerminal,
-          out.events(),
+          terminal_events,
           dispatcher,
           run_id,
           turn_id,
@@ -435,9 +459,9 @@ async fn Puppet::pump_compact(
 }
 
 ///|
-/// ReadyForModel step: run the before_model hook chain, fold any hook
-/// transcript rewrite through the reducer, declare the next model intent,
-/// and commit both in one durable boundary.
+/// ReadyForModel step: fold any queued steer, run the before_model hook chain,
+/// fold any hook transcript rewrite through the reducer, declare the next model
+/// intent, and commit all of it in one durable boundary.
 async fn Puppet::pump_ready_for_model(
   self : Puppet,
   state : RunState,
@@ -449,6 +473,19 @@ async fn Puppet::pump_ready_for_model(
   iter : Int32,
 ) -> PumpStep noraise {
   let mut state = state
+  // The turn's first model step has no effect completion to fold, so steer
+  // consumption happens here instead. It runs before the hook chain so
+  // `before_model` observes the complete transcript.
+  let prior_events : Array[KernelEvent] = []
+  let steered : Result[RunState, PuppetError] = Ok(
+    self.consume_into_state(state, prior_events),
+  ) catch {
+    error => Err(error)
+  }
+  match steered {
+    Err(error) => return StopWith(self.finalize_rejected(error~))
+    Ok(next_state) => state = next_state
+  }
   // Rewrites chain — each hook sees the previous output — and the result
   // replaces the reducer's transcript for the next CallModel effect.
   let initial_messages = state.transcript().messages_snapshot()
@@ -485,7 +522,6 @@ async fn Puppet::pump_ready_for_model(
   // content, not length: a same-length rewrite (e.g. system-prompt
   // replacement) is real and must not be dropped. A physical-equality check
   // first skips the O(N) comparison when no hook allocated a new array.
-  let rewrite_events : Array[KernelEvent] = []
   if hook_changed && current_messages != initial_messages {
     let rewrite_input : RunInput = TranscriptRewrite(payload={
       rewritten_messages: current_messages,
@@ -511,7 +547,7 @@ async fn Puppet::pump_ready_for_model(
       Ok(out) => {
         state = out.next_state()
         for event in out.events() {
-          rewrite_events.push(event)
+          prior_events.push(event)
         }
       }
     }
@@ -523,7 +559,7 @@ async fn Puppet::pump_ready_for_model(
   let declared : Result[(RunState, Array[KernelEvent]), PuppetError] = Ok(
     declare_model_effect_if_ready(
       state,
-      rewrite_events,
+      prior_events,
       self.config.catalog,
       snap.call_options(),
     ),
@@ -537,7 +573,7 @@ async fn Puppet::pump_ready_for_model(
       let cr : Result[Unit, PuppetError] = Ok(
         self.commit_boundary(
           state,
-          AssistantCommitted,
+          boundary_kind_for_events(events),
           events,
           dispatcher,
           run_id,
@@ -652,6 +688,11 @@ async fn Puppet::pump_awaiting_tools(
   snap : TurnSnapshot,
   hook_scope : @types.EventScope,
 ) -> PumpStep noraise {
+  if self.mailbox.steer_depth() > 0 && !self.mailbox.abort_requested() {
+    return self.pump_steering(
+      state, dispatcher, run_id, turn_id, session_id, snap,
+    )
+  }
   let pending = state.pending_effects()
   let mut state = state
   // Every hook runs before scheduling. Scheduling first would make a later
@@ -856,6 +897,14 @@ async fn Puppet::pump_awaiting_tools(
     Ok(value) => value
   }
   for wave_index, wave in waves {
+    if self.mailbox.abort_requested() {
+      return ContinueWith(state)
+    }
+    if self.mailbox.steer_depth() > 0 {
+      return self.pump_steering(
+        state, dispatcher, run_id, turn_id, session_id, snap,
+      )
+    }
     // Announce the launch before the wave driver starts: one durable
     // boundary per wave, one event per wave, expanded per call by the
     // projection. Observers therefore see execution begin instead of
@@ -910,6 +959,15 @@ async fn Puppet::pump_awaiting_tools(
         Err(error) => return StopWith(self.finalize_rejected(error~))
         Ok(_) => ()
       }
+    }
+    // A committed-start listener or a checkpoint may have submitted input.
+    if self.mailbox.abort_requested() {
+      return ContinueWith(state)
+    }
+    if self.mailbox.steer_depth() > 0 {
+      return self.pump_steering(
+        state, dispatcher, run_id, turn_id, session_id, snap,
+      )
     }
     // The wave driver receives child requests while roots wait, and folds
     // root outcomes in source order. On abort it returns the latest state,

@@ -123,7 +123,7 @@ async fn[X] AgentRuntime::execute_operation(
             Ok(_) => ()
             Err(cleanup_error) =>
               emit_secondary_failure(
-                self.observers,
+                self.events,
                 "operation_worker_cleanup",
                 cleanup_error.to_string(),
               )
@@ -330,7 +330,7 @@ async fn AgentRuntime::settle_operation_for_shutdown(
 /// and wakeup-level events hold no per-turn identity, so `scope` is `None`
 /// by design (session attribution travels in the event data).
 fn emit_custom_event(
-  observers : Array[&@port.Observer],
+  events : @event_runtime.EventRuntime,
   scope : @types.EventScope?,
   source : String,
   label : String,
@@ -341,9 +341,7 @@ fn emit_custom_event(
     label~,
     data=Json::object(Map::from_array(fields)),
   )
-  for observer in observers {
-    observer.on_event(scope, @event_snapshot.snapshot_turn_event(event))
-  }
+  events.emit_core(scope, event)
 }
 
 ///|
@@ -358,6 +356,7 @@ fn AgentRuntime::admit_operation(
   origin : OperationOrigin,
   operation_label~ : String? = None,
 ) -> OperationAdmission raise @error.AgentError {
+  self.ensure_agent_running()
   match self.operations.busy() {
     Some(busy) =>
       raise @error.AgentError::Busy(
@@ -409,10 +408,14 @@ fn AgentRuntime::admit_operation(
     self.capture_tool_contributions(operation_id=admission.operation_id)
   }
   self.acquire_operation_versions()
+  // The admitted operation owns the inbox for its whole life: steers and
+  // follow-ups submitted while it holds the guard land under its address,
+  // and nothing can attach to the previous operation's inbox state.
+  self.control.bind_operation(admission.operation_id, session_id)
   self.turn_active = true
   self.operations.begin_execution(admission.operation_id)
   emit_custom_event(
-    self.observers,
+    self.events,
     None,
     "posoco.operation",
     "operation_started",
@@ -423,6 +426,45 @@ fn AgentRuntime::admit_operation(
     ],
   )
   admission
+}
+
+///|
+/// Settle the step window of one finished turn: step messages the pump never
+/// confirmed become public `MessageUndelivered` events scoped to the turn
+/// that accepted them.
+fn AgentRuntime::settle_turn_messages(
+  self : AgentRuntime,
+  identity : TurnIdentity,
+) -> Unit {
+  for command in self.control.finish_turn(identity.run_id, identity.turn_id) {
+    self.emit_message_undelivered(command, "turn ended before delivery")
+  }
+}
+
+///|
+/// Settle the whole operation's inbox before the guard releases: step and
+/// turn leftovers alike are reported, and the inbox is closed so a later
+/// admission cannot inherit this operation's records.
+fn AgentRuntime::settle_operation_messages(self : AgentRuntime) -> Unit {
+  for command in self.control.finish_operation() {
+    self.emit_message_undelivered(command, "operation ended before delivery")
+  }
+}
+
+///|
+fn AgentRuntime::emit_message_undelivered(
+  self : AgentRuntime,
+  command : @puppetry.QueuedMessage,
+  reason : String,
+) -> Unit {
+  self.emit_turn_event(
+    Some(message_scope(command.address)),
+    MessageUndelivered(
+      command_id=command.command_id.to_string(),
+      delivery=command.delivery,
+      reason~,
+    ),
+  )
 }
 
 ///|
@@ -437,16 +479,19 @@ fn AgentRuntime::release_operation(
   outcome : OperationOutcome,
 ) -> Unit {
   if self.operations.current_id() == Some(admission.operation_id) {
-    self.turn_active = false
-    if !self.operations.clear_current(admission.operation_id) {
-      return
-    }
+    // Keep the guard held while settlement callbacks run. The inbox is
+    // already closed, and no new operation may acquire this one's leases.
+    self.settle_operation_messages()
     // Fallback for unwind paths that never reached the managed settle step:
     // the lease is always given back (or retained for unknown executions).
     self.release_operation_versions()
     self.operations.settle_execution(admission.operation_id)
+    self.turn_active = false
+    if !self.operations.clear_current(admission.operation_id) {
+      return
+    }
     emit_custom_event(
-      self.observers,
+      self.events,
       None,
       "posoco.operation",
       "operation_settled",

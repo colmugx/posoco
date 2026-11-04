@@ -60,3 +60,30 @@ test "event_snapshot/tool_payload_and_custom_are_isolated" {
     _ => fail("expected custom snapshot")
   }
 }
+
+///|
+test "event_snapshot/delivery_events_are_scalar_and_pass_through" {
+  let applied = snapshot_turn_event(
+    MessageApplied(command_id="cmd_1", delivery=Step),
+  )
+  assert_eq(applied, MessageApplied(command_id="cmd_1", delivery=Step))
+  let undelivered = snapshot_turn_event(
+    MessageUndelivered(
+      command_id="cmd_2",
+      delivery=Turn,
+      reason="run ended first",
+    ),
+  )
+  assert_eq(
+    undelivered,
+    MessageUndelivered(
+      command_id="cmd_2",
+      delivery=Turn,
+      reason="run ended first",
+    ),
+  )
+  assert_eq(
+    Show::to_string(undelivered),
+    "MessageUndelivered(command=cmd_2, delivery=turn, reason=run ended first)",
+  )
+}

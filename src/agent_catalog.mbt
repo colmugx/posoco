@@ -13,7 +13,7 @@ using @directory {
 /// fact, not a reducer/journal fact, so it carries no run scope and names the
 /// operation explicitly when it has one.
 fn emit_tool_catalog_change(
-  observers : Array[&@port.Observer],
+  events : @event_runtime.EventRuntime,
   change : @directory.ToolCatalogChange,
 ) -> Unit {
   let payload : @types.ToolCatalogChangedPayload = match change {
@@ -49,16 +49,14 @@ fn emit_tool_catalog_change(
       }
   }
   let event : @types.TurnEvent = ToolCatalogChanged(payload~)
-  for observer in observers {
-    observer.on_event(None, @event_snapshot.snapshot_turn_event(event))
-  }
+  events.emit_core(None, event)
 }
 
 ///|
 /// Project an operation-level capture fact: which catalog version this
 /// operation installed and how many tools it covers.
 fn emit_catalog_captured(
-  observers : Array[&@port.Observer],
+  events : @event_runtime.EventRuntime,
   operation_id : String,
   catalog_version : Int32,
   tool_count : Int32,
@@ -73,9 +71,7 @@ fn emit_catalog_captured(
     detail: None,
   }
   let event : @types.TurnEvent = ToolCatalogChanged(payload~)
-  for observer in observers {
-    observer.on_event(None, @event_snapshot.snapshot_turn_event(event))
-  }
+  events.emit_core(None, event)
 }
 
 ///|
@@ -118,7 +114,7 @@ fn AgentRuntime::capture_tool_contributions(
   match operation_id {
     Some(id) =>
       emit_catalog_captured(
-        self.observers,
+        self.events,
         id,
         catalog_version,
         capture.catalog.definitions().length(),
@@ -168,7 +164,7 @@ async fn AgentRuntime::retire_released_versions(
   }) catch {
     error =>
       emit_secondary_failure(
-        self.observers,
+        self.events,
         "tool_version_finalizer",
         error.to_string(),
       )
@@ -183,7 +179,7 @@ async fn AgentRuntime::retire_pending_versions(
   let failures = self.tool_contributions.retire_unreferenced()
   for failure in failures {
     emit_secondary_failure(
-      self.observers,
+      self.events,
       "tool_version_retire",
       "version=\{failure.version} owner=\{failure.owner} revision=\{failure.revision}: retire failed",
     )

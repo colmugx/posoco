@@ -9,7 +9,8 @@
 /// cannot bypass governance. `model` calls still carry `InvocationScope`
 /// attribution; `ui` has no governance surface. The view NEVER exposes tool
 /// invocation (would bypass `PipelineHook::before_tool`), session stores (state
-/// ownership), or observer-event emission (core-owned). Fields are private
+/// ownership), or core-namespace event emission. Events only permits publication
+/// in the declaring extension's namespace. Fields are private
 /// with getters so new capabilities can be added without breaking
 /// extensions that destructure or construct views in tests.
 pub struct CompositionView {
@@ -20,6 +21,7 @@ pub struct CompositionView {
   priv tasks_ : Tasks?
   priv wakeup_ : WakeupPort?
   priv tool_contributions_ : ToolContributions?
+  priv events_ : @events.Events?
 }
 
 ///|
@@ -78,6 +80,13 @@ pub fn CompositionView::tool_contributions(
 }
 
 ///|
+/// Present only when the extension declares `Capability::Events`. Publication
+/// is bound to its manifest id; listening may include any namespace.
+pub fn CompositionView::events(self : CompositionView) -> @events.Events? {
+  self.events_
+}
+
+///|
 /// Gate a view on a manifest's declared `requires`: a declared capability is
 /// populated from the composed ports, an undeclared one reads `None`.
 /// Called by the composition after every gate has passed, so `model` and
@@ -91,6 +100,7 @@ pub fn CompositionView::resolve(
   tasks~ : Tasks? = None,
   wakeup~ : WakeupPort? = None,
   tool_contributions~ : ToolContributions? = None,
+  events~ : @events.Events? = None,
 ) -> CompositionView {
   {
     model_: if requires.contains(Model) {
@@ -125,6 +135,11 @@ pub fn CompositionView::resolve(
     },
     tool_contributions_: if requires.contains(ToolContribution) {
       tool_contributions
+    } else {
+      None
+    },
+    events_: if requires.contains(Events) {
+      events
     } else {
       None
     },

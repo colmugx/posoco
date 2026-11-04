@@ -18,10 +18,24 @@ async fn Puppet::commit_boundary(
   session_id : SessionId,
   boundary_id_prefix : String,
 ) -> Unit raise PuppetError {
+  if kind is RunTerminal {
+    self.mailbox.message_inbox().close_step()
+  }
   let pre_commit_rev = self.config.journal.revision()
   let savepoint_id = "\{boundary_id_prefix}_r\{pre_commit_rev}"
   let entry = boundary_entry(
-    state, kind, events, run_id, turn_id, session_id, savepoint_id,
+    state,
+    kind,
+    events,
+    run_id,
+    turn_id,
+    session_id,
+    savepoint_id,
+    initial_command=if events.any(fn(event) { event is RunStarted(_) }) {
+      self.mailbox.message_inbox().initial_command()
+    } else {
+      None
+    },
   )
   let ctx : PreCommitContext = {
     run_id,
@@ -47,6 +61,18 @@ async fn Puppet::commit_boundary(
     is_terminal: kind is RunTerminal,
     messages: state.transcript().messages_snapshot(),
   })
+  // Confirm before any subscriber can suspend or submit more input.
+  let inbox = self.mailbox.message_inbox()
+  defer inbox.flush_step_deliveries()
+  for event in events {
+    match event {
+      UserMessageAppended(command_id~, ..) => inbox.confirm(command_id)
+      SteerUndelivered(command_id~, reason~) =>
+        inbox.discard(command_id, reason)
+      RunStarted(..) => inbox.confirm_initial()
+      _ => ()
+    }
+  }
   // Every event is published after the one boundary commit. They share its
   // committed revision while EventDispatcher preserves a strict event seq.
   for event in events {
@@ -69,7 +95,8 @@ fn boundary_kind_for_events(events : Array[KernelEvent]) -> SavepointKind {
       RunSuspended(..) => (3, RunSuspended)
       ToolCompleted(..) | ToolCallsPreRejected(..) => (2, ToolCommitted)
       ModelStepCompleted(..) => (1, AssistantCommitted)
-      RunStarted(..) => (0, InputAccepted)
+      RunStarted(..) | UserMessageAppended(..) | SteerUndelivered(..) =>
+        (0, InputAccepted)
       _ => (-1, AssistantCommitted)
     }
     if rank > best_rank {
@@ -85,6 +112,7 @@ fn boundary_kind_for_events(events : Array[KernelEvent]) -> SavepointKind {
 fn event_to_boundary_kind(event : KernelEvent) -> SavepointKind {
   match event {
     RunStarted(..) => InputAccepted
+    UserMessageAppended(..) | SteerUndelivered(..) => InputAccepted
     ModelStepCompleted(..) => AssistantCommitted
     ToolCompleted(..) | ToolCallsPreRejected(..) => ToolCommitted
     ToolChildDeclared(..) | ToolCallApproved(..) | ToolWaveStarted(..) =>
@@ -107,6 +135,7 @@ fn boundary_entry(
   turn_id : TurnId,
   session_id : SessionId,
   savepoint_id : String,
+  initial_command~ : String? = None,
 ) -> JournalEntry raise PuppetError {
   if events.is_empty() {
     raise ReducerInvariantViolation(
@@ -135,6 +164,37 @@ fn boundary_entry(
   } else {
     let primary = boundary_primary_event(events, kind)
     (primary.to_string(), kernel_event_payload(primary))
+  }
+  let deliveries : Array[Json] = []
+  for event in events {
+    match event {
+      UserMessageAppended(command_id~, ..) =>
+        deliveries.push({
+          "command_id": command_id,
+          "delivery": "step",
+          "outcome": "applied",
+        })
+      SteerUndelivered(command_id~, ..) =>
+        deliveries.push({
+          "command_id": command_id,
+          "delivery": "step",
+          "outcome": "undelivered",
+        })
+      _ => ()
+    }
+  }
+  if initial_command is Some(command_id) {
+    deliveries.push({
+      "command_id": command_id,
+      "delivery": "turn",
+      "outcome": "applied",
+    })
+  }
+  if !deliveries.is_empty() {
+    match payload {
+      Object(fields) => fields["message_deliveries"] = Json::array(deliveries)
+      _ => abort("boundary payload is not an object")
+    }
   }
   {
     identity: { run_id, turn_id, session_id, savepoint_id, kind, entry_seq: 0, },
@@ -332,6 +392,27 @@ fn kernel_event_payload(event : KernelEvent) -> Json {
           ("reason", Json::string(reason)),
         ]),
       )
+    // Steer facts are summarized: the message body is available to in-memory
+    // observers, never to the durable journal.
+    UserMessageAppended(command_id~, message~) =>
+      Json::object(
+        Map::from_array([
+          ("kind", Json::string("UserMessageAppended")),
+          ("command_id", Json::string(command_id)),
+          (
+            "content_chars",
+            Json::number(message_body_chars(message).to_double()),
+          ),
+        ]),
+      )
+    SteerUndelivered(command_id~, reason~) =>
+      Json::object(
+        Map::from_array([
+          ("kind", Json::string("SteerUndelivered")),
+          ("command_id", Json::string(command_id)),
+          ("reason", Json::string(safe_label(reason))),
+        ]),
+      )
     RunCompleted(final_message_summary~, model_steps~, tool_calls~) =>
       Json::object(
         Map::from_array([
@@ -356,6 +437,26 @@ fn kernel_event_payload(event : KernelEvent) -> Json {
         ]),
       )
   }
+}
+
+///|
+/// Text length of a message body, for bounded journal summaries. Image
+/// payloads contribute nothing: their byte length is not a readable proxy.
+fn message_body_chars(message : Message) -> Int32 {
+  let content = match message {
+    SystemMessage(content~) => content
+    UserMessage(content~) => content
+    AssistantMessage(content~, ..) => content
+    ToolMessage(..) => return 0
+  }
+  let mut total = 0
+  for item in content {
+    match item {
+      Text(text) => total = total + text.length()
+      Image(..) => ()
+    }
+  }
+  total
 }
 
 ///|

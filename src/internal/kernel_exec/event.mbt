@@ -147,6 +147,14 @@ pub(all) enum KernelEvent {
     messages_after~ : Int32,
     reason~ : String
   )
+  /// Emitted when a steer message is committed to the transcript at a step
+  /// boundary. Carries the body for in-memory observers and session
+  /// persistence; durable journal summaries keep only a character count.
+  UserMessageAppended(command_id~ : String, message~ : @kernel.Message)
+  /// Emitted for a steer accepted earlier but never applied because the run
+  /// ended first. The host keeps the input so the user can resend it; it is
+  /// never converted into a follow-up.
+  SteerUndelivered(command_id~ : String, reason~ : String)
   // ── Terminal events (exactly one per Run) ──
   /// Successful termination. Exactly once per Run.
   RunCompleted(
@@ -211,6 +219,10 @@ pub impl Show for KernelEvent with fn to_string(self : KernelEvent) -> String {
       "InputRejected(input=\{input_kind}, \{safe_label(reason)})"
     TranscriptRewritten(messages_before~, messages_after~, reason~) =>
       "TranscriptRewritten(\{messages_before}->\{messages_after} messages, \{safe_label(reason)})"
+    UserMessageAppended(command_id~, message~) =>
+      "UserMessageAppended(command=\{command_id}, content_chars=\{message_content_chars(message)})"
+    SteerUndelivered(command_id~, reason~) =>
+      "SteerUndelivered(command=\{command_id}, \{safe_label(reason)})"
     RunCompleted(final_message_summary~, model_steps~, tool_calls~) =>
       "RunCompleted(steps=\{model_steps}, tool_calls=\{tool_calls}, \{safe_label(final_message_summary)})"
     RunFailed(reason~) => "RunFailed(\{reason.to_string()})"
@@ -265,4 +277,24 @@ fn safe_label(value : String) -> String {
   } else {
     label
   }
+}
+
+///|
+/// Text length of a message body, used by bounded summaries. Image payloads
+/// contribute nothing: their byte length is not a readable proxy for size.
+fn message_content_chars(message : @kernel.Message) -> Int32 {
+  let content = match message {
+    SystemMessage(content~) => content
+    UserMessage(content~) => content
+    AssistantMessage(content~, ..) => content
+    ToolMessage(..) => return 0
+  }
+  let mut total = 0
+  for item in content {
+    match item {
+      Text(text) => total = total + text.length()
+      Image(..) => ()
+    }
+  }
+  total
 }

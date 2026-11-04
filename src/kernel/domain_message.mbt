@@ -265,6 +265,10 @@ pub impl Show for FinishReason with fn to_string(self : FinishReason) -> String 
 ///   but the contributing version that supplied it was hard-withdrawn. The
 ///   provider was never entered, so this is neither an unknown tool nor a
 ///   business failure.
+/// - `SupersededByMessage`: the call was still pending when the host committed
+///   a message that replaced the in-flight turn (steer/interrupt ownership).
+///   No provider was entered for this call; the model replans from the
+///   appended message instead of a tool result.
 ///
 /// Malformed-argument cases never reach this variant — they are
 /// `ModelParseFailure` at the reducer boundary (ADR §2.4).
@@ -276,6 +280,7 @@ pub(all) enum NotExecutedReason {
   InvocationLimit
   PolicyConflict
   Revoked
+  SupersededByMessage
   SchemaMismatch(json_path~ : String, expected~ : String, actual~ : String)
   RejectedByHook(reason~ : String)
 }
@@ -298,6 +303,7 @@ pub impl Show for NotExecutedReason with fn to_string(self : NotExecutedReason) 
     InvocationLimit => "InvocationLimit"
     PolicyConflict => "PolicyConflict"
     Revoked => "Revoked"
+    SupersededByMessage => "SupersededByMessage"
     SchemaMismatch(json_path~, expected~, actual~) =>
       "SchemaMismatch(path=\{json_path}, expected=\{expected}, actual=\{actual})"
     RejectedByHook(reason~) => "RejectedByHook(\{reason})"

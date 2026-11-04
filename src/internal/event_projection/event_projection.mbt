@@ -16,26 +16,29 @@ priv struct PendingToolProjection {
 /// one, install it as a subscriber and, when a run ends without folding its
 /// tool completions, call `drain_pending`.
 pub struct EventProjection {
-  priv observers : Array[&@port.Observer]
+  priv events : @event_runtime.EventRuntime
   priv pending_calls : Map[String, PendingToolProjection]
   priv chunk_dispatcher : Ref[@chunk_dispatch.ChunkDispatcher?]
   /// Late-bound live context-state lookup (session id -> puppet state),
   /// wired after the runtime exists in `AgentRuntime::compose`. `None` (or
   /// a lookup returning `None`) projects nothing.
   priv context_state_of : Ref[((String) -> @types.ContextState?)?]
+  priv acknowledge_message : ((String) -> Unit)?
 }
 
 ///|
 pub fn EventProjection::EventProjection(
-  observers : Array[&@port.Observer],
+  events : @event_runtime.EventRuntime,
   chunk_dispatcher : Ref[@chunk_dispatch.ChunkDispatcher?],
   context_state_of~ : Ref[((String) -> @types.ContextState?)?] = Ref(None),
+  acknowledge_message~ : ((String) -> Unit)? = None,
 ) -> EventProjection {
   {
-    observers,
+    events,
     pending_calls: Map::from_array([]),
     chunk_dispatcher,
     context_state_of,
+    acknowledge_message,
   }
 }
 
@@ -67,15 +70,13 @@ fn EventProjection::emit(
   event : @types.TurnEvent,
 ) -> Unit {
   // Piggyback flush: catch up buffered chunk telemetry before every committed
-  // event so observers see chunks before ModelResponseReceived, ToolCallPending,
+  // event so listeners see chunks before ModelResponseReceived, ToolCallPending,
   // etc., and so they catch up at boundaries during an unbroken SSE burst.
   match self.chunk_dispatcher.val {
     Some(dispatcher) => dispatcher.flush()
     None => ()
   }
-  for observer in self.observers {
-    observer.on_event(scope, @event_snapshot.snapshot_turn_event(event))
-  }
+  self.events.emit_core(scope, event)
 }
 
 ///|
@@ -115,6 +116,12 @@ fn EventProjection::emit_tool_result(
       ToolCallFailed(call~, failure=ReportedError(content~, structured~))
     RuntimeFailure(error_category~, message~) =>
       ToolCallFailed(call~, failure=Runtime(category=error_category, message~))
+    // Supersession by a committed user message is not a rejection: no
+    // decision refused the call, the call simply never runs, so it closes as
+    // an abandonment like every other orphaned call. The pending entry was
+    // already removed above, so the correlation cache stays clean.
+    NotExecuted(reason=SupersededByMessage, ..) =>
+      ToolCallAbandoned(call~, reason="superseded by message")
     NotExecuted(reason~, ..) => ToolCallRejected(call~, reason~)
   }
   self.emit(Some(scope), event)
@@ -256,6 +263,21 @@ pub impl @puppetry.EventSubscriber for EventProjection with fn on_event(
       }
     ToolCompleted(call~, outcome~, ..) =>
       self.emit_tool_result(scope, call, outcome)
+    UserMessageAppended(command_id~, ..) => {
+      if self.acknowledge_message is Some(acknowledge) {
+        acknowledge(command_id)
+      }
+      self.emit(Some(scope), MessageApplied(command_id~, delivery=Step))
+    }
+    SteerUndelivered(command_id~, reason~) => {
+      if self.acknowledge_message is Some(acknowledge) {
+        acknowledge(command_id)
+      }
+      self.emit(
+        Some(scope),
+        MessageUndelivered(command_id~, delivery=Step, reason~),
+      )
+    }
     _ => ()
   }
 }

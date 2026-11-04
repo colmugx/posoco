@@ -102,6 +102,12 @@ pub impl @puppetry.EventSubscriber for SessionCheckpointSubscriber with fn on_ev
   match envelope.event() {
     RunStarted(..) => ()
     TranscriptRewritten(..) => self.progress.mark_dirty(session_id)
+    // A steer message enters the transcript as a committed fact, so it must be
+    // appended incrementally or the session store silently lags the core fact.
+    UserMessageAppended(message~, ..) =>
+      if !self.progress.is_dirty(session_id) {
+        self.append_committed_message(session_id, message)
+      }
     ModelStepCompleted(completion~, ..) => {
       let payload = completion.message
       let message : @kernel.Message = AssistantMessage(

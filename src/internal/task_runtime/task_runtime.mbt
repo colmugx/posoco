@@ -776,7 +776,7 @@ pub async fn TaskRuntime::shutdown(
 
 ///|
 pub fn emit_managed_task_shutdown_failure(
-  observers : Array[&@port.Observer],
+  events : @event_runtime.EventRuntime,
   error : String,
   stragglers : String,
 ) -> Unit {
@@ -793,7 +793,5 @@ pub fn emit_managed_task_shutdown_failure(
       ]),
     ),
   )
-  for observer in observers {
-    observer.on_event(None, @event_snapshot.snapshot_turn_event(event))
-  }
+  events.emit_core(None, event)
 }

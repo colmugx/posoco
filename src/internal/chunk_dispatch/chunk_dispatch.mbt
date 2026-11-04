@@ -1,12 +1,12 @@
 ///|
 /// Buffered, per-turn dispatcher for `StreamChunk` telemetry. Chunk payloads
-/// are immutable scalar values; the two emitted events are constructed
-/// directly without root event-copy callbacks.
+/// are immutable scalar values; the dispatcher buffers only, and every
+/// delivery goes through the event runtime.
 pub struct ChunkDispatcher {
   priv queue : @aqueue.Queue[@types.TurnEvent]
   priv mut depth : Int32
   priv mut dropped : Int32
-  priv observers : Array[&@port.Observer]
+  priv events : @event_runtime.EventRuntime
 }
 
 ///|
@@ -14,13 +14,13 @@ let chunk_queue_capacity : Int32 = 1024
 
 ///|
 pub fn ChunkDispatcher::ChunkDispatcher(
-  observers : Array[&@port.Observer],
+  events : @event_runtime.EventRuntime,
 ) -> ChunkDispatcher {
   {
     queue: Queue(kind=Blocking(chunk_queue_capacity)),
     depth: 0,
     dropped: 0,
-    observers,
+    events,
   }
 }
 
@@ -54,9 +54,7 @@ fn ChunkDispatcher::emit(
   self : ChunkDispatcher,
   event : @types.TurnEvent,
 ) -> Unit {
-  for observer in self.observers {
-    observer.on_event(None, event)
-  }
+  self.events.emit_core(None, event)
 }
 
 ///|

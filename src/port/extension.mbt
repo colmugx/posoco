@@ -29,6 +29,8 @@ pub(all) enum Capability {
   /// The Agent-owned dynamic tool contribution capability, bound to the
   /// declaring manifest's owner id.
   ToolContribution
+  /// Agent-owned notifications, with publication bound to this manifest id.
+  Events
 }
 
 ///|

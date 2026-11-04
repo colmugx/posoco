@@ -1,5 +1,6 @@
 import {
   "colmugx/posoco/error",
   "colmugx/posoco/types",
+  "colmugx/posoco/events",
   "colmugx/posoco/kernel",
 }

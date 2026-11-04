@@ -1,5 +1,5 @@
 // ──────────────────────────────────────────────────────────────────────────
-// ControlMailbox — holds the three queues + abort flag + idle barrier
+// ControlMailbox — message inbox + structural controls + idle barrier
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
@@ -12,20 +12,13 @@ let default_max_queue_depth : Int32 = 64
 /// currently-active run_id (so stale commands targeting an old run are
 /// rejected at enqueue time without needing to consult the phase gate).
 ///
-/// The steer and follow-up queues are `@aqueue.Queue` (MPMC, async-safe)
-/// so that a sibling task in the same `TaskGroup` can enqueue commands
-/// while the pump is mid-run (e.g. blocked on a model HTTP call). The
-/// pump drains them at safe points via `try_get` (non-blocking).
-/// `resume_pending` stays a `Map` because resume is addressed by
-/// `suspension_id`, not FIFO.
+/// Message submission/selection is synchronous, including from sibling tasks
+/// while the pump awaits model/tool work. `MessageInbox` retains selected
+/// messages until commit; clearing a run does not discard those records.
+/// Structural fork/compact commands keep their separate queues, and resume
+/// remains addressed by suspension id.
 pub struct ControlMailbox {
-  mut steer_queue : @aqueue.Queue[SteerCommand]
-  mut follow_up_queue : @aqueue.Queue[FollowUpCommand]
-  /// Manual depth counters (`@aqueue.Queue` exposes no `length()`). The
-  /// enqueue path increments; the consume path decrements. Tests assert
-  /// on these to verify drain behaviour.
-  mut steer_depth : Int32
-  mut follow_up_depth : Int32
+  messages : MessageInbox
   /// Fork command queue. OneAtATime policy — the pump consumes one
   /// fork per safe point (a fork creates a new session and returns
   /// PromptResult::ForkCompleted; batching makes no sense).
@@ -97,10 +90,7 @@ pub impl Show for QuiescentStatus with fn to_string(self : QuiescentStatus) -> S
 ///|
 pub fn ControlMailbox::ControlMailbox() -> ControlMailbox {
   {
-    steer_queue: Queue(kind=Unbounded),
-    follow_up_queue: Queue(kind=Unbounded),
-    steer_depth: 0,
-    follow_up_depth: 0,
+    messages: MessageInbox(),
     fork_queue: Queue(kind=Unbounded),
     fork_depth: 0,
     compact_queue: Queue(kind=Unbounded),
@@ -124,13 +114,7 @@ pub impl Mailbox for ControlMailbox with fn bind_run(
   self.active_run_id = Some(run_id)
   self.active_turn_id = Some(turn_id)
   self.abort_requested = false
-  // `@aqueue.Queue` has no `clear()`: rebuild fresh instances. Old queued
-  // commands targeting the previous run are dropped (their command_ids
-  // were already Accepted; callers correlate via wait_idle).
-  self.steer_queue = Queue(kind=Unbounded)
-  self.follow_up_queue = Queue(kind=Unbounded)
-  self.steer_depth = 0
-  self.follow_up_depth = 0
+  self.messages.bind_turn(run_id, turn_id)
   self.fork_queue = Queue(kind=Unbounded)
   self.fork_depth = 0
   self.compact_queue = Queue(kind=Unbounded)
@@ -139,17 +123,13 @@ pub impl Mailbox for ControlMailbox with fn bind_run(
 }
 
 ///|
-/// Clear the active run binding. Called by the Puppet when the run
-/// reaches terminal. Any queued commands targeting the now-terminal run
-/// are dropped.
+/// Clear the active run binding. Structural commands are dropped; message
+/// records remain in the inbox for Agent's explicit settlement.
 pub impl Mailbox for ControlMailbox with fn clear_run(self : ControlMailbox) -> Unit {
   self.active_run_id = None
   self.active_turn_id = None
   self.abort_requested = false
-  self.steer_queue = Queue(kind=Unbounded)
-  self.follow_up_queue = Queue(kind=Unbounded)
-  self.steer_depth = 0
-  self.follow_up_depth = 0
+  self.messages.close_turn()
   self.fork_queue = Queue(kind=Unbounded)
   self.fork_depth = 0
   self.compact_queue = Queue(kind=Unbounded)
@@ -177,15 +157,20 @@ pub impl Mailbox for ControlMailbox with fn abort_requested(
 }
 
 ///|
+pub impl Mailbox for ControlMailbox with fn message_inbox(self : ControlMailbox) -> MessageInbox {
+  self.messages
+}
+
+///|
 pub impl Mailbox for ControlMailbox with fn steer_depth(self : ControlMailbox) -> Int32 {
-  self.steer_depth
+  self.messages.steer_depth()
 }
 
 ///|
 pub impl Mailbox for ControlMailbox with fn follow_up_depth(
   self : ControlMailbox,
 ) -> Int32 {
-  self.follow_up_depth
+  self.messages.follow_up_depth()
 }
 
 ///|
@@ -203,79 +188,19 @@ pub impl Mailbox for ControlMailbox with fn compact_depth(self : ControlMailbox)
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-/// Enqueue a steer command. Rejects if:
-/// - no active run (RejectedStale)
-/// - target_run_id / target_turn_id don't match active
-/// - queue full
-///
-/// Uses `try_put` (non-blocking) on the underlying `@aqueue.Queue`. The
-/// queue is `Unbounded`, so we enforce `max_depth` manually via the
-/// `steer_depth` counter to preserve `RejectedQueueFull` semantics.
 pub impl Mailbox for ControlMailbox with fn enqueue_steer(
   self : ControlMailbox,
   cmd : SteerCommand,
 ) -> EnqueueResult {
   match (self.active_run_id, self.active_turn_id) {
-    (Some(run), Some(turn)) => {
-      if run != cmd.target_run_id || turn != cmd.target_turn_id {
-        return RejectedStale(
-          command_id=cmd.command_id,
-          reason="steer targets stale run/turn",
-        )
-      }
-      if self.steer_depth >= self.max_depth {
-        return RejectedQueueFull(
-          command_id=cmd.command_id,
-          depth=self.steer_depth,
-        )
-      }
-      let put_ok : Bool = self.steer_queue.try_put(cmd) catch {
-        _ => false // queue closed — treat as full for caller simplicity
-      }
-      if !put_ok {
-        return RejectedQueueFull(
-          command_id=cmd.command_id,
-          depth=self.steer_depth,
-        )
-      }
-      self.steer_depth = self.steer_depth + 1
-      Accepted(command_id=cmd.command_id)
-    }
-    _ => RejectedStale(command_id=cmd.command_id, reason="no active run")
-  }
-}
-
-///|
-/// Enqueue a follow-up command. Rejects if no active run or stale ids.
-pub impl Mailbox for ControlMailbox with fn enqueue_follow_up(
-  self : ControlMailbox,
-  cmd : FollowUpCommand,
-) -> EnqueueResult {
-  match (self.active_run_id, self.active_turn_id) {
-    (Some(run), Some(turn)) => {
-      if run != cmd.target_run_id || turn != cmd.source_turn_id {
-        return RejectedStale(
-          command_id=cmd.command_id,
-          reason="follow_up targets stale run/turn",
-        )
-      }
-      if self.follow_up_depth >= self.max_depth {
-        return RejectedQueueFull(
-          command_id=cmd.command_id,
-          depth=self.follow_up_depth,
-        )
-      }
-      let put_ok : Bool = self.follow_up_queue.try_put(cmd) catch { _ => false }
-      if !put_ok {
-        return RejectedQueueFull(
-          command_id=cmd.command_id,
-          depth=self.follow_up_depth,
-        )
-      }
-      self.follow_up_depth = self.follow_up_depth + 1
-      Accepted(command_id=cmd.command_id)
-    }
-    _ => RejectedStale(command_id=cmd.command_id, reason="no active run")
+    (Some(run), Some(turn)) if run == cmd.target_run_id &&
+      turn == cmd.target_turn_id =>
+      self.messages.enqueue(cmd.command_id, Step, cmd.message)
+    _ =>
+      RejectedStale(
+        command_id=cmd.command_id,
+        reason="steer targets stale run/turn",
+      )
   }
 }
 
@@ -417,47 +342,21 @@ pub impl Mailbox for ControlMailbox with fn enqueue_compact(
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-/// Consume all steer commands at one safe point. The Puppet calls this
-/// after a complete tool batch commits and before allocating the next
-/// model_step_id. Returns the commands in FIFO order; the queue is
-/// drained.
-///
-/// Uses `try_get` (non-blocking) in a loop until the queue is empty.
+/// Select queued step messages in FIFO order. Records remain in the inbox
+/// until the boundary commits or Agent settles an unconfirmed selection.
 pub impl Mailbox for ControlMailbox with fn consume_steers(
   self : ControlMailbox,
 ) -> Array[SteerCommand] {
-  let out : Array[SteerCommand] = []
-  while true {
-    let next : SteerCommand? = self.steer_queue.try_get() catch {
-      _ => None // closed — treat as drained
+  self.messages
+  .select_steers()
+  .map(fn(command) {
+    {
+      command_id: command.command_id,
+      target_run_id: command.address.run_id,
+      target_turn_id: command.address.turn_id,
+      message: command.message,
     }
-    match next {
-      Some(cmd) => {
-        out.push(cmd)
-        self.steer_depth = self.steer_depth - 1
-      }
-      None => break
-    }
-  }
-  out
-}
-
-///|
-/// Consume one follow-up command (OneAtATime policy). Returns the oldest
-/// if any, else None. The Puppet calls this at a turn boundary.
-pub impl Mailbox for ControlMailbox with fn consume_one_follow_up(
-  self : ControlMailbox,
-) -> FollowUpCommand? {
-  let next : FollowUpCommand? = self.follow_up_queue.try_get() catch {
-    _ => None
-  }
-  match next {
-    Some(cmd) => {
-      self.follow_up_depth = self.follow_up_depth - 1
-      Some(cmd)
-    }
-    None => None
-  }
+  })
 }
 
 ///|

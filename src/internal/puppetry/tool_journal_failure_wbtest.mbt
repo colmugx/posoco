@@ -99,7 +99,7 @@ async test "tool_tree/journal_failure_at_each_child_boundary_ends_waiters_and_cl
     let hard = scenario >= 4
     let facts = ToolRevocationFacts()
     let replies : Array[@kernel.InvocationResult] = []
-    let signal = @async.CondVar::Cond()
+    let signal = @cond_var.Cond()
     let parent_exited = Ref(false)
     let child_calls = Ref(0)
     let cancel_ids : Array[EffectId] = []
@@ -122,7 +122,7 @@ async test "tool_tree/journal_failure_at_each_child_boundary_ends_waiters_and_cl
               replies.push((scope.invoke)("child", {}))
               signal.broadcast()
             })
-            let never = @async.CondVar::Cond()
+            let never = @cond_var.Cond()
             never.wait()
             Success(content="unreachable", structured=None)
           },

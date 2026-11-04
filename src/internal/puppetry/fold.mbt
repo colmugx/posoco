@@ -29,6 +29,11 @@ async fn Puppet::fold_effect_input(
   savepoint_id_prefix : String,
   snap : TurnSnapshot,
 ) -> FoldOutcome raise PuppetError {
+  let input : RunInput = match input {
+    ModelCompleted(payload~) if self.mailbox.steer_depth() > 0 &&
+      !self.mailbox.abort_requested() => ModelCompletedWithSteering(payload~)
+    other => other
+  }
   let reduced : Result[ReduceOutput, KernelError] = Ok(
     reduce(state, self.config.catalog, input),
   ) catch {
@@ -41,7 +46,31 @@ async fn Puppet::fold_effect_input(
       )
     Ok(value) => value
   }
-  self.record_context_reading(session_id, output.next_state(), snap)
+  let completed_events = output.events()
+  let completed_state = if input is ModelCompletedWithSteering(_) {
+    self.supersede_pending_tools(output.next_state(), completed_events)
+  } else {
+    output.next_state()
+  }
+  self.finish_step_boundary(
+    completed_state, completed_events, dispatcher, run_id, turn_id, session_id, savepoint_id_prefix,
+    snap,
+  )
+}
+
+///|
+async fn Puppet::finish_step_boundary(
+  self : Puppet,
+  completed_state : RunState,
+  completed_events : Array[KernelEvent],
+  dispatcher : EventDispatcher,
+  run_id : RunId,
+  turn_id : TurnId,
+  session_id : SessionId,
+  savepoint_id_prefix : String,
+  snap : TurnSnapshot,
+) -> FoldOutcome raise PuppetError {
+  self.record_context_reading(session_id, completed_state, snap)
   // Auto-compact threshold check. If the reducer just landed in
   // ReadyForModel AND observed token usage crossed the threshold, fire
   // a compact (trigger=Auto) BEFORE declaring the next model effect.
@@ -49,16 +78,22 @@ async fn Puppet::fold_effect_input(
   // updates the state and we proceed to declare_model_effect_if_ready
   // on the post-compact transcript.
   let rewrite_events : Array[KernelEvent] = []
-  let state_after_auto_compact = if output.next_state().phase() == ReadyForModel {
-    match self.check_auto_compact(output.next_state(), snap) {
+  let state_after_auto_compact = if completed_state.phase() == ReadyForModel {
+    let compact = match self.check_auto_compact(completed_state, snap) {
+      Some(command) => Some(command)
+      None if self.mailbox.steer_depth() > 0 => {
+        let prospective = completed_state.transcript().messages_snapshot()
+        prospective.append(
+          self.mailbox.message_inbox().pending_steer_messages(),
+        )
+        self.check_auto_compact_pre_request(session_id, prospective, snap)
+      }
+      None => None
+    }
+    match compact {
       Some(compact_cmd) => {
         let compact_outcome = self.handle_compact(
-          output.next_state(),
-          compact_cmd,
-          run_id,
-          turn_id,
-          session_id,
-          dispatcher,
+          completed_state, compact_cmd, run_id, turn_id, session_id, dispatcher,
           snap,
         )
         match compact_outcome {
@@ -72,9 +107,9 @@ async fn Puppet::fold_effect_input(
           Failed(error) => {
             let facts_committed : Result[Unit, PuppetError] = Ok(
               self.commit_boundary(
-                output.next_state(),
-                boundary_kind_for_events(output.events()),
-                output.events(),
+                completed_state,
+                boundary_kind_for_events(completed_events),
+                completed_events,
                 dispatcher,
                 run_id,
                 turn_id,
@@ -88,9 +123,7 @@ async fn Puppet::fold_effect_input(
               Err(e) => return Return(self.finalize_rejected(error=e))
               Ok(_) => ()
             }
-            self.last_completed_transcript = Some(
-              output.next_state().transcript(),
-            )
+            self.last_completed_transcript = Some(completed_state.transcript())
             return Return(
               self.finalize_rejected(
                 error=EffectExecutionFailed(
@@ -102,21 +135,34 @@ async fn Puppet::fold_effect_input(
           }
         }
       }
-      None => output.next_state()
+      None => completed_state
     }
   } else {
-    output.next_state()
+    completed_state
   }
   // Journal order stays causal: the effect-completion events that produced
-  // the pre-compact state come first, then the compact rewrite, then the
-  // next declared model intent — all committed in one boundary.
-  let prior_events = output.events()
+  // the pre-compact state come first, then the compact rewrite, then any
+  // steer message injected at this boundary, then the next declared model
+  // intent — all committed in one boundary.
+  let prior_events = completed_events
   for event in rewrite_events {
     prior_events.push(event)
   }
+  // Steer consumption belongs after auto-compact (an injected message must not
+  // be rewritten away immediately) and before the next model intent (so the
+  // fact, the message and that intent share one boundary).
+  let state_after_steer = self.consume_into_state(
+    state_after_auto_compact, prior_events,
+  )
+  // Terminal ends the turn with no further delivery point, so every steer still
+  // queued is reported in this same boundary instead of being cleared with the
+  // run binding. It is never converted into a follow-up.
+  if state_after_steer.phase() == Terminal {
+    self.drain_undelivered(prior_events, "turn ended before delivery")
+  }
   let boundary_kind = boundary_kind_for_events(prior_events)
   let (next_state, boundary_events) = declare_model_effect_if_ready(
-    state_after_auto_compact,
+    state_after_steer,
     prior_events,
     self.config.catalog,
     snap.call_options(),
@@ -132,7 +178,8 @@ async fn Puppet::fold_effect_input(
   match committed {
     Err(error) => raise error
     Ok(_) => {
-      if !rewrite_events.is_empty() {
+      if !rewrite_events.is_empty() ||
+        boundary_events.any(fn(event) { event is UserMessageAppended(..) }) {
         self.record_context_estimate(
           session_id,
           next_state.transcript().messages_snapshot(),
@@ -175,4 +222,68 @@ fn declare_model_effect_if_ready(
     events.push(event)
   }
   (output.next_state(), events)
+}
+
+///|
+/// Consume every steer queued for this run into the transcript, appending each
+/// `UserMessageAppended` to `events` so the caller commits the message together
+/// with the fact that made the boundary safe.
+///
+/// Only `ReadyForModel` consumes: appending a user message while a model or
+/// tool effect is still pending would break assistant/tool adjacency. Nothing
+/// is consumed in any other phase, so a steer accepted late stays queued for
+/// the next step boundary (or the terminal residual path).
+fn Puppet::consume_into_state(
+  self : Puppet,
+  state : RunState,
+  events : Array[KernelEvent],
+) -> RunState raise PuppetError {
+  if state.phase() != ReadyForModel || self.mailbox.abort_requested() {
+    return state
+  }
+  let steers = self.mailbox.consume_steers()
+  let mut state = state
+  for command in steers {
+    let input : RunInput = SteerAppended(payload={
+      message: command.message,
+      command_id: command.command_id.to_string(),
+    })
+    let reduced : Result[ReduceOutput, KernelError] = Ok(
+      reduce(state, self.config.catalog, input),
+    ) catch {
+      error => Err(error)
+    }
+    let output = match reduced {
+      Err(error) =>
+        raise ReducerInvariantViolation(
+          category=IllegalPhase(phase="steer", detail=error.to_string()),
+        )
+      Ok(value) => value
+    }
+    for event in output.events() {
+      events.push(event)
+    }
+    state = output.next_state()
+  }
+  state
+}
+
+///|
+/// Report every steer still queued as `SteerUndelivered`, appending the events
+/// to `events` so they commit inside the run's terminal boundary.
+///
+/// Unconfirmed selections remain in the inbox if this boundary fails.
+/// Step messages never become follow-ups automatically.
+fn Puppet::drain_undelivered(
+  self : Puppet,
+  events : Array[KernelEvent],
+  reason : String,
+) -> Unit {
+  self.mailbox.message_inbox().close_step()
+  let steers = self.mailbox.consume_steers()
+  for command in steers {
+    events.push(
+      SteerUndelivered(command_id=command.command_id.to_string(), reason~),
+    )
+  }
 }

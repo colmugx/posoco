@@ -183,12 +183,33 @@ pub extend TranscriptRewritePayload with Eq::{not_equal, equal}
 pub extend TranscriptRewritePayload with Debug::{to_repr}
 
 ///|
+/// A steer message accepted at a step boundary: one user message appended to
+/// the transcript after a complete tool batch and before the next model step
+/// is declared.
+#derive(Eq, Debug)
+pub(all) struct SteerAppendedPayload {
+  message : @kernel.Message
+  command_id : String
+}
+
+///|
+pub extend SteerAppendedPayload with Eq::{not_equal, equal}
+
+///|
+pub extend SteerAppendedPayload with Debug::{to_repr}
+
+///|
 /// Discriminator for RunInput variants. The reducer pattern-matches on this
 /// in `reduce(state, input)`.
 #derive(Eq, Debug)
 pub(all) enum RunInput {
   Start(payload~ : StartPayload)
   ModelCompleted(payload~ : ModelCompletedPayload)
+  /// A model completion that raced an accepted steer message: the same
+  /// completion payload, but the run must not end on a no-tool completion —
+  /// the steer re-opens the step boundary instead (explicit kind so replay
+  /// and rejection labels stay distinct from `ModelCompleted`).
+  ModelCompletedWithSteering(payload~ : ModelCompletedPayload)
   ModelFailed(payload~ : ModelFailedPayload)
   ToolCompleted(payload~ : ToolCompletedPayload)
   ToolFailed(payload~ : ToolFailedPayload)
@@ -198,6 +219,7 @@ pub(all) enum RunInput {
   SuspendRequested(payload~ : SuspendRequestedPayload)
   Resume(payload~ : ResumePayload)
   TranscriptRewrite(payload~ : TranscriptRewritePayload)
+  SteerAppended(payload~ : SteerAppendedPayload)
 }
 
 ///|
@@ -214,6 +236,7 @@ fn RunInput::kind(self : RunInput) -> String {
   match self {
     Start(..) => "Start"
     ModelCompleted(..) => "ModelCompleted"
+    ModelCompletedWithSteering(..) => "ModelCompletedWithSteering"
     ModelFailed(..) => "ModelFailed"
     ToolCompleted(..) => "ToolCompleted"
     ToolFailed(..) => "ToolFailed"
@@ -223,6 +246,7 @@ fn RunInput::kind(self : RunInput) -> String {
     SuspendRequested(..) => "SuspendRequested"
     Resume(..) => "Resume"
     TranscriptRewrite(..) => "TranscriptRewrite"
+    SteerAppended(..) => "SteerAppended"
   }
 }
 
@@ -235,6 +259,8 @@ pub impl Show for RunInput with fn to_string(self : RunInput) -> String {
     Start(..) => "Start"
     ModelCompleted(payload~) =>
       "ModelCompleted(effect=\{payload.effect_id.to_int()})"
+    ModelCompletedWithSteering(payload~) =>
+      "ModelCompletedWithSteering(effect=\{payload.effect_id.to_int()})"
     ModelFailed(payload~) => "ModelFailed(effect=\{payload.effect_id.to_int()})"
     ToolCompleted(payload~) =>
       "ToolCompleted(effect=\{payload.effect_id.to_int()}, call=\{payload.call_id.to_string()})"
@@ -248,5 +274,6 @@ pub impl Show for RunInput with fn to_string(self : RunInput) -> String {
     Resume(..) => "Resume"
     TranscriptRewrite(payload~) =>
       "TranscriptRewrite(\{payload.rewritten_messages.length()} messages, \{payload.reason})"
+    SteerAppended(payload~) => "SteerAppended(command=\{payload.command_id})"
   }
 }

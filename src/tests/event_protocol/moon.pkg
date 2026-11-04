@@ -1,0 +1,13 @@
+import {
+  "colmugx/posoco/events",
+  "colmugx/posoco/internal/event_runtime",
+  "colmugx/posoco/port",
+  "colmugx/posoco/types",
+  "colmugx/posoco/kernel",
+  "colmugx/posoco/tests/event_protocol/protocol",
+} for "wbtest"
+
+import {
+  "colmugx/posoco/events",
+  "colmugx/posoco/internal/event_runtime",
+} for "test"

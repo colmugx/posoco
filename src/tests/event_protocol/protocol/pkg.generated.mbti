@@ -1,0 +1,36 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "colmugx/posoco/tests/event_protocol/protocol"
+
+import {
+  "colmugx/posoco/events",
+  "colmugx/posoco/types",
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub fn publish_sprint(@events.Events, SprintEvent, scope? : @types.EventScope?) -> Result[Unit, @events.EventError]
+
+pub fn sprint_of(@events.EventEnvelope) -> SprintEvent?
+
+// Errors
+
+// Types and methods
+#derive(Eq, @debug.Debug)
+pub(all) enum SprintEvent {
+  Started(Int32)
+  Blocked(reason~ : String)
+  Finished
+}
+pub fn SprintEvent::describe(Self) -> String
+pub fn SprintEvent::equal(Self, Self) -> Bool
+pub fn SprintEvent::not_equal(Self, Self) -> Bool
+pub fn SprintEvent::to_repr(Self) -> @debug.Repr
+
+// Extensible enum extensions
+pub(all) extenum @events.Event += {
+  SprintChanged(SprintEvent)
+}
+
+// Type aliases
+
+// Traits

@@ -1,0 +1,63 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "colmugx/posoco/events"
+
+import {
+  "colmugx/posoco/types",
+  "moonbitlang/core/debug",
+}
+
+// Values
+
+// Errors
+
+// Types and methods
+pub extenum Event {
+}
+
+pub struct EventEnvelope {
+  namespace_ : EventNamespace
+  scope : @types.EventScope?
+  event : Event
+}
+pub fn EventEnvelope::EventEnvelope(namespace_~ : EventNamespace, event~ : Event, scope? : @types.EventScope?) -> Self
+pub fn EventEnvelope::namespace_of(Self) -> EventNamespace
+
+#derive(Eq, @debug.Debug)
+pub(all) enum EventError {
+  Closed
+  ReservedEvent
+}
+pub fn EventError::equal(Self, Self) -> Bool
+pub fn EventError::not_equal(Self, Self) -> Bool
+pub fn EventError::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) enum EventNamespace {
+  Posoco
+  Extension(String)
+}
+pub fn EventNamespace::equal(Self, Self) -> Bool
+pub fn EventNamespace::not_equal(Self, Self) -> Bool
+pub fn EventNamespace::to_repr(Self) -> @debug.Repr
+
+pub struct Events {
+  // private fields
+}
+pub fn Events::from_callbacks(publish~ : (Event, @types.EventScope?) -> Result[Unit, EventError], subscribe~ : ((EventEnvelope) -> Unit, EventNamespace?) -> Result[Subscription, EventError]) -> Self
+pub fn Events::publish(Self, Event, scope? : @types.EventScope?) -> Result[Unit, EventError]
+pub fn Events::subscribe(Self, (EventEnvelope) -> Unit, namespace_? : EventNamespace?) -> Result[Subscription, EventError]
+
+pub struct Subscription {
+  // private fields
+}
+pub fn Subscription::cancel(Self) -> Unit
+pub fn Subscription::from_cancel(() -> Unit) -> Self
+
+// Extensible enum extensions
+pub(all) extenum Event += {
+  Core(@types.TurnEvent)
+}
+
+// Type aliases
+
+// Traits

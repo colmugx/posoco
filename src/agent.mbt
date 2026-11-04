@@ -80,7 +80,7 @@ priv struct AgentRuntime {
   /// self-reported context window / compact threshold. Reference equality
   /// with the port the Puppet executes through — no second composition path.
   model : &@port.ModelPort
-  observers : Array[&@port.Observer]
+  events : @event_runtime.EventRuntime
   /// The composed hook chain in interception order — the same array the
   /// Puppet executes — retained for Agent-level dispatch points that fire
   /// outside the pump (`PipelineHook::on_turn_end`).
@@ -219,7 +219,7 @@ fn compose_tool_catalog(
     let provider : &@port.ToolProvider = @memory.MemoryToolProvider(
       sources=agg.memory,
       on_failure=reason => {
-        emit_secondary_failure(agg.observers, "memory_search", reason)
+        emit_secondary_failure(agg.events, "memory_search", reason)
       },
     )
     for definition in provider.list_tools() {
@@ -274,13 +274,14 @@ fn compose_hook_chain(
 
 ///|
 fn create_agent_stream_callback(
-  observers : Array[&@port.Observer],
+  events : @event_runtime.EventRuntime,
   dispatcher_ref : Ref[@chunk_dispatch.ChunkDispatcher?],
 ) -> @kernel_exec.HostChunkCallback? {
-  if observers.is_empty() {
-    return None
-  }
+  // Listeners may attach after Agent construction, including from the host.
   let cb = fn(chunk : @types.StreamChunk) {
+    if !events.has_listeners() {
+      return
+    }
     match dispatcher_ref.val {
       Some(dispatcher) => dispatcher.enqueue(chunk)
       None => ()
@@ -316,7 +317,7 @@ fn compose_mailbox_and_host(
     bindings,
     cancel_settle_ms=operation_cancel_settle_ms,
     on_cleanup_failure=reason => {
-      emit_secondary_failure(agg.observers, "tool_cleanup", reason)
+      emit_secondary_failure(agg.events, "tool_cleanup", reason)
     },
   )
   (mailbox_ref, builtin_command_port, command_ports, shim, shim)
@@ -334,6 +335,7 @@ fn AgentRuntime::compose(
   ui_projection : Bool,
   host_override : &@runtime.Runtime?,
 ) -> Agent raise @error.CompositionError {
+  errdefer agg.events.close()
   validate_agent_config(config)
   let (catalog, entries) = compose_tool_catalog(agg)
   let launch_gate = @kernel_exec.ToolLaunchGate::ToolLaunchGate()
@@ -342,7 +344,7 @@ fn AgentRuntime::compose(
   let tool_contributions = ToolContributionRegistry::ToolContributionRegistry(
     entries,
     launcher=launch_gate,
-    on_change=change => emit_tool_catalog_change(agg.observers, change),
+    on_change=change => emit_tool_catalog_change(agg.events, change),
     on_revoke=fn(versions, _names) {
       let affected : Array[String] = []
       for name, version in binding_versions.val {
@@ -368,7 +370,7 @@ fn AgentRuntime::compose(
   // receipt identity, attribution, and authoritative status only.
   task_runtime.set_ready_notifier(fn(outcome) {
     emit_custom_event(
-      agg.observers,
+      agg.events,
       None,
       "posoco.tasks",
       "background_outcome_ready",
@@ -388,12 +390,13 @@ fn AgentRuntime::compose(
   // extensions receive a fully constructed capability; the pump joins at
   // run_scoped startup. No runtime backfill is needed — the ledger owns its
   // admission state, and execution goes through the completed Agent.
-  let wakeup = @wakeup.WakeupRuntime::WakeupRuntime(observers=agg.observers)
+  let wakeup = @wakeup.WakeupRuntime::WakeupRuntime(events=agg.events)
   let operations = @operation_guard.OperationGuard::OperationGuard()
   let control = AgentControl(mailbox_ref)
   control.set_abort_hook(fn(run_id) {
     task_runtime.cancel_foreground_for_run(run_id)
   })
+  control.install_message_events(agg.events)
   let progress = @session_state.SessionProgress::SessionProgress()
   let core_facts = @core_facts.CoreFacts::CoreFacts()
   let checkpoint_subscriber = @session_checkpoint.SessionCheckpointSubscriber::SessionCheckpointSubscriber(
@@ -401,9 +404,12 @@ fn AgentRuntime::compose(
     progress,
   )
   let event_subscriber = @event_projection.EventProjection::EventProjection(
-    agg.observers,
+    agg.events,
     chunk_dispatcher_ref,
     context_state_of~,
+    acknowledge_message=Some(fn(command_id) {
+      control.inbox.acknowledge_step_delivery(command_id)
+    }),
   )
   // Wakeup input cutoff: commits the armed cutoff on the arming run's
   // committed RunStarted. Registered before any turn can arm, after the
@@ -423,7 +429,7 @@ fn AgentRuntime::compose(
       event_subscriber as &@puppetry.EventSubscriber,
     ],
     stream_chunks: create_agent_stream_callback(
-      agg.observers,
+      agg.events,
       chunk_dispatcher_ref,
     ),
     hooks: composed_hooks,
@@ -459,6 +465,7 @@ fn AgentRuntime::compose(
       tasks=Some(task_capability),
       wakeup=Some(wakeup_capability),
       tool_contributions=Some(contribution_capability),
+      events=Some(agg.events.capability(entry.id)),
     )
     entry.port.on_compose(view)
   }
@@ -489,7 +496,7 @@ fn AgentRuntime::compose(
   let runtime : AgentRuntime = {
     puppet,
     model: agg.model,
-    observers: agg.observers,
+    events: agg.events,
     hooks: composed_hooks,
     memory: agg.memory,
     memory_inbound_attempted: Map::from_array([]),
@@ -593,7 +600,7 @@ pub async fn[X] Agent::run_scoped(self : Agent, body : async (Agent) -> X) -> X 
         Ok(@async.protect_from_cancel(async fn() { self.runtime.shutdown() })) catch {
           error => {
             emit_secondary_failure(
-              self.runtime.observers,
+              self.runtime.events,
               "run_scoped_shutdown",
               error.to_string(),
             )
@@ -637,7 +644,7 @@ pub async fn[X] Agent::run_scoped(self : Agent, body : async (Agent) -> X) -> X 
           Ok(_) => raise error
           Err(cleanup_error) => {
             emit_secondary_failure(
-              self.runtime.observers,
+              self.runtime.events,
               "run_scoped_shutdown",
               cleanup_error.to_string(),
             )
@@ -681,7 +688,7 @@ async fn AgentRuntime::shutdown(self : AgentRuntime) -> Unit {
     Err(error) => {
       self.wakeup.drop_pending()
       @task.emit_managed_task_shutdown_failure(
-        self.observers,
+        self.events,
         error.to_string(),
         self.task_runtime.shutdown_straggler_detail(),
       )
@@ -726,6 +733,7 @@ async fn AgentRuntime::shutdown(self : AgentRuntime) -> Unit {
       ),
     )
   }
+  self.events.close()
   self.shutdown_complete = true
 }
 
@@ -750,9 +758,7 @@ fn AgentRuntime::emit_turn_event(
   scope : @types.EventScope?,
   event : @types.TurnEvent,
 ) -> Unit {
-  for observer in self.observers {
-    observer.on_event(scope, @event_snapshot.snapshot_turn_event(event))
-  }
+  self.events.emit_core(scope, event)
 }
 
 ///|
@@ -770,11 +776,7 @@ async fn AgentRuntime::dispatch_on_turn_begin(
   for hook in self.hooks {
     hook.on_turn_begin() catch {
       error =>
-        emit_secondary_failure(
-          self.observers,
-          "on_turn_begin",
-          error.to_string(),
-        )
+        emit_secondary_failure(self.events, "on_turn_begin", error.to_string())
     }
   }
 }
@@ -795,7 +797,7 @@ async fn AgentRuntime::dispatch_on_turn_end(
   for hook in self.hooks {
     hook.on_turn_end() catch {
       error =>
-        emit_secondary_failure(self.observers, "on_turn_end", error.to_string())
+        emit_secondary_failure(self.events, "on_turn_end", error.to_string())
     }
   }
 }
@@ -809,13 +811,13 @@ async fn AgentRuntime::dispatch_on_turn_end(
 /// requires.)
 fn AgentRuntime::drain_core_facts_errors(self : AgentRuntime) -> Unit {
   for detail in self.core_facts.take_errors() {
-    emit_secondary_failure(self.observers, "core_shadow_boundary", detail)
+    emit_secondary_failure(self.events, "core_shadow_boundary", detail)
   }
 }
 
 ///|
 fn emit_secondary_failure(
-  observers : Array[&@port.Observer],
+  events : @event_runtime.EventRuntime,
   hook_point : String,
   detail : String,
 ) -> Unit {
@@ -829,11 +831,8 @@ fn emit_secondary_failure(
       ]),
     ),
   )
-  for observer in observers {
-    // Secondary failures are emitted from hook closures and refresh paths
-    // that hold no run identity — scope is None by design.
-    observer.on_event(None, @event_snapshot.snapshot_turn_event(event))
-  }
+  // Hook closures and refresh paths hold no run identity.
+  events.emit_core(None, event)
 }
 
 ///|
@@ -907,12 +906,21 @@ async fn AgentRuntime::run_turn_with_mode(
           )
           let mut drained = 0
           while drained < follow_up_drain_limit {
-            match self.control.take_follow_up() {
-              Some(message) => {
+            match self.control.select_follow_up() {
+              Some(command) => {
                 drained = drained + 1
                 let follow_up = self.mint_turn_identity(session_id)
+                // The selected record stays in the inbox until this turn's
+                // initial commit confirms it; associating the id here — before
+                // the Puppet can commit anything — fixes that confirmation to
+                // exactly this turn.
+                self.control.arm_follow_up(
+                  command.command_id,
+                  follow_up.run_id,
+                  follow_up.turn_id,
+                )
                 result = self.run_single_turn(
-                  message,
+                  command.message,
                   session_id,
                   false,
                   admission_for_follow_up(admission, follow_up),
@@ -1012,6 +1020,10 @@ async fn AgentRuntime::run_single_turn(
     identity.run_id,
     identity.turn_id,
   )
+  // The inbox turn binding opens the step window under the admitted
+  // operation; every per-turn exit settles the step messages it still holds.
+  self.control.bind_turn(identity.run_id, identity.turn_id)
+  defer self.settle_turn_messages(identity)
   self.emit_turn_event(Some(identity.scope()), TurnStarted)
   // Turn-begin hooks fire after the TurnStarted projection and before the
   // pump's first before_model. Pre-turn failures above dispatch nothing —
@@ -1035,7 +1047,7 @@ async fn AgentRuntime::run_single_turn(
         Ok(_) => ()
         Err(error) =>
           emit_secondary_failure(
-            self.observers,
+            self.events,
             "foreground_task_cleanup",
             error.to_string(),
           )

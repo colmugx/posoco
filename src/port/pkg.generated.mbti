@@ -3,6 +3,7 @@ package "colmugx/posoco/port"
 
 import {
   "colmugx/posoco/error",
+  "colmugx/posoco/events",
   "colmugx/posoco/kernel",
   "colmugx/posoco/types",
   "moonbitlang/core/debug",
@@ -46,6 +47,7 @@ pub(all) enum Capability {
   Tasks
   Wakeup
   ToolContribution
+  Events
 }
 pub fn Capability::equal(Self, Self) -> Bool
 pub fn Capability::not_equal(Self, Self) -> Bool
@@ -110,9 +112,10 @@ pub struct CompositionView {
   // private fields
 }
 pub fn CompositionView::decision(Self) -> &DecisionPort?
+pub fn CompositionView::events(Self) -> @events.Events?
 pub fn CompositionView::log(Self) -> &LogPort?
 pub fn CompositionView::model(Self) -> &ModelPort?
-pub fn CompositionView::resolve(requires~ : Array[Capability], model~ : &ModelPort, decision? : &DecisionPort?, log? : &LogPort?, ui~ : &UiPort, tasks? : Tasks?, wakeup? : WakeupPort?, tool_contributions? : ToolContributions?) -> Self
+pub fn CompositionView::resolve(requires~ : Array[Capability], model~ : &ModelPort, decision? : &DecisionPort?, log? : &LogPort?, ui~ : &UiPort, tasks? : Tasks?, wakeup? : WakeupPort?, tool_contributions? : ToolContributions?, events? : @events.Events?) -> Self
 pub fn CompositionView::tasks(Self) -> Tasks?
 pub fn CompositionView::tool_contributions(Self) -> ToolContributions?
 pub fn CompositionView::ui(Self) -> &UiPort?

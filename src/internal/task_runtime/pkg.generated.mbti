@@ -3,6 +3,7 @@ package "colmugx/posoco/internal/task_runtime"
 
 import {
   "colmugx/posoco/error",
+  "colmugx/posoco/internal/event_runtime",
   "colmugx/posoco/kernel",
   "colmugx/posoco/port",
   "moonbitlang/async",
@@ -10,7 +11,7 @@ import {
 }
 
 // Values
-pub fn emit_managed_task_shutdown_failure(Array[&@port.Observer], String, String) -> Unit
+pub fn emit_managed_task_shutdown_failure(@event_runtime.EventRuntime, String, String) -> Unit
 
 pub fn parse_task_applied_ids(Map[String, @json.Json]) -> Array[String] raise @error.AgentError
 

@@ -19,8 +19,16 @@ fn reduce_awaiting_tools(
         state, input, "AwaitingTools: tools in flight; cannot suspend",
       )
     TranscriptRewrite(payload~) => reduce_transcript_rewrite(state, payload)
-    Start(_) | Resume(_) | ModelCompleted(_) | ModelFailed(_) =>
+    Start(_)
+    | Resume(_)
+    | ModelCompleted(_)
+    | ModelCompletedWithSteering(_)
+    | ModelFailed(_) =>
       reject_input(state, input, "AwaitingTools: input not legal here")
+    SteerAppended(_) =>
+      reject_input(
+        state, input, "AwaitingTools: tools in flight; steer lands at the next step boundary",
+      )
   }
 }
 

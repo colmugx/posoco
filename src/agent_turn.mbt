@@ -161,7 +161,7 @@ async fn AgentRuntime::inject_memory_inbound(
       request,
       self.config.memory_inbound_timeout_ms,
       fn(reason) {
-        emit_secondary_failure(self.observers, "memory_inbound", reason)
+        emit_secondary_failure(self.events, "memory_inbound", reason)
       },
     )
     if !bodies.is_empty() {
@@ -356,7 +356,7 @@ async fn AgentRuntime::run_turn_via_puppet(
   // returns only after every child task (the drain loop included) has
   // terminated, and the drain loop terminates only when the queue closes —
   // closing after the group returns would deadlock.
-  let dispatcher = @chunk_dispatch.ChunkDispatcher(self.observers)
+  let dispatcher = @chunk_dispatch.ChunkDispatcher(self.events)
   self.chunk_dispatcher.val = Some(dispatcher)
   // The typed error is captured inside the group closure and re-raised
   // after the boundary: `with_task_group`'s closure signature carries the
@@ -700,12 +700,7 @@ async fn AgentRuntime::write_new_thread_output(
     messages_before=pending.messages.length(),
     messages_after=pending.messages.length(),
   )
-  for observer in self.observers {
-    observer.on_event(
-      Some(pending.scope),
-      @event_snapshot.snapshot_turn_event(redirect),
-    )
-  }
+  self.events.emit_core(Some(pending.scope), redirect)
 }
 
 ///|
@@ -843,7 +838,7 @@ async fn AgentRuntime::complete_compact_turn(
         ) {
         Ok(_) => ()
         Err(detail) =>
-          emit_secondary_failure(self.observers, "core_shadow_terminal", detail)
+          emit_secondary_failure(self.events, "core_shadow_terminal", detail)
       }
       @session_output.save_all(
         self.sessions,
@@ -944,7 +939,7 @@ async fn AgentRuntime::save_turn_transcript(
     ) {
     Ok(_) => ()
     Err(detail) =>
-      emit_secondary_failure(self.observers, "core_shadow_terminal", detail)
+      emit_secondary_failure(self.events, "core_shadow_terminal", detail)
   }
   let metadata_checkpoint : Map[String, Json]? = if session_metadata_equal(
       metadata, base_metadata,
@@ -1020,7 +1015,7 @@ async fn AgentRuntime::save_failed_turn_transcript(
         Ok(_) => self.task_runtime.commit_outcomes(session_id)
         Err(error) =>
           emit_secondary_failure(
-            self.observers,
+            self.events,
             "failed_turn_transcript_save",
             "session_id=\{@diagnostic.safe_error_label(session_id)};op=\{operation};cause=\{failed_save_cause_label(error)}",
           )
@@ -1249,7 +1244,7 @@ async fn AgentRuntime::compact_session(
         Ok(_) => value
         Err(error) => {
           emit_secondary_failure(
-            self.observers,
+            self.events,
             "foreground_task_cleanup",
             error.to_string(),
           )
@@ -1260,7 +1255,7 @@ async fn AgentRuntime::compact_session(
       match cleanup {
         Err(cleanup_error) =>
           emit_secondary_failure(
-            self.observers,
+            self.events,
             "foreground_task_cleanup",
             cleanup_error.to_string(),
           )
@@ -1479,7 +1474,7 @@ async fn AgentRuntime::run_compact_operation(
             Ok(_) => ()
             Err(detail) =>
               emit_secondary_failure(
-                self.observers,
+                self.events,
                 "core_shadow_terminal",
                 detail,
               )

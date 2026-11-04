@@ -1,9 +1,8 @@
 import {
   "colmugx/posoco/types",
   "colmugx/posoco/kernel",
-  "colmugx/posoco/port",
   "colmugx/posoco/internal/chunk_dispatch",
-  "colmugx/posoco/internal/event_snapshot",
+  "colmugx/posoco/internal/event_runtime",
   "colmugx/posoco/internal/message_snapshot",
   "colmugx/posoco/internal/puppetry",
 }
@@ -13,6 +12,7 @@ import {
   "colmugx/posoco/kernel",
   "colmugx/posoco/port",
   "colmugx/posoco/internal/chunk_dispatch",
+  "colmugx/posoco/internal/event_runtime",
   "colmugx/posoco/internal/kernel_exec",
   "colmugx/posoco/internal/puppetry",
   "moonbitlang/async",

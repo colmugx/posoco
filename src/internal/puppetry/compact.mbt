@@ -38,7 +38,7 @@ async fn Puppet::handle_compact(
   run_id : RunId,
   turn_id : TurnId,
   session_id : SessionId,
-  _dispatcher : EventDispatcher,
+  dispatcher : EventDispatcher,
   snap : TurnSnapshot,
 ) -> CompactFlow raise PuppetError {
   let messages = state.transcript().messages_snapshot()
@@ -100,6 +100,25 @@ async fn Puppet::handle_compact(
       let new_session_id = session_id.to_string() +
         "_compact_" +
         compact_cmd.command_id().to_string()
+      // NewThread stops the turn without a `RunTerminal` boundary, so steers
+      // accepted while the compact ran would be dropped silently by
+      // `clear_run`; report them in one final boundary instead.
+      let steer_events : Array[KernelEvent] = []
+      self.drain_undelivered(
+        steer_events, "turn stopped by compact before delivery",
+      )
+      if steer_events.length() > 0 {
+        self.commit_boundary(
+          state,
+          boundary_kind_for_events(steer_events),
+          steer_events,
+          dispatcher,
+          run_id,
+          turn_id,
+          session_id,
+          "sp_compact_stop",
+        )
+      }
       let result : PromptResult = CompactCompleted(
         run_id~,
         turn_id~,

@@ -78,5 +78,9 @@ pub fn snapshot_turn_event(event : @types.TurnEvent) -> @types.TurnEvent {
     UserRequestStarted(kind~, prompt~) =>
       UserRequestStarted(kind~, prompt=@diagnostic.safe_error_label(prompt))
     UserRequestFinished(kind~, outcome~) => UserRequestFinished(kind~, outcome~)
+    MessageApplied(command_id~, delivery~) =>
+      MessageApplied(command_id~, delivery~)
+    MessageUndelivered(command_id~, delivery~, reason~) =>
+      MessageUndelivered(command_id~, delivery~, reason~)
   }
 }

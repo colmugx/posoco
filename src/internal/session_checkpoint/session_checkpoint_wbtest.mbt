@@ -163,3 +163,53 @@ async test "session checkpoint: every store runs, first failure blocks the advan
   assert_eq(attempts.val, 1)
   assert_eq(progress.cursor_or_zero("sess_checkpoint"), 0)
 }
+
+///|
+/// A steer committed at a step boundary: the transcript grows by one
+/// user-authored message, so the projection must append it incrementally
+/// instead of waiting for the terminal full save.
+fn appended_user_event(text : String) -> @kernel_exec.KernelEvent {
+  UserMessageAppended(
+    command_id="steer_1",
+    message=UserMessage(content=[Text(text)]),
+  )
+}
+
+///|
+async test "session checkpoint: a steer message is projected incrementally" {
+  let store = RecordingStore::{ checkpoints: [], }
+  let progress = @session_state.SessionProgress::SessionProgress()
+  let subscriber = SessionCheckpointSubscriber([store], progress)
+  subscriber.on_event(checkpoint_envelope(committed_tool_event("call_1")))
+  subscriber.on_event(
+    checkpoint_envelope(appended_user_event("keep to analysis only")),
+  )
+  assert_eq(store.checkpoints.map(fn(c) { c.from_index }), [0, 1])
+  assert_eq(progress.cursor_or_zero("sess_checkpoint"), 2)
+  let steered = store.checkpoints[1]
+  assert_eq(steered.messages.length(), 1)
+  guard steered.messages[0] is UserMessage(content~) else {
+    fail("expected the steer as a user message")
+  }
+  guard content[0] is Text(text) else { fail("expected text content") }
+  assert_eq(text, "keep to analysis only")
+}
+
+///|
+async test "session checkpoint: a dirty session skips the steer projection" {
+  let store = RecordingStore::{ checkpoints: [], }
+  let progress = @session_state.SessionProgress::SessionProgress()
+  let subscriber = SessionCheckpointSubscriber([store], progress)
+  subscriber.on_event(
+    checkpoint_envelope(
+      TranscriptRewritten(messages_before=3, messages_after=2, reason="compact"),
+    ),
+  )
+  subscriber.on_event(
+    checkpoint_envelope(appended_user_event("keep to analysis only")),
+  )
+  // The terminal full save re-establishes the canonical prefix; projecting
+  // here would append onto a prefix the store no longer matches.
+  assert_eq(store.checkpoints.length(), 0)
+  assert_eq(progress.cursor_or_zero("sess_checkpoint"), 0)
+}

@@ -317,6 +317,36 @@ pub extend ToolCatalogChangedPayload with Eq::{not_equal, equal}
 pub extend ToolCatalogChangedPayload with Debug::{to_repr}
 
 ///|
+/// Boundary at which a queued user message was (or was not) applied to the
+/// transcript. `Step` folds the message in between model steps of the running
+/// turn (mid-turn steering); `Turn` holds it for the turn boundary so it
+/// opens the next turn as fresh input.
+#derive(Eq, Debug)
+pub(all) enum MessageDeliveryKind {
+  Step
+  Turn
+}
+
+///|
+pub extend MessageDeliveryKind with Eq::{not_equal, equal}
+
+///|
+pub extend MessageDeliveryKind with Debug::{to_repr}
+
+///|
+pub extend MessageDeliveryKind with Show::{to_string, output}
+
+///|
+pub impl Show for MessageDeliveryKind with fn to_string(
+  self : MessageDeliveryKind,
+) -> String {
+  match self {
+    Step => "step"
+    Turn => "turn"
+  }
+}
+
+///|
 /// Turn lifecycle events observed via `Observer::on_event`. Payload types are
 /// canonical kernel types (`ToolCall`, `ToolOutcome`, `Message`,
 /// `Usage`). Tool events form an explicit per-call state machine — every
@@ -423,6 +453,21 @@ pub(all) enum TurnEvent {
   /// produced), "cancelled" (user dismissed), "unsupported" (no contributor
   /// could service it), or "failed" (transport/IO error).
   UserRequestFinished(kind~ : String, outcome~ : String)
+  /// A queued user message was committed to the transcript. `command_id` is
+  /// the control-handle acceptance receipt and `delivery` names the boundary
+  /// that applied it. Projected from the kernel's `UserMessageAppended`; the
+  /// message body stays in the session, never in the event.
+  MessageApplied(command_id~ : String, delivery~ : MessageDeliveryKind)
+  /// A queued user message never reached the transcript because the run ended
+  /// first. The host keeps the input so the user can resend it; it is never
+  /// converted into a follow-up. `command_id` is the control-handle
+  /// acceptance receipt, `delivery` the boundary it was queued for, and
+  /// `reason` a bounded explanation of why delivery did not happen.
+  MessageUndelivered(
+    command_id~ : String,
+    delivery~ : MessageDeliveryKind,
+    reason~ : String
+  )
 }
 
 ///|
@@ -483,6 +528,10 @@ pub impl Show for TurnEvent with fn to_string(self : TurnEvent) -> String {
       "UserRequestStarted(kind=\{kind}, prompt=\{prompt})"
     UserRequestFinished(kind~, outcome~) =>
       "UserRequestFinished(kind=\{kind}, outcome=\{outcome})"
+    MessageApplied(command_id~, delivery~) =>
+      "MessageApplied(command=\{command_id}, delivery=\{Show::to_string(delivery)})"
+    MessageUndelivered(command_id~, delivery~, reason~) =>
+      "MessageUndelivered(command=\{command_id}, delivery=\{Show::to_string(delivery)}, reason=\{reason})"
   }
 }
 

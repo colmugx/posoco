@@ -5,7 +5,7 @@
 async fn Puppet::start_ready_children(
   self : Puppet,
   tree : ToolTree,
-  group : @async.TaskGroup[PumpStep],
+  group : @async.TaskGroup,
   state : RunState,
   context : ExecutionContext,
   dispatcher : EventDispatcher,

@@ -289,6 +289,8 @@ pub(all) enum KernelEvent {
   BudgetExhausted(dimension~ : BudgetDimension, consumed~ : Int32, limit~ : Int32)
   InputRejected(input_kind~ : String, reason~ : String)
   TranscriptRewritten(messages_before~ : Int32, messages_after~ : Int32, reason~ : String)
+  UserMessageAppended(command_id~ : String, message~ : @kernel.Message)
+  SteerUndelivered(command_id~ : String, reason~ : String)
   RunCompleted(final_message_summary~ : String, model_steps~ : Int32, tool_calls~ : Int32)
   RunFailed(reason~ : FailureReason)
   RunCancelled(reason~ : @kernel.CancelReason)
@@ -380,6 +382,7 @@ pub fn ResumePayload::to_repr(Self) -> @debug.Repr
 pub(all) enum RunInput {
   Start(payload~ : StartPayload)
   ModelCompleted(payload~ : ModelCompletedPayload)
+  ModelCompletedWithSteering(payload~ : ModelCompletedPayload)
   ModelFailed(payload~ : ModelFailedPayload)
   ToolCompleted(payload~ : ToolCompletedPayload)
   ToolFailed(payload~ : ToolFailedPayload)
@@ -389,6 +392,7 @@ pub(all) enum RunInput {
   SuspendRequested(payload~ : SuspendRequestedPayload)
   Resume(payload~ : ResumePayload)
   TranscriptRewrite(payload~ : TranscriptRewritePayload)
+  SteerAppended(payload~ : SteerAppendedPayload)
 }
 pub fn RunInput::equal(Self, Self) -> Bool
 pub fn RunInput::not_equal(Self, Self) -> Bool
@@ -468,6 +472,15 @@ pub(all) struct StartedDetails {
 pub fn StartedDetails::equal(Self, Self) -> Bool
 pub fn StartedDetails::not_equal(Self, Self) -> Bool
 pub fn StartedDetails::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) struct SteerAppendedPayload {
+  message : @kernel.Message
+  command_id : String
+}
+pub fn SteerAppendedPayload::equal(Self, Self) -> Bool
+pub fn SteerAppendedPayload::not_equal(Self, Self) -> Bool
+pub fn SteerAppendedPayload::to_repr(Self) -> @debug.Repr
 
 #derive(Eq, @debug.Debug)
 pub(all) struct SuspendRequestedPayload {

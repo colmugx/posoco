@@ -81,6 +81,18 @@ pub fn EventScope::not_equal(Self, Self) -> Bool
 pub fn EventScope::to_repr(Self) -> @debug.Repr
 
 #derive(Eq, @debug.Debug)
+pub(all) enum MessageDeliveryKind {
+  Step
+  Turn
+}
+pub fn MessageDeliveryKind::equal(Self, Self) -> Bool
+pub fn MessageDeliveryKind::not_equal(Self, Self) -> Bool
+pub fn MessageDeliveryKind::output(Self, &Logger) -> Unit
+pub fn MessageDeliveryKind::to_repr(Self) -> @debug.Repr
+pub fn MessageDeliveryKind::to_string(Self) -> String
+pub impl Show for MessageDeliveryKind
+
+#derive(Eq, @debug.Debug)
 pub(all) struct Session {
   messages : Array[@kernel.Message]
   metadata : Map[String, @json.Json]
@@ -202,6 +214,8 @@ pub(all) enum TurnEvent {
   Custom(source~ : String, label~ : String, data~ : @json.Json)
   UserRequestStarted(kind~ : String, prompt~ : String)
   UserRequestFinished(kind~ : String, outcome~ : String)
+  MessageApplied(command_id~ : String, delivery~ : MessageDeliveryKind)
+  MessageUndelivered(command_id~ : String, delivery~ : MessageDeliveryKind, reason~ : String)
 }
 pub fn TurnEvent::equal(Self, Self) -> Bool
 pub fn TurnEvent::not_equal(Self, Self) -> Bool

@@ -3,6 +3,7 @@ package "colmugx/posoco/internal/wakeup"
 
 import {
   "colmugx/posoco/error",
+  "colmugx/posoco/internal/event_runtime",
   "colmugx/posoco/internal/puppetry",
   "colmugx/posoco/kernel",
   "colmugx/posoco/port",
@@ -26,7 +27,7 @@ pub impl @puppetry.EventSubscriber for WakeupCutoffSubscriber
 pub struct WakeupRuntime {
   // private fields
 }
-pub fn WakeupRuntime::WakeupRuntime(observers~ : Array[&@port.Observer]) -> Self
+pub fn WakeupRuntime::WakeupRuntime(events~ : @event_runtime.EventRuntime) -> Self
 pub fn WakeupRuntime::activate(Self) -> Unit raise @error.AgentError
 pub fn WakeupRuntime::arm_cutoff(Self, String, String, String) -> Unit
 pub fn WakeupRuntime::begin_shutdown(Self) -> Unit

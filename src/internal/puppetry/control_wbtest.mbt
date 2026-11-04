@@ -17,24 +17,19 @@ fn make_steer(cmd_id : String, run : RunId, turn : TurnId) -> SteerCommand {
     command_id: CommandId::unchecked(cmd_id),
     target_run_id: run,
     target_turn_id: turn,
-    observed_tool_batch_id: "batch_1",
-    observed_model_step_id: ModelStepId::first(),
-    payload: Json::null(),
+    message: UserMessage(content=[Text("steer")]),
   }
 }
 
 ///|
-fn make_follow_up(
-  cmd_id : String,
-  run : RunId,
-  source_turn : TurnId,
-) -> FollowUpCommand {
-  {
-    command_id: CommandId::unchecked(cmd_id),
-    target_run_id: run,
-    source_turn_id: source_turn,
-    payload: Json::null(),
-  }
+fn inbox_follow_up(mb : ControlMailbox, cmd_id : String) -> EnqueueResult {
+  mb
+  .message_inbox()
+  .enqueue(
+    CommandId::unchecked(cmd_id),
+    Turn,
+    UserMessage(content=[Text(cmd_id)]),
+  )
 }
 
 ///|
@@ -80,38 +75,26 @@ test "puppet_control/steer_consume_drains_queue" {
   let mb = bound_mailbox()
   let _ = mb.enqueue_steer(make_steer("s1", mb_run_id(), mb_turn_id()))
   let _ = mb.enqueue_steer(make_steer("s2", mb_run_id(), mb_turn_id()))
-  let consumed = mb.consume_steers()
-  assert_true(consumed.length() == 2)
+  let cmds = mb.consume_steers()
+  assert_true(cmds.length() == 2)
   // FIFO order.
-  assert_true(consumed[0].command_id.to_string() == "s1")
-  assert_true(consumed[1].command_id.to_string() == "s2")
+  assert_true(cmds[0].command_id.to_string() == "s1")
+  assert_true(cmds[1].command_id.to_string() == "s2")
   // Queue drained.
   assert_true(mb.steer_depth() == 0)
 }
 
 ///|
-test "puppet_control/follow_up_consume_one_at_a_time" {
+test "puppet_control/selected steer survives release until confirmed" {
   let mb = bound_mailbox()
-  let _ = mb.enqueue_follow_up(make_follow_up("f1", mb_run_id(), mb_turn_id()))
-  let _ = mb.enqueue_follow_up(make_follow_up("f2", mb_run_id(), mb_turn_id()))
-  // First consume returns f1, leaves f2.
-  let first = mb.consume_one_follow_up()
-  assert_true(first is Some(_))
-  match first {
-    Some(cmd) => assert_true(cmd.command_id.to_string() == "f1")
-    None => assert_true(false)
-  }
-  assert_true(mb.follow_up_depth() == 1)
-  // Second consume returns f2.
-  let second = mb.consume_one_follow_up()
-  match second {
-    Some(cmd) => assert_true(cmd.command_id.to_string() == "f2")
-    None => assert_true(false)
-  }
-  assert_true(mb.follow_up_depth() == 0)
-  // Third consume returns None.
-  let third = mb.consume_one_follow_up()
-  assert_true(third is None)
+  assert_true(
+    mb.enqueue_steer(make_steer("s1", mb_run_id(), mb_turn_id())) is Accepted(_),
+  )
+  assert_true(mb.consume_steers() is [_])
+  mb.clear_run()
+  let unsettled = mb.message_inbox().finish_operation()
+  assert_eq(unsettled.length(), 1)
+  assert_eq(unsettled[0].command_id.to_string(), "s1")
 }
 
 ///|
@@ -167,13 +150,16 @@ test "puppet_control/abort_stale_run_rejected" {
 }
 
 ///|
-test "puppet_control/clear_run_drops_queued_commands" {
+test "puppet_control/clear_run_retains_messages_for_agent_settlement" {
   let mb = bound_mailbox()
   let _ = mb.enqueue_steer(make_steer("s1", mb_run_id(), mb_turn_id()))
-  let _ = mb.enqueue_follow_up(make_follow_up("f1", mb_run_id(), mb_turn_id()))
+  let _ = inbox_follow_up(mb, "f1")
   let _ = mb.enqueue_resume(make_resume("r1", mb_run_id(), "susp_1"))
   mb.clear_run()
   assert_true(mb.steer_depth() == 0)
+  assert_true(mb.follow_up_depth() == 1)
+  let residual = mb.message_inbox().finish_operation()
+  assert_eq(residual.length(), 2)
   assert_true(mb.follow_up_depth() == 0)
   // After clear, a late command targeting the old run is rejected.
   mb.bind_run(RunId::unchecked("run_new"), TurnId::unchecked("turn_new"))

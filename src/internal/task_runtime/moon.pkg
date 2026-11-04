@@ -4,7 +4,7 @@ import {
   "colmugx/posoco/kernel",
   "colmugx/posoco/error",
   "colmugx/posoco/internal/diagnostic",
-  "colmugx/posoco/internal/event_snapshot",
+  "colmugx/posoco/internal/event_runtime",
   "colmugx/posoco/internal/message_snapshot",
   "colmugx/fuwaroid",
   "moonbitlang/core/env",
@@ -16,6 +16,7 @@ import {
   "colmugx/posoco/types",
   "colmugx/posoco/kernel",
   "colmugx/posoco/error",
+  "colmugx/posoco/internal/event_runtime",
   "moonbitlang/async",
   "moonbitlang/async/aqueue",
 } for "wbtest"

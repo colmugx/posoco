@@ -1,6 +1,6 @@
 import {
   "colmugx/posoco/types",
-  "colmugx/posoco/port",
+  "colmugx/posoco/internal/event_runtime",
   "moonbitlang/async/aqueue",
 }
 

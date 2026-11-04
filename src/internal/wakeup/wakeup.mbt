@@ -38,7 +38,7 @@ pub struct WakeupRuntime {
   /// timing so a notification landing between a check and `wait` is lost
   /// only if this counter did not move.
   priv mut epoch : Int32
-  priv observers : Array[&@port.Observer]
+  priv events : @event_runtime.EventRuntime
   /// Pending tickets in FIFO execution order.
   priv order : Array[WakeupPending]
   /// session → tag → pending entry (coalescing lookup).
@@ -50,7 +50,7 @@ pub struct WakeupRuntime {
 
 ///|
 pub fn WakeupRuntime::WakeupRuntime(
-  observers~ : Array[&@port.Observer],
+  events~ : @event_runtime.EventRuntime,
 ) -> WakeupRuntime {
   {
     scope_active: false,
@@ -61,7 +61,7 @@ pub fn WakeupRuntime::WakeupRuntime(
     next_operation_seq: 0,
     epoch: 0,
     wake: @async.CondVar::Cond(),
-    observers,
+    events,
     order: [],
     by_key: Map::from_array([]),
     generations: Map::from_array([]),
@@ -177,9 +177,7 @@ fn WakeupRuntime::emit_wakeup_event(
     label~,
     data=Json::object(Map::from_array(fields)),
   )
-  for observer in self.observers {
-    observer.on_event(None, @event_snapshot.snapshot_turn_event(event))
-  }
+  self.events.emit_core(None, event)
 }
 
 ///|

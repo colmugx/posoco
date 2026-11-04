@@ -25,7 +25,7 @@ priv struct AggregatedPorts {
   tools : Array[ToolEntry]
   tool_call_owners : Map[String, Array[String]]
   sessions : Array[&@port.SessionPort]
-  observers : Array[&@port.Observer]
+  events : @event_runtime.EventRuntime
   hooks : Array[&@port.PipelineHook]
   /// Memory sources paired with their manifest id — the id routes
   /// `memory_add`'s optional `source` argument.
@@ -55,6 +55,7 @@ fn aggregate_extensions(
   let tools : Array[ToolEntry] = []
   let tool_call_owners : Map[String, Array[String]] = Map::from_array([])
   let tool_index = ToolNameIndex::new()
+  let event_consumers : Map[String, Bool] = Map([])
   let sessions : Array[&@port.SessionPort] = []
   let observers : Array[&@port.Observer] = []
   let hooks : Array[&@port.PipelineHook] = []
@@ -73,6 +74,15 @@ fn aggregate_extensions(
         detail="extension returned a manifest with empty id",
       )
     }
+    let consumes_events = manifest.requires.contains(@port.Capability::Events)
+    if event_consumers.get(mid) is Some(previous) &&
+      (previous || consumes_events) {
+      raise ManifestSchemaError(
+        manifest_id=mid,
+        detail="Events requires a unique manifest id",
+      )
+    }
+    event_consumers[mid] = consumes_events
     if tool_call_owners.get(mid) is Some(existing) &&
       existing != manifest.tool_call_owners {
       raise ManifestSchemaError(
@@ -174,6 +184,7 @@ fn aggregate_extensions(
     1 => Some(logs[0])
     _ => raise MultipleLogs(manifests=log_manifests)
   }
+  let events = @event_runtime.EventRuntime(observers)
   // UI cardinality: 0 → NoopUiPort (unwrapped: a UI-less composition never
   // waits for a user, so no request events), 1 → wrapped passthrough,
   // 2+ → wrapped CompositeUiPort.
@@ -181,13 +192,13 @@ fn aggregate_extensions(
     0 => (NoopUiPort() : &@port.UiPort)
     1 =>
       (
-        UserRequestObservingUiPort::UserRequestObservingUiPort(ui[0], observers) :
+        UserRequestObservingUiPort::UserRequestObservingUiPort(ui[0], events) :
         &@port.UiPort)
     _ =>
       (
         UserRequestObservingUiPort::UserRequestObservingUiPort(
           CompositeUiPort(ui.copy()),
-          observers,
+          events,
         ) : &@port.UiPort)
   }
   {
@@ -197,7 +208,7 @@ fn aggregate_extensions(
     tools,
     tool_call_owners,
     sessions,
-    observers,
+    events,
     hooks,
     memory,
     lifecycle,
@@ -216,15 +227,15 @@ fn aggregate_extensions(
 /// (requires `Capability::Ui`); raw contributor holders bypass it.
 priv struct UserRequestObservingUiPort {
   inner : &@port.UiPort
-  observers : Array[&@port.Observer]
+  events : @event_runtime.EventRuntime
 }
 
 ///|
 fn UserRequestObservingUiPort::UserRequestObservingUiPort(
   inner : &@port.UiPort,
-  observers : Array[&@port.Observer],
+  events : @event_runtime.EventRuntime,
 ) -> UserRequestObservingUiPort {
-  { inner, observers, }
+  { inner, events, }
 }
 
 ///|
@@ -241,11 +252,8 @@ fn UserRequestObservingUiPort::emit_user_request_event(
   self : UserRequestObservingUiPort,
   event : @types.TurnEvent,
 ) -> Unit {
-  let snapshot = @event_snapshot.snapshot_turn_event(event)
-  for observer in self.observers {
-    // Scope is None: the wrapper sits outside any run identity.
-    observer.on_event(None, snapshot)
-  }
+  // The wrapper sits outside any run identity.
+  self.events.emit_core(None, event)
 }
 
 ///|
