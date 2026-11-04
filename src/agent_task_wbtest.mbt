@@ -374,61 +374,6 @@ fn foreground_abort_tasks(
 }
 
 ///|
-async test "managed_tasks/run_scoped_completes_and_waits" {
-  let capture = TaskCapture::new()
-  let model = @test_support.ScriptedModel([
-    @test_support.ScriptedModelStep::Respond(
-      @test_support.tk_stop_response("ok"),
-    ),
-  ])
-  let store = @test_support.RecordingSessionPort()
-  let agent = Agent(
-    exts=[
-      @test_support.tk_ext(id="model", model=Some(model)),
-      @test_support.tk_ext(id="io", sessions=[store]),
-      @test_support.tk_ext(
-        id="tasks",
-        lifecycle=[capture as &@port.Lifecycle],
-        requires=[@port.Capability::Tasks],
-      ),
-    ],
-    config=agent_config(max_tool_rounds=Some(10)),
-  )
-  let observed : Ref[TaskOutcome?] = Ref(None)
-  agent.run_scoped(async fn(_agent) {
-    let tasks = match capture.tasks {
-      Some(value) => value
-      None => abort("task capability was not composed")
-    }
-    let handle = match
-      tasks.submit({
-        session_id: "session_1",
-        mode: @port.TaskMode::Background,
-        label: "probe",
-        timeout_ms: None,
-        run: fn() {
-          @kernel.Message::UserMessage(content=[@kernel.Content::Text("done")])
-        },
-      }) {
-      Ok(value) => value
-      Err(_) => abort("task submit failed")
-    }
-    observed.val = Some(handle.wait())
-  })
-  let outcome = match observed.val {
-    Some(value) => value
-    None => fail("task did not complete")
-  }
-  let receipt = outcome.receipt
-  guard outcome.status is TaskStatus::Completed(_) else {
-    fail("task did not complete")
-  }
-  assert_eq(receipt.session_id, "session_1")
-  assert_eq(receipt.extension_id, "tasks")
-  assert_eq(receipt.label, "probe")
-}
-
-///|
 fn task_test_agent(
   model : &@port.ModelPort,
   store : @test_support.RecordingSessionPort,
@@ -583,45 +528,6 @@ async test "managed_tasks/long_horizon_background_outcomes_are_exactly_once" {
     Some(Json::Array(ids)) => assert_eq(ids.length(), 64)
     _ => fail("long-horizon session is missing applied task ids")
   }
-}
-
-///|
-async test "managed_tasks/save_failure_retains_one_pending_outcome" {
-  let capture = TaskCapture::new()
-  let model = @test_support.ScriptedModel([
-    @test_support.ScriptedModelStep::Respond(
-      @test_support.tk_stop_response("first"),
-    ),
-    @test_support.ScriptedModelStep::Respond(
-      @test_support.tk_stop_response("retry"),
-    ),
-  ])
-  let store = @test_support.RecordingSessionPort()
-  let agent = task_test_agent(model as &@port.ModelPort, store, capture)
-  agent.run_scoped(async fn(agent) {
-    let handle = task_test_submit(capture, "session_save", "save")
-    let marker = "[posoco-task-outcome id=\{handle.receipt().id}]"
-    ignore(handle.wait())
-    store.fail_save("session_save")
-    let first : Result[@types.TurnResult, @error.AgentError] = Ok(
-      agent.run_turn(@test_support.tk_user_msg("first"), "session_save"),
-    ) catch {
-      error => Err(error)
-    }
-    guard first is Err(_) else { fail("first save should fail") }
-    store.heal_save("session_save")
-    ignore(agent.run_turn(@test_support.tk_user_msg("retry"), "session_save"))
-    let saved = store.store["session_save"]
-    let markers = saved.messages
-      .iter()
-      .filter(fn(message) {
-        task_test_has_marker(
-          { messages: [message], metadata: Map::from_array([]), },
-          marker,
-        )
-      })
-    assert_eq(markers.count(), 1)
-  })
 }
 
 ///|

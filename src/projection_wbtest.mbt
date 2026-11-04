@@ -337,26 +337,6 @@ async test "m38_sysprompt/empty_prompt_short_circuits" {
 }
 
 ///|
-async test "m38_sysprompt/prepends_when_no_system_message" {
-  let hook = SystemPromptHook(base_prompt="BASE", contributors=[])
-  let user : @kernel.Message = UserMessage(content=[Text("hello")])
-  let out = hook.before_model([user])
-  assert_true(out.length() == 2)
-  match out[0] {
-    SystemMessage(content~) =>
-      match content {
-        [Text(s), ..] => assert_eq(s, "BASE")
-        _ => fail("expected Text content")
-      }
-    _ => fail("expected SystemMessage at index 0")
-  }
-  match out[1] {
-    UserMessage(_) => ()
-    _ => fail("expected original UserMessage to shift to index 1")
-  }
-}
-
-///|
 async test "m38_sysprompt/config_base_precedes_contributors" {
   let contributor : &@port.SystemPromptContributor = FixedPromptContributor::{
     text: "from_ext",

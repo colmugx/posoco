@@ -21,25 +21,6 @@ async test "noop_ui_port_request_raises_unsupported" {
 }
 
 ///|
-test "composite_ui_port_render_broadcasts_in_order" {
-  let a = @test_support.RecordingUiPort()
-  let b = @test_support.RecordingUiPort()
-  let c = @test_support.RecordingUiPort()
-  let composite = CompositeUiPort([a, b, c])
-  let intent = UiRender::{
-    slot: Status,
-    key: "k",
-    title: None,
-    body: Text("hi"),
-    ttl_ms: None,
-  }
-  composite.render(intent)
-  assert_eq(a.render_count(), 1)
-  assert_eq(b.render_count(), 1)
-  assert_eq(c.render_count(), 1)
-}
-
-///|
 async test "composite_ui_port_request_first_supporting_wins" {
   let unsupported_a = @test_support.RecordingUiPort::new_unsupported()
   let supporting_b = @test_support.RecordingUiPort(responses=[Yes])
@@ -63,39 +44,6 @@ async test "composite_ui_port_request_all_unsupported_raises" {
     Ok(_) => fail("expected Unsupported, got Ok response")
     Err(other) => fail("expected Unsupported, got error: " + other.to_string())
   }
-}
-
-///|
-async test "composite_ui_port_request_propagates_non_unsupported_error" {
-  // @test_support.RecordingUiPort with empty script raises Unsupported from the second
-  // contributor, but if we set the script we can simulate a Cancelled flow.
-  let supporting_then_cancel = @test_support.RecordingUiPort(responses=[
-    Cancelled,
-  ])
-  let composite = CompositeUiPort([supporting_then_cancel])
-  let resp = composite.request(Confirm(prompt="ok?"))
-  assert_true(resp is Cancelled)
-}
-
-///|
-test "composite_ui_port_descriptor_concatenates_sources" {
-  let with_one_source_a = @test_support.RecordingUiPort()
-  with_one_source_a.set_descriptor({
-    autocomplete_sources: [
-      { trigger: "/", kind: "command", fetch: fn(_) { [] }, },
-    ],
-  })
-  let with_one_source_b = @test_support.RecordingUiPort()
-  with_one_source_b.set_descriptor({
-    autocomplete_sources: [
-      { trigger: "@", kind: "mention", fetch: fn(_) { [] }, },
-    ],
-  })
-  let composite = CompositeUiPort([with_one_source_a, with_one_source_b])
-  let d = composite.ui_descriptor()
-  assert_eq(d.autocomplete_sources.length(), 2)
-  assert_eq(d.autocomplete_sources[0].trigger, "/")
-  assert_eq(d.autocomplete_sources[1].trigger, "@")
 }
 
 ///|

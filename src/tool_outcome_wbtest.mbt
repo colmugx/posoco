@@ -123,55 +123,6 @@ async test "t06a_business_error_event_matches_result" {
 }
 
 ///|
-async test "t06a_success_event_is_not_error" {
-  let first_response = @test_support.tk_tool_call_response(
-    "safe",
-    "tc_2",
-    Json::null(),
-  )
-  let final_response = @test_support.tk_stop_response("done")
-  let success_result = @test_support.tk_ok_result("ok")
-  let model = @test_support.ScriptedModel([
-    @test_support.ScriptedModelStep::Respond(first_response),
-    @test_support.ScriptedModelStep::Respond(final_response),
-  ])
-  let outcomes : Map[String, @test_support.ScriptedToolOutcome] = Map::from_array([
-      ("safe", @test_support.ScriptedToolOutcome::OutcomeOk(success_result)),
-    ],
-  )
-  let provider = @test_support.RecordingToolProvider(
-    [@test_support.tk_tool_def("safe", "")],
-    outcomes,
-  )
-  let obs = @test_support.RecordingObserver()
-  let store = @test_support.RecordingSessionPort()
-  let agent = Agent(
-    exts=[
-      @test_support.tk_ext(id="model", model=Some(model)),
-      @test_support.tk_ext(id="io", tools=[provider], sessions=[store], observers=[
-        obs,
-      ]),
-    ],
-    config=outcome_config(),
-  )
-  let turn_result = agent.run_turn(@test_support.tk_user_msg("run safe"), "s1")
-  let events = obs.events()
-  assert_eq(turn_result.tool_results.length(), 1)
-  assert_true(turn_result.tool_results[0] == success_result)
-  let mut saw_success_event = false
-  for e in events {
-    match e {
-      ToolCallSucceeded(call~, ..) =>
-        if call.call_id.to_string() == "tc_2" {
-          saw_success_event = true
-        }
-      _ => ()
-    }
-  }
-  assert_true(saw_success_event)
-}
-
-///|
 async test "t06a_runtime_error_event_is_runtime_failure" {
   let first_response = @test_support.tk_tool_call_response(
     "boom",

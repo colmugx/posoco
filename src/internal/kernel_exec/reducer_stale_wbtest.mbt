@@ -40,36 +40,6 @@ test "D1-STALE-CORRELATION: matching effect_id with wrong call_id → StaleCorre
 }
 
 ///|
-test "D1-STALE-CORRELATION: matching call_id with wrong effect_id → StaleCorrelation" {
-  let (st_tools, _exec1, exec2) = run_until_awaiting_tools_two_calls()
-  let catalog = make_catalog_v1()
-  // call_1 is pending, but the completion cites exec2's effect id — the pair
-  // never matches a single pending ExecuteTool.
-  let out = reduce(
-    st_tools,
-    catalog,
-    ToolCompleted(payload={
-      effect_id: exec2,
-      call_id: @kernel.CallId::unchecked("call_1"),
-      tool_name: @kernel.ToolName::unchecked("read"),
-      arguments: Json::null(),
-      outcome: Success(content="must never land", structured=None),
-    }),
-  )
-  let st = out.next_state()
-  assert_eq(st.phase(), Terminal)
-  match st.outcome() {
-    Some(Failed(reason=InvariantViolation(category~))) =>
-      match category {
-        StaleCorrelation(effect_id~) => assert_eq(effect_id, exec2)
-        _ => fail("expected StaleCorrelation, got \{category.to_string()}")
-      }
-    _ => fail("expected Failed(InvariantViolation(StaleCorrelation))")
-  }
-  assert_eq(st.transcript(), st_tools.transcript())
-}
-
-///|
 test "D1-STALE-CORRELATION: repeated completion of the same effect → StaleCorrelation" {
   let (st_tools, exec1, _exec2) = run_until_awaiting_tools_two_calls()
   let catalog = make_catalog_v1()

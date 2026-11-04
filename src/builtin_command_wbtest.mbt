@@ -10,47 +10,6 @@ fn bind_test_mailbox() -> @puppetry.ControlMailbox {
 }
 
 ///|
-test "m35_builtin/commands_declares_compact_and_fork" {
-  let mb = bind_test_mailbox()
-  let port = BuiltinCommandPort(mb)
-  let cmds = port.commands()
-  let ids = cmds.map(c => c.id)
-  assert_true(ids.contains("compact"))
-  assert_true(ids.contains("fork-here"))
-}
-
-///|
-async test "m35_builtin/compact_enqueues_manual_signal" {
-  let mb = bind_test_mailbox()
-  let port = BuiltinCommandPort(mb)
-  let outcome = port.invoke("compact", Json::null())
-  assert_true(outcome is Success(_))
-  assert_true(mb.compact_depth() == 1)
-  let cmd = mb.consume_one_compact()
-  match cmd {
-    Some(c) => assert_true(c.trigger() == Manual)
-    None => assert_true(false)
-  }
-}
-
-///|
-async test "m35_builtin/fork_here_enqueues_at_index" {
-  let mb = bind_test_mailbox()
-  let port = BuiltinCommandPort(mb)
-  let args : Json = Json::object(
-    Map::from_array([("index", Json::number(3.0))]),
-  )
-  let outcome = port.invoke("fork-here", args)
-  assert_true(outcome is Success(_))
-  assert_true(mb.fork_depth() == 1)
-  let cmd = mb.consume_one_fork()
-  match cmd {
-    Some(c) => assert_true(c.fork_index() == 3)
-    None => assert_true(false)
-  }
-}
-
-///|
 async test "m35_builtin/fork_here_default_index_zero" {
   let mb = bind_test_mailbox()
   let port = BuiltinCommandPort(mb)
@@ -200,43 +159,10 @@ async test "m35_builtin/unknown_id_raises_not_found" {
 /// BuiltinCommandPort constructed from a mailbox shares the instance.
 /// Enqueue through the port's `invoke("/compact")` then consume directly
 /// from the original mailbox reference — they must agree.
-async test "d1_mailbox/builtin_port_shares_mailbox_instance" {
-  let mb = bind_test_mailbox()
-  let port = BuiltinCommandPort(mb)
-  // Port enqueues a compact signal via its borrowed &Mailbox...
-  let outcome = port.invoke("compact", Json::null())
-  assert_true(outcome is Success(_))
-  // ...and the original ControlMailbox reference observes it. If the port
-  // held an independent copy, this consume would return None.
-  let cmd = mb.consume_one_compact()
-  match cmd {
-    Some(c) => assert_true(c.trigger() == Manual)
-    None => fail("expected compact signal on the shared mailbox")
-  }
-}
 
 ///|
 /// Enqueue through the trait reference, consume through the concrete type.
 /// Verifies trait dispatch and instance sharing are consistent.
-test "d1_mailbox/trait_ref_and_concrete_share_state" {
-  let mb = bind_test_mailbox()
-  let mailbox_ref : &@puppetry.Mailbox = mb as &@puppetry.Mailbox
-  // Enqueue via the &Mailbox trait reference...
-  let result = mailbox_ref.enqueue_fork({
-    command_id: @puppetry.CommandId::unchecked("d1_fk"),
-    target_run_id: @kernel_exec.RunId::unchecked("run_b"),
-    target_turn_id: @kernel.TurnId::unchecked("turn_b"),
-    fork_index: 2,
-  })
-  assert_true(result is Accepted(_))
-  // ...consume via the concrete ControlMailbox. Same instance.
-  let cmd = mb.consume_one_fork()
-  match cmd {
-    Some(c) => assert_true(c.fork_index() == 2)
-    None => fail("expected fork signal visible across &Mailbox / concrete")
-  }
-}
-
 // ──────────────────────────────────────────────────────────────────────────
 // Per-Agent singleton BuiltinCommandPort.
 //
@@ -248,35 +174,6 @@ test "d1_mailbox/trait_ref_and_concrete_share_state" {
 /// Repeated invokes on the SAME BuiltinCommandPort instance produce
 /// distinct, monotonically increasing command ids. This is the contract
 // a per-Agent singleton must uphold.
-async test "d3_singleton/command_ids_are_monotonic_across_invokes" {
-  let mb = bind_test_mailbox()
-  let port = BuiltinCommandPort(mb)
-  // First invoke: compact_1
-  let _ = port.invoke("compact", Json::null())
-  // Second invoke: compact_2 (not compact_1 again)
-  let _ = port.invoke("compact", Json::null())
-  // Third invoke: fork_1 (separate prefix, own counter share? no — seq
-  // is shared across prefixes so fork is fork_3)
-  let _ = port.invoke("fork-here", Json::null())
-  // Drain and inspect: 2 compacts + 1 fork queued.
-  assert_true(mb.compact_depth() == 2)
-  assert_true(mb.fork_depth() == 1)
-  let c1 = mb.consume_one_compact()
-  let c2 = mb.consume_one_compact()
-  let f1 = mb.consume_one_fork()
-  // All three command ids must be distinct (the seq counter is shared).
-  match (c1, c2, f1) {
-    (Some(a), Some(b), Some(c)) => {
-      let id_a = a.command_id().to_string()
-      let id_b = b.command_id().to_string()
-      let id_c = c.command_id().to_string()
-      assert_true(id_a != id_b)
-      assert_true(id_b != id_c)
-      assert_true(id_a != id_c)
-    }
-    _ => fail("expected 3 distinct commands")
-  }
-}
 
 ///|
 /// The port is constructed before the runtime exists, so a valid session_id

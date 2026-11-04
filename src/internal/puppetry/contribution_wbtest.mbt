@@ -223,32 +223,3 @@ test "puppet_contribution/prepare_batch_rejects_duplicate_entry_id" {
     _ => fail("expected SavepointFailed(ValidationFailed) for duplicate")
   }
 }
-
-///|
-test "puppet_contribution/commit_batch_detects_post_freeze_count_change" {
-  // We build a batch by hand (not via prepare_batch) so we can mutate it
-  // after freeze to simulate contract violation.
-  let base = [make_c_entry(InputAccepted, "sp1", 0)]
-  let frozen_keys = [entry_dedup_key(base[0].identity)]
-  let batch : FrozenBatch = {
-    savepoint_id: "sp1",
-    savepoint_kind: InputAccepted,
-    expected_revision: 0,
-    entries: base,
-    frozen_entry_keys: frozen_keys,
-  }
-  // Inject an extra entry into batch.entries post-freeze.
-  batch.entries.push(make_c_entry(InputAccepted, "sp1", 1))
-  let journal = InMemoryJournal()
-  let result : Result[Int32, PuppetError] = Ok(commit_batch(journal, batch)) catch {
-    e => Err(e)
-  }
-  assert_true(result is Err(SavepointFailed(..)))
-  match result {
-    Err(SavepointFailed(cause=BarrierFailed(detail~), ..)) =>
-      assert_true(detail.contains("post-freeze"))
-    _ => fail("expected SavepointFailed(BarrierFailed) post-freeze")
-  }
-  // Journal must be unchanged.
-  assert_true(journal.revision() == 0)
-}

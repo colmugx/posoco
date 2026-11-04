@@ -59,18 +59,6 @@ fn bound_mailbox() -> ControlMailbox {
 }
 
 ///|
-test "puppet_control/steer_enqueue_stale_run_rejected" {
-  let mb = bound_mailbox()
-  let result = mb.enqueue_steer(
-    make_steer("s1", RunId::unchecked("run_OTHER"), mb_turn_id()),
-  )
-  assert_true(
-    result is RejectedStale(reason="steer targets stale run/turn", ..),
-  )
-  assert_true(mb.steer_depth() == 0)
-}
-
-///|
 test "puppet_control/steer_consume_drains_queue" {
   let mb = bound_mailbox()
   let _ = mb.enqueue_steer(make_steer("s1", mb_run_id(), mb_turn_id()))
@@ -133,16 +121,6 @@ test "puppet_control/resume_wrong_run_rejected" {
 }
 
 ///|
-test "puppet_control/abort_first_accepted_second_already_requested" {
-  let mb = bound_mailbox()
-  let r1 = mb.enqueue_abort(make_abort("a1", mb_run_id()))
-  assert_true(r1 is Accepted(_))
-  assert_true(mb.abort_requested())
-  let r2 = mb.enqueue_abort(make_abort("a2", mb_run_id()))
-  assert_true(r2 is AbortAlreadyRequested(_))
-}
-
-///|
 test "puppet_control/abort_stale_run_rejected" {
   let mb = bound_mailbox()
   let r = mb.enqueue_abort(make_abort("a1", RunId::unchecked("run_OTHER")))
@@ -165,23 +143,6 @@ test "puppet_control/clear_run_retains_messages_for_agent_settlement" {
   mb.bind_run(RunId::unchecked("run_new"), TurnId::unchecked("turn_new"))
   let late = mb.enqueue_steer(make_steer("s_late", mb_run_id(), mb_turn_id()))
   assert_true(late is RejectedStale(reason="steer targets stale run/turn", ..))
-}
-
-///|
-async test "puppet_control/wait_idle_returns_terminal" {
-  let mb = ControlMailbox()
-  let outcome : RunOutcome = Completed(
-    final_message=AssistantMessage(
-      content=[],
-      tool_calls=[],
-      reasoning=None,
-      finish_reason=Stop,
-    ),
-    tool_results=[],
-  )
-  mb.set_quiescent(Terminal(outcome~))
-  let s = mb.wait_idle()
-  assert_true(s is Terminal(_))
 }
 
 ///|

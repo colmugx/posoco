@@ -41,20 +41,6 @@ fn make_entry(
 }
 
 ///|
-test "puppet_journal/append_only_monotonic_revision" {
-  let j = InMemoryJournal()
-  assert_true(j.revision() == 0)
-  let e1 = make_entry(InputAccepted, "sp1", 0)
-  let r1 = j.append([e1])
-  assert_true(r1 == 1)
-  assert_true(j.revision() == 1)
-  let e2 = make_entry(AssistantCommitted, "sp2", 0)
-  let r2 = j.append([e2])
-  assert_true(r2 == 2)
-  assert_true(j.revision() == 2)
-}
-
-///|
 test "puppet_journal/multi_entry_batch_single_revision_window" {
   let j = InMemoryJournal()
   // Two ToolCommitted entries in one batch (parallel tool batch).

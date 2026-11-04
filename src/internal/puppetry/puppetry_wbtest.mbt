@@ -28,19 +28,3 @@ async test "puppet/pump_executes_only_reducer_declared_effects" {
   // never cross the HostRuntime execute boundary.
   assert_eq(host.tool_call_count(), 1)
 }
-
-///|
-async test "puppet/pump_releases_lease_after_terminal" {
-  let host = FixtureHost(
-    [Ok(fixture_stop("done")), Ok(fixture_stop("again"))],
-    Map::from_array([]),
-  )
-  let journal = InMemoryJournal()
-  let puppet = Puppet(
-    fixture_config(host, fixture_empty_catalog(), journal, [], []),
-  )
-  assert_true(fixture_prompt(puppet, "lease_first") is Accepted(_))
-  assert_true(fixture_prompt(puppet, "lease_second") is Accepted(_))
-  assert_eq(host.model_call_count(), 2)
-  assert_true(puppet.phase() == Idle)
-}

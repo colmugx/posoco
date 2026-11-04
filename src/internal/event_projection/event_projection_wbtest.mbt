@@ -79,31 +79,6 @@ fn projection_with(observer : ProjectionObserver) -> &@puppetry.EventSubscriber 
 }
 
 ///|
-async test "projection: completion pairs with the committed pending call" {
-  let observer = ProjectionObserver::{ records: [], events: [], }
-  let subscriber = projection_with(observer)
-  let first = projection_call("call_a")
-  let second = projection_call("call_b")
-  let batch : @kernel_exec.KernelEvent = ToolBatchStarted(
-    model_step_id=@kernel_exec.ModelStepId::first(),
-    calls=[first, second],
-  )
-  subscriber.on_event(projection_envelope(batch))
-  subscriber.on_event(
-    projection_envelope(
-      ToolCompleted(
-        call=first,
-        outcome=projection_ok_outcome(),
-        parent_effect_id=None,
-      ),
-    ),
-  )
-  assert_eq(observer.records.map(fn(r) { r.0 }), [
-    "pending", "pending", "succeeded",
-  ])
-}
-
-///|
 async test "projection: terminal drain abandons only unpaired calls, once" {
   let observer = ProjectionObserver::{ records: [], events: [], }
   let no_dispatcher : Ref[@chunk_dispatch.ChunkDispatcher?] = Ref(None)

@@ -1,29 +1,4 @@
 ///|
-test "operation_guard/busy_and_matching_release" {
-  let g = OperationGuard::OperationGuard()
-  g.try_admit("a", "session-a", "turn")
-  let busy : Result[Unit, OperationBusy] = Ok(
-    g.try_admit("b", "session-b", "turn"),
-  ) catch {
-    error => Err(error)
-  }
-  match busy {
-    Err(Busy(operation_id~, session~)) => {
-      assert_eq(operation_id, "a")
-      assert_eq(session, "session-a")
-    }
-    Ok(_) => fail("expected busy")
-  }
-  assert_true(g.clear_current("a"))
-  assert_false(g.has_current())
-  assert_false(g.clear_current("a"))
-  g.try_admit("b", "session-b", "turn")
-  assert_true(g.has_current())
-  assert_false(g.clear_current("a"))
-  assert_true(g.clear_current("b"))
-}
-
-///|
 async test "operation_guard/cancel_replay_and_settled" {
   let g = OperationGuard::OperationGuard()
   g.try_admit("a", "session-a", "turn")

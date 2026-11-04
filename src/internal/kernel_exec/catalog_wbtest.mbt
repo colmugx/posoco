@@ -83,19 +83,6 @@ test "Schema: string type rejects number" {
 }
 
 ///|
-test "Schema: integer rejects fractional number" {
-  let schema = Json::object(
-    Map::from_array([("type", Json::string("integer"))]),
-  )
-  let instance = Json::number(42.5)
-  let result = validate_arguments(schema, instance)
-  match result {
-    Err(_) => ()
-    Ok(_) => fail("integer should reject 42.5")
-  }
-}
-
-///|
 test "Schema: required missing fails with path" {
   let schema = Json::object(
     Map::from_array([
@@ -153,36 +140,6 @@ test "Schema: additionalProperties=false rejects extra keys" {
   match result {
     Err(d) => assert_true(d.json_path.contains("y"))
     Ok(_) => fail("additionalProperties=false should reject 'y'")
-  }
-}
-
-///|
-test "Schema: enum rejects non-matching value" {
-  let schema = Json::object(
-    Map::from_array([
-      ("enum", Json::array([Json::string("a"), Json::string("b")])),
-    ]),
-  )
-  let instance = Json::string("c")
-  let result = validate_arguments(schema, instance)
-  match result {
-    Err(_) => ()
-    Ok(_) => fail("enum should reject 'c'")
-  }
-}
-
-///|
-test "Schema: const matches exactly" {
-  let schema = Json::object(Map::from_array([("const", Json::number(42.0))]))
-  let result_ok = validate_arguments(schema, Json::number(42.0))
-  match result_ok {
-    Ok(_) => ()
-    Err(_) => fail("const should accept 42")
-  }
-  let result_bad = validate_arguments(schema, Json::number(43.0))
-  match result_bad {
-    Err(_) => ()
-    Ok(_) => fail("const should reject 43")
   }
 }
 

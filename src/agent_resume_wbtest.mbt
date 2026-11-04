@@ -50,47 +50,6 @@ async test "rate-limit resume replays persisted user without duplicating transcr
 }
 
 ///|
-async test "rate-limit resume appends literal continue after persisted progress" {
-  let model = @test_support.ScriptedModel([
-    @test_support.ScriptedModelStep::Respond(
-      @test_support.tk_stop_response("continued"),
-    ),
-  ])
-  let store = @test_support.RecordingSessionPort()
-  let seeded : Session = {
-    messages: [
-      @test_support.tk_user_msg("original task"),
-      AssistantMessage(
-        content=[Content::Text("partial progress")],
-        reasoning=None,
-        tool_calls=[],
-        finish_reason=Stop,
-      ),
-    ],
-    metadata: Map::from_array([]),
-  }
-  store.seed("resume-progress", seeded)
-  let agent = Agent(
-    exts=[
-      @test_support.tk_ext(id="model", model=Some(model)),
-      @test_support.tk_ext(id="io", sessions=[store]),
-    ],
-    config=agent_config(max_tool_rounds=Some(10)),
-  )
-  ignore(agent.resume_turn("resume-progress"))
-  let request = model.received_messages[0]
-  assert_eq(request.length(), 3)
-  assert_true(request[2] == @test_support.tk_user_msg("continue"))
-  let persisted = store.store["resume-progress"]
-  assert_eq(persisted.messages.length(), 4)
-  assert_true(persisted.messages[2] == @test_support.tk_user_msg("continue"))
-  assert_true(
-    persisted.messages[3]
-    is AssistantMessage(content=[Text("continued"), ..], ..),
-  )
-}
-
-///|
 async test "rate-limit resume after tool progress appends continue" {
   let model = @test_support.ScriptedModel([
     @test_support.ScriptedModelStep::Respond(

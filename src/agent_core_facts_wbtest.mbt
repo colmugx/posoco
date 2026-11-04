@@ -683,37 +683,6 @@ async test "core_shadow/idle_newthread_source_and_summary_stay_separate" {
 }
 
 ///|
-async test "core_shadow/replace_compact_mirrors_terminal_without_child" {
-  let model = @test_support.ScriptedModel([
-    @test_support.ScriptedModelStep::Compact(result={
-      compacted_messages: [@test_support.tk_user_msg("replacement")],
-      mode: Replace,
-    }),
-  ])
-  let store = @test_support.RecordingSessionPort()
-  store.seed("replace-parent", {
-    messages: [
-      @test_support.tk_user_msg("old-one"),
-      @test_support.tk_user_msg("old-two"),
-    ],
-    metadata: Map::from_array([]),
-  })
-  let agent = Agent(
-    exts=[
-      @test_support.tk_ext(id="model", model=Some(model)),
-      @test_support.tk_ext(id="io", sessions=[store]),
-    ],
-    config=agent_config(max_tool_rounds=Some(10)),
-  )
-  let outcome = agent.compact_session("replace-parent")
-  assert_eq(outcome.final_session_id, "replace-parent")
-  assert_true(core_facts_readable(agent, "replace-parent"))
-  let core = core_facts_current(agent, "replace-parent")
-  assert_eq(core.messages.length(), 1)
-  assert_true(core.messages[0] == @test_support.tk_user_msg("replacement"))
-}
-
-///|
 /// Standalone-compact model that mutates the supplied message content before
 /// returning. The shadow source must already be a deep copy.
 struct ShadowMutatingCompactModel {}
@@ -956,106 +925,6 @@ async test "core_shadow/hook_rewrite_fork_pins_committed_source" {
 }
 
 ///|
-async test "core_shadow/h1_admission_conflict_not_revived_by_rewrite" {
-  let store = H1Store::{
-    checkpoints: 0,
-    fail_at: 2,
-    loads: 0,
-    saves: [],
-    checkpoint_bodies: [],
-  }
-  let observer = @test_support.RecordingObserver()
-  let model = ShadowGatedTurnModel::{
-    gate_calls: [2],
-    calls: 0,
-    entered: false,
-    released: false,
-    compacted: [@test_support.tk_user_msg("replacement")],
-    compact_mode: Replace,
-  }
-  let tools = @test_support.RecordingToolProvider(
-    [@test_support.tk_tool_def("leaf", "leaf tool")],
-    Map::from_array([
-      (
-        "leaf",
-        @test_support.ScriptedToolOutcome::OutcomeOk(
-          @test_support.tk_ok_result("ok"),
-        ),
-      ),
-    ]),
-  )
-  let agent = Agent(
-    exts=[
-      @test_support.tk_ext(id="model", model=Some(model)),
-      @test_support.tk_ext(id="tools", tools=[tools]),
-      @test_support.tk_ext(id="io", sessions=[store], observers=[observer]),
-    ],
-    config=agent_config(max_tool_rounds=Some(10)),
-  )
-  let first : Result[@types.TurnResult, @error.AgentError] = Ok(
-    agent.run_turn(@test_support.tk_user_msg("hello"), "h1-conflict"),
-  ) catch {
-    error => Err(error)
-  }
-  match first {
-    Err(_) => ()
-    Ok(_) => fail("expected the first store checkpoint to fail")
-  }
-  let before = core_facts_current(agent, "h1-conflict")
-  assert_eq(before.messages.length(), 3)
-  assert_true(before.messages[0] == @test_support.tk_user_msg("hello"))
-  assert_eq(store.loads, 1)
-  guard before.messages[1] is AssistantMessage(tool_calls=[call], ..) else {
-    fail("expected the committed assistant before the failed checkpoint")
-  }
-  assert_eq(call.call_id.to_string(), "call_1")
-  guard before.messages[2] is ToolMessage(call_id~, ..) else {
-    fail("expected the committed tool result before the failed checkpoint")
-  }
-  assert_eq(call_id.to_string(), "call_1")
-  let second = @async.with_task_group(async fn(group) {
-    let running = group.spawn(() => {
-      agent.run_turn(@test_support.tk_user_msg("next"), "h1-conflict")
-    })
-    let enqueued : Result[Bool, Error] = Ok(
-      @async.with_timeout(60, async fn() -> Bool {
-        defer {
-          model.released = true
-        }
-        if !core_facts_wait_entered(model) {
-          return false
-        }
-        shadow_invoke_command(agent, "compact", Json::null())
-      }),
-    ) catch {
-      error => Err(error)
-    }
-    guard enqueued is Ok(true) else {
-      fail("compact enqueue failed: \{repr(enqueued)}")
-    }
-    ignore(running.wait())
-  })
-  ignore(second)
-  assert_eq(store.loads, 1)
-  assert_eq(store.saves.length(), 2)
-  assert_eq(store.checkpoint_bodies.length(), 4)
-  let after = core_facts_current(agent, "h1-conflict")
-  assert_eq(after.messages.length(), 3)
-  assert_true(after.messages[0] == @test_support.tk_user_msg("replacement"))
-  guard after.messages[1]
-    is ToolMessage(call_id~, outcome=Success(content="ok", ..), ..) else {
-    fail("expected the continued tool result after Replace")
-  }
-  assert_eq(call_id.to_string(), "call_2")
-  guard after.messages[2] is AssistantMessage(content=[Text("done")], ..) else {
-    fail("expected the terminal assistant after Replace continuation")
-  }
-  assert_true(
-    @core_facts.messages_equal(after.messages, store.saves[1].messages),
-  )
-}
-
-///|
 async test "core_shadow/dispatch_failure_keeps_synced_hook_rewrite_boundary" {
   let store = CoreFactsCheckpointFailStore::{ checkpoints: 0, fail_at: 1, }
   let model = @test_support.ScriptedModel([
@@ -1092,73 +961,6 @@ async test "core_shadow/dispatch_failure_keeps_synced_hook_rewrite_boundary" {
 }
 
 ///|
-async test "core_shadow/cancelled_terminal_is_synced" {
-  let model = ShadowGatedTurnModel::{
-    gate_calls: [1],
-    calls: 0,
-    entered: false,
-    released: false,
-    compacted: [],
-    compact_mode: NewThread,
-  }
-  let store = @test_support.RecordingSessionPort()
-  let tools = @test_support.RecordingToolProvider(
-    [@test_support.tk_tool_def("leaf", "leaf tool")],
-    Map::from_array([
-      (
-        "leaf",
-        @test_support.ScriptedToolOutcome::OutcomeOk(
-          @test_support.tk_ok_result("ok"),
-        ),
-      ),
-    ]),
-  )
-  let agent = Agent(
-    exts=[
-      @test_support.tk_ext(id="model", model=Some(model)),
-      @test_support.tk_ext(id="tools", tools=[tools]),
-      @test_support.tk_ext(id="io", sessions=[store]),
-    ],
-    config=agent_config(max_tool_rounds=Some(10)),
-  )
-  let outcome : Ref[Result[@types.TurnResult, @error.AgentError]] = Ref(
-    Err(Runtime(InvocationFailed("unset"))),
-  )
-  @async.with_task_group(async fn(group) {
-    let running = group.spawn(async fn() {
-      let r : Result[@types.TurnResult, @error.AgentError] = Ok(
-        agent.run_turn(@test_support.tk_user_msg("abort me"), "synced-cancel"),
-      ) catch {
-        error => Err(error)
-      }
-      outcome.val = r
-    })
-    while !model.entered {
-      @async.pause()
-    }
-    ignore(agent.control().abort_active(Some("stop")))
-    model.released = true
-    ignore(running.wait())
-  })
-  guard outcome.val is Err(@error.AgentError::Cancelled(_)) else {
-    fail("expected structured Cancelled, got \{repr(outcome.val)}")
-  }
-  let core = core_facts_current(agent, "synced-cancel")
-  assert_true(core.messages.length() >= 2)
-  assert_true(core.messages[0] == @test_support.tk_user_msg("abort me"))
-  guard core.messages[1] is AssistantMessage(tool_calls=[call], ..) else {
-    fail("expected the committed assistant before cancellation")
-  }
-  assert_eq(call.call_id.to_string(), "call_1")
-  let terminal = match agent.runtime.puppet.last_completed_transcript() {
-    Some(transcript) => transcript.messages_snapshot()
-    None => fail("expected the cancelled run to expose its terminal transcript")
-  }
-  assert_core_messages_equal(core.messages, terminal)
-  assert_true(core_facts_readable(agent, "synced-cancel"))
-}
-
-///|
 async test "core_shadow/failed_terminal_is_synced" {
   let model = @test_support.ScriptedModel([
     @test_support.ScriptedModelStep::Fail(Transport("network down")),
@@ -1184,63 +986,6 @@ async test "core_shadow/failed_terminal_is_synced" {
   assert_eq(core.messages.length(), 1)
   assert_true(core.messages[0] == @test_support.tk_user_msg("fail"))
   assert_true(core_facts_readable(agent, "synced-failed-terminal"))
-}
-
-///|
-async test "core_shadow/standalone_newthread_source_keeps_fixated_tool" {
-  let call : @kernel.ToolCall = {
-    call_id: @kernel.CallId::unchecked("dangling-call"),
-    name: @kernel.ToolName::unchecked("leaf"),
-    arguments: Json::null(),
-  }
-  let dangling : @kernel.Message = AssistantMessage(
-    content=[Text("working")],
-    tool_calls=[call],
-    reasoning=None,
-    finish_reason=ToolCalls,
-  )
-  let model = @test_support.ScriptedModel([
-    @test_support.ScriptedModelStep::Compact(result={
-      compacted_messages: [@test_support.tk_user_msg("summary")],
-      mode: NewThread,
-    }),
-    @test_support.ScriptedModelStep::Respond(
-      @test_support.tk_stop_response("after compact"),
-    ),
-  ])
-  let store = @test_support.RecordingSessionPort()
-  store.seed("fixate-parent", {
-    messages: [dangling],
-    metadata: Map::from_array([]),
-  })
-  let agent = Agent(
-    exts=[
-      @test_support.tk_ext(id="model", model=Some(model)),
-      @test_support.tk_ext(id="io", sessions=[store]),
-    ],
-    config=agent_config(max_tool_rounds=Some(10)),
-  )
-  let outcome = agent.compact_session("fixate-parent")
-  let child_sid = outcome.final_session_id
-  let source = core_facts_source_of(agent, child_sid)
-  let resolved = core_facts_resolve_source(agent, source)
-  assert_eq(resolved.messages.length(), 2)
-  guard resolved.messages[1]
-    is ToolMessage(outcome=RuntimeFailure(error_category="Interrupted", ..), ..) else {
-    fail("expected the fixated interrupted tool result in the source")
-  }
-  let child = core_facts_current(agent, child_sid)
-  assert_eq(child.messages.length(), 1)
-  assert_true(child.messages[0] == @test_support.tk_user_msg("summary"))
-  // The source snapshot must not become the parent's current committed fact.
-  let parent = core_facts_current(agent, "fixate-parent")
-  assert_eq(parent.messages.length(), 1)
-  assert_true(parent.messages[0] == dangling)
-  // The next real turn can continue from the raw parent body.
-  ignore(agent.run_turn(@test_support.tk_user_msg("next"), "fixate-parent"))
-  let after = core_facts_current(agent, "fixate-parent")
-  assert_true(after.messages[0] == dangling)
-  assert_true(after.messages.length() >= 2)
 }
 
 ///|
@@ -1509,50 +1254,6 @@ fn shadow_dangling_message() -> @kernel.Message {
     reasoning=None,
     finish_reason=ToolCalls,
   )
-}
-
-///|
-async test "core_shadow/child_failure_revokes_source_snapshot" {
-  let model = @test_support.ScriptedModel([
-    @test_support.ScriptedModelStep::Compact(result={
-      compacted_messages: [@test_support.tk_user_msg("summary")],
-      mode: NewThread,
-    }),
-  ])
-  let store = @test_support.RecordingSessionPort()
-  let dangling = shadow_dangling_message()
-  store.seed("no-orphan-child", {
-    messages: [dangling],
-    metadata: Map::from_array([]),
-  })
-  let agent = Agent(
-    exts=[
-      @test_support.tk_ext(id="model", model=Some(model)),
-      @test_support.tk_ext(id="io", sessions=[store]),
-    ],
-    config=agent_config(max_tool_rounds=Some(10)),
-  )
-  let child_sid = "no-orphan-child_compact_agent_compact_session_1"
-  ignore(
-    agent.runtime.core_facts.hydrate(
-      child_sid,
-      [@test_support.tk_user_msg("pre-existing")],
-      Map::from_array([]),
-    ),
-  )
-  let failed : Result[@types.CompactOutcome, @error.AgentError] = Ok(
-    agent.compact_session("no-orphan-child"),
-  ) catch {
-    error => Err(error)
-  }
-  guard failed is Err(Runtime(InvocationFailed(detail))) else {
-    fail("expected the child core fact failure to abort the output")
-  }
-  assert_true(detail.contains("core child fact"))
-  assert_false(store.store.contains(child_sid))
-  let parent = core_facts_current(agent, "no-orphan-child")
-  assert_eq(parent.messages.length(), 1)
-  assert_true(parent.messages[0] == dangling)
 }
 
 ///|

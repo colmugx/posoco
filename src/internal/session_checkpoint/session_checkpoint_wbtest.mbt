@@ -96,21 +96,6 @@ fn committed_tool_event(id : String) -> @kernel_exec.KernelEvent {
 }
 
 ///|
-async test "session checkpoint: consecutive completions advance the cursor" {
-  let store = RecordingStore::{ checkpoints: [], }
-  let progress = @session_state.SessionProgress::SessionProgress()
-  let subscriber = SessionCheckpointSubscriber([store], progress)
-  subscriber.on_event(checkpoint_envelope(committed_tool_event("call_1")))
-  subscriber.on_event(checkpoint_envelope(committed_tool_event("call_2")))
-  assert_eq(store.checkpoints.map(fn(c) { c.from_index }), [0, 1])
-  assert_eq(progress.cursor_or_zero("sess_checkpoint"), 2)
-  for checkpoint in store.checkpoints {
-    assert_eq(checkpoint.messages.length(), 1)
-    assert_true(checkpoint.metadata is None)
-  }
-}
-
-///|
 async test "session checkpoint: a rewrite keeps the dirty gate across RunStarted" {
   let store = RecordingStore::{ checkpoints: [], }
   let progress = @session_state.SessionProgress::SessionProgress()

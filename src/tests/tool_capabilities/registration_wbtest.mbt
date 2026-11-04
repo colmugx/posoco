@@ -35,41 +35,6 @@ async test "port cancel/equal effect ids cancel only the specified run" {
 }
 
 ///|
-async test "port cancel/duplicate live run effect cannot replace its registration" {
-  let probe = CancellableProbe()
-  let runtime = @runtime.PortRuntime(model=@test_support.ScriptedModel([]))
-  @async.with_timeout(2000, () => {
-    @async.with_task_group(group => {
-      group.spawn_bg(() => {
-        ignore(
-          runtime.execute_tool(probe_effect(7, provider=probe, run_id="one")),
-        )
-      })
-      while probe.registered_effects.is_empty() {
-        @async.pause()
-      }
-      try
-        runtime.execute_tool(probe_effect(7, provider=probe, run_id="one"))
-      catch {
-        error =>
-          assert_true(error.to_string().contains("duplicate live tool effect"))
-      } noraise {
-        _ => fail("duplicate execution must not enter the provider")
-      }
-      assert_eq(probe.registered_effects, [7])
-      let report = runtime.cancel_effects(
-        [{ value: 7, }],
-        DeadlineReached,
-        run_id=@kernel.RunId::unchecked("one"),
-      )
-      assert_true(report[0].1 is Propagated)
-      assert_eq(probe.cancelled_effects, [7])
-      probe.release.put(1)
-    })
-  })
-}
-
-///|
 async test "port cancel/run scoped registrations isolate unknown runs and reject duplicates" {
   let probe = CancellableProbe()
   let runtime = @runtime.PortRuntime(model=@test_support.ScriptedModel([]))

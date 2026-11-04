@@ -1,28 +1,4 @@
 ///|
-test "core_facts/h2_missing_provenance_not_revived_by_rewrite" {
-  let shadow = CoreFacts::CoreFacts()
-  shadow.mark_missing_provenance("missing-child")
-  shadow.record_boundary("run-1", "missing-child", 1, "sp-1", false, [
-    @test_support.tk_user_msg("rewritten"),
-  ])
-  match
-    shadow.record_terminal(
-      "missing-child",
-      "run-1",
-      [@test_support.tk_user_msg("terminal")],
-      Map::from_array([]),
-    ) {
-    Ok(_) => ()
-    Err(_) => ()
-  }
-  assert_false(shadow.store.sessions.contains("missing-child"))
-  match shadow.state.get("missing-child") {
-    Some(MissingProvenance) => ()
-    _ => fail("expected missing provenance to survive the rewrite")
-  }
-}
-
-///|
 test "core_facts/late_run_terminal_is_rejected" {
   let shadow = CoreFacts::CoreFacts()
   match

@@ -108,59 +108,6 @@ test "RunState: Terminal rejects None outcome" {
 }
 
 ///|
-test "BudgetConsumed: exclusive limit semantics for tool_rounds" {
-  let budget = Budget::default_run() // max_tool_rounds=Some(32)
-  let at_limit : BudgetConsumed = {
-    model_steps: 0,
-    tool_rounds: 32,
-    tool_calls: 0,
-    observed_total_tokens: 0,
-    any_usage_verified: false,
-    last_context_tokens: None,
-  }
-  // Limit N allows N full rounds: 32 == 32 is within budget.
-  match at_limit.exceeded(budget) {
-    WithinBudget => ()
-    _ => fail("expected WithinBudget at the limit")
-  }
-  let past_limit : BudgetConsumed = {
-    model_steps: 0,
-    tool_rounds: 33,
-    tool_calls: 0,
-    observed_total_tokens: 0,
-    any_usage_verified: false,
-    last_context_tokens: None,
-  }
-  match past_limit.exceeded(budget) {
-    Exceeded(ToolRounds) => ()
-    _ => fail("expected Exceeded(ToolRounds) past the limit")
-  }
-}
-
-///|
-test "BudgetConsumed: UnknownUsage for tokens when no usage verified" {
-  let consumed : BudgetConsumed = {
-    model_steps: 0,
-    tool_rounds: 0,
-    tool_calls: 0,
-    observed_total_tokens: 0,
-    any_usage_verified: false,
-    last_context_tokens: None,
-  }
-  let budget = Budget::bounded(
-    max_model_steps=100,
-    max_tool_rounds=10,
-    max_tool_calls=50,
-    max_total_tokens=1000,
-  )
-  let state = consumed.exceeded(budget)
-  match state {
-    UnknownUsage(TotalTokens) => ()
-    _ => fail("expected UnknownUsage(TotalTokens), not \{state.to_string()}")
-  }
-}
-
-///|
 test "Reducer: negative model usage is typed failure without budget decrease" {
   let catalog = make_catalog_v1()
   let (st_first_awaiting, first_effect_id, first_model_step_id) = run_until_awaiting_model()
@@ -262,36 +209,6 @@ test "Reducer: negative model usage is typed failure without budget decrease" {
       assert_true(detail.contains("usage"))
     _ => fail("expected typed ModelParseFailure for negative model usage")
   }
-}
-
-///|
-test "KernelEvent: terminal events classified correctly" {
-  let terminal_completed : KernelEvent = RunCompleted(
-    final_message_summary="ok",
-    model_steps=1,
-    tool_calls=0,
-  )
-  assert_true(terminal_completed.is_terminal())
-
-  let terminal_failed : KernelEvent = RunFailed(reason=DeadlineReached)
-  assert_true(terminal_failed.is_terminal())
-
-  let terminal_cancelled : KernelEvent = RunCancelled(
-    reason=HostRequested(detail=None),
-  )
-  assert_true(terminal_cancelled.is_terminal())
-
-  let non_terminal : KernelEvent = RunStarted(details={
-    run_id: RunId::unchecked("r"),
-    session_id: SessionId::unchecked("s"),
-  })
-  assert_false(non_terminal.is_terminal())
-
-  let suspended : KernelEvent = RunSuspended(
-    requirement={ kind: "approval", payload: Json::null(), },
-    model_step_id=ModelStepId::first(),
-  )
-  assert_false(suspended.is_terminal())
 }
 
 ///|

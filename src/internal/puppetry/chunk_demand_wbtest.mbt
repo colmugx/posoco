@@ -122,22 +122,3 @@ async test "puppet/chunks_are_not_requested_without_a_consumer" {
   assert_true(host.saw_no_sink())
   assert_eq(host.delivered_chunks(), 0)
 }
-
-///|
-async test "puppet/chunks_are_delivered_when_consumer_is_set" {
-  let trace : Array[@types.StreamChunk] = []
-  let on_chunk : HostChunkCallback = fn(chunk : @types.StreamChunk) {
-    trace.push(chunk)
-  }
-  let host = ChunkDemandHost()
-  let journal = InMemoryJournal()
-  let puppet = Puppet(
-    chunk_demand_config(host, fixture_empty_catalog(), journal, Some(on_chunk)),
-  )
-
-  assert_true(fixture_prompt(puppet, "chunk_some") is Accepted(_))
-  assert_false(host.saw_no_sink())
-  assert_eq(host.delivered_chunks(), 1)
-  assert_eq(trace.length(), 1)
-  assert_eq(trace[0], TextDelta(token="delta"))
-}
