@@ -14,7 +14,7 @@ command、prompt、memory、lifecycle——都通过开放的 port trait 注入�
 ## 安装
 
 ```bash
-moon add colmugx/posoco@0.23.3
+moon add colmugx/posoco@0.24.0
 ```
 
 ## Port
@@ -31,7 +31,7 @@ Port 是 Posoco 核心与 agent 所用能力之间唯一的接缝。
 | `Observer` | 只读 turn 事件观察 |
 | `Hook` | 单 trait 带默认方法的管线拦截：模型前改写消息或中止（`before_model`）、工具前审批/推迟/拒绝（`before_tool`）、每个效果后只读（`on_post_event`） |
 | `MemoryPort` | 长期记忆存储与检索 |
-| `Lifecycle` | 关闭时的 async 资源清理 |
+| `Lifecycle` | 组合期能力接线、一次性 async 启动、关闭清理 |
 | `CommandPort` | 用户侧 slash 命令枚举与调用 |
 | `UiPort` | 结构化 UI 意图 + 交互请求（Status / Notice / Widget / Input / Confirm / Select） |
 | `SystemPromptContributor` | 声明 system prompt 段落（拼装并在模型调用前注入） |
@@ -42,8 +42,8 @@ Port 是 Posoco 核心与 agent 所用能力之间唯一的接缝。
 
 扩展是一个 struct，它实现一个或多个 port trait，**并且**实现
 `@posoco.Extension`。同一个 `self` 引用放进 manifest 中该 struct 实现的每个
-port 槽位；`id` 字符串只用于组合诊断（工具冲突消息、observer 归因），不参与
-路由或持久化。
+port 槽位。manifest 的 `id` 用于组合诊断，也绑定本扩展的事件发布命名空间；
+声明 `Events` 能力的扩展，其 id 必须在 Agent 内唯一。
 
 最小形态：两个方法加一行 `pub extend`：
 
@@ -60,7 +60,7 @@ pub impl @posoco.Extension for ReadTools with fn extension_id(_self) -> String {
 /// 2. 声明 ReadTools 贡献哪些 port。同一个 `self` 放进它实现的每个槽位，
 ///    省略的槽位默认为空数组。
 pub impl @posoco.Extension for ReadTools with fn manifest(self) -> @posoco.ExtensionManifest {
-  @posoco.ExtensionManifest::make(id="posoco_ext_read", tools=[self])
+  @posoco.ExtensionManifest(id="posoco_ext_read", tools=[self])
 }
 
 ///|
@@ -76,12 +76,13 @@ pub fn read_extension() -> ReadTools {
 ```
 
 如果是 `ModelPort` 扩展，把 `self` 放到 `models: [self]`：
-`make(id=..., models=[self])`。
+`ExtensionManifest(id=..., models=[self])`。
 
 ## 组合一个 agent
 
 agent 开发者导入扩展包，把扩展实例接进一个 `Agent`。`exts` 是自报家门扩展
-的数组——与顺序无关；Agent 聚合它们的 manifest。
+的数组；Agent 聚合它们的 manifest。扩展顺序决定 hook、observer、lifecycle 的
+注册顺序，但不提供工具重名时的「后声明覆盖前声明」。
 
 ```moonbit nocheck
 let agent = @posoco.Agent(
@@ -117,6 +118,23 @@ let result = agent.run_turn(input, "session_1")
 已发布 `TurnStarted` 的 turn 恰好发布一个 terminal event：成功为
 `TurnCompleted`，任何主路径失败为 `TurnFailed`。
 
+## 强类型事件
+
+Posoco 为每个 Agent 提供一套事件系统，核心通知与社区协议共用它。
+协议包定义封闭的载荷 ADT，并为开放的 `@posoco.Event` 添加构造器；发布和接听
+都直接使用类型化的值，不需要字符串 topic、JSON 编解码或向下转型。
+
+- **扩展接入**：manifest 声明 `requires: [@posoco.Capability::Events]` 并登记
+  `Lifecycle`；在 `on_compose` 中取得 `view.events()`，之后调用
+  `events.publish(event)` 或 `events.subscribe(handler, namespace_=...)`。
+- **宿主接入**：调用 `agent.subscribe_events(handler, namespace_=...)`，结束时对
+  返回的 `Subscription` 调用 `cancel()`。无需创建总线或接触内部运行时。
+- **命名空间**：发布身份绑定为 `Extension(manifest_id)`。`Posoco` 命名空间保留给
+  `Core(TurnEvent)`；扩展不能发布 `Core`。接听可选择任意命名空间，`None` 表示全部。
+- **边界**：回调同步且不可抛错，事件不重放，shutdown 后保留的能力返回关闭错误。
+  `Observer` 仍然可用，是同一系统里只收核心通知的适配器；`Hook` 仍负责拦截。
+  通知不代替需要等待完成的 journal/checkpoint 提交。
+
 ## 扩展库
 
 [`colmugx/posoco-extension`](https://github.com/colmugx/posoco-extension) 维护了一套开箱即用的扩展，可直接接入 `Agent(exts~, config~)`。
@@ -135,8 +153,8 @@ let result = agent.run_turn(input, "session_1")
 ## 开发与验证
 
 ```bash
-moon check
-moon test
+moon check --output-json
+moon test --output-json
 moon fmt
 moon info
 ```

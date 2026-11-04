@@ -218,6 +218,18 @@ graph LR
 | 能否中断流程 | ❌ | ✅ 中止或拒绝 |
 | 典型用途 | 日志、指标、UI 更新 | 审批、改写、审计 |
 
+### 统一的强类型通知
+
+Observer 现在是 Agent 原生事件系统在保留 `Posoco` namespace 上的适配层，
+不是另一条并行广播通道。扩展声明 `Capability::Events`，在 `on_compose` 取得
+绑定自己 manifest id 的能力，使用函数注册监听、发布业务 ADT，并显式取消订阅。
+宿主通过 `Agent::subscribe_events` 接听，不能借此冒充核心发布。
+
+社区协议通过 MoonBit `extenum` 在自己的包里增加事件构造器，不需要改核心事件列表，
+也不需要 Json 编解码。系统同步有序，重入通知排队，不重放历史。Hook 继续负责
+审批和改写；journal/checkpoint 的提交订阅仍须等待并传播错误，不混入通知总线。
+详见[原生强类型事件与迁移边界](../src/events/MIGRATION.md)。
+
 ## 6. 数据流与快照
 
 ```mermaid

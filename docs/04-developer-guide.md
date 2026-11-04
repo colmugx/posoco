@@ -3,6 +3,9 @@
 上一章讲了"怎么实现一个端口"，这一章讲"怎么把它们组合成一个像样的产品"：
 组装 Agent、配置、跑多轮对话、处理错误、管理会话与压缩、优雅关闭。
 
+执行中接收新消息的两种能力见[step 与 turn 消息投递](message-delivery-boundaries.md)：
+该文定义执行边界、目标身份、公开 API 和投递结果，不规定产品的默认投递策略。
+
 ## 1. 组装 Agent
 
 `Agent(exts~, config~)` 是唯一的组合入口。每个扩展通过 manifest 声明自己提供的
@@ -30,7 +33,7 @@ fn build_agent(
 
 规则：
 
-- 恰好一个扩展提供 `ModelPort`，至少一个提供 `SessionPort`；
+- 恰好一个扩展提供 `ModelPort`；`SessionPort` 可选，未提供时不跨 turn 持久化；
 - 工具、observer、hook 等全部可选，没有也能构造；
 - 工具重名、命令重名、manifest 畸形，都在构造阶段以 `CompositionError` 失败。
   不会产生"半成品"Agent，也没有"后声明覆盖前声明"的工具路由。
@@ -126,9 +129,54 @@ let outcome : Result[@posoco.TurnResult, @posoco.AgentError] =
 - observer 只收 `TurnEvent`，不改变主数据流。
 
 只提供一个端口的扩展，manifest 直接写
-`ExtensionManifest::make(id=..., observers: [self])`；省略的字段默认为空数组。
+`ExtensionManifest(id=..., observers=[self])`；省略的字段默认为空数组。
 同时实现多个端口时，在相应字段里登记同一个 `self`。具体实现见
 [03 端口配方](./03-trait-recipes.md) 的第 5、6 节。
+
+### 4.1 社区协议与宿主接听：Events
+
+`Observer` 不必迁移：它只收核心 `TurnEvent`，在 Agent 内适配到统一事件系统。
+需要扩展间通信或宿主动态接听时，使用 `Events`，不另建产品层总线。
+`Hook` 仍负责改写、审批和拦截；事件监听器不参与决策，也不承担必须等待完成的
+journal/checkpoint 提交。
+
+扩展的接入顺序：
+
+1. 协议包定义封闭的载荷 ADT，用 `pub(all) extenum @posoco.Event += { ... }`
+   添加公开构造器。接收者匹配这个构造器后，便可穷尽匹配载荷 ADT；开放的外层
+   `Event` 仍要保留 `_` 分支，以兼容其他协议。跨包构造器用**声明协议的包名**限定。
+2. manifest 声明 `requires: [@posoco.Capability::Events]`，并把实现 `Lifecycle`
+   的实例放进 `lifecycle: [self]`。仅声明 requires 而不注册 lifecycle，不会自动调用
+   该实例的 `on_compose`。
+3. 在 `on_compose` 中取得 `view.events()`，保存能力、注册监听；缺失已声明能力时，
+   raise `CompositionError::ExtensionComposeFailed`。不要在构造阶段发布初始化事实。
+4. 在 `on_start` 或业务方法中调用 `events.publish(ProtocolEvent(payload))`。
+   `on_start` 在首次 `run_turn` 内执行一次，因此宿主可以在这之前完成订阅。
+5. 用返回的 `Subscription::cancel()` 释放监听；扩展自己的监听可在 `on_shutdown`
+   取消。取消幂等，普通操作取消不会关闭 Agent 的事件系统。
+
+**身份与过滤是两件事**：发布端不传 source，Agent 将其命名空间绑定为
+`Extension(manifest_id)`；使用 Events 的扩展 id 必须唯一。`Posoco` 保留给
+`Core(TurnEvent)`，扩展尝试发布 `Core` 返回 `Err(ReservedEvent)`。
+订阅不受「只能看自己」限制，可选择任意命名空间：
+
+| 接入方 | 高层 API |
+|---|---|
+| 扩展发布 | `events.publish(event, scope=Some(scope))`；无归属时省略 scope |
+| 扩展接听 | `events.subscribe(handler, namespace_=Some(Extension("other")))` |
+| 宿主接听核心 | `agent.subscribe_events(handler, namespace_=Some(Posoco))` |
+| 宿主接听所有 | `agent.subscribe_events(handler)` |
+| 释放监听 | 对 `Ok(subscription)` 中的句柄调用 `subscription.cancel()` |
+
+表中的枚举构造器使用对应导入的限定名；`Core` 声明于 `colmugx/posoco/events`。
+`namespace_` 是真实的参数标签，不能写成 MoonBit 保留字 `namespace`。
+`publish` 与 `subscribe` 都返回 `Result`，不要忽略错误：Agent 最终 shutdown 后
+返回 `Err(Closed)`（发布禁止的 `Core` 仍优先返回 `ReservedEvent`）。
+
+**交付约定**：同步、按注册顺序、不可抛错；重入发布排队而不递归调用监听器。
+每批使用监听列表快照，批内新增或取消在下一批生效。没有历史重放，因此先订阅、
+后发布；状态恢复、快照查询应由业务协议另行提供。社区载荷应使用不可变值，
+系统不做通用深拷贝。`EventEnvelope.scope` 可为空，不能假定每条通知都有 session/run。
 
 ## 5. 错误处理
 
@@ -269,5 +317,6 @@ async fn close_agent(agent : @posoco.Agent) -> Unit {
 - 工具定义使用合法的 JSON Schema（object/boolean），`provenance` 稳定。
 - 工具业务失败返回 `ToolReportedError`；基础设施失败保持 typed。
 - session store 对未知 id 返回空 session，且保留 metadata。
-- hook 不静默吞错误；observer 保持只读。
+- hook 不静默吞错误；observer 保持只读；事件回调同步、不可抛错。
+- 事件能力在 manifest 声明并通过 lifecycle 获取；manifest id 唯一，监听及时取消。
 - 通过一个组合好的 `Agent` 做集成测试，而不是伸手够内部实现。

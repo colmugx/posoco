@@ -15,7 +15,7 @@ core never dictates shape.
 ## Installation
 
 ```bash
-moon add colmugx/posoco@0.23.3
+moon add colmugx/posoco@0.24.0
 ```
 
 ## Ports
@@ -33,7 +33,7 @@ uses.
 | `Observer` | Read-only turn-event observation |
 | `Hook` | Pipeline interception with default methods: rewrite messages or abort before model (`before_model`), approve / defer / reject before tool (`before_tool`), read-only after each effect (`on_post_event`) |
 | `MemoryPort` | Long-term memory storage and retrieval |
-| `Lifecycle` | Async resource cleanup on shutdown |
+| `Lifecycle` | Composition wiring, one-time async startup, shutdown cleanup |
 | `CommandPort` | User-side slash-command enumeration and dispatch |
 | `UiPort` | Structured UI intents + interaction requests (Status / Notice / Widget / Input / Confirm / Select) |
 | `SystemPromptContributor` | Declare system-prompt sections (assembled and injected before the model call) |
@@ -44,9 +44,9 @@ uses.
 
 An extension is a struct that implements one or more port traits **and**
 `@posoco.Extension`. The same `self` reference goes in every manifest slot
-whose port the struct implements; the `id` string is used only for composition
-diagnostics (tool-collision messages, observer attribution), never for routing
-or persistence.
+whose port the struct implements. The manifest `id` identifies the extension
+in composition diagnostics and binds its event-publishing namespace. If an
+extension requires `Events`, its id must be unique within the Agent.
 
 The minimal shape is two methods plus one `pub extend` line:
 
@@ -63,7 +63,7 @@ pub impl @posoco.Extension for ReadTools with fn extension_id(_self) -> String {
 /// 2. Declare which ports ReadTools contributes. The same `self` goes under
 ///    every slot whose trait ReadTools implements; omitted slots default to [].
 pub impl @posoco.Extension for ReadTools with fn manifest(self) -> @posoco.ExtensionManifest {
-  @posoco.ExtensionManifest::make(id="posoco_ext_read", tools=[self])
+  @posoco.ExtensionManifest(id="posoco_ext_read", tools=[self])
 }
 
 ///|
@@ -79,13 +79,14 @@ pub fn read_extension() -> ReadTools {
 ```
 
 For a `ModelPort` extension, put `self` under `models: [self]` instead:
-`make(id=..., models=[self])`.
+`ExtensionManifest(id=..., models=[self])`.
 
 ## compose an agent
 
 Agent authors import extension packages and wire their instances into one
-`Agent`. `exts` is an array of self-reporting extensions — order-independent;
-Agent aggregates their manifests.
+`Agent`. Agent aggregates their manifests; extension order determines hook,
+observer, and lifecycle registration order. It does not give colliding tools a
+last-wins priority.
 
 ```moonbit nocheck
 let agent = @posoco.Agent(
@@ -122,6 +123,26 @@ is async and raises `AgentError`. Composition is fail-fast and raises
 
 A turn that has emitted `TurnStarted` emits exactly one terminal event:
 `TurnCompleted` on success, or `TurnFailed` on any primary failure.
+
+## Typed events
+
+Posoco owns one event system per Agent for both core notifications and community
+protocols. Define a closed payload ADT and add a constructor to the open
+`@posoco.Event`; publishers and listeners exchange typed values, not JSON topics.
+
+- **Extensions:** declare `requires: [@posoco.Capability::Events]` and register a
+  `Lifecycle`; obtain `view.events()` in `on_compose`, then call
+  `events.publish(event)` or `events.subscribe(handler, namespace_=...)`.
+- **Hosts:** call `agent.subscribe_events(handler, namespace_=...)`; cancel the
+  returned `Subscription` when finished. No bus construction or runtime factory
+  is needed.
+- **Namespaces:** publication is bound to `Extension(manifest_id)`. `Posoco` is
+  reserved for `Core(TurnEvent)` notifications; an extension cannot publish
+  `Core`. Subscriptions may select any namespace, or all with `None`.
+- **Boundaries:** handlers are synchronous and non-raising, notifications have
+  no replay, and shutdown closes retained capabilities. `Observer` is a core-only
+  adapter on this same system; `Hook` remains the interception API. Event
+  notifications do not replace awaited journal/checkpoint commits.
 
 ## Extension library
 

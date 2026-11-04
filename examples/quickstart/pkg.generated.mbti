@@ -15,9 +15,12 @@ import {
 // Types and methods
 type QuickstartExtension
 pub impl @port.Extension for QuickstartExtension
+pub impl @port.Lifecycle for QuickstartExtension
 
 type QuickstartModel
 pub impl @port.ModelPort for QuickstartModel
+
+type QuickstartProgress
 
 type QuickstartSessionPort
 pub impl @port.SessionPort for QuickstartSessionPort

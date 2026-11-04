@@ -91,11 +91,16 @@ pub impl @posoco.SessionPort for QuickstartSessionPort with fn save(
 struct QuickstartExtension {
   model : QuickstartModel
   sessions : QuickstartSessionPort
+  events : Ref[@posoco.Events?]
 }
 
 ///|
 fn QuickstartExtension::QuickstartExtension() -> QuickstartExtension {
-  { model: QuickstartModel::{ }, sessions: QuickstartSessionPort(), }
+  {
+    model: QuickstartModel::{ },
+    sessions: QuickstartSessionPort(),
+    events: Ref(None),
+  }
 }
 
 ///|
@@ -106,7 +111,13 @@ pub impl @posoco.Extension for QuickstartExtension with fn extension_id(_self) -
 ///|
 pub impl @posoco.Extension for QuickstartExtension with fn manifest(self) -> @posoco.ExtensionManifest {
   let manifest = @posoco.ExtensionManifest::default(id="quickstart")
-  { ..manifest, models: [self.model], sessions: [self.sessions], }
+  {
+    ..manifest,
+    models: [self.model],
+    sessions: [self.sessions],
+    lifecycle: [self],
+    requires: [@posoco.Capability::Events],
+  }
 }
 
 ///|
@@ -116,10 +127,27 @@ async fn main {
     exts=[extension],
     config=@posoco.agent_config(max_tool_rounds=Some(0)),
   )
+  // Subscribe before the first turn: events are live notifications, not replayed state.
+  let started = Ref(false)
+  guard agent.subscribe_events(
+      envelope => {
+        match envelope.event {
+          QuickstartChanged(Started) => started.val = true
+          _ => () // Event is open: other protocols may add constructors.
+        }
+      },
+      namespace_=Some(@posoco.EventNamespace::Extension("quickstart")),
+    )
+    is Ok(subscription) else {
+    abort("quickstart could not subscribe to events")
+  }
   let input : @posoco.Message = @posoco.Message::UserMessage(content=[
     @posoco.Content::Text("Say hello"),
   ])
   let result = agent.run_turn(input, "quickstart-session")
+  if !started.val {
+    abort("quickstart did not receive its startup event")
+  }
   match result.message {
     @posoco.Message::AssistantMessage(content~, ..) =>
       for item in content {
@@ -130,5 +158,6 @@ async fn main {
       }
     _ => abort("quickstart expected an AssistantMessage response")
   }
+  subscription.cancel()
   agent.shutdown()
 }

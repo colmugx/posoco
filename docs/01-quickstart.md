@@ -54,6 +54,7 @@ pub impl @posoco.ModelPort for FixedModel with fn compact(
   _self,
   _scope : @posoco.InvocationScope,
   _messages : ArrayView[@posoco.Message],
+  _tools : Array[@posoco.ToolDef],
   _options : @posoco.ChatOptions,
   _trigger : @posoco.CompactTrigger,
 ) -> @posoco.CompactResult raise @posoco.ModelError {
@@ -73,7 +74,7 @@ pub impl @posoco.Extension for FixedModel with fn extension_id(_self) -> String 
 pub impl @posoco.Extension for FixedModel with fn manifest(
   self,
 ) -> @posoco.ExtensionManifest {
-  @posoco.ExtensionManifest::make(id="quickstart-model", models=[self])
+  @posoco.ExtensionManifest(id="quickstart-model", models=[self])
 }
 
 pub extend FixedModel with @posoco.Extension::{extension_id, manifest}
@@ -132,6 +133,16 @@ pub impl @posoco.SessionPort for MemoryStore with fn save(
 ) -> Unit {
   self.sessions[id] = copy_session(session)
 }
+
+pub impl @posoco.Extension for MemoryStore with fn extension_id(_self) -> String {
+  "quickstart-store"
+}
+
+pub impl @posoco.Extension for MemoryStore with fn manifest(self) -> @posoco.ExtensionManifest {
+  @posoco.ExtensionManifest(id="quickstart-store", sessions=[self])
+}
+
+pub extend MemoryStore with @posoco.Extension::{extension_id, manifest}
 ```
 
 三个要点：
@@ -190,16 +201,38 @@ let result = agent.run_turn(input, "quickstart-session")
 
 ## 5. 验证
 
+从仓库根目录运行独立的离线示例：
+
 ```bash
-moon check --output-json
-moon test --output-json -f 'quickstart_fixture*'
+moon -C examples/quickstart check --target native --deny-warn --output-json .
+moon -C examples/quickstart test --target native --deny-warn --output-json .
+moon -C examples/quickstart run --target native .
 ```
 
-测试应显示 `1/1 passed`。这个 fixture 覆盖了：消息与 `Completion` 的构造、
-`Agent(exts~, config~)` 的组合签名、`run_turn` 的调用与返回的 session id、
-以及 session store 通过公开 trait 被注入。
+可执行程序输出 `Hello from the Posoco quickstart.`。测试同时检查 user + assistant
+完整历史已保存，以及下面的事件接入行为；不需要模型 API key 或网络请求。
 
-## 6. 下一步
+## 6. 再加一个强类型事件
+
+完整示例还演示了扩展与宿主之间的通知，不需要自己创建 EventBus：
+
+1. [`events.mbt`](../examples/quickstart/events.mbt) 定义封闭的 `QuickstartProgress`
+   ADT，再为开放的 `@posoco.Event` 添加 `QuickstartChanged(QuickstartProgress)`。
+2. manifest 声明 `requires: [@posoco.Capability::Events]` 和 `lifecycle: [self]`，
+   在 `Lifecycle::on_compose` 取得 `view.events()`。
+3. 宿主在首次 `run_turn` 前调用 `agent.subscribe_events`，用
+   `namespace_=Some(@posoco.EventNamespace::Extension("quickstart"))` 接听该扩展。
+4. 扩展在 `Lifecycle::on_start` 发布 `QuickstartChanged(Started)`，宿主直接匹配 ADT；
+   Agent 把来源绑定到 manifest id。核心另有保留的 `Posoco` 命名空间，但共用同一系统。
+5. 用返回的 `Subscription::cancel()` 取消接听；`shutdown` 关闭能力。事件没有重放，
+   回调同步、不可抛错，因此应先订阅后发布，社区载荷使用不可变值。
+
+这不是改写模型调用或审批工具的机制：拦截仍用 `Hook`；原有 `Observer` 仍只收核心通知。
+扩展间接听使用同一个 `events.subscribe`。完整说明见
+[quickstart README](../examples/quickstart/README.md) 和
+[开发指南的 Events 一节](./04-developer-guide.md#41-社区协议与宿主接听events)。
+
+## 7. 下一步
 
 - 想知道 Posoco 为什么这样设计、turn 内部发生了什么 → [02 架构入门](./02-architecture.md)
 - 想给 Agent 加工具、Observer、Hook 等更多端口 → [03 端口配方](./03-trait-recipes.md)

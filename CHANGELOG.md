@@ -1,6 +1,109 @@
 # Changelog
 
-## 0.23.1
+## 0.24.0
+
+### Added: typed extension events — one Agent-owned notification system
+
+Posoco ships the new public package `colmugx/posoco/events` (`@events`). The
+open `Event` extenum currently holds `Core(@types.TurnEvent)`; a community
+protocol package adds its own constructor with
+`pub extenum @events.Event += { ... }` and publishers and listeners exchange
+typed payloads — no JSON topics, no downcasts, no runtime registry, no
+process-global bus. Delivery metadata lives in
+`EventEnvelope { namespace_, scope, event }` with the closed `EventNamespace`
+(`Posoco` | `Extension(String)`).
+
+- **Extensions publish through an owner-bound capability.** Declare
+  `requires: [@posoco.Capability::Events]`, register a `Lifecycle`, and take
+  `view.events()` in `on_compose`: `events.publish(event, scope?)`,
+  `events.subscribe(handler, namespace_?)`, idempotent
+  `Subscription::cancel()`. Publish in `on_start` or a business method, not
+  during construction. The Agent binds publication to the declaring manifest
+  id, so a publisher cannot forge a source, and `Posoco` is reserved —
+  an extension publishing `Core` gets `Err(ReservedEvent)`. Extensions using
+  Events must own a unique manifest id or composition fails with
+  `ManifestSchemaError`; duplicate ids between legacy non-Events extensions
+  keep their existing behavior.
+- **Hosts subscribe read-only.** `Agent::subscribe_events(handler,
+  namespace_~)` grants no publication rights. A subscription may select
+  `Extension(id)`, the reserved `Posoco`, or everything with `None`.
+  `publish`/`subscribe` return typed `Result`s: after shutdown — or after a
+  failed compose, which revokes capabilities already delivered — both return
+  `Err(Closed)`. Publications made during shutdown cleanup are still
+  delivered before the runtime closes, and cancelling a turn never closes
+  the capability.
+- **Delivery contract.** Handlers are synchronous and non-raising. Delivery
+  is ordered by registration with a per-batch listener snapshot: reentrant
+  publishes queue instead of recursing, subscribe/cancel during a batch
+  applies from the next batch, and there is no history replay — subscribe
+  before publishing. Core payloads are snapshotted at enqueue; community
+  payloads are delivered as published and must stay immutable (no generic
+  deep copy). `scope` is optional attribution, not a routing filter, and
+  `None` never guarantees a session attribution.
+
+`Observer` keeps its shape and becomes a core-only adapter on the same
+runtime: every composed observer still receives `TurnEvent`s in manifest
+order, exactly once per notification, and never sees community events
+(nothing is re-serialized into `TurnEvent::Custom`). `Hook` remains the
+interception API, and awaited journal/checkpoint commits stay the correctness
+protocol — notifications replace no acknowledgement. Stream telemetry
+(`StreamChunkReceived`/`StreamChunksDropped`) now flows through the same
+runtime, so a host without legacy Observers can subscribe after construction
+and still receive chunk events.
+
+The `Events`/`Subscription` constructor factories are framework and test
+seams; building a capability value does not claim real publication rights.
+Migration: exhaustive matches over `Capability` gain one `Events` arm.
+See the [event package guide](src/events/README.mbt.md), the
+[composition and migration guide](src/events/MIGRATION.md), and the updated
+offline quickstart.
+
+Known validation boundary: external protocol round-trips (a separate
+protocol module extending `Event` and a separate consumer module
+publishing/subscribing through a real Agent) pass on native and js, and the
+in-repo event and Agent acceptance tests pass on the default wasm-gc target;
+an isolated wasm-gc workspace fixture still fails during code generation
+(`global.set expected type`, root cause open). This release does not claim
+standalone-module wasm-gc integration.
+
+### Changed: Agent-owned step and turn message delivery
+
+`enqueue_steer` applies input within the current turn; `enqueue_follow_up`
+starts a later turn in the same session and operation. Both use one bounded,
+Agent-owned inbox, snapshot input at acceptance, and retain selected records
+until their boundary commits. `current_message_target()` returns an opaque
+credential accepted by either method's optional `target` argument; delayed
+submissions with an expired target are rejected instead of retargeted.
+
+Step input accepted before a successful model response can supersede unstarted
+tool calls. Each superseded call retains its call id and an explicit
+`NotExecuted(SupersededByMessage)` result. An already launched wave finishes
+with its real outcomes; later waves do not launch. Pending input before normal
+completion continues the same turn, without reopening a committed terminal.
+Cancellation, model/runtime failures and budgets keep their existing precedence.
+
+`TurnEvent::MessageApplied(command_id~, delivery~)` and
+`MessageUndelivered(command_id~, delivery~, reason~)` flow through the existing
+Observer and `Agent::subscribe_events` surfaces. Delivery kind is `Step` or
+`Turn` — the newly exported `MessageDeliveryKind` — and exhaustive `TurnEvent`
+matches gain these two arms. Applied means committed context, not model
+acknowledgement or a durable message service. The boundary journal preserves
+command correlations without message bodies; SessionPort checkpointing
+preserves the body at its transcript position. A failed checkpoint does not
+undo an already committed delivery.
+
+Cancellation, failure, early exits and operation release settle unconfirmed
+records explicitly. Follow-ups left after the 64-turn drain limit no longer
+leak into later calls or sessions. Undelivered messages are never automatically
+resent or converted between delivery kinds. Step-window closure precedes
+terminal subscriber callbacks.
+
+The execution pump now imports `moonbitlang/core/async` and its queue/condition
+subpackages, adapting to the non-generic core TaskGroup API. Other packages'
+legacy async imports are retained where still used; no module dependency is
+removed as part of this change.
+
+## 0.23.2
 
 ### Breaking: `SessionStore` is now `SessionPort`
 
