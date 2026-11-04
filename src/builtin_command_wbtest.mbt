@@ -39,6 +39,7 @@ async test "m35_builtin/idle_compact_starts_compact_session_directly" {
     metadata: Map::from_array([]),
   })
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store]),
@@ -99,6 +100,7 @@ async test "m35_builtin/idle_compact_reports_modelport_failure_not_locked_sessio
     metadata: Map::from_array([]),
   })
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store]),

@@ -190,7 +190,7 @@ pub async fn ToolContributionRegistry::replace(
     error =>
       return Err(
         @port.ToolContributionError::Rejected(
-          reason=bounded_error_label(error.to_string(), 256),
+          reason=@diagnostic.bounded_error_label(error.to_string(), 256),
         ),
       )
   }
@@ -396,11 +396,11 @@ pub async fn ToolContributionRegistry::retire_unreferenced(
             callback()
           }),
         ) catch {
-          error => Err(bounded_error_label(error.to_string(), 256))
+          error => Err(@diagnostic.bounded_error_label(error.to_string(), 256))
         }
         let failure : String? = match attempted {
           Ok(Ok(_)) => None
-          Ok(Err(detail)) => Some(bounded_error_label(detail, 256))
+          Ok(Err(detail)) => Some(@diagnostic.bounded_error_label(detail, 256))
           Err(detail) => Some(detail)
         }
         match failure {
@@ -461,7 +461,7 @@ fn describe_retire_failures(failures : Array[ToolRetireFailure]) -> String {
       "version=\{failure.version} owner=\{failure.owner} revision=\{failure.revision}: \{failure.detail}",
     )
   }
-  bounded_error_label(labels.join("; "), 256)
+  @diagnostic.bounded_error_label(labels.join("; "), 256)
 }
 
 ///|

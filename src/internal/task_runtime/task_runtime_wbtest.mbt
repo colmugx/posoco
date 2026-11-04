@@ -206,10 +206,13 @@ async test "managed_tasks/shutdown_deadline_reports_straggler_and_can_retry" {
     // task identity/status detail instead of truncating its tail.
     let stragglers = runtime.shutdown_straggler_detail()
     let observer = TestObserver::TestObserver()
+    let event_runtime = @event_runtime.EventRuntime()
+    match event_runtime.register_observers([observer as &@port.Observer]) {
+      Ok(_) => ()
+      Err(error) => fail("register_observers failed: \{repr(error)}")
+    }
     emit_managed_task_shutdown_failure(
-      @event_runtime.EventRuntime::EventRuntime([observer as &@port.Observer]),
-      "managed task shutdown deadline exceeded",
-      stragglers,
+      event_runtime, "managed task shutdown deadline exceeded", stragglers,
     )
     let events = observer.events
     assert_eq(events.length(), 1)

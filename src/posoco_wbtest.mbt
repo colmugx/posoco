@@ -126,6 +126,7 @@ async test "tool_failure_non_fatal" {
   let config = make_config()
 
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", tools=[tools], sessions=[store], observers=[
@@ -168,6 +169,7 @@ async test "hook_reject_skips_tool_and_feeds_back" {
   let reject_hook = PolicyRejectHook::{ }
 
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(
@@ -234,6 +236,7 @@ async test "hook_reject_steers_model_to_allowed_tool" {
   let observer = @test_support.RecordingObserver()
 
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(
@@ -278,6 +281,7 @@ async fn run_bash_with_hooks(
   }
   let store = @test_support.RecordingSessionPort()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", tools=[tools], hooks~, sessions=[store], observers=[]),
@@ -403,6 +407,7 @@ async test "async_before_tool_gates_tool_wave" {
   let release : @aqueue.Queue[Int32] = Queue(kind=Unbounded)
   let gate_hook = GateHook::{ entered, release, }
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", tools=[tools], hooks=[gate_hook], sessions=[
@@ -475,6 +480,7 @@ async test "hook_before_tool_raise_aborts_run" {
   )
   let store = @test_support.RecordingSessionPort()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(
@@ -522,6 +528,7 @@ async test "reasoning_raw_replayed_verbatim_into_saved_session" {
   ])
   let store = @test_support.RecordingSessionPort()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store]),
@@ -584,6 +591,7 @@ async test "unbounded_tool_rounds_complete_long_turn" {
   let store = @test_support.RecordingSessionPort()
   let observer = @test_support.RecordingObserver()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", tools=[tools], sessions=[store], observers=[
@@ -640,6 +648,7 @@ async test "bounded_tool_rounds_allows_exactly_n_rounds" {
   let store = @test_support.RecordingSessionPort()
   let observer = @test_support.RecordingObserver()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", tools=[tools], sessions=[store], observers=[
@@ -695,6 +704,7 @@ async test "hook_single_impl_receives_all_points" {
   )
   let hook = @test_support.RecordingHook()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", tools=[tools], hooks=[hook], sessions=[
@@ -766,6 +776,7 @@ async test "agent_routes_tools_to_correct_provider" {
   let config = make_config()
 
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(
@@ -817,6 +828,7 @@ async test "streaming_events_emitted_during_chat" {
   let config = make_config()
 
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", tools=[empty_tools()], sessions=[store], observers=[
@@ -866,6 +878,7 @@ async test "multiple_observers_fan_out" {
   let config = make_config()
 
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", tools=[empty_tools()], sessions=[store], observers=[
@@ -894,6 +907,7 @@ async test "multiple_session_stores_write_all" {
   let config = make_config()
 
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(
@@ -943,6 +957,7 @@ async test "hook_turn_error_fires_on_model_error" {
   let config = make_config()
 
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(
@@ -1046,6 +1061,7 @@ async test "all_rejected_wave_unknown_tool_completes_with_rejection_event" {
   let store = @test_support.RecordingSessionPort()
   let observer = @test_support.RecordingObserver()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", tools=[tools], sessions=[store], observers=[
@@ -1096,6 +1112,7 @@ async test "all_rejected_wave_schema_mismatch_completes_with_rejection_event" {
   let store = @test_support.RecordingSessionPort()
   let observer = @test_support.RecordingObserver()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", tools=[tools], sessions=[store], observers=[
@@ -1149,6 +1166,7 @@ async test "mixed_wave_pairs_executed_call_and_rejects_unknown_without_pending" 
   let store = @test_support.RecordingSessionPort()
   let observer = @test_support.RecordingObserver()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", tools=[tools], sessions=[store], observers=[
@@ -1217,6 +1235,7 @@ async test "wave3/compact_session/idle full chain without a chat request" {
     metadata: Map::from_array([]),
   })
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store], observers=[observer]),
@@ -1276,6 +1295,7 @@ async test "wave3/compact_session/context state records the post-compact estimat
     metadata: Map::from_array([]),
   })
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store], observers=[observer]),
@@ -1339,6 +1359,7 @@ async test "wave3/compact_session/pending tools fixated as interrupted" {
     metadata: Map::from_array([]),
   })
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store]),
@@ -1387,6 +1408,7 @@ async test "wave3/body recovery is scoped to the affected operation session" {
   })
   store.fail_save("recover-a")
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store]),
@@ -1527,6 +1549,7 @@ async test "wave3/cancellation/mid-stream cancel is structured and the session s
   }
   let runtime : &@runtime.Runtime = parking as &@runtime.Runtime
   let agent = Agent::with_runtime(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model), sessions=[store], observers=[
         observer,
@@ -1602,6 +1625,7 @@ async test "wave3/context_state/retrievable at initial load and not cleared by T
     @test_support.ScriptedModelStep::Respond(wave3_stop_with_usage("done", 30)),
   ])
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store], observers=[observer]),

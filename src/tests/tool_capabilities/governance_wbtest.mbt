@@ -65,6 +65,7 @@ async test "tool_invoke/rewritten_child_rechecks_owner_and_schema_and_never_inhe
       ),
     ])
     let agent = Agent(
+      events=@agent.EventSystem(),
       exts=[
         @test_support.tk_ext(id="model", model=Some(model), hooks=[hook], observers=[
           observer,
@@ -141,6 +142,7 @@ async test "tool_invoke/a_later_rewrite_invalidates_child_consent" {
     ),
   ])
   let agent = Agent(
+    events=@agent.EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model), hooks=[
         consent, rewrite,
@@ -182,6 +184,7 @@ async test "tool_invoke/child_crosses_the_same_binding_aware_runtime_decorator" 
   ])
   let runtime = FakeRuntime(@runtime.PortRuntime(model~))
   let agent = Agent::with_runtime(
+    events=@agent.EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       parent,
@@ -239,6 +242,7 @@ async test "tool_invoke/unregistered_target_cannot_be_invoked_by_name" {
   ])
   let runtime = @runtime.PortRuntime(model~)
   let agent = Agent::with_runtime(
+    events=@agent.EventSystem(),
     exts=[@test_support.tk_ext(id="model", model=Some(model)), parent],
     config=@agent.agent_config(max_tool_rounds=Some(10)),
     runtime~,

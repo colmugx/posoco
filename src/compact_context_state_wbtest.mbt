@@ -46,6 +46,7 @@ async fn check_manual_compact_context(
   })
   let observer = @test_support.RecordingObserver()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store], observers=[observer]),
@@ -124,6 +125,7 @@ async fn check_auto_compact_context(
   let store = @test_support.RecordingSessionPort()
   let observer = @test_support.RecordingObserver()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="tools", tools=[policy_tools()]),

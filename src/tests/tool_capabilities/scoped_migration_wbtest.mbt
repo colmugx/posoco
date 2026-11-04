@@ -37,6 +37,7 @@ async test "tool_invoke/migrated_scoped_calls_preserve_permission_and_schema_rej
     },
   }
   let agent = Agent(
+    events=@agent.EventSystem(),
     exts=[
       @test_support.tk_ext(
         id="model",
@@ -100,6 +101,7 @@ async test "tool_invoke/program_names_use_owner_admission_instead_of_a_run_code_
     },
   }
   let agent = Agent(
+    events=@agent.EventSystem(),
     exts=[
       @test_support.tk_ext(
         id="model",

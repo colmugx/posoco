@@ -364,7 +364,9 @@ async fn AgentRuntime::run_turn_via_puppet(
   // the only way the original `AgentError` variant — and its contextualized
   // messages — survives the crossing.
   let turn_error : Ref[@error.AgentError?] = Ref(None)
-  let result = @async.with_task_group(async fn(group) {
+  // `with_task_group` is `Unit`-valued: the turn result crosses in a cell.
+  let turn_outcome : Ref[@types.TurnResult?] = Ref(None)
+  @async.with_task_group(async fn(group) {
     group.spawn_bg(async fn() { dispatcher.drain_loop() })
     errdefer {
       dispatcher.flush()
@@ -402,7 +404,7 @@ async fn AgentRuntime::run_turn_via_puppet(
     }
     dispatcher.flush()
     dispatcher.close()
-    turn_result
+    turn_outcome.val = Some(turn_result)
   }) catch {
     _ => {
       self.chunk_dispatcher.val = None
@@ -416,7 +418,11 @@ async fn AgentRuntime::run_turn_via_puppet(
     }
   }
   self.chunk_dispatcher.val = None
-  result
+  match turn_outcome.val {
+    Some(result) => result
+    None =>
+      raise Runtime(InvocationFailed("turn body: completed without a result"))
+  }
 }
 
 ///|

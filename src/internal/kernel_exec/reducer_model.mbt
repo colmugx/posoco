@@ -369,12 +369,7 @@ fn reduce_model_completed_with_tools(
   let batch_calls : Array[@kernel.ToolCall] = []
   for e in effects {
     match e {
-      ExecuteTool(payload~, ..) =>
-        batch_calls.push({
-          call_id: payload.call_id,
-          name: payload.tool_name,
-          arguments: payload.arguments,
-        })
+      ExecuteTool(payload~, ..) => batch_calls.push(payload.tool_call())
       _ => ()
     }
   }

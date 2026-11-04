@@ -167,7 +167,7 @@ pub fn TurnSnapshot::capture(
   }
   let captured_policy : RunPolicy = {
     model_id: input.policy.model_id,
-    call_options: snapshot_json(input.policy.call_options),
+    call_options: @message_snapshot.snapshot_json(input.policy.call_options),
     budget: input.policy.budget,
     context_window: input.policy.context_window,
     compact_threshold: input.policy.compact_threshold,
@@ -186,27 +186,6 @@ pub fn TurnSnapshot::capture(
     lifecycle_provenance: input.lifecycle_provenance.copy(),
     subscriber_provenance: input.subscriber_provenance.copy(),
     fingerprint: fp,
-  }
-}
-
-///|
-/// Recursively copy Json so mutable Array/Map backing storage cannot cross the
-/// turn-capture seam in either direction.
-fn snapshot_json(value : Json) -> Json {
-  match value {
-    Null => Json::null()
-    True => Json::boolean(true)
-    False => Json::boolean(false)
-    Number(number, repr~) => Json::number(number, repr?)
-    String(text) => Json::string(text)
-    Array(values) => Json::array(values.map(snapshot_json))
-    Object(values) => {
-      let copied : Map[String, Json] = Map::from_array([])
-      for key in values.keys() {
-        copied[key] = snapshot_json(values[key])
-      }
-      Json::object(copied)
-    }
   }
 }
 
@@ -328,7 +307,7 @@ pub fn TurnSnapshot::model_id(self : TurnSnapshot) -> String {
 
 ///|
 pub fn TurnSnapshot::call_options(self : TurnSnapshot) -> Json {
-  snapshot_json(self.policy.call_options)
+  @message_snapshot.snapshot_json(self.policy.call_options)
 }
 
 ///|

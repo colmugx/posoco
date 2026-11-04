@@ -6,6 +6,7 @@ async test "agent step delivery/normal stop continues same turn with FIFO snapsh
   ])
   let observer = @test_support.RecordingObserver()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", observers=[observer]),
@@ -77,6 +78,7 @@ async test "agent step delivery/model response cannot launch superseded tools" {
   )
   let observer = @test_support.RecordingObserver()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="tools", tools=[tools]),
@@ -205,6 +207,7 @@ async test "agent step delivery/launched wave finishes but later wave never star
   let tools = StepWaveTools::{ control: None, calls: [], parallel: false, }
   let observer = @test_support.RecordingObserver()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="tools", tools=[tools]),
@@ -283,6 +286,7 @@ async test "agent step delivery/all roots in a launched parallel wave keep real 
   let tools = StepWaveTools::{ control: None, calls: [], parallel: true, }
   let observer = @test_support.RecordingObserver()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="tools", tools=[tools]),
@@ -339,6 +343,7 @@ async test "agent step delivery/committed receipt survives checkpoint failure be
   let store = @test_support.RecordingSessionPort()
   let observer = @test_support.RecordingObserver()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store], observers=[observer]),

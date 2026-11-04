@@ -540,6 +540,7 @@ pub(all) struct QueuedMessage {
 #derive(Eq, @debug.Debug)
 pub(all) enum QuiescentStatus {
   Idle
+  Active
   Suspended(run_id~ : @kernel.RunId, suspension_id~ : String, requirement_kind~ : String)
   Terminal(outcome~ : @kernel_exec.RunOutcome)
   Shutdown

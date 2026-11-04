@@ -283,6 +283,7 @@ async test "managed_tasks/background_routes_by_session_and_normalizes_result" {
   }
   let a_release : @aqueue.Queue[Int32] = Queue(kind=Unbounded)
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store], hooks=[gate]),
@@ -364,6 +365,7 @@ async test "managed_tasks/background_outcome_survives_failed_save_and_heal" {
   ])
   let store = @test_support.RecordingSessionPort()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store]),
@@ -440,6 +442,7 @@ async test "managed_tasks/cancelled_waiter_does_not_cancel_background_and_late_w
   let late_one : Ref[@port.TaskOutcome?] = Ref(None)
   let late_two : Ref[@port.TaskOutcome?] = Ref(None)
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store]),
@@ -517,6 +520,7 @@ async test "managed_tasks/user_marker_does_not_suppress_first_task_outcome" {
   ])
   let store = @test_support.RecordingSessionPort()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store]),
@@ -575,6 +579,7 @@ async test "managed_tasks/nested_scope_rejects_without_closing_outer_scope" {
   ])
   let store = @test_support.RecordingSessionPort()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store]),
@@ -636,6 +641,7 @@ async test "managed_tasks/scope_error_and_ambient_cancel_reap_background_work" {
   let error_model = @test_support.ScriptedModel([])
   let error_store = @test_support.RecordingSessionPort()
   let error_agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(error_model)),
       @test_support.tk_ext(id="io", sessions=[error_store]),
@@ -693,6 +699,7 @@ async test "managed_tasks/scope_error_and_ambient_cancel_reap_background_work" {
   let cancel_model = @test_support.ScriptedModel([])
   let cancel_store = @test_support.RecordingSessionPort()
   let cancel_agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(cancel_model)),
       @test_support.tk_ext(id="io", sessions=[cancel_store]),
@@ -759,6 +766,7 @@ async test "managed_tasks/scope_error_and_ambient_cancel_reap_background_work" {
 async test "managed_tasks/shutdown_before_start_calls_lifecycle_once" {
   let probe = AcceptanceShutdownProbe::new()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(
         id="model",
@@ -783,6 +791,7 @@ async test "managed_tasks/external_worker_message_mutation_does_not_rewrite_term
   let model = @test_support.ScriptedModel([])
   let store = @test_support.RecordingSessionPort()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store]),
@@ -831,6 +840,7 @@ async test "managed_tasks/wait_result_mutation_isolated_from_late_wait_and_deliv
   ])
   let store = @test_support.RecordingSessionPort()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store]),
@@ -886,6 +896,7 @@ async test "managed_tasks/tasks_requires_gate_and_scope_admission" {
   let hidden = AcceptanceTaskCapture::new()
   let declared = AcceptanceTaskCapture::new()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(
         id="model",
@@ -924,6 +935,7 @@ async test "managed_tasks/tasks_requires_gate_and_scope_admission" {
 async test "managed_tasks/foreground_requires_operation_and_matching_session" {
   let probe = AcceptanceForegroundAdmissionProbe::new()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(
         id="model",
@@ -985,6 +997,7 @@ async test "managed_tasks/foreground_requires_operation_and_matching_session" {
 async test "managed_tasks/background_failure_timeout_and_immediate_cancel_are_stable" {
   let capture = AcceptanceTaskCapture::new()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(
         id="model",

@@ -163,7 +163,11 @@ test "agent control/settles queued and selected follow-ups at operation end" {
 /// repeated initial commit is a no-op.
 test "agent control/initial confirmation projects Applied once, scoped to the committing turn" {
   let observer = @test_support.RecordingObserver()
-  let events = @event_runtime.EventRuntime([observer])
+  let events = @event_runtime.EventRuntime()
+  match events.register_observers([observer]) {
+    Ok(_) => ()
+    Err(error) => fail("register_observers failed: \{repr(error)}")
+  }
   let control = bound_agent_control()
   control.install_message_events(events)
   let scoped : Array[(String, String)] = []
@@ -428,6 +432,7 @@ async test "agent control/follow-ups drain FIFO across turns and return the last
   )
   let store = @test_support.RecordingSessionPort()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="tools", tools=[tools]),
@@ -484,6 +489,7 @@ async test "agent control/reentrant follow-up enqueued during a drained turn ext
     ["first", "second"],
   )
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="tools", tools=[tools]),
@@ -604,6 +610,7 @@ async test "agent control/follow-up pinned to an older turn is rejected stale" {
     @test_support.tk_tool_def("echo", "echo tool"),
   ])
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="tools", tools=[tools]),
@@ -661,6 +668,7 @@ async test "agent control/cancelled operation reports its queued follow-up undel
   )
   let observer = @test_support.RecordingObserver()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="tools", tools=[tools]),

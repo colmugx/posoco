@@ -11,6 +11,7 @@ async test "tool_catalog/events_distinguish_commits_captures_and_cleanup_without
     detail="private-connection-detail",
   )
   let agent = Agent(
+    events=@agent.EventSystem(),
     exts=[
       @test_support.tk_ext(
         id="model",

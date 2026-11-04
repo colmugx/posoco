@@ -67,6 +67,7 @@ async test "t06a_business_error_event_matches_result" {
   let obs = @test_support.RecordingObserver()
   let store = @test_support.RecordingSessionPort()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", tools=[provider], sessions=[store], observers=[
@@ -146,6 +147,7 @@ async test "t06a_runtime_error_event_is_runtime_failure" {
   let obs = @test_support.RecordingObserver()
   let store = @test_support.RecordingSessionPort()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", tools=[provider], sessions=[store], observers=[
@@ -251,6 +253,7 @@ async test "t06b_collision_fails_composition" {
   let store = @test_support.RecordingSessionPort()
   let composition_result = Ok(
     Agent(
+      events=EventSystem(),
       exts=[
         @test_support.tk_ext(id="model", model=Some(model)),
         @test_support.tk_ext(id="io", tools=[p1, p2], sessions=[store]),
@@ -288,6 +291,7 @@ async test "t06b_missing_collision_provenance_is_actionable" {
   let store = @test_support.RecordingSessionPort()
   let composition_result = Ok(
     Agent(
+      events=EventSystem(),
       exts=[
         @test_support.tk_ext(id="model", model=Some(model)),
         @test_support.tk_ext(id="io", tools=[p1, p2], sessions=[store]),
@@ -339,6 +343,7 @@ async test "attachments_outcome_flows_to_result_event_and_transcript" {
   let obs = @test_support.RecordingObserver()
   let store = @test_support.RecordingSessionPort()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", tools=[provider], sessions=[store], observers=[

@@ -36,6 +36,7 @@ fn build_fake_runtime_agent(
   let fake = FakeRuntime(port_runtime)
   fake.abort_on_tool = abort_on_tool
   let agent = Agent::with_runtime(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", tools=[tools], sessions=[
@@ -135,6 +136,7 @@ async test "runtime seam/follow-up during turn drives a subsequent turn" {
   let store = @test_support.RecordingSessionPort()
   let observer = @test_support.RecordingObserver()
   let agent = Agent::with_runtime(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(
         id="model",
@@ -234,6 +236,7 @@ async test "runtime seam/publication applies at the next operation boundary" {
     ),
   ])
   let agent = Agent::with_runtime(
+    events=EventSystem(),
     exts=[@test_support.tk_ext(id="model", model=Some(model)), publisher],
     config=agent_config(max_tool_rounds=Some(10)),
     runtime=FakeRuntime(@runtime.PortRuntime(model~)),
@@ -290,6 +293,7 @@ async test "runtime seam/publication mid-operation preserves captured execution"
   let runtime = FakeRuntime(@runtime.PortRuntime(model~))
   runtime.on_first_execute = Some(() => publisher.publish(next))
   let agent = Agent::with_runtime(
+    events=EventSystem(),
     exts=[@test_support.tk_ext(id="model", model=Some(model)), publisher],
     config=agent_config(max_tool_rounds=Some(10)),
     runtime~,
@@ -329,6 +333,7 @@ async test "runtime seam/rejected publication retains the last valid group" {
     ),
   ])
   let agent = Agent::with_runtime(
+    events=EventSystem(),
     exts=[@test_support.tk_ext(id="model", model=Some(model)), publisher],
     config=agent_config(max_tool_rounds=Some(10)),
     runtime=FakeRuntime(@runtime.PortRuntime(model~)),

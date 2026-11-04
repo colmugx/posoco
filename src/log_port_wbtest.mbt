@@ -48,6 +48,7 @@ test "log/composition_is_optional_and_gated" {
   let log = @test_support.RecordingLogPort()
   ignore(
     Agent(
+      events=EventSystem(),
       exts=[
         @test_support.tk_ext(
           id="model",
@@ -93,6 +94,7 @@ test "log/composition_rejects_multiple_providers" {
   let b = @test_support.RecordingLogPort()
   try
     Agent(
+      events=EventSystem(),
       exts=[
         @test_support.tk_ext(
           id="model",

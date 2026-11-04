@@ -148,6 +148,7 @@ async test "core_shadow/no_store_records_committed_messages" {
     ]),
   )
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="tools", tools=[provider]),
@@ -197,6 +198,7 @@ async test "core_shadow/new_session_with_store_matches_persisted" {
   )
   let store = @test_support.RecordingSessionPort()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="tools", tools=[provider]),
@@ -237,6 +239,7 @@ async test "core_shadow/hydrates_existing_store_before_new_boundaries" {
     ),
   ])
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store]),
@@ -287,6 +290,7 @@ async test "core_shadow/store_failure_keeps_recorded_core" {
     ]),
   )
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="tools", tools=[provider]),
@@ -476,6 +480,7 @@ async test "core_shadow/fork_pins_safe_point_source_after_assistant_commit" {
     ]),
   )
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="tools", tools=[tools]),
@@ -483,7 +488,8 @@ async test "core_shadow/fork_pins_safe_point_source_after_assistant_commit" {
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
-  let turn = @async.with_task_group(async fn(group) {
+  let turn_cell : Ref[@types.TurnResult?] = Ref(None)
+  @async.with_task_group(async fn(group) {
     let running = group.spawn(() => {
       agent.run_turn(@test_support.tk_user_msg("go"), "fork-parent")
     })
@@ -507,8 +513,9 @@ async test "core_shadow/fork_pins_safe_point_source_after_assistant_commit" {
     guard enqueued is Ok(true) else {
       fail("fork enqueue failed: \{repr(enqueued)}")
     }
-    running.wait()
+    turn_cell.val = Some(running.wait())
   })
+  let turn = turn_cell.val.unwrap()
   assert_eq(turn.final_session_id, "fork-parent")
   let redirects = core_facts_redirects(observer.events())
   assert_eq(redirects.length(), 1)
@@ -573,6 +580,7 @@ async test "core_shadow/midturn_newthread_source_includes_tool_and_assistant" {
     ]),
   )
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="tools", tools=[tools]),
@@ -580,7 +588,8 @@ async test "core_shadow/midturn_newthread_source_includes_tool_and_assistant" {
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
-  let turn = @async.with_task_group(async fn(group) {
+  let turn_cell : Ref[@types.TurnResult?] = Ref(None)
+  @async.with_task_group(async fn(group) {
     let running = group.spawn(() => {
       agent.run_turn(@test_support.tk_user_msg("go"), "mid-parent")
     })
@@ -600,8 +609,9 @@ async test "core_shadow/midturn_newthread_source_includes_tool_and_assistant" {
     guard enqueued is Ok(true) else {
       fail("mid-turn compact enqueue failed: \{repr(enqueued)}")
     }
-    running.wait()
+    turn_cell.val = Some(running.wait())
   })
+  let turn = turn_cell.val.unwrap()
   let child_sid = turn.final_session_id
   assert_true(child_sid.has_prefix("mid-parent_compact_"))
   assert_true(core_facts_readable(agent, child_sid))
@@ -654,6 +664,7 @@ async test "core_shadow/idle_newthread_source_and_summary_stay_separate" {
     metadata: Map::from_array([]),
   })
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store]),
@@ -734,6 +745,7 @@ async test "core_shadow/compact_source_frozen_before_model_mutation" {
     metadata: Map::from_array([]),
   })
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store]),
@@ -780,6 +792,7 @@ async test "core_shadow/hook_rewrite_mirrors_terminal_transcript" {
   let store = @test_support.RecordingSessionPort()
   let hook = ShadowRewriteHook::{ }
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store], hooks=[hook]),
@@ -821,6 +834,7 @@ async test "core_shadow/terminal_mirror_survives_store_save_failure" {
   })
   store.fail_save("save-fail")
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store]),
@@ -872,6 +886,7 @@ async test "core_shadow/hook_rewrite_fork_pins_committed_source" {
   )
   let hook = ShadowRewriteHook::{ }
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="tools", tools=[tools]),
@@ -881,7 +896,8 @@ async test "core_shadow/hook_rewrite_fork_pins_committed_source" {
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
-  let fork_turn = @async.with_task_group(async fn(group) {
+  let fork_turn_cell : Ref[@types.TurnResult?] = Ref(None)
+  @async.with_task_group(async fn(group) {
     let running = group.spawn(() => {
       agent.run_turn(@test_support.tk_user_msg("go"), "hook-fork-parent")
     })
@@ -905,8 +921,9 @@ async test "core_shadow/hook_rewrite_fork_pins_committed_source" {
     guard enqueued is Ok(true) else {
       fail("fork enqueue failed: \{repr(enqueued)}")
     }
-    running.wait()
+    fork_turn_cell.val = Some(running.wait())
   })
+  let fork_turn = fork_turn_cell.val.unwrap()
   assert_eq(fork_turn.final_session_id, "hook-fork-parent")
   let redirects = core_facts_redirects(observer.events())
   assert_eq(redirects.length(), 1)
@@ -934,6 +951,7 @@ async test "core_shadow/dispatch_failure_keeps_synced_hook_rewrite_boundary" {
   ])
   let hook = ShadowRewriteHook::{ }
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store], hooks=[hook]),
@@ -967,6 +985,7 @@ async test "core_shadow/failed_terminal_is_synced" {
   ])
   let store = @test_support.RecordingSessionPort()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store]),
@@ -1015,6 +1034,7 @@ async test "core_shadow/standalone_newthread_model_failure_keeps_parent_current"
     metadata: Map::from_array([]),
   })
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store]),
@@ -1100,6 +1120,7 @@ async test "core_shadow/standalone_newthread_cancel_keeps_parent_current" {
     metadata: Map::from_array([]),
   })
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store]),
@@ -1166,6 +1187,7 @@ async test "core_shadow/missing_provenance_survives_real_next_turn" {
     ]),
   )
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="tools", tools=[tools]),
@@ -1182,44 +1204,42 @@ async test "core_shadow/missing_provenance_survives_real_next_turn" {
     Err(_) => ()
     Ok(_) => fail("expected the first store checkpoint to fail")
   }
-  let fork_turn : Result[@types.TurnResult, @error.AgentError] = @async.with_task_group(async fn(
-      group,
-    ) {
-      let turn_body : async () -> Result[@types.TurnResult, @error.AgentError] = () => {
-        let r : Result[@types.TurnResult, @error.AgentError] = Ok(
-          agent.run_turn(
-            @test_support.tk_user_msg("fork"),
-            "missing-real-parent",
-          ),
-        ) catch {
-          error => Err(error)
-        }
-        r
-      }
-      let running = group.spawn(turn_body)
-      let enqueued : Result[Bool, Error] = Ok(
-        @async.with_timeout(60, async fn() -> Bool {
-          defer {
-            model.released = true
-          }
-          while !model.entered {
-            @async.pause()
-          }
-          shadow_invoke_command(
-            agent,
-            "fork-here",
-            Json::object(Map::from_array([("index", Json::number(1.0))])),
-          )
-        }),
+  let fork_turn_cell : Ref[Result[@types.TurnResult, @error.AgentError]?] = Ref(
+    None,
+  )
+  @async.with_task_group(async fn(group) {
+    let turn_body : async () -> Result[@types.TurnResult, @error.AgentError] = () => {
+      let r : Result[@types.TurnResult, @error.AgentError] = Ok(
+        agent.run_turn(@test_support.tk_user_msg("fork"), "missing-real-parent"),
       ) catch {
         error => Err(error)
       }
-      guard enqueued is Ok(true) else {
-        fail("fork enqueue failed: \{repr(enqueued)}")
-      }
-      running.wait()
-    },
-  )
+      r
+    }
+    let running = group.spawn(turn_body)
+    let enqueued : Result[Bool, Error] = Ok(
+      @async.with_timeout(60, async fn() -> Bool {
+        defer {
+          model.released = true
+        }
+        while !model.entered {
+          @async.pause()
+        }
+        shadow_invoke_command(
+          agent,
+          "fork-here",
+          Json::object(Map::from_array([("index", Json::number(1.0))])),
+        )
+      }),
+    ) catch {
+      error => Err(error)
+    }
+    guard enqueued is Ok(true) else {
+      fail("fork enqueue failed: \{repr(enqueued)}")
+    }
+    fork_turn_cell.val = Some(running.wait())
+  })
+  let fork_turn = fork_turn_cell.val.unwrap()
   guard fork_turn is Ok(_) else {
     fail("fork must continue from the retained core, not a stale store")
   }
@@ -1276,6 +1296,7 @@ async test "core_shadow/replace_compact_saves_model_body_exactly" {
     metadata: Map::from_array([]),
   })
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store]),
@@ -1325,6 +1346,7 @@ async test "core_authority/store_seeded_once_then_core" {
     metadata: Map::from_array([]),
   })
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store]),
@@ -1352,6 +1374,7 @@ async test "core_authority/no_store_multiturn_keeps_core_history" {
     ),
   ])
   let agent = Agent(
+    events=EventSystem(),
     exts=[@test_support.tk_ext(id="model", model=Some(model))],
     config=agent_config(max_tool_rounds=Some(10)),
   )
@@ -1383,6 +1406,7 @@ async test "core_authority/external_store_change_does_not_rewind_core" {
     metadata: Map::from_array([]),
   })
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store]),
@@ -1411,6 +1435,7 @@ async test "core_authority/runtime_missing_provenance_is_not_washed_by_store" {
   let store = @test_support.RecordingSessionPort()
   let observer = @test_support.RecordingObserver()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store], observers=[observer]),

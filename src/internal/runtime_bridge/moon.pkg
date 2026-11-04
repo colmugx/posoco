@@ -4,5 +4,13 @@ import {
   "colmugx/posoco/kernel",
   "colmugx/posoco/port",
   "colmugx/posoco/error",
-  "moonbitlang/async",
+  "moonbitlang/core/async",
 }
+
+import {
+  "colmugx/posoco/types",
+} for "wbtest"
+
+options(
+  "allow-experimental-packages": [ "moonbitlang/core/async" ],
+)

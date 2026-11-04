@@ -104,6 +104,8 @@ async fn[X] AgentRuntime::execute_operation(
   // body() returns (before any await), so a caller cancellation landing at the
   // outer task-group boundary cannot discard the body's own typed reason.
   let body_outcome : Ref[Result[X, @error.AgentError]?] = Ref(None)
+  // `with_task_group` is `Unit`-valued: the joined outcome crosses in a cell.
+  let joined_outcome : Ref[Result[X, @error.AgentError]?] = Ref(None)
   let outcome : Result[X, @error.AgentError]? = @async.handle_cancellation(async fn() {
     @async.with_task_group(async fn(group) {
       let worker = group.spawn(async fn() -> Result[X, @error.AgentError] {
@@ -174,7 +176,7 @@ async fn[X] AgentRuntime::execute_operation(
         result
       })
       self.register_operation_execution(admission, worker)
-      worker.wait() catch {
+      let joined : Result[X, @error.AgentError] = worker.wait() catch {
         error =>
           if error is @async.WaitedTaskAlreadyCancelled {
             // The worker already performed its protected cleanup on unwind
@@ -200,19 +202,29 @@ async fn[X] AgentRuntime::execute_operation(
             )
           }
       }
+      joined_outcome.val = Some(joined)
     }) catch {
       // Ordinary group failures become the contextualized runtime error. A
       // caller cancellation bypasses this catch too, but the surrounding
       // handle_cancellation intercepts it only after the group has fully
       // joined, mapping it to the typed Cancelled outcome below.
       error =>
-        Err(
-          @error.AgentError::Runtime(
-            @error.RuntimeError::InvocationFailed(
-              "operation group: " +
-              @diagnostic.safe_error_label(error.to_string()),
+        joined_outcome.val = Some(
+          Err(
+            @error.AgentError::Runtime(
+              @error.RuntimeError::InvocationFailed(
+                "operation group: " +
+                @diagnostic.safe_error_label(error.to_string()),
+              ),
             ),
           ),
+        )
+    }
+    match joined_outcome.val {
+      Some(joined) => joined
+      None =>
+        raise @error.AgentError::Runtime(
+          @error.RuntimeError::InvocationFailed("operation group: no outcome"),
         )
     }
   }) catch {

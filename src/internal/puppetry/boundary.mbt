@@ -497,7 +497,11 @@ fn Puppet::finalize_run(
       Accepted(run_id~, turn_id~)
     }
     ReleasedNoCommit(result~) => {
+      // The run ended without a terminal outcome (fork, new-thread compact).
+      // The mailbox is quiescent again, so `wait_idle` must not block on the
+      // `Active` status `bind_run` installed.
       self.release_run_binding()
+      self.mailbox.set_quiescent(Idle)
       result
     }
   }

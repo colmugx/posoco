@@ -26,6 +26,7 @@ async test "t05_metadata_roundtrip_preserves_unknown_keys" {
   ])
   store.seed("s1", { messages: [], metadata: initial_meta, })
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store]),
@@ -56,6 +57,7 @@ async test "t05_save_failure_returns_session_error_no_turn_completed" {
   store.fail_save("doomed")
   let obs = @test_support.RecordingObserver()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store], observers=[obs]),
@@ -97,6 +99,7 @@ async test "t05_failed_turn_persists_progress_without_aliasing" {
     metadata: Map::from_array([]),
   })
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store]),
@@ -138,6 +141,7 @@ async test "t05_session_load_error_has_context_without_metadata" {
   let store = @test_support.RecordingSessionPort()
   store.fail_load("load-target", Load("backend unavailable"))
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store]),
@@ -169,6 +173,7 @@ async test "t05_session_error_uses_bounded_single_line_id" {
   let store = @test_support.RecordingSessionPort()
   store.fail_load(raw_id, Load("backend unavailable"))
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store]),
@@ -206,6 +211,7 @@ async test "t05_session_save_cause_cannot_reexpand_raw_id" {
   // both the contextual id label and the bounded cause label.
   store.fail_save(raw_id)
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store]),
@@ -466,6 +472,7 @@ async test "t05_each_final_save_store_gets_independent_deep_snapshot" {
     ),
   ])
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[mutating_store, recording_store]),
@@ -556,6 +563,7 @@ async test "t05_tool_ports_hooks_and_observers_get_json_snapshots" {
   let recording_observer = @test_support.RecordingObserver()
   let store = @test_support.RecordingSessionPort()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(
@@ -615,6 +623,7 @@ async test "automatic title comes from admitted human input before memory inject
   ])
   let store = @test_support.RecordingSessionPort()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="memory", memory=[memory]),
@@ -707,6 +716,7 @@ async test "t05_turn_result_tool_outcomes_do_not_alias_held_transcript_or_next_i
   }
   let store = @test_support.RecordingSessionPort()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", tools=[provider], sessions=[store]),

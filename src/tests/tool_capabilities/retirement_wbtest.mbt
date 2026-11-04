@@ -7,6 +7,7 @@ async test "tool_retire/failed_cleanup_preserves_the_committed_revision_and_retr
   )
   let probe = RetireProbe::RetireProbe(failures_left=1)
   let agent = Agent(
+    events=@agent.EventSystem(),
     exts=[
       @test_support.tk_ext(
         id="model",
@@ -50,6 +51,7 @@ async test "tool_retire/shutdown_retries_failed_cleanup_without_repeating_succes
   )
   let probe = RetireProbe::RetireProbe(failures_left=1)
   let agent = Agent(
+    events=@agent.EventSystem(),
     exts=[
       @test_support.tk_ext(
         id="model",
@@ -85,6 +87,7 @@ async test "tool_retire/shutdown_does_not_succeed_while_a_retire_is_in_progress"
     Map([]),
   )
   let agent = Agent(
+    events=@agent.EventSystem(),
     exts=[
       @test_support.tk_ext(
         id="model",
@@ -98,7 +101,7 @@ async test "tool_retire/shutdown_does_not_succeed_while_a_retire_is_in_progress"
   )
   let entered = Ref(false)
   let released = Ref(false)
-  let signal = @async.CondVar::Cond()
+  let signal = @cond_var.Cond::Cond()
   ignore(
     publisher
     .capability()
@@ -137,6 +140,7 @@ async test "tool_retire/another_owners_cleanup_failure_does_not_fail_a_publicati
   )
   let probe = RetireProbe::RetireProbe(failures_left=3)
   let agent = Agent(
+    events=@agent.EventSystem(),
     exts=[
       @test_support.tk_ext(
         id="model",
@@ -182,6 +186,7 @@ async test "tool_retire/revoking_an_old_owner_does_not_revoke_a_reused_tool_name
   let probe = RetireProbe::RetireProbe(failures_left=100)
   let hook = ConsentWaitHook::ConsentWaitHook()
   let agent = Agent(
+    events=@agent.EventSystem(),
     exts=[
       @test_support.tk_ext(
         id="model",

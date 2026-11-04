@@ -42,6 +42,7 @@ priv struct AggregatedPorts {
 /// Order follows extension array order; collisions fail fast.
 fn aggregate_extensions(
   exts : Array[&@port.Extension],
+  events~ : @event_runtime.EventRuntime,
 ) -> AggregatedPorts raise @error.CompositionError {
   if exts.length() == 0 {
     raise EmptyManifests
@@ -184,7 +185,12 @@ fn aggregate_extensions(
     1 => Some(logs[0])
     _ => raise MultipleLogs(manifests=log_manifests)
   }
-  let events = @event_runtime.EventRuntime(observers)
+  match events.register_observers(observers) {
+    Ok(_) => ()
+    Err(Closed) => raise EventSystemClosed
+    Err(error) =>
+      abort("unexpected observer registration error: \{repr(error)}")
+  }
   // UI cardinality: 0 → NoopUiPort (unwrapped: a UI-less composition never
   // waits for a user, so no request events), 1 → wrapped passthrough,
   // 2+ → wrapped CompositeUiPort.

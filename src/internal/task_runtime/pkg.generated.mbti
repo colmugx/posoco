@@ -6,7 +6,7 @@ import {
   "colmugx/posoco/internal/event_runtime",
   "colmugx/posoco/kernel",
   "colmugx/posoco/port",
-  "moonbitlang/async",
+  "moonbitlang/core/async",
   "moonbitlang/core/json",
 }
 
@@ -28,7 +28,7 @@ pub struct TaskRuntime {
   // private fields
 }
 pub fn TaskRuntime::TaskRuntime(foreground_settle_timeout_ms? : Int32, shutdown_settle_timeout_ms? : Int32) -> Self
-pub fn[G] TaskRuntime::activate(Self, @async.TaskGroup[G]) -> Unit raise @error.AgentError
+pub fn TaskRuntime::activate(Self, @async.TaskGroup) -> Unit raise @error.AgentError
 pub fn TaskRuntime::begin_operation(Self, String, @kernel.RunId, @kernel.TurnId) -> Unit raise @error.AgentError
 pub fn TaskRuntime::cancel_foreground_for_run(Self, @kernel.RunId) -> Unit
 pub fn TaskRuntime::capability(Self, String) -> @port.Tasks

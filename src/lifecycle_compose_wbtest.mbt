@@ -71,6 +71,7 @@ test "compose/view_gated_by_declared_requires" {
   let model_only = @test_support.RecordingLifecycle(id="model_only", log~)
   ignore(
     Agent(
+      events=EventSystem(),
       exts=[
         scripted_model_ext([
           @test_support.ScriptedModelStep::Respond(
@@ -108,6 +109,7 @@ test "compose/view_gated_by_declared_requires" {
 test "compose/extension_compose_failure_is_loud" {
   try
     Agent(
+      events=EventSystem(),
       exts=[
         scripted_model_ext([
           @test_support.ScriptedModelStep::Respond(
@@ -148,6 +150,7 @@ async test "compose/start_once_before_first_turn_started" {
     ),
   ])
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(

@@ -206,6 +206,7 @@ pub(all) struct ExecuteToolPayload {
 pub fn ExecuteToolPayload::equal(Self, Self) -> Bool
 pub fn ExecuteToolPayload::not_equal(Self, Self) -> Bool
 pub fn ExecuteToolPayload::to_repr(Self) -> @debug.Repr
+pub fn ExecuteToolPayload::tool_call(Self) -> @kernel.ToolCall
 
 #derive(Eq, @debug.Debug)
 pub(all) struct ExecutionPlan {
@@ -539,6 +540,7 @@ pub(all) struct ToolCompletedPayload {
 pub fn ToolCompletedPayload::equal(Self, Self) -> Bool
 pub fn ToolCompletedPayload::not_equal(Self, Self) -> Bool
 pub fn ToolCompletedPayload::to_repr(Self) -> @debug.Repr
+pub fn ToolCompletedPayload::tool_call(Self) -> @kernel.ToolCall
 
 pub(all) struct ToolExecutionScope {
   invocation : @kernel.InvocationScope
@@ -563,6 +565,7 @@ pub(all) struct ToolFailedPayload {
 pub fn ToolFailedPayload::equal(Self, Self) -> Bool
 pub fn ToolFailedPayload::not_equal(Self, Self) -> Bool
 pub fn ToolFailedPayload::to_repr(Self) -> @debug.Repr
+pub fn ToolFailedPayload::tool_call(Self) -> @kernel.ToolCall
 
 pub struct ToolLaunchGate {
   // private fields

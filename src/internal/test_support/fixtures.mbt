@@ -300,6 +300,7 @@ pub impl @port.MemoryPort for ScriptedMemoryPort with fn delete(
 /// let tools = RecordingToolProvider(..)
 /// let store = RecordingSessionPort()
 /// let observer = RecordingObserver()
+/// let system = @posoco.EventSystem()
 /// let agent = Agent(
 ///   exts=[
 ///     tk_ext("model", model=Some(model)),
@@ -307,6 +308,7 @@ pub impl @port.MemoryPort for ScriptedMemoryPort with fn delete(
 ///     tk_ext("io", sessions=[store], observers=[observer]),
 ///   ],
 ///   config=@posoco.agent_config(max_tool_rounds=Some(10)),
+///   events=system,
 /// )
 /// ```
 pub fn tk_ext(

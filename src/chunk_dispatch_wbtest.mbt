@@ -122,6 +122,7 @@ async test "p2 concurrent run_turn rejects before side effects and preserves fir
   let release : @aqueue.Queue[Int32] = Queue(kind=Unbounded)
   let gate = TurnLoopGate::{ entered, release, }
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", hooks=[gate], sessions=[store], observers=[
@@ -232,6 +233,7 @@ async test "p2 cancelled turn releases Agent guard for the next turn" {
   let release : @aqueue.Queue[Int32] = Queue(kind=Unbounded)
   let gate = TurnLoopGate::{ entered, release, }
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", hooks=[gate], sessions=[store]),
@@ -293,6 +295,7 @@ async test "chunk dispatch: streaming turn delivers chunks in order before TurnC
   let store = @test_support.RecordingSessionPort()
   let observer = @test_support.RecordingObserver()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store], observers=[observer]),
@@ -350,6 +353,7 @@ async test "chunk dispatch: overflow drops oldest and emits StreamChunksDropped"
   let store = @test_support.RecordingSessionPort()
   let observer = @test_support.RecordingObserver()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store], observers=[observer]),
@@ -468,6 +472,7 @@ async test "chunk dispatch: flush drains chunks before TurnFailed" {
   let store = @test_support.RecordingSessionPort()
   let observer = @test_support.RecordingObserver()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="tools", tools=[tool]),
@@ -517,6 +522,7 @@ async test "chunk dispatch: adjacent identical tokens pass through 1:1 without d
   let store = @test_support.RecordingSessionPort()
   let observer = @test_support.RecordingObserver()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store], observers=[observer]),

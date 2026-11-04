@@ -93,13 +93,13 @@ pub impl @kernel_exec.HostRuntime for HookRewriteHost with fn execute_tool(
   arguments : Json,
   _scope,
 ) -> @kernel.ToolOutcome {
-  let recorded_arguments = snapshot_json(arguments)
+  let recorded_arguments = @message_snapshot.snapshot_json(arguments)
   if self.mutate_arguments {
     match arguments {
       Object(fields) => fields["path"] = Json::string("/provider-mutated")
       _ => ()
     }
-    self.mutated_arguments.push(snapshot_json(arguments))
+    self.mutated_arguments.push(@message_snapshot.snapshot_json(arguments))
   }
   self.executions.push(
     (

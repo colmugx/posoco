@@ -2,7 +2,7 @@
 async test "tool_cleanup/malformed_runtime_receipts_do_not_release_unconfirmed_executions" {
   for shape in ["missing", "duplicate", "foreign"] {
     let entered = Ref(false)
-    let signal = @async.CondVar::Cond()
+    let signal = @cond_var.Cond::Cond()
     let facet = CancellationProbe::{ disposition: Stopped, ids: [], }
     let replies : Array[@kernel.InvocationResult] = []
     let observer = @test_support.RecordingObserver()
@@ -41,7 +41,7 @@ async test "tool_cleanup/malformed_runtime_receipts_do_not_release_unconfirmed_e
             (ctx.register_cancel)(facet)
             entered.val = true
             signal.broadcast()
-            let never = @async.CondVar::Cond()
+            let never = @cond_var.Cond::Cond()
             never.wait()
             @test_support.tk_ok_result("unreachable")
           },
@@ -62,6 +62,7 @@ async test "tool_cleanup/malformed_runtime_receipts_do_not_release_unconfirmed_e
           }
         })
         let agent = Agent::with_runtime(
+          events=@agent.EventSystem(),
           exts=[
             @test_support.tk_ext(id="model", model=Some(model), observers=[
               observer,
@@ -151,7 +152,7 @@ impl @port.ToolCancellable for FailingToolCancellation with fn cancel(
 
   self.calls += 1
   if self.hanging {
-    let never = @async.CondVar::Cond()
+    let never = @cond_var.Cond::Cond()
     never.wait()
   }
   if self.failing {
@@ -169,7 +170,7 @@ async test "tool_cleanup/primary_failure_and_cleanup_error_are_both_visible_and_
       calls: 0,
     }
     let entered = Ref(false)
-    let signal = @async.CondVar::Cond()
+    let signal = @cond_var.Cond::Cond()
     let observer = @test_support.RecordingObserver()
     @async.with_timeout(12_000, async fn() {
       @async.with_task_group(async fn(group) {
@@ -203,7 +204,7 @@ async test "tool_cleanup/primary_failure_and_cleanup_error_are_both_visible_and_
             (ctx.register_cancel)(facet)
             entered.val = true
             signal.broadcast()
-            let never = @async.CondVar::Cond()
+            let never = @cond_var.Cond::Cond()
             never.wait()
             @test_support.tk_ok_result("unreachable")
           },
@@ -214,6 +215,7 @@ async test "tool_cleanup/primary_failure_and_cleanup_error_are_both_visible_and_
           ),
         ])
         let agent = Agent(
+          events=@agent.EventSystem(),
           exts=[
             @test_support.tk_ext(id="model", model=Some(model), observers=[
               observer,
@@ -290,7 +292,7 @@ impl @port.PipelineHook for FailingChildHook with fn before_tool(self, call) -> 
 async test "tool_cleanup/child_hook_defer_and_error_end_waiters_without_starting_the_child" {
   for defer_call in [false, true] {
     let replies : Array[@kernel.InvocationResult] = []
-    let signal = @async.CondVar::Cond()
+    let signal = @cond_var.Cond::Cond()
     let parent_cancel = CancellationProbe::{ disposition: Stopped, ids: [], }
     let child = @test_support.RecordingToolProvider(
       [{ ..@test_support.tk_tool_def("child", "child"), exposure: Deferred, }],
@@ -322,12 +324,13 @@ async test "tool_cleanup/child_hook_defer_and_error_end_waiters_without_starting
               replies.push(ctx.invoke("child", {}))
               signal.broadcast()
             })
-            let never = @async.CondVar::Cond()
+            let never = @cond_var.Cond::Cond()
             never.wait()
             @test_support.tk_ok_result("unreachable")
           },
         }
         let agent = Agent(
+          events=@agent.EventSystem(),
           exts=[
             @test_support.tk_ext(
               id="model",
@@ -392,7 +395,7 @@ async test "tool_cleanup/child_hook_defer_and_error_end_waiters_without_starting
 ///|
 async test "tool_cleanup/runtime_dispatch_failure_ends_waiters_and_retains_unknown_execution_until_acknowledged" {
   let replies : Array[@kernel.InvocationResult] = []
-  let signal = @async.CondVar::Cond()
+  let signal = @cond_var.Cond::Cond()
   let parent_cancel = CancellationProbe::{ disposition: Stopped, ids: [], }
   let child = @test_support.RecordingToolProvider(
     [{ ..@test_support.tk_tool_def("child", "child"), exposure: Deferred, }],
@@ -423,12 +426,13 @@ async test "tool_cleanup/runtime_dispatch_failure_ends_waiters_and_retains_unkno
             replies.push(ctx.invoke("child", {}))
             signal.broadcast()
           })
-          let never = @async.CondVar::Cond()
+          let never = @cond_var.Cond::Cond()
           never.wait()
           @test_support.tk_ok_result("unreachable")
         },
       }
       let agent = Agent::with_runtime(
+        events=@agent.EventSystem(),
         exts=[
           @test_support.tk_ext(id="model", model=Some(model), observers=[
             observer,

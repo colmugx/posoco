@@ -27,7 +27,7 @@ exhaustive; only the match on the open `Event` needs a wildcard.
 ///|
 test "an extension publishes and a host listens" {
   let seen : Array[String] = []
-  let runtime = @event_runtime.EventRuntime([])
+  let runtime = @event_runtime.EventRuntime()
   guard runtime.subscribe(fn(envelope) {
       match envelope.event {
         SprintMilestone(stage~, done~) =>
@@ -48,13 +48,16 @@ test "an extension publishes and a host listens" {
 
 `runtime.capability(owner)` is the value an extension receives from
 `CompositionView::events`; the concrete runtime belongs to the Agent.
+Composed `Observer`s are not passed to the constructor: attach them with
+`runtime.register_observers(observers)` in manifest order and handle the
+returned `Result`, which is `Err(Closed)` once the runtime is closed.
 
 ## Core publication stays reserved, shutdown stays loud
 
 ```mbt check
 ///|
 test "an extension capability cannot publish core and dies with the Agent" {
-  let runtime = @event_runtime.EventRuntime([])
+  let runtime = @event_runtime.EventRuntime()
   let publisher = runtime.capability("sprint-tools")
   guard publisher.publish(@events.Core(TurnStarted))
     is Err(@events.ReservedEvent) else {

@@ -12,6 +12,12 @@ pub(open) trait WakeupHost {
 let wakeup_tag_max_length : Int32 = 80
 
 ///|
+/// Pending-ticket cap per session. A session that reaches it is rejected with
+/// `PendingFull` rather than growing the ledger without bound; coalescing onto
+/// an already pending tag stays accepted.
+let wakeup_max_pending : Int32 = 64
+
+///|
 priv struct WakeupPending {
   ticket : @port.WakeupTicket
   extension_id : String
@@ -33,7 +39,7 @@ pub struct WakeupRuntime {
   priv mut active_generation : Int32
   priv mut next_ticket_seq : Int32
   priv mut next_operation_seq : Int32
-  priv wake : @async.CondVar
+  priv wake : @cond_var.Cond
   /// Monotonic state-change count, compared instead of trusting broadcast
   /// timing so a notification landing between a check and `wait` is lost
   /// only if this counter did not move.
@@ -60,7 +66,7 @@ pub fn WakeupRuntime::WakeupRuntime(
     next_ticket_seq: 0,
     next_operation_seq: 0,
     epoch: 0,
-    wake: @async.CondVar::Cond(),
+    wake: @cond_var.Cond::Cond(),
     events,
     order: [],
     by_key: Map::from_array([]),
@@ -237,6 +243,9 @@ fn WakeupRuntime::request(
       Ok(entry.ticket)
     }
     None => {
+      if session_map.length() >= wakeup_max_pending {
+        return Err(PendingFull(session~, limit=wakeup_max_pending))
+      }
       self.next_ticket_seq = self.next_ticket_seq + 1
       let ticket : @port.WakeupTicket = {
         id: "wakeup_ticket_\{self.next_ticket_seq}",
@@ -332,9 +341,9 @@ fn WakeupRuntime::take_next(
 }
 
 ///|
-pub fn[G] WakeupRuntime::start_pump(
+pub fn WakeupRuntime::start_pump(
   self : WakeupRuntime,
-  group : @async.TaskGroup[G],
+  group : @async.TaskGroup,
   host : &WakeupHost,
 ) -> Unit {
   group.spawn_bg(async fn() { self.pump_loop(host) })

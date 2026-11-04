@@ -14,6 +14,7 @@ async test "rate-limit resume replays persisted user without duplicating transcr
   ])
   let store = @test_support.RecordingSessionPort()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store]),
@@ -79,6 +80,7 @@ async test "rate-limit resume after tool progress appends continue" {
   )
   let store = @test_support.RecordingSessionPort()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", tools=[tools], sessions=[store]),
@@ -166,6 +168,7 @@ async test "rate-limit failure persists best-effort and reports save failure as 
   let store = SaveFailingStore::{ saves: 0, fail_from: 4, }
   let observer = @test_support.RecordingObserver()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="tools", tools=[tools]),

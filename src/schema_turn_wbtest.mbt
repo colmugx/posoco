@@ -56,6 +56,7 @@ async test "oneOf tool composes through Agent and executes conforming call" {
   let store = @test_support.RecordingSessionPort()
   let observer = @test_support.RecordingObserver()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", tools=[tools], sessions=[store], observers=[
@@ -88,6 +89,7 @@ async test "oneOf XOR violations are pre-pass rejected without execution" {
   let store = @test_support.RecordingSessionPort()
   let observer = @test_support.RecordingObserver()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", tools=[tools], sessions=[store], observers=[

@@ -23,6 +23,7 @@ async test "tool_invoke/child_result_returns_to_parent_without_another_model_tur
   let store = @test_support.RecordingSessionPort()
   let observer = @test_support.RecordingObserver()
   let agent = Agent(
+    events=@agent.EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model), sessions=[store], observers=[
         observer,
@@ -137,6 +138,7 @@ async test "tool_invoke/admission_denials_do_not_reach_the_child_provider" {
       ),
     ])
     let agent = Agent(
+      events=@agent.EventSystem(),
       exts=[@test_support.tk_ext(id="model", model=Some(model)), parent, child],
       config=@agent.agent_config(
         max_tool_rounds=@agent.agent_config(max_tool_rounds=Some(10)).max_tool_rounds,
@@ -182,6 +184,7 @@ async test "tool_invoke/recursion_uses_the_shared_call_budget_without_an_extra_m
     ),
   ])
   let agent = Agent(
+    events=@agent.EventSystem(),
     exts=[@test_support.tk_ext(id="model", model=Some(model)), recursive],
     config=@agent.agent_config(
       max_tool_rounds=@agent.agent_config(max_tool_rounds=Some(10)).max_tool_rounds,
@@ -226,6 +229,7 @@ async test "tool_invoke/a_saved_context_loses_discovery_and_invocation" {
     ),
   ])
   let agent = Agent(
+    events=@agent.EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       parent,
@@ -266,6 +270,7 @@ async test "tool_invoke/custom_runtime_forwards_mandatory_child_bindings" {
   ])
   let runtime = FakeRuntime(@runtime.PortRuntime(model~))
   let agent = Agent::with_runtime(
+    events=@agent.EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       InvokingTool::{ seen_tools: [], },
@@ -290,6 +295,7 @@ test "tool_invoke/duplicate_owner_cannot_silently_widen_its_child_scope" {
   let parent = InvokingTool::{ seen_tools: [], }
   try
     Agent(
+      events=@agent.EventSystem(),
       exts=[
         @test_support.tk_ext(
           id="model",
@@ -384,6 +390,7 @@ async test "tool_invoke/model_call_ids_cannot_collide_with_kernel_child_ids" {
   )
   let observer = @test_support.RecordingObserver()
   let agent = Agent(
+    events=@agent.EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model), observers=[observer]),
       InvokingTool::{ seen_tools: [], },

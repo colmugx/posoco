@@ -1,6 +1,6 @@
 ///|
 priv struct SubtreeStop {
-  signal : @async.CondVar
+  signal : @cond_var.Cond
   stopped : Ref[Bool]
   calls : Ref[Int32]
   confirms : Bool
@@ -47,7 +47,7 @@ impl @port.Extension for SubtreeOwner with fn manifest(self) {
 
 ///|
 async test "tool_lifecycle/hard_parent_cancels_cross_owner_child_not_parallel_root" {
-  let signal = @async.CondVar::Cond()
+  let signal = @cond_var.Cond::Cond()
   let child_entered = Ref(false)
   let other_entered = Ref(false)
   let parent_done = Ref(false)
@@ -144,6 +144,7 @@ async test "tool_lifecycle/hard_parent_cancels_cross_owner_child_not_parallel_ro
   }
   let publisher = ManualPublisher::new()
   let agent = Agent(
+    events=@agent.EventSystem(),
     exts=[
       @test_support.tk_ext(
         id="model",
@@ -192,7 +193,7 @@ async test "tool_lifecycle/hard_parent_cancels_cross_owner_child_not_parallel_ro
 
 ///|
 async test "tool_lifecycle/hard_parent_blocks_queued_children_and_new_invocations" {
-  let signal = @async.CondVar::Cond()
+  let signal = @cond_var.Cond::Cond()
   let first_started = Ref(false)
   let second_approved = Ref(false)
   let forbidden_starts = Ref(0)
@@ -254,6 +255,7 @@ async test "tool_lifecycle/hard_parent_blocks_queued_children_and_new_invocation
   }
   let publisher = ManualPublisher::new()
   let agent = Agent(
+    events=@agent.EventSystem(),
     exts=[
       @test_support.tk_ext(
         id="model",
@@ -305,7 +307,7 @@ async test "tool_lifecycle/hard_parent_ends_child_confirmation_wait_without_ente
   let hook = WaitingChildHook::{
     waiting: Ref(false),
     exited: Ref(false),
-    signal: @async.CondVar::Cond(),
+    signal: @cond_var.Cond::Cond(),
   }
   let replies : Array[@kernel.InvocationResult] = []
   let parent = InvocationFixture::{
@@ -325,6 +327,7 @@ async test "tool_lifecycle/hard_parent_ends_child_confirmation_wait_without_ente
   )
   let publisher = ManualPublisher::new()
   let agent = Agent(
+    events=@agent.EventSystem(),
     exts=[
       @test_support.tk_ext(
         id="model",
@@ -405,6 +408,7 @@ async test "tool_lifecycle/hard_parent_blocks_static_child_after_runtime_await" 
   let runtime = AwaitingRuntime::AwaitingRuntime(@runtime.PortRuntime(model~))
   let observer = @test_support.RecordingObserver()
   let agent = Agent::with_runtime(
+    events=@agent.EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model), observers=[observer]),
       SubtreeOwner::{ publisher, },

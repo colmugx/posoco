@@ -35,6 +35,7 @@ fn wakeup_capture_agent(
   observer : SignalObserver,
 ) -> Agent raise @error.CompositionError {
   Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store], observers=[observer]),

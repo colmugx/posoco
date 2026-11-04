@@ -64,6 +64,39 @@ pub extend ExecuteToolPayload with Eq::{not_equal, equal}
 pub extend ExecuteToolPayload with Debug::{to_repr}
 
 ///|
+/// The one tool-call projection for every payload carrying `call_id` /
+/// `tool_name` / `arguments`, so the scheduler, hooks and events all report the
+/// same call shape.
+fn tool_call_projection(
+  call_id : @kernel.CallId,
+  tool_name : @kernel.ToolName,
+  arguments : Json,
+) -> @kernel.ToolCall {
+  { call_id, name: tool_name, arguments, }
+}
+
+///|
+pub fn ExecuteToolPayload::tool_call(
+  self : ExecuteToolPayload,
+) -> @kernel.ToolCall {
+  tool_call_projection(self.call_id, self.tool_name, self.arguments)
+}
+
+///|
+pub fn ToolCompletedPayload::tool_call(
+  self : ToolCompletedPayload,
+) -> @kernel.ToolCall {
+  tool_call_projection(self.call_id, self.tool_name, self.arguments)
+}
+
+///|
+pub fn ToolFailedPayload::tool_call(
+  self : ToolFailedPayload,
+) -> @kernel.ToolCall {
+  tool_call_projection(self.call_id, self.tool_name, self.arguments)
+}
+
+///|
 /// Payload for `Effect::CancelOutstanding`. Lists the effect ids the reducer
 /// wants the executor to stop; the executor records a `CancelDisposition`
 /// per id (fake executors report `Propagated`; a real adapter may report

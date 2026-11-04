@@ -13,12 +13,7 @@ fn scheduled_tool_effect_waves(
   let calls : Array[ToolCall] = []
   for effect in pending {
     match effect {
-      ExecuteTool(payload~, ..) =>
-        calls.push({
-          call_id: payload.call_id,
-          name: payload.tool_name,
-          arguments: payload.arguments,
-        })
+      ExecuteTool(payload~, ..) => calls.push(payload.tool_call())
       _ =>
         raise ReducerInvariantViolation(
           category=IllegalPhase(

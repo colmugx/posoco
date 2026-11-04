@@ -173,6 +173,7 @@ async test "newthread/fork_persists_sibling_with_lineage_and_emits_redirect" {
     ]),
   )
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="tools", tools=[tools]),
@@ -315,6 +316,7 @@ async test "newthread/compact_newthread_persists_sibling_with_lineage_and_emits_
   })
   let observer = @test_support.RecordingObserver()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store], observers=[observer]),
@@ -389,6 +391,7 @@ async test "newthread/midturn_compact_newthread_reaches_complete_compact_turn" {
     ]),
   )
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="tools", tools=[tools]),
@@ -396,7 +399,8 @@ async test "newthread/midturn_compact_newthread_reaches_complete_compact_turn" {
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
-  let result = @async.with_task_group(async fn(group) {
+  let result_cell : Ref[@types.TurnResult?] = Ref(None)
+  @async.with_task_group(async fn(group) {
     let turn = group.spawn(() => {
       agent.run_turn(@test_support.tk_user_msg("go"), "m1")
     })
@@ -430,8 +434,9 @@ async test "newthread/midturn_compact_newthread_reaches_complete_compact_turn" {
     guard enqueued is Ok(true) else {
       fail("mid-run compact enqueue failed: \{repr(enqueued)}")
     }
-    turn.wait()
+    result_cell.val = Some(turn.wait())
   })
+  let result = result_cell.val.unwrap()
   // First minted compact command id is `compact_1`, so the mid-run sibling
   // sid is deterministic: session + "_compact_" + command id.
   guard result.final_session_id == "m1_compact_compact_1" else {
@@ -514,6 +519,7 @@ async test "newthread/failed_output_recovers_and_old_terminal_stays" {
   }
   let observer = @test_support.RecordingObserver()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store], observers=[observer]),
@@ -619,6 +625,7 @@ async test "newthread/fork_save_failure_recovers_pending_before_next_turn" {
     ]),
   )
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="tools", tools=[tools]),
@@ -825,6 +832,7 @@ async test "newthread/partial_output_retry_repeats_store_without_exactly_once" {
   let second = @test_support.RecordingSessionPort()
   let observer = @test_support.RecordingObserver()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[first, second], observers=[
@@ -951,6 +959,7 @@ async test "newthread/all_stores_persist_before_redirect_precedes_terminal_event
     }),
   ])
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store_a, store_b], observers=[
@@ -1041,6 +1050,7 @@ async test "newthread/failed_output_gate_blocks_then_recovers_before_body" {
   store.fail_save(child_sid)
   let observer = @test_support.RecordingObserver()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store], observers=[observer]),
@@ -1116,6 +1126,7 @@ async test "newthread/child_fact_failure_blocks_all_output" {
   })
   let observer = @test_support.RecordingObserver()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store], observers=[observer]),
@@ -1183,6 +1194,7 @@ async test "newthread/recovery_preserves_parent_and_original_scope" {
   store.fail_save(child_sid)
   let observer = ScopedRedirectObserver::{ redirects: [], }
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store], observers=[observer]),
@@ -1256,7 +1268,7 @@ priv struct CancelGateStore {
   child_sid : String
   mut armed : Bool
   mut entered : Bool
-  gate : @async.CondVar
+  gate : @cond_var.Cond
 }
 
 ///|
@@ -1305,7 +1317,7 @@ async test "newthread/cancel_after_core_fact_keeps_pending_for_recovery" {
     child_sid,
     armed: true,
     entered: false,
-    gate: @async.CondVar::Cond(),
+    gate: @cond_var.Cond::Cond(),
   }
   store.inner.seed("cancel-parent", {
     messages: [@test_support.tk_user_msg("old")],
@@ -1313,6 +1325,7 @@ async test "newthread/cancel_after_core_fact_keeps_pending_for_recovery" {
   })
   let observer = @test_support.RecordingObserver()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store], observers=[observer]),

@@ -76,7 +76,11 @@ async test "events public facade: extension registers, publishes and listens wit
     subscription: Ref(None),
     received: [],
   }
-  let agent = @posoco.Agent(exts=[extension], config=@posoco.agent_config())
+  let agent = @posoco.Agent(
+    events=@posoco.EventSystem(),
+    exts=[extension],
+    config=@posoco.agent_config(),
+  )
   assert_eq(extension.received, [])
   let host_received : Array[Int32] = []
   guard agent.subscribe_events(envelope => {
@@ -111,7 +115,11 @@ async test "events public facade: closed Agent operations report typed errors be
     subscription: Ref(None),
     received: [],
   }
-  let agent = @posoco.Agent(exts=[extension], config=@posoco.agent_config())
+  let agent = @posoco.Agent(
+    events=@posoco.EventSystem(),
+    exts=[extension],
+    config=@posoco.agent_config(),
+  )
   agent.shutdown()
   for operation in ["turn", "compact", "resume"] {
     let result : Result[Unit, @posoco.AgentError] = Ok(

@@ -134,6 +134,7 @@ async test "b10_agent_reuses_one_puppet_across_turns" {
   let store = MockSessionPort::{ store: Map::from_array([]), }
   let observer = MockObserver::{ events: [], }
   let agent = @posoco.Agent(
+    events=@posoco.EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", tools=[empty_tools()], sessions=[store], observers=[
@@ -162,6 +163,7 @@ async test "b11_agent_runs_ephemerally_without_session_store" {
     index: 0,
   }
   let agent = @posoco.Agent(
+    events=@posoco.EventSystem(),
     exts=[@test_support.tk_ext(id="model", model=Some(model))],
     config=make_config(),
   )

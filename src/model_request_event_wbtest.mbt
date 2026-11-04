@@ -32,6 +32,7 @@ async test "model_request_started/brackets_every_step_before_chunks" {
   )
   let observer = @test_support.RecordingObserver()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(

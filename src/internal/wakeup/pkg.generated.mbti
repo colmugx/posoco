@@ -7,7 +7,7 @@ import {
   "colmugx/posoco/internal/puppetry",
   "colmugx/posoco/kernel",
   "colmugx/posoco/port",
-  "moonbitlang/async",
+  "moonbitlang/core/async",
 }
 
 // Values
@@ -36,7 +36,7 @@ pub fn WakeupRuntime::disarm_cutoff(Self, String) -> Unit
 pub fn WakeupRuntime::drop_pending(Self) -> Unit
 pub fn WakeupRuntime::notify_operation_settled(Self) -> Unit
 pub fn WakeupRuntime::set_active_session(Self, String?) -> Unit
-pub fn[G] WakeupRuntime::start_pump(Self, @async.TaskGroup[G], &WakeupHost) -> Unit
+pub fn WakeupRuntime::start_pump(Self, @async.TaskGroup, &WakeupHost) -> Unit
 
 // Type aliases
 

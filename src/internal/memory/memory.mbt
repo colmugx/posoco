@@ -210,6 +210,16 @@ pub impl @port.ToolProvider for MemoryToolProvider with fn list_tools(
 }
 
 ///|
+/// Model-visible outcome for a search whose whole source wave failed: the
+/// per-source failure text is unavailable, so the wave reason is the report.
+fn memory_search_wave_failure(reason : String) -> @kernel.ToolOutcome {
+  ToolReportedError(
+    content="memory_search: no source completed (\{reason})",
+    structured=None,
+  )
+}
+
+///|
 async fn MemoryToolProvider::execute_memory_search(
   self : MemoryToolProvider,
   args : Map[String, Json],
@@ -227,24 +237,36 @@ async fn MemoryToolProvider::execute_memory_search(
       )
     None => None
   }
-  let searched : Array[(String, Result[String?, String])] = @async.all(
-    self.sources.map(fn(pair) {
-      let (source, port) = pair
-      () => {
-        let outcome : Result[String?, String] = Ok(port.search(query~, top_k?)) catch {
-          err => {
-            let reason = err.to_string()
-            (self.on_failure)("memory_search \{source}: \{reason}")
-            Err(reason)
+  let attempted : Result[Array[(String, Result[String?, String])], Error] = Ok(
+    @async.all(
+      self.sources.map(fn(pair) {
+        let (source, port) = pair
+        () => {
+          let outcome : Result[String?, String] = Ok(
+            port.search(query~, top_k?),
+          ) catch {
+            err => {
+              let reason = err.to_string()
+              (self.on_failure)("memory_search \{source}: \{reason}")
+              Err(reason)
+            }
           }
+          (source, outcome)
         }
-        (source, outcome)
-      }
-    }),
+      }),
+    ),
   ) catch {
-    // Cancellation bypasses catch as a runtime signal; this guard only
-    // absorbs unexpected ordinary propagation. Contribute nothing either way.
-    _ => []
+    error => Err(error)
+  }
+  let searched = match attempted {
+    Ok(searched) => searched
+    Err(error) => {
+      // A whole-wave failure has nothing to report per source, so it must not
+      // be papered over as a clean miss.
+      let reason = error.to_string()
+      (self.on_failure)("memory_search wave: \{reason}")
+      return memory_search_wave_failure(reason)
+    }
   }
   let hits : Array[String] = []
   let failures : Array[String] = []

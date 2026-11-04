@@ -123,6 +123,7 @@ async fn compact_tools_idle(fail_compact : Bool, refresh : Bool) -> Unit {
     ),
   )
   let agent = Agent::with_runtime(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model), sessions=[store]),
       source,
@@ -266,6 +267,7 @@ async fn compact_tools_midturn(fail_compact : Bool) -> Unit {
     release: false,
   }
   let agent = Agent::with_runtime(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model), sessions=[store]),
       source,
@@ -390,6 +392,7 @@ async fn compact_tools_auto(fail_compact : Bool, pre_request : Bool) -> Unit {
     )
   })
   let agent = Agent::with_runtime(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model), sessions=[store]),
       source,
@@ -438,6 +441,7 @@ async test "compact_tools/empty snapshot is explicit and does not inherit anothe
     @test_support.ScriptedModelStep::Compact(result=policy_replace_result()),
   ])
   let chat_agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model), tools=[policy_tools()]),
     ],
@@ -448,6 +452,7 @@ async test "compact_tools/empty snapshot is explicit and does not inherit anothe
   let store = @test_support.RecordingSessionPort()
   compact_tools_seed(store, "tools-empty")
   let compact_agent = Agent(
+    events=EventSystem(),
     exts=[@test_support.tk_ext(id="model", model=Some(model), sessions=[store])],
     config=agent_config(max_tool_rounds=Some(10)),
   )

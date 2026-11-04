@@ -8,7 +8,7 @@ import {
   "colmugx/posoco/internal/message_snapshot",
   "colmugx/fuwaroid",
   "moonbitlang/core/env",
-  "moonbitlang/async",
+  "moonbitlang/core/async",
 }
 
 import {
@@ -17,6 +17,13 @@ import {
   "colmugx/posoco/kernel",
   "colmugx/posoco/error",
   "colmugx/posoco/internal/event_runtime",
-  "moonbitlang/async",
-  "moonbitlang/async/aqueue",
+  "moonbitlang/core/async",
+  "moonbitlang/core/async/aqueue",
 } for "wbtest"
+
+options(
+  "allow-experimental-packages": [
+    "moonbitlang/core/async",
+    "moonbitlang/core/async/aqueue",
+  ],
+)

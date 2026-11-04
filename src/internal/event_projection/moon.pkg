@@ -15,5 +15,9 @@ import {
   "colmugx/posoco/internal/event_runtime",
   "colmugx/posoco/internal/kernel_exec",
   "colmugx/posoco/internal/puppetry",
-  "moonbitlang/async",
+  "moonbitlang/core/async",
 } for "wbtest"
+
+options(
+  "allow-experimental-packages": [ "moonbitlang/core/async" ],
+)

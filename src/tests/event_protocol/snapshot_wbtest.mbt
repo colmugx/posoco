@@ -2,7 +2,11 @@
 test "runtime/core_payload_snapshot_isolates_each_receiver" {
   let log : Ref[Array[String]] = Ref([])
   let observer = recording_observer("observer", log)
-  let runtime = @event_runtime.EventRuntime([observer as &@port.Observer])
+  let runtime = @event_runtime.EventRuntime()
+  match runtime.register_observers([observer as &@port.Observer]) {
+    Ok(_) => ()
+    Err(error) => fail("register_observers failed: \{repr(error)}")
+  }
   let second_seen : Array[String?] = []
   // The first listener poisons the payload copy it received.
   ignore(
@@ -32,7 +36,7 @@ test "runtime/core_payload_snapshot_isolates_each_receiver" {
 
 ///|
 test "runtime/core_payload_enqueue_snapshot_survives_producer_mutation" {
-  let runtime = @event_runtime.EventRuntime([])
+  let runtime = @event_runtime.EventRuntime()
   let seen : Array[String?] = []
   ignore(
     runtime.subscribe(fn(envelope) {

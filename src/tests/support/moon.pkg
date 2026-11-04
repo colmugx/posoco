@@ -6,5 +6,9 @@ import {
   "colmugx/posoco/types",
   "colmugx/posoco/error",
   "colmugx/posoco/internal/test_support",
-  "moonbitlang/async/aqueue",
+  "moonbitlang/core/async/aqueue",
 }
+
+options(
+  "allow-experimental-packages": [ "moonbitlang/core/async/aqueue" ],
+)

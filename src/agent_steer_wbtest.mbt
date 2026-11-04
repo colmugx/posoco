@@ -84,6 +84,7 @@ async test "agent steer/mid-tool steer reaches the next model request" {
   )
   let observer = @test_support.RecordingObserver()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="tools", tools=[tools]),
@@ -159,6 +160,7 @@ async test "agent steer/steer message is persisted at its transcript index" {
   )
   let store = @test_support.RecordingSessionPort()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="tools", tools=[tools]),

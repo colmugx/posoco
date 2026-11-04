@@ -380,6 +380,7 @@ fn task_test_agent(
   capture : TaskCapture,
 ) -> Agent raise @error.CompositionError {
   Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store]),
@@ -547,6 +548,7 @@ async test "managed_tasks/abort_cancels_overlapping_foreground_and_keeps_backgro
     ]),
   )
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="tools", tools=[tools]),
@@ -615,6 +617,7 @@ async test "managed_tasks/rejects_malformed_applied_ids_before_model_call" {
     ]),
   })
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store]),
@@ -644,6 +647,7 @@ async test "managed_tasks/compact_keeps_busy_guard_through_blocked_operation" {
   let model = CompactBusyModel::new()
   let store = @test_support.RecordingSessionPort()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(
         id="model",

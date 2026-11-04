@@ -105,6 +105,7 @@ async test "tool_event_surface/happy_path_pending_approved_started_succeeded" {
   )
   let observer = @test_support.RecordingObserver()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(
@@ -153,6 +154,7 @@ async test "tool_event_surface/hook_reject_surfaces_as_rejected_run_continues" {
   )
   let observer = @test_support.RecordingObserver()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(
@@ -207,6 +209,7 @@ async test "tool_event_surface/consent_hook_approval_carries_scope" {
   )
   let observer = @test_support.RecordingObserver()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(
@@ -253,6 +256,7 @@ async test "tool_event_surface/hook_raise_abandons_pending_calls" {
   )
   let observer = @test_support.RecordingObserver()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(
@@ -314,6 +318,7 @@ async test "tool_event_surface/mid_wave_cancel_abandons_pending_calls" {
     "slow_tool",
   ])
   let agent = Agent::with_runtime(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model), sessions=[store]),
       @test_support.tk_ext(id="tools", tools=[tools], observers=[observer]),

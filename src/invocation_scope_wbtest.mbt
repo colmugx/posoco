@@ -18,6 +18,7 @@ async test "scope/chat_carries_caller_session_per_turn" {
     ),
   ])
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[
@@ -65,6 +66,7 @@ async test "scope/tool_loop_shares_run_effect_ids_increase" {
     ]),
   )
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="tools", tools=[tools], sessions=[
@@ -137,6 +139,7 @@ async test "scope/compact_scoped_to_run_without_effect_id" {
     ]),
   )
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="tools", tools=[tools], sessions=[

@@ -1,7 +1,7 @@
 ///|
 async test "tool_invoke/unjoined_parent_cannot_report_success_and_its_waiter_is_released" {
   let entered = Ref(false)
-  let signal = @async.CondVar::Cond()
+  let signal = @cond_var.Cond::Cond()
   let replies : Array[@kernel.InvocationResult] = []
   let observer = @test_support.RecordingObserver()
   @async.with_timeout(2000, async fn() {
@@ -37,7 +37,7 @@ async test "tool_invoke/unjoined_parent_cannot_report_success_and_its_waiter_is_
         action: async fn(_ctx) {
           entered.val = true
           signal.broadcast()
-          let never = @async.CondVar::Cond()
+          let never = @cond_var.Cond::Cond()
           never.wait()
           @test_support.tk_ok_result("unreachable")
         },
@@ -48,6 +48,7 @@ async test "tool_invoke/unjoined_parent_cannot_report_success_and_its_waiter_is_
         ),
       ])
       let agent = Agent(
+        events=@agent.EventSystem(),
         exts=[
           @test_support.tk_ext(id="model", model=Some(model), observers=[
             observer,
@@ -109,7 +110,7 @@ async test "tool_cleanup/unjoined_child_is_cancelled_and_only_confirmed_stop_all
       ] : Array[@kernel.CancelDisposition]) {
     let probe = CancellationProbe::{ disposition, ids: [], }
     let entered = Ref(false)
-    let signal = @async.CondVar::Cond()
+    let signal = @cond_var.Cond::Cond()
     let replies : Array[@kernel.InvocationResult] = []
     @async.with_timeout(2000, async fn() {
       @async.with_task_group(async fn(group) {
@@ -146,7 +147,7 @@ async test "tool_cleanup/unjoined_child_is_cancelled_and_only_confirmed_stop_all
             (ctx.register_cancel)(probe)
             entered.val = true
             signal.broadcast()
-            let never = @async.CondVar::Cond()
+            let never = @cond_var.Cond::Cond()
             never.wait()
             @test_support.tk_ok_result("unreachable")
           },
@@ -160,6 +161,7 @@ async test "tool_cleanup/unjoined_child_is_cancelled_and_only_confirmed_stop_all
           ),
         ])
         let agent = Agent(
+          events=@agent.EventSystem(),
           exts=[
             @test_support.tk_ext(id="model", model=Some(model)),
             parent,
@@ -218,7 +220,7 @@ async test "tool_cleanup/unjoined_child_is_cancelled_and_only_confirmed_stop_all
 priv struct WaitingChildHook {
   waiting : Ref[Bool]
   exited : Ref[Bool]
-  signal : @async.CondVar
+  signal : @cond_var.Cond
 }
 
 ///|
@@ -229,7 +231,7 @@ impl @port.PipelineHook for WaitingChildHook with fn before_tool(self, call) -> 
     defer {
       self.exited.val = true
     }
-    let never = @async.CondVar::Cond()
+    let never = @cond_var.Cond::Cond()
     never.wait()
   }
   Approve(call~)
@@ -240,7 +242,7 @@ async test "tool_cleanup/abort_cancels_a_child_confirmation_wait_and_keeps_the_s
   let hook = WaitingChildHook::{
     waiting: Ref(false),
     exited: Ref(false),
-    signal: @async.CondVar::Cond(),
+    signal: @cond_var.Cond::Cond(),
   }
   let parent_cancel = CancellationProbe::{ disposition: Stopped, ids: [], }
   let parent = InvocationFixture::{
@@ -272,6 +274,7 @@ async test "tool_cleanup/abort_cancels_a_child_confirmation_wait_and_keeps_the_s
   ])
   let observer = @test_support.RecordingObserver()
   let agent = Agent(
+    events=@agent.EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model), hooks=[hook], observers=[
         observer,
@@ -364,7 +367,7 @@ async test "tool_cleanup/root_abort_cancels_the_live_subtree_after_provider_task
     calls: [],
   }
   let entered = Ref(false)
-  let signal = @async.CondVar::Cond()
+  let signal = @cond_var.Cond::Cond()
   let parent = InvocationFixture::{
     id: "parent",
     definitions: [
@@ -396,7 +399,7 @@ async test "tool_cleanup/root_abort_cancels_the_live_subtree_after_provider_task
       (ctx.register_cancel)(child_stop)
       entered.val = true
       signal.broadcast()
-      let never = @async.CondVar::Cond()
+      let never = @cond_var.Cond::Cond()
       never.wait()
       @test_support.tk_ok_result("unreachable")
     },
@@ -411,6 +414,7 @@ async test "tool_cleanup/root_abort_cancels_the_live_subtree_after_provider_task
     ),
   ])
   let agent = Agent(
+    events=@agent.EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model), observers=[observer]),
       parent,

@@ -17,6 +17,7 @@ async test "panic t07_shutdown_failure_is_not_swallowed" {
   let store = @test_support.RecordingSessionPort()
   let lifecycle = FailingLifecycle::{ }
   let agent = @posoco.Agent(
+    events=@posoco.EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store], lifecycle=[lifecycle]),

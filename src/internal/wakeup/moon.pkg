@@ -6,5 +6,13 @@ import {
   "colmugx/posoco/internal/diagnostic",
   "colmugx/posoco/internal/event_runtime",
   "colmugx/posoco/internal/puppetry",
-  "moonbitlang/async",
+  "moonbitlang/core/async",
+  "moonbitlang/core/async/cond_var",
 }
+
+options(
+  "allow-experimental-packages": [
+    "moonbitlang/core/async",
+    "moonbitlang/core/async/cond_var",
+  ],
+)

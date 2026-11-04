@@ -28,6 +28,7 @@ async test "tool_contribution/published_group_is_executable_by_a_later_operation
     ),
   ])
   let agent = Agent(
+    events=@agent.EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(
@@ -179,6 +180,7 @@ async test "tool_contribution/mid_operation_replace_is_visible_only_to_the_next_
     ),
   ])
   let agent = Agent(
+    events=@agent.EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(
@@ -252,6 +254,7 @@ async test "tool_contribution/soft_withdraw_affects_future_operations_only" {
     ),
   ])
   let agent = Agent(
+    events=@agent.EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(
@@ -346,6 +349,7 @@ async test "tool_contribution/rejected_group_keeps_the_accepted_revision" {
     ),
   ])
   let agent = Agent(
+    events=@agent.EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="static", tools=[static_provider]),
@@ -394,6 +398,7 @@ async test "tool_contribution/shutdown_closes_the_capability" {
     ),
   ])
   let agent = Agent(
+    events=@agent.EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(
@@ -424,7 +429,7 @@ priv struct StartupToolPublisher {
   provider : &@port.ToolProvider
   mut capability : @port.ToolContributions?
   waiting : Ref[Bool]
-  release : @async.CondVar
+  release : @cond_var.Cond
   released : Ref[Bool]
   mut starts : Int32
 }
@@ -464,7 +469,7 @@ async test "tool_catalog/first_operation_captures_after_managed_startup_and_hold
     provider,
     capability: None,
     waiting: Ref(false),
-    release: @async.CondVar::Cond(),
+    release: @cond_var.Cond::Cond(),
     released: Ref(false),
     starts: 0,
   }
@@ -480,6 +485,7 @@ async test "tool_catalog/first_operation_captures_after_managed_startup_and_hold
     ),
   ])
   let agent = Agent(
+    events=@agent.EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="publisher", lifecycle=[publisher], requires=[

@@ -39,6 +39,7 @@ async test "tool_recovery/resume_interrupts_the_old_call_and_uses_only_the_new_b
     ),
   ])
   let agent = Agent(
+    events=@agent.EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model), sessions=[store]),
       @test_support.tk_ext(id="current-owner", lifecycle=[publisher], requires=[

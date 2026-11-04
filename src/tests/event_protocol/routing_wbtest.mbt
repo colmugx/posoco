@@ -1,6 +1,6 @@
 ///|
 test "runtime/namespace_filter_selects_one_namespace" {
-  let runtime = @event_runtime.EventRuntime([])
+  let runtime = @event_runtime.EventRuntime()
   let all : Array[String] = []
   let posoco : Array[String] = []
   let alpha : Array[String] = []

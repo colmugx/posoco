@@ -77,6 +77,7 @@ pub impl @port.PipelineHook for ScopedHook with fn on_post_event(
 async test "scope_projection/turn_events_carry_one_run_identity" {
   let observer = ScopedObserver::{ records: [], }
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(
         id="model",
@@ -128,6 +129,7 @@ async test "scope_projection/two_turns_distinct_runs_same_session" {
     ),
   ])
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(
@@ -179,6 +181,7 @@ async test "scope_projection/tool_loop_events_and_hook_stages_share_run" {
     ]),
   )
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(

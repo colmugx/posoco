@@ -55,6 +55,7 @@ test "decision/composition_is_optional_and_gated" {
   let decision = @test_support.ScriptedDecisionPort([])
   ignore(
     Agent(
+      events=EventSystem(),
       exts=[
         @test_support.tk_ext(
           id="model",
@@ -100,6 +101,7 @@ test "decision/composition_rejects_multiple_providers" {
   let b = @test_support.ScriptedDecisionPort([])
   try
     Agent(
+      events=EventSystem(),
       exts=[
         @test_support.tk_ext(
           id="model",

@@ -834,3 +834,61 @@ async test "puppet/C-SUBSCRIBER-FAIL" {
 ///|
 // C-RESUME-WRONG-SUSPENSION removed: resume with a mismatched suspension id
 // is covered by `puppet_phase/resume_wrong_suspension_id` (phase_wbtest).
+
+///|
+async test "puppet/C-WAIT-IDLE-REPORTS-THE-CURRENT-RUN" {
+  let released : @aqueue.Queue[Unit] = Queue(kind=Unbounded)
+  released.put(())
+  let held : @aqueue.Queue[Unit] = Queue(kind=Unbounded)
+  let host = AbortProbeHost(
+    [Ok(fixture_stop("first")), Err(Transport(reason="second-offline"))],
+    Map::from_array([]),
+    Queue(kind=Unbounded),
+    model_gates=[released, held],
+  )
+  let journal = InMemoryJournal()
+  let puppet = Puppet(
+    canonical_puppet_config(
+      host as &@kernel_exec.HostRuntime,
+      fixture_empty_catalog(),
+      journal,
+      [],
+      [],
+      None,
+    ),
+  )
+  assert_true(fixture_prompt(puppet, "first") is Accepted(_))
+  match puppet.wait_idle() {
+    Terminal(outcome=Completed(_)) => ()
+    status =>
+      fail("run 1 must report its own terminal, got " + status.to_string())
+  }
+  // Drain run 1's model-start signal so the next take belongs to run 2.
+  ignore(host.model_started_signal.get())
+  let blocked : Ref[Bool] = Ref(false)
+  @async.with_task_group(async fn(group) {
+    let run_two = group.spawn(async fn() { fixture_prompt(puppet, "second") })
+    ignore(host.model_started_signal.get())
+    // Run 2 is parked inside its model call: the barrier must not hand back
+    // run 1's terminal outcome.
+    let probe : Result[QuiescentStatus, Error] = Ok(
+      @async.with_timeout(60, () => puppet.wait_idle()),
+    ) catch {
+      error => Err(error)
+    }
+    match probe {
+      Ok(status) =>
+        fail("wait_idle returned stale \{status.to_string()} mid-run")
+      Err(_) => blocked.val = true
+    }
+    assert_true(puppet.mailbox().quiescent_status() is Active)
+    held.put(())
+    assert_true(run_two.wait() is Accepted(_))
+  })
+  assert_true(blocked.val)
+  match puppet.wait_idle() {
+    Terminal(outcome=Failed(reason=ModelTransport(detail~))) =>
+      assert_eq(detail, "second-offline")
+    status => fail("expected run 2's terminal, got " + status.to_string())
+  }
+}

@@ -669,11 +669,7 @@ async fn Puppet::pump_awaiting_model(
 /// allowed to retain and mutate its input, but that mutation must never reach
 /// reducer-owned pending effects or an earlier consent snapshot.
 fn snapshot_tool_call(call : ToolCall) -> ToolCall {
-  {
-    call_id: call.call_id,
-    name: call.name,
-    arguments: snapshot_json(call.arguments),
-  }
+  @message_snapshot.snapshot_tool_call(call)
 }
 
 ///|
@@ -709,11 +705,7 @@ async fn Puppet::pump_awaiting_tools(
         let finalized = finalize_tool_call(
           self.config.catalog,
           self.config.hooks,
-          {
-            call_id: payload.call_id,
-            name: payload.tool_name,
-            arguments: payload.arguments,
-          },
+          payload.tool_call(),
           direct=true,
           revocations?=self.tool_revocations,
         ) catch {
@@ -732,7 +724,7 @@ async fn Puppet::pump_awaiting_tools(
           tool_name: final_call.name,
           // Keep the reducer's pending payload independent from the effect
           // handed to the host as well as from every hook input.
-          arguments: snapshot_json(final_call.arguments),
+          arguments: @message_snapshot.snapshot_json(final_call.arguments),
           owner: final_owner,
           model_step_id: payload.model_step_id,
           catalog_version: payload.catalog_version,
@@ -754,7 +746,7 @@ async fn Puppet::pump_awaiting_tools(
             let executable_effect : Effect = ExecuteTool(effect_id~, payload={
               call_id: payload.call_id,
               tool_name: final_call.name,
-              arguments: snapshot_json(final_call.arguments),
+              arguments: @message_snapshot.snapshot_json(final_call.arguments),
               owner: final_owner,
               model_step_id: payload.model_step_id,
               catalog_version: payload.catalog_version,
@@ -914,11 +906,7 @@ async fn Puppet::pump_awaiting_tools(
     for effect in wave {
       match effect {
         ExecuteTool(effect_id=_, payload~) => {
-          wave_calls.push({
-            call_id: payload.call_id,
-            name: payload.tool_name,
-            arguments: payload.arguments,
-          })
+          wave_calls.push(payload.tool_call())
           wave_model_step = Some(payload.model_step_id)
         }
         _ =>

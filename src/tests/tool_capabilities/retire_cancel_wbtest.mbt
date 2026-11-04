@@ -12,6 +12,7 @@ async test "tool_retire/caller_cancellation_releases_the_operation_lease_and_ret
     ),
   ])
   let agent = Agent(
+    events=@agent.EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="owner", lifecycle=[publisher], requires=[
@@ -67,12 +68,13 @@ async test "tool_retire/unconfirmed_execution_keeps_resources_until_shutdown_con
     action: async fn(ctx) {
       (ctx.register_cancel)(facet)
       entered.val = true
-      @async.CondVar::Cond().wait()
+      @cond_var.Cond::Cond().wait()
       @test_support.tk_ok_result("unreachable")
     },
   }
   let probe = RetireProbe::RetireProbe()
   let agent = Agent(
+    events=@agent.EventSystem(),
     exts=[
       @test_support.tk_ext(
         id="model",

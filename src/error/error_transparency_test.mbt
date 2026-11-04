@@ -118,6 +118,7 @@ async test "t07_model_error_emits_turnfailed_not_turncompleted" {
   let store = @test_support.RecordingSessionPort()
   let obs = @test_support.RecordingObserver()
   let agent = @posoco.Agent(
+    events=@posoco.EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store], observers=[obs]),
@@ -162,6 +163,7 @@ async test "t07_rate_limited_model_surfaces_quota_scheduling_data" {
   let store = @test_support.RecordingSessionPort()
   let obs = @test_support.RecordingObserver()
   let agent = @posoco.Agent(
+    events=@posoco.EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store], observers=[obs]),
@@ -214,6 +216,7 @@ async test "t07_save_error_emits_exactly_one_turnfailed" {
   store.fail_save("save-fail")
   let obs = @test_support.RecordingObserver()
   let agent = @posoco.Agent(
+    events=@posoco.EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store], observers=[obs]),
@@ -242,6 +245,7 @@ async test "t07_model_failure_keeps_primary_after_input_checkpoint" {
   let store = @test_support.RecordingSessionPort()
   let obs = @test_support.RecordingObserver()
   let agent = @posoco.Agent(
+    events=@posoco.EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store], observers=[obs]),
@@ -289,6 +293,7 @@ async test "t07_load_error_emits_one_safe_turnfailed" {
   store.fail_load("load-fail", Load("backend detail must stay with caller"))
   let obs = @test_support.RecordingObserver()
   let agent = @posoco.Agent(
+    events=@posoco.EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store], observers=[obs]),
@@ -335,6 +340,7 @@ async test "t07_afterturn_hook_failure_is_observable_but_nonfatal" {
   let hook = @test_support.RecordingHook()
   hook.abort_when("before_model", "hook blocked the model call")
   let agent = @posoco.Agent(
+    events=@posoco.EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", hooks=[hook], sessions=[store], observers=[
@@ -373,6 +379,7 @@ async test "t07_error_hook_failure_preserves_primary_and_is_observable" {
   let hook = @test_support.RecordingHook()
   hook.abort_when("before_model", "hook aborted before model call")
   let agent = @posoco.Agent(
+    events=@posoco.EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", hooks=[hook], sessions=[store], observers=[
@@ -404,6 +411,7 @@ async test "t07_turnerror_hook_failure_preserves_primary_and_is_observable" {
   let hook = @test_support.RecordingHook()
   hook.abort_when("before_model", "hook aborted before model call")
   let agent = @posoco.Agent(
+    events=@posoco.EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", hooks=[hook], sessions=[store], observers=[
@@ -454,6 +462,7 @@ async test "t07_aftertool_hook_failure_is_observable_but_nonfatal" {
   let hook = @test_support.RecordingHook()
   hook.abort_when("before_model", "hook blocked after tool execution")
   let agent = @posoco.Agent(
+    events=@posoco.EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(
@@ -485,6 +494,7 @@ async test "t07_beforemodel_abort_emits_exactly_one_turnfailed" {
   let hook = @test_support.RecordingHook()
   hook.abort_when("before_model", "policy rejected model call")
   let agent = @posoco.Agent(
+    events=@posoco.EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", hooks=[hook], sessions=[store], observers=[
@@ -524,6 +534,7 @@ async test "t07_premodel_abort_emits_turnstarted_and_one_terminal_event" {
   let hook = @test_support.RecordingHook()
   hook.abort_when("before_model", "turn rejected before start")
   let agent = @posoco.Agent(
+    events=@posoco.EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", hooks=[hook], sessions=[store], observers=[
@@ -570,6 +581,7 @@ async test "t07_tool_loop_emits_exactly_one_turnfailed" {
   let obs = @test_support.RecordingObserver()
   let config : AgentConfig = @posoco.agent_config(max_tool_rounds=Some(0))
   let agent = @posoco.Agent(
+    events=@posoco.EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", tools=[provider], sessions=[store], observers=[

@@ -1,9 +1,10 @@
 ///|
 pub fn tool_provenance(tool : @kernel.ToolDef) -> String {
   match nonempty_provenance(tool) {
-    Some(source) => "ToolDef.provenance='\{safe_error_label(source)}'"
+    Some(source) =>
+      "ToolDef.provenance='\{@diagnostic.safe_error_label(source)}'"
     None =>
-      "unlabeled provider declaring '\{safe_error_label(tool.name.to_string())}' (set ToolDef.provenance to a stable provider id)"
+      "unlabeled provider declaring '\{@diagnostic.safe_error_label(tool.name.to_string())}' (set ToolDef.provenance to a stable provider id)"
   }
 }
 

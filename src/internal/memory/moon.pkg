@@ -2,5 +2,9 @@ import {
   "colmugx/posoco/port",
   "colmugx/posoco/kernel",
   "colmugx/posoco/error",
-  "moonbitlang/async",
+  "moonbitlang/core/async",
 }
+
+options(
+  "allow-experimental-packages": [ "moonbitlang/core/async" ],
+)

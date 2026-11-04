@@ -1,3 +1,11 @@
 import {
-  "moonbitlang/async",
+  "moonbitlang/core/async",
+  "moonbitlang/core/async/cond_var",
 }
+
+options(
+  "allow-experimental-packages": [
+    "moonbitlang/core/async",
+    "moonbitlang/core/async/cond_var",
+  ],
+)

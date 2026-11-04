@@ -31,6 +31,7 @@ async test "rewind_truncate_changes_history_seen_by_next_agent_turn" {
   ])
   let store = @test_support.RecordingSessionPort()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store]),
@@ -48,6 +49,7 @@ async test "rewind_truncate_changes_history_seen_by_next_agent_turn" {
     ),
   ])
   let fresh = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(fresh_model)),
       @test_support.tk_ext(id="io", sessions=[store]),

@@ -46,6 +46,8 @@ pub(all) suberror CompositionError {
   EmptyManifests
   ManifestSchemaError(manifest_id~ : String, detail~ : String)
   ExtensionComposeFailed(manifest_id~ : String, detail~ : String)
+  EventSystemAlreadyOwned
+  EventSystemClosed
 }
 pub fn CompositionError::output(Self, &Logger) -> Unit
 pub fn CompositionError::to_repr(Self) -> @debug.Repr

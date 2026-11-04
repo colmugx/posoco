@@ -1,5 +1,5 @@
 import {
-  "moonbitlang/async",
+  "moonbitlang/core/async",
   "colmugx/posoco",
   "colmugx/posoco/error",
   "colmugx/posoco/types",
@@ -9,4 +9,5 @@ import {
 
 options(
   targets: { "error_transparency_shutdown_native_test.mbt": [ "native" ] },
+  "allow-experimental-packages": [ "moonbitlang/core/async" ],
 )

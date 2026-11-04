@@ -254,6 +254,7 @@ fn build_memory_agent(
     memory_inbound_timeout_ms=timeout_ms,
   )
   Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="memory", memory~),
@@ -347,6 +348,7 @@ async test "m38_sysprompt/config_base_precedes_contributors" {
     ),
   ])
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="ext", prompt_contributors=[contributor]),
@@ -385,6 +387,7 @@ async test "m38_sysprompt/lazy_assembly_reads_post_on_start" {
   ])
   let store = @test_support.RecordingSessionPort()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="lifecycle", lifecycle=[starter]),
@@ -947,6 +950,7 @@ async test "m38_memory/memory_search_collision_at_composition" {
   let mem = @test_support.ScriptedMemoryPort(inbounds=[])
   let composition_result = Ok(
     Agent(
+      events=EventSystem(),
       exts=[
         @test_support.tk_ext(
           id="model",
@@ -1003,6 +1007,7 @@ async test "m38_hooks/same_length_rewrite_reaches_model" {
   let store = @test_support.RecordingSessionPort()
   let observer = @test_support.RecordingObserver()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="hook", hooks=[SameLengthAgentHook::{ }]),
@@ -1064,6 +1069,7 @@ fn build_ui_agent(
     ]),
   )
   Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", tools=[tools], ui=[ui], sessions=[

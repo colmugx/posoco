@@ -335,7 +335,6 @@ fn AgentRuntime::compose(
   ui_projection : Bool,
   host_override : &@runtime.Runtime?,
 ) -> Agent raise @error.CompositionError {
-  errdefer agg.events.close()
   validate_agent_config(config)
   let (catalog, entries) = compose_tool_catalog(agg)
   let launch_gate = @kernel_exec.ToolLaunchGate::ToolLaunchGate()
@@ -545,6 +544,10 @@ fn AgentRuntime::compose(
 /// Construct an Agent from an array of extensions.
 /// Aggregation order is the array order; collisions fail-fast.
 /// At least one extension must contribute a `ModelPort`.
+/// `events` transfers one host-created EventSystem to this Agent exclusively.
+/// A construction failure after takeover closes the resource and revokes its
+/// capabilities; a rejected second takeover leaves the first Agent untouched.
+/// Successful composition keeps it open until Agent.shutdown completes.
 ///
 /// `ui_projection` (default `false`): when `true`, Posoco's built-in
 /// render policy (`UiRenderHook` over the aggregated `UiPort`) is appended
@@ -553,9 +556,12 @@ fn AgentRuntime::compose(
 pub fn Agent::Agent(
   exts~ : Array[&@port.Extension],
   config~ : AgentConfig,
+  events~ : EventSystem,
   ui_projection~ : Bool = false,
 ) -> Agent raise @error.CompositionError {
-  let agg = aggregate_extensions(exts)
+  let event_runtime = events.claim()
+  errdefer event_runtime.close()
+  let agg = aggregate_extensions(exts, events=event_runtime)
   AgentRuntime::compose(agg, config, ui_projection, None)
 }
 
@@ -566,14 +572,19 @@ pub fn Agent::Agent(
 /// overrides only the methods it needs (e.g. `execute_tool` +
 /// `cancel_effects` for cancellation propagation). Plain extension authors
 /// do not need this — see `docs/RUNTIME.md`.
+/// The required `events` resource follows the same exclusive takeover,
+/// construction-failure revocation, and shutdown lifetime as Agent().
 ///
 pub fn Agent::with_runtime(
   exts~ : Array[&@port.Extension],
   config~ : AgentConfig,
+  events~ : EventSystem,
   runtime~ : &@runtime.Runtime,
   ui_projection~ : Bool = false,
 ) -> Agent raise @error.CompositionError {
-  let agg = aggregate_extensions(exts)
+  let event_runtime = events.claim()
+  errdefer event_runtime.close()
+  let agg = aggregate_extensions(exts, events=event_runtime)
   AgentRuntime::compose(agg, config, ui_projection, Some(runtime))
 }
 
@@ -590,6 +601,8 @@ pub async fn[X] Agent::run_scoped(self : Agent, body : async (Agent) -> X) -> X 
       ),
     )
   }
+  // `with_task_group` is `Unit`-valued: the body value crosses in a cell.
+  let body_outcome : Ref[X?] = Ref(None)
   @async.with_task_group(async fn(group) {
     let owns_scope = Ref(false)
     // A raw cancellation signal bypasses the catch around `body(self)`
@@ -636,7 +649,7 @@ pub async fn[X] Agent::run_scoped(self : Agent, body : async (Agent) -> X) -> X 
     match body_result {
       Ok(value) =>
         match shutdown_result {
-          Ok(_) => value
+          Ok(_) => body_outcome.val = Some(value)
           Err(error) => raise error
         }
       Err(error) =>
@@ -653,6 +666,13 @@ pub async fn[X] Agent::run_scoped(self : Agent, body : async (Agent) -> X) -> X 
         }
     }
   })
+  match body_outcome.val {
+    Some(value) => value
+    None =>
+      raise @error.AgentError::Runtime(
+        @error.RuntimeError::InvocationFailed("run_scoped: no body outcome"),
+      )
+  }
 }
 
 ///|

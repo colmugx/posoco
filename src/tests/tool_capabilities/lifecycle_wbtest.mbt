@@ -94,6 +94,7 @@ async test "tool_lifecycle/publish_ack_reports_active_state_and_retires_the_supe
   let v1_probe = RetireProbe::RetireProbe()
   let v2_probe = RetireProbe::RetireProbe()
   let agent = Agent(
+    events=@agent.EventSystem(),
     exts=[
       @test_support.tk_ext(
         id="model",
@@ -177,6 +178,7 @@ async test "tool_lifecycle/soft_then_hard_withdraw_establishes_a_new_revocation_
   )
   let publisher = ManualPublisher::new()
   let agent = Agent(
+    events=@agent.EventSystem(),
     exts=[
       @test_support.tk_ext(
         id="model",
@@ -229,7 +231,7 @@ async test "tool_lifecycle/soft_then_hard_withdraw_establishes_a_new_revocation_
 /// call continue: the deterministic "confirmation in progress" window.
 priv struct ConsentWaitHook {
   waiting : Ref[Bool]
-  release : @async.CondVar
+  release : @cond_var.Cond
   released : Ref[Bool]
   mut waits : Int32
 }
@@ -238,7 +240,7 @@ priv struct ConsentWaitHook {
 fn ConsentWaitHook::ConsentWaitHook() -> ConsentWaitHook {
   {
     waiting: Ref(false),
-    release: @async.CondVar::Cond(),
+    release: @cond_var.Cond::Cond(),
     released: Ref(false),
     waits: 0,
   }
@@ -283,6 +285,7 @@ async test "tool_lifecycle/hard_withdraw_during_confirmation_never_starts_the_pr
     ),
   ])
   let agent = Agent(
+    events=@agent.EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model), hooks=[hook]),
       @test_support.tk_ext(id="contrib", lifecycle=[publisher], requires=[
@@ -328,7 +331,7 @@ async test "tool_lifecycle/hard_withdraw_during_confirmation_never_starts_the_pr
 struct AwaitingRuntime {
   inner : @runtime.PortRuntime
   entered : Ref[Bool]
-  release : @async.CondVar
+  release : @cond_var.Cond
   released : Ref[Bool]
   forwarded : Ref[Bool]
 }
@@ -340,7 +343,7 @@ fn AwaitingRuntime::AwaitingRuntime(
   {
     inner,
     entered: Ref(false),
-    release: @async.CondVar::Cond(),
+    release: @cond_var.Cond::Cond(),
     released: Ref(false),
     forwarded: Ref(false),
   }
@@ -438,6 +441,7 @@ async test "tool_lifecycle/hard_withdraw_while_a_runtime_decorator_awaits_is_ref
   let runtime = AwaitingRuntime::AwaitingRuntime(inner)
   let observer = @test_support.RecordingObserver()
   let agent = Agent::with_runtime(
+    events=@agent.EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model), observers=[observer]),
       @test_support.tk_ext(id="contrib", lifecycle=[publisher], requires=[
@@ -493,7 +497,7 @@ async test "tool_lifecycle/hard_withdraw_while_a_runtime_decorator_awaits_is_ref
 priv struct CancellableProvider {
   entered : Ref[Bool]
   stopped : Ref[Bool]
-  wake : @async.CondVar
+  wake : @cond_var.Cond
   cancels : Array[Int32]
   mut executed : Int32
 }
@@ -503,7 +507,7 @@ fn CancellableProvider::CancellableProvider() -> CancellableProvider {
   {
     entered: Ref(false),
     stopped: Ref(false),
-    wake: @async.CondVar::Cond(),
+    wake: @cond_var.Cond::Cond(),
     cancels: [],
     executed: 0,
   }
@@ -562,6 +566,7 @@ async test "tool_lifecycle/hard_withdraw_cancels_the_in_flight_effect_and_keeps_
     ),
   ])
   let agent = Agent(
+    events=@agent.EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="contrib", lifecycle=[publisher], requires=[
@@ -696,6 +701,7 @@ async test "tool_lifecycle/hard_withdraw_refuses_a_child_of_a_captured_version" 
     ),
   ])
   let agent = Agent(
+    events=@agent.EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       parent,
@@ -770,6 +776,7 @@ async test "tool_lifecycle/hard_withdraw_is_repeatable_and_scoped_to_one_owner" 
     ),
   ])
   let agent = Agent(
+    events=@agent.EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="a", lifecycle=[a], requires=[
@@ -825,6 +832,7 @@ async test "tool_lifecycle/concurrent_publication_does_not_reenter_a_retiring_ve
     Map([]),
   )
   let agent = Agent(
+    events=@agent.EventSystem(),
     exts=[
       @test_support.tk_ext(
         id="model",
@@ -838,7 +846,7 @@ async test "tool_lifecycle/concurrent_publication_does_not_reenter_a_retiring_ve
   )
   let calls = Ref(0)
   let released = Ref(false)
-  let signal = @async.CondVar::Cond()
+  let signal = @cond_var.Cond::Cond()
   let cap = publisher.capability()
   let _ = cap.replace(provider~, retire=async fn() {
     calls.val += 1

@@ -63,6 +63,7 @@ async test "turn_begin/dispatched_after_turn_started_before_first_model" {
   let hook = TurnBeginLogHook::{ log, }
   let obs = TurnEndLogObserver::{ log, }
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(
         id="model",
@@ -125,6 +126,7 @@ async test "turn_begin/raised_hook_is_secondary_failure_turn_proceeds" {
   let after = TurnBeginLogHook::{ log, }
   let obs = TurnEndLogObserver::{ log, }
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(
         id="model",
@@ -180,6 +182,7 @@ async test "turn_end/completed_dispatched_once_after_turn_completed" {
   let hook = TurnEndLogHook::{ id: "only", log, }
   let obs = TurnEndLogObserver::{ log, }
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(
         id="model",
@@ -218,6 +221,7 @@ async test "turn_end/failed_path_also_dispatches_after_turn_failed" {
   let hook = TurnEndLogHook::{ id: "only", log, }
   let obs = TurnEndLogObserver::{ log, }
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(
         id="model",
@@ -260,6 +264,7 @@ async test "turn_end/hooks_dispatched_in_registration_order" {
   let first = TurnEndLogHook::{ id: "first", log, }
   let second = TurnEndLogHook::{ id: "second", log, }
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(
         id="model",
@@ -293,6 +298,7 @@ async test "turn_end/raised_hook_is_secondary_failure_not_turn_failure" {
   let good = TurnEndLogHook::{ id: "good", log, }
   let obs = TurnEndLogObserver::{ log, }
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(
         id="model",

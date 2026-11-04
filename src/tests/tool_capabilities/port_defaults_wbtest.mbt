@@ -64,6 +64,7 @@ async test "port_defaults/minimal_tool_and_hook_preserve_declared_exposure" {
     ),
   ])
   let agent = Agent(
+    events=@agent.EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="tools", tools=[tools], hooks=[hook]),
@@ -92,6 +93,7 @@ async test "port_defaults/minimal_tool_and_hook_preserve_declared_exposure" {
 async test "port_defaults/start_only_lifecycle_can_shutdown_without_an_override" {
   let lifecycle = StartOnly::{ starts: Ref(0), }
   let agent = Agent(
+    events=@agent.EventSystem(),
     exts=[
       @test_support.tk_ext(
         id="model",

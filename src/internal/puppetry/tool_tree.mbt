@@ -120,7 +120,10 @@ fn ToolTree::launch(
       .filter(def => {
         !(def.exposure is Disabled) && allowed.contains(def.owner.to_string())
       })
-      .map(def => { ..def, input_schema: snapshot_json(def.input_schema), })
+      .map(def => {
+        ..def,
+        input_schema: @message_snapshot.snapshot_json(def.input_schema),
+      })
     },
     invoke: async fn(name, arguments) {
       if !self.active.val || !live.val || revoked() {
@@ -137,7 +140,14 @@ fn ToolTree::launch(
         started: false,
       }
       self.replies.push(reply)
-      self.queue.put(Request(effect_id, name, snapshot_json(arguments), reply))
+      self.queue.put(
+        Request(
+          effect_id,
+          name,
+          @message_snapshot.snapshot_json(arguments),
+          reply,
+        ),
+      )
       while reply.result is None {
         reply.ready.wait()
       }
@@ -309,11 +319,7 @@ async fn Puppet::execute_tool_tree(
                 abort("child declaration did not produce ExecuteTool")
               }
               reply.effect_id = Some(effect_id)
-              let mut call : ToolCall = {
-                call_id: payload.call_id,
-                name: payload.tool_name,
-                arguments: payload.arguments,
-              }
+              let mut call : ToolCall = payload.tool_call()
               let mut rejection = pre_rejection
               let mut consent_scope : String? = None
               if rejection is None {
@@ -380,7 +386,7 @@ async fn Puppet::execute_tool_tree(
               let final_effect : Effect = ExecuteTool(effect_id~, payload={
                 ..payload,
                 tool_name: call.name,
-                arguments: snapshot_json(call.arguments),
+                arguments: @message_snapshot.snapshot_json(call.arguments),
                 owner,
               })
               let pending = state

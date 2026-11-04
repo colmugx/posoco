@@ -9,7 +9,8 @@
 ///
 /// Plus an **idle barrier**: a `@cond_var.Cond` that `wait_idle` waits on,
 /// woken when the Puppet reaches a quiescent phase (Idle / Suspended /
-/// Shutdown).
+/// Terminal / Shutdown). A bound run reports `Active`, which never satisfies
+/// the barrier.
 ///
 /// IDs (ADR §6.1): every command carries the IDs required for safe-point
 /// correlation. Stale IDs are rejected at enqueue time, not at consume time.
@@ -314,6 +315,7 @@ pub(open) trait Mailbox {
   fn quiescent_status(Self) -> QuiescentStatus
   fn set_quiescent(Self, status : QuiescentStatus) -> Unit
   /// Wait until the mailbox reaches a quiescent status. Implementations
-  /// MUST use a cond-var / event (not polling).
+  /// MUST use a cond-var / event (not polling), and MUST keep waiting while
+  /// the status is `Active`.
   async fn wait_idle(Self) -> QuiescentStatus
 }

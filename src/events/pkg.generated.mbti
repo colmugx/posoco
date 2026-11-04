@@ -26,6 +26,8 @@ pub fn EventEnvelope::namespace_of(Self) -> EventNamespace
 pub(all) enum EventError {
   Closed
   ReservedEvent
+  InvalidOwner
+  Owned
 }
 pub fn EventError::equal(Self, Self) -> Bool
 pub fn EventError::not_equal(Self, Self) -> Bool

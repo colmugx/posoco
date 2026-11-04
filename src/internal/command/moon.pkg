@@ -3,4 +3,5 @@ import {
   "colmugx/posoco/port",
   "colmugx/posoco/error",
   "colmugx/posoco/types",
+  "colmugx/posoco/internal/diagnostic",
 }

@@ -1,26 +1,4 @@
 ///|
-fn bounded_error_label(value : String, cap : Int32) -> String {
-  let chars : Array[Char] = []
-  let mut truncated = false
-  for char in value {
-    if chars.length() >= cap {
-      truncated = true
-      break
-    }
-    match char {
-      '\n' | '\r' => chars.push(' ')
-      other => chars.push(other)
-    }
-  }
-  let label = String::from_array(chars)
-  if truncated {
-    label + "...(truncated)"
-  } else {
-    label
-  }
-}
-
-///|
 /// Built-in slash command port for `/compact` and `/fork-here`.
 /// `invoke` enqueues a signal on the ControlMailbox for the pump's safe points.
 /// The BuiltinCommandPort holds a reference to the Puppet's ControlMailbox.
@@ -191,7 +169,7 @@ async fn BuiltinCommandPort::invoke_idle_compact(
           // Keep the category and safe bounded label in the command outcome.
           Failure(
             reason="compact failed: " +
-              bounded_error_label(error.to_string(), 512),
+              @diagnostic.bounded_error_label(error.to_string(), 512),
           )
         Ok(outcome) =>
           Success(
@@ -244,7 +222,7 @@ pub impl @port.CommandPort for BuiltinCommandPort with fn invoke(
             Err(error) =>
               Failure(
                 reason="compact failed: " +
-                  bounded_error_label(error.to_string(), 512),
+                  @diagnostic.bounded_error_label(error.to_string(), 512),
               )
           }
           outcome

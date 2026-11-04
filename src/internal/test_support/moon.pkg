@@ -5,5 +5,9 @@ import {
   "colmugx/posoco/types",
   "colmugx/posoco/internal/event_snapshot",
   "colmugx/posoco/internal/message_snapshot",
-  "moonbitlang/async",
+  "moonbitlang/core/async",
 }
+
+options(
+  "allow-experimental-packages": [ "moonbitlang/core/async" ],
+)

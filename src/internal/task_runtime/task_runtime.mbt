@@ -104,9 +104,9 @@ pub fn TaskRuntime::capability(
 }
 
 ///|
-pub fn[G] TaskRuntime::activate(
+pub fn TaskRuntime::activate(
   self : TaskRuntime,
-  group : @async.TaskGroup[G],
+  group : @async.TaskGroup,
 ) -> Unit raise @error.AgentError {
   if self.closed {
     raise @error.AgentError::Runtime(

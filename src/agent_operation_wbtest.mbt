@@ -178,6 +178,7 @@ async test "operation/started_settled fire exactly once across the follow-up dra
   let control_ref : Ref[AgentControl?] = Ref(None)
   let injector = FollowUpInjector::FollowUpInjector(control_ref)
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store], observers=[
@@ -232,6 +233,7 @@ async test "operation/busy names the incumbent and the loser leaves no trace" {
   let store = @test_support.RecordingSessionPort()
   let observer = SignalObserver::SignalObserver()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store], observers=[observer]),
@@ -291,6 +293,7 @@ async test "operation/compact settles with the compact origin and outcome" {
   })
   let observer = SignalObserver::SignalObserver()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store], observers=[observer]),
@@ -338,6 +341,7 @@ async test "operation/resume carries the resume origin" {
   })
   let observer = SignalObserver::SignalObserver()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store], observers=[observer]),
@@ -363,6 +367,7 @@ async test "operation/model failure settles failed and stays reusable" {
   let store = @test_support.RecordingSessionPort()
   let observer = SignalObserver::SignalObserver()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store], observers=[observer]),

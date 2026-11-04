@@ -24,7 +24,7 @@ import {
   "colmugx/posoco/internal/puppetry",
   "colmugx/posoco/internal/tool_directory" @directory,
   "colmugx/posoco/internal/runtime_bridge" @bridge,
-  "moonbitlang/async",
+  "moonbitlang/core/async",
 }
 
 import {
@@ -32,8 +32,10 @@ import {
   "colmugx/posoco/types",
   "colmugx/posoco/kernel",
   "colmugx/posoco/error",
+  "colmugx/posoco/events",
+  "colmugx/posoco/runtime",
   "colmugx/posoco/internal/test_support",
-  "moonbitlang/async",
+  "moonbitlang/core/async",
 } for "test"
 
 import {
@@ -44,12 +46,17 @@ import {
   "colmugx/posoco/internal/puppetry",
   "colmugx/posoco/internal/task_runtime" @task,
   "colmugx/posoco/internal/test_support",
-  "moonbitlang/async",
-  "moonbitlang/async/aqueue",
+  "moonbitlang/core/async",
+  "moonbitlang/core/async/aqueue",
+  "moonbitlang/core/async/cond_var",
   "moonbitlang/core/quickcheck" @qc,
   "colmugx/posoco/tests/support",
 } for "wbtest"
 
 options(
-  "allow-experimental-packages": [ "moonbitlang/core/async" ],
+  "allow-experimental-packages": [
+    "moonbitlang/core/async",
+    "moonbitlang/core/async/aqueue",
+    "moonbitlang/core/async/cond_var",
+  ],
 )

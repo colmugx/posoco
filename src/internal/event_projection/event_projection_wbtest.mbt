@@ -71,10 +71,12 @@ fn projection_ok_outcome() -> @kernel.ToolOutcome {
 /// attached (chunk telemetry is wired by the root, not by this package).
 fn projection_with(observer : ProjectionObserver) -> &@puppetry.EventSubscriber {
   let no_dispatcher : Ref[@chunk_dispatch.ChunkDispatcher?] = Ref(None)
-  let projection = EventProjection(
-    @event_runtime.EventRuntime::EventRuntime([observer as &@port.Observer]),
-    no_dispatcher,
-  )
+  let events = @event_runtime.EventRuntime()
+  match events.register_observers([observer as &@port.Observer]) {
+    Ok(_) => ()
+    Err(error) => abort("register_observers failed: \{repr(error)}")
+  }
+  let projection = EventProjection(events, no_dispatcher)
   projection as &@puppetry.EventSubscriber
 }
 
@@ -82,10 +84,12 @@ fn projection_with(observer : ProjectionObserver) -> &@puppetry.EventSubscriber 
 async test "projection: terminal drain abandons only unpaired calls, once" {
   let observer = ProjectionObserver::{ records: [], events: [], }
   let no_dispatcher : Ref[@chunk_dispatch.ChunkDispatcher?] = Ref(None)
-  let projection = EventProjection(
-    @event_runtime.EventRuntime::EventRuntime([observer as &@port.Observer]),
-    no_dispatcher,
-  )
+  let events = @event_runtime.EventRuntime()
+  match events.register_observers([observer as &@port.Observer]) {
+    Ok(_) => ()
+    Err(error) => fail("register_observers failed: \{repr(error)}")
+  }
+  let projection = EventProjection(events, no_dispatcher)
   let subscriber : &@puppetry.EventSubscriber = projection
   let folded = projection_call("call_folded")
   let leftover = projection_call("call_leftover")
@@ -123,10 +127,12 @@ async test "projection: terminal drain abandons only unpaired calls, once" {
 async test "projection: completion without a committed pending call is a violation" {
   let observer = ProjectionObserver::{ records: [], events: [], }
   let no_dispatcher : Ref[@chunk_dispatch.ChunkDispatcher?] = Ref(None)
-  let projection = EventProjection(
-    @event_runtime.EventRuntime::EventRuntime([observer as &@port.Observer]),
-    no_dispatcher,
-  )
+  let events = @event_runtime.EventRuntime()
+  match events.register_observers([observer as &@port.Observer]) {
+    Ok(_) => ()
+    Err(error) => fail("register_observers failed: \{repr(error)}")
+  }
+  let projection = EventProjection(events, no_dispatcher)
   let outcome : Result[Unit, @puppetry.SubscriberError] = try {
     projection.on_event(
       projection_envelope(
@@ -193,10 +199,12 @@ async test "projection: undelivered steer projects as a step undelivery" {
 async test "projection: superseded call closes as abandoned, not rejected" {
   let observer = ProjectionObserver::{ records: [], events: [], }
   let no_dispatcher : Ref[@chunk_dispatch.ChunkDispatcher?] = Ref(None)
-  let projection = EventProjection(
-    @event_runtime.EventRuntime::EventRuntime([observer as &@port.Observer]),
-    no_dispatcher,
-  )
+  let events = @event_runtime.EventRuntime()
+  match events.register_observers([observer as &@port.Observer]) {
+    Ok(_) => ()
+    Err(error) => fail("register_observers failed: \{repr(error)}")
+  }
+  let projection = EventProjection(events, no_dispatcher)
   let subscriber : &@puppetry.EventSubscriber = projection
   let call = projection_call("call_superseded")
   subscriber.on_event(

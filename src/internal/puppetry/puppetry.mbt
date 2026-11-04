@@ -228,23 +228,9 @@ async fn Puppet::fire_post_event_hooks(
       ModelCompleted(completion=payload.completion)
     ModelFailed(payload~) => ModelFailed(failure=payload.failure)
     ToolCompleted(payload~) =>
-      ToolCompleted(
-        call={
-          call_id: payload.call_id,
-          name: payload.tool_name,
-          arguments: payload.arguments,
-        },
-        outcome=payload.outcome,
-      )
+      ToolCompleted(call=payload.tool_call(), outcome=payload.outcome)
     ToolFailed(payload~) =>
-      ToolFailed(
-        call={
-          call_id: payload.call_id,
-          name: payload.tool_name,
-          arguments: payload.arguments,
-        },
-        reason=payload.reason,
-      )
+      ToolFailed(call=payload.tool_call(), reason=payload.reason)
     _ => return
   }
   for hook in self.config.hooks {

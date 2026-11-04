@@ -196,3 +196,69 @@ test "puppet_control/compact_enqueue_stale_rejected" {
   )
   assert_true(mb.compact_depth() == 0)
 }
+
+///|
+fn mb_terminal_status() -> QuiescentStatus {
+  Terminal(outcome=Cancelled(reason=HostRequested(detail=Some("test"))))
+}
+
+///|
+async test "puppet_control/wait_idle_blocks_while_run_is_active" {
+  let mb = bound_mailbox()
+  let seen : Ref[QuiescentStatus?] = Ref(None)
+  let timed_out : Ref[Bool] = Ref(false)
+  @async.with_task_group(async fn(group) {
+    group.spawn_bg(async fn() {
+      let waited : Result[QuiescentStatus, Error] = Ok(
+        @async.with_timeout(60, () => mb.wait_idle()),
+      ) catch {
+        error => Err(error)
+      }
+      match waited {
+        Ok(status) => seen.val = Some(status)
+        Err(_) => timed_out.val = true
+      }
+    })
+    @async.sleep(20)
+    // The run is still in flight: nothing may satisfy the barrier yet.
+    assert_true(seen.val is None)
+    assert_true(timed_out.val == false)
+    mb.set_quiescent(mb_terminal_status())
+  })
+  assert_true(timed_out.val == false)
+  match seen.val {
+    Some(status) => assert_true(status is Terminal(_))
+    None => fail("wait_idle never returned the terminal status")
+  }
+}
+
+///|
+async test "puppet_control/wait_idle_waits_through_non_quiescent_wakeups" {
+  let mb = bound_mailbox()
+  let seen : Ref[QuiescentStatus?] = Ref(None)
+  @async.with_task_group(async fn(group) {
+    group.spawn_bg(async fn() { seen.val = Some(mb.wait_idle()) })
+    @async.sleep(20)
+    ignore(mb.enqueue_abort(make_abort("a1", mb_run_id())))
+    mb.set_quiescent(Active)
+    @async.sleep(20)
+    assert_true(seen.val is None)
+    mb.set_quiescent(mb_terminal_status())
+  })
+  match seen.val {
+    Some(status) => assert_true(status is Terminal(_))
+    None => fail("wait_idle never returned the terminal status")
+  }
+}
+
+///|
+test "puppet_control/second_run_starts_active_not_stale_terminal" {
+  let mb = bound_mailbox()
+  mb.set_quiescent(mb_terminal_status())
+  assert_true(mb.quiescent_status() is Terminal(_))
+  mb.clear_run()
+  // The ended run's terminal stays observable until the next run binds.
+  assert_true(mb.quiescent_status() is Terminal(_))
+  mb.bind_run(RunId::unchecked("run_second"), TurnId::unchecked("turn_second"))
+  assert_true(mb.quiescent_status() is Active)
+}

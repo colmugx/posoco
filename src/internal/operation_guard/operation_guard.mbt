@@ -8,7 +8,7 @@ priv struct Execution {
   operation_id : String
   mut cancel_requested : Bool
   mut cancel_worker : (() -> Unit)?
-  settle : @async.CondVar
+  settle : @cond_var.Cond
   mut settled : Bool
 }
 
@@ -113,7 +113,7 @@ pub fn OperationGuard::begin_execution(
         operation_id,
         cancel_requested: false,
         cancel_worker: None,
-        settle: @async.CondVar::Cond(),
+        settle: @cond_var.Cond::Cond(),
         settled: false,
       })
     _ => ()

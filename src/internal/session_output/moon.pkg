@@ -5,9 +5,13 @@ import {
   "colmugx/posoco/error",
   "colmugx/posoco/internal/message_snapshot",
   "colmugx/posoco/internal/diagnostic",
-  "moonbitlang/async",
+  "moonbitlang/core/async",
 }
 
 import {
-  "moonbitlang/async",
+  "moonbitlang/core/async",
 } for "wbtest"
+
+options(
+  "allow-experimental-packages": [ "moonbitlang/core/async" ],
+)

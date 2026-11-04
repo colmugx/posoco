@@ -52,13 +52,20 @@ pub impl @kernel_exec.HostRuntime for RuntimeHostShim with fn execute_tool(
   arguments : Json,
   scope : @kernel_exec.ToolExecutionScope,
 ) -> @kernel.ToolOutcome {
+  // Whether the provider handed the runtime a `ToolCancellable` for this
+  // effect. Only those executions can be escalated to a terminal disposition
+  // later; a provider that registered nothing leaves nothing to settle.
+  let cancellable_registered : Ref[Bool] = Ref(false)
   let factory = fn(register_cancel) {
     @port.ToolCallContext(
       effect_id~,
       call_id~,
       name=tool_name,
       arguments~,
-      register_cancel~,
+      register_cancel=fn(cancellable) {
+        cancellable_registered.val = true
+        register_cancel(cancellable)
+      },
       scope=scope.invocation,
       parent_effect_id?=scope.parent_effect_id,
       root_effect_id=scope.root_effect_id,
@@ -69,8 +76,16 @@ pub impl @kernel_exec.HostRuntime for RuntimeHostShim with fn execute_tool(
   }
   let key = (scope.invocation.run_id.to_string(), effect_id.to_int())
   self.incomplete[key] = scope.invocation
-  // An abnormal unwind deliberately retains this execution. Only a real
-  // return or an executor-confirmed terminal cancellation releases it.
+  // An abnormal unwind deliberately retains this execution: a later
+  // `cancel_effects` escalates the orphaned child, and only a real return or
+  // an executor-confirmed terminal cancellation releases it. The one unwind
+  // nothing can ever settle is a run-level cancellation of a provider that
+  // registered no cancellable facet — keeping it would reject every later
+  // admission — so that case settles here. No diagnostic: a cancelled run is
+  // not a cleanup defect and must not add noise to the turn's event surface.
+  errdefer (if !cancellable_registered.val && @async.is_being_cancelled() {
+    self.incomplete.remove(key)
+  })
   let outcome = self.inner.execute_tool(
     @runtime.EffectContext(
       run_id=scope.invocation.run_id,

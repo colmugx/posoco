@@ -15,11 +15,13 @@ import {
 pub struct EventRuntime {
   // private fields
 }
-pub fn EventRuntime::EventRuntime(Array[&@port.Observer]) -> Self
+pub fn EventRuntime::EventRuntime() -> Self
 pub fn EventRuntime::capability(Self, String) -> @events.Events
 pub fn EventRuntime::close(Self) -> Unit
 pub fn EventRuntime::emit_core(Self, @types.EventScope?, @types.TurnEvent) -> Unit
 pub fn EventRuntime::has_listeners(Self) -> Bool
+pub fn EventRuntime::is_closed(Self) -> Bool
+pub fn EventRuntime::register_observers(Self, Array[&@port.Observer]) -> Result[Unit, @events.EventError]
 pub fn EventRuntime::subscribe(Self, (@events.EventEnvelope) -> Unit, namespace_? : @events.EventNamespace?) -> Result[@events.Subscription, @events.EventError]
 
 // Type aliases

@@ -28,6 +28,7 @@ async test "tool_binding/custom_runtime_can_inspect_forward_and_refuse_bound_exe
   ])
   let runtime = FakeRuntime(@runtime.PortRuntime(model~))
   let agent = Agent::with_runtime(
+    events=@agent.EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="publisher", lifecycle=[publisher], requires=[

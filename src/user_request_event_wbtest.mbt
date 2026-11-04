@@ -93,6 +93,7 @@ fn build_uireq_agent(
   requires~ : Array[@port.Capability] = [],
 ) -> Agent raise @error.CompositionError {
   Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(
         id="model",

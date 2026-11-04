@@ -583,6 +583,7 @@ pub(all) enum WakeupError {
   ScopeInactive
   TagInvalid(reason~ : String)
   InvalidSession(reason~ : String)
+  PendingFull(session~ : String, limit~ : Int32)
 }
 pub fn WakeupError::equal(Self, Self) -> Bool
 pub fn WakeupError::not_equal(Self, Self) -> Bool

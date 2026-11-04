@@ -139,6 +139,7 @@ async test "abort/mid-model-call: structured Cancelled, cancel_effects delivered
     park_model=true,
   )
   let agent = Agent::with_runtime(
+    events=EventSystem(),
     exts=[@test_support.tk_ext(id="model", model=Some(model), sessions=[store])],
     config=agent_config(max_tool_rounds=Some(10)),
     runtime=probe as &@runtime.Runtime,
@@ -206,6 +207,7 @@ async test "abort/mid-tool-wave: structured Cancelled, tool effect cancelled, in
     "slow_tool",
   ])
   let agent = Agent::with_runtime(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model), sessions=[store]),
       // The catalog must know the tool (manifest contribution); execution

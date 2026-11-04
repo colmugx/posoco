@@ -4,7 +4,7 @@ async test "tool_invoke/sequential_slot_includes_a_waiting_grandchild" {
   let second_admitted = Ref(false)
   let second_started = Ref(false)
   let release = Ref(false)
-  let signal = @async.CondVar::Cond()
+  let signal = @cond_var.Cond::Cond()
   let parent = InvocationFixture::{
     id: "parent",
     owners: ["child"],
@@ -91,6 +91,7 @@ async test "tool_invoke/sequential_slot_includes_a_waiting_grandchild" {
     ),
   ])
   let agent = Agent(
+    events=@agent.EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model), hooks=[hook]),
       parent,
@@ -178,6 +179,7 @@ async test "tool_invoke/sequential_siblings_keep_their_entire_execution_slot" {
     ),
   ])
   let agent = Agent(
+    events=@agent.EventSystem(),
     exts=[@test_support.tk_ext(id="model", model=Some(model)), parent, children],
     config=@agent.agent_config(max_tool_rounds=Some(10)),
   )
@@ -193,7 +195,7 @@ async test "tool_invoke/sequential_siblings_keep_their_entire_execution_slot" {
 ///|
 async test "tool_invoke/parallel_siblings_can_overlap" {
   let entered = Ref(0)
-  let gate = @async.CondVar::Cond()
+  let gate = @cond_var.Cond::Cond()
   let parent = InvocationFixture::{
     id: "parent",
     definitions: [
@@ -238,6 +240,7 @@ async test "tool_invoke/parallel_siblings_can_overlap" {
     ),
   ])
   let agent = Agent(
+    events=@agent.EventSystem(),
     exts=[@test_support.tk_ext(id="model", model=Some(model)), parent, children],
     config=@agent.agent_config(max_tool_rounds=Some(10)),
   )

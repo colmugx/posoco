@@ -74,6 +74,7 @@ async test "perf guard: multi-wave tool commit is linear in transcript" {
     max_tool_rounds=Some(waves + 2),
   )
   let agent = @posoco.Agent(
+    events=@posoco.EventSystem(),
     exts=[
       @test_support.tk_ext(
         id="model",
@@ -114,6 +115,7 @@ async test "perf guard: streaming turn drains 50k chunks fast" {
   let store = @test_support.RecordingSessionPort()
   let observer = @test_support.RecordingObserver()
   let agent = @posoco.Agent(
+    events=@posoco.EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store], observers=[observer]),

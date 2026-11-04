@@ -6,7 +6,7 @@ import {
   "colmugx/posoco/internal/message_snapshot",
   "colmugx/posoco/internal/diagnostic",
   "colmugx/posoco/internal/session_state",
-  "moonbitlang/async",
+  "moonbitlang/core/async",
 }
 
 import {
@@ -17,5 +17,9 @@ import {
   "colmugx/posoco/internal/kernel_exec",
   "colmugx/posoco/internal/puppetry",
   "colmugx/posoco/internal/session_state",
-  "moonbitlang/async",
+  "moonbitlang/core/async",
 } for "wbtest"
+
+options(
+  "allow-experimental-packages": [ "moonbitlang/core/async" ],
+)

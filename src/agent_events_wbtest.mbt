@@ -41,6 +41,7 @@ async test "events: manifest gating, owner binding, host filtering and Agent iso
   let undeclared = event_probe()
   let second = event_probe()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       scripted_model_ext([]),
       @test_support.tk_ext(id="publisher", lifecycle=[first], requires=[Events]),
@@ -49,6 +50,7 @@ async test "events: manifest gating, owner binding, host filtering and Agent iso
     config=agent_config(),
   )
   let other = Agent(
+    events=EventSystem(),
     exts=[
       scripted_model_ext([]),
       @test_support.tk_ext(id="publisher", lifecycle=[second], requires=[Events]),
@@ -122,6 +124,7 @@ async test "events: old Observer and host each receive core once, not community 
   let probe = event_probe()
   let observer = @test_support.RecordingObserver()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       scripted_model_ext([
         @test_support.ScriptedModelStep::Respond(
@@ -167,6 +170,7 @@ async test "events: old Observer and host each receive core once, not community 
 ///|
 async test "events: host attaching after construction receives streamed chunks without legacy Observers" {
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       scripted_model_ext([
         @test_support.ScriptedModelStep::Stream(
@@ -199,6 +203,7 @@ test "events: failed composition revokes capabilities already delivered" {
   let probe = event_probe()
   try
     Agent(
+      events=EventSystem(),
       exts=[
         scripted_model_ext([]),
         @test_support.tk_ext(id="publisher", lifecycle=[probe], requires=[
@@ -227,6 +232,7 @@ test "events: failed composition revokes capabilities already delivered" {
 async test "events: shutdown publication is delivered before the runtime closes" {
   let probe = event_probe(publish_shutdown=true)
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       scripted_model_ext([]),
       @test_support.tk_ext(id="publisher", lifecycle=[probe], requires=[Events]),
@@ -258,6 +264,7 @@ async test "events: cancelling one turn leaves the same Agent event capability u
   let release : @aqueue.Queue[Int32] = Queue(kind=Unbounded)
   let gate = TurnLoopGate::{ entered, release, }
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       scripted_model_ext([
         @test_support.ScriptedModelStep::Respond(
@@ -318,6 +325,7 @@ async test "events: event namespace owners require unique manifest ids without c
     let probe = event_probe()
     let result : Result[Agent, @error.CompositionError] = Ok(
       Agent(
+        events=EventSystem(),
         exts=[
           scripted_model_ext([]),
           @test_support.tk_ext(
@@ -346,6 +354,7 @@ async test "events: event namespace owners require unique manifest ids without c
     assert_true(probe.seen.val is None)
   }
   let legacy = Agent(
+    events=EventSystem(),
     exts=[
       scripted_model_ext([]),
       @test_support.tk_ext(id="shared"),

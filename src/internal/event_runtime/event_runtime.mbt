@@ -32,22 +32,28 @@ pub struct EventRuntime {
 }
 
 ///|
-/// Build the runtime and register the composed observers, in manifest order,
-/// as listeners of the Posoco namespace only. They keep receiving the same
-/// `TurnEvent` shape through `Observer::on_event`.
-pub fn EventRuntime::EventRuntime(
-  observers : Array[&@port.Observer],
-) -> EventRuntime {
-  let runtime : EventRuntime = {
+pub fn EventRuntime::EventRuntime() -> EventRuntime {
+  {
     listeners: [],
     queue: [],
     next_id: Ref(0),
     delivering: Ref(false),
     closed: Ref(false),
   }
+}
+
+///|
+/// Attach composed observers to the existing resource, in manifest order.
+pub fn EventRuntime::register_observers(
+  self : EventRuntime,
+  observers : Array[&@port.Observer],
+) -> Result[Unit, @events.EventError] {
+  if self.closed.val {
+    return Err(Closed)
+  }
   for observer in observers {
-    ignore(
-      runtime.subscribe(
+    match
+      self.subscribe(
         fn(envelope) {
           match envelope.event {
             @events.Core(event) => observer.on_event(envelope.scope, event)
@@ -55,10 +61,17 @@ pub fn EventRuntime::EventRuntime(
           }
         },
         namespace_=Some(@events.EventNamespace::Posoco),
-      ),
-    )
+      ) {
+      Ok(_) => ()
+      Err(error) => return Err(error)
+    }
   }
-  runtime
+  Ok(())
+}
+
+///|
+pub fn EventRuntime::is_closed(self : EventRuntime) -> Bool {
+  self.closed.val
 }
 
 ///|

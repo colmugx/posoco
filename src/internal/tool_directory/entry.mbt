@@ -22,7 +22,7 @@ fn owned_tool_def(tool : @kernel.ToolDef, owner : String) -> @kernel.ToolDef {
   @kernel.ToolDef(
     name=tool.name,
     description=tool.description,
-    input_schema=snapshot_json(tool.input_schema),
+    input_schema=@message_snapshot.snapshot_json(tool.input_schema),
     owner=@kernel.OwnerId::unchecked(owner),
     policy=tool.policy,
     provenance=tool.provenance,

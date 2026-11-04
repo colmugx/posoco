@@ -42,6 +42,7 @@ fn compact_diag_failure_agent(
     metadata: Map::from_array([]),
   })
   Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store], observers=[observer]),
@@ -121,6 +122,7 @@ async test "compact_diag/standalone_compact_failure_detail_and_no_commit" {
   })
   let observer = @test_support.RecordingObserver()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model), sessions=[store], observers=[
         observer,
@@ -249,6 +251,7 @@ async test "compact_diag/midrun_manual_compact_failure_forwards_bounded_label" {
     release: false,
   }
   let agent = Agent::with_runtime(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="tools", tools=[tools]),
@@ -378,6 +381,7 @@ async test "compact_diag/cancelled_compact_stays_a_cancelled_outcome" {
     compact_calls: 0,
   }
   let agent = Agent::with_runtime(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model), sessions=[store], observers=[
         observer,
@@ -465,6 +469,7 @@ async test "compact_diag/busy_agent_rejects_compact_and_stays_usable" {
     release: false,
   }
   let agent = Agent::with_runtime(
+    events=EventSystem(),
     exts=[@test_support.tk_ext(id="model", model=Some(model), sessions=[store])],
     config=agent_config(max_tool_rounds=Some(10)),
     runtime=probe as &@runtime.Runtime,

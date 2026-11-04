@@ -304,6 +304,10 @@ pub(all) suberror CompositionError {
   /// when a capability they need reads `None` in the `CompositionView`
   /// (typically because it was not declared in `requires`).
   ExtensionComposeFailed(manifest_id~ : String, detail~ : String)
+  /// Event resources have one Agent owner for their entire lifetime.
+  EventSystemAlreadyOwned
+  /// A closed event resource cannot be used to construct an Agent.
+  EventSystemClosed
 }
 
 ///|
@@ -327,6 +331,8 @@ pub impl Show for CompositionError with fn to_string(self) -> String {
     MultipleLogs(manifests~) =>
       "CompositionError::MultipleLogs(manifests=\{manifests.join(",")})"
     EmptyManifests => "CompositionError::EmptyManifests"
+    EventSystemAlreadyOwned => "CompositionError::EventSystemAlreadyOwned"
+    EventSystemClosed => "CompositionError::EventSystemClosed"
     ManifestSchemaError(manifest_id~, detail~) =>
       "CompositionError::ManifestSchemaError(manifest=\{manifest_id}, detail=\{detail})"
     ExtensionComposeFailed(manifest_id~, detail~) =>

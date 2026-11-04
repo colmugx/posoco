@@ -39,6 +39,7 @@ async test "core_authority/failed_initial_load_is_not_cached" {
     ),
   ])
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store]),
@@ -83,6 +84,7 @@ async test "core_authority/fresh_agent_recovers_child_with_only_parent_id" {
     ),
   ])
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store]),
@@ -134,6 +136,7 @@ async test "core_authority/two_store_seed_uses_first_then_full_aligns_both" {
     ),
   ])
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[first, second]),
@@ -191,6 +194,7 @@ async test "core_authority/real_terminal_mismatch_makes_core_unreadable" {
     ),
   ])
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store]),
@@ -328,6 +332,7 @@ async test "core_authority/task_outcome_and_applied_ids_fail_atomic_output_once"
     ),
   ])
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store]),
@@ -384,7 +389,7 @@ struct TerminalGateStore {
   mut saves : Int32
   mut gated : Bool
   mut entered : Bool
-  gate : @async.CondVar
+  gate : @cond_var.Cond
 }
 
 ///|
@@ -437,7 +442,7 @@ async test "core_authority/task_outcome_cancel_at_terminal_output_once" {
     saves: 0,
     gated: true,
     entered: false,
-    gate: @async.CondVar::Cond(),
+    gate: @cond_var.Cond::Cond(),
   }
   let model = @test_support.ScriptedModel([
     @test_support.ScriptedModelStep::Respond(
@@ -448,6 +453,7 @@ async test "core_authority/task_outcome_cancel_at_terminal_output_once" {
     ),
   ])
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store]),
@@ -546,6 +552,7 @@ async test "core_authority/title_and_context_core_metadata_survive_second_turn" 
     ),
   ])
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store]),

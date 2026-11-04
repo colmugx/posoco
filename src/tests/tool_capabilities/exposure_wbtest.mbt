@@ -68,6 +68,7 @@ async test "tool_exposure/rules_are_frozen_for_followups_and_recomputed_for_next
     ),
   ])
   let agent = Agent(
+    events=@agent.EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="tools", tools=[provider], hooks=[hook]),
@@ -119,6 +120,7 @@ async test "tool_exposure/hook_rewrite_cannot_enter_disabled_target" {
     ),
   ])
   let agent = Agent(
+    events=@agent.EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="tools", tools=[provider], hooks=[
@@ -164,6 +166,7 @@ async test "tool_exposure/deferred_tool_is_not_offered_and_guessing_is_rejected"
     ),
   ])
   let agent = Agent(
+    events=@agent.EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="owner", tools=[provider]),
@@ -200,6 +203,7 @@ async test "tool_exposure/manual_compact_only_receives_direct_projection" {
     Map::from_array([]),
   )
   let agent = Agent(
+    events=@agent.EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model), sessions=[store]),
       @test_support.tk_ext(id="tools", tools=[provider]),

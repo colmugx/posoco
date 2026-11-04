@@ -21,6 +21,7 @@ fn build_basic_tools_agent(
   model : @test_support.ScriptedModel,
 ) -> Agent raise @error.CompositionError {
   Agent::with_runtime(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model), memory=[mem], sessions=[
         @test_support.RecordingSessionPort(),
@@ -80,6 +81,7 @@ async test "basic tools/absent without memory ports" {
     ),
   )
   let agent = Agent::with_runtime(
+    events=EventSystem(),
     exts=[@test_support.tk_ext(id="model", model=Some(model)), publisher],
     config=agent_config(max_tool_rounds=Some(10)),
     runtime=@runtime.PortRuntime(model~),

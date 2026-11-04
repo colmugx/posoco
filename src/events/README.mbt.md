@@ -31,25 +31,72 @@ test "a community protocol extends the open event type" {
 }
 ```
 
-A capability publishes only in the namespace the Agent granted it (an
-extension's manifest id) while `subscribe` may listen to any namespace.
-Handlers are synchronous and non-raising; `cancel` is idempotent and a new
-listener receives no history.
+A capability publishes only in the namespace its owner was granted while
+`subscribe` may listen to any namespace. Handlers are synchronous and
+non-raising; `cancel` is idempotent and a new listener receives no history.
 
-Real extensions declare `Capability::Events` and obtain their capability in
-`Lifecycle::on_compose`; hosts use `Agent::subscribe_events`:
+## One resource per Agent
 
-1. Define an ADT and extend `@posoco.Event`.
-2. Declare `requires: [@posoco.Capability::Events]` and `lifecycle: [self]` in
-   the extension manifest.
-3. Obtain `view.events()` in `Lifecycle::on_compose`; publish in `on_start` or
-   a business method, not during construction.
-4. Subscribe with `events.subscribe` (extensions) or `agent.subscribe_events`
-   (hosts), optionally filtering with `namespace_=Some(Extension(id))` or
-   `namespace_=Some(Posoco)`. `None` means all namespaces.
-5. Handle the `Result`, retain the subscription, and call `cancel()` when done.
-   After shutdown, new publications/subscriptions return `Err(Closed)`; an
-   extension attempting to publish `Core` returns `Err(ReservedEvent)`.
+`EventSystem()` is the host-owned resource behind every capability and
+subscription. Create it before the ports and the Agent that will consume it,
+then hand the same value to exactly one `Agent(exts~, config~, events~)`:
+
+1. Define an ADT and extend the open `@posoco.Event`.
+2. `let system = @posoco.EventSystem()`. While no Agent owns it, the system
+   already grants `publisher(owner~)` capabilities and accepts `subscribe`.
+3. Give a plain object its `Events` with `system.publisher(owner="status_bar")`.
+   The grant is bound to `Extension("status_bar")`, the object needs no
+   `Lifecycle`, and the capability stays valid after the Agent takes over.
+4. Compose `Agent(exts~, config~, events=system)`. Construction takes exclusive
+   ownership before aggregation; a second Agent on the same value is rejected
+   and leaves the first Agent working.
+5. Extensions can still declare `requires: [@posoco.Capability::Events]` and
+   `lifecycle: [self]`, then obtain `view.events()` in `Lifecycle::on_compose`.
+   An object that needs to publish earlier can instead receive its capability
+   from the host, including before that object's construction.
+6. Hosts subscribe with `system.subscribe(handler)` before composition or with
+   `agent.subscribe_events(handler)` afterwards, optionally filtering with
+   `namespace_=Some(Extension(id))` or `namespace_=Some(Posoco)`. `None` means
+   all namespaces.
+7. Handle every `Result`, retain the subscription, and call `cancel()` when
+   done. After `Agent::shutdown` — or `system.close()` on a system no Agent
+   owns — publisher grants, publications and new subscriptions return
+   `Err(Closed)`; an extension publishing `Core` returns `Err(ReservedEvent)`.
+
+A failed or cancelled turn does not close the resource. Any composition failure
+after takeover does close it and revokes the capabilities already handed out, so
+a failed construction never leaves a usable half-composed resource. A closed or
+already-owned system is reported with a typed error; it is never reopened,
+replaced, or silently handed to a second owner.
+
+```moonbit nocheck
+// Host side, in the root package: `EventSystem` belongs to `@posoco`, so the
+// events package documents the capability shape rather than owning the resource.
+///|
+let system = @posoco.EventSystem()
+// An untaken system already accepts listeners and grants capabilities.
+
+///|
+let subscription = system.subscribe(handler).unwrap()
+// `publisher.publish(...)` is tagged Extension("status_bar") from now on,
+// including after the Agent takes the resource over.
+
+///|
+let publisher = system.publisher(owner="status_bar").unwrap()
+
+///|
+let agent = @posoco.Agent(exts~, config~, events=system)
+// Retain subscription until its listener is no longer needed, then cancel it.
+// `Agent::shutdown` closes the resource; retained capabilities return Closed.
+```
+
+`publisher` rejects a blank owner with `Err(InvalidOwner)`, publishing `Core`
+returns `Err(ReservedEvent)`, closing an owned resource returns `Err(Owned)`,
+and community publication and subscription return `Err(Closed)` after shutdown.
+The shared `EventError` describes both capability and resource operations;
+it does not give a capability access to resource management. The runnable
+end-to-end version of this host flow is
+[`examples/quickstart`](../../examples/quickstart/README.md).
 
 The manifest id binds publishing identity and must be unique for Events users.
 `Posoco` is reserved for core notifications, not an extra bus. `Observer` is a
@@ -68,8 +115,9 @@ apply to the next batch. Use immutable community payloads: they are not deep
 copied. `scope` is optional delivery attribution, not a routing filter.
 
 See also the [public API integration tests](../agent_events_test.mbt),
-[cross-package protocol examples](../tests/event_protocol/README.mbt.md), and
-[composition and migration guide](MIGRATION.md).
+[cross-package protocol examples](../tests/event_protocol/README.mbt.md), the
+[runnable host example](../../examples/quickstart/README.md), and the
+[resource and migration contract](MIGRATION.md).
 
 The following isolated test uses fake callbacks only to illustrate the listener
 shape; `from_callbacks` and envelope construction are framework/test seams, not

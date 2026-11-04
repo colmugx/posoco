@@ -32,7 +32,7 @@ pub fn validate_args(@port.CommandDef, @json.Json) -> Result[@json.Json, String]
 pub struct Agent {
   // private fields
 }
-pub fn Agent::Agent(exts~ : Array[&@port.Extension], config~ : AgentConfig, ui_projection? : Bool) -> Self raise @error.CompositionError
+pub fn Agent::Agent(exts~ : Array[&@port.Extension], config~ : AgentConfig, events~ : EventSystem, ui_projection? : Bool) -> Self raise @error.CompositionError
 pub fn Agent::commands(Self) -> Array[&@port.CommandPort]
 pub async fn Agent::compact_session(Self, String) -> @types.CompactOutcome raise @error.AgentError
 pub async fn Agent::context_state(Self, String) -> @types.ContextState?
@@ -43,7 +43,7 @@ pub async fn Agent::run_turn(Self, @kernel.Message, String) -> @types.TurnResult
 pub fn Agent::set_active_session(Self, String?) -> Unit
 pub async fn Agent::shutdown(Self) -> Unit
 pub fn Agent::subscribe_events(Self, (@events.EventEnvelope) -> Unit, namespace_? : @events.EventNamespace?) -> Result[@events.Subscription, @events.EventError]
-pub fn Agent::with_runtime(exts~ : Array[&@port.Extension], config~ : AgentConfig, runtime~ : &@runtime.Runtime, ui_projection? : Bool) -> Self raise @error.CompositionError
+pub fn Agent::with_runtime(exts~ : Array[&@port.Extension], config~ : AgentConfig, events~ : EventSystem, runtime~ : &@runtime.Runtime, ui_projection? : Bool) -> Self raise @error.CompositionError
 
 pub struct AgentConfig {
   max_tool_rounds : Int32?
@@ -68,6 +68,14 @@ pub fn AgentControl::enqueue_follow_up(Self, @kernel.Message, target? : MessageT
 pub fn AgentControl::enqueue_steer(Self, @kernel.Message, target? : MessageTarget?) -> @runtime.EnqueueOutcome
 pub fn AgentControl::pending_follow_ups(Self) -> Int32
 pub fn AgentControl::pending_steers(Self) -> Int32
+
+pub struct EventSystem {
+  // private fields
+}
+pub fn EventSystem::EventSystem() -> Self
+pub fn EventSystem::close(Self) -> Result[Unit, @events.EventError]
+pub fn EventSystem::publisher(Self, owner~ : String) -> Result[@events.Events, @events.EventError]
+pub fn EventSystem::subscribe(Self, (@events.EventEnvelope) -> Unit, namespace_? : @events.EventNamespace?) -> Result[@events.Subscription, @events.EventError]
 
 #derive(Eq)
 pub struct MessageTarget {

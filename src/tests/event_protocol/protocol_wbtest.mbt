@@ -1,6 +1,6 @@
 ///|
 test "protocol/community_adt_travels_typed_across_packages" {
-  let runtime = @event_runtime.EventRuntime([])
+  let runtime = @event_runtime.EventRuntime()
   let started : Array[Int32] = []
   let blocked : Array[String] = []
   let scoped : Array[(@types.EventScope?, String)] = []

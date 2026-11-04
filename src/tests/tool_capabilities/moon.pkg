@@ -7,5 +7,13 @@ import {
   "colmugx/posoco/types",
   "colmugx/posoco/error",
   "colmugx/posoco/internal/test_support",
-  "moonbitlang/async",
+  "moonbitlang/core/async",
+  "moonbitlang/core/async/cond_var",
 } for "wbtest"
+
+options(
+  "allow-experimental-packages": [
+    "moonbitlang/core/async",
+    "moonbitlang/core/async/cond_var",
+  ],
+)

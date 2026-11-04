@@ -51,11 +51,7 @@ async fn Puppet::start_ready_children(
       guard effect is ExecuteTool(payload~, ..) else {
         abort("scheduled non-tool child")
       }
-      calls.push({
-        call_id: payload.call_id,
-        name: payload.tool_name,
-        arguments: payload.arguments,
-      })
+      calls.push(payload.tool_call())
       model_step = Some(payload.model_step_id)
     }
     self.commit_boundary(

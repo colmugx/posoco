@@ -20,6 +20,7 @@ async test "tool_assembly/static_definitions_are_read_once_and_bound_to_manifest
     ),
   ])
   let agent = Agent(
+    events=@agent.EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="declaring_extension", tools=[provider]),
@@ -106,6 +107,7 @@ async test "tool_directory/static_and_dynamic_definitions_are_deep_copied_at_com
     ),
   ])
   let agent = Agent(
+    events=@agent.EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="static", tools=[static_provider]),
@@ -159,6 +161,7 @@ async test "tool_directory/memory_is_core_bound_with_source_and_contribution" {
   ])
   let runtime = @runtime.PortRuntime(model~)
   let agent = Agent::with_runtime(
+    events=@agent.EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="memory-source", memory=[memory]),
@@ -241,6 +244,7 @@ async test "tool_directory/multiple_publishers_share_operation_boundary" {
     ignore(publisher.publish(replacement))
   })
   let agent = Agent::with_runtime(
+    events=@agent.EventSystem(),
     exts=[
       source,
       @test_support.tk_ext(id="model", model=Some(model)),
@@ -316,6 +320,7 @@ async test "tool_directory/renaming_and_owner_withdrawal_do_not_leave_stale_rout
     ),
   ])
   let agent = Agent(
+    events=@agent.EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="a", lifecycle=[a], requires=[

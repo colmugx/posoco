@@ -45,6 +45,10 @@ pub(all) enum WakeupError {
   /// the currently bound active window session. A request never binds the
   /// active session itself.
   InvalidSession(reason~ : String)
+  /// The session already holds the maximum number of pending tickets. The
+  /// request is rejected — never silently dropped — and coalescing onto an
+  /// already pending tag is still accepted.
+  PendingFull(session~ : String, limit~ : Int32)
 }
 
 ///|

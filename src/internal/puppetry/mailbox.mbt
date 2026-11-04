@@ -55,6 +55,8 @@ pub struct ControlMailbox {
 pub(all) enum QuiescentStatus {
   /// No run was active.
   Idle
+  /// A run is in flight; the mailbox is not quiescent.
+  Active
   /// Run is suspended; carries the details needed to resume.
   Suspended(
     run_id~ : RunId,
@@ -80,6 +82,7 @@ pub extend QuiescentStatus with Show::{output}
 pub impl Show for QuiescentStatus with fn to_string(self : QuiescentStatus) -> String {
   match self {
     Idle => "Idle"
+    Active => "Active"
     Suspended(run_id~, suspension_id~, requirement_kind~) =>
       "Suspended(run=\{run_id.to_string()}, susp=\{suspension_id}, kind=\{requirement_kind})"
     Terminal(outcome~) => "Terminal(\{outcome.to_string()})"
@@ -114,6 +117,9 @@ pub impl Mailbox for ControlMailbox with fn bind_run(
   self.active_run_id = Some(run_id)
   self.active_turn_id = Some(turn_id)
   self.abort_requested = false
+  // A new run starts non-quiescent, so a previous run's Terminal cannot be
+  // read by a `wait_idle` caller entering this run.
+  self.quiescent_status = Active
   self.messages.bind_turn(run_id, turn_id)
   self.fork_queue = Queue(kind=Unbounded)
   self.fork_depth = 0
@@ -125,6 +131,10 @@ pub impl Mailbox for ControlMailbox with fn bind_run(
 ///|
 /// Clear the active run binding. Structural commands are dropped; message
 /// records remain in the inbox for Agent's explicit settlement.
+///
+/// The quiescent status is left alone on purpose: the terminal/suspended
+/// status of the run that just ended stays observable, and the next
+/// `bind_run` moves the mailbox back to `Active`.
 pub impl Mailbox for ControlMailbox with fn clear_run(self : ControlMailbox) -> Unit {
   self.active_run_id = None
   self.active_turn_id = None
@@ -255,9 +265,9 @@ pub impl Mailbox for ControlMailbox with fn enqueue_abort(
         return AbortAlreadyRequested(command_id=cmd.command_id)
       }
       self.abort_requested = true
-      // Signal the idle barrier so a wait_idle blocked on this run wakes
-      // up (the pump will observe abort_requested on its next tick).
-      self.idle_cond.broadcast()
+      // Deliberately no idle-barrier broadcast: abort does not quiesce the
+      // run. The pump observes `abort_requested` at its next safe point and
+      // sets the terminal status there, which is what wakes `wait_idle`.
       Accepted(command_id=cmd.command_id)
     }
   }
@@ -441,24 +451,17 @@ pub impl Mailbox for ControlMailbox with fn set_quiescent(
 /// `@cond_var.Cond::wait` — NOT polling, NOT sleep. Multiple waiters all
 /// wake on `set_quiescent`.
 ///
-/// Returns the quiescent status (never `Idle`-but-still-active — the
-/// Puppet only sets quiescent when truly quiescent).
+/// Returns the first non-`Active` status observed. `Active` (a run in
+/// flight) always keeps waiting, so a wakeup that does not quiesce the
+/// mailbox — a spurious one, or the `Active` status `bind_run` installs —
+/// cannot make a late waiter read a stale `Terminal`.
 pub impl Mailbox for ControlMailbox with fn wait_idle(self : ControlMailbox) -> QuiescentStatus {
-  // Loop because @cond_var may have spurious wakeups; we re-check the
-  // status each time. The status starts as Idle (the initial state) so
-  // a wait_idle call when already quiescent returns immediately.
-  while true {
-    match self.quiescent_status {
-      Idle =>
-        // Idle is quiescent — return immediately.
-        return Idle
-      Suspended(..) => return self.quiescent_status
-      Terminal(..) => return self.quiescent_status
-      Shutdown => return Shutdown
+  for ;; {
+    let status = self.quiescent_status
+    if status is Active {
+      self.idle_cond.wait()
+    } else {
+      return status
     }
-    // Active state: wait for the Puppet to signal.
-    self.idle_cond.wait()
   }
-  // Unreachable; MoonBit needs a return at the end.
-  Idle
 }

@@ -1,9 +1,16 @@
 import {
   "colmugx/posoco/types",
   "colmugx/posoco/internal/event_runtime",
-  "moonbitlang/async/aqueue",
+  "moonbitlang/core/async/aqueue",
 }
 
 import {
-  "moonbitlang/async",
+  "moonbitlang/core/async",
 } for "wbtest"
+
+options(
+  "allow-experimental-packages": [
+    "moonbitlang/core/async",
+    "moonbitlang/core/async/aqueue",
+  ],
+)

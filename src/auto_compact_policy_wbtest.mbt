@@ -93,6 +93,7 @@ async test "policy/provider-reported window enables auto-compact without host co
     ),
   }
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="tools", tools=[policy_tools()]),
@@ -126,6 +127,7 @@ async test "policy/compact scope carries the resolved pressure reading" {
     ),
   }
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="tools", tools=[policy_tools()]),
@@ -168,6 +170,7 @@ async test "policy/host window overrides the provider report" {
     ),
   }
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="tools", tools=[policy_tools()]),
@@ -204,6 +207,7 @@ async test "policy/core default threshold is 0.88 when nobody declares one" {
     reported: policy_reported(context_window=Some(100)),
   }
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="tools", tools=[policy_tools()]),
@@ -243,6 +247,7 @@ async test "policy/cumulative usage does not trigger, latest occupancy does" {
     ),
   }
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="tools", tools=[policy_tools()]),
@@ -281,6 +286,7 @@ async test "policy/same task crossing twice compacts twice" {
     ),
   }
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="tools", tools=[policy_tools()]),
@@ -315,6 +321,7 @@ async test "policy/auto-compact failure stops the turn immediately and is report
   }
   let store = @test_support.RecordingSessionPort()
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="tools", tools=[policy_tools()]),
@@ -460,6 +467,7 @@ async test "policy/e2e compacted transcript is what the next model call sees" {
     compacted,
   )
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="tools", tools=[policy_tools()]),
@@ -541,6 +549,7 @@ async test "policy/pre-request check compacts before the first request" {
     [@test_support.tk_user_msg("summary")],
   )
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store]),
@@ -579,6 +588,7 @@ async test "policy/pre-request check stays quiet below the threshold" {
     [@test_support.tk_user_msg("summary")],
   )
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store]),
@@ -615,6 +625,7 @@ async test "policy/pre-request check ignores readings from another window" {
     [@test_support.tk_user_msg("summary")],
   )
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store]),
@@ -648,6 +659,7 @@ async test "policy/e2e compacted transcript persists into the next turn" {
     compacted,
   )
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="tools", tools=[policy_tools()]),
@@ -721,6 +733,7 @@ async test "policy/pre-request check covers the first request after resume" {
     [@test_support.tk_user_msg("summary")],
   )
   let agent = Agent(
+    events=EventSystem(),
     exts=[
       @test_support.tk_ext(id="model", model=Some(model)),
       @test_support.tk_ext(id="io", sessions=[store]),
