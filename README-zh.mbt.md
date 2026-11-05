@@ -4,7 +4,7 @@
 
 核心拥有 agent loop 及其不变量，所有运行时能力——model、tool、session、observer、hook、UI、
 command、prompt、memory、lifecycle——都通过开放的 port trait 注入。产品通过
-`Agent(exts~, config~)` 唯一入口组合；核心不规定形态。
+`Agent(exts~, config~, events~)` 唯一入口组合；核心不规定形态。
 
 > **API 文档：** <https://mooncakes.io/docs/colmugx/posoco> · **English README:**
 > [`README.mbt.md`](./README.mbt.md)
@@ -14,7 +14,7 @@ command、prompt、memory、lifecycle——都通过开放的 port trait 注入�
 ## 安装
 
 ```bash
-moon add colmugx/posoco@0.24.0
+moon add colmugx/posoco@0.24.1
 ```
 
 ## Port
@@ -85,6 +85,10 @@ agent 开发者导入扩展包，把扩展实例接进一个 `Agent`。`exts` �
 注册顺序，但不提供工具重名时的「后声明覆盖前声明」。
 
 ```moonbit nocheck
+// 宿主为每个 Agent 持有一个事件资源。先创建它：ports 和普通对象可能在 Agent
+// 存在之前就需要自己的 owner-bound `Events`。
+let system = @posoco.EventSystem()
+
 let agent = @posoco.Agent(
   exts=[
     model_ext,   // 贡献 ModelPort 的扩展
@@ -96,6 +100,7 @@ let agent = @posoco.Agent(
     max_output_tokens: None,
     model_context_window: None,
   },
+  events=system,
 )
 
 let input : @posoco.Message = @posoco.UserMessage(content=[
@@ -103,6 +108,9 @@ let input : @posoco.Message = @posoco.UserMessage(content=[
 ])
 let result = agent.run_turn(input, "session_1")
 ```
+
+`events~` 是必填参数：Posoco 不再隐式创建事件资源。组合会独占接管该值，
+一个 `EventSystem` 只服务一个 Agent。
 
 `AgentConfig` 有四个字段：`max_tool_rounds`（`Int?`，`None` 为无界、是推荐默认；
 `Some(n)` 放行 n 个完整工具轮）、`temperature`、`max_output_tokens`、`model_context_window`。`run_turn(message, session_id)`
@@ -120,24 +128,52 @@ let result = agent.run_turn(input, "session_1")
 
 ## 强类型事件
 
-Posoco 为每个 Agent 提供一套事件系统，核心通知与社区协议共用它。
+Posoco 为每个 Agent 提供一套事件资源，核心通知与社区协议共用它。
 协议包定义封闭的载荷 ADT，并为开放的 `@posoco.Event` 添加构造器；发布和接听
-都直接使用类型化的值，不需要字符串 topic、JSON 编解码或向下转型。
+都直接使用类型化的值，不需要字符串 topic、JSON 编解码或向下转型。资源是实时的：
+组合之前、之中、之后都能授权能力和投递通知，但它从不重放历史。
 
+```moonbit nocheck
+let system = @posoco.EventSystem()
+
+// 普通对象（没有 Lifecycle 字段，也不持有 Agent）发布到 Extension("status_bar")。
+// 该授权在 Agent 接管之后依然有效。
+let granted = system.publisher(owner="status_bar") // Result[Events, EventError]
+
+// 宿主可以在 Agent 存在之前接听。
+let subscription = system.subscribe(
+  envelope => handle(envelope),
+  namespace_=Some(@posoco.EventNamespace::Extension("status_bar")),
+)
+```
+
+- **宿主资源**：在 ports 之前创建 `EventSystem()`，把同一个值传给唯一一个
+  `Agent(..., events=system)`。构造会独占接管；第二个 Agent 复用同一资源会被
+  拒绝，且不影响第一个 Agent。
+- **普通对象**：`system.publisher(owner~)` 授予绑定 `Extension(owner)` 的 `Events`，
+  不需要 `Lifecycle`，也不需要 Agent。owner 由宿主指定，可以不是 manifest id。
+- **宿主接入**：组合前用 `system.subscribe(handler, namespace_=...)`，组合后用
+  `agent.subscribe_events(handler, namespace_=...)`；结束时 `cancel()`。
 - **扩展接入**：manifest 声明 `requires: [@posoco.Capability::Events]` 并登记
   `Lifecycle`；在 `on_compose` 中取得 `view.events()`，之后调用
   `events.publish(event)` 或 `events.subscribe(handler, namespace_=...)`。
-- **宿主接入**：调用 `agent.subscribe_events(handler, namespace_=...)`，结束时对
-  返回的 `Subscription` 调用 `cancel()`。无需创建总线或接触内部运行时。
-- **命名空间**：发布身份绑定为 `Extension(manifest_id)`。`Posoco` 命名空间保留给
-  `Core(TurnEvent)`；扩展不能发布 `Core`。接听可选择任意命名空间，`None` 表示全部。
-- **边界**：回调同步且不可抛错，事件不重放，shutdown 后保留的能力返回关闭错误。
-  `Observer` 仍然可用，是同一系统里只收核心通知的适配器；`Hook` 仍负责拦截。
-  通知不代替需要等待完成的 journal/checkpoint 提交。
+- **命名空间**：`Posoco` 命名空间保留给 `Core(TurnEvent)`；owner-bound 能力不能
+  发布 `Core`。接听可选择任意命名空间，`None` 表示全部。
+- **生命周期**：turn 失败或取消不关闭资源；接管之后的任何构造失败会关闭资源并
+  撤销已发出的能力；`shutdown()` 关闭它。此后授权、发布、订阅返回 `Err(Closed)`，
+  `cancel()` 仍幂等。直接关闭已接管的资源、或重复接管，都是 typed error，不会
+  静默重开。
+- **边界**：回调同步且不可抛错，按注册顺序投递并每批取快照，事件不重放。
+  `Observer` 是同一系统里只收核心通知的适配器；`Hook` 仍负责拦截。通知不代替
+  需要等待完成的 journal/checkpoint 提交。
+
+端到端可运行示例（Agent 之前的普通 publisher、提前接听、typed 投递、
+shutdown 后 `Closed`）见 [`examples/quickstart`](./examples/quickstart/README.md)；
+完整资源契约与迁移步骤见 [`src/events/MIGRATION.md`](./src/events/MIGRATION.md)。
 
 ## 扩展库
 
-[`colmugx/posoco-extension`](https://github.com/colmugx/posoco-extension) 维护了一套开箱即用的扩展，可直接接入 `Agent(exts~, config~)`。
+[`colmugx/posoco-extension`](https://github.com/colmugx/posoco-extension) 维护了一套开箱即用的扩展，可直接接入 `Agent(exts~, config~, events~)`。
 
 ## 延伸阅读 — Posoco 101
 

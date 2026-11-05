@@ -1,5 +1,44 @@
 # Changelog
 
+## 0.24.1
+
+### Breaking: explicitly supplied EventSystem with exclusive Agent ownership
+
+`Agent(exts~, config~, events~)` and
+`Agent::with_runtime(exts~, config~, events~, runtime~)` now require a
+host-created `EventSystem`. The implicit event-runtime construction path is
+removed; there is no default, compatibility constructor, or process registry.
+
+Create the resource before constructing ports. `system.publisher(owner~)`
+grants the existing owner-bound `Events` capability to an ordinary object;
+it need not implement `Lifecycle` or hold an Agent. `system.subscribe` can
+also register listeners before composition. Both pre-composition and late
+grants connect to the same runtime used by `CompositionView::events`,
+`Agent::subscribe_events`, core notifications, and the core-only `Observer`
+adapter. Delivery stays registration-ordered, synchronous, reentrancy-safe,
+and non-replaying; listeners registered before composition precede Observers
+registered during composition.
+
+One resource is exclusively transferred to one Agent. A second claim raises
+`CompositionError::EventSystemAlreadyOwned` without affecting the first Agent.
+Any construction failure after takeover closes the resource and revokes all
+issued capabilities; a closed resource raises `EventSystemClosed` on claim.
+Turn failure/cancellation keeps it open, and successful final shutdown closes
+it. `EventSystem::close` cleans up an unclaimed resource, returns `Err(Owned)`
+while an Agent owns it, and is idempotent after closure. Closed operations
+return `Err(Closed)`; blank owner grants return `Err(InvalidOwner)` without
+normalizing valid identities. Owner-bound capabilities still reject core
+payloads with `Err(ReservedEvent)`.
+
+All repository callers and examples use the required resource directly.
+See the [event resource contract and migration guide](src/events/MIGRATION.md)
+and the [offline quickstart](examples/quickstart/README.md).
+
+Validation: the workspace suite passes on the default Wasm backend, native,
+and js; the quickstart passes on native and js with `core/async`. Its explicit
+wasm-gc build is still blocked by `Value run_async_main not found in package
+moonbitlang/core/async`. No old-async fallback or skipped check is introduced.
+
 ## 0.24.0
 
 ### Added: typed extension events — one Agent-owned notification system

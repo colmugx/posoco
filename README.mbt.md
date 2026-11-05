@@ -3,8 +3,8 @@
 Posoco is a protocol-first LLM agent framework for MoonBit: the core owns the
 agent loop and its invariants, and every runtime capability — model, tool,
 session, observer, hook, UI, command, prompt, memory, lifecycle — is injected
-through open port traits. Products compose one `Agent(exts~, config~)`; the
-core never dictates shape.
+through open port traits. Products compose one `Agent(exts~, config~, events~)`;
+the core never dictates shape.
 
 > **API docs:** <https://mooncakes.io/docs/colmugx/posoco> · **中文 README:**
 > [`README-zh.mbt.md`](./README-zh.mbt.md)
@@ -15,7 +15,7 @@ core never dictates shape.
 ## Installation
 
 ```bash
-moon add colmugx/posoco@0.24.0
+moon add colmugx/posoco@0.24.1
 ```
 
 ## Ports
@@ -89,6 +89,10 @@ observer, and lifecycle registration order. It does not give colliding tools a
 last-wins priority.
 
 ```moonbit nocheck
+// The host owns one event resource per Agent. Create it first: ports and plain
+// objects may need their owner-bound `Events` before the Agent exists.
+let system = @posoco.EventSystem()
+
 let agent = @posoco.Agent(
   exts=[
     model_ext,   // an extension contributing ModelPort
@@ -100,6 +104,7 @@ let agent = @posoco.Agent(
     max_output_tokens: None,
     model_context_window: None,
   },
+  events=system,
 )
 
 let input : @posoco.Message = @posoco.UserMessage(content=[
@@ -107,6 +112,10 @@ let input : @posoco.Message = @posoco.UserMessage(content=[
 ])
 let result = agent.run_turn(input, "session_1")
 ```
+
+`events~` is required: Posoco no longer creates an implicit event resource.
+Composition takes exclusive ownership of the value, so one `EventSystem` serves
+one Agent.
 
 `AgentConfig` has four fields: `max_tool_rounds` (`Int?` — `None` is
 unbounded and the recommended default; `Some(n)` allows n full tool rounds),
@@ -126,27 +135,64 @@ A turn that has emitted `TurnStarted` emits exactly one terminal event:
 
 ## Typed events
 
-Posoco owns one event system per Agent for both core notifications and community
-protocols. Define a closed payload ADT and add a constructor to the open
-`@posoco.Event`; publishers and listeners exchange typed values, not JSON topics.
+Posoco owns one event resource per Agent for both core notifications and
+community protocols. Define a closed payload ADT and add a constructor to the
+open `@posoco.Event`; publishers and listeners exchange typed values, not JSON
+topics. The resource is live: it grants capabilities and delivers notifications
+before, during, and after composition — it never replays history.
 
+```moonbit nocheck
+let system = @posoco.EventSystem()
+
+// A plain object (no Lifecycle field, no Agent reference) publishes into
+// Extension("status_bar"). The grant survives the Agent takeover.
+let granted = system.publisher(owner="status_bar") // Result[Events, EventError]
+
+// Hosts can listen before the Agent exists.
+let subscription = system.subscribe(
+  envelope => handle(envelope),
+  namespace_=Some(@posoco.EventNamespace::Extension("status_bar")),
+)
+```
+
+- **Host resource:** create `EventSystem()` before the ports and pass the same
+  value to exactly one `Agent(..., events=system)`. Construction takes exclusive
+  ownership; a second Agent on that value is rejected and leaves the first
+  Agent working.
+- **Plain objects:** `system.publisher(owner~)` grants an owner-bound `Events`
+  without a `Lifecycle` and without an Agent. Publication is fixed to
+  `Extension(owner)` at grant time; `owner` is chosen by the host and may differ
+  from a manifest id.
+- **Hosts:** subscribe with `system.subscribe(handler, namespace_=...)` before
+  composition, or with `agent.subscribe_events(handler, namespace_=...)`
+  afterwards. Cancel the returned `Subscription` when finished.
 - **Extensions:** declare `requires: [@posoco.Capability::Events]` and register a
   `Lifecycle`; obtain `view.events()` in `on_compose`, then call
   `events.publish(event)` or `events.subscribe(handler, namespace_=...)`.
-- **Hosts:** call `agent.subscribe_events(handler, namespace_=...)`; cancel the
-  returned `Subscription` when finished. No bus construction or runtime factory
-  is needed.
-- **Namespaces:** publication is bound to `Extension(manifest_id)`. `Posoco` is
-  reserved for `Core(TurnEvent)` notifications; an extension cannot publish
-  `Core`. Subscriptions may select any namespace, or all with `None`.
-- **Boundaries:** handlers are synchronous and non-raising, notifications have
-  no replay, and shutdown closes retained capabilities. `Observer` is a core-only
-  adapter on this same system; `Hook` remains the interception API. Event
-  notifications do not replace awaited journal/checkpoint commits.
+- **Namespaces:** `Posoco` is reserved for `Core(TurnEvent)` notifications; an
+  owner-bound capability cannot publish `Core`. Subscriptions may select any
+  namespace, or all with `None`.
+- **Lifecycle:** a failed or cancelled turn keeps the resource open; any
+  composition failure after takeover closes it and revokes the capabilities
+  already granted; `shutdown()` closes it. Grants, publishes and subscriptions
+  then return `Err(Closed)`; `cancel()` stays idempotent. Closing an owned
+  resource directly, or taking it over twice, is a typed error — never a silent
+  reopen.
+- **Boundaries:** handlers are synchronous and non-raising, deliveries follow
+  registration order with a per-batch snapshot, and the resource is never
+  replayed. `Observer` is a core-only adapter on this same system; `Hook` remains
+  the interception API. Event notifications do not replace awaited
+  journal/checkpoint commits.
+
+A runnable end-to-end host example (plain publisher before the Agent, early
+subscription, typed delivery, `Closed` after shutdown) is
+[`examples/quickstart`](./examples/quickstart/README.md). The full resource
+contract and migration steps are in
+[`src/events/MIGRATION.md`](./src/events/MIGRATION.md).
 
 ## Extension library
 
-[`colmugx/posoco-extension`](https://github.com/colmugx/posoco-extension) maintains a curated set of ready-to-use extensions, and other port implementations you can drop straight into `Agent(exts~, config~)`.
+[`colmugx/posoco-extension`](https://github.com/colmugx/posoco-extension) maintains a curated set of ready-to-use extensions, and other port implementations you can drop straight into `Agent(exts~, config~, events~)`.
 
 ## Learn more — Posoco 101
 

@@ -1,10 +1,9 @@
 name = "colmugx/posoco"
 
-version = "0.24.0"
+version = "0.24.1"
 
 import {
-  "colmugx/fuwaroid@0.3.2",
-  "moonbitlang/async@0.22.7",
+  "colmugx/fuwaroid@0.4.0",
   "colmugx/json-schema@0.1.5",
 }
 
