@@ -264,25 +264,6 @@ test "C-MODEL-LENGTH-FINISH: finish_reason=Length → Terminal(Failed)" {
 }
 
 ///|
-/// Drive one AwaitingModel state through `ModelFailed` with the given
-/// failure and return the terminal `FailureReason` the reducer classified.
-fn model_failure_reason(failure : @kernel.ModelFailure) -> FailureReason raise {
-  let (st_awaiting, eff_id, step_id) = run_until_awaiting_model()
-  let catalog = make_catalog_v1()
-  let out = reduce(
-    st_awaiting,
-    catalog,
-    ModelFailed(payload={ effect_id: eff_id, model_step_id: step_id, failure, }),
-  )
-  let st = out.next_state()
-  assert_eq(st.phase(), Terminal)
-  match st.outcome() {
-    Some(Failed(reason~)) => reason
-    _ => fail("expected Failed outcome for ModelFailed input")
-  }
-}
-
-///|
 test "C-INVARIANT-DUPLICATE-CALL-ID: same call_id twice in one batch → Failed" {
   let (st_awaiting, eff_id, step_id) = run_until_awaiting_model()
   let catalog = make_catalog_v1()

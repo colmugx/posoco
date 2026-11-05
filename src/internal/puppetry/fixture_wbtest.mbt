@@ -353,19 +353,6 @@ async fn fixture_prompt(
 }
 
 ///|
-fn first_revision_matching(
-  entries : Array[JournalEntry],
-  kind : SavepointKind,
-) -> Int32 {
-  for entry in entries {
-    if entry.identity.kind == kind {
-      return entry.revision
-    }
-  }
-  0
-}
-
-///|
 /// The host must receive the reducer-allocated effect identity with each
 /// `execute_tool` call. Allocation is deterministic per run: CallModel is
 /// effect 1, the tool batch follows as effects 2..N. Hosts that propagate

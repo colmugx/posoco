@@ -70,8 +70,6 @@ already-owned system is reported with a typed error; it is never reopened,
 replaced, or silently handed to a second owner.
 
 ```moonbit nocheck
-// Host side, in the root package: `EventSystem` belongs to `@posoco`, so the
-// events package documents the capability shape rather than owning the resource.
 ///|
 let system = @posoco.EventSystem()
 // An untaken system already accepts listeners and grants capabilities.

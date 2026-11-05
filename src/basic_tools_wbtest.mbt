@@ -2,19 +2,6 @@
 using @support {type ToolPublisher}
 
 ///|
-fn basic_tools_final_text(result : @types.TurnResult) -> String {
-  let mut text = ""
-  if result.message is AssistantMessage(content~, ..) {
-    for block in content {
-      if block is Text(value) {
-        text = value
-      }
-    }
-  }
-  text
-}
-
-///|
 fn build_basic_tools_agent(
   mem : @test_support.ScriptedMemoryPort,
   publisher : ToolPublisher,

@@ -2,24 +2,6 @@
 /// Whitebox tests for the Puppet phase gate.
 
 ///|
-
-///|
-/// Run a raise-resulting call and capture its typed error, if any.
-fn try_acquire_prompt(
-  gate : PhaseGate,
-  op_id : String,
-  run_id : RunId,
-  turn_id : TurnId,
-) -> PuppetError? {
-  try {
-    ignore(gate.acquire_prompt(op_id, run_id, turn_id))
-    None
-  } catch {
-    e => Some(e)
-  }
-}
-
-///|
 fn try_acquire_resume(
   gate : PhaseGate,
   op_id : String,
@@ -27,36 +9,6 @@ fn try_acquire_resume(
 ) -> PuppetError? {
   try {
     ignore(gate.acquire_resume(op_id, susp_id))
-    None
-  } catch {
-    e => Some(e)
-  }
-}
-
-///|
-fn try_release(gate : PhaseGate, op_id : String) -> PuppetError? {
-  try {
-    gate.release(op_id)
-    None
-  } catch {
-    e => Some(e)
-  }
-}
-
-///|
-fn try_gate_transition(gate : PhaseGate, to : PuppetPhase) -> PuppetError? {
-  try {
-    ignore(gate.transition(to))
-    None
-  } catch {
-    e => Some(e)
-  }
-}
-
-///|
-fn try_rotate_turn(gate : PhaseGate, new_turn_id : TurnId) -> PuppetError? {
-  try {
-    ignore(gate.rotate_turn(new_turn_id))
     None
   } catch {
     e => Some(e)

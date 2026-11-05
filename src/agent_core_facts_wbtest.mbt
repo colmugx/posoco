@@ -386,19 +386,6 @@ impl @port.ModelPort for ShadowGatedTurnModel with fn provider_config(_self) -> 
 }
 
 ///|
-async fn core_facts_wait_entered(model : ShadowGatedTurnModel) -> Bool {
-  let waited : Unit = @async.with_timeout(60, async fn() {
-    while !model.entered {
-      @async.pause()
-    }
-  }) catch {
-    _ => fail("model gate did not enter")
-  }
-  ignore(waited)
-  true
-}
-
-///|
 async fn shadow_invoke_command(
   agent : Agent,
   command_id : String,
@@ -1258,22 +1245,6 @@ async test "core_shadow/missing_provenance_survives_real_next_turn" {
   }
   assert_eq(model.calls, 2)
   assert_false(core_has_session(agent, missing_sid))
-}
-
-///|
-fn shadow_dangling_message() -> @kernel.Message {
-  AssistantMessage(
-    content=[Text("working")],
-    tool_calls=[
-      {
-        call_id: @kernel.CallId::unchecked("dangling-call"),
-        name: @kernel.ToolName::unchecked("leaf"),
-        arguments: Json::null(),
-      },
-    ],
-    reasoning=None,
-    finish_reason=ToolCalls,
-  )
 }
 
 ///|
