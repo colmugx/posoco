@@ -121,11 +121,60 @@ pub impl @posoco.Extension for QuickstartExtension with fn manifest(self) -> @po
 }
 
 ///|
+/// A plain object that reports progress without being an extension. The host
+/// hands it an owner-bound `Events` value, so it needs no `Lifecycle` and no
+/// reference to the Agent.
+struct QuickstartReporter {
+  publisher : @posoco.Events
+}
+
+///|
+fn QuickstartReporter::new(
+  system : @posoco.EventSystem,
+) -> Result[QuickstartReporter, @posoco.EventError] {
+  match system.publisher(owner="quickstart_reporter") {
+    Ok(publisher) => Ok({ publisher, })
+    Err(error) => Err(error)
+  }
+}
+
+///|
+fn QuickstartReporter::report_started(self : QuickstartReporter) -> Bool {
+  self.publisher.publish(QuickstartChanged(Started)) is Ok(_)
+}
+
+///|
 async fn main {
+  // The host owns one event resource per Agent and creates it before the ports.
+  let system = @posoco.EventSystem()
+  // Listen before composition: an untaken system already delivers.
+  let delivered = Ref(0)
+  guard system.subscribe(
+      envelope => {
+        match envelope.event {
+          QuickstartChanged(Started) => delivered.val += 1
+          _ => () // Event is open: other protocols may add constructors.
+        }
+      },
+      namespace_=Some(@posoco.EventNamespace::Extension("quickstart_reporter")),
+    )
+    is Ok(system_subscription) else {
+    abort("quickstart could not subscribe before composing the Agent")
+  }
+  // A plain object gets its own publisher before the Agent exists.
+  let reporter = match QuickstartReporter::new(system) {
+    Ok(reporter) => reporter
+    Err(_) => abort("quickstart could not obtain an owner-bound publisher")
+  }
+  if !reporter.report_started() {
+    abort("quickstart could not publish before composing the Agent")
+  }
   let extension = QuickstartExtension()
+  // The same resource is handed to exactly one Agent.
   let agent = @posoco.Agent(
     exts=[extension],
     config=@posoco.agent_config(max_tool_rounds=Some(0)),
+    events=system,
   )
   // Subscribe before the first turn: events are live notifications, not replayed state.
   let started = Ref(false)
@@ -141,12 +190,19 @@ async fn main {
     is Ok(subscription) else {
     abort("quickstart could not subscribe to events")
   }
+  // A capability granted before takeover keeps working afterwards.
+  if !reporter.report_started() {
+    abort("quickstart publisher stopped working after the Agent took over")
+  }
   let input : @posoco.Message = @posoco.Message::UserMessage(content=[
     @posoco.Content::Text("Say hello"),
   ])
   let result = agent.run_turn(input, "quickstart-session")
   if !started.val {
     abort("quickstart did not receive its startup event")
+  }
+  if delivered.val != 2 {
+    abort("quickstart pre-Agent subscriber saw \{delivered.val} events, want 2")
   }
   match result.message {
     @posoco.Message::AssistantMessage(content~, ..) =>
@@ -159,5 +215,9 @@ async fn main {
     _ => abort("quickstart expected an AssistantMessage response")
   }
   subscription.cancel()
+  system_subscription.cancel()
   agent.shutdown()
+  if reporter.report_started() {
+    abort("quickstart publisher stayed open after shutdown")
+  }
 }

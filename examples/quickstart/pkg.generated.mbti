@@ -22,6 +22,8 @@ pub impl @port.ModelPort for QuickstartModel
 
 type QuickstartProgress
 
+type QuickstartReporter
+
 type QuickstartSessionPort
 pub impl @port.SessionPort for QuickstartSessionPort
 

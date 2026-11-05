@@ -242,7 +242,8 @@ pub extend InMemoryStore with @posoco.Extension::{extension_id, manifest}
 
 ## 5. 组装并运行 Agent
 
-现在把两个扩展连起来。`Agent` 的构造器只接受两个参数：扩展数组 + 配置。
+现在把两个扩展连起来。`Agent` 的构造器接受三个参数：扩展数组 + 配置 + 事件资源。
+事件资源由宿主创建，Agent 构造时独占接管：
 
 ```moonbit check
 ///|
@@ -250,9 +251,12 @@ pub extend InMemoryStore with @posoco.Extension::{extension_id, manifest}
 async test "first_agent_runs_one_turn" {
   let model = FixedModel::{ }
   let store = InMemoryStore::{ sessions: Map::from_array([]), }
+  // 一个 Agent 一个事件资源。先创建，再交给 Agent；没有隐式创建路径。
+  let events = @posoco.EventSystem()
   let agent = @posoco.Agent(
     exts=[model, store], // 两个自报告扩展，顺序无关
     config=@posoco.agent_config(max_tool_rounds=Some(10)),
+    events~,
   )
 
   // 构造用户消息。Message 是 ADT，不是 record——每种角色一个构造器。
@@ -273,6 +277,7 @@ async test "first_agent_runs_one_turn" {
       ])
     _ => fail("expected AssistantMessage")
   }
+  agent.shutdown()
 }
 ```
 
@@ -374,6 +379,7 @@ async test "first_agent_model_failure_is_typed" {
   let agent = @posoco.Agent(
     exts=[model, store],
     config=@posoco.agent_config(max_tool_rounds=Some(10)),
+    events=@posoco.EventSystem(),
   )
   let user_message : @posoco.Message = @posoco.Message::UserMessage(content=[
     @posoco.Content::Text("你好"),
@@ -386,6 +392,8 @@ async test "first_agent_model_failure_is_typed" {
     @posoco.AgentError::Model(_) => () // 期望的错误
     _ => fail("expected AgentError::Model, got something else")
   }
+  // turn 失败不会关闭事件资源；shutdown 才是最终关闭点。
+  agent.shutdown()
 }
 ```
 
@@ -407,7 +415,8 @@ raise `ModelError::ResponseParse`，而不是静默变成 `{}`。
 | `ModelPort` | 你实现的"模型"——固定回复（3 个方法） |
 | `SessionPort` | 你实现的"记忆"——内存字典（load + save） |
 | `Extension` | 自报告——告诉 Agent 你贡献了哪些端口 |
-| `Agent(exts=, config=)` | 组装入口，扩展数组 + 配置 |
+| `EventSystem` | 宿主创建的事件资源，Agent 构造时独占接管 |
+| `Agent(exts=, config=, events=)` | 组装入口，扩展数组 + 配置 + 事件资源 |
 | `run_turn` | 运行一轮，返回 TurnResult raise AgentError |
 | `Message` ADT | 每种角色一个构造器（UserMessage/AssistantMessage/…） |
 
