@@ -15,8 +15,9 @@ Posoco 采用**六边形（端口-适配器）架构**：框架核心不依赖�
 
 - **Trait 即端口**。每个 trait 都是一道解耦边界：核心逻辑只面向 trait 编程，
   不知道也不关心背后是哪个 provider。
-- **Agent 是组合根**。`Agent(exts=..., config=...)` 在构造时汇总所有扩展的
-  manifest，把端口接好，随后一切由它驱动。你不需要自己"接线"。
+- **Agent 是组合根**。`Agent(exts=..., config=..., events=...)` 在构造时独占接管
+  宿主创建的事件资源，汇总所有扩展的 manifest，把端口接好，随后一切由它驱动。
+  你不需要自己"接线"。
 - **扩展自报家门**。每个扩展通过 `Extension::manifest` 声明自己提供了哪些端口，
   一个值可以同时提供多个端口（比如同一个 struct 既当模型又当存储）。
 
@@ -25,7 +26,7 @@ Posoco 采用**六边形（端口-适配器）架构**：框架核心不依赖�
 ```mermaid
 graph TD
   subgraph "第 3 层 — 组合与运行"
-    Agent["Agent<br/>Agent(exts=, config=)<br/>run_turn() / shutdown()"]
+    Agent["Agent<br/>Agent(exts=, config=, events=)<br/>run_turn() / shutdown()"]
   end
 
   subgraph "第 2 层 — 具体实现（适配器）"
@@ -221,12 +222,16 @@ graph LR
 ### 统一的强类型通知
 
 Observer 现在是 Agent 原生事件系统在保留 `Posoco` namespace 上的适配层，
-不是另一条并行广播通道。扩展声明 `Capability::Events`，在 `on_compose` 取得
-绑定自己 manifest id 的能力，使用函数注册监听、发布业务 ADT，并显式取消订阅。
-宿主通过 `Agent::subscribe_events` 接听，不能借此冒充核心发布。
+不是另一条并行广播通道。事件资源由宿主创建：`@posoco.EventSystem()` 在还没有
+Agent 时就能接听，也能用 `publisher(owner~)` 给普通对象（不必实现 `Lifecycle`）
+授予绑定 `Extension(owner)` 的能力；同一个值再传给 `Agent(exts=, config=, events=)`
+独占接管。扩展声明 `Capability::Events`，在 `on_compose` 取得绑定自己 manifest id
+的能力，使用函数注册监听、发布业务 ADT，并显式取消订阅。宿主可以在组合前用
+`system.subscribe`、组合后用 `Agent::subscribe_events` 接听，都不能借此冒充核心发布。
 
 社区协议通过 MoonBit `extenum` 在自己的包里增加事件构造器，不需要改核心事件列表，
-也不需要 Json 编解码。系统同步有序，重入通知排队，不重放历史。Hook 继续负责
+也不需要 Json 编解码。系统同步有序，重入通知排队，不重放历史。turn 失败或取消不关闭
+资源；构造失败会关闭并撤销已发出的能力；`shutdown` 最终关闭它。Hook 继续负责
 审批和改写；journal/checkpoint 的提交订阅仍须等待并传播错误，不混入通知总线。
 详见[原生强类型事件与迁移边界](../src/events/MIGRATION.md)。
 

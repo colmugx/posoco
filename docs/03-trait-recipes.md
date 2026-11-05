@@ -67,12 +67,14 @@ pub extend EchoModel with @posoco.Extension::{extension_id, manifest}
   `CompositionError::ToolCollision`——不存在"后声明覆盖前声明"。
 
 把扩展直接交给 `Agent` 即可。Agent 恰好需要一个模型；`SessionPort`、工具、
-observer、hook、memory、UI、command、lifecycle 都是可选的。没有 store 时 Agent
+observer、hook、memory、UI、command、lifecycle 都是可选的。事件资源则必填：
+宿主先创建一个 `EventSystem`，Agent 构造时独占接管。没有 store 时 Agent
 以 ephemeral 模式运行，不做跨 turn 的 session 持久化：
 
 ```moonbit
 let model = EchoModel::{  }
 let store = MySessionPort()
+let system = @posoco.EventSystem()
 let agent = @posoco.Agent(
   exts=[
     model as &@posoco.Extension,
@@ -86,6 +88,7 @@ let agent = @posoco.Agent(
     compact_threshold: None,
     system_prompt: None,
   },
+  events=system,
 )
 ```
 

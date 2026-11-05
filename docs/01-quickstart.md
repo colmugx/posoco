@@ -163,6 +163,8 @@ pub extend MemoryStore with @posoco.Extension::{extension_id, manifest}
 ```moonbit
 let model = FixedModel::{  }
 let store = MemoryStore::{ sessions: Map::from_array([]) }
+// 每个 Agent 一个事件资源，先由宿主创建，再交给 Agent 独占接管。
+let events = @posoco.EventSystem()
 
 let agent = @posoco.Agent(
   exts=[
@@ -175,6 +177,7 @@ let agent = @posoco.Agent(
     max_output_tokens: None,
     model_context_window: None,
   },
+  events=events,
 )
 
 let input : @posoco.Message = @posoco.UserMessage(content=[
@@ -183,10 +186,11 @@ let input : @posoco.Message = @posoco.UserMessage(content=[
 let result = agent.run_turn(input, "quickstart-session")
 ```
 
-- **`Agent(exts~, config~)` 只接受两个参数**：扩展数组和配置。配置目前有四个
-  字段：`max_tool_rounds`（一轮对话里最多几波工具调用，`None` = 不设上限，
-  推荐默认）、`temperature`、`max_output_tokens`、`model_context_window`
-  （模型上下文窗口，Agent 据此判断何时需要压缩）。
+- **`Agent(exts~, config~, events~)` 接受三个参数**：扩展数组、配置和事件资源。
+  `events` 必填，没有默认值或隐式创建；同一个 `EventSystem` 只能被一个 Agent
+  接管。配置目前有四个字段：`max_tool_rounds`（一轮对话里最多几波工具调用，
+  `None` = 不设上限，推荐默认）、`temperature`、`max_output_tokens`、
+  `model_context_window`（模型上下文窗口，Agent 据此判断何时需要压缩）。
 - **组装对真正必需的能力 fail-fast**。缺模型、工具重名会在构造时立刻抛
   `CompositionError`；会话存储是可选能力：
   - 没有任何扩展提供模型 → `CompositionError::MissingModel`
@@ -214,18 +218,31 @@ moon -C examples/quickstart run --target native .
 
 ## 6. 再加一个强类型事件
 
-完整示例还演示了扩展与宿主之间的通知，不需要自己创建 EventBus：
+完整示例还演示了普通对象、扩展与宿主之间的通知，不需要自己创建 EventBus：
 
+0. `main` 先创建 `let system = @posoco.EventSystem()`。这个资源在没有 Agent 时就能
+   授权、接听和发布，是宿主唯一需要管理的对象。
 1. [`events.mbt`](../examples/quickstart/events.mbt) 定义封闭的 `QuickstartProgress`
    ADT，再为开放的 `@posoco.Event` 添加 `QuickstartChanged(QuickstartProgress)`。
-2. manifest 声明 `requires: [@posoco.Capability::Events]` 和 `lifecycle: [self]`，
-   在 `Lifecycle::on_compose` 取得 `view.events()`。
-3. 宿主在首次 `run_turn` 前调用 `agent.subscribe_events`，用
+2. 普通对象用 `system.publisher(owner="quickstart_reporter")` 取得自己的 `Events`：
+   它不实现 `Lifecycle`，也不持有 Agent，发布身份固定为
+   `Extension("quickstart_reporter")`。这份能力在 Agent 接管资源后仍然有效。
+3. 扩展的 manifest 声明 `requires: [@posoco.Capability::Events]` 和
+   `lifecycle: [self]`，在 `Lifecycle::on_compose` 取得 `view.events()`——扩展入口不变。
+4. 宿主在组合之前用 `system.subscribe(...)` 接听，组合之后也可以用
+   `agent.subscribe_events(...)`；两者共享同一资源。示例用
    `namespace_=Some(@posoco.EventNamespace::Extension("quickstart"))` 接听该扩展。
-4. 扩展在 `Lifecycle::on_start` 发布 `QuickstartChanged(Started)`，宿主直接匹配 ADT；
+5. 扩展在 `Lifecycle::on_start` 发布 `QuickstartChanged(Started)`，宿主直接匹配 ADT；
    Agent 把来源绑定到 manifest id。核心另有保留的 `Posoco` 命名空间，但共用同一系统。
-5. 用返回的 `Subscription::cancel()` 取消接听；`shutdown` 关闭能力。事件没有重放，
-   回调同步、不可抛错，因此应先订阅后发布，社区载荷使用不可变值。
+6. 用返回的 `Subscription::cancel()` 取消接听；`agent.shutdown()` 关闭资源，之后
+   获取 publisher、发布、订阅都返回 `Err(Closed)`。事件没有重放，回调同步、不可抛错，
+   因此应先订阅后发布，社区载荷使用不可变值。
+
+资源规则（完整契约见 [`src/events/MIGRATION.md`](../src/events/MIGRATION.md)）：
+接管之前的 `publisher` / `subscribe` / `publish` 都可用；接管是独占的，第二个 Agent
+复用同一资源会被拒绝（`CompositionError::EventSystemAlreadyOwned`），且不影响第一个
+Agent；接管之后的任何构造失败会关闭资源并撤销已发出的能力；turn 失败或取消不关闭；
+宿主不能直接关闭已接管的系统（`Err(Owned)`），只能经 `Agent::shutdown` 关闭。
 
 这不是改写模型调用或审批工具的机制：拦截仍用 `Hook`；原有 `Observer` 仍只收核心通知。
 扩展间接听使用同一个 `events.subscribe`。完整说明见

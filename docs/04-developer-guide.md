@@ -8,8 +8,9 @@
 
 ## 1. 组装 Agent
 
-`Agent(exts~, config~)` 是唯一的组合入口。每个扩展通过 manifest 声明自己提供的
-端口；**扩展数组的顺序决定 hook 和 observer 的注册顺序**（也就是执行顺序）：
+`Agent(exts~, config~, events~)` 是唯一的组合入口。每个扩展通过 manifest 声明自己提供的
+端口；**扩展数组的顺序决定 hook 和 observer 的注册顺序**（也就是执行顺序）。
+`events` 是宿主创建的事件资源，Agent 构造时独占接管：
 
 ```moonbit
 fn build_agent(
@@ -18,6 +19,7 @@ fn build_agent(
   store : &@posoco.Extension,
   observer : &@posoco.Extension,
   hook : &@posoco.Extension,
+  events : @posoco.EventSystem,
 ) -> @posoco.Agent raise @posoco.CompositionError {
   @posoco.Agent(
     exts=[model, tools, store, observer, hook],
@@ -27,6 +29,7 @@ fn build_agent(
       max_output_tokens: Some(4096),
       model_context_window: Some(128000),
     },
+    events~,
   )
 }
 ```
@@ -35,8 +38,12 @@ fn build_agent(
 
 - 恰好一个扩展提供 `ModelPort`；`SessionPort` 可选，未提供时不跨 turn 持久化；
 - 工具、observer、hook 等全部可选，没有也能构造；
+- `events` 必填且必须由宿主创建；一个 `EventSystem` 只由一个 Agent 接管，重复接管
+  返回 typed `CompositionError`，第一个 Agent 不受影响；
 - 工具重名、命令重名、manifest 畸形，都在构造阶段以 `CompositionError` 失败。
-  不会产生"半成品"Agent，也没有"后声明覆盖前声明"的工具路由。
+  不会产生"半成品"Agent，也没有"后声明覆盖前声明"的工具路由；
+- 接管之后的任何构造失败会关闭该事件资源并撤销已发出的能力——失败后应重新创建
+  资源，不要复用同一个 `EventSystem`。
 
 ### 配置字段
 
@@ -140,6 +147,36 @@ let outcome : Result[@posoco.TurnResult, @posoco.AgentError] =
 `Hook` 仍负责改写、审批和拦截；事件监听器不参与决策，也不承担必须等待完成的
 journal/checkpoint 提交。
 
+#### 4.1.1 资源由宿主创建并独占接管
+
+```moonbit
+let system = @posoco.EventSystem()
+
+// Agent 之前：普通对象（不实现 Lifecycle、不持有 Agent）取得发布能力。
+let publisher = system.publisher(owner="status_bar") // Result[Events, EventError]
+
+// Agent 之前：宿主接听。
+let subscription = system.subscribe(handler, namespace_=Some(Posoco))
+
+let agent = @posoco.Agent(exts=exts, config=config, events=system)
+```
+
+- 未接管时 `publisher` / `subscribe` / `publish` 都可用；通知只送给当时存在的
+  监听器，没有历史回放，也不会为将来接管的 Agent 缓存历史。
+- 接管是独占的：第二个 Agent 复用同一 `EventSystem` 会 raise
+  `CompositionError::EventSystemAlreadyOwned`，第一个 Agent 继续正常工作。
+- 接管之后的任何构造失败（aggregation、配置校验、`on_compose`）都会关闭资源并
+  撤销已发出的能力；turn 失败或取消不关闭；`agent.shutdown()` 最终关闭它。
+- 宿主不能直接关闭已接管的资源：`system.close()` 只对未接管的系统成功，已接管时
+  返回 `Err(Owned)`，必须经 `Agent::shutdown` 关闭。关闭后授权、发布、订阅都返回
+  `Err(Closed)`，`Subscription::cancel` 仍幂等。
+- `publisher(owner~)` 的 owner 由宿主指定，可以不是 manifest id，但必须非空
+  （空/全空白返回 `Err(InvalidOwner)`）；授予后发布身份固定为 `Extension(owner)`，
+  普通 publisher 拿不到资源管理能力。
+
+完整契约、错误表与迁移步骤见
+[`src/events/MIGRATION.md`](../src/events/MIGRATION.md)。
+
 扩展的接入顺序：
 
 1. 协议包定义封闭的载荷 ADT，用 `pub(all) extenum @posoco.Event += { ... }`
@@ -149,29 +186,36 @@ journal/checkpoint 提交。
    的实例放进 `lifecycle: [self]`。仅声明 requires 而不注册 lifecycle，不会自动调用
    该实例的 `on_compose`。
 3. 在 `on_compose` 中取得 `view.events()`，保存能力、注册监听；缺失已声明能力时，
-   raise `CompositionError::ExtensionComposeFailed`。不要在构造阶段发布初始化事实。
+   raise `CompositionError::ExtensionComposeFailed`。需要早于组合发布初始化事实时，
+   由宿主在构造 Agent 之前用 `EventSystem::publisher(owner~)` 授权后发布，不要在
+   扩展构造器里发布。
 4. 在 `on_start` 或业务方法中调用 `events.publish(ProtocolEvent(payload))`。
    `on_start` 在首次 `run_turn` 内执行一次，因此宿主可以在这之前完成订阅。
 5. 用返回的 `Subscription::cancel()` 释放监听；扩展自己的监听可在 `on_shutdown`
-   取消。取消幂等，普通操作取消不会关闭 Agent 的事件系统。
+   取消。取消幂等，普通操作取消不会关闭 Agent 的事件资源。
 
-**身份与过滤是两件事**：发布端不传 source，Agent 将其命名空间绑定为
-`Extension(manifest_id)`；使用 Events 的扩展 id 必须唯一。`Posoco` 保留给
-`Core(TurnEvent)`，扩展尝试发布 `Core` 返回 `Err(ReservedEvent)`。
-订阅不受「只能看自己」限制，可选择任意命名空间：
+**身份与过滤是两件事**：发布端不传 source，系统在授权时绑定命名空间——扩展为
+`Extension(manifest_id)`，宿主提前授权的是 `Extension(owner)`。使用 Events 的扩展
+id 必须唯一。`Posoco` 保留给 `Core(TurnEvent)`，任何 owner-bound 能力尝试发布
+`Core` 都返回 `Err(ReservedEvent)`。订阅不受「只能看自己」限制，可选择任意命名空间：
 
 | 接入方 | 高层 API |
 |---|---|
+| 宿主建立资源 | `@posoco.EventSystem()`；组合时作为 `events=` 传入 |
+| 普通对象发布（Agent 前/后） | `system.publisher(owner="status_bar")` → `publisher.publish(event)` |
+| 宿主组合前接听 | `system.subscribe(handler, namespace_=...)` |
 | 扩展发布 | `events.publish(event, scope=Some(scope))`；无归属时省略 scope |
 | 扩展接听 | `events.subscribe(handler, namespace_=Some(Extension("other")))` |
 | 宿主接听核心 | `agent.subscribe_events(handler, namespace_=Some(Posoco))` |
 | 宿主接听所有 | `agent.subscribe_events(handler)` |
 | 释放监听 | 对 `Ok(subscription)` 中的句柄调用 `subscription.cancel()` |
+| 关闭资源 | 未接管时 `system.close()`；已接管时 `agent.shutdown()` |
 
 表中的枚举构造器使用对应导入的限定名；`Core` 声明于 `colmugx/posoco/events`。
 `namespace_` 是真实的参数标签，不能写成 MoonBit 保留字 `namespace`。
-`publish` 与 `subscribe` 都返回 `Result`，不要忽略错误：Agent 最终 shutdown 后
-返回 `Err(Closed)`（发布禁止的 `Core` 仍优先返回 `ReservedEvent`）。
+`publisher`、`publish`、`subscribe` 都返回 `Result`，不要忽略错误：Agent 最终
+shutdown（或宿主关闭未接管的资源）后返回 `Err(Closed)`，发布禁止的 `Core` 返回
+`ReservedEvent`，重复接管与关闭活跃资源各有明确的 typed 错误。
 
 **交付约定**：同步、按注册顺序、不可抛错；重入发布排队而不递归调用监听器。
 每批使用监听列表快照，批内新增或取消在下一批生效。没有历史重放，因此先订阅、
@@ -318,5 +362,6 @@ async fn close_agent(agent : @posoco.Agent) -> Unit {
 - 工具业务失败返回 `ToolReportedError`；基础设施失败保持 typed。
 - session store 对未知 id 返回空 session，且保留 metadata。
 - hook 不静默吞错误；observer 保持只读；事件回调同步、不可抛错。
-- 事件能力在 manifest 声明并通过 lifecycle 获取；manifest id 唯一，监听及时取消。
+- 事件资源由宿主创建并交给唯一一个 Agent；扩展能力仍通过 manifest 声明 +
+  lifecycle 获取，manifest id 唯一，监听及时取消，最终经 `shutdown` 关闭资源。
 - 通过一个组合好的 `Agent` 做集成测试，而不是伸手够内部实现。
