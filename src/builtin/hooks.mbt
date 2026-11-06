@@ -25,7 +25,8 @@ pub(all) struct SystemPromptHook {
 }
 
 ///|
-/// A contributor entry: manifest id (for section header) and the contributor.
+/// A contributor entry: `id` records the source manifest for attribution; it
+/// is not rendered into the assembled prompt.
 pub(all) struct SystemPromptSection {
   id : String
   contributor : &@port.SystemPromptContributor
@@ -48,18 +49,19 @@ pub fn SystemPromptHook::SystemPromptHook(
 }
 
 ///|
-/// Assemble base + non-empty contributor sections with `id:` headers.
-/// Sections are separated by a blank line (`\n\n`). The result is empty when
-/// the base prompt and every contributor return empty strings.
+/// Assemble base + non-blank contributor sections, joined verbatim with a
+/// blank line (`\n\n`). A section whose text is only whitespace counts as
+/// empty and is skipped; surviving bodies are never trimmed or reflowed.
+/// The result is empty when the base prompt and every contributor are blank.
 pub fn SystemPromptHook::assemble(self : SystemPromptHook) -> String {
   let sections : Array[String] = []
-  if self.base_prompt != "" {
+  if self.base_prompt.trim() != "" {
     sections.push(self.base_prompt)
   }
   for s in self.contributors {
     let text = s.contributor.system_prompt()
-    if text != "" {
-      sections.push("\{s.id}:\n\{text}")
+    if text.trim() != "" {
+      sections.push(text)
     }
   }
   sections.join("\n\n")
@@ -81,9 +83,10 @@ pub extend SystemPromptHook with @port.PipelineHook::{
 /// Semantics:
 /// 1. If the assembled prompt is empty, return `messages` unchanged.
 /// 2. If `messages` is empty, return `[SystemMessage(assembled)]`.
-/// 3. If `messages[0]` is a SystemMessage with the exact same text, return
-///    the same array instance (no rewrite, no journal noise).
-/// 4. If `messages[0]` is a SystemMessage with different text, replace it.
+/// 3. If `messages[0]` is a SystemMessage whose content is exactly one Text
+///    equal to the assembled prompt, return the same array instance (no
+///    rewrite, no journal noise).
+/// 4. If `messages[0]` is a SystemMessage with different content, replace it.
 /// 5. Otherwise prepend the new SystemMessage.
 pub impl @port.PipelineHook for SystemPromptHook with fn before_model(
   self : SystemPromptHook,
@@ -107,7 +110,7 @@ pub impl @port.PipelineHook for SystemPromptHook with fn before_model(
   match messages[0] {
     SystemMessage(content~) => {
       match content {
-        [Text(existing), ..] if existing == assembled => return messages
+        [Text(existing)] if existing == assembled => return messages
         _ => ()
       }
       let new_messages : Array[@kernel.Message] = [sys_msg]

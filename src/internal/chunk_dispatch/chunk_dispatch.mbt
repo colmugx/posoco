@@ -1,12 +1,19 @@
 ///|
 /// Buffered, per-turn dispatcher for `StreamChunk` telemetry. Chunk payloads
 /// are immutable scalar values; the dispatcher buffers only, and every
-/// delivery goes through the event runtime.
+/// delivery goes through the event runtime. The turn's `EventScope` is
+/// captured at construction, so chunks and drop notices stay attributed to
+/// the turn that produced them.
+///
+/// Lifecycle: one dispatcher per turn; `drain_loop` runs for the turn's
+/// duration, then `flush` followed by `close`. Nothing may be enqueued after
+/// `close` — `enqueue` on a closed queue is a no-op.
 pub struct ChunkDispatcher {
   priv queue : @aqueue.Queue[@types.TurnEvent]
   priv mut depth : Int32
   priv mut dropped : Int32
   priv events : @event_runtime.EventRuntime
+  priv scope : @types.EventScope
 }
 
 ///|
@@ -15,12 +22,14 @@ let chunk_queue_capacity : Int32 = 1024
 ///|
 pub fn ChunkDispatcher::ChunkDispatcher(
   events : @event_runtime.EventRuntime,
+  scope : @types.EventScope,
 ) -> ChunkDispatcher {
   {
     queue: Queue(kind=Blocking(chunk_queue_capacity)),
     depth: 0,
     dropped: 0,
     events,
+    scope,
   }
 }
 
@@ -54,7 +63,7 @@ fn ChunkDispatcher::emit(
   self : ChunkDispatcher,
   event : @types.TurnEvent,
 ) -> Unit {
-  self.events.emit_core(None, event)
+  self.events.emit_core(Some(self.scope), event)
 }
 
 ///|

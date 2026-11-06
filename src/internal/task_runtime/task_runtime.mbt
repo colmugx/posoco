@@ -433,9 +433,12 @@ pub fn TaskRuntime::cancel_foreground_for_run(
 }
 
 ///|
+/// Settle the operation's foreground tasks within the bounded settlement
+/// budget. `nocancel` keeps cleanup that follows in a `defer`/`errdefer` from
+/// being skipped by cancellation.
 pub async fn TaskRuntime::finish_active_operation(
   self : TaskRuntime,
-) -> Unit raise @error.AgentError {
+) -> Unit raise @error.AgentError + nocancel {
   let operation = match self.active_operation {
     None => return
     Some(value) => value

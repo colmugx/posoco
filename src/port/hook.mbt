@@ -147,13 +147,14 @@ pub impl Show for HookStage with fn to_string(self : HookStage) -> String {
 ///   interception belongs in `before_model` or `before_tool`.
 /// - `on_turn_end`: async turn-end slot, no payload. The terminal outcome
 ///   already lives on the Observer channel — `TurnCompleted` /
-///   `TurnFailed(String)` — and an extension typically implements Observer
-///   and PipelineHook as two views over one shared struct, so a hook that
-///   needs the outcome reads its own observer-side state instead of a
-///   second payload type. Dispatched
-///   once per `run_turn`, after the terminal observer projection
-///   (`TurnCompleted` / `TurnFailed`) and before the call returns — on both
-///   the completed and the failed path. This is the slot for side effects
+///   `TurnFailed(String)` / `TurnCancelled` — and an extension typically
+///   implements Observer and PipelineHook as two views over one shared
+///   struct, so a hook that needs the outcome reads its own observer-side
+///   state instead of a second payload type. Dispatched
+///   once per turn that reaches a typed terminal, after the terminal
+///   observer projection and before that turn returns — on the completed,
+///   failed and cancelled paths alike. One `run_turn` may drain several
+///   follow-up turns inside one operation; each turn dispatches its own pair. This is the slot for side effects
 ///   that must finish by turn end, such as committing buffered writes to an
 ///   external system. Implementations must carry their own timeout budget
 ///   and may not block the turn's return indefinitely. Division of labor
@@ -162,6 +163,9 @@ pub impl Show for HookStage with fn to_string(self : HookStage) -> String {
 ///   `on_turn_end` is a secondary failure — reported to observers, never
 ///   replacing the turn's primary outcome — and cancellation is not a
 ///   defect.
+///
+///   A hard cancellation that unwinds the turn outside every `catch` does not
+///   dispatch this hook; the Observer still receives `TurnCancelled`.
 ///
 /// Async spread: the slots are `async`, so IO in an implementation body
 /// propagates through async. The pipeline dispatches hooks sequentially —
@@ -195,8 +199,10 @@ pub(open) trait PipelineHook {
   /// `on_turn_end` is `async` so hooks with turn-end side effects that must
   /// complete before the turn returns (e.g. committing buffered writes to an
   /// external system) can await. The terminal outcome is not a payload: read
-  /// it from the Observer channel (`TurnCompleted` / `TurnFailed`), which an
-  /// extension shares state with as a second view over the same struct.
+  /// it from the Observer channel (`TurnCompleted` / `TurnFailed` /
+  /// `TurnCancelled`), which an extension shares state with as a second view
+  /// over the same struct. It is not dispatched when a hard cancellation
+  /// unwinds the turn outside every `catch` (see the slot documentation).
   /// Synchronous implementations write a plain `fn` body — a sync `fn`
   /// satisfies an `async` trait slot under MoonBit's colorless-coroutine
   /// model.

@@ -356,8 +356,11 @@ async fn AgentRuntime::run_turn_via_puppet(
   // returns only after every child task (the drain loop included) has
   // terminated, and the drain loop terminates only when the queue closes —
   // closing after the group returns would deadlock.
-  let dispatcher = @chunk_dispatch.ChunkDispatcher(self.events)
-  self.chunk_dispatcher.val = Some(dispatcher)
+  let dispatcher = @chunk_dispatch.ChunkDispatcher(
+    self.events,
+    identity.scope(),
+  )
+  let dispatcher_generation = self.install_chunk_dispatcher(dispatcher)
   // The typed error is captured inside the group closure and re-raised
   // after the boundary: `with_task_group`'s closure signature carries the
   // wide `Error` (no error type parameter), so capturing the typed value is
@@ -368,10 +371,8 @@ async fn AgentRuntime::run_turn_via_puppet(
   let turn_outcome : Ref[@types.TurnResult?] = Ref(None)
   @async.with_task_group(async fn(group) {
     group.spawn_bg(async fn() { dispatcher.drain_loop() })
-    errdefer {
-      dispatcher.flush()
-      dispatcher.close()
-    }
+    // Releases on every exit of this closure, including a raw cancellation.
+    errdefer self.release_chunk_dispatcher(dispatcher, dispatcher_generation)
     // The Ok/Err wrapper lets the typed AgentError escape the group closure
     // as data: catch + re-raise is fragile_catch_all and try? is deprecated.
     // The body runs under handle_cancellation (async 0.22: a raw cancellation
@@ -402,12 +403,11 @@ async fn AgentRuntime::run_turn_via_puppet(
         raise cancelled
       }
     }
-    dispatcher.flush()
-    dispatcher.close()
+    self.release_chunk_dispatcher(dispatcher, dispatcher_generation)
     turn_outcome.val = Some(turn_result)
   }) catch {
     _ => {
-      self.chunk_dispatcher.val = None
+      self.clear_chunk_dispatcher(dispatcher_generation)
       let original : @error.AgentError = match turn_error.val {
         Some(ae) => ae
         // Cancellation is translated inside the group closure, so any error
@@ -417,12 +417,49 @@ async fn AgentRuntime::run_turn_via_puppet(
       raise original
     }
   }
-  self.chunk_dispatcher.val = None
+  self.clear_chunk_dispatcher(dispatcher_generation)
   match turn_outcome.val {
     Some(result) => result
     None =>
       raise Runtime(InvocationFailed("turn body: completed without a result"))
   }
+}
+
+///|
+/// Install this turn's chunk dispatcher and return the generation it owns.
+fn AgentRuntime::install_chunk_dispatcher(
+  self : AgentRuntime,
+  dispatcher : @chunk_dispatch.ChunkDispatcher,
+) -> Int32 {
+  self.chunk_dispatcher_generation = self.chunk_dispatcher_generation + 1
+  self.chunk_dispatcher.val = Some(dispatcher)
+  self.chunk_dispatcher_generation
+}
+
+///|
+/// Drop the Agent's dispatcher reference only when it still belongs to this
+/// turn. A turn's cleanup can never unmount a later turn's dispatcher.
+fn AgentRuntime::clear_chunk_dispatcher(
+  self : AgentRuntime,
+  generation : Int32,
+) -> Unit {
+  if self.chunk_dispatcher_generation == generation {
+    self.chunk_dispatcher.val = None
+  }
+}
+
+///|
+/// Terminal cleanup of one turn's chunk telemetry: drain the tail into the
+/// observer channel, close the queue (which ends the drain loop), then clear
+/// the reference. Synchronous by contract — it is the unwind path too.
+fn AgentRuntime::release_chunk_dispatcher(
+  self : AgentRuntime,
+  dispatcher : @chunk_dispatch.ChunkDispatcher,
+  generation : Int32,
+) -> Unit {
+  dispatcher.flush()
+  dispatcher.close()
+  self.clear_chunk_dispatcher(generation)
 }
 
 ///|
@@ -1214,6 +1251,8 @@ async fn AgentRuntime::compact_session(
   let admission = self.admit_operation(session_id, Compact)
   // Same unwind guard as run_turn_with_mode: a hard-cancelled compact must
   // not wedge the Agent busy, and the operation must settle cancelled.
+  // Retire is `nocancel` and release is sync, so the cancel signal cannot
+  // truncate this cleanup between the two steps.
   errdefer (if self.operations.current_id() == Some(admission.operation_id) {
     self.retire_released_versions()
     self.release_operation(admission, Cancelled)

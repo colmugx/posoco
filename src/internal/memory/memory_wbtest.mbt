@@ -141,3 +141,99 @@ async test "memory_search/hit_outranks_sibling_failure" {
   assert_true(failures[0].contains("memory_search lost: "))
   assert_true(failures[0].contains("index unavailable"))
 }
+
+///|
+async test "memory_lead/exact_literal" {
+  assert_eq(
+    MEMORY_INBOUND_LEAD,
+    "Recalled memory for this session may be stale or incomplete; verify against the current conversation before relying on it.",
+  )
+}
+
+///|
+fn schema_property(schema : Json, key : String) -> Map[String, Json]? {
+  match schema {
+    Object(fields) =>
+      match fields.get("properties") {
+        Some(Object(props)) =>
+          match props.get(key) {
+            Some(Object(prop)) => Some(prop)
+            _ => None
+          }
+        _ => None
+      }
+    _ => None
+  }
+}
+
+///|
+async test "memory_tools/descriptions_match_port_contract" {
+  let a = ({ body: Some("hit"), failure: "", } : FailingMemorySource)
+  let provider = MemoryToolProvider(
+    sources=[("a", a as &@port.MemoryPort), ("b", a as &@port.MemoryPort)],
+    on_failure=fn(_reason) { () },
+  )
+  let defs = provider.list_tools()
+  assert_eq(defs.length(), 2)
+  let search = defs[0]
+  let add = defs[1]
+  assert_eq(search.name.to_string(), "memory_search")
+  assert_eq(add.name.to_string(), "memory_add")
+  assert_eq(
+    search.description,
+    "Search accumulated memory (past work, settled decisions, SOPs) before answering questions it may have settled, and before saving anything new.",
+  )
+  assert_false(add.description.contains("durable"))
+  assert_eq(
+    add.description,
+    "Save a memory for future sessions. Omit source to save to every connected memory provider; valid sources: a, b",
+  )
+  match schema_property(add.input_schema, "source") {
+    Some(fields) =>
+      match fields.get("type") {
+        Some(String(ty)) => assert_eq(ty, "string")
+        _ => fail("expected source type string")
+      }
+    _ => fail("expected a source property in memory_add schema")
+  }
+  match schema_property(add.input_schema, "source") {
+    Some(fields) =>
+      match fields.get("description") {
+        Some(String(desc)) => assert_eq(desc, "Target memory provider ID.")
+        _ => fail("expected source description")
+      }
+    _ => fail("expected a source property in memory_add schema")
+  }
+  match schema_property(search.input_schema, "top_k") {
+    Some(fields) => {
+      match fields.get("type") {
+        Some(String(ty)) => assert_eq(ty, "integer")
+        _ => fail("expected top_k type integer")
+      }
+      match fields.get("description") {
+        Some(String(desc)) =>
+          assert_eq(
+            desc, "Max results; omit to leave the count to the provider.",
+          )
+        _ => fail("expected top_k description")
+      }
+    }
+    _ => fail("expected a top_k property in memory_search schema")
+  }
+  match search.input_schema {
+    Object(fields) =>
+      match fields.get("required") {
+        Some(Array([String("query")])) => ()
+        _ => fail("expected required [query]")
+      }
+    _ => fail("expected an object schema")
+  }
+  match add.input_schema {
+    Object(fields) =>
+      match fields.get("required") {
+        Some(Array([String("content")])) => ()
+        _ => fail("expected required [content]")
+      }
+    _ => fail("expected an object schema")
+  }
+}

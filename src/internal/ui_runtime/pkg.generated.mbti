@@ -1,0 +1,30 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "colmugx/posoco/internal/ui_runtime"
+
+import {
+  "colmugx/posoco/port",
+}
+
+// Values
+
+// Errors
+
+// Types and methods
+pub struct UiRuntime {
+  // private fields
+}
+pub fn UiRuntime::UiRuntime() -> Self
+pub fn UiRuntime::begin_operation(Self, String) -> Result[Unit, @port.UiResourceError]
+pub fn UiRuntime::capability(Self, String) -> @port.UiResources
+pub fn UiRuntime::close(Self) -> Unit
+pub fn UiRuntime::current_operation(Self) -> String?
+pub fn UiRuntime::generation(Self) -> Int32
+pub fn UiRuntime::host(Self) -> @port.UiHost
+pub fn UiRuntime::interactions(Self, String) -> @port.UiInteractions
+pub fn UiRuntime::is_closed(Self) -> Bool
+pub fn UiRuntime::operation_capability(Self, String) -> Result[@port.UiResources, @port.UiResourceError]
+pub fn UiRuntime::settle_operation(Self, String) -> Unit
+
+// Type aliases
+
+// Traits

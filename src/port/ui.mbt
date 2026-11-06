@@ -76,12 +76,15 @@ pub impl Show for UiBody with fn to_string(self) -> String {
 ///|
 /// One keyed entry of an `Entries` body. `color` carries a semantic role
 /// name from the host-negotiated vocabulary, never a raw color value.
-#derive(Debug)
+#derive(Eq, Debug)
 pub(all) struct UiEntry {
   key : String
   value : String
   color : String?
 }
+
+///|
+pub extend UiEntry with Eq::{not_equal, equal}
 
 ///|
 pub extend UiEntry with Debug::{to_repr}

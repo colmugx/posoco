@@ -1,9 +1,7 @@
 ///|
-/// Operation-lifecycle seam tests (plan step 2): the Agent projects
-/// `posoco.operation` started/settled exactly once per admission, brackets
-/// the whole follow-up drain, rejects concurrent admission with the
-/// structured `AgentError::Busy`, and releases the guard on the normal,
-/// failure, and hard-cancel paths.
+/// Operation-lifecycle seam tests: the Agent projects `posoco.operation`
+/// started/settled exactly once per admission and releases the guard on
+/// every path.
 
 ///|
 /// Records every projected core event so tests can assert on the full
@@ -392,5 +390,191 @@ async test "operation/model failure settles failed and stays reusable" {
       ..
     ) else {
     fail("the Agent must stay reusable after a failed operation")
+  }
+}
+
+///|
+/// Compact gate: the compact call parks after admission so a hard cancellation
+/// lands at a deterministic point instead of a timing guess.
+priv struct CompactGateModel {
+  entered : @aqueue.Queue[Int32]
+  gate : @aqueue.Queue[Int32]
+  compacted : Array[@kernel.Message]
+}
+
+///|
+fn CompactGateModel::CompactGateModel(
+  compacted : Array[@kernel.Message],
+) -> CompactGateModel {
+  {
+    entered: Queue(kind=Unbounded),
+    gate: Queue(kind=Unbounded),
+    compacted: compacted.copy(),
+  }
+}
+
+///|
+impl @port.ModelPort for CompactGateModel with fn chat(
+  _self,
+  _scope : @kernel.InvocationScope,
+  _messages : ArrayView[@kernel.Message],
+  _tools : Array[@kernel.ToolDef],
+  _options : @types.ChatOptions,
+  _stream : @types.StreamMode,
+) -> @kernel.ModelCallResult raise @error.ModelError {
+  @test_support.tk_stop_response("after cancel")
+}
+
+///|
+impl @port.ModelPort for CompactGateModel with fn compact(
+  self,
+  _scope : @kernel.InvocationScope,
+  _messages : ArrayView[@kernel.Message],
+  _tools : Array[@kernel.ToolDef],
+  _options : @types.ChatOptions,
+  _trigger : @kernel.CompactTrigger,
+) -> @kernel.CompactResult raise @error.ModelError {
+  self.entered.put(1) catch {
+    error => raise @error.ModelError::ResponseParse(error.to_string())
+  }
+  ignore(
+    self.gate.get() catch {
+      error => raise @error.ModelError::ResponseParse(error.to_string())
+    },
+  )
+  { compacted_messages: self.compacted.copy(), mode: Replace, }
+}
+
+///|
+impl @port.ModelPort for CompactGateModel with fn provider_config(_self) -> @port.ProviderConfig {
+  @port.ProviderConfig::empty()
+}
+
+///|
+async test "operation/hard_cancel settles cancelled once and releases the guard" {
+  let model = GatedModel::GatedModel(responses=["after cancel"])
+  let store = @test_support.RecordingSessionPort()
+  let observer = SignalObserver::SignalObserver()
+  let agent = Agent(
+    events=EventSystem(),
+    exts=[
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store], observers=[observer]),
+    ],
+    config=agent_config(max_tool_rounds=Some(10)),
+  )
+  let outcome : Ref[Result[@types.TurnResult, @error.AgentError]?] = Ref(None)
+  @async.with_task_group(async fn(group) {
+    let turn = group.spawn(async fn() {
+      let result : Result[@types.TurnResult, @error.AgentError] = Ok(
+        agent.run_turn(@test_support.tk_user_msg("hold"), "op-hard-cancel"),
+      ) catch {
+        error => Err(error)
+      }
+      outcome.val = Some(result)
+    })
+    // The gate callback fires inside the admitted operation, so the cancel
+    // below lands while the guard is held.
+    ignore(model.entered.get())
+    assert_eq(operation_events(observer, "operation_started").length(), 1)
+    turn.cancel()
+    ignore(
+      @async.handle_cancellation(async fn() {
+        ignore(turn.wait()) catch {
+          @error.AgentError::Cancelled(_) | @async.WaitedTaskAlreadyCancelled =>
+            ()
+          error => raise error
+        }
+      }),
+    )
+  })
+  guard outcome.val is Some(Err(@error.AgentError::Cancelled(_))) else {
+    fail("a hard-cancelled turn must surface as a typed cancellation")
+  }
+  // The unwind released the guard and settled exactly once.
+  let settled = operation_events(observer, "operation_settled")
+  assert_eq(settled.length(), 1)
+  fail_unless_custom(settled[0], "operation_id", "agent_run_turn_1")
+  fail_unless_custom(settled[0], "outcome", "cancelled")
+  // Settled implies the guard is gone: the next operation is admitted.
+  model.gate.put(1)
+  let next = agent.run_turn(
+    @test_support.tk_user_msg("after"),
+    "op-hard-cancel",
+  )
+  guard next.message
+    is @kernel.Message::AssistantMessage(
+      content=[@kernel.Content::Text("after cancel")],
+      ..
+    ) else {
+    fail("the Agent must admit the next operation after a hard cancel")
+  }
+  assert_eq(operation_events(observer, "operation_settled").length(), 2)
+}
+
+///|
+async test "operation/hard_cancelled_compact settles cancelled and releases the guard" {
+  let model = CompactGateModel::CompactGateModel([
+    @test_support.tk_user_msg("summary"),
+  ])
+  let store = @test_support.RecordingSessionPort()
+  store.seed("op-compact-cancel", {
+    messages: [@test_support.tk_user_msg("seeded")],
+    metadata: Map::from_array([]),
+  })
+  let observer = SignalObserver::SignalObserver()
+  let agent = Agent(
+    events=EventSystem(),
+    exts=[
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store], observers=[observer]),
+    ],
+    config=agent_config(max_tool_rounds=Some(10)),
+  )
+  let outcome : Ref[Result[@types.CompactOutcome, @error.AgentError]?] = Ref(
+    None,
+  )
+  @async.with_task_group(async fn(group) {
+    let compact = group.spawn(async fn() {
+      let result : Result[@types.CompactOutcome, @error.AgentError] = Ok(
+        agent.compact_session("op-compact-cancel"),
+      ) catch {
+        error => Err(error)
+      }
+      outcome.val = Some(result)
+    })
+    ignore(model.entered.get())
+    compact.cancel()
+    ignore(
+      @async.handle_cancellation(async fn() {
+        ignore(compact.wait()) catch {
+          @error.AgentError::Cancelled(_) | @async.WaitedTaskAlreadyCancelled =>
+            ()
+          error => raise error
+        }
+      }),
+    )
+  })
+  guard outcome.val is Some(Err(@error.AgentError::Cancelled(detail))) else {
+    fail("a hard-cancelled compact must surface as a typed cancellation")
+  }
+  assert_eq(detail, "compact cancelled")
+  let settled = operation_events(observer, "operation_settled")
+  assert_eq(settled.length(), 1)
+  fail_unless_custom(settled[0], "origin", "compact")
+  fail_unless_custom(settled[0], "outcome", "cancelled")
+  // The cancelled compact never committed: the seeded window is intact.
+  assert_eq(store.store["op-compact-cancel"].messages.length(), 1)
+  // The guard is gone, so the same session admits an ordinary turn.
+  let turn = agent.run_turn(
+    @test_support.tk_user_msg("after cancel"),
+    "op-compact-cancel",
+  )
+  guard turn.message
+    is @kernel.Message::AssistantMessage(
+      content=[@kernel.Content::Text("after cancel")],
+      ..
+    ) else {
+    fail("the Agent must admit a turn after a hard-cancelled compact")
   }
 }

@@ -11,9 +11,7 @@
 /// one piece of memory-specific text core ever produces. Everything past
 /// this line is provider content, untouched by core.
 pub const MEMORY_INBOUND_LEAD : String =
-  #| ## Memory
-  #|
-  #| The following is memory recalled for this session, for your information. It may be stale or incomplete — verify against the current conversation before relying on it.
+  #|Recalled memory for this session may be stale or incomplete; verify against the current conversation before relying on it.
 
 ///|
 /// One provider's inbound read with an optional per-call timeout. Any
@@ -107,6 +105,16 @@ fn memory_arg_schema(ty : String) -> Json {
 }
 
 ///|
+fn memory_arg_schema_described(ty : String, description : String) -> Json {
+  Json::object(
+    Map::from_array([
+      ("type", Json::string(ty)),
+      ("description", Json::string(description)),
+    ]),
+  )
+}
+
+///|
 fn memory_search_schema() -> Json {
   Json::object(
     Map::from_array([
@@ -116,7 +124,12 @@ fn memory_search_schema() -> Json {
         Json::object(
           Map::from_array([
             ("query", memory_arg_schema("string")),
-            ("top_k", memory_arg_schema("integer")),
+            (
+              "top_k",
+              memory_arg_schema_described(
+                "integer", "Max results; omit to leave the count to the provider.",
+              ),
+            ),
           ]),
         ),
       ),
@@ -135,7 +148,12 @@ fn memory_add_schema() -> Json {
         Json::object(
           Map::from_array([
             ("content", memory_arg_schema("string")),
-            ("source", memory_arg_schema("string")),
+            (
+              "source",
+              memory_arg_schema_described(
+                "string", "Target memory provider ID.",
+              ),
+            ),
           ]),
         ),
       ),
@@ -200,7 +218,7 @@ pub impl @port.ToolProvider for MemoryToolProvider with fn list_tools(
     ),
     ToolDef(
       name=@kernel.ToolName::unchecked("memory_add"),
-      description="Save a durable memory for future sessions. Omit source to save to every connected memory provider; valid sources: \{valid_sources.join(", ")}",
+      description="Save a memory for future sessions. Omit source to save to every connected memory provider; valid sources: \{valid_sources.join(", ")}",
       input_schema=memory_add_schema(),
       owner=@kernel.OwnerId::unchecked("placeholder"),
       policy=Sequential,

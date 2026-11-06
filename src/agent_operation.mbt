@@ -4,10 +4,12 @@
 /// `operation_settled` exactly once per admission.
 ///
 /// The lifecycle sits above the per-turn identity layer: one admitted operation
-/// covers the initial turn plus every follow-up drained inside the same call.
-/// Settling is independent of `TurnCompleted` and the internal
-/// `OperationFinalized` phase event — settled is emitted only after the guard is
-/// released, on normal, failure, soft- and hard-cancel paths alike.
+/// covers the initial turn plus every follow-up drained inside the same call,
+/// and the `on_turn_begin` / `on_turn_end` hook dispatches that bracket them.
+/// Settling is independent of the turn's terminal (`TurnCompleted` /
+/// `TurnFailed` / `TurnCancelled`) and of the internal `OperationFinalized`
+/// phase event — settled is emitted only after the guard is released, on
+/// normal, failure, soft- and hard-cancel paths alike.
 
 ///|
 /// What kind of host-visible operation holds the guard. Ordinary user input
@@ -109,12 +111,10 @@ async fn[X] AgentRuntime::execute_operation(
   let outcome : Result[X, @error.AgentError]? = @async.handle_cancellation(async fn() {
     @async.with_task_group(async fn(group) {
       let worker = group.spawn(async fn() -> Result[X, @error.AgentError] {
-        // Unconditional-on-unwind cleanup: whether the body settles typed or
-        // unwinds on a raw cancellation, the protected foreground task
-        // cleanup and the pending-call drain run here, before the guard
-        // releases. finish_active_operation is idempotent (None clears), so
-        // the typed catch paths cannot double-run terminal cleanup, and the
-        // raw cancellation signal keeps propagating after this errdefer.
+        // Unconditional-on-unwind cleanup: the foreground task cleanup and
+        // the pending-call drain run here, before the guard releases.
+        // finish_active_operation is idempotent, so typed catch paths cannot
+        // double-run it; the raw cancellation signal keeps propagating.
         errdefer {
           let cleanup : Result[Unit, @error.AgentError] = Ok(
             self.task_runtime.finish_active_operation(),
@@ -410,6 +410,18 @@ fn AgentRuntime::admit_operation(
       )
   }
   errdefer self.operations.abort_admit(operation_id)
+  // The UI operation window opens and closes with this guard; a second live
+  // window is a broken invariant, reported as a typed runtime failure.
+  match self.ui_runtime.begin_operation(operation_id) {
+    Ok(_) => ()
+    Err(error) =>
+      raise @error.AgentError::Runtime(
+        @error.RuntimeError::InvocationFailed(
+          "ui operation window: " + error.to_string(),
+        ),
+      )
+  }
+  errdefer self.ui_runtime.settle_operation(operation_id)
   // Startup may publish dynamic tools asynchronously. Its first operation
   // holds this guard, then captures once after startup; later admissions
   // keep their synchronous pre-await capture.
@@ -497,6 +509,9 @@ fn AgentRuntime::release_operation(
     // Fallback for unwind paths that never reached the managed settle step:
     // the lease is always given back (or retained for unknown executions).
     self.release_operation_versions()
+    // Reclaim transient presentation resources while the guard is still
+    // held; idempotent across all release paths.
+    self.ui_runtime.settle_operation(admission.operation_id)
     self.operations.settle_execution(admission.operation_id)
     self.turn_active = false
     if !self.operations.clear_current(admission.operation_id) {

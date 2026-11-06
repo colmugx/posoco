@@ -101,6 +101,9 @@ priv struct AgentRuntime {
   operations : @operation_guard.OperationGuard
   /// Agent-owned wakeup ledger and pump.
   wakeup : @wakeup.WakeupRuntime
+  /// Agent-owned UI resource protocol state: one owner-bound capability per
+  /// declaring extension and the host-side baseline/change feed over it.
+  ui_runtime : @ui.UiRuntime
   config : AgentConfig
   mut next_catalog_version : Int32
   /// Agent-owned dynamic tool contributions (one owner-bound group per
@@ -134,8 +137,12 @@ priv struct AgentRuntime {
   /// Per-turn chunk dispatcher handle. The callback installed in the Puppet
   /// reads this reference to route `StreamChunk` events to the active turn's
   /// buffered queue; `run_turn_via_puppet` creates and swaps the dispatcher
-  /// for each turn.
+  /// for each turn. Only the installing turn may clear it, which the
+  /// generation below pins down.
   chunk_dispatcher : Ref[@chunk_dispatch.ChunkDispatcher?]
+  /// Generation of the installed chunk dispatcher. Bumped on every install so
+  /// a turn's cleanup drops its own dispatcher and never a later turn's.
+  mut chunk_dispatcher_generation : Int32
   /// Persisted-prefix bookkeeping (cursor + rewrite-dirty) shared with the
   /// committed-event checkpoint subscriber; see `@session_state.SessionProgress`.
   progress : @session_state.SessionProgress
@@ -390,6 +397,8 @@ fn AgentRuntime::compose(
   // run_scoped startup. No runtime backfill is needed — the ledger owns its
   // admission state, and execution goes through the completed Agent.
   let wakeup = @wakeup.WakeupRuntime::WakeupRuntime(events=agg.events)
+  let ui_runtime = @ui.UiRuntime::UiRuntime()
+  errdefer ui_runtime.close()
   let operations = @operation_guard.OperationGuard::OperationGuard()
   let control = AgentControl(mailbox_ref)
   control.set_abort_hook(fn(run_id) {
@@ -461,6 +470,8 @@ fn AgentRuntime::compose(
       decision=agg.decision,
       log=agg.log,
       ui=agg.ui,
+      ui_resources=Some(ui_runtime.capability(entry.id)),
+      ui_interactions=Some(ui_runtime.interactions(entry.id)),
       tasks=Some(task_capability),
       wakeup=Some(wakeup_capability),
       tool_contributions=Some(contribution_capability),
@@ -507,6 +518,7 @@ fn AgentRuntime::compose(
     task_runtime,
     operations,
     wakeup,
+    ui_runtime,
     config,
     next_catalog_version: 2,
     tool_contributions,
@@ -522,6 +534,7 @@ fn AgentRuntime::compose(
     start_notified: false,
     turn_active: false,
     chunk_dispatcher: chunk_dispatcher_ref,
+    chunk_dispatcher_generation: 0,
     progress,
     core_facts,
     event_subscriber,
@@ -681,6 +694,9 @@ async fn AgentRuntime::shutdown(self : AgentRuntime) -> Unit {
     return
   }
   self.shutdown_started = true
+  // Closes on raise/cancellation; the success path closes after `on_shutdown`
+  // below.
+  errdefer self.ui_runtime.close()
   // Contribution handles close with the Agent: an extension holding the
   // owner-bound capability can no longer publish or withdraw, and no later
   // operation is admitted to capture a new directory.
@@ -735,6 +751,8 @@ async fn AgentRuntime::shutdown(self : AgentRuntime) -> Unit {
     self.lifecycle[self.next_lifecycle_shutdown].on_shutdown()
     self.next_lifecycle_shutdown = self.next_lifecycle_shutdown - 1
   }
+  // UI resources close last: after `on_shutdown`'s final publishes.
+  self.ui_runtime.close()
   // Core-managed contribution versions retire last: every operation, managed
   // task and extension shutdown above has already completed, so no new use can
   // start. An extension is never asked to withdraw on a closed handle. A retire
@@ -804,13 +822,14 @@ async fn AgentRuntime::dispatch_on_turn_begin(
 ///|
 /// Dispatch `PipelineHook::on_turn_end` in registration order, after the terminal
 /// observer projection and just before `run_single_turn` returns. Dispatched
-/// on both the completed and the failed path. The terminal outcome is not a
-/// payload — hooks read it from the Observer channel (`TurnCompleted` /
-/// `TurnFailed`), which fires first. A raise
-/// is a secondary failure: observers get a `secondary_failure` event, the
-/// turn's primary outcome is never replaced, and later hooks still run.
-/// Cancellation travels as a runtime signal that bypasses this handler,
-/// so only genuine defects are reported.
+/// whenever the turn reached a typed terminal — completed, failed, or
+/// cancelled. The terminal outcome is not a payload — hooks read it from the
+/// Observer channel (`TurnCompleted` / `TurnFailed` / `TurnCancelled`), which
+/// fires first. A raise is a secondary failure: observers get a
+/// `secondary_failure` event, the turn's primary outcome is never replaced,
+/// and later hooks still run. A hard cancellation that unwinds the turn
+/// outside every `catch` skips this dispatch; the terminal is projected from
+/// the unwind fallback instead.
 async fn AgentRuntime::dispatch_on_turn_end(
   self : AgentRuntime,
 ) -> Unit noraise {
@@ -909,7 +928,8 @@ async fn AgentRuntime::run_turn_with_mode(
   // A host hard-cancel delivers a raw cancellation signal that bypasses the
   // catch below (a re-raising with_task_group can surface it raw), so the
   // guard and the operation must also release on unwind or the Agent stays
-  // wedged busy.
+  // wedged busy. Retire is `nocancel` and release is sync, so the cancel
+  // signal cannot truncate this cleanup between the two steps.
   errdefer (if self.operations.current_id() == Some(admission.operation_id) {
     self.retire_released_versions()
     self.release_operation(admission, Cancelled)
@@ -1015,9 +1035,50 @@ async fn AgentRuntime::notify_start_if_first(
 }
 
 ///|
+/// Terminal bookkeeping of one turn: whether `TurnStarted` was published and
+/// whether this turn's single terminal has been projected.
+priv struct TurnTerminal {
+  mut started : Bool
+  mut settled : Bool
+}
+
+///|
+/// Project the turn's one terminal. The marker is set before the projection so
+/// a listener re-entering the Agent cannot observe — or provoke — a second
+/// terminal, and the unwind fallback stays idempotent.
+fn AgentRuntime::settle_turn_terminal(
+  self : AgentRuntime,
+  identity : TurnIdentity,
+  terminal : TurnTerminal,
+  event : @types.TurnEvent,
+) -> Unit {
+  if terminal.settled {
+    return
+  }
+  terminal.settled = true
+  self.emit_turn_event(Some(identity.scope()), event)
+}
+
+///|
+/// Close the tool calls a cancelled turn left pending; the Puppet emits no
+/// closing kernel event for a hard-cancelled run.
+fn AgentRuntime::abandon_pending_calls(
+  self : AgentRuntime,
+  identity : TurnIdentity,
+  reason : String,
+) -> Unit {
+  self.event_subscriber.drain_pending(Some(identity.scope()), reason)
+}
+
+///|
 /// Run exactly one turn: delegate to Puppet; emit start/end events for
 /// observers. `admission` carries the per-turn identity minted at operation
 /// admission (initial turns) or at drain time (follow-ups).
+///
+/// `TurnStarted` is followed by exactly one terminal: `TurnCompleted` on
+/// success, `TurnFailed` on a primary failure, and `TurnCancelled` on soft
+/// cancellation, hard cancellation, or shutdown. Cancellation is its own
+/// category, never a failure.
 #warnings("-fragile_catch_all")
 async fn AgentRuntime::run_single_turn(
   self : AgentRuntime,
@@ -1044,6 +1105,14 @@ async fn AgentRuntime::run_single_turn(
   // operation; every per-turn exit settles the step messages it still holds.
   self.control.bind_turn(identity.run_id, identity.turn_id)
   defer self.settle_turn_messages(identity)
+  // Covers a hard cancellation that bypasses `catch`: a started-but-unsettled
+  // turn still owes its one terminal.
+  let terminal = TurnTerminal::{ started: false, settled: false, }
+  errdefer (if terminal.started && !terminal.settled {
+    self.abandon_pending_calls(identity, "turn cancelled")
+    self.settle_turn_terminal(identity, terminal, TurnCancelled)
+  })
+  terminal.started = true
   self.emit_turn_event(Some(identity.scope()), TurnStarted)
   // Turn-begin hooks fire after the TurnStarted projection and before the
   // pump's first before_model. Pre-turn failures above dispatch nothing —
@@ -1072,12 +1141,17 @@ async fn AgentRuntime::run_single_turn(
             error.to_string(),
           )
       }
-      let safe_reason = "turn failed: " + agent_error_category(primary)
-      // The Puppet's host-level rejection path emits no terminal kernel
-      // event, so the Agent closes still-pending tool calls here — the
-      // abandonment must precede the turn-failure synthesis.
-      self.event_subscriber.drain_pending(Some(identity.scope()), "turn failed")
-      self.emit_turn_event(Some(identity.scope()), TurnFailed(safe_reason))
+      // The Puppet emits no terminal kernel event on rejection: close
+      // still-pending tool calls before the terminal synthesis.
+      let cancelled = primary is @error.AgentError::Cancelled(_)
+      let reason = if cancelled { "turn cancelled" } else { "turn failed" }
+      self.abandon_pending_calls(identity, reason)
+      let event : @types.TurnEvent = if cancelled {
+        TurnCancelled
+      } else {
+        TurnFailed("turn failed: " + agent_error_category(primary))
+      }
+      self.settle_turn_terminal(identity, terminal, event)
       self.dispatch_on_turn_end()
       raise primary
     }
@@ -1090,14 +1164,15 @@ async fn AgentRuntime::run_single_turn(
   }
   match cleanup {
     Ok(_) => {
-      self.emit_turn_event(Some(identity.scope()), TurnCompleted)
+      self.settle_turn_terminal(identity, terminal, TurnCompleted)
       self.dispatch_on_turn_end()
       result
     }
     Err(error) => {
-      self.event_subscriber.drain_pending(Some(identity.scope()), "turn failed")
-      self.emit_turn_event(
-        Some(identity.scope()),
+      self.abandon_pending_calls(identity, "turn failed")
+      self.settle_turn_terminal(
+        identity,
+        terminal,
         TurnFailed("turn failed: AgentError::Runtime"),
       )
       self.dispatch_on_turn_end()
@@ -1186,6 +1261,16 @@ pub async fn Agent::shutdown(self : Agent) -> Unit {
 /// binding a previously bound session does not revive its dropped tickets.
 pub fn Agent::set_active_session(self : Agent, session_id : String?) -> Unit {
   self.runtime.wakeup.set_active_session(session_id)
+}
+
+///|
+/// The host's entry to the UI resource protocol: one atomic baseline of live
+/// resources plus a cursor, an in-process change feed from that cursor, and
+/// action dispatch back to the publishing extension. Resources are published
+/// by extensions through `CompositionView::ui_resources`; the host never
+/// constructs owner identity itself.
+pub fn Agent::ui_host(self : Agent) -> @port.UiHost {
+  self.runtime.ui_runtime.host()
 }
 
 ///|

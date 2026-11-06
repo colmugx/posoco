@@ -260,10 +260,7 @@ async test "hook_reject_steers_model_to_allowed_tool" {
 
 ///|
 /// Lattice: user consent (ApproveAfterConsent) outranks another gate's
-/// Reject regardless of registration order — a gate must not veto a
-/// decision the user already made. This is the plan-mode × permission
-/// composition: the user allows `bash` at the permission ask, the plan gate
-/// still says no, the call runs anyway.
+/// Reject regardless of registration order.
 async fn run_bash_with_hooks(
   hooks : Array[&@port.PipelineHook],
 ) -> (RecordingExecProvider, TurnResult) {
@@ -361,9 +358,7 @@ impl @port.ToolProvider for RecordingExecProvider with fn execute(
 
 ///|
 /// GateHook — an async `before_tool` that suspends until the test releases
-/// it. Proves the pump genuinely waits on a suspending hook: the tool wave
-/// must not start while the hook is still blocked (e.g. a permission prompt
-/// waiting on user input over UiPort).
+/// it; the tool wave must not start while the hook is blocked.
 struct GateHook {
   entered : @aqueue.Queue[Int32]
   release : @aqueue.Queue[Int32]
@@ -552,11 +547,8 @@ async test "reasoning_raw_replayed_verbatim_into_saved_session" {
 }
 
 ///|
-/// Regression: with `max_tool_rounds=None` the turn is unbounded — a 40-round
-/// single-call turn must complete. Previously the pump backstop
-/// (`max_iterations = rounds + 1` while the pump burns 2 iterations per round)
-/// silently killed such turns at ~11 batches and mislabeled the failure
-/// ToolLoopExceeded.
+/// With `max_tool_rounds=None` the turn is unbounded: a 40-round single-call
+/// turn must complete.
 async test "unbounded_tool_rounds_complete_long_turn" {
   let rounds = 40
   let steps : Array[@test_support.ScriptedModelStep] = []
@@ -1595,13 +1587,11 @@ async test "wave3/cancellation/mid-stream cancel is structured and the session s
     is AssistantMessage(content=[Text("second turn after late esc")], ..) else {
     fail("expected the next turn to complete after a late abort request")
   }
+  // The cancelled turn is counted by its own terminal variant.
   let mut cancelled_turns = 0
   for event in observer.events() {
     match event {
-      TurnFailed(reason) =>
-        if reason.contains("AgentError::Cancelled") {
-          cancelled_turns = cancelled_turns + 1
-        }
+      TurnCancelled => cancelled_turns = cancelled_turns + 1
       _ => ()
     }
   }

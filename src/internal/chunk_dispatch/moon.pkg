@@ -5,6 +5,8 @@ import {
 }
 
 import {
+  "colmugx/posoco/events",
+  "colmugx/posoco/kernel",
   "moonbitlang/core/async",
 } for "wbtest"
 

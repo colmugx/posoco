@@ -203,6 +203,7 @@ pub(all) enum TurnEvent {
   SessionRedirect(from~ : String, to~ : String, messages_before~ : Int32, messages_after~ : Int32)
   TurnCompleted
   TurnFailed(String)
+  TurnCancelled
   StreamChunkReceived(chunk~ : StreamChunk)
   StreamChunksDropped(count~ : Int32)
   ConfigWarning(field~ : String, value~ : String, reason~ : String)

@@ -135,9 +135,7 @@ async test "p2 concurrent run_turn rejects before side effects and preserves fir
     let first = group.spawn(async fn() {
       agent.run_turn(@test_support.tk_user_msg("first"), "p2-session")
     })
-    // before_model runs after Puppet::prompt acquired its lease, so the
-    // second invocation exercises the Agent guard rather than a race in the
-    // internal lease implementation.
+    // before_model runs after Puppet::prompt acquired its lease.
     ignore(entered.get())
     assert_eq(model.call_count(), 0)
 
@@ -163,7 +161,8 @@ async test "p2 concurrent run_turn rejects before side effects and preserves fir
     for event in events_before {
       match event {
         TurnStarted => starts_before = starts_before + 1
-        TurnCompleted | TurnFailed(_) => terminal_before = terminal_before + 1
+        TurnCompleted | TurnFailed(_) | TurnCancelled =>
+          terminal_before = terminal_before + 1
         _ => ()
       }
     }
@@ -188,7 +187,8 @@ async test "p2 concurrent run_turn rejects before side effects and preserves fir
   let mut terminal_count = 0
   for event in events {
     match event {
-      TurnCompleted | TurnFailed(_) => terminal_count = terminal_count + 1
+      TurnCompleted | TurnFailed(_) | TurnCancelled =>
+        terminal_count = terminal_count + 1
       _ => ()
     }
   }
@@ -366,15 +366,12 @@ async test "chunk dispatch: overflow drops oldest and emits StreamChunksDropped"
   guard events[events.length() - 1] is TurnCompleted else {
     fail("last event must be TurnCompleted")
   }
-  // Some chunks were delivered, and the synchronous 2500-chunk burst against
-  // the 1024-slot queue guarantees overflow regardless of how often the drain
-  // task interleaves: cumulative delivery is bounded by the burst size, not
-  // by the queue capacity (a livelier drain legitimately delivers more).
+  // The synchronous 2500-chunk burst against the 1024-slot queue guarantees
+  // overflow regardless of drain interleaving.
   let chunk_events = events.filter(fn(e) { e is StreamChunkReceived(_) })
   assert_true(chunk_events.length() > 0)
   assert_true(chunk_events.length() < total_chunks)
-  // Drop events are synthesized when the buffer transitions below capacity
-  // and at flush; total dropped + delivered must account for every chunk.
+  // Total dropped + delivered must account for every chunk.
   let drop_events = events.filter(fn(e) { e is StreamChunksDropped(_) })
   assert_true(drop_events.length() >= 1)
   let mut total_dropped = 0
@@ -394,10 +391,7 @@ async test "chunk dispatch: overflow drops oldest and emits StreamChunksDropped"
   if didx >= cidx {
     fail("StreamChunksDropped must precede TurnCompleted")
   }
-  // Delivered chunks preserve production (FIFO) order: every delivered token
-  // is found by scanning the source sequence forward without backtracking.
-  // Under drain/producer interleaving the delivered set may have gaps, so a
-  // contiguous-newest-suffix expectation would overconstrain the scheduler.
+  // Delivered chunks preserve production (FIFO) order; gaps are allowed.
   let source_tokens : Array[String] = []
   for chunk in chunks {
     match chunk {
@@ -502,11 +496,8 @@ async test "chunk dispatch: flush drains chunks before TurnFailed" {
 }
 
 ///|
-/// Duplicate-chunk invariant: adjacent identical tokens (CJK
-/// punctuation, backticks) are legal model output and must cross the dispatch
-/// path verbatim — one observer event per streamed chunk, no dedup and no
-/// duplication. A duplicate seen in outbound telemetry therefore enters at or
-/// below the ModelPort stream boundary, never in posoco core.
+/// Duplicate-chunk invariant: adjacent identical tokens are legal model
+/// output and must cross the dispatch path verbatim.
 async test "chunk dispatch: adjacent identical tokens pass through 1:1 without dedup or duplication" {
   let sent = ["、", "、", "。", "。", "`", "`", "`"]
   let chunks = []
@@ -543,5 +534,296 @@ async test "chunk dispatch: adjacent identical tokens pass through 1:1 without d
         }
       _ => fail("expected StreamChunkReceived at index \{i}")
     }
+  }
+}
+
+///|
+/// Observer double that keeps the scope stamped on every turn event.
+struct ChunkScopeObserver {
+  received : Array[(@types.EventScope?, @types.TurnEvent)]
+}
+
+///|
+impl @port.Observer for ChunkScopeObserver with fn on_event(
+  self,
+  scope,
+  event : @types.TurnEvent,
+) -> Unit {
+  self.received.push((scope, event))
+}
+
+///|
+fn ChunkScopeObserver::turn_events(
+  self : ChunkScopeObserver,
+) -> Array[(@types.EventScope?, @types.TurnEvent)] {
+  self.received.filter(fn(entry) {
+    match entry.1 {
+      Custom(source~, ..) => source != "posoco.operation"
+      _ => true
+    }
+  })
+}
+
+///|
+/// The scope's `TurnStarted` identity, asserted to be present.
+fn turn_started_scope(
+  events : Array[(@types.EventScope?, @types.TurnEvent)],
+) -> @types.EventScope raise {
+  guard events[0].1 is TurnStarted else {
+    fail("first event must be TurnStarted")
+  }
+  guard events[0].0 is Some(scope) else {
+    fail("TurnStarted must carry Some(scope)")
+  }
+  scope
+}
+
+///|
+/// A streamed turn attributes every chunk to its own run, in production
+/// order, before `ModelResponseReceived`.
+async test "chunk dispatch: chunks carry the TurnStarted scope and precede the final response" {
+  let chunks = []
+  for i in 0..<5 {
+    chunks.push(@types.TextDelta(token="s\{i}"))
+  }
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Stream(
+      chunks~,
+      response=@test_support.tk_stop_response("ok"),
+    ),
+  ])
+  let observer = ChunkScopeObserver::{ received: [], }
+  let agent = Agent(
+    events=EventSystem(),
+    exts=[
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(
+        id="io",
+        sessions=[@test_support.RecordingSessionPort()],
+        observers=[observer],
+      ),
+    ],
+    config=agent_config(max_tool_rounds=Some(10)),
+  )
+  let _ = agent.run_turn(@test_support.tk_user_msg("hello"), "s_scope")
+  let events = observer.turn_events()
+  let turn_scope = turn_started_scope(events)
+  assert_eq(turn_scope.session_id.to_string(), "s_scope")
+  let response_idx = events.search_by(fn(entry) {
+    entry.1 is ModelResponseReceived(_)
+  })
+  guard response_idx is Some(ridx) else {
+    fail("ModelResponseReceived not found")
+  }
+  let completed_idx = events.search_by(fn(entry) { entry.1 is TurnCompleted })
+  guard completed_idx is Some(cidx) else { fail("TurnCompleted not found") }
+  assert_true(ridx < cidx)
+  let chunk_tokens : Array[String] = []
+  for i, entry in events {
+    match entry.1 {
+      StreamChunkReceived(chunk=TextDelta(token~)) => {
+        assert_eq(entry.0, Some(turn_scope))
+        chunk_tokens.push(token)
+        if i >= ridx {
+          fail("stream chunk observed at or after ModelResponseReceived")
+        }
+      }
+      StreamChunkReceived(_) => fail("expected TextDelta")
+      _ => ()
+    }
+  }
+  assert_eq(chunk_tokens, ["s0", "s1", "s2", "s3", "s4"])
+}
+
+///|
+/// Two turns on one Agent are two runs: each turn's chunks carry its own
+/// scope.
+async test "chunk dispatch: consecutive turns keep separate chunk scopes" {
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Stream(
+      chunks=[
+        @types.TextDelta(token="first-0"),
+        @types.TextDelta(token="first-1"),
+      ],
+      response=@test_support.tk_stop_response("first"),
+    ),
+    @test_support.ScriptedModelStep::Stream(
+      chunks=[@types.TextDelta(token="second-0")],
+      response=@test_support.tk_stop_response("second"),
+    ),
+  ])
+  let observer = ChunkScopeObserver::{ received: [], }
+  let agent = Agent(
+    events=EventSystem(),
+    exts=[
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(
+        id="io",
+        sessions=[@test_support.RecordingSessionPort()],
+        observers=[observer],
+      ),
+    ],
+    config=agent_config(max_tool_rounds=Some(10)),
+  )
+  let _ = agent.run_turn(@test_support.tk_user_msg("one"), "s_turns")
+  let _ = agent.run_turn(@test_support.tk_user_msg("two"), "s_turns")
+  let started : Array[@types.EventScope] = []
+  let per_turn_chunks : Array[Array[@types.EventScope?]] = []
+  for entry in observer.turn_events() {
+    match entry.1 {
+      TurnStarted => {
+        guard entry.0 is Some(scope) else {
+          fail("TurnStarted must carry Some(scope)")
+        }
+        started.push(scope)
+        per_turn_chunks.push([])
+      }
+      StreamChunkReceived(_) => {
+        if per_turn_chunks.length() == 0 {
+          fail("chunk telemetry before the first TurnStarted")
+        }
+        per_turn_chunks[per_turn_chunks.length() - 1].push(entry.0)
+      }
+      _ => ()
+    }
+  }
+  assert_eq(started.length(), 2)
+  assert_eq(per_turn_chunks[0].length(), 2)
+  assert_eq(per_turn_chunks[1].length(), 1)
+  assert_eq(per_turn_chunks[0][0], Some(started[0]))
+  assert_eq(per_turn_chunks[0][1], Some(started[0]))
+  assert_eq(per_turn_chunks[1][0], Some(started[1]))
+  // Same session, different run/turn: identity is per turn, not per agent.
+  assert_eq(started[0].session_id.to_string(), "s_turns")
+  assert_eq(started[1].session_id.to_string(), "s_turns")
+  assert_true(started[0].run_id.to_string() != started[1].run_id.to_string())
+  assert_true(started[0].turn_id.to_string() != started[1].turn_id.to_string())
+}
+
+///|
+/// Overflow is telemetry loss, not identity loss: the drop notice carries the
+/// turn scope and precedes the terminal event.
+async test "chunk dispatch: overflow drop notice carries the turn scope" {
+  let total_chunks = 2500
+  let chunks = []
+  for i in 0..<total_chunks {
+    chunks.push(@types.TextDelta(token="c\{i}"))
+  }
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Stream(
+      chunks~,
+      response=@test_support.tk_stop_response("ok"),
+    ),
+  ])
+  let observer = ChunkScopeObserver::{ received: [], }
+  let agent = Agent(
+    events=EventSystem(),
+    exts=[
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(
+        id="io",
+        sessions=[@test_support.RecordingSessionPort()],
+        observers=[observer],
+      ),
+    ],
+    config=agent_config(max_tool_rounds=Some(10)),
+  )
+  let _ = agent.run_turn(@test_support.tk_user_msg("hello"), "s_overflow")
+  let events = observer.turn_events()
+  let turn_scope = turn_started_scope(events)
+  let response_idx = events.search_by(fn(entry) {
+    entry.1 is ModelResponseReceived(_)
+  })
+  guard response_idx is Some(ridx) else {
+    fail("ModelResponseReceived not found")
+  }
+  let mut delivered = 0
+  let mut dropped_total = 0
+  // Per-item FIFO: forward walk through the production order; gaps allowed.
+  let mut cursor = 0
+  for i, entry in events {
+    match entry.1 {
+      StreamChunkReceived(chunk=TextDelta(token~)) => {
+        assert_eq(entry.0, Some(turn_scope))
+        let mut found = false
+        while cursor < total_chunks {
+          let expected = "c\{cursor}"
+          cursor = cursor + 1
+          if expected == token {
+            found = true
+            break
+          }
+        }
+        if !found {
+          fail("delivered chunk #\{delivered} breaks production order")
+        }
+        delivered = delivered + 1
+      }
+      StreamChunkReceived(_) => fail("expected TextDelta")
+      StreamChunksDropped(count~) => {
+        assert_eq(entry.0, Some(turn_scope))
+        dropped_total = dropped_total + count
+        if i >= ridx {
+          fail("StreamChunksDropped must precede ModelResponseReceived")
+        }
+      }
+      _ => ()
+    }
+  }
+  assert_true(dropped_total > 0)
+  assert_true(delivered > 0)
+  assert_eq(delivered + dropped_total, total_chunks)
+}
+
+///|
+/// Cancellation flushes the tail chunks; they still carry the turn's scope.
+async test "chunk dispatch: cancelled stream keeps the turn scope on flushed chunks" {
+  let chunks = [@types.TextDelta(token="p0"), @types.TextDelta(token="p1")]
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::StreamParked(chunks~),
+  ])
+  let observer = ChunkScopeObserver::{ received: [], }
+  let agent = Agent(
+    events=EventSystem(),
+    exts=[
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(
+        id="io",
+        sessions=[@test_support.RecordingSessionPort()],
+        observers=[observer],
+      ),
+    ],
+    config=agent_config(max_tool_rounds=Some(10)),
+  )
+  @async.with_task_group(async fn(group) {
+    let turn = group.spawn(
+      async fn() {
+        let result : Result[@types.TurnResult, Error] = Ok(
+          agent.run_turn(@test_support.tk_user_msg("cancel-me"), "s_cancel"),
+        ) catch {
+          error => Err(error)
+        }
+        result
+      },
+      allow_failure=true,
+    )
+    while model.parked_calls == 0 {
+      @async.pause()
+    }
+    turn.cancel()
+    match turn.wait() {
+      Err(_) => ()
+      Ok(_) => fail("cancelled turn must not complete")
+    }
+  })
+  let events = observer.turn_events()
+  let turn_scope = turn_started_scope(events)
+  assert_eq(turn_scope.session_id.to_string(), "s_cancel")
+  let chunk_scopes = events.filter(fn(entry) {
+    entry.1 is StreamChunkReceived(_)
+  })
+  assert_eq(chunk_scopes.length(), chunks.length())
+  for entry in chunk_scopes {
+    assert_eq(entry.0, Some(turn_scope))
   }
 }

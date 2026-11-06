@@ -153,10 +153,11 @@ fn AgentRuntime::release_retained_versions(self : AgentRuntime) -> Unit {
 ///|
 /// Retire versions that lost every reference, then retry pending ones. Never
 /// raises: a retire failure is reported as a secondary diagnostic and stays
-/// pending for the next attempt, so it can never mask the primary outcome.
+/// pending for the next attempt. `nocancel` keeps sync finalizers that follow
+/// in a `defer`/`errdefer` from being skipped by cancellation.
 async fn AgentRuntime::retire_released_versions(
   self : AgentRuntime,
-) -> Unit noraise {
+) -> Unit noraise + nocancel {
   @async.protect_from_cancel(async fn() noraise {
     self.release_operation_versions()
     self.release_retained_versions()

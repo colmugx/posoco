@@ -67,6 +67,24 @@ pub impl @port.Lifecycle for StartSettingLifecycle with fn on_shutdown(
 }
 
 ///|
+struct CountingPromptContributor {
+  reads : Ref[Int32]
+}
+
+///|
+pub extend CountingPromptContributor with @port.SystemPromptContributor::{
+  system_prompt,
+}
+
+///|
+pub impl @port.SystemPromptContributor for CountingPromptContributor with fn system_prompt(
+  self : CountingPromptContributor,
+) -> String {
+  self.reads.val = self.reads.val + 1
+  "COUNTED"
+}
+
+///|
 struct FailingInboundPort {
   _dummy : Unit
 }
@@ -315,8 +333,8 @@ async test "m38_sysprompt/assembles_base_plus_contributors" {
   match out[0] {
     SystemMessage(content~) =>
       match content {
-        [Text(s), ..] => assert_eq(s, "BASE\n\na:\nSECTION_A\n\nb:\nSECTION_B")
-        _ => fail("expected Text content")
+        [Text(s)] => assert_eq(s, "BASE\n\nSECTION_A\n\nSECTION_B")
+        _ => fail("expected canonical single Text content")
       }
     _ => fail("expected SystemMessage")
   }
@@ -335,6 +353,80 @@ async test "m38_sysprompt/empty_prompt_short_circuits" {
   let out = hook.before_model(input)
   assert_true(out.length() == 1)
   assert_true(physical_equal(out, input))
+}
+
+///|
+async test "m38_sysprompt/blank_sections_skipped_body_preserved_verbatim" {
+  let blank : &@port.SystemPromptContributor = FixedPromptContributor::{
+    text: "  \n\t  ",
+  }
+  let formatted : &@port.SystemPromptContributor = FixedPromptContributor::{
+    text: "line one\n\n   indented start\n  tail  ",
+  }
+  let hook = SystemPromptHook(base_prompt="  \n", contributors=[
+    SystemPromptSection(id="blank", contributor=blank),
+    SystemPromptSection(id="formatted", contributor=formatted),
+  ])
+  assert_eq(hook.assemble(), "line one\n\n   indented start\n  tail  ")
+  let user : @kernel.Message = UserMessage(content=[Text("hello")])
+  let out = hook.before_model([user])
+  assert_true(out.length() == 2)
+  match out[0] {
+    SystemMessage(content~) =>
+      match content {
+        [Text(s)] => assert_eq(s, "line one\n\n   indented start\n  tail  ")
+        _ => fail("expected canonical single Text content")
+      }
+    _ => fail("expected SystemMessage at index 0")
+  }
+  match out[1] {
+    UserMessage(content~) =>
+      match content {
+        [Text(s)] => assert_eq(s, "hello")
+        _ => fail("expected Text content")
+      }
+    _ => fail("expected the untouched user input at index 1")
+  }
+}
+
+///|
+async test "m38_sysprompt/all_blank_contributions_short_circuit" {
+  let blank : &@port.SystemPromptContributor = FixedPromptContributor::{
+    text: "\n \t",
+  }
+  let hook = SystemPromptHook(base_prompt="   ", contributors=[
+    SystemPromptSection(id="blank", contributor=blank),
+  ])
+  assert_eq(hook.assemble(), "")
+  let user : @kernel.Message = UserMessage(content=[Text("hello")])
+  let input = [user]
+  let out = hook.before_model(input)
+  assert_true(out.length() == 1)
+  assert_true(physical_equal(out, input))
+}
+
+///|
+async test "m38_sysprompt/idempotent_only_for_canonical_single_text" {
+  let hook = SystemPromptHook(base_prompt="NEW", contributors=[])
+  let same : @kernel.Message = SystemMessage(content=[Text("NEW")])
+  let user : @kernel.Message = UserMessage(content=[Text("hello")])
+  let input = [same, user]
+  let out = hook.before_model(input)
+  assert_true(physical_equal(out, input))
+  let extra : @kernel.Message = SystemMessage(content=[
+    Text("NEW"),
+    Text("extra"),
+  ])
+  let replaced = hook.before_model([extra, user])
+  assert_true(replaced.length() == 2)
+  match replaced[0] {
+    SystemMessage(content~) =>
+      match content {
+        [Text(s)] => assert_eq(s, "NEW")
+        _ => fail("expected canonical single Text replacement")
+      }
+    _ => fail("expected SystemMessage at index 0")
+  }
 }
 
 ///|
@@ -368,8 +460,8 @@ async test "m38_sysprompt/config_base_precedes_contributors" {
   match prompt[0] {
     SystemMessage(content~) =>
       match content {
-        [Text(s), ..] => assert_eq(s, "host_base\n\next:\nfrom_ext")
-        _ => fail("expected Text content")
+        [Text(s)] => assert_eq(s, "host_base\n\nfrom_ext")
+        _ => fail("expected canonical single Text content")
       }
     _ => fail("expected SystemMessage at index 0")
   }
@@ -404,10 +496,106 @@ async test "m38_sysprompt/lazy_assembly_reads_post_on_start" {
   match prompt[0] {
     SystemMessage(content~) =>
       match content {
-        [Text(s), ..] => assert_eq(s, "ext:\nafter_start")
-        _ => fail("expected Text content")
+        [Text(s)] => assert_eq(s, "after_start")
+        _ => fail("expected canonical single Text content")
       }
     _ => fail("expected SystemMessage at index 0")
+  }
+}
+
+///|
+async test "m38_sysprompt/same_ext_contributors_join_without_headers" {
+  let c1 : &@port.SystemPromptContributor = FixedPromptContributor::{
+    text: "ONE",
+  }
+  let c2 : &@port.SystemPromptContributor = FixedPromptContributor::{
+    text: "TWO",
+  }
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("ok"),
+    ),
+  ])
+  let agent = Agent(
+    events=EventSystem(),
+    exts=[
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="ext", prompt_contributors=[c1, c2]),
+      @test_support.tk_ext(id="io", sessions=[
+        @test_support.RecordingSessionPort(),
+      ]),
+    ],
+    config=agent_config(max_tool_rounds=Some(10)),
+  )
+  ignore(agent.run_turn(@test_support.tk_user_msg("hi"), "session_same_ext"))
+  let prompt = model.received_messages[0]
+  match prompt[0] {
+    SystemMessage(content~) =>
+      match content {
+        [Text(s)] => assert_eq(s, "ONE\n\nTWO")
+        _ => fail("expected canonical single Text content")
+      }
+    _ => fail("expected SystemMessage at index 0")
+  }
+}
+
+///|
+async test "m38_sysprompt/contributor_read_once_across_rounds_turns_sessions" {
+  let reads = Ref(0)
+  let contributor : &@port.SystemPromptContributor = CountingPromptContributor::{
+    reads,
+  }
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_tool_call_response("echo", "call_1", Json::null()),
+    ),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("done"),
+    ),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("second turn"),
+    ),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("other session"),
+    ),
+  ])
+  let tools = @test_support.RecordingToolProvider(
+    [@test_support.tk_tool_def("echo", "echo tool")],
+    Map::from_array([
+      (
+        "echo",
+        @test_support.ScriptedToolOutcome::OutcomeOk(
+          @test_support.tk_ok_result("echoed"),
+        ),
+      ),
+    ]),
+  )
+  let agent = Agent(
+    events=EventSystem(),
+    exts=[
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="tools", tools=[tools]),
+      @test_support.tk_ext(id="ext", prompt_contributors=[contributor]),
+      @test_support.tk_ext(id="io", sessions=[
+        @test_support.RecordingSessionPort(),
+      ]),
+    ],
+    config=agent_config(max_tool_rounds=Some(10)),
+  )
+  ignore(agent.run_turn(@test_support.tk_user_msg("one"), "session_a"))
+  ignore(agent.run_turn(@test_support.tk_user_msg("two"), "session_a"))
+  ignore(agent.run_turn(@test_support.tk_user_msg("three"), "session_b"))
+  assert_eq(reads.val, 1)
+  assert_eq(model.received_messages.length(), 4)
+  for prompt in model.received_messages {
+    match prompt[0] {
+      SystemMessage(content~) =>
+        match content {
+          [Text(s)] => assert_eq(s, "COUNTED")
+          _ => fail("expected canonical single Text system content")
+        }
+      _ => fail("expected SystemMessage at index 0")
+    }
   }
 }
 
@@ -1042,6 +1230,129 @@ async test "m38_hooks/same_length_rewrite_reaches_model" {
   }
   assert_eq(completed, 1)
   assert_eq(failed, 0)
+}
+
+///|
+struct ModeIndicatorHook {
+  mode : Ref[String]
+}
+
+///|
+fn ModeIndicatorHook::envelope(self : ModeIndicatorHook) -> String {
+  "<mode-state>\nCurrent mode: \{self.mode.val}\n</mode-state>"
+}
+
+///|
+pub impl @port.PipelineHook for ModeIndicatorHook with fn before_model(
+  self : ModeIndicatorHook,
+  messages : Array[@kernel.Message],
+) -> Array[@kernel.Message] raise @port.HookAbort {
+  let envelope = self.envelope()
+  let mut i = messages.length() - 1
+  while i >= 0 {
+    match messages[i] {
+      UserMessage(content=[Text(text), ..]) if text.contains("<mode-state>") => {
+        if text == envelope {
+          return messages
+        }
+        break
+      }
+      _ => ()
+    }
+    i = i - 1
+  }
+  let out : Array[@kernel.Message] = []
+  for m in messages {
+    out.push(m)
+  }
+  out.push(UserMessage(content=[Text(envelope)]))
+  out
+}
+
+///|
+pub extend ModeIndicatorHook with @port.PipelineHook::{
+  tool_exposure,
+  on_turn_begin,
+  on_post_event,
+  before_model,
+  before_tool,
+  on_turn_end,
+}
+
+///|
+fn mode_notification_texts(messages : Array[@kernel.Message]) -> Array[String] {
+  let out : Array[String] = []
+  for m in messages {
+    match m {
+      UserMessage(content=[Text(text), ..]) if text.contains("<mode-state>") =>
+        out.push(text)
+      _ => ()
+    }
+  }
+  out
+}
+
+///|
+async test "m38_sysprompt/dynamic_mode_notification_appends_once_on_change" {
+  let mode = Ref("act")
+  let hook : &@port.PipelineHook = ModeIndicatorHook::{ mode, }
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_tool_call_response("echo", "call_1", Json::null()),
+    ),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("done"),
+    ),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("same mode"),
+    ),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("mode changed"),
+    ),
+  ])
+  let tools = @test_support.RecordingToolProvider(
+    [@test_support.tk_tool_def("echo", "echo tool")],
+    Map::from_array([
+      (
+        "echo",
+        @test_support.ScriptedToolOutcome::OutcomeOk(
+          @test_support.tk_ok_result("echoed"),
+        ),
+      ),
+    ]),
+  )
+  let agent = Agent(
+    events=EventSystem(),
+    exts=[
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="tools", tools=[tools]),
+      @test_support.tk_ext(id="hook", hooks=[hook]),
+      @test_support.tk_ext(id="io", sessions=[
+        @test_support.RecordingSessionPort(),
+      ]),
+    ],
+    config=agent_config(max_tool_rounds=Some(10)),
+  )
+  ignore(agent.run_turn(@test_support.tk_user_msg("do it"), "session_mode"))
+  assert_eq(model.received_messages.length(), 2)
+  assert_eq(mode_notification_texts(model.received_messages[0]).length(), 1)
+  assert_eq(mode_notification_texts(model.received_messages[1]).length(), 1)
+  match model.received_messages[0][0] {
+    UserMessage(content~) =>
+      match content {
+        [Text(s), ..] => assert_eq(s, "do it")
+        _ => fail("expected Text content")
+      }
+    _ => fail("expected the real input to stay at index 0")
+  }
+  ignore(agent.run_turn(@test_support.tk_user_msg("again"), "session_mode"))
+  assert_eq(mode_notification_texts(model.received_messages[2]).length(), 1)
+  mode.val = "plan"
+  ignore(agent.run_turn(@test_support.tk_user_msg("switch"), "session_mode"))
+  let notifications = mode_notification_texts(model.received_messages[3])
+  assert_eq(notifications.length(), 2)
+  assert_true(notifications[0].contains("act"))
+  assert_true(notifications[1].contains("plan"))
 }
 
 ///|

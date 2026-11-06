@@ -18,6 +18,8 @@ pub struct CompositionView {
   priv decision_ : &DecisionPort?
   priv log_ : &LogPort?
   priv ui_ : &UiPort?
+  priv ui_resources_ : UiResources?
+  priv ui_interactions_ : UiInteractions?
   priv tasks_ : Tasks?
   priv wakeup_ : WakeupPort?
   priv tool_contributions_ : ToolContributions?
@@ -53,6 +55,22 @@ pub fn CompositionView::log(self : CompositionView) -> &LogPort? {
 /// only to consume the composed UI is not allowed.
 pub fn CompositionView::ui(self : CompositionView) -> &UiPort? {
   self.ui_
+}
+
+///|
+/// Present only when the extension declared `Capability::Ui`; bound to this
+/// extension's manifest id.
+pub fn CompositionView::ui_resources(self : CompositionView) -> UiResources? {
+  self.ui_resources_
+}
+
+///|
+/// Present only when the extension declares `Capability::Ui`; bound to this
+/// extension's manifest id.
+pub fn CompositionView::ui_interactions(
+  self : CompositionView,
+) -> UiInteractions? {
+  self.ui_interactions_
 }
 
 ///|
@@ -97,6 +115,8 @@ pub fn CompositionView::resolve(
   decision~ : &DecisionPort? = None,
   log~ : &LogPort? = None,
   ui~ : &UiPort,
+  ui_resources~ : UiResources? = None,
+  ui_interactions~ : UiInteractions? = None,
   tasks~ : Tasks? = None,
   wakeup~ : WakeupPort? = None,
   tool_contributions~ : ToolContributions? = None,
@@ -120,6 +140,16 @@ pub fn CompositionView::resolve(
     },
     ui_: if requires.contains(Ui) {
       Some(ui)
+    } else {
+      None
+    },
+    ui_resources_: if requires.contains(Ui) {
+      ui_resources
+    } else {
+      None
+    },
+    ui_interactions_: if requires.contains(Ui) {
+      ui_interactions
     } else {
       None
     },

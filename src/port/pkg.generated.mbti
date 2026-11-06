@@ -115,10 +115,12 @@ pub fn CompositionView::decision(Self) -> &DecisionPort?
 pub fn CompositionView::events(Self) -> @events.Events?
 pub fn CompositionView::log(Self) -> &LogPort?
 pub fn CompositionView::model(Self) -> &ModelPort?
-pub fn CompositionView::resolve(requires~ : Array[Capability], model~ : &ModelPort, decision? : &DecisionPort?, log? : &LogPort?, ui~ : &UiPort, tasks? : Tasks?, wakeup? : WakeupPort?, tool_contributions? : ToolContributions?, events? : @events.Events?) -> Self
+pub fn CompositionView::resolve(requires~ : Array[Capability], model~ : &ModelPort, decision? : &DecisionPort?, log? : &LogPort?, ui~ : &UiPort, ui_resources? : UiResources?, ui_interactions? : UiInteractions?, tasks? : Tasks?, wakeup? : WakeupPort?, tool_contributions? : ToolContributions?, events? : @events.Events?) -> Self
 pub fn CompositionView::tasks(Self) -> Tasks?
 pub fn CompositionView::tool_contributions(Self) -> ToolContributions?
 pub fn CompositionView::ui(Self) -> &UiPort?
+pub fn CompositionView::ui_interactions(Self) -> UiInteractions?
+pub fn CompositionView::ui_resources(Self) -> UiResources?
 pub fn CompositionView::wakeup(Self) -> WakeupPort?
 
 #derive(Eq, @debug.Debug)
@@ -485,6 +487,72 @@ pub fn ToolWithdrawMode::to_repr(Self) -> @debug.Repr
 pub fn ToolWithdrawMode::to_string(Self) -> String
 pub impl Show for ToolWithdrawMode
 
+#derive(Eq, @debug.Debug)
+pub(all) struct UiActionInvocation {
+  resource : UiResourceRef
+  revision : Int32
+  action : String
+  request_id : String
+  payload : @json.Json?
+}
+pub fn UiActionInvocation::equal(Self, Self) -> Bool
+pub fn UiActionInvocation::not_equal(Self, Self) -> Bool
+pub fn UiActionInvocation::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) enum UiActionPayloadKind {
+  NoPayload
+  JsonPayload
+}
+pub fn UiActionPayloadKind::equal(Self, Self) -> Bool
+pub fn UiActionPayloadKind::not_equal(Self, Self) -> Bool
+pub fn UiActionPayloadKind::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) struct UiActionRequest {
+  resource : UiResourceRef
+  action : String
+  expected_revision : Int32
+  request_id : String
+  payload : @json.Json?
+}
+pub fn UiActionRequest::equal(Self, Self) -> Bool
+pub fn UiActionRequest::not_equal(Self, Self) -> Bool
+pub fn UiActionRequest::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) struct UiActionResult {
+  request_id : String
+  resource : UiResourceRef
+  action : String
+  revision : Int32
+  replayed : Bool
+}
+pub fn UiActionResult::equal(Self, Self) -> Bool
+pub fn UiActionResult::not_equal(Self, Self) -> Bool
+pub fn UiActionResult::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) struct UiActionSpec {
+  id : String
+  label : String
+  payload : UiActionPayloadKind
+}
+pub fn UiActionSpec::equal(Self, Self) -> Bool
+pub fn UiActionSpec::not_equal(Self, Self) -> Bool
+pub fn UiActionSpec::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) struct UiBaseline {
+  cursor : UiCursor
+  interaction_cursor : UiCursor
+  resources : Array[UiResourceSnapshot]
+  pending_interactions : Array[UiInteractionSnapshot]
+}
+pub fn UiBaseline::equal(Self, Self) -> Bool
+pub fn UiBaseline::not_equal(Self, Self) -> Bool
+pub fn UiBaseline::to_repr(Self) -> @debug.Repr
+
 #derive(@debug.Debug)
 pub(all) enum UiBody {
   Text(String)
@@ -499,6 +567,33 @@ pub fn UiBody::to_repr(Self) -> @debug.Repr
 pub fn UiBody::to_string(Self) -> String
 pub impl Show for UiBody
 
+#derive(Eq, @debug.Debug)
+pub(all) enum UiChange {
+  Resource(change~ : UiResourceChange)
+  Interaction(change~ : UiInteractionChange)
+}
+pub fn UiChange::equal(Self, Self) -> Bool
+pub fn UiChange::not_equal(Self, Self) -> Bool
+pub fn UiChange::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) struct UiChanges {
+  cursor : UiCursor
+  changes : Array[UiResourceChange]
+}
+pub fn UiChanges::equal(Self, Self) -> Bool
+pub fn UiChanges::not_equal(Self, Self) -> Bool
+pub fn UiChanges::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) struct UiCursor {
+  generation : Int32
+  seq : Int32
+}
+pub fn UiCursor::equal(Self, Self) -> Bool
+pub fn UiCursor::not_equal(Self, Self) -> Bool
+pub fn UiCursor::to_repr(Self) -> @debug.Repr
+
 #derive(@debug.Debug)
 pub(all) struct UiDescriptor {
   autocomplete_sources : Array[AutocompleteSource]
@@ -506,13 +601,24 @@ pub(all) struct UiDescriptor {
 pub fn UiDescriptor::empty() -> Self
 pub fn UiDescriptor::to_repr(Self) -> @debug.Repr
 
-#derive(@debug.Debug)
+#derive(Eq, @debug.Debug)
 pub(all) struct UiEntry {
   key : String
   value : String
   color : String?
 }
+pub fn UiEntry::equal(Self, Self) -> Bool
+pub fn UiEntry::not_equal(Self, Self) -> Bool
 pub fn UiEntry::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) struct UiFeedBatch {
+  cursor : UiCursor
+  change : UiChange
+}
+pub fn UiFeedBatch::equal(Self, Self) -> Bool
+pub fn UiFeedBatch::not_equal(Self, Self) -> Bool
+pub fn UiFeedBatch::to_repr(Self) -> @debug.Repr
 
 #derive(Eq, @debug.Debug)
 pub(all) enum UiHint {
@@ -525,6 +631,230 @@ pub(all) enum UiHint {
 pub fn UiHint::equal(Self, Self) -> Bool
 pub fn UiHint::not_equal(Self, Self) -> Bool
 pub fn UiHint::to_repr(Self) -> @debug.Repr
+
+pub struct UiHost {
+  // private fields
+}
+pub fn UiHost::answer(Self, request~ : UiInteractionAnswerRequest) -> Result[UiInteractionAnswerReceipt, UiInteractionError]
+pub fn UiHost::changes_since(Self, cursor~ : UiCursor) -> Result[UiChanges, UiResourceError]
+pub fn UiHost::connect(Self, capabilities~ : UiHostCapabilities) -> Result[UiHostConnection, UiInteractionError]
+pub fn UiHost::dismiss(Self, interaction~ : UiInteractionRef, reason? : String) -> Result[UiInteractionOutcome, UiInteractionError]
+pub async fn UiHost::dispatch(Self, request~ : UiActionRequest) -> Result[UiActionResult, UiResourceError] noraise
+pub fn UiHost::from_callbacks(snapshot~ : () -> Result[UiBaseline, UiResourceError], changes_since~ : (UiCursor) -> Result[UiChanges, UiResourceError], interactions_since~ : (UiCursor) -> Result[UiInteractionChanges, UiResourceError], dispatch~ : async (UiActionRequest) -> Result[UiActionResult, UiResourceError] noraise, answer~ : (UiInteractionAnswerRequest) -> Result[UiInteractionAnswerReceipt, UiInteractionError], dismiss~ : (UiInteractionRef, String) -> Result[UiInteractionOutcome, UiInteractionError], subscribe~ : ((UiFeedBatch) -> Result[Unit, String], (UiListenerFailure) -> Unit) -> Result[UiObservation, UiResourceError], connect? : (UiHostCapabilities) -> Result[UiHostConnection, UiInteractionError]) -> Self
+pub fn UiHost::interactions_since(Self, cursor~ : UiCursor) -> Result[UiInteractionChanges, UiResourceError]
+pub fn UiHost::snapshot(Self) -> Result[UiBaseline, UiResourceError]
+pub fn UiHost::subscribe(Self, listener~ : (UiFeedBatch) -> Result[Unit, String], on_failure~ : (UiListenerFailure) -> Unit) -> Result[UiObservation, UiResourceError]
+
+#derive(Eq, @debug.Debug)
+pub(all) struct UiHostCapabilities {
+  resource_kinds : Array[UiResourceKind]
+  fallback : Bool
+  interactions : Array[UiInteractionKind]
+}
+pub fn UiHostCapabilities::equal(Self, Self) -> Bool
+pub fn UiHostCapabilities::new(resource_kinds? : Array[UiResourceKind], fallback? : Bool, interactions? : Array[UiInteractionKind]) -> Self
+pub fn UiHostCapabilities::not_equal(Self, Self) -> Bool
+pub fn UiHostCapabilities::to_repr(Self) -> @debug.Repr
+
+pub struct UiHostConnection {
+  // private fields
+}
+pub fn UiHostConnection::answer(Self, request~ : UiInteractionAnswerRequest) -> Result[UiInteractionAnswerReceipt, UiInteractionError]
+pub fn UiHostConnection::detach(Self) -> Result[Unit, UiInteractionError]
+pub fn UiHostConnection::dismiss(Self, interaction~ : UiInteractionRef, reason? : String) -> Result[UiInteractionOutcome, UiInteractionError]
+pub fn UiHostConnection::from_callbacks(id~ : Int32, is_connected~ : () -> Bool, update~ : (UiHostCapabilities) -> Result[Unit, UiInteractionError], detach~ : () -> Result[Unit, UiInteractionError], answer~ : (UiInteractionAnswerRequest) -> Result[UiInteractionAnswerReceipt, UiInteractionError], dismiss~ : (UiInteractionRef, String) -> Result[UiInteractionOutcome, UiInteractionError]) -> Self
+pub fn UiHostConnection::id(Self) -> Int32
+pub fn UiHostConnection::is_connected(Self) -> Bool
+pub fn UiHostConnection::update(Self, capabilities~ : UiHostCapabilities) -> Result[Unit, UiInteractionError]
+
+#derive(Eq, @debug.Debug)
+pub(all) struct UiHostConnectionSupport {
+  connection : Int32
+  support : UiHostSupport
+}
+pub fn UiHostConnectionSupport::equal(Self, Self) -> Bool
+pub fn UiHostConnectionSupport::not_equal(Self, Self) -> Bool
+pub fn UiHostConnectionSupport::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) enum UiHostSupport {
+  Native
+  Fallback
+  Unsupported
+}
+pub fn UiHostSupport::equal(Self, Self) -> Bool
+pub fn UiHostSupport::not_equal(Self, Self) -> Bool
+pub fn UiHostSupport::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) enum UiInteractionAnswer {
+  Text(String)
+  Yes
+  No
+  Choice(Int32)
+}
+pub fn UiInteractionAnswer::equal(Self, Self) -> Bool
+pub fn UiInteractionAnswer::not_equal(Self, Self) -> Bool
+pub fn UiInteractionAnswer::output(Self, &Logger) -> Unit
+pub fn UiInteractionAnswer::to_repr(Self) -> @debug.Repr
+pub fn UiInteractionAnswer::to_string(Self) -> String
+pub impl Show for UiInteractionAnswer
+
+#derive(Eq, @debug.Debug)
+pub(all) struct UiInteractionAnswerReceipt {
+  interaction : UiInteractionRef
+  answer : UiInteractionAnswer
+  replayed : Bool
+}
+pub fn UiInteractionAnswerReceipt::equal(Self, Self) -> Bool
+pub fn UiInteractionAnswerReceipt::not_equal(Self, Self) -> Bool
+pub fn UiInteractionAnswerReceipt::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) struct UiInteractionAnswerRequest {
+  interaction : UiInteractionRef
+  answer : UiInteractionAnswer
+}
+pub fn UiInteractionAnswerRequest::equal(Self, Self) -> Bool
+pub fn UiInteractionAnswerRequest::not_equal(Self, Self) -> Bool
+pub fn UiInteractionAnswerRequest::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) enum UiInteractionBody {
+  FreeText(default~ : String?)
+  Confirmation
+  Choice(options~ : Array[String], default~ : Int32?)
+}
+pub fn UiInteractionBody::equal(Self, Self) -> Bool
+pub fn UiInteractionBody::kind(Self) -> UiInteractionKind
+pub fn UiInteractionBody::not_equal(Self, Self) -> Bool
+pub fn UiInteractionBody::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) enum UiInteractionChange {
+  Opened(snapshot~ : UiInteractionSnapshot)
+  Settled(owner~ : String, request_id~ : String, outcome~ : UiInteractionOutcome)
+}
+pub fn UiInteractionChange::equal(Self, Self) -> Bool
+pub fn UiInteractionChange::not_equal(Self, Self) -> Bool
+pub fn UiInteractionChange::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) struct UiInteractionChanges {
+  cursor : UiCursor
+  changes : Array[UiInteractionChange]
+}
+pub fn UiInteractionChanges::equal(Self, Self) -> Bool
+pub fn UiInteractionChanges::not_equal(Self, Self) -> Bool
+pub fn UiInteractionChanges::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) enum UiInteractionError {
+  Closed
+  NotFound(owner~ : String, request_id~ : String)
+  Duplicate(request_id~ : String)
+  InvalidInput(reason~ : String)
+  InvalidAnswer(reason~ : String)
+  AlreadySettled(outcome~ : UiInteractionOutcome)
+  Conflict(reason~ : String)
+  PendingFull(limit~ : Int32)
+  HostUnavailable(reason~ : String)
+  ConnectionsFull(limit~ : Int32)
+  Dismissed(reason~ : String)
+  Withdrawn
+}
+pub fn UiInteractionError::equal(Self, Self) -> Bool
+pub fn UiInteractionError::not_equal(Self, Self) -> Bool
+pub fn UiInteractionError::output(Self, &Logger) -> Unit
+pub fn UiInteractionError::to_repr(Self) -> @debug.Repr
+pub fn UiInteractionError::to_string(Self) -> String
+pub impl Show for UiInteractionError
+
+#derive(Eq, @debug.Debug)
+pub(all) enum UiInteractionKind {
+  TextInput
+  YesNo
+  SingleChoice
+}
+pub fn UiInteractionKind::equal(Self, Self) -> Bool
+pub fn UiInteractionKind::not_equal(Self, Self) -> Bool
+pub fn UiInteractionKind::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) enum UiInteractionOutcome {
+  Answered(answer~ : UiInteractionAnswer)
+  Dismissed(reason~ : String)
+  Withdrawn
+  WaitCancelled
+  Closed
+}
+pub fn UiInteractionOutcome::equal(Self, Self) -> Bool
+pub fn UiInteractionOutcome::not_equal(Self, Self) -> Bool
+pub fn UiInteractionOutcome::output(Self, &Logger) -> Unit
+pub fn UiInteractionOutcome::to_repr(Self) -> @debug.Repr
+pub fn UiInteractionOutcome::to_string(Self) -> String
+pub impl Show for UiInteractionOutcome
+
+#derive(Eq, @debug.Debug)
+pub(all) struct UiInteractionRef {
+  owner : String
+  request_id : String
+  generation : Int32
+}
+pub fn UiInteractionRef::equal(Self, Self) -> Bool
+pub fn UiInteractionRef::not_equal(Self, Self) -> Bool
+pub fn UiInteractionRef::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) struct UiInteractionRequest {
+  request_id : String
+  scope : UiResourceScope
+  prompt : String
+  body : UiInteractionBody
+  title : String?
+}
+pub fn UiInteractionRequest::equal(Self, Self) -> Bool
+pub fn UiInteractionRequest::new(request_id~ : String, prompt~ : String, body~ : UiInteractionBody, scope? : UiResourceScope, title? : String) -> Self
+pub fn UiInteractionRequest::not_equal(Self, Self) -> Bool
+pub fn UiInteractionRequest::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) struct UiInteractionSnapshot {
+  interaction : UiInteractionRef
+  scope : UiResourceScope
+  prompt : String
+  body : UiInteractionBody
+  title : String?
+}
+pub fn UiInteractionSnapshot::equal(Self, Self) -> Bool
+pub fn UiInteractionSnapshot::not_equal(Self, Self) -> Bool
+pub fn UiInteractionSnapshot::to_repr(Self) -> @debug.Repr
+
+pub struct UiInteractions {
+  // private fields
+}
+pub async fn UiInteractions::ask(Self, request~ : UiInteractionRequest) -> Result[UiInteractionAnswer, UiInteractionError] noraise
+pub fn UiInteractions::find(Self, request_id~ : String) -> Result[UiInteractionSnapshot, UiInteractionError]
+pub fn UiInteractions::from_callbacks(owner~ : String, open~ : (UiInteractionRequest) -> Result[UiInteractionSnapshot, UiInteractionError], wait~ : async (UiInteractionRef) -> Result[UiInteractionAnswer, UiInteractionError] noraise, withdraw~ : (UiInteractionRef) -> Result[UiInteractionOutcome, UiInteractionError], find? : (String) -> Result[UiInteractionSnapshot, UiInteractionError], ask? : async (UiInteractionRequest) -> Result[UiInteractionAnswer, UiInteractionError] noraise) -> Self
+pub fn UiInteractions::open(Self, request~ : UiInteractionRequest) -> Result[UiInteractionSnapshot, UiInteractionError]
+pub fn UiInteractions::owner(Self) -> String
+pub async fn UiInteractions::wait(Self, interaction~ : UiInteractionRef) -> Result[UiInteractionAnswer, UiInteractionError] noraise
+pub fn UiInteractions::withdraw(Self, interaction~ : UiInteractionRef) -> Result[UiInteractionOutcome, UiInteractionError]
+
+#derive(Eq, @debug.Debug)
+pub(all) struct UiListenerFailure {
+  subscription : Int32
+  seq : Int32
+  detail : String
+}
+pub fn UiListenerFailure::equal(Self, Self) -> Bool
+pub fn UiListenerFailure::not_equal(Self, Self) -> Bool
+pub fn UiListenerFailure::to_repr(Self) -> @debug.Repr
+
+pub(all) struct UiObservation {
+  baseline : UiBaseline
+  subscription : UiSubscription
+}
 
 #derive(@debug.Debug)
 pub(all) struct UiRender {
@@ -549,6 +879,134 @@ pub fn UiRequest::output(Self, &Logger) -> Unit
 pub fn UiRequest::to_repr(Self) -> @debug.Repr
 pub fn UiRequest::to_string(Self) -> String
 pub impl Show for UiRequest
+
+#derive(Eq, @debug.Debug)
+pub(all) enum UiResourceBody {
+  Text(String)
+  Lines(Array[String])
+  KeyValue(Array[(String, String)])
+  Entries(Array[UiEntry])
+  Progress(Double)
+  Markdown(String)
+  Custom(@json.Json)
+}
+pub fn UiResourceBody::equal(Self, Self) -> Bool
+pub fn UiResourceBody::not_equal(Self, Self) -> Bool
+pub fn UiResourceBody::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) enum UiResourceChange {
+  Published(snapshot~ : UiResourceSnapshot)
+  Replaced(snapshot~ : UiResourceSnapshot)
+  Withdrawn(owner~ : String, key~ : String, revision~ : Int32)
+}
+pub fn UiResourceChange::equal(Self, Self) -> Bool
+pub fn UiResourceChange::not_equal(Self, Self) -> Bool
+pub fn UiResourceChange::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) struct UiResourceDraft {
+  key : String
+  kind : UiResourceKind
+  scope : UiResourceScope
+  lifetime : UiResourceLifetime
+  title : String?
+  body : UiResourceBody
+  actions : Array[UiActionSpec]
+}
+pub fn UiResourceDraft::equal(Self, Self) -> Bool
+pub fn UiResourceDraft::new(key~ : String, kind~ : UiResourceKind, body~ : UiResourceBody, scope? : UiResourceScope, lifetime? : UiResourceLifetime, title? : String, actions? : Array[UiActionSpec]) -> Self
+pub fn UiResourceDraft::not_equal(Self, Self) -> Bool
+pub fn UiResourceDraft::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) enum UiResourceError {
+  Closed
+  Unsupported(feature~ : String)
+  NotFound(owner~ : String, key~ : String)
+  StaleRevision(expected~ : Int32, actual~ : Int32)
+  InvalidInput(reason~ : String)
+  Conflict(reason~ : String)
+  InProgress(request_id~ : String)
+  HandlerFailed(detail~ : String)
+  SnapshotRequired(reason~ : String)
+}
+pub fn UiResourceError::equal(Self, Self) -> Bool
+pub fn UiResourceError::not_equal(Self, Self) -> Bool
+pub fn UiResourceError::output(Self, &Logger) -> Unit
+pub fn UiResourceError::to_repr(Self) -> @debug.Repr
+pub fn UiResourceError::to_string(Self) -> String
+pub impl Show for UiResourceError
+
+#derive(Eq, @debug.Debug)
+pub(all) struct UiResourceKind {
+  namespace_ : String
+  name : String
+  schema_version : Int32
+}
+pub fn UiResourceKind::custom(namespace_~ : String, name~ : String, schema_version? : Int32) -> Self
+pub fn UiResourceKind::equal(Self, Self) -> Bool
+pub fn UiResourceKind::not_equal(Self, Self) -> Bool
+pub fn UiResourceKind::standard(name~ : String) -> Self
+pub fn UiResourceKind::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) enum UiResourceLifetime {
+  OwnerBound
+  SessionBound
+  OperationBound
+}
+pub fn UiResourceLifetime::equal(Self, Self) -> Bool
+pub fn UiResourceLifetime::not_equal(Self, Self) -> Bool
+pub fn UiResourceLifetime::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) struct UiResourceRef {
+  owner : String
+  key : String
+  generation : Int32
+}
+pub fn UiResourceRef::equal(Self, Self) -> Bool
+pub fn UiResourceRef::not_equal(Self, Self) -> Bool
+pub fn UiResourceRef::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) enum UiResourceScope {
+  AgentScope
+  SessionScope(id~ : String)
+  OperationScope(id~ : String)
+  ToolCallScope(id~ : String)
+}
+pub fn UiResourceScope::equal(Self, Self) -> Bool
+pub fn UiResourceScope::not_equal(Self, Self) -> Bool
+pub fn UiResourceScope::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) struct UiResourceSnapshot {
+  resource : UiResourceRef
+  revision : Int32
+  kind : UiResourceKind
+  scope : UiResourceScope
+  lifetime : UiResourceLifetime
+  title : String?
+  body : UiResourceBody
+  actions : Array[UiActionSpec]
+}
+pub fn UiResourceSnapshot::equal(Self, Self) -> Bool
+pub fn UiResourceSnapshot::not_equal(Self, Self) -> Bool
+pub fn UiResourceSnapshot::to_repr(Self) -> @debug.Repr
+
+pub struct UiResources {
+  // private fields
+}
+pub fn UiResources::from_callbacks(owner~ : String, publish~ : (UiResourceDraft) -> Result[UiResourceSnapshot, UiResourceError], replace~ : (UiResourceDraft, Int32) -> Result[UiResourceSnapshot, UiResourceError], remove~ : (UiResourceRef) -> Result[Int32, UiResourceError], set_action_handler~ : (async (UiActionInvocation) -> Result[Unit, String]) -> Result[Unit, UiResourceError], operation? : () -> Result[Self, UiResourceError], host_support? : (UiResourceRef) -> Result[Array[UiHostConnectionSupport], UiResourceError]) -> Self
+pub fn UiResources::host_support(Self, resource~ : UiResourceRef) -> Result[Array[UiHostConnectionSupport], UiResourceError]
+pub fn UiResources::operation(Self) -> Result[Self, UiResourceError]
+pub fn UiResources::owner(Self) -> String
+pub fn UiResources::publish(Self, draft~ : UiResourceDraft) -> Result[UiResourceSnapshot, UiResourceError]
+pub fn UiResources::remove(Self, resource~ : UiResourceRef) -> Result[Int32, UiResourceError]
+pub fn UiResources::replace(Self, draft~ : UiResourceDraft, expected~ : Int32) -> Result[UiResourceSnapshot, UiResourceError]
+pub fn UiResources::set_action_handler(Self, handler~ : async (UiActionInvocation) -> Result[Unit, String]) -> Result[Unit, UiResourceError]
 
 #derive(Eq, @debug.Debug)
 pub(all) enum UiResponse {
@@ -577,6 +1035,14 @@ pub fn UiSlot::output(Self, &Logger) -> Unit
 pub fn UiSlot::to_repr(Self) -> @debug.Repr
 pub fn UiSlot::to_string(Self) -> String
 pub impl Show for UiSlot
+
+pub struct UiSubscription {
+  // private fields
+}
+pub fn UiSubscription::from_callbacks(id~ : Int32, is_active~ : () -> Bool, unsubscribe~ : () -> Unit) -> Self
+pub fn UiSubscription::id(Self) -> Int32
+pub fn UiSubscription::is_active(Self) -> Bool
+pub fn UiSubscription::unsubscribe(Self) -> Unit
 
 #derive(Eq, @debug.Debug)
 pub(all) enum WakeupError {
@@ -608,6 +1074,8 @@ pub fn WakeupTicket::to_repr(Self) -> @debug.Repr
 
 // Type aliases
 pub type ToolRetire = async () -> Result[Unit, String]
+
+pub type UiActionHandler = async (UiActionInvocation) -> Result[Unit, String]
 
 // Traits
 pub(open) trait CommandPort {

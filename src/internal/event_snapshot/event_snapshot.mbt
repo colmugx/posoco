@@ -61,6 +61,7 @@ pub fn snapshot_turn_event(event : @types.TurnEvent) -> @types.TurnEvent {
       SessionRedirect(from~, to~, messages_before~, messages_after~)
     TurnCompleted => TurnCompleted
     TurnFailed(reason) => TurnFailed(reason)
+    TurnCancelled => TurnCancelled
     StreamChunkReceived(chunk~) => StreamChunkReceived(chunk~)
     StreamChunksDropped(count~) => StreamChunksDropped(count~)
     ConfigWarning(field~, value~, reason~) =>

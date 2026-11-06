@@ -198,7 +198,9 @@ fn count_terminal_events(events : Array[TurnEvent]) -> Int32 {
   let mut count = 0
   for event in events {
     match event {
-      TurnFailed(_) | TurnCompleted => count = count + 1
+      // Three terminal variants: cancellation is its own category and still
+      // counts as the turn's one terminal.
+      TurnFailed(_) | TurnCompleted | TurnCancelled => count = count + 1
       _ => ()
     }
   }
@@ -326,10 +328,7 @@ async test "t07_load_error_emits_one_safe_turnfailed" {
 
 ///|
 async test "t07_afterturn_hook_failure_is_observable_but_nonfatal" {
-  // In the Puppet path, PostEventHook is non-failable (returns Unit without
-  // raise). PipelineHook abort scenarios are now handled through PreModelHook.
-  // This test verifies that a PreModelHook abort still emits exactly one
-  // terminal event (TurnFailed).
+  // A PreModelHook abort still emits exactly one terminal event.
   let model = @test_support.ScriptedModel([
     @test_support.ScriptedModelStep::Respond(
       @test_support.tk_stop_response("done"),
@@ -367,10 +366,7 @@ async test "t07_afterturn_hook_failure_is_observable_but_nonfatal" {
 
 ///|
 async test "t07_error_hook_failure_preserves_primary_and_is_observable" {
-  // Puppet path: PreModelHook can abort before the model is called. When the
-  // model would have failed but the hook aborts first, the primary error is
-  // the PipelineAborted (not the model error). This test verifies the abort is
-  // observable as PipelineAborted.
+  // A PreModelHook abort before the model call surfaces as PipelineAborted.
   let model = @test_support.ScriptedModel([
     @test_support.ScriptedModelStep::Fail(Transport("primary network failure")),
   ])
@@ -435,9 +431,8 @@ async test "t07_turnerror_hook_failure_preserves_primary_and_is_observable" {
 
 ///|
 async test "t07_aftertool_hook_failure_is_observable_but_nonfatal" {
-  // Puppet path: tool execution is followed by PreModelHook in the next
-  // pump iteration. A pre_model_hook abort before the second model call
-  // surfaces as PipelineAborted.
+  // A pre_model_hook abort before the second model call surfaces as
+  // PipelineAborted.
   let model = @test_support.ScriptedModel([
     @test_support.ScriptedModelStep::Respond(
       @test_support.tk_tool_call_response("probe", "tc_secondary", Json::null()),

@@ -1,0 +1,17 @@
+import {
+  "colmugx/posoco/port",
+  "colmugx/posoco/internal/message_snapshot",
+  "moonbitlang/core/async/cond_var",
+}
+
+import {
+  "colmugx/posoco/port",
+  "moonbitlang/core/async",
+} for "wbtest"
+
+options(
+  "allow-experimental-packages": [
+    "moonbitlang/core/async",
+    "moonbitlang/core/async/cond_var",
+  ],
+)

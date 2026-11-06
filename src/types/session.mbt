@@ -413,6 +413,10 @@ pub(all) enum TurnEvent {
   )
   TurnCompleted
   TurnFailed(String)
+  /// The turn ended because it was cancelled, not because anything failed.
+  /// Soft cancellation, hard cancellation and Agent shutdown all report this
+  /// variant; the typed reason stays on the raised `AgentError::Cancelled`.
+  TurnCancelled
   StreamChunkReceived(chunk~ : StreamChunk)
   /// Emitted when the buffered chunk queue overflowed and oldest chunks were
   /// dropped. `count` is the number of dropped `StreamChunkReceived` events.
@@ -510,6 +514,7 @@ pub impl Show for TurnEvent with fn to_string(self : TurnEvent) -> String {
     SessionRedirect(from~, to~, ..) => "SessionRedirect(from:\{from}, to:\{to})"
     TurnCompleted => "TurnCompleted"
     TurnFailed(msg) => "TurnFailed(\{msg})"
+    TurnCancelled => "TurnCancelled"
     StreamChunkReceived(..) => "StreamChunkReceived"
     StreamChunksDropped(count~) => "StreamChunksDropped(count=\{count})"
     ConfigWarning(field~, value~, reason~) =>

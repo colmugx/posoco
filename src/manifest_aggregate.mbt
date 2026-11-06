@@ -33,8 +33,6 @@ priv struct AggregatedPorts {
   lifecycle : Array[LifecycleEntry]
   commands : Array[&@port.CommandPort]
   ui : &@port.UiPort
-  /// Contributor paired with its manifest id (used as the prompt section
-  /// header so the assembled prompt names its source).
   prompt_contributors : Array[(String, &@port.SystemPromptContributor)]
 }
 

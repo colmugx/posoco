@@ -33,7 +33,7 @@ pub fn TaskRuntime::begin_operation(Self, String, @kernel.RunId, @kernel.TurnId)
 pub fn TaskRuntime::cancel_foreground_for_run(Self, @kernel.RunId) -> Unit
 pub fn TaskRuntime::capability(Self, String) -> @port.Tasks
 pub fn TaskRuntime::commit_outcomes(Self, String) -> Unit
-pub async fn TaskRuntime::finish_active_operation(Self) -> Unit raise @error.AgentError
+pub async fn TaskRuntime::finish_active_operation(Self) -> Unit raise @error.AgentError + nocancel
 pub fn TaskRuntime::has_inflight(Self, String) -> Bool
 pub fn TaskRuntime::metadata_with_applied_outcomes(Self, String, Map[String, @json.Json]) -> Map[String, @json.Json] raise @error.AgentError
 pub fn TaskRuntime::peek_outcomes(Self, String) -> Array[@port.TaskOutcome]

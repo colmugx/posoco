@@ -38,6 +38,7 @@ fn event_surface_tag(event : @types.TurnEvent) -> String {
     ToolCallAbandoned(..) => "ToolCallAbandoned"
     TurnCompleted => "TurnCompleted"
     TurnFailed(_) => "TurnFailed"
+    TurnCancelled => "TurnCancelled"
     _ => "other"
   }
 }
@@ -352,12 +353,12 @@ async test "tool_event_surface/mid_wave_cancel_abandons_pending_calls" {
     fail("expected structured Cancelled, got \{repr(outcome.val)}")
   }
   assert_eq(probe.tool_parks, 1)
-  // The runtime's cancel disposition folds the parked effect as a failure
-  // outcome (never a fabricated success), so the pending slot is consumed
-  // by ToolCallFailed; the turn then fails. No orphan remains.
+  // The cancel disposition folds the parked effect as a failure outcome, so
+  // the pending slot is consumed by ToolCallFailed and the turn ends
+  // cancelled.
   let tags = turn_surface_events(observer.events()).map(event_surface_tag)
   assert_eq(tags, [
     "TurnStarted", "ModelRequestStarted", "ModelResponseReceived", "ToolCallPending",
-    "ToolCallApproved", "ToolCallStarted", "ToolCallFailed", "TurnFailed",
+    "ToolCallApproved", "ToolCallStarted", "ToolCallFailed", "TurnCancelled",
   ])
 }
