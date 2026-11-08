@@ -33,7 +33,7 @@ Port 是 Posoco 核心与 agent 所用能力之间唯一的接缝。
 | `MemoryPort` | 长期记忆存储与检索 |
 | `Lifecycle` | 组合期能力接线、一次性 async 启动、关闭清理 |
 | `CommandPort` | 用户侧 slash 命令枚举与调用 |
-| `UiPort` | 结构化 UI 意图 + 交互请求（Status / Notice / Widget / Input / Confirm / Select） |
+| `UiPort` | 结构化 UI 意图 + 交互请求（Status / Notice / Widget / Input / Confirm / Select）——旧适配层，见 [UI 协议](#ui-协议) |
 | `SystemPromptContributor` | 声明 system prompt 段落（拼装并在模型调用前注入） |
 | `Extension` | 自报家门协议：`extension_id` + `manifest` 声明本扩展贡献哪些 port |
 | `ProviderConfig` | 模型侧 provider 配置（伴随类型，非运行时 port） |
@@ -124,7 +124,10 @@ let result = agent.run_turn(input, "session_1")
 - `SessionPort` 是可选的；未提供时 Agent 以 ephemeral 模式运行，不做持久化 session 写入
 
 已发布 `TurnStarted` 的 turn 恰好发布一个 terminal event：成功为
-`TurnCompleted`，任何主路径失败为 `TurnFailed`。
+`TurnCompleted`，任何主路径失败为 `TurnFailed`，被取消（软 abort、硬取消、
+Agent shutdown、取消的 resume）为 `TurnCancelled`。取消不会被伪装成失败：
+调用方拿到的仍是 typed `AgentError::Cancelled`，operation 结算为 `cancelled`。
+取消 compact 不会发布任何 turn 事件——compact 是 operation，不是 turn。
 
 ## 强类型事件
 
@@ -171,6 +174,29 @@ let subscription = system.subscribe(
 shutdown 后 `Closed`）见 [`examples/quickstart`](./examples/quickstart/README.md)；
 完整资源契约与迁移步骤见 [`src/events/MIGRATION.md`](./src/events/MIGRATION.md)。
 
+## UI 协议
+
+`UiPort` 仍是旧的渲染 / 阻塞式 `request` 适配层。与它并列，Agent 还带一套状态
+协议：扩展发布资源、发起结构化提问，宿主观察并作答。
+
+- **扩展侧**：声明 `requires: [@posoco.Capability::Ui]`，在 `on_compose` 取
+  `view.ui_resources()` / `view.ui_interactions()`。资源是 owner 绑定的
+  （manifest id + 本地 key + 运行时 generation），发布即整块替换、revision 单调
+  递增，更新用 `replace(expected=...)`，撤销要显式调用。`resources.operation()`
+  返回绑定当前 admitted operation 的句柄，它发布的 `OperationBound` 资源会在该
+  turn / compact 结算时自动回收。
+- **宿主侧**：用 `agent.ui_host()`。一次 `snapshot()` 是同一切点上的 live 资源、
+  pending 提问与两条游标；随后用 `changes_since` / `interactions_since` 拉取，
+  或用 `subscribe` 收按提交顺序的推送。`dispatch` 把当前声明过的动作送回 owner
+  扩展，回执只代表"受理"——结果状态走 change feed。`connect` 声明宿主能渲染和
+  回答什么；没有匹配连接时阻塞提问立刻 `HostUnavailable`。
+- **边界**：全部在进程内——游标、pending 提问与重放窗口都不跨 Agent 重启，没有
+  跨进程恢复。`UiPort` 语义不变，也**不会**获得这些新保证。动作和答案都不带来
+  tool/model/session 权限。
+
+教程：[`posoco-101/13-ui-observe-and-ask.mbt.md`](./posoco-101/13-ui-observe-and-ask.mbt.md)；
+契约：[`docs/ui-protocol.md`](./docs/ui-protocol.md)。
+
 ## 扩展库
 
 [`colmugx/posoco-extension`](https://github.com/colmugx/posoco-extension) 维护了一套开箱即用的扩展，可直接接入 `Agent(exts~, config~, events~)`。
@@ -185,6 +211,11 @@ shutdown 后 `Closed`）见 [`examples/quickstart`](./examples/quickstart/README
 |---|---|---|
 | 01 | Agent Loop 原理：怎么自己写一个 Agent | ✅ |
 | 02 | 用 Posoco 写你的第一个 Agent（10 行） | ✅ |
+| 03–12 | 扩展组合、Tool Use、Routing、Reflection、Parallelization、Planning、Memory、Observer、typed error、capstone | 计划中 |
+| 13 | 让 Agent 的界面可被宿主观察：UI 资源、push 观察、结构化提问 | ✅ |
+| 14 | 流式事件的身份：scope、丢失提示与最终响应 | ✅ |
+| 15 | 多宿主与无人应答：能力协商和阻塞式快速失败 | ✅ |
+| 16 | 取消不是失败：turn 的三种终态 | ✅ |
 
 ## 开发与验证
 
