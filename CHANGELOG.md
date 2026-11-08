@@ -2,6 +2,90 @@
 
 ## 0.24.1
 
+### Breaking: cancellation is its own turn terminal (`TurnCancelled`)
+
+`TurnEvent` gains a payload-free `TurnCancelled`. A turn that published
+`TurnStarted` now ends with exactly one of `TurnCompleted`, `TurnFailed`, or
+`TurnCancelled`; soft cancellation (a host abort resolved at a puppet safe
+point), hard cancellation (the operation's task was cancelled), Agent shutdown,
+and a cancelled `resume_turn` all project `TurnCancelled` and no longer a
+`TurnFailed` whose text happened to name `AgentError::Cancelled`.
+
+Unchanged protocol: `Observer::on_event`'s signature, `AgentError::Cancelled`,
+and the operation projection (`operation_settled` `outcome="cancelled"`). The
+event carries no payload — the cancellation category is the stable semantic and
+the typed error stays on the raised value, so no reason string or provider text
+enters the observer channel. Pending tool calls still close with
+`ToolCallAbandoned` before the terminal and buffered chunk telemetry is still
+flushed before it.
+
+A hard cancellation may unwind the turn outside every `catch` (async 0.22
+runtime signal). A synchronous unwind fallback then projects the one
+`TurnCancelled` for a turn that had already started and not yet settled, and
+never invents a terminal for a request that never started. That fallback cannot
+await, so `PipelineHook::on_turn_end` is not dispatched on that path; the
+observer terminal is still delivered. On every typed path (completed, failed,
+cancelled) `on_turn_end` keeps its existing once-per-turn dispatch.
+
+A cancelled `compact_session` is an operation, not a turn: it emits no
+`TurnStarted` and therefore no turn terminal, and keeps its existing
+compaction-phase events. `operation_settled` is the settlement fact for every
+operation; `OperationFinalized` remains what it already was — a compaction
+phase event, not a claim that every cancellation point emits one.
+
+Migration for hosts that matched cancellation today: replace
+`TurnFailed(reason) if reason.contains("AgentError::Cancelled")` — or any
+text-matching on the failure reason — with a direct `TurnCancelled` arm, keep
+`AgentError::Cancelled` as the raised value, and add a wildcard arm (or handle
+all three variants) so future terminals do not break an exhaustive match. A
+host that treats "terminal seen" as "one of TurnCompleted/TurnFailed" must add
+`TurnCancelled` to that terminal set, or its hang detection will fire on every
+cancelled turn. The turn terminal and the operation are different boundaries: a
+cancellation that lands after the turn already completed (inside the async
+`on_turn_end` hook, or between follow-up turns of the same `run_turn`) keeps the
+turn's terminal unchanged and settles the operation `cancelled`; hosts that
+need "the turn produced a result" read the terminal, and hosts that need "the
+call is over" read `operation_settled`.
+
+### Changed: system prompt sections join verbatim without id headers; blank sections skipped; canonical idempotency
+
+The built-in `SystemPromptHook` no longer renders `{extension_id}:` headers into
+the assembled system prompt: the base prompt and each contributor's body are
+joined verbatim, separated by `\n\n`. `SystemPromptSection.id` stays as a
+public source-attribution field but is not rendered. Whitespace-only base
+prompts and contributor returns now count as empty and are skipped (previously
+only `""` was); surviving bodies are never trimmed, deduplicated, or reflowed.
+The head-SystemMessage idempotency check now returns the input unchanged only
+when the head system message's content is exactly one Text equal to the
+assembled prompt; any other head system content is still replaced. Ordering,
+lazy first-read after `on_start`, and the lifetime cache are unchanged.
+
+### Changed: builtin memory copy matches the MemoryPort contract
+
+`MEMORY_INBOUND_LEAD` is now a single sentence without accidental leading
+spaces: `"Recalled memory for this session may be stale or incomplete; verify
+against the current conversation before relying on it."`. The `memory_add`
+description no longer promises durable persistence — a save is a request to
+the target provider. The `source` argument schema now documents that it
+selects the target memory provider, and the
+`top_k` schema documents that omitting it leaves the hit count to the
+provider. Tool names, argument names, search-trigger semantics, default
+broadcast-save behavior, valid source ids, and execution-level validation are
+unchanged; provider-returned memory bodies are never trimmed or rewritten.
+
+### Documented: `before_model` is a transcript rewrite, not an ephemeral channel
+
+`src/port/system_prompt.mbt`, `docs/architecture.md`, `docs/02-architecture.md`,
+and the dynamic-mode example in `docs/03-trait-recipes.md` no longer describe
+`PipelineHook::before_model` injections as ephemeral: a message injected there
+is recorded and persisted with the session like any other message. The docs
+also now state the real trigger semantics — `before_model` runs once at the
+turn's pump entry; model calls after tool waves within the same turn do not
+re-run it — and the dynamic-mode example finds the nearest previous
+state by the hook's own marker, appends only once per state change, and never
+rewrites real user input or history. Example behavior is pinned by
+`m38_sysprompt/dynamic_mode_notification_appends_once_on_change`.
+
 ### Breaking: explicitly supplied EventSystem with exclusive Agent ownership
 
 `Agent(exts~, config~, events~)` and
@@ -38,6 +122,239 @@ Validation: the workspace suite passes on the default Wasm backend, native,
 and js; the quickstart passes on native and js with `core/async`. Its explicit
 wasm-gc build is still blocked by `Value run_async_main not found in package
 moonbitlang/core/async`. No old-async fallback or skipped check is introduced.
+
+### Added: streaming telemetry carries the turn's scope; drop notices are per report
+
+`TurnEvent::StreamChunkReceived` and `TurnEvent::StreamChunksDropped` now carry
+`Some(scope)` equal to the same turn's `TurnStarted` scope (`EventScope {
+session_id, run_id, turn_id }`) instead of no scope, so a host can route
+telemetry without keeping its own "current turn" state. Two turns in one session
+never share a scope.
+
+Ordering (unchanged, now explicit): a turn's chunks and its drop notices are
+delivered before that turn's `ModelResponseReceived` and before its single
+terminal; a cancelled or failed turn flushes the buffer with the same scope
+first and only then publishes the terminal; nothing from the turn arrives after
+the terminal. `StreamChunksDropped(count)` reports the number dropped since the
+previous report, so one turn may emit several notices and hosts must sum them to
+know whether the delta stream is complete. The buffer is bounded (1024 events)
+and drops the oldest; drop notices are never re-sent and never replayed.
+Telemetry is not fact: `TurnResult.message` / `ModelResponseReceived` remains
+the authoritative output, and a host that needs lossless deltas must consume the
+adapter's own `StreamChunk` callback rather than reconstruct them from the
+transcript.
+
+### Added: UI protocol — owner-bound resources, host observation, actions, structured questions
+
+Extensions can now publish UI *state* and ask structured questions through
+capability values delivered by `CompositionView`, and hosts can observe and
+answer through `Agent::ui_host()`. Both new capabilities are gated on `requires:
+[@posoco.Capability::Ui]`, exactly like the existing `ui()` slot.
+
+- `CompositionView::ui_resources()` → `UiResources?` and
+  `CompositionView::ui_interactions()` → `UiInteractions?` are additive; the
+  existing `CompositionView::ui()` → `&UiPort?` keeps its type and its gating.
+- `Agent::ui_host()` → `@port.UiHost` is always available (also for headless
+  compositions with no `UiPort`); it is the host's only entry to the protocol.
+
+**Ownership is bound at composition, not by a string.** Every resource ref is
+`owner` (the declaring manifest id) + local `key` + runtime `generation`. An
+extension cannot construct another owner's ref or remove its resource
+(`InvalidInput`), the internal key is `owner + NUL + key` so empty and
+NUL-bearing ids are rejected instead of aliasing another owner, and a
+`generation` from a previous runtime is never accepted (refs → `NotFound`,
+cursors → `SnapshotRequired`). `scope` (`AgentScope` / `SessionScope` /
+`OperationScope` / `ToolCallScope`) records attribution only — the runtime never
+derives authority from it.
+
+**Resources (`UiResources`).** `publish(draft)` is a complete in-place
+replacement for the same owner + key (revision +1, never a duplicate node);
+`replace(draft, expected)` is compare-and-swap and answers `StaleRevision` while
+changing nothing; `remove(resource)` withdraws and emits a `Withdrawn` change
+(removal is `NotFound`, revisions never rewind — the tombstone keeps counting).
+Drafts are validated (`InvalidInput`): blank/over-long/NUL keys, empty namespace
+or name, `schema_version < 1`, duplicate action ids, empty scope ids, and
+`Custom` bodies whose namespace is not the publisher's own manifest id (the
+`posoco` namespace stays reserved for framework kinds). Standard bodies are
+`Text` / `Lines` / `KeyValue` / `Entries` / `Progress` / `Markdown`. Every
+boundary deep-copies (drafts in, snapshots out, `Json` and arrays both ways), so
+a caller mutating its own payload afterwards cannot rewrite live state.
+
+`UiResourceLifetime::OwnerBound` and `OperationBound` are implemented;
+`SessionBound` still reports `Unsupported(feature)` rather than pretending a
+cleanup it does not perform. Lifetime and capability must match: `OwnerBound` is
+published by the composition-delivered capability, `OperationBound` only by an
+operation handle, and replacement can never migrate a resource from one lifetime
+or operation to another.
+
+**Host observation (`UiHost`).** `snapshot()` is one synchronous cut: every live
+resource, every pending interaction, and the two cursors — so there is no
+snapshot/subscribe gap and no double delivery. `changes_since(cursor)` and
+`interactions_since(cursor)` are two independent feed families, each bounded (64
+entries); a cursor that is older than the window, belongs to another generation,
+or points past the current `seq` answers `SnapshotRequired`, never a silently
+short feed. `subscribe(listener, on_failure)` takes the baseline and registers
+the subscriber in one synchronous step and returns `UiObservation { baseline,
+subscription }`; each accepted change produces exactly one `UiFeedBatch`
+carrying its family's cursor, in commit order across families. Listener
+re-entrancy queues the new change behind the current one (no recursive
+delivery), delivery rotates one batch per subscriber per round so a
+self-publishing listener cannot starve others, a listener returning
+`Err(detail)` gets one `on_failure` call and is then dropped (`is_active()`
+false) with no rollback and no re-delivery, and `unsubscribe()` is idempotent
+(also inside a listener). A cancelled accepting call does not retract accepted
+changes; `Agent::shutdown` drops every subscriber and returns `Closed` for new
+subscriptions and reads.
+
+**Actions (`dispatch`).** A host may dispatch only the actions the resource
+currently declares. The request carries `request_id`, `expected_revision`, the
+action id and an optional JSON payload; validation is synchronous and ordered
+(closed → blank id/action → owner/ref key legality → idempotency hit →
+generation → resource exists → `expected_revision` → declared action → payload
+shape → handler present) and only then is the owner handler awaited. The
+returned receipt is an *acceptance* fact (which revision accepted the click),
+not the resulting state: results travel on the change feed. Idempotency is a
+bounded window (64 entries) keyed by `request_id` — a replay with the same
+content returns the stored receipt (`replayed = true`) and does not run the
+handler twice, different content is `Conflict`, and a `request_id` still in
+flight is `InProgress` (the runtime never waits, so a re-entrant dispatch cannot
+self-lock). This is **not** permanent exactly-once: outside the window an id is
+reusable, and the `request_id` namespace is the whole host runtime, not one
+owner or one resource. A cancelled dispatch releases its reservation (the id
+stays usable); a missing handler, a handler returning `Err`, or a throwing
+handler are all `HandlerFailed`. Handler registration is **owner-scoped**, not
+per resource and not per operation: `set_action_handler(handler)` replaces that
+owner's single slot, and calling it on an operation handle forwards to the same
+owner slot. Async completions must therefore still guard with
+`replace(expected=invocation.revision)`. UI actions grant no tool, model or
+session authority — governed work keeps going through the existing turn/tool
+entry points and `PipelineHook`.
+
+**Structured questions (`UiInteractions`).** `open(request)` creates a pending
+question, `wait(interaction)` awaits its one terminal, `ask(request)` is
+open+wait in one synchronous admission boundary, `withdraw(interaction)` is the
+owner's explicit release, and `find(request_id)` is an owner-bound read-only
+recovery lookup. Identity is `owner + request_id + generation`: an extension
+cannot answer, withdraw, wait on, or ask on behalf of another owner
+(`InvalidInput` for a wrong owner, `NotFound` for an unknown one) — waiting is
+identity-checked too, otherwise an unrelated extension could register as a
+waiter and cancel someone else's question into `WaitCancelled`. Pending
+questions appear in `snapshot().pending_interactions` and as `Opened` changes.
+The first *valid* answer settles atomically; a shape mismatch
+(`FreeText`←`Text`, `Confirmation`←`Yes|No`, `Choice`←in-range index) is
+`InvalidAnswer` and changes nothing; the same answer again replays the stored
+receipt, a different answer is `Conflict`, and an answer to an already settled
+question is `AlreadySettled(outcome)`. Five mutually exclusive terminals never
+impersonate each other: `Answered` (waiter gets `Ok(answer)`), `Dismissed` (user
+closed the prompt — not `No`), `Withdrawn` (owner withdrew), `WaitCancelled`
+(the last waiter was cancelled — not a user rejection) and `Closed` (Agent shut
+down with the question still pending). Pending is bounded at 64 (`PendingFull`)
+and the settled-id retention window is 64 (`Duplicate` inside it, reusable
+outside); the lookup `find` covers both pending questions and that retention
+window, so the "`ask` lost its last host after creation" path is recoverable:
+`find` the ref, then `wait` for a new host or `withdraw`. `find` never waits,
+never settles and needs no host; an unknown or evicted id is `NotFound`, after
+shutdown it is `Closed`, and an adapter that does not implement a `find`
+callback reports `HostUnavailable` instead of faking success. Answers are user
+input only: they create no tool/model/session authority, and approval semantics
+stay in `PipelineHook` (`Defer` etc.). After `close`, `open` / `wait` / `ask` /
+`find` / `withdraw` / `answer` / `dismiss` / `connect` and every lease call
+return `Closed`.
+
+**Operation-scoped reclamation.** `UiResources::operation()` *captures* the
+currently admitted operation and returns the same `UiResources` type narrowed to
+it; idle it is `InvalidInput` (no "will bind to the next operation" promise).
+The handle publishes only `OperationBound` resources, sees only its own
+operation's resources, refuses to recapture from itself when that operation is
+gone, and is refused after settlement. Agent admission/release is the sole
+authority: `run_turn`, `resume_turn`, `compact_session` and wakeup turns each
+open one window, which closes and reclaims on completion, failure, cancellation,
+admission rollback and repeated or late settlement alike — idempotently, and
+touching only its own resources. Settlement closes the acceptance window
+*before* delivering the `Withdrawn` changes (publish order, same feed for pull
+and push), so a listener reacting to a withdrawal cannot publish back into a
+finished operation; opening a second window while one is open is `InvalidInput`
+and leaves the live one untouched. Only display resources are reclaimed by
+settlement — questions are never guessed away from their `scope`; their
+terminals come from the explicit paths above. `Closed` outranks every
+stale-operation error: after `Agent::shutdown`, owner and operation capabilities
+answer `Closed` for `publish` / `replace` / `remove` / `operation` /
+`set_action_handler`. The UI protocol is closed only after admitted operations
+settle, managed work finishes and extension `on_shutdown` has run, so legitimate
+final publishes are not cut off; a failed or cancelled shutdown attempt closes
+it anyway rather than leaking host handles, subscriptions and waiters.
+
+**Host connections, capability matching, fail-fast (`connect`).** Subscribing is
+not connecting: a subscription only observes the feed and never claims that
+anybody can answer. `UiHost::connect(capabilities)` attaches a framework-issued
+lease (`UiHostConnection`: `id`, `is_connected`, `update`, `detach`, `answer`,
+`dismiss`). Resource kinds match exactly on namespace + name + `schema_version`
+(`Native`); an unlisted kind is `Fallback` only when the host declared `fallback
+= true`, otherwise `Unsupported`. Interaction bodies match `FreeText→TextInput`,
+`Confirmation→YesNo`, `Choice→SingleChoice`, and an empty list means "answers
+nothing". `UiResources::host_support(resource)` reports one
+`UiHostConnectionSupport` per live connection in attach order (empty array = no
+connections); the runtime never picks a layout or "the first host wins".
+Publishing is not gated on any of it — a resource is state, not a receipt that
+it was shown — and a read-only host still observes kinds it cannot render.
+Capabilities are deep-copied on the way in, registration is bounded (16 live
+connections → `ConnectionsFull`, 64 entries per list → `InvalidInput`, no
+duplicate kinds or interaction classes), `update` only affects live leases,
+`detach` is idempotent and releases only that lease, and `update` / `answer` /
+`dismiss` on a revoked lease are `HostUnavailable`. Blocking `wait` and `ask`
+require a live connection declaring that body kind; with none they fail fast
+with `HostUnavailable` — `ask` leaves no pending question, consumes no
+`request_id` and emits no `Opened`, and `open` stays legal without any host (it
+just never starts waiting). When the last matching connection detaches or
+downgrades, its waiters are woken with `HostUnavailable` and the question stays
+pending (no synthetic `No` / `Dismissed` / `Withdrawn` / `WaitCancelled`); a
+call that already returned is never restarted when a host comes back, and
+`Closed` outranks `HostUnavailable`.
+
+**Boundaries of this release.** Everything above is in-process: cursors, pending
+questions, replay and retention windows live in memory, so an Agent restart
+invalidates cursors and refs (`generation` changed) and there is no
+cross-process recovery. Still not implemented and explicitly reported rather
+than faked: `SessionBound` reclamation, cross-process host
+authentication/reconnect, non-blocking questions (late answers wired into
+steer/follow-up), automatic withdrawal of interactions by operation scope, and a
+core event (operation/turn/attempt/tool-call) observation contract on top of
+this runtime.
+
+**Legacy `UiPort` keeps working.** `CompositionView::ui()` still returns the
+aggregated `&UiPort?`, `render` / `request` keep their existing semantics, and
+the new values coexist with it in one composition. `UiPort` gains none of the
+new guarantees — no owner binding, revisions, cursors, replay, observable
+pending questions or `Dismissed` / `WaitCancelled` distinctions — and there is
+no automatic bridge or synthetic core owner for old adapters. Deleting the old
+protocol still requires separate approval.
+
+**Migration (self-contained).** For a host: keep `UiPort` if it only renders;
+otherwise call `agent.ui_host()` once, read `snapshot()` for a baseline, then
+follow `changes_since` / `interactions_since` from the returned cursors or
+`subscribe` with a listener that returns `Ok(())` / `Err(detail)`, handles
+`on_failure`, and unsubscribes on exit. Treat `SnapshotRequired` as "re-read the
+baseline" (never as "nothing changed"), call `connect` with the capabilities it
+really has before it may answer blocking questions, and treat `HostUnavailable`
+as an environment fact, `Withdrawn` as invalidity and `Dismissed` /
+`WaitCancelled` as distinct terminals rather than "no". For an extension:
+declare `requires: [@posoco.Capability::Ui]`, take `ctx.ui_resources()` /
+`ctx.ui_interactions()` in `on_compose` (both stay `None` without the
+declaration), install one owner-scoped action handler, use full-replacement
+drafts with `replace(expected=invocation.revision)` for async completions,
+publish transient panels through `resources.operation()` with `OperationBound`,
+and drive questions with an owner-owned `request_id` plus handling of all five
+outcomes — keeping `find(request_id)` for the case where a host disappears after
+`ask` created the question.
+
+Contract tests: `src/ui_resource_test.mbt`, `src/ui_interaction_test.mbt`,
+`src/ui_operation_bound_test.mbt`, `src/ui_host_capability_test.mbt` (root,
+black-box against a real Agent) and the `src/internal/ui_runtime` white-box
+suites; executable walkthroughs in `posoco-101/13-ui-observe-and-ask.mbt.md`,
+`14-streaming-scope-and-drops.mbt.md`,
+`15-host-capabilities-and-fail-fast.mbt.md` and
+`16-turn-cancellation-terminal.mbt.md`. The full contract lives in
+`docs/ui-protocol.md`.
 
 ## 0.24.0
 
