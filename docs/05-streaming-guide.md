@@ -189,34 +189,67 @@ accumulator，自己维护状态。
 provider 响应体、无界的 `error.to_string()` 载荷。畸形流 JSON 和畸形工具参数
 JSON 同样适用这条规则。
 
-## 7. Observer 侧消费
+## 7. Observer 侧消费：身份、丢失提示与最终响应
 
 Agent 会把 `StreamChunk` 回调投影成 `TurnEvent::StreamChunkReceived` 事件。
-如果宿主 observer 处理不过来，核心还会发出 `TurnEvent::StreamChunksDropped(count~)`
-表示有 telemetry chunk 被丢弃；这是非终端事件，只用于遥测。
+每个 turn 有唯一身份 `EventScope { session_id, run_id, turn_id }`：这一轮里
+**所有遥测事件**——chunk 与 `StreamChunksDropped`——都携带同一个 `Some(scope)`，
+并且与这一轮的 `TurnStarted` 相等。宿主不需要维护"当前 turn"这类状态，读事件
+自带的 scope 就能把它分流到正确的会话或界面。
+
+三类信息各司其职：
+
+| 你收到的 | 含义 | 可靠性 |
+|---------|------|--------|
+| `StreamChunkReceived(chunk)` | 这一轮的一个增量，用来边到边刷新 | 遥测：有界缓冲（默认 1024 条），满了丢最旧 |
+| `StreamChunksDropped(count)` | 这一轮丢了 `count` 个增量提示，拼接结果不完整 | 遥测：每次上报"自上次上报以来"的丢弃数，一轮可能多条，需累加；不补发、不重放 |
+| `ModelResponseReceived(message)` / `TurnResult.message` | 这一轮模型的完整、权威输出 | 事实：与写进 transcript 的内容一致 |
+
+既有的顺序契约（不要依赖比这更弱的假设）：
+
+1. 每个 chunk、以及它触发的丢失通知，都在同一轮的 `ModelResponseReceived`
+   与唯一一个终止事件（`TurnCompleted` / `TurnFailed` / `TurnCancelled`）**之前**；
+2. 丢失通知在下一条送达的 chunk 或终止事件之前，scope 与同轮 chunk 相同；
+   积压反复出现时一轮会收到多条，每条只报增量计数，宿主必须累加；
+3. 终止事件之后不会再有本轮 chunk。取消/失败路径同样先做一次尾部 flush：
+   结束前把缓冲排空，scope 仍是这一轮的，然后才发终止事件。取消的终止事件是
+   `TurnCancelled`（无载荷），不是 `TurnFailed`——取消不是失败。
 
 ```moonbit
 pub impl @posoco.Observer for TokenPrinter with fn on_event(
   _self,
-  _scope : @posoco.EventScope?,
+  scope : @posoco.EventScope?,
   event : @posoco.TurnEvent,
 ) -> Unit {
   match event {
+    @posoco.TurnEvent::TurnStarted =>
+      // 这一轮的身份；本轮的 chunk 与丢失通知都带同一个 scope。
+      match scope {
+        Some(scope) => println("[turn] " + scope.session_id.to_string())
+        None => ()
+      }
     @posoco.TurnEvent::StreamChunkReceived(chunk~) =>
       match chunk {
         @posoco.StreamChunk::TextDelta(token~) => println(token)
         @posoco.StreamChunk::ReasoningDelta(_) => ()
         _ => ()
       }
+    @posoco.TurnEvent::StreamChunksDropped(count~) =>
+      // 只是"提示不完整"，不是失败，也不是终止。
+      println("[dropped] " + count.to_string() + " chunks")
+    @posoco.TurnEvent::ModelResponseReceived(..) => ()
     @posoco.TurnEvent::TurnCompleted => println("")
+    // 取消有自己的终止事件：它不是失败，也不会以 TurnFailed 出现。
+    @posoco.TurnEvent::TurnCancelled => println("[cancelled]")
     _ => ()
   }
 }
 ```
 
 如果你的产品需要**无损**的工具调用增量或用量遥测，就在宿主 sink 里直接消费
-适配器的 `StreamChunk` 回调，不要试图从最终 transcript 里重建。最终的
-`TurnResult.message` 始终是权威的 assistant 消息。
+适配器的 `StreamChunk` 回调（那条路上没有缓冲上限），不要试图从最终 transcript
+里重建，也不要指望 `StreamChunksDropped` 之后的补发。最终的
+`TurnResult.message` 始终是权威的 assistant 消息：增量是提示，不是事实。
 
 ## 8. 测试清单
 
@@ -246,7 +279,13 @@ test "accumulator assembles streamed completion" {
 - 干净 EOF、provider 失败、畸形 JSON 都抛 typed 错误；
 - 缺工具调用字段、arguments 畸形时抛 `ResponseParse`，且不泄漏原始载荷；
 - 组合好的 Agent 会发出 `StreamChunkReceived` 事件，恰好一个 terminal turn
-  事件；如果 observer 慢到积压，还会看到 `StreamChunksDropped`。
+  事件（`TurnCompleted` / `TurnFailed` / `TurnCancelled` 之一）；如果 observer
+  慢到积压，还会看到 `StreamChunksDropped`；
+- `StreamChunkReceived` 的 `scope` 等于同一轮 `TurnStarted` 的 scope，连续两轮
+  的 chunk 不串身份（run/turn 不同、session 相同）；
+- `StreamChunksDropped` 的 scope 与同轮 chunk 相同，且出现在本轮
+  `ModelResponseReceived` 与终止事件之前；多条通知的计数要累加后再判断"是否完整"；
+- 取消/失败路径的尾部 flush 仍带同一 scope，终止事件之后不再有本轮 chunk。
 
 写扩展时用 testkit 里的 `ScriptedModelStep::Stream` 做一致性假件很方便，但它是
 测试专用 API——生产扩展要直接实现 `ModelPort` 和 `Extension`。

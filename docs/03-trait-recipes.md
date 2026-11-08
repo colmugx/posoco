@@ -436,6 +436,8 @@ pub impl @posoco.Observer for ConsoleObserver with fn on_event(
       println("dropped " + count.to_string() + " telemetry chunks")
     @posoco.TurnEvent::TurnCompleted => println("turn completed")
     @posoco.TurnEvent::TurnFailed(reason) => println("turn failed: " + reason)
+    // 取消是第三种终态，无载荷；原因在调用方拿到的 AgentError::Cancelled 里。
+    @posoco.TurnEvent::TurnCancelled => println("turn cancelled")
     _ => ()
   }
 }
@@ -655,23 +657,26 @@ pub impl @posoco.Lifecycle for ManagedConnection with fn on_shutdown(
   声明、`invoke(id, args)` 执行。和 ToolProvider 的区别：工具是模型发起的，
   结果回填进对话；命令是用户/宿主发起的。
 - **UiPort**：宿主交互能力，`UiPort::request` 可以弹审批框、选单等。审批类
-  hook 通过它实现人工确认。
+  hook 通过它实现人工确认。状态型展示内容改用 owner-bound 资源协议
+  （`CompositionView::ui_resources` + `Agent::ui_host`），见
+  [ui-protocol.md](./ui-protocol.md)；`UiPort` 在迁移期继续保留。
 - **SystemPromptContributor**：给聚合 system prompt 加一段**逐字节稳定**的
-  静态内容。核心只读一次并缓存，空字符串会被跳过。详见下一节。
+  静态内容。核心只读一次并缓存，纯空白段落会被跳过。详见下一节。
 
 ## 10. SystemPromptContributor：静态 system prompt 段落
 
 `SystemPromptContributor` 只负责返回**逐字节稳定**的字符串段落。Posoco 在每个
 Agent 生命周期中只读取一次——首个 turn 的第一次 `before_model`——并把
 `AgentConfig.system_prompt` 与各 contributor 的返回组装成一条 SystemMessage 缓存
-下来。空字符串会被跳过；contributor 绝不能返回动态内容（如 plan mode 开关、
+下来。纯空白段落会被跳过，有效正文逐字节保留（不 trim、不去重、不重排）；
+contributor 绝不能返回动态内容（如 plan mode 开关、
 时间戳、随机 ID），否则会破坏 prefix cache 与 transcript 稳定性。
 
 ### 签名与契约
 
 ```moonbit
 pub(open) trait SystemPromptContributor {
-  /// 返回一段 system prompt 文本。空字符串表示"无内容"。
+  /// 返回一段 system prompt 文本。纯空白表示"无内容"。
   /// 稳定性契约：同一个 Agent 生命周期内，返回值必须逐字节相同。
   fn system_prompt(Self) -> String
 }
@@ -705,23 +710,30 @@ pub extend RuleContributor with @posoco.Extension::{extension_id, manifest}
 
 ### 组装语义
 
-当 `AgentConfig.system_prompt` 非空，或任一扩展登记了 `SystemPromptContributor`
+当 `AgentConfig.system_prompt` 非空白，或任一扩展登记了 `SystemPromptContributor`
 时，Posoco 自动注入内置 `SystemPromptHook`：
 
-1. 以 `AgentConfig.system_prompt` 为 base（若有且非空）；
-2. 依次追加每个 contributor 的 section，格式为 `{extension_id}:\n{text}`；
-3. section 之间以空行 `\n\n` 分隔；
-4. 若 base 与所有 contributor 都为空，直接返回原 `messages`，不注入空 system
-   消息；
-5. 否则合成一条 `SystemMessage`，置于 index 0：原 0 号位文本相同则原样返回数组
-   （避免 transcript 重写），不同则替换，无 system 消息则 prepend。
+1. 以 `AgentConfig.system_prompt` 为 base（若有且非空白）；
+2. 依次追加每个 contributor 返回的正文，逐字节保留，不加任何扩展 ID 标题或
+   来源前缀（`SystemPromptSection.id` 只做来源归因，不进入 prompt）；
+3. 段落之间以空行 `\n\n` 分隔；
+4. 若 base 与所有 contributor 都是纯空白，直接返回原 `messages`，不注入空
+   system 消息；
+5. 否则合成一条 `SystemMessage`，置于 index 0：原 0 号位 SystemMessage 的完整
+   content 恰为单一 Text 且文本相同时原样返回数组（避免 transcript 重写），
+   其他情况按既有策略处理（0 号位 system 内容不同则替换，无 system 消息则
+   prepend）。
 
-### 动态模式指示：用 PipelineHook.before_model 注入 UserMessage
+### 动态状态通知：用 PipelineHook.before_model 追加一条通知
 
 需要按 turn 变化的信号（plan mode、当前时间、会话状态等）不要走
 `SystemPromptContributor`，否则缓存后的静态文本无法反映变化。应实现
-`PipelineHook.before_model`，向 messages 末尾追加（或替换已有）一条带 envelope 的
-`UserMessage`。envelope 格式可参考 `posoco-devkit` 的 `context_envelope`：
+`PipelineHook.before_model`。注意：`before_model` 是 transcript 改写接口——
+注入的消息会和其他消息一样记录并随会话持久化，**不是**自动不落盘的临时通道；
+它在 turn 开始的 pump 入口执行一次，同一 turn 内工具波次之后的模型调用不会
+重新执行它。因此通知必须幂等：按 hook 自己的标记找到最近一次状态，状态没变就
+不追加，变化了只追加一条，
+并保留真实用户输入和历史（旧状态留在历史里就是状态变更历史，不要回头删改）。
 
 ```moonbit
 pub(all) struct ModeIndicatorHook {
@@ -738,21 +750,21 @@ pub impl @posoco.PipelineHook for ModeIndicatorHook with fn before_model(
   messages : Array[@posoco.Message],
 ) -> Array[@posoco.Message] raise @posoco.HookAbort {
   let envelope = make_envelope(self.mode)
-  // 幂等：如果最后一条 UserMessage 已经携带完全相同的 envelope，则原样返回
   let mut i = messages.length() - 1
-  let mut last_user_idx = -1
+  let mut nearest = -1
   while i >= 0 {
     match messages[i] {
-      @posoco.Message::UserMessage(content~) => {
-        last_user_idx = i
-        break
-      }
+      @posoco.Message::UserMessage(content=[@posoco.Content::Text(text), ..]) =>
+        if text.contains("<cetas-context type=\"mode\"") {
+          nearest = i
+          break
+        }
       _ => ()
     }
     i = i - 1
   }
-  if last_user_idx >= 0 {
-    match messages[last_user_idx] {
+  if nearest >= 0 {
+    match messages[nearest] {
       @posoco.Message::UserMessage(content=[@posoco.Content::Text(existing), ..]) =>
         if existing == envelope { return messages }
       _ => ()
@@ -767,9 +779,12 @@ pub impl @posoco.PipelineHook for ModeIndicatorHook with fn before_model(
 
 幂等要点：
 
-- 比较前先检查最后一条 `UserMessage` 的文本是否已等于目标 envelope；
-- 内容相同时**必须**返回同一个数组实例（或内容相同的副本），避免核心把"无变化"
-  误判为消息改动而触发 transcript 重写；
+- 从后往前按 hook 自己的标记（这里匹配 envelope 的 `type="mode"`，也可用
+  devkit envelope 的其他稳定字段）找最近一次状态，而不是只看最后一条
+  `UserMessage`——否则新一轮真实用户输入出现后，即使状态没变也会再追加一份；
+- 最近状态等于目标 envelope 时**必须**返回同一个数组实例（或内容相同的副本），
+  避免核心把"无变化"误判为消息改动而触发 transcript 重写；
+- 状态变化才追加一次；不要修改真实用户输入或删除历史里的旧状态；
 - envelope 中不要嵌入时间戳、随机 ID 等每 turn 都会变的字段，否则每次都不同，
   幂等失效。
 

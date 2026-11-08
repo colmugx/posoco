@@ -143,8 +143,9 @@ flowchart TD
    触发）；`ModelPort::compact` 决定**怎么做**（`NewThread` 会开一条新会话线程并
    重定向，原来的会话保留）。压缩不是独立端口，它由模型适配器承担。
 4. **模型调用前**：`before_model` hooks 可以链式改写发给模型的消息（比如注入
-   system prompt），也可以 raise `HookAbort` 中止整个 turn。同一 turn 里后续的
-   工具波次不会重复执行它。
+   system prompt），也可以 raise `HookAbort` 中止整个 turn。它在 turn 开始的
+   pump 入口执行一次（同一 turn 内工具波次之后的模型调用不会重新执行它）；注入
+   的消息是 transcript 改写，会随会话持久化，不是临时通道。
 5. **模型调用**：`ModelPort::chat`。流式模式下回调产生的增量事件会投影成
    `StreamChunkReceived` 事件（详见 05 流式指南）。
 6. **工具波次**：模型回复里有工具调用时，Agent 按工具名路由给对应的 provider
@@ -160,6 +161,12 @@ flowchart TD
 9. **失败**：任何主流程失败（模型错误、存储错误、hook 中止、工具轮次超限）都会
    发布一次 `TurnFailed`（只带安全的错误类别，不泄漏 prompt、参数等原始内容），
    然后把原始 `AgentError` 重新抛给调用方。
+10. **取消**：软取消（宿主 abort 在 pump 安全点生效）、硬取消（operation 的
+    task 被取消）、Agent shutdown 与 resume 回放中的取消，都发布
+   `TurnCancelled`（无载荷），而不是 `TurnFailed`；调用方拿到的仍是 typed
+   `AgentError::Cancelled`，operation 投影仍是 `operation_settled(outcome=
+   "cancelled")`。compact 取消属于 operation：它没有 `TurnStarted`，因此没有
+   turn 终态。`TurnStarted` 之后恰好一个终态，三选一。
 
 ## 5. Observer 与 Hook：看与管
 
@@ -188,6 +195,7 @@ graph LR
     O4["工具终态家族<br/>Approved/Started<br/>Succeeded/Failed/Rejected/Abandoned"]
     O5["TurnCompleted"]
     O6["TurnFailed"]
+    O8["TurnCancelled"]
     O7["Custom: 次要失败"]
   end
 
