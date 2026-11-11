@@ -4,14 +4,17 @@
 /// The JS async test runner treats an uncaught panic as a process-level
 /// failure, so this test belongs to the native target where the test harness
 /// can report the expected panic without terminating unrelated tests.
+#cfg(target="native")
 struct FailingLifecycle {}
 
 ///|
+#cfg(target="native")
 pub impl @posoco.Lifecycle for FailingLifecycle with fn on_shutdown(_self) -> Unit {
   abort("shutdown cleanup failed")
 }
 
 ///|
+#cfg(target="native")
 async test "panic t07_shutdown_failure_is_not_swallowed" {
   let model = @test_support.ScriptedModel([])
   let store = @test_support.RecordingSessionPort()

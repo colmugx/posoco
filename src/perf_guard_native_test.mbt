@@ -7,6 +7,7 @@
 /// StreamAccumulator text path: 100k × 4-char TextDelta pushes must complete
 /// in well under 2s. Catches an O(L²) recurrence where repeated string
 /// concatenation copied the whole prefix on every push.
+#cfg(target="native")
 async test "perf guard: stream accumulator text push is sub-quadratic" {
   let n = 100_000
   let acc = @types.StreamAccumulator()
@@ -26,6 +27,7 @@ async test "perf guard: stream accumulator text push is sub-quadratic" {
 /// Reducer wave commit path: 8 waves × 4 parallel tools over a growing
 /// transcript must complete in a few seconds. Catches an O(K·N) rebuild
 /// recurrence where each tool result triggered a full transcript copy.
+#cfg(target="native")
 async test "perf guard: multi-wave tool commit is linear in transcript" {
   let waves = 8
   let tools_per_wave = 4
@@ -100,6 +102,7 @@ async test "perf guard: multi-wave tool commit is linear in transcript" {
 /// turn must complete < 5s. Catches accidental synchronous fan-out or
 /// per-chunk persistence recurrence. Telemetry is intentionally lossy under
 /// overload; this guard checks wall time, not event counts.
+#cfg(target="native")
 async test "perf guard: streaming turn drains 50k chunks fast" {
   let n = 50_000
   let chunks : Array[@types.StreamChunk] = []

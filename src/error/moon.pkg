@@ -8,6 +8,5 @@ import {
 } for "test"
 
 options(
-  targets: { "error_transparency_shutdown_native_test.mbt": [ "native" ] },
   "allow-experimental-packages": [ "moonbitlang/core/async" ],
 )
