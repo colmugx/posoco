@@ -1,4 +1,5 @@
 ///|
+
 ///|
 async test "puppet/pump_executes_only_reducer_declared_effects" {
   let host = FixtureHost(

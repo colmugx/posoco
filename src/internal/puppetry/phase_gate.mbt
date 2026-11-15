@@ -58,7 +58,6 @@ pub fn PhaseGate::is_quiescent(self : PhaseGate) -> Bool {
   self.phase.is_quiescent()
 }
 
-
 ///|
 /// Decide whether an operation class is allowed in the current phase.
 /// Returns `Ok` if allowed, or a typed `PuppetError` describing the
@@ -130,7 +129,6 @@ pub fn PhaseGate::authorise(
   }
 }
 
-
 ///|
 /// Acquire a structural lease for a new prompt/continue. Returns the updated
 /// gate and the lease on success. Raises typed errors for:
@@ -192,7 +190,7 @@ pub fn PhaseGate::acquire_resume(
           actual~,
         )
       }
-          let turn = match self.active_turn_id {
+      let turn = match self.active_turn_id {
         Some(t) => t
         None => TurnId::unchecked("__missing__")
       }
@@ -241,7 +239,6 @@ pub fn PhaseGate::release(
     }
   }
 }
-
 
 ///|
 /// Apply a transition. The caller
