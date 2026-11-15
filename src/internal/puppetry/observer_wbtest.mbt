@@ -1,11 +1,5 @@
 ///|
-/// PipelineHook.on_post_event real-time channel whitebox tests (BR-6/BR-7: the
-/// former `Observer::on_kernel_event` effect-level channel was folded into
-/// `PipelineHook::on_post_event`).
-///
-/// Verifies the pump fires each hook's `on_post_event(HookStage)`
-/// immediately after every effect commits, in real time (not batched at
-/// turn end like the session-level `Observer::on_event` channel).
+/// Hooks receive committed effect events before the turn-level observer.
 
 ///|
 /// PipelineHook that records every HookStage delivered to `on_post_event`. Does NOT
@@ -44,7 +38,6 @@ async test "hook_post_event/model_only_turn_fires_model_completed" {
   let journal = InMemoryJournal()
   let recorder = EffectRecorder::{ stages: [], }
   let recorder_ref : &@port.PipelineHook = recorder as &@port.PipelineHook
-  // Build a minimal config with the recorder as the sole hook.
   let mailbox_instance = ControlMailbox()
   let mailbox : &Mailbox = mailbox_instance as &Mailbox
   let host_ref : &@kernel_exec.HostRuntime = host as &@kernel_exec.HostRuntime
@@ -67,7 +60,6 @@ async test "hook_post_event/model_only_turn_fires_model_completed" {
     Accepted(..) => ()
     other => fail("expected accepted prompt, got " + other.to_string())
   }
-  // Exactly one model call → exactly one ModelCompleted stage delivered.
   assert_eq(recorder.stages.length(), 1)
   match recorder.stages[0] {
     ModelCompleted(..) => ()
