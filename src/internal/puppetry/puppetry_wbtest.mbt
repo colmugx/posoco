@@ -1,10 +1,4 @@
 ///|
-/// Focused Puppet-pump regression tests using the canonical FixtureHost.
-
-// "puppet/pump_forwards_catalog_definitions_to_host" removed: the catalog
-// definition count it asserted is already pinned by "puppet/C-SINGLE-TOOL"
-// (`host.observed_definition_count() == 1`) in fixture_wbtest.
-
 ///|
 async test "puppet/pump_executes_only_reducer_declared_effects" {
   let host = FixtureHost(

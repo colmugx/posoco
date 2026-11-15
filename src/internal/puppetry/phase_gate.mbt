@@ -1,6 +1,3 @@
-// PhaseGate — the state machine + lease tracker
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 /// The phase gate. Holds the current macro-phase and (optionally) the
 /// outstanding lease. All transitions go through `transition` / `acquire`
@@ -8,9 +5,6 @@
 ///
 /// Construction: `PhaseGate::idle()` is the only public constructor.
 pub struct PhaseGate {
-  // Field visibility is package-private: only this file constructs or
-  // mutates the gate. The Puppet (T06) holds a PhaseGate and calls its
-  // methods; it never reaches into fields.
   phase : PuppetPhase
   lease : OperationLease?
   /// Run id currently bound to the gate (None when Idle). Survives
@@ -34,31 +28,26 @@ pub fn PhaseGate::idle() -> PhaseGate {
 }
 
 ///|
-/// Current macro-phase. Read-only accessor.
 pub fn PhaseGate::phase(self : PhaseGate) -> PuppetPhase {
   self.phase
 }
 
 ///|
-/// Currently-held lease, if any.
 pub fn PhaseGate::lease(self : PhaseGate) -> OperationLease? {
   self.lease
 }
 
 ///|
-/// Run id currently bound to the gate. None when Idle.
 pub fn PhaseGate::active_run_id(self : PhaseGate) -> RunId? {
   self.active_run_id
 }
 
 ///|
-/// Turn id currently bound to the gate.
 pub fn PhaseGate::active_turn_id(self : PhaseGate) -> TurnId? {
   self.active_turn_id
 }
 
 ///|
-/// Suspension id when Suspended; None otherwise.
 pub fn PhaseGate::active_suspension_id(self : PhaseGate) -> String? {
   self.active_suspension_id
 }
@@ -69,9 +58,6 @@ pub fn PhaseGate::is_quiescent(self : PhaseGate) -> Bool {
   self.phase.is_quiescent()
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Authorisation — which operation classes are allowed in each phase
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 /// Decide whether an operation class is allowed in the current phase.
@@ -144,9 +130,6 @@ pub fn PhaseGate::authorise(
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Lease acquire / release
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 /// Acquire a structural lease for a new prompt/continue. Returns the updated
@@ -209,8 +192,7 @@ pub fn PhaseGate::acquire_resume(
           actual~,
         )
       }
-      // Resume does NOT allocate a new turn; we re-use the active turn id.
-      let turn = match self.active_turn_id {
+          let turn = match self.active_turn_id {
         Some(t) => t
         None => TurnId::unchecked("__missing__")
       }
@@ -260,12 +242,9 @@ pub fn PhaseGate::release(
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Internal mutators (used by the Puppet pump in T06)
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
-/// Apply a transition. Internal — the Puppet (T06) is the only caller and
+/// Apply a transition. The caller
 /// it has already acquired/released the lease as appropriate. Raises typed
 /// error on illegal transitions.
 ///
