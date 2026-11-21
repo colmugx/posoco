@@ -3,10 +3,11 @@ package "posoco/ears"
 
 import {
   "moonbitlang/core/debug",
+  "moonbitlang/core/json",
 }
 
 // Values
-pub async fn serve(wire~ : &Wire, run~ : async (Ears, Json) -> Json) -> Unit
+pub async fn serve(wire~ : &Wire, run~ : async (Ears, @json.Json) -> @json.Json) -> Unit
 
 pub fn stdio() -> &Wire
 
@@ -17,19 +18,20 @@ pub struct Ears {
   // private fields
 }
 pub fn Ears::Ears(wire~ : &Wire, allowed~ : Array[String]) -> Self
-pub async fn Ears::call(Self, String, Json) -> Outcome
+pub async fn Ears::call(Self, String, @json.Json) -> Outcome
 pub fn Ears::close(Self) -> Unit
 pub async fn Ears::log(Self, level? : String, String) -> Unit
 
+#derive(Eq, @debug.Debug)
 pub(all) enum Outcome {
-  Success(content~ : String, structured~ : Json?)
-  Failure(code~ : String, content~ : String, structured~ : Json?)
-} derive(Eq, @debug.Debug)
+  Success(content~ : String, structured~ : @json.Json?)
+  Failure(code~ : String, content~ : String, structured~ : @json.Json?)
+}
 pub fn Outcome::equal(Self, Self) -> Bool
-pub fn Outcome::from_json(Json) -> Self raise
+pub fn Outcome::from_json(@json.Json) -> Self raise
 pub fn Outcome::is_error(Self) -> Bool
 pub fn Outcome::not_equal(Self, Self) -> Bool
-pub fn Outcome::to_json(Self) -> Json
+pub fn Outcome::to_json(Self) -> @json.Json
 pub fn Outcome::to_repr(Self) -> @debug.Repr
 
 pub struct StdioWire {

@@ -1,10 +1,11 @@
 ///|
 /// Wire mirror of the host outcome (protocol 1). Failures are values a
 /// guest branches on; only transport loss raises.
+#derive(Eq, Debug)
 pub(all) enum Outcome {
   Success(content~ : String, structured~ : Json?)
   Failure(code~ : String, content~ : String, structured~ : Json?)
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend Outcome with Debug::{to_repr}
