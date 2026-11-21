@@ -104,7 +104,11 @@ struct InterleavingModel {
 }
 
 ///|
-async fn enqueue_newthread_command(agent : Agent, id : String, args : Json) -> Bool {
+async fn enqueue_newthread_command(
+  agent : Agent,
+  id : String,
+  args : Json,
+) -> Bool {
   for port in agent.commands() {
     for def in port.commands() {
       if def.id == id {
