@@ -93,18 +93,30 @@ fn newthread_save_count(
 }
 
 ///|
-/// Model whose first chat call blocks until `released`, so the test can
-/// enqueue a mailbox command while the run is bound and before the next pump
-/// safe point drains it. Later chat calls answer with a stop response.
-struct GatedTurnModel {
-  mut entered : Bool
-  mut released : Bool
+/// The first model call injects a command at a deterministic interleaving:
+/// the run is bound, its model effect is in flight, and the next safe point
+/// has not executed. No scheduler ordering or wall-clock budget is involved.
+struct InterleavingModel {
   mut calls : Int32
   compacted : Array[@kernel.Message]
+  on_first_chat : Ref[(async () -> Bool)?]
+  mut enqueued : Result[Bool, Error]
 }
 
 ///|
-impl @port.ModelPort for GatedTurnModel with fn chat(
+async fn enqueue_newthread_command(agent : Agent, id : String, args : Json) -> Bool {
+  for port in agent.commands() {
+    for def in port.commands() {
+      if def.id == id {
+        return port.invoke(id, args) is Success(..)
+      }
+    }
+  }
+  false
+}
+
+///|
+impl @port.ModelPort for InterleavingModel with fn chat(
   self,
   _scope : @kernel.InvocationScope,
   _messages : ArrayView[@kernel.Message],
@@ -114,9 +126,11 @@ impl @port.ModelPort for GatedTurnModel with fn chat(
 ) -> @kernel.ModelCallResult raise @error.ModelError {
   self.calls = self.calls + 1
   if self.calls == 1 {
-    self.entered = true
-    while !self.released {
-      @async.pause()
+    if self.on_first_chat.val is Some(callback) {
+      // Take the callback before invoking it; it is a one-shot input and
+      // may capture the Agent that owns this model.
+      self.on_first_chat.val = None
+      self.enqueued = Ok(callback()) catch { e => Err(e) }
     }
     @test_support.tk_tool_call_response("leaf", "call_1", Json::null())
   } else {
@@ -125,7 +139,7 @@ impl @port.ModelPort for GatedTurnModel with fn chat(
 }
 
 ///|
-impl @port.ModelPort for GatedTurnModel with fn compact(
+impl @port.ModelPort for InterleavingModel with fn compact(
   self,
   _scope : @kernel.InvocationScope,
   _messages : ArrayView[@kernel.Message],
@@ -137,16 +151,16 @@ impl @port.ModelPort for GatedTurnModel with fn compact(
 }
 
 ///|
-impl @port.ModelPort for GatedTurnModel with fn provider_config(_self) -> @port.ProviderConfig {
+impl @port.ModelPort for InterleavingModel with fn provider_config(_self) -> @port.ProviderConfig {
   @port.ProviderConfig::empty()
 }
 
 ///|
 async test "newthread/fork_persists_sibling_with_lineage_and_emits_redirect" {
-  let model = GatedTurnModel::{
-    entered: false,
-    released: false,
+  let model = InterleavingModel::{
     calls: 0,
+    on_first_chat: Ref(None),
+    enqueued: Ok(false),
     compacted: [],
   }
   let store = @test_support.RecordingSessionPort()
@@ -171,50 +185,20 @@ async test "newthread/fork_persists_sibling_with_lineage_and_emits_redirect" {
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
-  @async.with_task_group(async fn(group) {
-    let turn = group.spawn(() => {
-      agent.run_turn(@test_support.tk_user_msg("go"), "s1")
-    })
-    // The gate always opens when the bounded enqueue phase exits — success,
-    // assertion failure, or timeout — so the parked turn never outlives the
-    // phase that was supposed to release it.
-    let enqueued : Result[Bool, Error] = Ok(
-      @async.with_timeout(60, async fn() -> Bool {
-        defer {
-          model.released = true
-        }
-        while !model.entered {
-          @async.pause()
-        }
-        let mut fork_port : &@port.CommandPort? = None
-        for port in agent.commands() {
-          for def in port.commands() {
-            if def.id == "fork-here" {
-              fork_port = Some(port)
-            }
-          }
-        }
-        guard fork_port is Some(port) else { return false }
-        guard port.invoke(
-            "fork-here",
-            Json::object(Map::from_array([("index", Json::number(2.0))])),
-          )
-          is Success(..) else {
-          return false
-        }
-        true
-      }),
-    ) catch {
-      e => Err(e)
-    }
-    guard enqueued is Ok(true) else {
-      fail("fork enqueue failed: \{repr(enqueued)}")
-    }
-    let result = turn.wait()
-    guard result.final_session_id == "s1" else {
-      fail("fork must leave the caller on the original thread")
-    }
+  model.on_first_chat.val = Some(async fn() {
+    enqueue_newthread_command(
+      agent,
+      "fork-here",
+      Json::object(Map::from_array([("index", Json::number(2.0))])),
+    )
   })
+  let result = agent.run_turn(@test_support.tk_user_msg("go"), "s1")
+  guard model.enqueued is Ok(true) else {
+    fail("fork enqueue failed: \{repr(model.enqueued)}")
+  }
+  guard result.final_session_id == "s1" else {
+    fail("fork must leave the caller on the original thread")
+  }
   // Exactly one redirect, sibling side counted from the fork point.
   let redirects = newthread_redirects(observer.events())
   guard redirects.length() == 1 else {
@@ -354,10 +338,10 @@ async test "newthread/compact_newthread_persists_sibling_with_lineage_and_emits_
 /// live run reaches `complete_compact_turn` (the mailbox safe-point path),
 /// not the idle standalone entry.
 async test "newthread/midturn_compact_newthread_reaches_complete_compact_turn" {
-  let model = GatedTurnModel::{
-    entered: false,
-    released: false,
+  let model = InterleavingModel::{
     calls: 0,
+    on_first_chat: Ref(None),
+    enqueued: Ok(false),
     compacted: [@test_support.tk_user_msg("mid-turn summary")],
   }
   let store = @test_support.RecordingSessionPort()
@@ -382,44 +366,13 @@ async test "newthread/midturn_compact_newthread_reaches_complete_compact_turn" {
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
-  let result_cell : Ref[@types.TurnResult?] = Ref(None)
-  @async.with_task_group(async fn(group) {
-    let turn = group.spawn(() => {
-      agent.run_turn(@test_support.tk_user_msg("go"), "m1")
-    })
-    // Same bounded-gate contract as the fork test: the compact enqueue phase
-    // always opens the gate on exit, before the turn is joined.
-    let enqueued : Result[Bool, Error] = Ok(
-      @async.with_timeout(60, async fn() -> Bool {
-        defer {
-          model.released = true
-        }
-        while !model.entered {
-          @async.pause()
-        }
-        let mut compact_port : &@port.CommandPort? = None
-        for port in agent.commands() {
-          for def in port.commands() {
-            if def.id == "compact" {
-              compact_port = Some(port)
-            }
-          }
-        }
-        guard compact_port is Some(port) else { return false }
-        guard port.invoke("compact", Json::null()) is Success(..) else {
-          return false
-        }
-        true
-      }),
-    ) catch {
-      e => Err(e)
-    }
-    guard enqueued is Ok(true) else {
-      fail("mid-run compact enqueue failed: \{repr(enqueued)}")
-    }
-    result_cell.val = Some(turn.wait())
+  model.on_first_chat.val = Some(async fn() {
+    enqueue_newthread_command(agent, "compact", Json::null())
   })
-  let result = result_cell.val.unwrap()
+  let result = agent.run_turn(@test_support.tk_user_msg("go"), "m1")
+  guard model.enqueued is Ok(true) else {
+    fail("mid-run compact enqueue failed: \{repr(model.enqueued)}")
+  }
   // First minted compact command id is `compact_1`, so the mid-run sibling
   // sid is deterministic: session + "_compact_" + command id.
   guard result.final_session_id == "m1_compact_compact_1" else {
@@ -578,10 +531,10 @@ async test "newthread/failed_output_recovers_and_old_terminal_stays" {
 /// snapshot remains, but no sibling, redirect, or cursor is published. The
 /// next operation recovers that child before running its own request.
 async test "newthread/fork_save_failure_recovers_pending_before_next_turn" {
-  let model = GatedTurnModel::{
-    entered: false,
-    released: false,
+  let model = InterleavingModel::{
     calls: 0,
+    on_first_chat: Ref(None),
+    enqueued: Ok(false),
     compacted: [],
   }
   let store = @test_support.RecordingSessionPort()
@@ -609,58 +562,29 @@ async test "newthread/fork_save_failure_recovers_pending_before_next_turn" {
     ],
     config=agent_config(max_tool_rounds=Some(10)),
   )
-  @async.with_task_group(async fn(group) {
-    let turn_body : async () -> Result[@types.TurnResult, @error.AgentError] = () => {
-      let r : Result[@types.TurnResult, @error.AgentError] = Ok(
-        agent.run_turn(@test_support.tk_user_msg("go"), "s1"),
-      ) catch {
-        e => Err(e)
-      }
-      r
-    }
-    let turn = group.spawn(turn_body)
-    let enqueued : Result[Bool, Error] = Ok(
-      @async.with_timeout(60, async fn() -> Bool {
-        defer {
-          model.released = true
-        }
-        while !model.entered {
-          @async.pause()
-        }
-        let mut fork_port : &@port.CommandPort? = None
-        for port in agent.commands() {
-          for def in port.commands() {
-            if def.id == "fork-here" {
-              fork_port = Some(port)
-            }
-          }
-        }
-        guard fork_port is Some(port) else { return false }
-        guard port.invoke(
-            "fork-here",
-            Json::object(Map::from_array([("index", Json::number(2.0))])),
-          )
-          is Success(..) else {
-          return false
-        }
-        true
-      }),
-    ) catch {
-      e => Err(e)
-    }
-    guard enqueued is Ok(true) else {
-      fail("fork enqueue failed: \{repr(enqueued)}")
-    }
-    let outcome = turn.wait()
-    guard outcome is Err(Session(error)) else {
-      let why = match outcome {
-        Ok(_) => "turn completed"
-        Err(other) => other.to_string()
-      }
-      fail("expected a Session error from the failed fork save, got \{why}")
-    }
-    assert_true(error.to_string().contains("fork_save"))
+  model.on_first_chat.val = Some(async fn() {
+    enqueue_newthread_command(
+      agent,
+      "fork-here",
+      Json::object(Map::from_array([("index", Json::number(2.0))])),
+    )
   })
+  let outcome : Result[@types.TurnResult, @error.AgentError] = Ok(
+    agent.run_turn(@test_support.tk_user_msg("go"), "s1"),
+  ) catch {
+    e => Err(e)
+  }
+  guard model.enqueued is Ok(true) else {
+    fail("fork enqueue failed: \{repr(model.enqueued)}")
+  }
+  guard outcome is Err(Session(error)) else {
+    let why = match outcome {
+      Ok(_) => "turn completed"
+      Err(other) => other.to_string()
+    }
+    fail("expected a Session error from the failed fork save, got \{why}")
+  }
+  assert_true(error.to_string().contains("fork_save"))
   let child_sid = "s1_fork_fork_1"
   assert_false(store.store.contains(child_sid))
   assert_eq(newthread_redirects(observer.events()).length(), 0)
