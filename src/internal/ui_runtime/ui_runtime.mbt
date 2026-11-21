@@ -155,7 +155,7 @@ pub fn UiRuntime::UiRuntime() -> UiRuntime {
     interactions: Map::from_array([]),
     pending_order: [],
     interaction_order: [],
-    interaction_wake: @cond_var.Cond::Cond(),
+    interaction_wake: Cond(),
     subscribers: Map::from_array([]),
     subscriber_order: [],
     next_subscriber: 1,
@@ -187,11 +187,9 @@ pub fn UiRuntime::capability(
 ) -> @port.UiResources {
   @port.UiResources::from_callbacks(
     owner~,
-    publish=fn(draft) { self.publish(owner, UiCallContext::Owner, draft) },
-    replace=fn(draft, expected) {
-      self.replace(owner, UiCallContext::Owner, draft, expected)
-    },
-    remove=fn(resource) { self.remove(owner, UiCallContext::Owner, resource) },
+    publish=fn(draft) { self.publish(owner, Owner, draft) },
+    replace=fn(draft, expected) { self.replace(owner, Owner, draft, expected) },
+    remove=fn(resource) { self.remove(owner, Owner, resource) },
     set_action_handler=fn(handler) { self.set_action_handler(owner, handler) },
     host_support=fn(resource) { self.host_support(owner, resource) },
     operation=fn() { self.operation_capability(owner) },
@@ -264,12 +262,12 @@ fn ui_validate_owner(owner : String) -> @port.UiResourceError? {
 
 ///|
 fn ui_closed_error() -> @port.UiResourceError {
-  @port.UiResourceError::Closed
+  Closed
 }
 
 ///|
 fn ui_invalid(reason : String) -> @port.UiResourceError {
-  @port.UiResourceError::InvalidInput(reason~)
+  InvalidInput(reason~)
 }
 
 ///|
@@ -402,11 +400,7 @@ fn ui_validate_draft(
         Operation(_) => ()
       }
     SessionBound =>
-      return Some(
-        @port.UiResourceError::Unsupported(
-          feature="session-scoped lifetime cleanup",
-        ),
-      )
+      return Some(Unsupported(feature="session-scoped lifetime cleanup"))
   }
   let seen : Map[String, Unit] = Map::from_array([])
   for action in draft.actions {
@@ -454,7 +448,7 @@ fn UiRuntime::push_change(
   if !self.subscribers.is_empty() {
     self.notify({
       cursor: { generation: self.generation, seq: self.seq, },
-      change: @port.UiChange::Resource(change=ui_copy_change(change)),
+      change: Resource(change=ui_copy_change(change)),
     })
   }
 }
@@ -471,14 +465,14 @@ fn ui_check_cursor(
 ) -> @port.UiResourceError? {
   if cursor.generation != generation {
     return Some(
-      @port.UiResourceError::SnapshotRequired(
+      SnapshotRequired(
         reason="\{family} cursor belongs to runtime generation \{cursor.generation}, current generation is \{generation}",
       ),
     )
   }
   if cursor.seq > seq || cursor.seq < base_seq {
     return Some(
-      @port.UiResourceError::SnapshotRequired(
+      SnapshotRequired(
         reason="\{family} cursor \{cursor.seq} is outside the retained window [\{base_seq}, \{seq}]",
       ),
     )
@@ -499,9 +493,9 @@ fn UiRuntime::commit(
   self.bind_operation_resource(context, key)
   self.push_change(
     if created {
-      @port.UiResourceChange::Published(snapshot=ui_copy_snapshot(snapshot))
+      Published(snapshot=ui_copy_snapshot(snapshot))
     } else {
-      @port.UiResourceChange::Replaced(snapshot=ui_copy_snapshot(snapshot))
+      Replaced(snapshot=ui_copy_snapshot(snapshot))
     },
   )
   ui_copy_snapshot(snapshot)
@@ -573,7 +567,7 @@ fn UiRuntime::replace(
   let key = ui_resource_key(owner, draft.key)
   let live = match self.live.get(key) {
     Some(snapshot) => snapshot
-    None => return Err(@port.UiResourceError::NotFound(owner~, key=draft.key))
+    None => return Err(NotFound(owner~, key=draft.key))
   }
   // A replacement never migrates a resource off its lifetime or into another
   // operation.
@@ -582,9 +576,7 @@ fn UiRuntime::replace(
     None => ()
   }
   if live.revision != expected {
-    return Err(
-      @port.UiResourceError::StaleRevision(expected~, actual=live.revision),
-    )
+    return Err(StaleRevision(expected~, actual=live.revision))
   }
   let snapshot = self.build_snapshot(owner, draft, expected + 1)
   Ok(self.commit(snapshot, false, context))
@@ -611,27 +603,20 @@ fn UiRuntime::remove(
     None => ()
   }
   if resource.generation != self.generation {
-    return Err(@port.UiResourceError::NotFound(owner~, key=resource.key))
+    return Err(NotFound(owner~, key=resource.key))
   }
   let key = ui_resource_key(owner, resource.key)
   let live = match self.live.get(key) {
     Some(snapshot) => snapshot
-    None =>
-      return Err(@port.UiResourceError::NotFound(owner~, key=resource.key))
+    None => return Err(NotFound(owner~, key=resource.key))
   }
   // An operation-bound handle only sees resources that operation owns.
   if !self.owns_live_resource(context, key) {
-    return Err(@port.UiResourceError::NotFound(owner~, key=resource.key))
+    return Err(NotFound(owner~, key=resource.key))
   }
   self.live.remove(key)
   self.operation_bindings.remove(key)
-  self.push_change(
-    @port.UiResourceChange::Withdrawn(
-      owner~,
-      key=resource.key,
-      revision=live.revision,
-    ),
-  )
+  self.push_change(Withdrawn(owner~, key=resource.key, revision=live.revision))
   Ok(live.revision)
 }
 
@@ -875,7 +860,7 @@ async fn UiRuntime::dispatch(
     Some(stored) =>
       if !ui_same_request(stored.request, request) {
         return Err(
-          @port.UiResourceError::Conflict(
+          Conflict(
             reason="request id \{request.request_id} is bound to a different action",
           ),
         )
@@ -889,41 +874,26 @@ async fn UiRuntime::dispatch(
               revision,
               replayed: true,
             })
-          Some(Err(detail)) =>
-            Err(@port.UiResourceError::HandlerFailed(detail~))
-          None =>
-            Err(
-              @port.UiResourceError::InProgress(request_id=request.request_id),
-            )
+          Some(Err(detail)) => Err(HandlerFailed(detail~))
+          None => Err(InProgress(request_id=request.request_id))
         }
       }
     None => ()
   }
   if request.resource.generation != self.generation {
-    return Err(
-      @port.UiResourceError::NotFound(
-        owner=request.resource.owner,
-        key=request.resource.key,
-      ),
-    )
+    return Err(NotFound(owner=request.resource.owner, key=request.resource.key))
   }
   let key = ui_resource_key(request.resource.owner, request.resource.key)
   let live = match self.live.get(key) {
     Some(snapshot) => snapshot
     None =>
       return Err(
-        @port.UiResourceError::NotFound(
-          owner=request.resource.owner,
-          key=request.resource.key,
-        ),
+        NotFound(owner=request.resource.owner, key=request.resource.key),
       )
   }
   if live.revision != request.expected_revision {
     return Err(
-      @port.UiResourceError::StaleRevision(
-        expected=request.expected_revision,
-        actual=live.revision,
-      ),
+      StaleRevision(expected=request.expected_revision, actual=live.revision),
     )
   }
   let spec = match ui_find_action(live.actions, request.action) {
@@ -942,7 +912,7 @@ async fn UiRuntime::dispatch(
     None =>
       // Routing failure before any owner code ran; nothing is reserved.
       return Err(
-        @port.UiResourceError::HandlerFailed(
+        HandlerFailed(
           detail="owner \{request.resource.owner} has no action handler",
         ),
       )
@@ -980,7 +950,7 @@ async fn UiRuntime::dispatch(
     }
     Err(detail) => {
       self.settle_receipt(request.request_id, Err(detail))
-      Err(@port.UiResourceError::HandlerFailed(detail~))
+      Err(HandlerFailed(detail~))
     }
   }
 }

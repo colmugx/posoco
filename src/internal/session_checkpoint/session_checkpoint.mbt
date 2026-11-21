@@ -72,7 +72,7 @@ async fn SessionCheckpointSubscriber::append_committed_message(
     }),
   ) catch {
     error =>
-      raise @puppetry.SubscriberError::Internal(
+      raise Internal(
         subscriber_id="agent_session_checkpoint",
         detail="checkpoint dispatch failed: " + error.to_string(),
       )
@@ -81,7 +81,7 @@ async fn SessionCheckpointSubscriber::append_committed_message(
     match result {
       Ok(_) => ()
       Err(error) =>
-        raise @puppetry.SubscriberError::Internal(
+        raise Internal(
           subscriber_id="agent_session_checkpoint",
           detail="session_id=" +
             @diagnostic.safe_error_label(session_id) +

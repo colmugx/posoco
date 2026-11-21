@@ -5,7 +5,7 @@
 /// journal barrier succeeds; assigns monotonic `seq` per run; dispatches
 /// in registration order; awaits each subscriber.
 ///
-/// Default (ADR §7 Q7.4 recommendation): ALL subscribers are
+/// Default: ALL subscribers are
 /// correctness-critical. A subscriber failure fails the run with
 /// `PuppetError::SubscriberFailed`; the journal entry is already durable
 /// (commit happened before dispatch). No best-effort escape hatch.
@@ -104,7 +104,7 @@ pub impl Show for EventEnvelope with fn to_string(self : EventEnvelope) -> Strin
 /// - mutate the envelope (it's passed by value, but the inner KernelEvent
 ///   is immutable anyway)
 /// - reach into the journal (the trait exposes no writer)
-/// - re-enter the Puppet via structural commands (ADR §11 reentrancy rule)
+/// - re-enter the Puppet via structural commands
 ///
 /// Subscribers may:
 /// - read the envelope and any derived state

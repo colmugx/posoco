@@ -1,6 +1,6 @@
 ///|
 /// RunJournal — append-only, single-writer journal for Puppet savepoints
-/// (ADR §5).
+///.
 ///
 /// Contract:
 /// - Entries are append-only. No update, no delete of committed entries.
@@ -11,13 +11,13 @@
 /// - Suspended does NOT close the journal: legal resume may append more
 ///   entries under the same run id.
 /// - The journal stores Posoco canonical domain entries only — never provider
-///   wire messages (ADR §2 non-goal).
+///   wire messages.
 ///
 /// `InMemoryJournal` is the first adapter; a durable JSONL/SQLite store would
 /// implement the same `RunJournal` trait.
 
 // ──────────────────────────────────────────────────────────────────────────
-// SavepointKind (ADR §5 savepoint table)
+// SavepointKind
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|

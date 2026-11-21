@@ -380,10 +380,7 @@ pub fn UiResources::operation(
 ) -> Result[UiResources, UiResourceError] {
   match self.operation_ {
     Some(acquire) => acquire()
-    None =>
-      Err(
-        UiResourceError::Unsupported(feature="operation-scoped UI capability"),
-      )
+    None => Err(Unsupported(feature="operation-scoped UI capability"))
   }
 }
 
@@ -407,10 +404,7 @@ pub fn UiResources::from_callbacks(
 ) -> UiResources {
   let support_callback = match host_support {
     Some(callback) => callback
-    None =>
-      fn(_resource) {
-        Err(UiResourceError::Unsupported(feature="host capability query"))
-      }
+    None => fn(_resource) { Err(Unsupported(feature="host capability query")) }
   }
   {
     owner_: owner,

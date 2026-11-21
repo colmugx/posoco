@@ -19,7 +19,7 @@ pub fn ToolEntry::bound(
 
 ///|
 fn owned_tool_def(tool : @kernel.ToolDef, owner : String) -> @kernel.ToolDef {
-  @kernel.ToolDef(
+  ToolDef(
     name=tool.name,
     description=tool.description,
     input_schema=@message_snapshot.snapshot_json(tool.input_schema),

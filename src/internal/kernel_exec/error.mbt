@@ -1,7 +1,7 @@
 ///|
 /// Typed Kernel errors — constructor validation and reducer invariant violations.
 
-// Invariant categories (one home per failure — ADR §2.4)
+// Invariant categories (one home per failure
 
 ///|
 /// Why the reducer (or constructor) declared a kernel invariant failure.
@@ -62,7 +62,7 @@ pub impl Show for InvariantCategory with fn to_string(self : InvariantCategory) 
   }
 }
 
-// Failure reasons (terminal Failed outcome — ADR §2.3, §2.4)
+// Failure reasons (terminal Failed outcome
 
 ///|
 /// Why a Run terminated with `Failed`. Mirrors ADR §2.4 taxonomy: model

@@ -22,7 +22,7 @@ fn snapshot_session(
 ///|
 /// Deep-copy a `@kernel.ToolDef`.
 pub fn snapshot_tool_def(tool : @kernel.ToolDef) -> @kernel.ToolDef {
-  @kernel.ToolDef(
+  ToolDef(
     name=tool.name,
     description=tool.description,
     input_schema=@message_snapshot.snapshot_json(tool.input_schema),
@@ -36,7 +36,7 @@ pub fn snapshot_tool_def(tool : @kernel.ToolDef) -> @kernel.ToolDef {
 ///|
 fn snapshot_completion(completion : @kernel.Completion) -> @kernel.Completion {
   let msg = completion.message
-  @kernel.Completion(
+  Completion(
     content=msg.content.map(@message_snapshot.snapshot_content),
     tool_calls=msg.tool_calls.map(@message_snapshot.snapshot_tool_call),
     reasoning=msg.reasoning,

@@ -1,0 +1,35 @@
+import {
+  "colmugx/posoco",
+  "colmugx/posoco/error",
+  "colmugx/posoco/events",
+  "colmugx/posoco/kernel",
+  "colmugx/posoco/port",
+  "colmugx/posoco/runtime",
+  "colmugx/posoco/types",
+  "colmugx/posoco/internal/test_support",
+  "moonbitlang/core/async",
+} for "test"
+
+import {
+  "colmugx/posoco",
+  "colmugx/posoco/error",
+  "colmugx/posoco/events",
+  "colmugx/posoco/kernel",
+  "colmugx/posoco/port",
+  "colmugx/posoco/runtime",
+  "colmugx/posoco/types",
+  "colmugx/posoco/internal/message_snapshot",
+  "colmugx/posoco/internal/task_runtime" @task,
+  "colmugx/posoco/internal/test_support",
+  "colmugx/posoco/internal/tests/support",
+  "moonbitlang/core/async",
+  "moonbitlang/core/async/aqueue",
+  "moonbitlang/core/quickcheck" @qc,
+} for "wbtest"
+
+options(
+  "allow-experimental-packages": [
+    "moonbitlang/core/async",
+    "moonbitlang/core/async/aqueue",
+  ],
+)

@@ -375,7 +375,7 @@ pub async fn UiInteractions::ask(
     Some(callback) => callback(request)
     None =>
       Err(
-        UiInteractionError::HostUnavailable(
+        HostUnavailable(
           reason="this UiInteractions adapter does not negotiate host capabilities",
         ),
       )
@@ -420,7 +420,7 @@ pub fn UiInteractions::from_callbacks(
     None =>
       fn(_request_id) {
         Err(
-          UiInteractionError::HostUnavailable(
+          HostUnavailable(
             reason="this UiInteractions adapter does not expose owner-bound lookup",
           ),
         )

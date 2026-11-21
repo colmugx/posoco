@@ -1,0 +1,781 @@
+///|
+priv struct TaskCapture {
+  mut tasks : @port.Tasks?
+}
+
+///|
+fn TaskCapture::new() -> TaskCapture {
+  { tasks: None, }
+}
+
+///|
+impl @port.Lifecycle for TaskCapture with fn on_compose(
+  self : TaskCapture,
+  view : @port.CompositionView,
+) {
+  self.tasks = view.tasks()
+}
+
+///|
+impl @port.Lifecycle for TaskCapture with fn on_shutdown(_self : TaskCapture) {
+  ()
+}
+
+///|
+/// Model gate used to keep one Agent operation active while its task hook
+/// admits overlapping foreground and background work.
+priv struct ForegroundAbortModel {
+  release : @aqueue.Queue[Int32]
+  response : @kernel.ModelCallResult
+}
+
+///|
+fn ForegroundAbortModel::new() -> ForegroundAbortModel {
+  {
+    release: Queue(kind=Unbounded),
+    response: @test_support.tk_tool_call_response(
+      "abort-tool",
+      "abort-call",
+      Json::null(),
+    ),
+  }
+}
+
+///|
+async fn ForegroundAbortModel::release(self : ForegroundAbortModel) -> Unit {
+  self.release.put(1)
+}
+
+///|
+impl @port.ModelPort for ForegroundAbortModel with fn chat(
+  self,
+  _scope : @kernel.InvocationScope,
+  _messages : ArrayView[@kernel.Message],
+  _tools : Array[@kernel.ToolDef],
+  _options : @types.ChatOptions,
+  _stream : @types.StreamMode,
+) -> @kernel.ModelCallResult raise @error.ModelError {
+  let gate = self.release.get() catch {
+    error => raise ResponseParse(error.to_string())
+  }
+  ignore(gate)
+  self.response
+}
+
+///|
+impl @port.ModelPort for ForegroundAbortModel with fn compact(
+  _self,
+  _scope : @kernel.InvocationScope,
+  _messages : ArrayView[@kernel.Message],
+  _tools : Array[@kernel.ToolDef],
+  _options : @types.ChatOptions,
+  _trigger : @kernel.CompactTrigger,
+) -> @kernel.CompactResult raise @error.ModelError {
+  raise ResponseParse("compact is not used by this test")
+}
+
+///|
+impl @port.ModelPort for ForegroundAbortModel with fn provider_config(_self) -> @port.ProviderConfig {
+  @port.ProviderConfig::empty()
+}
+
+///|
+priv struct CompactBusyModel {
+  mut tasks : @port.Tasks?
+  mut first_compact : Bool
+  foreground_started : @aqueue.Queue[Int32]
+  cleanup_started : @aqueue.Queue[Int32]
+  cleanup_release : @aqueue.Queue[Int32]
+  foreground_hold : @aqueue.Queue[Int32]
+  started : @aqueue.Queue[Int32]
+  release : @aqueue.Queue[Int32]
+}
+
+///|
+fn CompactBusyModel::new() -> CompactBusyModel {
+  {
+    tasks: None,
+    first_compact: true,
+    foreground_started: Queue(kind=Unbounded),
+    cleanup_started: Queue(kind=Unbounded),
+    cleanup_release: Queue(kind=Unbounded),
+    foreground_hold: Queue(kind=Unbounded),
+    started: Queue(kind=Unbounded),
+    release: Queue(kind=Unbounded),
+  }
+}
+
+///|
+fn CompactBusyModel::submit_foreground(
+  self : CompactBusyModel,
+) -> Unit raise @error.ModelError {
+  let tasks = match self.tasks {
+    Some(value) => value
+    None => raise ResponseParse("compact task capability was not composed")
+  }
+  ignore(
+    match
+      tasks.submit({
+        session_id: "compact-busy",
+        mode: Foreground,
+        label: "compact-cleanup",
+        timeout_ms: None,
+        run: async fn() {
+          self.foreground_started.put(1) catch {
+            _ => abort("compact foreground start signal failed")
+          }
+          // Cancellation is a runtime signal since async 0.22: detect it
+          // explicitly instead of catching a cancellation error.
+          let released : Bool = match
+            @async.handle_cancellation(async fn() {
+              ignore(self.foreground_hold.get())
+            }) {
+            Some(_) => true
+            None => false
+          }
+          if released {
+            UserMessage(content=[Text("unexpected foreground release")])
+          } else {
+            ignore(
+              @async.protect_from_cancel(async fn() {
+                self.cleanup_started.put(1) catch {
+                  _ => abort("compact cleanup start signal failed")
+                }
+                ignore(
+                  self.cleanup_release.get() catch {
+                    _ => abort("compact cleanup release failed")
+                  },
+                )
+              }) catch {
+                _ => ()
+              },
+            )
+            UserMessage(content=[Text("foreground cleanup released")])
+          }
+        },
+      }) {
+      Ok(value) => value
+      Err(_) => raise ResponseParse("compact foreground task admission failed")
+    },
+  )
+}
+
+///|
+impl @port.Lifecycle for CompactBusyModel with fn on_compose(
+  self : CompactBusyModel,
+  view : @port.CompositionView,
+) {
+  self.tasks = view.tasks()
+}
+
+///|
+impl @port.Lifecycle for CompactBusyModel with fn on_shutdown(
+  _self : CompactBusyModel,
+) {
+  ()
+}
+
+///|
+async fn CompactBusyModel::release(self : CompactBusyModel) -> Unit {
+  self.release.put(1)
+}
+
+///|
+impl @port.ModelPort for CompactBusyModel with fn chat(
+  _self,
+  _scope : @kernel.InvocationScope,
+  _messages : ArrayView[@kernel.Message],
+  _tools : Array[@kernel.ToolDef],
+  _options : @types.ChatOptions,
+  _stream : @types.StreamMode,
+) -> @kernel.ModelCallResult raise @error.ModelError {
+  @test_support.tk_stop_response("turn must not enter while compact is busy")
+}
+
+///|
+impl @port.ModelPort for CompactBusyModel with fn compact(
+  self,
+  _scope : @kernel.InvocationScope,
+  messages : ArrayView[@kernel.Message],
+  _tools : Array[@kernel.ToolDef],
+  _options : @types.ChatOptions,
+  _trigger : @kernel.CompactTrigger,
+) -> @kernel.CompactResult raise @error.ModelError {
+  if self.first_compact {
+    self.first_compact = false
+    self.submit_foreground()
+    ignore(
+      self.foreground_started.get() catch {
+        error => raise ResponseParse(error.to_string())
+      },
+    )
+    self.started.put(1) catch {
+      error => raise ResponseParse(error.to_string())
+    }
+    ignore(
+      self.release.get() catch {
+        error => raise ResponseParse(error.to_string())
+      },
+    )
+  }
+  { compacted_messages: messages.to_owned(), mode: Replace, }
+}
+
+///|
+impl @port.ModelPort for CompactBusyModel with fn provider_config(_self) -> @port.ProviderConfig {
+  @port.ProviderConfig::empty()
+}
+
+///|
+priv struct ForegroundAbortProbe {
+  mut tasks : @port.Tasks?
+  mut submitted : Bool
+  mut foreground_one : @port.TaskHandle?
+  mut foreground_two : @port.TaskHandle?
+  mut background : @port.TaskHandle?
+  started : @aqueue.Queue[Int32]
+  foreground_gate : @aqueue.Queue[Int32]
+  background_gate : @aqueue.Queue[Int32]
+}
+
+///|
+fn ForegroundAbortProbe::new() -> ForegroundAbortProbe {
+  {
+    tasks: None,
+    submitted: false,
+    foreground_one: None,
+    foreground_two: None,
+    background: None,
+    started: Queue(kind=Unbounded),
+    foreground_gate: Queue(kind=Unbounded),
+    background_gate: Queue(kind=Unbounded),
+  }
+}
+
+///|
+fn ForegroundAbortProbe::submit(self : ForegroundAbortProbe) -> Unit {
+  let tasks = match self.tasks {
+    Some(value) => value
+    None => abort("task capability was not composed")
+  }
+  let foreground_one = match
+    tasks.submit({
+      session_id: "abort-session",
+      mode: Foreground,
+      label: "foreground-one",
+      timeout_ms: None,
+      run: async fn() {
+        self.started.put(1)
+        ignore(self.foreground_gate.get())
+        UserMessage(content=[Text("foreground-one")])
+      },
+    }) {
+    Ok(handle) => handle
+    Err(_) => abort("first foreground task admission failed")
+  }
+  let foreground_two = match
+    tasks.submit({
+      session_id: "abort-session",
+      mode: Foreground,
+      label: "foreground-two",
+      timeout_ms: None,
+      run: async fn() {
+        self.started.put(1)
+        ignore(self.foreground_gate.get())
+        UserMessage(content=[Text("foreground-two")])
+      },
+    }) {
+    Ok(handle) => handle
+    Err(_) => abort("second foreground task admission failed")
+  }
+  let background = match
+    tasks.submit({
+      session_id: "background-session",
+      mode: Background,
+      label: "background-survivor",
+      timeout_ms: None,
+      run: async fn() {
+        self.started.put(1)
+        ignore(self.background_gate.get())
+        UserMessage(content=[Text("background-survivor")])
+      },
+    }) {
+    Ok(handle) => handle
+    Err(_) => abort("background task admission failed")
+  }
+  self.foreground_one = Some(foreground_one)
+  self.foreground_two = Some(foreground_two)
+  self.background = Some(background)
+}
+
+///|
+impl @port.Lifecycle for ForegroundAbortProbe with fn on_compose(
+  self : ForegroundAbortProbe,
+  view : @port.CompositionView,
+) {
+  self.tasks = view.tasks()
+}
+
+///|
+impl @port.Lifecycle for ForegroundAbortProbe with fn on_shutdown(
+  _self : ForegroundAbortProbe,
+) {
+  ()
+}
+
+///|
+impl @port.PipelineHook for ForegroundAbortProbe with fn before_model(
+  self : ForegroundAbortProbe,
+  messages : Array[@kernel.Message],
+) -> Array[@kernel.Message] {
+  if !self.submitted {
+    self.submitted = true
+    self.submit()
+  }
+  messages
+}
+
+///|
+fn foreground_abort_tasks(
+  probe : ForegroundAbortProbe,
+) -> (@port.TaskHandle, @port.TaskHandle, @port.TaskHandle) {
+  let first = match probe.foreground_one {
+    Some(handle) => handle
+    None => abort("first foreground handle was not published")
+  }
+  let second = match probe.foreground_two {
+    Some(handle) => handle
+    None => abort("second foreground handle was not published")
+  }
+  let background = match probe.background {
+    Some(handle) => handle
+    None => abort("background handle was not published")
+  }
+  (first, second, background)
+}
+
+///|
+fn task_test_agent(
+  model : &@port.ModelPort,
+  store : @test_support.RecordingSessionPort,
+  capture : TaskCapture,
+) -> Agent raise @error.CompositionError {
+  Agent(
+    events=EventSystem(),
+    exts=[
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store]),
+      @test_support.tk_ext(
+        id="tasks",
+        lifecycle=[capture as &@port.Lifecycle],
+        requires=[Tasks],
+      ),
+    ],
+    config=agent_config(max_tool_rounds=Some(10)),
+  )
+}
+
+///|
+fn task_test_spec(session_id : String, label : String) -> TaskSpec {
+  {
+    session_id,
+    mode: Background,
+    label,
+    timeout_ms: None,
+    run: fn() {
+      AssistantMessage(
+        content=[Text("worker result")],
+        tool_calls=[],
+        reasoning=None,
+        finish_reason=Stop,
+      )
+    },
+  }
+}
+
+///|
+fn task_test_submit(
+  capture : TaskCapture,
+  session_id : String,
+  label : String,
+) -> TaskHandle {
+  let tasks = match capture.tasks {
+    Some(value) => value
+    None => abort("task capability was not composed")
+  }
+  match tasks.submit(task_test_spec(session_id, label)) {
+    Ok(handle) => handle
+    Err(_) => abort("task submit failed")
+  }
+}
+
+///|
+fn task_test_has_marker(session : @types.Session, marker : String) -> Bool {
+  session.messages
+  .iter()
+  .any(fn(message) {
+    match message {
+      UserMessage(content~) =>
+        content
+        .iter()
+        .any(fn(content) { content is Text(text) && text.contains(marker) })
+      _ => false
+    }
+  })
+}
+
+///|
+async test "managed_tasks/outcomes_route_to_fixed_session" {
+  let capture = TaskCapture::new()
+  let model = @test_support.ScriptedModel([
+    Respond(@test_support.tk_stop_response("B")),
+    Respond(@test_support.tk_stop_response("A")),
+  ])
+  let store = @test_support.RecordingSessionPort()
+  let agent = task_test_agent(model as &@port.ModelPort, store, capture)
+  agent.run_scoped(async fn(agent) {
+    let a = task_test_submit(capture, "session_a", "a")
+    let b = task_test_submit(capture, "session_b", "b")
+    let a_marker = "[posoco-task-outcome id=\{a.receipt().id}]"
+    let b_marker = "[posoco-task-outcome id=\{b.receipt().id}]"
+    ignore(a.wait())
+    ignore(b.wait())
+    ignore(agent.run_turn(@test_support.tk_user_msg("b input"), "session_b"))
+    let b_session = store.store["session_b"]
+    assert_true(task_test_has_marker(b_session, b_marker))
+    assert_false(task_test_has_marker(b_session, a_marker))
+    ignore(agent.run_turn(@test_support.tk_user_msg("a input"), "session_a"))
+    let a_session = store.store["session_a"]
+    assert_true(task_test_has_marker(a_session, a_marker))
+  })
+}
+
+///|
+async test "managed_tasks/long_horizon_background_outcomes_are_exactly_once" {
+  let capture = TaskCapture::new()
+  let steps : Array[@test_support.ScriptedModelStep] = []
+  for i = 0; i < 32; i = i + 1 {
+    steps.push(Respond(@test_support.tk_stop_response("turn-\{i}")))
+  }
+  let model = @test_support.ScriptedModel(steps)
+  let store = @test_support.RecordingSessionPort()
+  let agent = task_test_agent(model as &@port.ModelPort, store, capture)
+  let markers : Array[String] = []
+  agent.run_scoped(async fn(agent) {
+    for turn = 0; turn < 32; turn = turn + 1 {
+      for worker = 0; worker < 2; worker = worker + 1 {
+        let handle = task_test_submit(
+          capture,
+          "long_horizon",
+          "turn-\{turn}-worker-\{worker}",
+        )
+        markers.push("[posoco-task-outcome id=\{handle.receipt().id}]")
+        ignore(handle.wait())
+      }
+      ignore(
+        agent.run_turn(
+          @test_support.tk_user_msg("turn-\{turn}"),
+          "long_horizon",
+        ),
+      )
+    }
+  })
+
+  assert_eq(model.call_count(), 32)
+  assert_eq(markers.length(), 64)
+  let saved = store.store["long_horizon"]
+  for marker in markers {
+    let mut count = 0
+    for message in saved.messages {
+      if task_test_has_marker(
+          { messages: [message], metadata: Map::from_array([]), },
+          marker,
+        ) {
+        count = count + 1
+      }
+    }
+    assert_eq(count, 1)
+  }
+  match saved.metadata.get("posoco.task.applied_ids") {
+    Some(Array(ids)) => assert_eq(ids.length(), 64)
+    _ => fail("long-horizon session is missing applied task ids")
+  }
+}
+
+///|
+async test "managed_tasks/abort_cancels_overlapping_foreground_and_keeps_background" {
+  let model = ForegroundAbortModel::new()
+  let probe = ForegroundAbortProbe::new()
+  let store = @test_support.RecordingSessionPort()
+  let tools = @test_support.RecordingToolProvider(
+    [@test_support.tk_tool_def("abort-tool", "abort test tool")],
+    Map::from_array([
+      ("abort-tool", OutcomeOk(@test_support.tk_ok_result("unused"))),
+    ]),
+  )
+  let agent = Agent(
+    events=EventSystem(),
+    exts=[
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="tools", tools=[tools]),
+      @test_support.tk_ext(id="io", sessions=[store]),
+      @test_support.tk_ext(
+        id="task-probe",
+        hooks=[probe as &@port.PipelineHook],
+        lifecycle=[probe as &@port.Lifecycle],
+        requires=[Tasks],
+      ),
+    ],
+    config=agent_config(max_tool_rounds=Some(10)),
+  )
+  let turn_result : Ref[Result[@types.TurnResult, Error]?] = Ref(None)
+  agent.run_scoped(async fn(agent) {
+    @async.with_task_group(async fn(group) {
+      let turn = group.spawn(async fn() {
+        let result : Result[@types.TurnResult, Error] = Ok(
+          agent.run_turn(@test_support.tk_user_msg("abort me"), "abort-session"),
+        ) catch {
+          error => Err(error)
+        }
+        turn_result.val = Some(result)
+      })
+      ignore(probe.started.get())
+      ignore(probe.started.get())
+      ignore(probe.started.get())
+      assert_true(
+        agent.control().abort_active(Some("stop")) is @runtime.Accepted(_),
+      )
+      model.release()
+      ignore(turn.wait())
+    })
+    let (foreground_one, foreground_two, background) = foreground_abort_tasks(
+      probe,
+    )
+    guard foreground_one.wait().status is Cancelled(_) else {
+      fail("first foreground task was not cancelled")
+    }
+    guard foreground_two.wait().status is Cancelled(_) else {
+      fail("second foreground task was not cancelled")
+    }
+    probe.background_gate.put(1)
+    guard background.wait().status is Completed(_) else {
+      fail("background task did not survive operation abort")
+    }
+  })
+  match turn_result.val {
+    Some(Err(@error.AgentError::Cancelled(_))) => ()
+    value => fail("abort must cancel the active operation: \{repr(value)}")
+  }
+}
+
+///|
+async test "managed_tasks/rejects_malformed_applied_ids_before_model_call" {
+  let model = @test_support.ScriptedModel([
+    Respond(@test_support.tk_stop_response("healed")),
+  ])
+  let store = @test_support.RecordingSessionPort()
+  store.seed("malformed", {
+    messages: [],
+    metadata: Map::from_array([
+      ("posoco.task.applied_ids", Json::string("not-an-array")),
+    ]),
+  })
+  let agent = Agent(
+    events=EventSystem(),
+    exts=[
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store]),
+    ],
+    config=agent_config(max_tool_rounds=Some(10)),
+  )
+  let result : Result[@types.TurnResult, @error.AgentError] = Ok(
+    agent.run_turn(
+      @test_support.tk_user_msg("must fail before model"),
+      "malformed",
+    ),
+  ) catch {
+    error => Err(error)
+  }
+  match result {
+    Err(Runtime(InvocationFailed(detail))) =>
+      assert_true(detail.contains("malformed posoco.task.applied_ids"))
+    _ =>
+      fail("malformed applied-id metadata must fail during session admission")
+  }
+  assert_eq(model.call_count(), 0)
+}
+
+///|
+async test "managed_tasks/compact_keeps_busy_guard_through_blocked_operation" {
+  let model = CompactBusyModel::new()
+  let store = @test_support.RecordingSessionPort()
+  let agent = Agent(
+    events=EventSystem(),
+    exts=[
+      @test_support.tk_ext(
+        id="model",
+        model=Some(model),
+        lifecycle=[model as &@port.Lifecycle],
+        requires=[Tasks],
+      ),
+      @test_support.tk_ext(id="io", sessions=[store]),
+    ],
+    config=agent_config(max_tool_rounds=Some(10)),
+  )
+  let compact_result : Ref[Result[@types.CompactOutcome, Error]?] = Ref(None)
+  agent.run_scoped(async fn(agent) {
+    @async.with_task_group(async fn(group) {
+      let compact = group.spawn(async fn() {
+        let result : Result[@types.CompactOutcome, Error] = Ok(
+          agent.compact_session("compact-busy"),
+        ) catch {
+          error => Err(error)
+        }
+        compact_result.val = Some(result)
+      })
+      ignore(model.started.get())
+      model.release()
+      ignore(model.cleanup_started.get())
+      let turn_result : Result[@types.TurnResult, Error] = Ok(
+        agent.run_turn(@test_support.tk_user_msg("busy turn"), "compact-busy"),
+      ) catch {
+        error => Err(error)
+      }
+      guard turn_result is Err(@error.AgentError::Busy(operation_id~, session~)) &&
+        session == "compact-busy" &&
+        operation_id.contains("agent_compact_session_") else {
+        fail(
+          "a turn must be rejected with the structured busy error while compact cleanup is joining, got \{repr(turn_result)}",
+        )
+      }
+      model.cleanup_release.put(1)
+      ignore(compact.wait())
+    })
+    let next = agent.run_turn(
+      @test_support.tk_user_msg("after compact"),
+      "compact-busy",
+    )
+    guard next.message is AssistantMessage(content=[Text(text)], ..) else {
+      fail("same Agent did not accept a turn after compact cleanup")
+    }
+    assert_eq(text, "turn must not enter while compact is busy")
+    let compact_again = agent.compact_session("compact-busy")
+    assert_eq(compact_again.final_session_id, "compact-busy")
+  })
+  guard compact_result.val is Some(Ok(_)) else {
+    fail("blocked compact did not finish after release")
+  }
+}
+
+///|
+async test "managed_tasks/timeout_survives_masked_raise" {
+  let capture = TaskCapture::new()
+  let model = @test_support.ScriptedModel([
+    Respond(@test_support.tk_stop_response("unused")),
+  ])
+  let store = @test_support.RecordingSessionPort()
+  let agent = task_test_agent(model as &@port.ModelPort, store, capture)
+  agent.run_scoped(async fn(_agent) {
+    let tasks = match capture.tasks {
+      Some(value) => value
+      None => abort("task capability was not composed")
+    }
+    let handle = match
+      tasks.submit({
+        session_id: "masked-raise",
+        mode: Background,
+        label: "masked-raise",
+        timeout_ms: Some(150),
+        run: async fn() {
+          match @async.handle_cancellation(async fn() { @async.sleep(60000) }) {
+            // Simulate an adapter masking the cancellation as a typed raise;
+            // the timeout must still win.
+            None => raise @error.AgentError::Runtime(InvocationFailed("masked"))
+            Some(_) => ()
+          }
+          UserMessage(content=[Text("never")])
+        },
+      }) {
+      Ok(value) => value
+      Err(_) => abort("task submit failed")
+    }
+    let outcome = handle.wait()
+    guard outcome.status is TimedOut else {
+      fail("masked raise degraded the timeout: \{repr(outcome.status)}")
+    }
+  })
+}
+
+///|
+async test "managed_tasks/timeout_survives_masked_return" {
+  let capture = TaskCapture::new()
+  let model = @test_support.ScriptedModel([
+    Respond(@test_support.tk_stop_response("unused")),
+  ])
+  let store = @test_support.RecordingSessionPort()
+  let agent = task_test_agent(model as &@port.ModelPort, store, capture)
+  agent.run_scoped(async fn(_agent) {
+    let tasks = match capture.tasks {
+      Some(value) => value
+      None => abort("task capability was not composed")
+    }
+    let handle = match
+      tasks.submit({
+        session_id: "masked-return",
+        mode: Background,
+        label: "masked-return",
+        timeout_ms: Some(150),
+        run: async fn() {
+          match @async.handle_cancellation(async fn() { @async.sleep(60000) }) {
+            // Simulate an adapter masking the cancellation and returning a
+            // garbage message; the masking guard must still surface Cancelled.
+            None => ()
+            Some(_) => ()
+          }
+          UserMessage(content=[Text("garbage-after-cancel")])
+        },
+      }) {
+      Ok(value) => value
+      Err(_) => abort("task submit failed")
+    }
+    let outcome = handle.wait()
+    guard outcome.status is TimedOut else {
+      fail("masked return degraded the timeout: \{repr(outcome.status)}")
+    }
+  })
+}
+
+///|
+async test "managed_tasks/business_error_survives_cancel_guard" {
+  let capture = TaskCapture::new()
+  let model = @test_support.ScriptedModel([
+    Respond(@test_support.tk_stop_response("unused")),
+  ])
+  let store = @test_support.RecordingSessionPort()
+  let agent = task_test_agent(model as &@port.ModelPort, store, capture)
+  agent.run_scoped(async fn(_agent) {
+    let tasks = match capture.tasks {
+      Some(value) => value
+      None => abort("task capability was not composed")
+    }
+    let handle = match
+      tasks.submit({
+        session_id: "business-error",
+        mode: Background,
+        label: "business-error",
+        timeout_ms: None,
+        run: fn() raise {
+          raise @error.AgentError::Runtime(InvocationFailed("boom"))
+        },
+      }) {
+      Ok(value) => value
+      Err(_) => abort("task submit failed")
+    }
+    let outcome = handle.wait()
+    let reason = match outcome.status {
+      Failed(reason~) => reason
+      other => fail("business error must stay Failed: \{repr(other)}")
+    }
+    assert_true(reason.contains("boom"))
+  })
+}

@@ -1,5 +1,5 @@
 ///|
-/// Effect declarations for the functional Kernel (ADR §2.1, §2.5).
+/// Effect declarations for the functional Kernel.
 ///
 /// Effects are pure data — the reducer declares them, the stateless executor
 /// executes ONE at a time. No effect payload ever carries a trait reference.
@@ -39,7 +39,7 @@ pub extend CallModelPayload with Debug::{to_repr}
 /// Payload for `Effect::ExecuteTool`. The executor looks up
 /// `catalog_version`+`owner` in the runtime registry; if either is missing,
 /// the executor returns a typed `ToolFailed` input carrying an
-/// `InvariantCategory::MissingOwner`/`StaleSnapshot` (ADR §2.5).
+/// `InvariantCategory::MissingOwner`/`StaleSnapshot`.
 #derive(Eq, Debug)
 pub(all) struct ExecuteToolPayload {
   model_step_id : ModelStepId
@@ -120,7 +120,7 @@ pub extend CancelOutstandingPayload with Debug::{to_repr}
 ///|
 /// A single declared Effect. Each variant carries its own id and the
 /// `model_step_id` it belongs to. The executor consumes exactly one Effect at
-/// a time and returns exactly one completion Input (ADR §2.5).
+/// a time and returns exactly one completion Input.
 ///
 /// `effect_id` is unique per Run and allocated by the reducer.
 #derive(Eq, Debug)

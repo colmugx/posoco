@@ -68,7 +68,7 @@ pub struct CoreFacts {
 ///|
 pub fn CoreFacts::CoreFacts() -> CoreFacts {
   {
-    store: CoreVersionStore::CoreVersionStore(),
+    store: CoreVersionStore(),
     state: Map::from_array([]),
     metadata: Map::from_array([]),
     last_commit: Map::from_array([]),

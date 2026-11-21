@@ -368,11 +368,11 @@ fn Puppet::record_context_reading(
     self.context_states.get(sid) {
     Some(previous) =>
       if previous.window_tokens != window {
-        @types.Estimated
+        Estimated
       } else {
-        @types.Measured
+        Measured
       }
-    None => @types.Measured
+    None => Measured
   }
   self.context_states[sid] = {
     session_id: sid,
@@ -425,7 +425,7 @@ fn Puppet::record_context_estimate(
   let (tokens, source) = if has_provider_replay_state(messages) {
     (None, @types.Unknown)
   } else {
-    (Some(estimate_tokens_of_messages(messages)), @types.Estimated)
+    (Some(estimate_tokens_of_messages(messages)), Estimated)
   }
   self.context_states[sid] = {
     session_id: sid,

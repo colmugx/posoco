@@ -16,7 +16,7 @@ priv enum UiCallContext {
 /// Rejection shared by every mutation that arrives through an operation handle
 /// whose operation is gone.
 fn ui_operation_gone(operation_id : String) -> @port.UiResourceError {
-  @port.UiResourceError::InvalidInput(
+  InvalidInput(
     reason="operation \{operation_id} is no longer admitted; an operation-bound UI capability never outlives its operation",
   )
 }
@@ -77,7 +77,7 @@ pub fn UiRuntime::settle_operation(
       Some(snapshot) => {
         self.live.remove(key)
         self.push_change(
-          @port.UiResourceChange::Withdrawn(
+          Withdrawn(
             owner=snapshot.resource.owner,
             key=snapshot.resource.key,
             revision=snapshot.revision,
@@ -127,19 +127,12 @@ fn UiRuntime::bind_operation_capability(
 ) -> @port.UiResources {
   @port.UiResources::from_callbacks(
     owner~,
-    publish=fn(draft) {
-      self.publish(owner, UiCallContext::Operation(operation_id~), draft)
-    },
+    publish=fn(draft) { self.publish(owner, Operation(operation_id~), draft) },
     replace=fn(draft, expected) {
-      self.replace(
-        owner,
-        UiCallContext::Operation(operation_id~),
-        draft,
-        expected,
-      )
+      self.replace(owner, Operation(operation_id~), draft, expected)
     },
     remove=fn(resource) {
-      self.remove(owner, UiCallContext::Operation(operation_id~), resource)
+      self.remove(owner, Operation(operation_id~), resource)
     },
     set_action_handler=fn(handler) {
       self.operation_action_handler(owner, operation_id, handler)
@@ -176,7 +169,7 @@ fn UiRuntime::operation_host_support(
   }
   let key = ui_resource_key(owner, resource.key)
   if !self.owns_live_resource(context, key) {
-    return Err(@port.UiResourceError::NotFound(owner~, key=resource.key))
+    return Err(NotFound(owner~, key=resource.key))
   }
   self.host_support(owner, resource)
 }
@@ -192,7 +185,7 @@ fn UiRuntime::acquire_operation_capability(
   if self.closed {
     return Err(ui_closed_error())
   }
-  match self.check_call_context(UiCallContext::Operation(operation_id~)) {
+  match self.check_call_context(Operation(operation_id~)) {
     Some(error) => Err(error)
     None => Ok(self.bind_operation_capability(owner, operation_id))
   }
@@ -210,7 +203,7 @@ fn UiRuntime::operation_action_handler(
   if self.closed {
     return Err(ui_closed_error())
   }
-  match self.check_call_context(UiCallContext::Operation(operation_id~)) {
+  match self.check_call_context(Operation(operation_id~)) {
     Some(error) => Err(error)
     None => self.set_action_handler(owner, handler)
   }
@@ -273,12 +266,7 @@ fn UiRuntime::check_takeover(
       }
     // Session-bound resources never become live; the lifetime is refused at
     // draft validation.
-    SessionBound =>
-      Some(
-        @port.UiResourceError::Unsupported(
-          feature="session-scoped lifetime cleanup",
-        ),
-      )
+    SessionBound => Some(Unsupported(feature="session-scoped lifetime cleanup"))
   }
 }
 

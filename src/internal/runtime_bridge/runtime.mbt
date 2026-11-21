@@ -87,7 +87,7 @@ pub impl @kernel_exec.HostRuntime for RuntimeHostShim with fn execute_tool(
     self.incomplete.remove(key)
   })
   let outcome = self.inner.execute_tool(
-    @runtime.EffectContext(
+    EffectContext(
       run_id=scope.invocation.run_id,
       effect_id~,
       owner=owner_id,

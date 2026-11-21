@@ -9,7 +9,7 @@ fn ui_interaction_key(owner : String, request_id : String) -> String {
 
 ///|
 fn ui_interaction_invalid(reason : String) -> @port.UiInteractionError {
-  @port.UiInteractionError::InvalidInput(reason~)
+  InvalidInput(reason~)
 }
 
 ///|
@@ -134,29 +134,15 @@ fn ui_validate_interaction_answer(
         None
       } else {
         Some(
-          @port.UiInteractionError::InvalidAnswer(
-            reason="choice \{index} is outside the option range",
-          ),
+          InvalidAnswer(reason="choice \{index} is outside the option range"),
         )
       }
     (FreeText(_), _) =>
-      Some(
-        @port.UiInteractionError::InvalidAnswer(
-          reason="this question accepts free text only",
-        ),
-      )
+      Some(InvalidAnswer(reason="this question accepts free text only"))
     (Confirmation, _) =>
-      Some(
-        @port.UiInteractionError::InvalidAnswer(
-          reason="this question accepts Yes or No only",
-        ),
-      )
+      Some(InvalidAnswer(reason="this question accepts Yes or No only"))
     (Choice(..), _) =>
-      Some(
-        @port.UiInteractionError::InvalidAnswer(
-          reason="this question accepts a choice index only",
-        ),
-      )
+      Some(InvalidAnswer(reason="this question accepts a choice index only"))
   }
 }
 
@@ -167,10 +153,10 @@ fn ui_interaction_outcome_result(
 ) -> Result[@port.UiInteractionAnswer, @port.UiInteractionError] {
   match outcome {
     Answered(answer~) => Ok(answer)
-    Dismissed(reason~) => Err(@port.UiInteractionError::Dismissed(reason~))
-    Withdrawn => Err(@port.UiInteractionError::Withdrawn)
-    WaitCancelled => Err(@port.UiInteractionError::AlreadySettled(outcome~))
-    Closed => Err(@port.UiInteractionError::Closed)
+    Dismissed(reason~) => Err(Dismissed(reason~))
+    Withdrawn => Err(Withdrawn)
+    WaitCancelled => Err(AlreadySettled(outcome~))
+    Closed => Err(Closed)
   }
 }
 
@@ -201,7 +187,7 @@ fn UiRuntime::check_open_interaction(
   request : @port.UiInteractionRequest,
 ) -> Result[Unit, @port.UiInteractionError] {
   if self.closed {
-    return Err(@port.UiInteractionError::Closed)
+    return Err(Closed)
   }
   match ui_validate_interaction_owner(owner) {
     Some(error) => return Err(error)
@@ -213,14 +199,10 @@ fn UiRuntime::check_open_interaction(
   }
   let key = ui_interaction_key(owner, request.request_id)
   if self.interactions.contains(key) {
-    return Err(
-      @port.UiInteractionError::Duplicate(request_id=request.request_id),
-    )
+    return Err(Duplicate(request_id=request.request_id))
   }
   if self.pending_order.length() >= ui_max_pending_interactions {
-    return Err(
-      @port.UiInteractionError::PendingFull(limit=ui_max_pending_interactions),
-    )
+    return Err(PendingFull(limit=ui_max_pending_interactions))
   }
   Ok(())
 }
@@ -249,9 +231,7 @@ fn UiRuntime::create_interaction(
   self.pending_order.push(key)
   self.interaction_order.push(key)
   self.push_interaction_change(
-    @port.UiInteractionChange::Opened(
-      snapshot=ui_copy_interaction_snapshot(snapshot),
-    ),
+    Opened(snapshot=ui_copy_interaction_snapshot(snapshot)),
   )
   ui_copy_interaction_snapshot(snapshot)
 }
@@ -304,7 +284,7 @@ fn UiRuntime::find_interaction(
   request_id : String,
 ) -> Result[@port.UiInteractionSnapshot, @port.UiInteractionError] {
   if self.closed {
-    return Err(@port.UiInteractionError::Closed)
+    return Err(Closed)
   }
   match ui_validate_interaction_owner(owner) {
     Some(error) => return Err(error)
@@ -317,7 +297,7 @@ fn UiRuntime::find_interaction(
   }
   match self.interactions.get(ui_interaction_key(owner, request_id)) {
     Some(record) => Ok(ui_copy_interaction_snapshot(record.snapshot))
-    None => Err(@port.UiInteractionError::NotFound(owner~, request_id~))
+    None => Err(NotFound(owner~, request_id~))
   }
 }
 
@@ -339,22 +319,14 @@ fn UiRuntime::interaction_record(
   }
   if interaction.generation != self.generation {
     return Err(
-      @port.UiInteractionError::NotFound(
-        owner=interaction.owner,
-        request_id=interaction.request_id,
-      ),
+      NotFound(owner=interaction.owner, request_id=interaction.request_id),
     )
   }
   let key = ui_interaction_key(interaction.owner, interaction.request_id)
   match self.interactions.get(key) {
     Some(record) => Ok(record)
     None =>
-      Err(
-        @port.UiInteractionError::NotFound(
-          owner=interaction.owner,
-          request_id=interaction.request_id,
-        ),
-      )
+      Err(NotFound(owner=interaction.owner, request_id=interaction.request_id))
   }
 }
 
@@ -371,9 +343,7 @@ fn UiRuntime::push_interaction_change(
   }
   self.notify({
     cursor: { generation: self.generation, seq: self.interaction_seq, },
-    change: @port.UiChange::Interaction(
-      change=ui_copy_interaction_change(change),
-    ),
+    change: Interaction(change=ui_copy_interaction_change(change)),
   })
 }
 
@@ -399,7 +369,7 @@ fn UiRuntime::settle_interaction(
     }
   }
   self.push_interaction_change(
-    @port.UiInteractionChange::Settled(
+    Settled(
       owner=record.snapshot.interaction.owner,
       request_id=record.snapshot.interaction.request_id,
       outcome~,
@@ -437,7 +407,7 @@ fn UiRuntime::answer_interaction(
   request : @port.UiInteractionAnswerRequest,
 ) -> Result[@port.UiInteractionAnswerReceipt, @port.UiInteractionError] {
   if self.closed {
-    return Err(@port.UiInteractionError::Closed)
+    return Err(Closed)
   }
   let record = match self.interaction_record(request.interaction) {
     Ok(record) => record
@@ -454,24 +424,19 @@ fn UiRuntime::answer_interaction(
         return Ok({ interaction: request.interaction, answer, replayed: true, })
       } else {
         return Err(
-          @port.UiInteractionError::Conflict(
+          Conflict(
             reason="interaction \{request.interaction.request_id} was already answered with a different value",
           ),
         )
       }
-    Some(outcome) =>
-      return Err(@port.UiInteractionError::AlreadySettled(outcome~))
+    Some(outcome) => return Err(AlreadySettled(outcome~))
     None => ()
   }
   match ui_validate_interaction_answer(record.snapshot.body, request.answer) {
     Some(error) => return Err(error)
     None => ()
   }
-  self.settle_interaction(
-    key,
-    record,
-    @port.UiInteractionOutcome::Answered(answer=request.answer),
-  )
+  self.settle_interaction(key, record, Answered(answer=request.answer))
   Ok({
     interaction: request.interaction,
     answer: request.answer,
@@ -487,7 +452,7 @@ fn UiRuntime::dismiss_interaction(
   reason : String,
 ) -> Result[@port.UiInteractionOutcome, @port.UiInteractionError] {
   if self.closed {
-    return Err(@port.UiInteractionError::Closed)
+    return Err(Closed)
   }
   let record = match self.interaction_record(interaction) {
     Ok(record) => record
@@ -495,7 +460,7 @@ fn UiRuntime::dismiss_interaction(
   }
   let key = ui_interaction_key(interaction.owner, interaction.request_id)
   match record.outcome {
-    Some(outcome) => Err(@port.UiInteractionError::AlreadySettled(outcome~))
+    Some(outcome) => Err(AlreadySettled(outcome~))
     None => {
       let outcome : @port.UiInteractionOutcome = Dismissed(reason~)
       self.settle_interaction(key, record, outcome)
@@ -512,7 +477,7 @@ fn UiRuntime::withdraw_interaction(
   interaction : @port.UiInteractionRef,
 ) -> Result[@port.UiInteractionOutcome, @port.UiInteractionError] {
   if self.closed {
-    return Err(@port.UiInteractionError::Closed)
+    return Err(Closed)
   }
   if interaction.owner != owner {
     return Err(
@@ -525,14 +490,10 @@ fn UiRuntime::withdraw_interaction(
   }
   let key = ui_interaction_key(interaction.owner, interaction.request_id)
   match record.outcome {
-    Some(outcome) => Err(@port.UiInteractionError::AlreadySettled(outcome~))
+    Some(outcome) => Err(AlreadySettled(outcome~))
     None => {
-      self.settle_interaction(
-        key,
-        record,
-        @port.UiInteractionOutcome::Withdrawn,
-      )
-      Ok(@port.UiInteractionOutcome::Withdrawn)
+      self.settle_interaction(key, record, Withdrawn)
+      Ok(Withdrawn)
     }
   }
 }
@@ -557,7 +518,7 @@ async fn UiRuntime::wait_interaction(
     Ok(record) => record
     Err(error) =>
       if self.closed {
-        return Err(@port.UiInteractionError::Closed)
+        return Err(Closed)
       } else {
         return Err(error)
       }
@@ -567,7 +528,7 @@ async fn UiRuntime::wait_interaction(
     None => ()
   }
   if self.closed {
-    return Err(@port.UiInteractionError::Closed)
+    return Err(Closed)
   }
   if !self.interaction_supported(record.snapshot.body) {
     return Err(
@@ -592,7 +553,7 @@ async fn UiRuntime::wait_interaction(
       None =>
         if self.closed {
           completed = true
-          return Err(@port.UiInteractionError::Closed)
+          return Err(Closed)
         } else if self.host_epoch != epoch {
           epoch = self.host_epoch
           if !self.interaction_supported(record.snapshot.body) {
@@ -623,11 +584,7 @@ fn UiRuntime::release_waiter(
     record.waiters = record.waiters - 1
   }
   if !completed && record.waiters == 0 && record.outcome is None {
-    self.settle_interaction(
-      key,
-      record,
-      @port.UiInteractionOutcome::WaitCancelled,
-    )
+    self.settle_interaction(key, record, WaitCancelled)
   }
 }
 
@@ -687,7 +644,7 @@ fn UiRuntime::settle_all_interactions_closed(self : UiRuntime) -> Unit {
     match self.interactions.get(key) {
       Some(record) =>
         if record.outcome is None {
-          record.outcome = Some(@port.UiInteractionOutcome::Closed)
+          record.outcome = Some(Closed)
         }
       None => ()
     }

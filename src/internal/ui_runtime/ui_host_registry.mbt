@@ -19,14 +19,14 @@ fn ui_validate_host_capabilities(
 ) -> @port.UiInteractionError? {
   if capabilities.resource_kinds.length() > ui_max_host_capability_entries {
     return Some(
-      @port.UiInteractionError::InvalidInput(
+      InvalidInput(
         reason="host capability resource kinds exceed \{ui_max_host_capability_entries} entries",
       ),
     )
   }
   if capabilities.interactions.length() > ui_max_host_capability_entries {
     return Some(
-      @port.UiInteractionError::InvalidInput(
+      InvalidInput(
         reason="host capability interactions exceed \{ui_max_host_capability_entries} entries",
       ),
     )
@@ -34,21 +34,21 @@ fn ui_validate_host_capabilities(
   for kind in capabilities.resource_kinds {
     if kind.namespace_ == "" || kind.name == "" {
       return Some(
-        @port.UiInteractionError::InvalidInput(
+        InvalidInput(
           reason="host capability resource kinds need a namespace and a name",
         ),
       )
     }
     if kind.namespace_.contains("\u{0}") || kind.name.contains("\u{0}") {
       return Some(
-        @port.UiInteractionError::InvalidInput(
+        InvalidInput(
           reason="host capability resource kinds must not contain NUL",
         ),
       )
     }
     if kind.schema_version < 1 {
       return Some(
-        @port.UiInteractionError::InvalidInput(
+        InvalidInput(
           reason="host capability resource kind schema_version must be positive",
         ),
       )
@@ -59,7 +59,7 @@ fn ui_validate_host_capabilities(
       let kind = capabilities.resource_kinds[index]
       if kind == capabilities.resource_kinds[other] {
         return Some(
-          @port.UiInteractionError::InvalidInput(
+          InvalidInput(
             reason="duplicate host capability resource kind \{kind.namespace_}/\{kind.name}@\{kind.schema_version}",
           ),
         )
@@ -71,7 +71,7 @@ fn ui_validate_host_capabilities(
       let kind = capabilities.interactions[index]
       if kind == capabilities.interactions[other] {
         return Some(
-          @port.UiInteractionError::InvalidInput(
+          InvalidInput(
             reason="duplicate host capability interaction kind \{ui_interaction_kind_label(kind)}",
           ),
         )
@@ -122,7 +122,7 @@ fn ui_host_support_for_kind(
 
 ///|
 fn ui_host_unavailable(reason : String) -> @port.UiInteractionError {
-  @port.UiInteractionError::HostUnavailable(reason~)
+  HostUnavailable(reason~)
 }
 
 ///|
@@ -161,16 +161,14 @@ fn UiRuntime::connect_host(
   capabilities : @port.UiHostCapabilities,
 ) -> Result[@port.UiHostConnection, @port.UiInteractionError] {
   if self.closed {
-    return Err(@port.UiInteractionError::Closed)
+    return Err(Closed)
   }
   match ui_validate_host_capabilities(capabilities) {
     Some(error) => return Err(error)
     None => ()
   }
   if self.host_connection_order.length() >= ui_max_host_connections {
-    return Err(
-      @port.UiInteractionError::ConnectionsFull(limit=ui_max_host_connections),
-    )
+    return Err(ConnectionsFull(limit=ui_max_host_connections))
   }
   let id = self.next_host_connection
   self.next_host_connection = id + 1
@@ -202,7 +200,7 @@ fn UiRuntime::update_host_connection(
   capabilities : @port.UiHostCapabilities,
 ) -> Result[Unit, @port.UiInteractionError] {
   if self.closed {
-    return Err(@port.UiInteractionError::Closed)
+    return Err(Closed)
   }
   let record = match self.host_connections.get(id) {
     Some(record) => record
@@ -224,7 +222,7 @@ fn UiRuntime::detach_host_connection(
   id : Int32,
 ) -> Result[Unit, @port.UiInteractionError] {
   if self.closed {
-    return Err(@port.UiInteractionError::Closed)
+    return Err(Closed)
   }
   match self.host_connections.get(id) {
     Some(_) => {
@@ -264,7 +262,7 @@ fn UiRuntime::connection_for_interaction(
   interaction : @port.UiInteractionRef,
 ) -> Result[UiHostConnectionRecord, @port.UiInteractionError] {
   if self.closed {
-    return Err(@port.UiInteractionError::Closed)
+    return Err(Closed)
   }
   let record = match self.host_connections.get(id) {
     Some(record) => record
@@ -334,12 +332,11 @@ fn UiRuntime::host_support(
     return Err(ui_invalid("resource key must not contain NUL"))
   }
   if resource.generation != self.generation {
-    return Err(@port.UiResourceError::NotFound(owner~, key=resource.key))
+    return Err(NotFound(owner~, key=resource.key))
   }
   let live = match self.live.get(ui_resource_key(owner, resource.key)) {
     Some(snapshot) => snapshot
-    None =>
-      return Err(@port.UiResourceError::NotFound(owner~, key=resource.key))
+    None => return Err(NotFound(owner~, key=resource.key))
   }
   let reports : Array[@port.UiHostConnectionSupport] = []
   for id in self.host_connection_order {

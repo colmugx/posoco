@@ -1,5 +1,5 @@
 ///|
-/// Pure reducer for the functional Kernel (ADR §2.1, §2.2, §2.5).
+/// Pure reducer for the functional Kernel.
 ///
 /// This file is the SOLE arbiter of phase transitions. Given a RunState and
 /// a RunInput, the reducer returns the next RunState, the effects the
@@ -75,7 +75,7 @@ pub fn reduce(
 ) -> ReduceOutput raise KernelError {
   // Post-terminal rejection: any input after Terminal is a typed rejection.
   // The state is unchanged; no new terminal event is emitted; the
-  // transcript is not mutated. (ADR §2.5 rule 1, §2.6 late-completion rule.)
+  // transcript is not mutated.
   match state.phase() {
     Terminal => reduce_post_terminal(state, input)
     Initializing => reduce_initializing(state, catalog, input)

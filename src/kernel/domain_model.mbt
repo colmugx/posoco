@@ -8,7 +8,7 @@
 ///|
 /// Token usage reported by the model for a single step. The Kernel only counts
 /// what is actually reported; absent dimensions are `None`, **never** silently
-/// coerced to 0 (ADR §2.9 — unknown usage is never reported as 0).
+/// coerced to 0.
 #derive(Eq, Debug)
 pub(all) struct Usage {
   input_tokens : Int32?
@@ -151,13 +151,13 @@ pub fn Completion::tool_calls(self : Completion) -> Array[ToolCall] {
 ///|
 /// Returns the finish reason. `Length` is preserved as a distinct variant so
 /// the reducer can refuse to emit `ExecuteTool` effects for a truncated
-/// completion (ADR §2.7, `StreamAccumulator` behaviour).
+/// completion.
 pub fn Completion::finish_reason(self : Completion) -> FinishReason {
   self.message.finish_reason
 }
 
 ///|
-/// Categorises why a model step failed (ADR §2.4). The reducer maps this to a
+/// Categorises why a model step failed. The reducer maps this to a
 /// `FailureReason::Model*` variant. Each variant carries a safe bounded label,
 /// never a raw provider payload.
 #derive(Eq, Debug)

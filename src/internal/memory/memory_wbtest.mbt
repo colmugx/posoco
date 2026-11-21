@@ -37,7 +37,7 @@ pub impl @port.MemoryPort for FailingMemorySource with fn search(
   ignore((query, top_k))
   match self.body {
     Some(body) => Some(body)
-    None => raise @error.MemoryError::Search(self.failure)
+    None => raise Search(self.failure)
   }
 }
 

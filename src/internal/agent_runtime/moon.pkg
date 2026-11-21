@@ -1,0 +1,41 @@
+import {
+  "colmugx/posoco/builtin",
+  "colmugx/posoco/error",
+  "colmugx/posoco/events",
+  "colmugx/posoco/kernel",
+  "colmugx/posoco/port",
+  "colmugx/posoco/runtime",
+  "colmugx/posoco/types",
+  "colmugx/posoco/internal/chunk_dispatch",
+  "colmugx/posoco/internal/command",
+  "colmugx/posoco/internal/core_facts",
+  "colmugx/posoco/internal/diagnostic",
+  "colmugx/posoco/internal/event_projection",
+  "colmugx/posoco/internal/event_runtime",
+  "colmugx/posoco/internal/kernel_exec",
+  "colmugx/posoco/internal/memory",
+  "colmugx/posoco/internal/message_snapshot",
+  "colmugx/posoco/internal/operation_guard",
+  "colmugx/posoco/internal/puppetry",
+  "colmugx/posoco/internal/runtime_bridge" @bridge,
+  "colmugx/posoco/internal/session_checkpoint",
+  "colmugx/posoco/internal/session_output",
+  "colmugx/posoco/internal/session_state",
+  "colmugx/posoco/internal/task_runtime" @task,
+  "colmugx/posoco/internal/tool_directory" @directory,
+  "colmugx/posoco/internal/ui_runtime" @ui,
+  "colmugx/posoco/internal/wakeup",
+  "moonbitlang/core/async",
+}
+
+import {
+  "colmugx/posoco/internal/test_support",
+  "moonbitlang/core/async/cond_var",
+} for "wbtest"
+
+options(
+  "allow-experimental-packages": [
+    "moonbitlang/core/async",
+    "moonbitlang/core/async/cond_var",
+  ],
+)

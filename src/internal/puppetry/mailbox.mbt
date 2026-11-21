@@ -50,7 +50,7 @@ pub struct ControlMailbox {
 ///|
 /// Typed quiescent status returned by `wait_idle`. Distinct from
 /// `PuppetPhase` because it carries suspension details and the terminal
-/// outcome (ADR §6.7).
+/// outcome.
 #derive(Eq, Debug)
 pub(all) enum QuiescentStatus {
   /// No run was active.

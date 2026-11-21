@@ -22,7 +22,7 @@ pub impl @port.ModelPort for SilentModel with fn chat(
   _stream : @types.StreamMode,
 ) -> @kernel.ModelCallResult raise @error.ModelError {
   self.calls = self.calls + 1
-  raise @error.ModelError::ResponseParse("silent model")
+  raise ResponseParse("silent model")
 }
 
 ///|
@@ -37,7 +37,7 @@ pub impl @port.ModelPort for SilentModel with fn compact(
   _options : @types.ChatOptions,
   _trigger : @kernel.CompactTrigger,
 ) -> @kernel.CompactResult raise @error.ModelError {
-  raise @error.ModelError::ResponseParse("silent model")
+  raise ResponseParse("silent model")
 }
 
 ///|

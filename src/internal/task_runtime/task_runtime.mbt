@@ -17,8 +17,8 @@ fn next_task_runtime_identity() -> String raise @error.AgentError {
   let bytes = match @env.rand(16) {
     Some(value) => value
     None =>
-      raise @error.AgentError::Runtime(
-        @error.RuntimeError::InvocationFailed(
+      raise Runtime(
+        InvocationFailed(
           "task runtime nonce unavailable: platform entropy source returned no bytes",
         ),
       )
@@ -108,17 +108,13 @@ pub fn TaskRuntime::activate(
   group : @async.TaskGroup,
 ) -> Unit raise @error.AgentError {
   if self.closed {
-    raise @error.AgentError::Runtime(
-      @error.RuntimeError::InvocationFailed("task runtime is closed"),
-    )
+    raise Runtime(InvocationFailed("task runtime is closed"))
   }
   if self.scope_active {
-    raise @error.AgentError::Runtime(
-      @error.RuntimeError::InvocationFailed("task scope is already active"),
-    )
+    raise Runtime(InvocationFailed("task scope is already active"))
   }
   self.runtime_id = Some(next_task_runtime_identity())
-  self.supervisor = Some(@fuwaroid.Supervisor(group~))
+  self.supervisor = Some(Supervisor(group~))
   self.scope_active = true
 }
 
@@ -144,23 +140,20 @@ fn TaskRuntime::record_matches_operation(
   operation : TaskOperation,
 ) -> Bool {
   match record.receipt.mode {
-    @port.TaskMode::Foreground =>
+    Foreground =>
       match record.operation {
         Some(owner) => agent_task_operation_equal(owner, operation)
         None => false
       }
-    @port.TaskMode::Background => false
+    Background => false
   }
 }
 
 ///|
 fn supervised_task_terminal(status : @fuwaroid.SupervisedTaskStatus) -> Bool {
   match status {
-    @fuwaroid.SupervisedTaskStatus::Completed
-    | @fuwaroid.SupervisedTaskStatus::Cancelled
-    | @fuwaroid.SupervisedTaskStatus::Failed => true
-    @fuwaroid.SupervisedTaskStatus::Running
-    | @fuwaroid.SupervisedTaskStatus::Cancelling => false
+    Completed | Cancelled | Failed => true
+    Running | Cancelling => false
   }
 }
 
@@ -199,11 +192,7 @@ pub fn TaskRuntime::begin_operation(
 ) -> Unit raise @error.AgentError {
   self.refresh_active_operation()
   if self.active_operation is Some(_) {
-    raise @error.AgentError::Runtime(
-      @error.RuntimeError::InvocationFailed(
-        "foreground task cleanup is still pending",
-      ),
-    )
+    raise Runtime(InvocationFailed("foreground task cleanup is still pending"))
   }
   self.active_operation = Some({ session_id, run_id, turn_id, })
 }
@@ -249,7 +238,7 @@ fn TaskRuntime::submit(
 
   let operation = self.active_operation
   match spec.mode {
-    @port.TaskMode::Foreground =>
+    Foreground =>
       match operation {
         None => return Err(Unavailable)
         Some(owner) if owner.session_id != spec.session_id =>
@@ -260,7 +249,7 @@ fn TaskRuntime::submit(
           )
         Some(_) => ()
       }
-    @port.TaskMode::Background => ()
+    Background => ()
   }
 
   let supervisor = match self.supervisor {
@@ -289,15 +278,8 @@ fn TaskRuntime::submit(
         let outcome = match waited {
           Ok(value) => value
           Err(error) if error is @async.WaitedTaskAlreadyCancelled =>
-            @port.TaskOutcome::{
-              receipt,
-              status: @port.TaskStatus::Cancelled(reason="task cancelled"),
-            }
-          Err(error) =>
-            @port.TaskOutcome::{
-              receipt,
-              status: @port.TaskStatus::Failed(reason=error.to_string()),
-            }
+            { receipt, status: Cancelled(reason="task cancelled"), }
+          Err(error) => { receipt, status: Failed(reason=error.to_string()), }
         }
         runtime.reap(receipt.id)
         snapshot_task_outcome(outcome)
@@ -313,10 +295,10 @@ fn TaskRuntime::submit(
 /// stays in the session inbox only.
 pub fn task_outcome_status_label(status : @port.TaskStatus) -> String {
   match status {
-    @port.TaskStatus::Completed(..) => "completed"
-    @port.TaskStatus::Failed(..) => "failed"
-    @port.TaskStatus::TimedOut => "timed_out"
-    @port.TaskStatus::Cancelled(..) => "cancelled"
+    Completed(..) => "completed"
+    Failed(..) => "failed"
+    TimedOut => "timed_out"
+    Cancelled(..) => "cancelled"
   }
 }
 
@@ -364,12 +346,10 @@ async fn TaskRuntime::execute(
       }
       match result {
         Ok(Some(message)) =>
-          @port.TaskStatus::Completed(
-            message=@message_snapshot.snapshot_message(message),
-          )
-        Ok(None) => @port.TaskStatus::Cancelled(reason="task cancelled")
-        Err(error) if error is @async.TimeoutError => @port.TaskStatus::TimedOut
-        Err(error) => @port.TaskStatus::Failed(reason=error.to_string())
+          Completed(message=@message_snapshot.snapshot_message(message))
+        Ok(None) => Cancelled(reason="task cancelled")
+        Err(error) if error is @async.TimeoutError => TimedOut
+        Err(error) => Failed(reason=error.to_string())
       }
     }
     None => {
@@ -380,24 +360,22 @@ async fn TaskRuntime::execute(
       }
       match result {
         Ok(Some(message)) =>
-          @port.TaskStatus::Completed(
-            message=@message_snapshot.snapshot_message(message),
-          )
-        Ok(None) => @port.TaskStatus::Cancelled(reason="task cancelled")
-        Err(error) => @port.TaskStatus::Failed(reason=error.to_string())
+          Completed(message=@message_snapshot.snapshot_message(message))
+        Ok(None) => Cancelled(reason="task cancelled")
+        Err(error) => Failed(reason=error.to_string())
       }
     }
   }
   let outcome : @port.TaskOutcome = { receipt, status, }
   match receipt.mode {
-    @port.TaskMode::Background => {
+    Background => {
       let stored = snapshot_task_outcome(outcome)
       self.enqueue_outcome(stored)
       // Inbox write succeeded first: the ready projection is never ahead of
       // the delivery it announces.
       self.notify_background_outcome_ready(stored)
     }
-    @port.TaskMode::Foreground => ()
+    Foreground => ()
   }
   outcome
 }
@@ -452,8 +430,8 @@ pub async fn TaskRuntime::finish_active_operation(
   let supervisor = match self.supervisor {
     Some(value) => value
     None =>
-      raise @error.AgentError::Runtime(
-        @error.RuntimeError::InvocationFailed(
+      raise Runtime(
+        InvocationFailed(
           "task supervisor is unavailable during foreground cleanup",
         ),
       )
@@ -472,20 +450,20 @@ pub async fn TaskRuntime::finish_active_operation(
   let outcome = match settled {
     Ok(value) => value
     Err(error) =>
-      raise @error.AgentError::Runtime(
-        @error.RuntimeError::InvocationFailed(
+      raise Runtime(
+        InvocationFailed(
           "foreground task settlement failed: " + error.to_string(),
         ),
       )
   }
   match outcome {
-    @fuwaroid.Settled => {
+    Settled => {
       for record in records {
         self.reap(record.receipt.id)
       }
       self.active_operation = None
     }
-    @fuwaroid.DeadlineExceeded(snapshots) => {
+    DeadlineExceeded(snapshots) => {
       self.refresh_active_operation()
       let detail = snapshots
         .map(fn(snapshot) {
@@ -497,10 +475,8 @@ pub async fn TaskRuntime::finish_active_operation(
           "\{label}:\{repr(snapshot.status)}"
         })
         .join(", ")
-      raise @error.AgentError::Runtime(
-        @error.RuntimeError::InvocationFailed(
-          "foreground task cleanup deadline exceeded: " + detail,
-        ),
+      raise Runtime(
+        InvocationFailed("foreground task cleanup deadline exceeded: " + detail),
       )
     }
   }
@@ -572,8 +548,8 @@ pub fn parse_task_applied_ids(
         match value {
           String(id) => ids.push(id)
           _ =>
-            raise @error.AgentError::Runtime(
-              @error.RuntimeError::InvocationFailed(
+            raise Runtime(
+              InvocationFailed(
                 "malformed posoco.task.applied_ids metadata entry",
               ),
             )
@@ -582,10 +558,8 @@ pub fn parse_task_applied_ids(
       ids
     }
     Some(_) =>
-      raise @error.AgentError::Runtime(
-        @error.RuntimeError::InvocationFailed(
-          "malformed posoco.task.applied_ids metadata value",
-        ),
+      raise Runtime(
+        InvocationFailed("malformed posoco.task.applied_ids metadata value"),
       )
   }
 }
@@ -616,13 +590,13 @@ pub fn TaskRuntime::peek_outcomes(
 /// repeated handle waits cannot share mutable content with the worker result.
 fn snapshot_task_outcome(outcome : @port.TaskOutcome) -> @port.TaskOutcome {
   let status = match outcome.status {
-    @port.TaskStatus::Completed(message~) =>
+    Completed(message~) =>
       @port.TaskStatus::Completed(
         message=@message_snapshot.snapshot_message(message),
       )
-    @port.TaskStatus::Failed(reason~) => @port.TaskStatus::Failed(reason~)
-    @port.TaskStatus::TimedOut => @port.TaskStatus::TimedOut
-    @port.TaskStatus::Cancelled(reason~) => @port.TaskStatus::Cancelled(reason~)
+    Failed(reason~) => Failed(reason~)
+    TimedOut => TimedOut
+    Cancelled(reason~) => Cancelled(reason~)
   }
   { receipt: outcome.receipt, status, }
 }
@@ -659,17 +633,15 @@ pub fn TaskRuntime::commit_outcomes(
 fn task_message_text(message : @kernel.Message) -> String {
   let content_text = fn(content : @kernel.Content) -> String {
     match content {
-      @kernel.Content::Text(text) => text
-      @kernel.Content::Image(media_type~, ..) => "[image=\{media_type}]"
+      Text(text) => text
+      Image(media_type~, ..) => "[image=\{media_type}]"
     }
   }
   match message {
-    @kernel.Message::SystemMessage(content~) =>
-      content.map(content_text).join("")
-    @kernel.Message::UserMessage(content~) => content.map(content_text).join("")
-    @kernel.Message::AssistantMessage(content~, ..) =>
-      content.map(content_text).join("")
-    @kernel.Message::ToolMessage(outcome~, ..) => outcome.summary()
+    SystemMessage(content~) => content.map(content_text).join("")
+    UserMessage(content~) => content.map(content_text).join("")
+    AssistantMessage(content~, ..) => content.map(content_text).join("")
+    ToolMessage(outcome~, ..) => outcome.summary()
   }
 }
 
@@ -685,13 +657,13 @@ fn task_outcome_marker(outcome : @port.TaskOutcome) -> String {
 pub fn task_outcome_message(outcome : @port.TaskOutcome) -> @kernel.Message {
   let marker = task_outcome_marker(outcome)
   let detail = match outcome.status {
-    @port.TaskStatus::Completed(message~) => task_message_text(message)
-    @port.TaskStatus::Failed(reason~) => "failed: \{reason}"
-    @port.TaskStatus::TimedOut => "timed out"
-    @port.TaskStatus::Cancelled(reason~) => "cancelled: \{reason}"
+    Completed(message~) => task_message_text(message)
+    Failed(reason~) => "failed: \{reason}"
+    TimedOut => "timed out"
+    Cancelled(reason~) => "cancelled: \{reason}"
   }
-  @kernel.Message::UserMessage(content=[
-    @kernel.Content::Text(
+  UserMessage(content=[
+    Text(
       "\{marker} extension=\{outcome.receipt.extension_id} label=\{outcome.receipt.label}: \{detail}",
     ),
   ])
@@ -751,14 +723,14 @@ pub async fn TaskRuntime::shutdown(
   let outcome = match settled {
     Ok(value) => value
     Err(error) =>
-      raise @error.AgentError::Runtime(
-        @error.RuntimeError::InvocationFailed(
+      raise Runtime(
+        InvocationFailed(
           "managed task shutdown settlement failed: " + error.to_string(),
         ),
       )
   }
   match outcome {
-    @fuwaroid.Settled => {
+    Settled => {
       let records : Array[TaskRecord] = Array::from_iter(self.tasks.values())
       for record in records {
         self.reap(record.receipt.id)
@@ -766,9 +738,9 @@ pub async fn TaskRuntime::shutdown(
       self.supervisor = None
       self.active_operation = None
     }
-    @fuwaroid.DeadlineExceeded(_) =>
-      raise @error.AgentError::Runtime(
-        @error.RuntimeError::InvocationFailed(
+    DeadlineExceeded(_) =>
+      raise Runtime(
+        InvocationFailed(
           "managed task shutdown deadline exceeded: " +
           self.shutdown_straggler_detail(),
         ),

@@ -4,7 +4,7 @@
 /// this type directly; there is no separate JSON wire contract.
 ///
 /// Streaming remains a host/telemetry concern, not a transcript fact
-/// (ADR §2.11).
+///.
 #derive(Eq, Debug)
 pub(all) enum StreamChunk {
   TextDelta(token~ : String)
@@ -183,7 +183,7 @@ pub fn StreamAccumulator::push(
 ) -> Unit raise @error.ModelError {
   match chunk.validate() {
     Ok(_) => ()
-    Err(reason) => raise @error.ModelError::ResponseParse(reason)
+    Err(reason) => raise ResponseParse(reason)
   }
   match chunk {
     TextDelta(token~) => self.text_buf.write_string(token)
@@ -191,7 +191,7 @@ pub fn StreamAccumulator::push(
     ToolCallDelta(index~, id~, name~, arguments_delta~) => {
       match @proof_stream.check_tool_index(self.tool_calls.length(), index) {
         RejectSparse =>
-          raise @error.ModelError::ResponseParse(
+          raise ResponseParse(
             "stream tool-call index is sparse; expected an existing index or the next contiguous 0-based index",
           )
         AcceptAppend(_) => self.tool_calls.push(ToolCallBuilder())

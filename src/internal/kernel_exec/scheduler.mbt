@@ -1,5 +1,5 @@
 ///|
-/// Deterministic ToolScheduler for the functional Kernel (ADR §2.8).
+/// Deterministic ToolScheduler for the functional Kernel.
 /// Given a catalog snapshot and source-order tool calls (pre-validated by the reducer),
 /// produces ordered execution waves. Parallel neighbours share a wave; Exclusive
 /// forms a barrier before and after; Sequential occupies a single-element wave.
@@ -37,7 +37,7 @@ pub impl Show for SchedulingError with fn to_string(self : SchedulingError) -> S
 /// A single wave of tool calls that MAY execute in parallel. Wave membership
 /// is determined by the execution policies of adjacent calls; executor is
 /// free to run them in any order, but the reducer places outcomes back in
-/// source order regardless of completion order (ADR §2.8).
+/// source order regardless of completion order.
 #derive(Eq, Debug)
 pub(all) struct ExecutionWave {
   /// Calls in this wave, in source order.
@@ -171,7 +171,7 @@ pub fn schedule(
 
 ///|
 /// Single-line plan trace for logs. Includes call ids, names and policies;
-/// NEVER includes arguments or schema payloads (ADR §2.7).
+/// NEVER includes arguments or schema payloads.
 pub fn ExecutionPlan::trace(self : ExecutionPlan) -> String {
   self.waves
   .mapi(fn(wave_index, wave) {

@@ -1,7 +1,7 @@
 ///|
-/// Journal contribution + pre-commit seam + savepoint coordinator (ADR §5).
+/// Journal contribution + pre-commit seam + savepoint coordinator.
 ///
-/// Contract (ADR §5 commit order):
+/// Contract:
 /// 1. Reducer/canonical transition produces base entries.
 /// 2. Registered JournalContributors receive an immutable PreCommitContext
 ///    (registration order) and each returns a JournalContribution of

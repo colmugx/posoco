@@ -71,13 +71,13 @@ pub extend LogRecord with Debug::{to_repr}
 /// Validate the protocol-level fields that every sink may rely on.
 pub fn LogRecord::validate(self : LogRecord) -> Unit raise @error.LogError {
   if self.source.trim().length() == 0 {
-    raise @error.LogError::InvalidRecord("source must not be empty")
+    raise InvalidRecord("source must not be empty")
   }
   if self.channel.trim().length() == 0 {
-    raise @error.LogError::InvalidRecord("channel must not be empty")
+    raise InvalidRecord("channel must not be empty")
   }
   if self.event.trim().length() == 0 {
-    raise @error.LogError::InvalidRecord("event must not be empty")
+    raise InvalidRecord("event must not be empty")
   }
 }
 

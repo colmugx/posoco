@@ -229,7 +229,7 @@ fn validate_confidence(
 ) -> Unit raise @error.DecisionError {
   match confidence {
     Some(value) if !valid_probability(value) =>
-      raise @error.DecisionError::ResponseParse(
+      raise ResponseParse(
         "confidence for question '" +
         question_id +
         "' must be finite and in [0,1]",
@@ -246,41 +246,35 @@ pub fn DecisionRequest::validate(
   self : DecisionRequest,
 ) -> Unit raise @error.DecisionError {
   if self.questions.is_empty() {
-    raise @error.DecisionError::InvalidRequest(
-      "at least one decision question is required",
-    )
+    raise InvalidRequest("at least one decision question is required")
   }
   let ids : Map[String, Bool] = Map::from_array([])
   for question in self.questions {
     let id = question.id()
     if id == "" {
-      raise @error.DecisionError::InvalidRequest(
-        "decision question id must not be empty",
-      )
+      raise InvalidRequest("decision question id must not be empty")
     }
     if ids.contains(id) {
-      raise @error.DecisionError::InvalidRequest(
-        "duplicate decision question id '" + id + "'",
-      )
+      raise InvalidRequest("duplicate decision question id '" + id + "'")
     }
     ids[id] = true
     match question {
       Boolean(..) => ()
       Choice(id~, options~, ..) => {
         if options.length() < 2 {
-          raise @error.DecisionError::InvalidRequest(
+          raise InvalidRequest(
             "choice question '" + id + "' requires at least two options",
           )
         }
         let option_ids : Map[String, Bool] = Map::from_array([])
         for option in options {
           if option.id == "" {
-            raise @error.DecisionError::InvalidRequest(
+            raise InvalidRequest(
               "choice question '" + id + "' has an empty option id",
             )
           }
           if option_ids.contains(option.id) {
-            raise @error.DecisionError::InvalidRequest(
+            raise InvalidRequest(
               "choice question '" +
               id +
               "' has duplicate option '" +
@@ -293,7 +287,7 @@ pub fn DecisionRequest::validate(
       }
       Score(id~, levels~, ..) =>
         if levels.length() < 2 {
-          raise @error.DecisionError::InvalidRequest(
+          raise InvalidRequest(
             "score question '" + id + "' requires at least two levels",
           )
         }
@@ -311,9 +305,7 @@ pub fn DecisionResult::validate_for(
 ) -> Unit raise @error.DecisionError {
   request.validate()
   if self.answers.length() != request.questions.length() {
-    raise @error.DecisionError::ResponseParse(
-      "decision answer count does not match question count",
-    )
+    raise ResponseParse("decision answer count does not match question count")
   }
   let questions : Map[String, DecisionQuestion] = Map::from_array([])
   for question in request.questions {
@@ -323,20 +315,16 @@ pub fn DecisionResult::validate_for(
   for answer in self.answers {
     let id = answer.id()
     if seen.contains(id) {
-      raise @error.DecisionError::ResponseParse(
-        "duplicate decision answer id '" + id + "'",
-      )
+      raise ResponseParse("duplicate decision answer id '" + id + "'")
     }
     seen[id] = true
     if !questions.contains(id) {
-      raise @error.DecisionError::ResponseParse(
-        "decision answer id '" + id + "' was not requested",
-      )
+      raise ResponseParse("decision answer id '" + id + "' was not requested")
     }
     match (questions[id], answer) {
       (Boolean(..), BooleanAnswer(probability_true~, ..)) =>
         if !valid_probability(probability_true) {
-          raise @error.DecisionError::ResponseParse(
+          raise ResponseParse(
             "boolean probability for question '" +
             id +
             "' must be finite and in [0,1]",
@@ -348,7 +336,7 @@ pub fn DecisionResult::validate_for(
       ) => {
         validate_confidence(id, confidence)
         if probabilities.length() != options.length() {
-          raise @error.DecisionError::ResponseParse(
+          raise ResponseParse(
             "choice probabilities for question '" +
             id +
             "' do not match option count",
@@ -359,7 +347,7 @@ pub fn DecisionResult::validate_for(
           allowed[option.id] = true
         }
         if !allowed.contains(selected) {
-          raise @error.DecisionError::ResponseParse(
+          raise ResponseParse(
             "choice answer for question '" +
             id +
             "' selected unknown option '" +
@@ -371,14 +359,14 @@ pub fn DecisionResult::validate_for(
         let mut sum = 0.0
         for entry in probabilities {
           if !allowed.contains(entry.id) || probability_ids.contains(entry.id) {
-            raise @error.DecisionError::ResponseParse(
+            raise ResponseParse(
               "choice probabilities for question '" +
               id +
               "' contain an unknown or duplicate option",
             )
           }
           if !valid_probability(entry.probability) {
-            raise @error.DecisionError::ResponseParse(
+            raise ResponseParse(
               "choice probability for question '" +
               id +
               "' must be finite and in [0,1]",
@@ -388,7 +376,7 @@ pub fn DecisionResult::validate_for(
           sum = sum + entry.probability
         }
         if (sum - 1.0).abs() > 0.000001 {
-          raise @error.DecisionError::ResponseParse(
+          raise ResponseParse(
             "choice probabilities for question '" + id + "' must sum to 1",
           )
         }
@@ -396,7 +384,7 @@ pub fn DecisionResult::validate_for(
       (Score(levels~, ..), ScoreAnswer(score~, probabilities~, confidence~, ..)) => {
         validate_confidence(id, confidence)
         if probabilities.length() != levels.length() {
-          raise @error.DecisionError::ResponseParse(
+          raise ResponseParse(
             "score probabilities for question '" +
             id +
             "' do not match level count",
@@ -406,14 +394,14 @@ pub fn DecisionResult::validate_for(
           score.is_inf() ||
           score < 0.0 ||
           score > (levels.length() - 1).to_double() {
-          raise @error.DecisionError::ResponseParse(
+          raise ResponseParse(
             "score for question '" + id + "' is outside the rubric range",
           )
         }
         let mut sum = 0.0
         for probability in probabilities {
           if !valid_probability(probability) {
-            raise @error.DecisionError::ResponseParse(
+            raise ResponseParse(
               "score probability for question '" +
               id +
               "' must be finite and in [0,1]",
@@ -422,13 +410,13 @@ pub fn DecisionResult::validate_for(
           sum = sum + probability
         }
         if (sum - 1.0).abs() > 0.000001 {
-          raise @error.DecisionError::ResponseParse(
+          raise ResponseParse(
             "score probabilities for question '" + id + "' must sum to 1",
           )
         }
       }
       _ =>
-        raise @error.DecisionError::ResponseParse(
+        raise ResponseParse(
           "decision answer kind does not match question '" + id + "'",
         )
     }

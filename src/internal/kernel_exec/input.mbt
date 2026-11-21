@@ -108,7 +108,7 @@ pub extend CancelRequestedPayload with Eq::{not_equal, equal}
 pub extend CancelRequestedPayload with Debug::{to_repr}
 
 ///|
-/// Deadline reached. Wins against queued completions (ADR §2.5 rule 2).
+/// Deadline reached. Wins against queued completions.
 #derive(Eq, Debug)
 pub(all) struct DeadlineReachedPayload {
   detail : String
@@ -136,7 +136,7 @@ pub extend BudgetExhaustedPayload with Eq::{not_equal, equal}
 pub extend BudgetExhaustedPayload with Debug::{to_repr}
 
 ///|
-/// Suspend requested. Only legal from `AwaitingModel` with a single pending `CallModel` (ADR §2.6).
+/// Suspend requested. Only legal from `AwaitingModel` with a single pending `CallModel`.
 /// Drops the pending effect, emits `CancelOutstanding`, enters `Suspended`.
 #derive(Eq, Debug)
 pub(all) struct SuspendRequestedPayload {

@@ -210,7 +210,7 @@ pub extend Message with Debug::{to_repr}
 
 ///|
 /// Why the assistant finished a step. It is owned by the assistant message
-/// (per ADR §2.11: single source of truth).
+///.
 ///
 /// `Length` is preserved as a distinct variant because the reducer must NOT
 /// emit `ExecuteTool` effects after a length-truncated completion, even if the
@@ -244,7 +244,7 @@ pub impl Show for FinishReason with fn to_string(self : FinishReason) -> String 
 
 ///|
 /// Discriminator for a rejected model or child tool call. No provider started
-/// for this outcome (ADR §2.7).
+/// for this outcome.
 ///
 /// - `UnknownTool`: the requested tool name is not present in the catalog
 ///   operation snapshot.
@@ -270,7 +270,7 @@ pub impl Show for FinishReason with fn to_string(self : FinishReason) -> String 
 ///   appended message instead of a tool result.
 ///
 /// Malformed-argument cases never reach this variant — they are
-/// `ModelParseFailure` at the reducer boundary (ADR §2.4).
+/// `ModelParseFailure` at the reducer boundary.
 #derive(Eq, Debug)
 pub(all) enum NotExecutedReason {
   UnknownTool
@@ -310,7 +310,7 @@ pub impl Show for NotExecutedReason with fn to_string(self : NotExecutedReason) 
 }
 
 ///|
-/// Outcome of a single tool invocation (ADR §2.4, §2.11).
+/// Outcome of a single tool invocation.
 ///
 /// Variants:
 /// - `Success`: tool ran and returned structured data. `content` is the
@@ -489,7 +489,7 @@ pub fn Transcript::from_array(messages : Array[Message]) -> Transcript {
 
 ///|
 /// Returns a new transcript with `message` appended. The original transcript
-/// is not mutated (ADR §2.10).
+/// is not mutated.
 pub fn Transcript::append(self : Transcript, message : Message) -> Transcript {
   let next = self.messages.copy()
   next.push(message)

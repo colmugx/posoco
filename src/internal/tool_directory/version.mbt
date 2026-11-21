@@ -71,15 +71,8 @@ impl @port.ToolProvider for VersionBoundProvider with fn execute(
       Some(scope) => scope.run_id.to_string()
       None => ""
     }
-    self.launcher.record_refusal(
-      run_id,
-      ctx.effect_id.to_int(),
-      @kernel.NotExecutedReason::Revoked,
-    )
-    return @kernel.ToolOutcome::NotExecuted(
-      reason=@kernel.NotExecutedReason::Revoked,
-      original_call_id=ctx.call_id,
-    )
+    self.launcher.record_refusal(run_id, ctx.effect_id.to_int(), Revoked)
+    return NotExecuted(reason=Revoked, original_call_id=ctx.call_id)
   }
   self.inner.execute(ctx)
 }

@@ -17,11 +17,7 @@ pub fn RuntimeHostShim::require_settled(
       .to_array()
       .map(key => key.0 + "/" + key.1.to_string())
       .join(", ")
-    raise @error.AgentError::Runtime(
-      @error.RuntimeError::InvocationFailed(
-        "unconfirmed tool execution: " + scopes,
-      ),
-    )
+    raise Runtime(InvocationFailed("unconfirmed tool execution: " + scopes))
   }
 }
 

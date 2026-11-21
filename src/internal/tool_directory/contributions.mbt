@@ -67,7 +67,7 @@ pub fn ToolContributionRegistry::ToolContributionRegistry(
     pending_capture: false,
     generation: 0,
     closed: Ref(false),
-    launcher: launcher.unwrap_or(@kernel_exec.ToolLaunchGate::ToolLaunchGate()),
+    launcher: launcher.unwrap_or(ToolLaunchGate()),
     on_change: on_change.unwrap_or(fn(_) { () }),
     on_revoke: on_revoke.unwrap_or(fn(_, _) { () }),
   }
@@ -138,12 +138,10 @@ pub async fn ToolContributionRegistry::replace(
   retire : @port.ToolRetire?,
 ) -> Result[@port.ToolContributionCommit, @port.ToolContributionError] noraise {
   if self.closed.val {
-    return Err(@port.ToolContributionError::Closed)
+    return Err(Closed)
   }
   if owner == "" {
-    return Err(
-      @port.ToolContributionError::Rejected(reason="owner must be non-empty"),
-    )
+    return Err(Rejected(reason="owner must be non-empty"))
   }
   // Definitions are read exactly once and owned by the version.
   let definitions = provider.list_tools().map(def => owned_tool_def(def, owner))
@@ -189,9 +187,7 @@ pub async fn ToolContributionRegistry::replace(
   ) catch {
     error =>
       return Err(
-        @port.ToolContributionError::Rejected(
-          reason=@diagnostic.bounded_error_label(error.to_string(), 256),
-        ),
+        Rejected(reason=@diagnostic.bounded_error_label(error.to_string(), 256)),
       )
   }
   let revision = match self.slots.get(owner) {
@@ -230,12 +226,12 @@ pub async fn ToolContributionRegistry::replace(
     Published(owner~, revision~, tools=self.names_of(version_id)),
   )
   match self.retire_unreferenced(owner~) {
-    [] => Ok({ owner, revision, state: @port.ToolContributionState::Active, })
+    [] => Ok({ owner, revision, state: Active, })
     failures =>
       Err(
-        @port.ToolContributionError::CleanupPending(
+        CleanupPending(
           revision~,
-          state=@port.ToolContributionState::Active,
+          state=Active,
           detail=describe_retire_failures(failures),
         ),
       )
@@ -252,14 +248,13 @@ pub async fn ToolContributionRegistry::withdraw(
   mode : @port.ToolWithdrawMode,
 ) -> Result[@port.ToolContributionCommit, @port.ToolContributionError] noraise {
   if self.closed.val {
-    return Err(@port.ToolContributionError::Closed)
+    return Err(Closed)
   }
   let slot = match self.slots.get(owner) {
     Some(slot) => slot
-    None => return Err(@port.ToolContributionError::NotContributed)
+    None => return Err(NotContributed)
   }
-  let already = slot.withdrawn &&
-    (mode is @port.ToolWithdrawMode::Soft || slot.hard)
+  let already = slot.withdrawn && (mode is Soft || slot.hard)
   let revision = if already { slot.revision } else { slot.revision + 1 }
   let revoked : Array[Int32] = []
   if !already {
@@ -271,7 +266,7 @@ pub async fn ToolContributionRegistry::withdraw(
         }
       None => ()
     }
-    if mode is @port.ToolWithdrawMode::Hard {
+    if mode is Hard {
       // Every live version of this owner — including versions an earlier
       // replace or soft withdrawal already superseded — is irrevocably
       // revoked, so no operation may start a new call through them.
@@ -285,7 +280,7 @@ pub async fn ToolContributionRegistry::withdraw(
     slot.revision = revision
     slot.version = None
     slot.withdrawn = true
-    slot.hard = mode is @port.ToolWithdrawMode::Hard
+    slot.hard = mode is Hard
     self.pending_capture = true
     self.generation = self.generation + 1
     (self.on_change)(Withdrawn(owner~, revision~, mode=mode.to_string()))
@@ -298,13 +293,12 @@ pub async fn ToolContributionRegistry::withdraw(
     }
   }
   match self.retire_unreferenced(owner~) {
-    [] =>
-      Ok({ owner, revision, state: @port.ToolContributionState::Withdrawn, })
+    [] => Ok({ owner, revision, state: Withdrawn, })
     failures =>
       Err(
-        @port.ToolContributionError::CleanupPending(
+        CleanupPending(
           revision~,
-          state=@port.ToolContributionState::Withdrawn,
+          state=Withdrawn,
           detail=describe_retire_failures(failures),
         ),
       )
@@ -328,11 +322,11 @@ fn ToolContributionRegistry::state(
   owner : String,
 ) -> @port.ToolContributionState {
   if self.closed.val {
-    return @port.ToolContributionState::Closed
+    return Closed
   }
   match self.slots.get(owner) {
-    Some(slot) if !slot.withdrawn => @port.ToolContributionState::Active
-    _ => @port.ToolContributionState::Withdrawn
+    Some(slot) if !slot.withdrawn => Active
+    _ => Withdrawn
   }
 }
 

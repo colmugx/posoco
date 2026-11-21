@@ -72,7 +72,7 @@ async fn finalize_tool_call(
     )
   } else if invalid_consent {
     Some(
-      @kernel.ToolOutcome::NotExecuted(
+      NotExecuted(
         reason=RejectedByHook(
           reason="tool call changed after consent; authorization was not reused",
         ),
@@ -81,7 +81,7 @@ async fn finalize_tool_call(
     )
   } else if consented is None && !rejections.is_empty() {
     Some(
-      @kernel.ToolOutcome::NotExecuted(
+      NotExecuted(
         reason=RejectedByHook(reason=rejections.join("; ")),
         original_call_id=input.call_id,
       ),

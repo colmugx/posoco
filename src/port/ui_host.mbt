@@ -345,7 +345,7 @@ pub fn UiHost::from_callbacks(
     None =>
       fn(_capabilities) {
         Err(
-          UiInteractionError::HostUnavailable(
+          HostUnavailable(
             reason="this UiHost adapter does not support host connections",
           ),
         )

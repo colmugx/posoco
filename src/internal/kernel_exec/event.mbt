@@ -83,7 +83,7 @@ pub(all) enum KernelEvent {
   ToolChildAbandoned(call~ : @kernel.ToolCall, parent_effect_id~ : EffectId)
   /// Emitted per tool outcome (success, error, runtime failure or
   /// NotExecuted). The outcome tag IS the error status — there is no
-  /// parallel `is_error` boolean (ADR §2.11). The call is the canonical
+  /// parallel `is_error` boolean. The call is the canonical
   /// request that was resolved, including the final call after hook
   /// finalization. Arguments are available to in-memory observers, never to
   /// durable diagnostic summaries.

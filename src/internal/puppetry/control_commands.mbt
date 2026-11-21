@@ -1,5 +1,5 @@
 ///|
-/// Control commands + idle barrier (ADR §6).
+/// Control commands + idle barrier.
 ///
 /// Step and turn messages share the Agent-owned `MessageInbox`. The pump
 /// selects step messages at safe boundaries; Agent selects turn messages
@@ -12,7 +12,7 @@
 /// Terminal / Shutdown). A bound run reports `Active`, which never satisfies
 /// the barrier.
 ///
-/// IDs (ADR §6.1): every command carries the IDs required for safe-point
+/// IDs: every command carries the IDs required for safe-point
 /// correlation. Stale IDs are rejected at enqueue time, not at consume time.
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -65,7 +65,7 @@ pub impl Show for CommandId with fn to_string(self : CommandId) -> String {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// QueuePolicy — ADR §6.4/§6.5
+// QueuePolicy
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|

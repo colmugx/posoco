@@ -1,5 +1,5 @@
 ///|
-/// RunState — single source of truth for a Run (ADR §2.2, §2.6).
+/// RunState — single source of truth for a Run.
 /// The reducer is the ONLY writer. Every transition produces a fresh RunState.
 /// Phase invariants: Initializing/ReadyForModel/AwaitingModel/AwaitingTools/Suspended/Terminal.
 
@@ -36,7 +36,7 @@ pub impl Show for Phase with fn to_string(self : Phase) -> String {
 }
 
 ///|
-/// Terminal outcome of a Run (ADR §2.3). Exactly one per Run.
+/// Terminal outcome of a Run. Exactly one per Run.
 #derive(Eq, Debug)
 pub(all) enum RunOutcome {
   Completed(
@@ -212,7 +212,7 @@ fn RunState::mk_core(
 }
 
 ///|
-/// Check phase/pending/outcome invariants (ADR §2.2). Raises `KernelError::ConstructorInvariant` on violation.
+/// Check phase/pending/outcome invariants. Raises `KernelError::ConstructorInvariant` on violation.
 fn RunState::validate(self : RunState) -> RunState raise KernelError {
   match self.phase {
     Initializing => {

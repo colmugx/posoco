@@ -60,7 +60,7 @@ pub fn EventRuntime::register_observers(
             _ => ()
           }
         },
-        namespace_=Some(@events.EventNamespace::Posoco),
+        namespace_=Some(Posoco),
       ) {
       Ok(_) => ()
       Err(error) => return Err(error)
@@ -84,7 +84,7 @@ pub fn EventRuntime::subscribe(
   namespace_~ : @events.EventNamespace? = None,
 ) -> Result[@events.Subscription, @events.EventError] {
   if self.closed.val {
-    return Err(@events.EventError::Closed)
+    return Err(Closed)
   }
   let id = self.next_id.val
   self.next_id.val = id + 1
@@ -114,7 +114,7 @@ pub fn EventRuntime::emit_core(
   if self.closed.val {
     abort("event_runtime: emit_core after close")
   }
-  self.enqueue(@events.EventNamespace::Posoco, scope, @events.Core(event))
+  self.enqueue(Posoco, scope, @events.Core(event))
 }
 
 ///|
@@ -128,7 +128,7 @@ pub fn EventRuntime::capability(
   @events.Events::from_callbacks(
     publish=fn(event, scope) {
       match event {
-        @events.Core(_) => Err(@events.EventError::ReservedEvent)
+        @events.Core(_) => Err(ReservedEvent)
         _ => self.publish(owner_namespace, scope, event)
       }
     },

@@ -140,7 +140,7 @@ async fn execute_call_model(
           Err(reason) => stream_failure.push(reason)
           Ok(_) => {
             let index_result : Result[Unit, String] = match chunk {
-              @types.ToolCallDelta(index~, ..) =>
+              ToolCallDelta(index~, ..) =>
                 if highest_tool_index < 0 {
                   if index == 0 {
                     highest_tool_index = 0
@@ -286,10 +286,7 @@ async fn execute_execute_tool(
         call_id: payload.call_id,
         tool_name: payload.tool_name,
         arguments: payload.arguments,
-        outcome: @kernel.ToolOutcome::NotExecuted(
-          reason~,
-          original_call_id=payload.call_id,
-        ),
+        outcome: NotExecuted(reason~, original_call_id=payload.call_id),
       })
     None =>
       match outcome {

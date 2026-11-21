@@ -1,0 +1,74 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "colmugx/posoco/internal/tests/support"
+
+import {
+  "colmugx/posoco",
+  "colmugx/posoco/error",
+  "colmugx/posoco/internal/test_support",
+  "colmugx/posoco/kernel",
+  "colmugx/posoco/port",
+  "colmugx/posoco/runtime",
+  "colmugx/posoco/types",
+  "moonbitlang/core/async/aqueue",
+  "moonbitlang/core/json",
+}
+
+// Values
+pub fn compact_tools_seed(@test_support.RecordingSessionPort, String) -> Unit
+
+pub fn policy_replace_result() -> @kernel.CompactResult
+
+pub fn probe_effect(Int32, tool_name? : String, provider~ : &@port.ToolProvider, run_id~ : String) -> @runtime.EffectContext
+
+// Errors
+
+// Types and methods
+pub(all) struct CancellableProbe {
+  release : @aqueue.Queue[Int32]
+  registered_effects : Array[Int32]
+  cancelled_effects : Array[Int32]
+  cancelled_runs : Array[String]
+  seen_reasons : Array[@kernel.CancelReason]
+}
+pub fn CancellableProbe::CancellableProbe() -> Self
+pub async fn CancellableProbe::cancel(Self, run_id~ : @kernel.RunId, @kernel.EffectId, @kernel.CancelReason) -> @kernel.CancelDisposition
+pub async fn CancellableProbe::execute(Self, @port.ToolCallContext) -> @kernel.ToolOutcome raise @error.RuntimeError
+pub fn CancellableProbe::list_tools(Self) -> Array[@kernel.ToolDef]
+pub impl @port.ToolCancellable for CancellableProbe
+pub impl @port.ToolProvider for CancellableProbe
+
+pub(all) struct FakeRuntime {
+  inner : @runtime.PortRuntime
+  mut deny_tools : Bool
+  mut fail_tool : String?
+  seen_contexts : Array[@runtime.EffectContext]
+  seen_scopes : Array[@kernel.InvocationScope]
+  mut cancel_calls : Int32
+  cancel_seen : Array[Array[@kernel.EffectId]]
+  mut cancel_report : ((Array[@kernel.EffectId]) -> Array[(@kernel.EffectId, @kernel.CancelDisposition)])?
+  mut control : @posoco.AgentControl?
+  mut abort_on_tool : Bool
+  mut follow_up_on_tool : Bool
+  mut follow_up_sent : Bool
+  mut on_first_execute : (async () -> Unit)?
+}
+pub fn FakeRuntime::FakeRuntime(@runtime.PortRuntime) -> Self
+pub async fn FakeRuntime::call_model(Self, @kernel.InvocationScope, ArrayView[@kernel.Message], Array[@kernel.ToolDef], @json.Json, ((@types.StreamChunk) -> Unit)?) -> Result[@kernel.ModelCallResult, @kernel.ModelFailure]
+pub async fn FakeRuntime::cancel_effects(Self, run_id~ : @kernel.RunId, Array[@kernel.EffectId], @kernel.CancelReason) -> Array[(@kernel.EffectId, @kernel.CancelDisposition)]
+pub async fn FakeRuntime::compact(Self, @kernel.InvocationScope, ArrayView[@kernel.Message], Array[@kernel.ToolDef], @json.Json, @kernel.CompactTrigger) -> Result[@kernel.CompactResult, @kernel.ModelFailure]
+pub async fn FakeRuntime::execute_tool(Self, @runtime.EffectContext) -> @kernel.ToolOutcome
+pub impl @runtime.Runtime for FakeRuntime
+
+pub struct ToolPublisher {
+  // private fields
+}
+pub fn ToolPublisher::ToolPublisher(&@port.ToolProvider) -> Self
+pub fn ToolPublisher::capability(Self) -> @port.ToolContributions
+pub fn ToolPublisher::extension_id(Self) -> String
+pub fn ToolPublisher::manifest(Self) -> @port.ExtensionManifest
+pub async fn ToolPublisher::publish(Self, &@port.ToolProvider) -> Unit
+pub impl @port.Extension for ToolPublisher
+
+// Type aliases
+
+// Traits
