@@ -7,7 +7,7 @@ pub(all) enum InvocationResult {
   Interrupted(
     reason~ : String,
     cancellation~ : CancelDisposition,
-    side_effects_possible~ : Bool
+    side_effects_possible~ : Bool,
   )
 }
 

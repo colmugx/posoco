@@ -1,0 +1,125 @@
+///|
+predicate is_full(k : BodyKind) {
+  match k {
+    Full(_) => true
+    Append(_) => false
+  }
+}
+
+///|
+predicate version_meta_inv(m : VersionMeta) {
+  m.total_len >= 0 &&
+  (match m.kind {
+    Full(n) => n >= 0 && n == m.total_len
+    Append(n) => n >= 0 && n <= m.total_len
+  })
+}
+
+///|
+predicate opt_int_eq(a : Option[Int], b : Option[Int]) {
+  match (a, b) {
+    (None, None) => true
+    (Some(x), Some(y)) => x == y
+    _ => false
+  }
+}
+
+///|
+lemma opt_int_eq_refl(x : Option[Int]) where {
+  proof_ensure: opt_int_eq(x, x),
+} {
+  match x {
+    None => ()
+    Some(_) => ()
+  }
+}
+
+///|
+predicate provenance_eq(a : VersionMeta, b : VersionMeta) {
+  opt_int_eq(a.source_session, b.source_session) &&
+  opt_int_eq(a.source_version, b.source_version)
+}
+
+///|
+predicate is_complete(s : FactsLifecycle) {
+  match s {
+    Complete => true
+    _ => false
+  }
+}
+
+///|
+predicate is_missing_provenance(s : FactsLifecycle) {
+  match s {
+    MissingProvenance => true
+    _ => false
+  }
+}
+
+///|
+predicate facts_stop_post(
+  prev : FactsLifecycle,
+  run_id : Int,
+  next : FactsLifecycle,
+) {
+  match prev {
+    Complete => is_complete(next)
+    MissingProvenance => is_missing_provenance(next)
+    Tracking(active_run) =>
+      if active_run == run_id {
+        match next {
+          Stopped(r) => r == run_id
+          _ => false
+        }
+      } else {
+        match next {
+          Tracking(r) => r == active_run
+          _ => false
+        }
+      }
+    Stopped(active_run) =>
+      match next {
+        Stopped(r) => r == active_run
+        _ => false
+      }
+    Empty =>
+      match next {
+        Stopped(r) => r == run_id
+        _ => false
+      }
+  }
+}
+
+///|
+predicate facts_finish_post(
+  prev : FactsLifecycle,
+  run_id : Int,
+  next : FactsLifecycle,
+) {
+  match prev {
+    Tracking(active_run) =>
+      if active_run == run_id {
+        match next {
+          Stopped(r) => r == run_id
+          _ => false
+        }
+      } else {
+        match next {
+          Tracking(r) => r == active_run
+          _ => false
+        }
+      }
+    Complete => is_complete(next)
+    MissingProvenance => is_missing_provenance(next)
+    Stopped(active_run) =>
+      match next {
+        Stopped(r) => r == active_run
+        _ => false
+      }
+    Empty =>
+      match next {
+        Empty => true
+        _ => false
+      }
+  }
+}

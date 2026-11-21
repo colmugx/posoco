@@ -1,0 +1,25 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "colmugx/posoco/internal/proof/progress"
+
+// Values
+pub fn advance_one_if_clean(CursorState) -> CursorState
+
+pub fn cursor_init() -> CursorState
+
+pub fn mark_clean(CursorState) -> CursorState
+
+pub fn mark_dirty(CursorState) -> CursorState
+
+pub fn set_cursor_checked(CursorState, Int32) -> CursorState
+
+// Errors
+
+// Types and methods
+pub(all) struct CursorState {
+  cursor : Int32
+  dirty : Bool
+}
+
+// Type aliases
+
+// Traits

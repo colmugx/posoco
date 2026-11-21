@@ -248,7 +248,7 @@ async test "newthread/fork_persists_sibling_with_lineage_and_emits_redirect" {
   assert_true(sibling.messages[1] == @test_support.tk_user_msg("two"))
   assert_eq(sibling.metadata[@types.PARENT_THREAD_ID_KEY], Json::string("s1"))
   // The sibling cursor advanced so the next turn appends instead of resaving.
-  assert_eq(agent.runtime.progress.cursors.get(to), Some(2))
+  assert_eq(agent.runtime.progress.cursor(to), Some(2))
   // Parent provenance (evidence from the recorded writes): two incremental
   // checkpoints — the input at cursor 2, then the assistant tool-call message
   // at cursor 3. The tool result is never persisted: the fork safe point
@@ -343,7 +343,7 @@ async test "newthread/compact_newthread_persists_sibling_with_lineage_and_emits_
   assert_eq(sibling.messages.length(), 1)
   assert_true(sibling.messages[0] == @test_support.tk_user_msg("summary"))
   assert_eq(sibling.metadata[@types.PARENT_THREAD_ID_KEY], Json::string("c1"))
-  assert_eq(agent.runtime.progress.cursors.get(to), Some(1))
+  assert_eq(agent.runtime.progress.cursor(to), Some(1))
   // Real alias isolation: mutate what load() handed out, then reload — the
   // persisted state must be untouched because saves carry deep snapshots.
   sibling.messages.push(@test_support.tk_user_msg("poison"))
@@ -462,7 +462,7 @@ async test "newthread/midturn_compact_newthread_reaches_complete_compact_turn" {
     sibling.messages[0] == @test_support.tk_user_msg("mid-turn summary"),
   )
   assert_eq(sibling.metadata[@types.PARENT_THREAD_ID_KEY], Json::string("m1"))
-  assert_eq(agent.runtime.progress.cursors.get(to), Some(1))
+  assert_eq(agent.runtime.progress.cursor(to), Some(1))
   // Single writer on the mid-turn path as well.
   assert_eq(newthread_save_count(store, to), 1)
 }
@@ -541,7 +541,7 @@ async test "newthread/failed_output_recovers_and_old_terminal_stays" {
   assert_eq(store.saves, [first_sid])
   assert_false(store.seen.contains(first_sid))
   assert_eq(newthread_redirects(observer.events()).length(), 0)
-  for key, _cursor in agent.runtime.progress.cursors {
+  for key in agent.runtime.progress.tracked_sessions() {
     assert_false(key.has_prefix("f1_compact_"))
   }
   let old_failures = newthread_failure_terminals(observer.events())
@@ -580,8 +580,8 @@ async test "newthread/failed_output_recovers_and_old_terminal_stays" {
     second_body.metadata.get(@types.PARENT_THREAD_ID_KEY),
     Some(Json::string("f1")),
   )
-  assert_eq(agent.runtime.progress.cursors.get(first_sid), Some(1))
-  assert_eq(agent.runtime.progress.cursors.get(second_sid), Some(1))
+  assert_eq(agent.runtime.progress.cursor(first_sid), Some(1))
+  assert_eq(agent.runtime.progress.cursor(second_sid), Some(1))
   assert_eq(store.saves, [first_sid, first_sid, second_sid])
   // Recovery only adds the old redirect; the old compact failure terminal is
   // not replaced by a success and no CompactFinished is invented for it.
@@ -688,7 +688,7 @@ async test "newthread/fork_save_failure_recovers_pending_before_next_turn" {
   let child_sid = "s1_fork_fork_1"
   assert_false(store.store.contains(child_sid))
   assert_eq(newthread_redirects(observer.events()).length(), 0)
-  for key, _cursor in agent.runtime.progress.cursors {
+  for key in agent.runtime.progress.tracked_sessions() {
     assert_false(key.has_prefix("s1_fork_"))
   }
   // The failed turn still persists its own parent progress, without lineage.
@@ -718,7 +718,7 @@ async test "newthread/fork_save_failure_recovers_pending_before_next_turn" {
   let redirects = newthread_redirects(observer.events())
   assert_eq(redirects.length(), 1)
   assert_eq(redirects[0].1, child_sid)
-  assert_eq(agent.runtime.progress.cursors.get(child_sid), Some(2))
+  assert_eq(agent.runtime.progress.cursor(child_sid), Some(2))
   assert_eq(newthread_failure_terminals(observer.events()), old_failures)
 }
 
@@ -877,7 +877,7 @@ async test "newthread/partial_output_retry_repeats_store_without_exactly_once" {
   assert_false(second.store.contains(failed_sid))
   // No diversion side effects: no redirect, no sibling cursor.
   assert_eq(newthread_redirects(observer.events()).length(), 0)
-  for key, _cursor in agent.runtime.progress.cursors {
+  for key in agent.runtime.progress.tracked_sessions() {
     assert_false(key.has_prefix("p2_compact_"))
   }
   let old_failures = newthread_failure_terminals(observer.events())
@@ -905,8 +905,8 @@ async test "newthread/partial_output_retry_repeats_store_without_exactly_once" {
   assert_eq(redirects.length(), 2)
   assert_eq(redirects[0].1, failed_sid)
   assert_eq(redirects[1].1, retry_sid)
-  assert_eq(agent.runtime.progress.cursors.get(failed_sid), Some(1))
-  assert_eq(agent.runtime.progress.cursors.get(retry_sid), Some(1))
+  assert_eq(agent.runtime.progress.cursor(failed_sid), Some(1))
+  assert_eq(agent.runtime.progress.cursor(retry_sid), Some(1))
   // The recovered child is written to both stores; the store that already
   // succeeded receives the same body again. This is intentionally not
   // exactly-once.
@@ -1027,7 +1027,7 @@ async test "newthread/all_stores_persist_before_redirect_precedes_terminal_event
     fail("expected an OperationFinalized marker on the tape")
   }
   assert_true(finished_at < finalized_at)
-  assert_eq(agent.runtime.progress.cursors.get(sid), Some(1))
+  assert_eq(agent.runtime.progress.cursor(sid), Some(1))
 }
 
 ///|
@@ -1108,7 +1108,7 @@ async test "newthread/failed_output_gate_blocks_then_recovers_before_body" {
   let child = store.store[child_sid]
   assert_eq(child.messages.length(), 1)
   assert_true(child.messages[0] == @test_support.tk_user_msg("pending-summary"))
-  assert_eq(agent.runtime.progress.cursors.get(child_sid), Some(1))
+  assert_eq(agent.runtime.progress.cursor(child_sid), Some(1))
 }
 
 ///|
@@ -1152,7 +1152,7 @@ async test "newthread/child_fact_failure_blocks_all_output" {
   assert_true(detail.contains("core child fact"))
   assert_false(store.store.contains(child_sid))
   assert_eq(newthread_redirects(observer.events()).length(), 0)
-  for key, _cursor in agent.runtime.progress.cursors {
+  for key in agent.runtime.progress.tracked_sessions() {
     assert_false(key.has_prefix("fact-parent_compact_"))
   }
 }
@@ -1245,7 +1245,7 @@ async test "newthread/recovery_preserves_parent_and_original_scope" {
     parent_cursor_before,
   )
 
-  assert_eq(agent.runtime.progress.cursors.get(child_sid), Some(1))
+  assert_eq(agent.runtime.progress.cursor(child_sid), Some(1))
   let child = store.load(child_sid) catch {
     e => fail("expected the recovered child: \{e}")
   }
@@ -1363,7 +1363,7 @@ async test "newthread/cancel_after_core_fact_keeps_pending_for_recovery" {
   )
   assert_false(store.inner.store.contains(child_sid))
   assert_eq(newthread_redirects(observer.events()).length(), 0)
-  assert_false(agent.runtime.progress.cursors.contains(child_sid))
+  assert_true(agent.runtime.progress.cursor(child_sid) is None)
   // Release the gate without changing the snapshot; the next operation
   // recovers the same child and body, then executes its own request.
   store.gate.broadcast()
@@ -1380,7 +1380,7 @@ async test "newthread/cancel_after_core_fact_keeps_pending_for_recovery" {
     child.metadata.get(@types.PARENT_THREAD_ID_KEY),
     Some(Json::string("cancel-parent")),
   )
-  assert_eq(agent.runtime.progress.cursors.get(child_sid), Some(1))
+  assert_eq(agent.runtime.progress.cursor(child_sid), Some(1))
   let redirects = newthread_redirects(observer.events())
   assert_eq(redirects.length(), 1)
   assert_eq(redirects[0].1, child_sid)

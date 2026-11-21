@@ -44,6 +44,12 @@ fn reduce_start(
   catalog : ToolCatalogSnapshot,
   payload : StartPayload,
 ) -> ReduceOutput raise KernelError {
+  if catalog.version() != payload.catalog_version {
+    return reduce_invariant_violation(
+      state,
+      StaleSnapshot(expected=payload.catalog_version, actual=catalog.version()),
+    )
+  }
   let transcript = @kernel.Transcript::from_array(payload.initial_messages)
   let run_started : KernelEvent = RunStarted(details={
     run_id: state.run_id(),
@@ -61,14 +67,6 @@ fn reduce_start(
     outcome=None,
     suspension_requirement=None,
   )
-  // The catalog must match the catalog_version the host carried; a stale
-  // snapshot is a kernel invariant failure.
-  if catalog.version() != payload.catalog_version {
-    return reduce_invariant_violation(
-      next_state,
-      StaleSnapshot(expected=payload.catalog_version, actual=catalog.version()),
-    )
-  }
   reduce_output(next_state, [], [run_started])
 }
 
@@ -436,12 +434,27 @@ fn reduce_transcript_rewrite(
     messages_after=transcript.length(),
     reason=payload.reason,
   )
-  // A rewrite while tools are in flight may have moved or removed the
-  // assistant message that owns the pending calls. Rebuild the source-position
-  // ledger from the new transcript so the wave commit can still order results
-  // by source position.
   let new_positions = match state.phase() {
     AwaitingTools => build_tool_call_ledger(transcript)
+    _ => Map::from_array([])
+  }
+  let reindexed_results : Map[
+    String,
+    (@kernel.ToolName, @kernel.ToolOutcome, Int32),
+  ] = match state.phase() {
+    AwaitingTools => {
+      let updated : Map[String, (@kernel.ToolName, @kernel.ToolOutcome, Int32)] = Map::from_array([],
+      )
+      for call_id, entry in state.completed_tool_results {
+        let (tool_name, outcome, _) = entry
+        let pos = match new_positions.get(call_id) {
+          Some(p) => p
+          None => missing_tool_position
+        }
+        updated[call_id] = (tool_name, outcome, pos)
+      }
+      updated
+    }
     _ => Map::from_array([])
   }
   let next_state = state.transition(
@@ -452,11 +465,9 @@ fn reduce_transcript_rewrite(
     next_effect_id=state.next_effect_id(),
     current_model_step_id=state.current_model_step_id(),
     catalog_version=None,
-    // The rewrite changed the transcript the last usage reading described:
-    // occupancy is unknown until the next reliable observation. Cumulative
-    // counters stay — the run-wide token budget is unaffected by compaction.
     budget_consumed={ ..state.budget_consumed(), last_context_tokens: None, },
     outcome=state.outcome(),
+    completed_tool_results=reindexed_results,
     tool_call_positions=new_positions,
     suspension_requirement=state.suspension_requirement(),
   )

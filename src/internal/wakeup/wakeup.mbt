@@ -227,7 +227,6 @@ fn WakeupRuntime::request(
     Some(value) => value + 1
     None => 1
   }
-  self.generations[session] = generation
   let session_map = match self.by_key.get(session) {
     Some(existing) => existing
     None => {
@@ -238,6 +237,7 @@ fn WakeupRuntime::request(
   }
   match session_map.get(tag) {
     Some(entry) => {
+      self.generations[session] = generation
       entry.note = note
       entry.latest_requirement = generation
       Ok(entry.ticket)
@@ -246,6 +246,7 @@ fn WakeupRuntime::request(
       if session_map.length() >= wakeup_max_pending {
         return Err(PendingFull(session~, limit=wakeup_max_pending))
       }
+      self.generations[session] = generation
       self.next_ticket_seq = self.next_ticket_seq + 1
       let ticket : @port.WakeupTicket = {
         id: "wakeup_ticket_\{self.next_ticket_seq}",
@@ -326,16 +327,17 @@ fn WakeupRuntime::take_next(
     if self.closed || !host.wakeup_idle() {
       return None
     }
-    match self.order.get(0) {
-      Some(entry) => {
+    match self.order {
+      [entry, ..] => {
         ignore(self.order.remove(0))
         self.forget(entry)
         if self.pending_stale(entry) {
+          self.emit_wakeup_event("wakeup_dropped", entry)
           continue
         }
         return Some(entry)
       }
-      None => return None
+      [] => return None
     }
   }
 }
@@ -397,17 +399,35 @@ async fn WakeupRuntime::pump_loop(
 fn WakeupRuntime::requeue_front(
   self : WakeupRuntime,
   entry : WakeupPending,
-) -> Unit {
-  self.order.insert(0, entry)
-  let session_map = match self.by_key.get(entry.ticket.session) {
-    Some(existing) => existing
-    None => {
-      let created : Map[String, WakeupPending] = Map::from_array([])
-      self.by_key[entry.ticket.session] = created
-      created
+) -> Bool {
+  let key_present = match self.by_key.get(entry.ticket.session) {
+    Some(existing) => existing.contains(entry.ticket.tag)
+    None => false
+  }
+  match
+    @proof_wakeup.decide_requeue(
+      self.closed,
+      self.pending_stale(entry),
+      key_present,
+    ) {
+    DropStaleOrClosed | DropSuperseded => {
+      self.emit_wakeup_event("wakeup_dropped", entry)
+      false
+    }
+    RequeueAtFront => {
+      let session_map = match self.by_key.get(entry.ticket.session) {
+        Some(existing) => existing
+        None => {
+          let created : Map[String, WakeupPending] = Map::from_array([])
+          self.by_key[entry.ticket.session] = created
+          created
+        }
+      }
+      self.order.insert(0, entry)
+      session_map[entry.ticket.tag] = entry
+      true
     }
   }
-  session_map[entry.ticket.tag] = entry
 }
 
 ///|

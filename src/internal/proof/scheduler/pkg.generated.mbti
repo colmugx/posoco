@@ -1,0 +1,25 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "colmugx/posoco/internal/proof/scheduler"
+
+// Values
+pub fn catalog_version_matches(Int32, Int32) -> Bool
+
+pub fn next_wave_end(FixedArray[Policy], Int32) -> Int32
+
+// Errors
+
+// Types and methods
+pub(all) enum Policy {
+  Parallel
+  Sequential
+  Exclusive
+}
+
+pub(all) struct WaveRange {
+  start : Int32
+  stop : Int32
+}
+
+// Type aliases
+
+// Traits

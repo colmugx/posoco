@@ -1,0 +1,26 @@
+///|
+predicate index_decision_post(
+  count : Int,
+  index : Int,
+  result : IndexDecision,
+) {
+  match result {
+    RejectSparse => index < 0 || index > count
+    AcceptAppend(next_count) => index == count && next_count == count + 1
+    AcceptExisting(next_count) =>
+      0 <= index && index < count && next_count == count
+  }
+}
+
+///|
+predicate merge_latch_post(
+  current_empty : Bool,
+  incoming_present : Bool,
+  incoming_empty : Bool,
+  result : LatchDecision,
+) {
+  match result {
+    WriteIncoming => current_empty && incoming_present && !incoming_empty
+    KeepExisting => !current_empty || !incoming_present || incoming_empty
+  }
+}

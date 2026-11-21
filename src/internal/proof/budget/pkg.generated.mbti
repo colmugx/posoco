@@ -1,0 +1,51 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "colmugx/posoco/internal/proof/budget"
+
+// Values
+pub fn budget_consumed_zero() -> BudgetConsumed
+
+pub fn bump_model_step(BudgetConsumed, Bool, Int32?, Int32?, Int32?) -> BudgetConsumed
+
+pub fn bump_tool_batch(BudgetConsumed, Int32) -> BudgetConsumed
+
+pub fn check_exceeded(BudgetConsumed, Budget) -> BudgetState
+
+pub fn saturating_add_nonneg(Int32, Int32) -> Int32
+
+pub fn usage_context_occupancy(Int32?, Int32?, Int32?) -> Int32?
+
+// Errors
+
+// Types and methods
+pub(all) struct Budget {
+  max_model_steps : Int32?
+  max_tool_rounds : Int32?
+  max_tool_calls : Int32?
+  max_total_tokens : Int32?
+}
+
+pub(all) struct BudgetConsumed {
+  model_steps : Int32
+  tool_rounds : Int32
+  tool_calls : Int32
+  observed_total_tokens : Int32
+  any_usage_verified : Bool
+  last_context_tokens : Int32?
+}
+
+pub(all) enum BudgetDimension {
+  ModelSteps
+  ToolRounds
+  ToolCalls
+  TotalTokens
+}
+
+pub(all) enum BudgetState {
+  WithinBudget
+  Exceeded(BudgetDimension)
+  UnknownUsage(BudgetDimension)
+}
+
+// Type aliases
+
+// Traits

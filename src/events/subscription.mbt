@@ -17,20 +17,19 @@
 /// ```
 pub struct Subscription {
   priv cancel_ : () -> Unit
-  priv active : Ref[Bool]
+  priv state : Ref[@proof_events.SubscriptionState]
 }
 
 ///|
-/// Framework construction hook. Product code receives subscriptions from
-/// `Events::subscribe` and does not need this constructor.
 pub fn Subscription::from_cancel(cancel : () -> Unit) -> Subscription {
-  { cancel_: cancel, active: Ref(true), }
+  { cancel_: cancel, state: Ref({ active: true, }), }
 }
 
 ///|
 pub fn Subscription::cancel(self : Subscription) -> Unit {
-  if self.active.val {
-    self.active.val = false
+  let outcome = @proof_events.cancel_subscription(self.state.val)
+  self.state.val = outcome.state
+  if outcome.should_run {
     (self.cancel_)()
   }
 }

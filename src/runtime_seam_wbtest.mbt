@@ -1,5 +1,5 @@
 ///|
-using @support {type FakeRuntime}
+using @support {type FakeRuntime, type ToolPublisher}
 
 ///|
 /// End-to-end contract tests for the public runtime seam: a custom

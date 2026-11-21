@@ -84,7 +84,7 @@ pub(all) enum FailureReason {
   ModelQuotaExhausted(
     detail~ : String,
     reset_at_ms~ : Int64?,
-    provider_code~ : String?
+    provider_code~ : String?,
   )
   /// A host-side policy or control gate rejected a model effect. This is not
   /// a provider error and must remain distinguishable at the product boundary.
@@ -145,7 +145,7 @@ pub(all) suberror KernelError {
   ReducerInvariant(
     run_id~ : RunId,
     phase~ : String,
-    category~ : InvariantCategory
+    category~ : InvariantCategory,
   )
   /// Adapter call failed in a way the reducer cannot continue from (this is
   /// rare — most adapter failures arrive as `ModelFailed`/`ToolFailed` inputs;
@@ -155,7 +155,7 @@ pub(all) suberror KernelError {
     run_id~ : RunId,
     phase~ : String,
     input_kind~ : String,
-    detail~ : String
+    detail~ : String,
   )
 }
 

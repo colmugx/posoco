@@ -1,0 +1,29 @@
+///|
+predicate is_parallel(p : Policy) {
+  match p {
+    Parallel => true
+    Sequential => false
+    Exclusive => false
+  }
+}
+
+///|
+predicate all_parallel(policies : FixedArray[Policy], lo : Int, hi : Int) {
+  ∀ k : Int, lo <= k && k < hi → is_parallel(policies[k])
+}
+
+///|
+predicate wave_range_ok(
+  policies : FixedArray[Policy],
+  start : Int,
+  stop : Int,
+) {
+  start < stop &&
+  stop <= policies.length() &&
+  (if is_parallel(policies[start]) {
+    all_parallel(policies, start, stop) &&
+    (if stop < policies.length() { !is_parallel(policies[stop]) } else { true })
+  } else {
+    stop == start + 1
+  })
+}

@@ -1,0 +1,67 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "colmugx/posoco/internal/proof/phase"
+
+// Values
+pub fn phase_initial() -> PhaseState
+
+pub fn step_phase(PhaseState, TransitionKind) -> StepResult
+
+// Errors
+
+// Types and methods
+pub(all) enum EffectTag {
+  CallModel
+  ExecuteTool
+  CancelOutstanding
+}
+
+pub(all) enum EventTag {
+  NonTerminalEvent
+  RunCompleted
+  RunFailed
+  RunCancelled
+}
+
+pub(all) enum Phase {
+  Initializing
+  ReadyForModel
+  AwaitingModel
+  AwaitingTools
+  Suspended
+  Terminal
+}
+
+pub(all) struct PhaseState {
+  phase : Phase
+  pending_model : Int32
+  pending_tools : Int32
+  has_outcome : Bool
+  has_suspension : Bool
+  model_step_id : Int32
+  event_seq : Int32
+}
+
+pub(all) struct StepResult {
+  state : PhaseState
+  emitted_non_terminal : Int32
+  emitted_terminal : Int32
+  terminal_event : EventTag?
+}
+
+pub(all) enum TransitionKind {
+  StartRun
+  StartModelCall
+  CompleteModelFinal
+  CompleteModelWithTools(Int32)
+  CompleteModelSteer
+  CompleteToolPartial
+  CompleteToolWaveDone
+  SuspendFromModel
+  ResumeToReady
+  CancelRun
+  FailRun
+}
+
+// Type aliases
+
+// Traits

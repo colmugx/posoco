@@ -84,8 +84,9 @@ async fn WakeupRuntime::execute_ticket(
     // executing event fired, so re-queue at the head and wait for the
     // incumbent's settled notification.
     Err(@error.AgentError::Busy(..)) => {
-      self.requeue_front(entry)
-      return true
+      let requeued = self.requeue_front(entry)
+      terminal.val = Some("requeued")
+      return requeued
     }
     Err(@error.AgentError::Cancelled(_)) => "wakeup_cancelled"
     Err(_) => "wakeup_failed"

@@ -371,13 +371,7 @@ async fn AgentRuntime::run_turn_via_puppet(
   let turn_outcome : Ref[@types.TurnResult?] = Ref(None)
   @async.with_task_group(async fn(group) {
     group.spawn_bg(async fn() { dispatcher.drain_loop() })
-    // Releases on every exit of this closure, including a raw cancellation.
     errdefer self.release_chunk_dispatcher(dispatcher, dispatcher_generation)
-    // The Ok/Err wrapper lets the typed AgentError escape the group closure
-    // as data: catch + re-raise is fragile_catch_all and try? is deprecated.
-    // The body runs under handle_cancellation (async 0.22: a raw cancellation
-    // signal bypasses catch) and returns its typed outcome as data, so the
-    // wide raise crossing cannot erase the AgentError classification.
     let outcome : Result[@types.TurnResult, @error.AgentError]? = @async.handle_cancellation(async fn() {
         let typed : Result[@types.TurnResult, @error.AgentError] = Ok(
           self.run_puppet_turn_body(
@@ -614,7 +608,7 @@ fn AgentRuntime::terminal_failure_to_agent_error(
     Some(Failed(reason=ModelRuntime(detail~))) =>
       Some(Model("model runtime failure: " + detail))
     Some(
-      Failed(reason=ModelQuotaExhausted(detail~, reset_at_ms~, provider_code~))
+      Failed(reason=ModelQuotaExhausted(detail~, reset_at_ms~, provider_code~)),
     ) =>
       // Provider quota/rate-limit verdict. The message keeps the provider
       // code and reset time so hosts can schedule a retry instead of

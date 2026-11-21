@@ -1,0 +1,74 @@
+///|
+fn exposure_rank(e : ExposureLevel) -> Int {
+  match e {
+    Disabled => 0
+    Deferred => 1
+    Direct => 2
+  }
+}
+
+///|
+fn min2(a : Int, b : Int) -> Int {
+  if a <= b {
+    a
+  } else {
+    b
+  }
+}
+
+///|
+predicate exposure_narrow_post(
+  left : ExposureLevel,
+  right : ExposureLevel,
+  result : ExposureLevel,
+) {
+  exposure_rank(result) == min2(exposure_rank(left), exposure_rank(right)) &&
+  exposure_rank(result) <= exposure_rank(left) &&
+  exposure_rank(result) <= exposure_rank(right)
+}
+
+///|
+predicate monotonic_next_post(current : Int, result : Int) {
+  result == current + 1 && result > current && result >= 1
+}
+
+///|
+predicate opt_nonneg(v : Option[Int]) {
+  match v {
+    Some(n) => n >= 0
+    None => true
+  }
+}
+
+///|
+predicate usage_scalars_nonneg(u : UsageScalars) {
+  opt_nonneg(u.input_tokens) &&
+  opt_nonneg(u.output_tokens) &&
+  opt_nonneg(u.total_tokens) &&
+  opt_nonneg(u.cached_input_tokens) &&
+  opt_nonneg(u.uncached_input_tokens)
+}
+
+///|
+lemma exposure_narrow_commutative(a : ExposureLevel, b : ExposureLevel) where {
+  proof_ensure: min2(exposure_rank(a), exposure_rank(b)) ==
+    min2(exposure_rank(b), exposure_rank(a)),
+} {
+}
+
+///|
+lemma exposure_narrow_associative(
+  a : ExposureLevel,
+  b : ExposureLevel,
+  c : ExposureLevel,
+) where {
+  proof_ensure: min2(min2(exposure_rank(a), exposure_rank(b)), exposure_rank(c)) ==
+    min2(exposure_rank(a), min2(exposure_rank(b), exposure_rank(c))),
+} {
+}
+
+///|
+lemma exposure_narrow_idempotent(a : ExposureLevel) where {
+  proof_ensure: min2(exposure_rank(a), exposure_rank(a)) == exposure_rank(a),
+} {
+}

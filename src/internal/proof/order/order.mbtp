@@ -1,0 +1,20 @@
+///|
+predicate sorted_range(arr : FixedArray[Int], lo : Int, hi : Int) {
+  ∀ a : Int, ∀ b : Int, lo <= a && a <= b && b < hi → arr[a] <= arr[b]
+}
+
+///|
+predicate sorted_upto(arr : FixedArray[Int], hi : Int) {
+  sorted_range(arr, 0, hi)
+}
+
+///|
+predicate all_gt_key(arr : FixedArray[Int], lo : Int, hi : Int, key : Int) {
+  ∀ k : Int, lo <= k && k < hi → arr[k] > key
+}
+
+///|
+predicate bridge_sorted(arr : FixedArray[Int], hole : Int, hi : Int) {
+  ∀ a : Int, ∀ b : Int, 0 <= a && a < hole && hole + 1 <= b && b < hi →
+    arr[a] <= arr[b]
+}

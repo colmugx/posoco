@@ -190,7 +190,6 @@ pub impl Show for Reasoning with fn to_string(self : Reasoning) -> String {
 // mapping is a trusted opaque bridge. A future spec that reasons about
 // message order or contents needs a real sequence model here first.
 #derive(Eq, Debug)
-#proof_external("int.Int", "int")
 pub(all) enum Message {
   SystemMessage(content~ : Array[Content])
   UserMessage(content~ : Array[Content])
@@ -198,7 +197,7 @@ pub(all) enum Message {
     content~ : Array[Content],
     tool_calls~ : Array[ToolCall],
     reasoning~ : Reasoning?,
-    finish_reason~ : FinishReason
+    finish_reason~ : FinishReason,
   )
   ToolMessage(call_id~ : CallId, tool_name~ : ToolName, outcome~ : ToolOutcome)
 }
@@ -342,7 +341,7 @@ pub(all) enum ToolOutcome {
   SuccessWithAttachments(
     content~ : String,
     structured~ : Json?,
-    attachments~ : Array[Content]
+    attachments~ : Array[Content],
   )
   ToolReportedError(content~ : String, structured~ : Json?)
   RuntimeFailure(error_category~ : String, message~ : String)
@@ -466,7 +465,6 @@ fn safe_outcome_label(value : String) -> String {
 // Proof-side token model: phase_inv carries the transcript opaquely; the
 // int mapping is a trusted opaque bridge (see state_proof.mbtp).
 #derive(Eq, Debug)
-#proof_external("int.Int", "int")
 pub(all) struct Transcript {
   messages : Array[Message]
 }

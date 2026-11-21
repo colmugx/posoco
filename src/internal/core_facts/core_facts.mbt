@@ -181,10 +181,12 @@ pub fn CoreFacts::stop(
   reason : String,
 ) -> Unit {
   match self.state.get(session_id) {
-    Some(MissingProvenance) => ()
+    Some(Tracking(run_id=state_run)) if state_run == run_id =>
+      self.state[session_id] = Stopped(run_id~, reason~)
     Some(Stopped(run_id=state_run, reason=state_reason)) if state_run == run_id =>
       self.state[session_id] = Stopped(run_id~, reason=state_reason)
-    _ => self.state[session_id] = Stopped(run_id~, reason~)
+    None => self.state[session_id] = Stopped(run_id~, reason~)
+    _ => ()
   }
   self.pending_source.remove(run_id)
 }

@@ -1,0 +1,30 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "colmugx/posoco/internal/proof/wakeup"
+
+// Values
+pub fn admit_wakeup(Bool, Bool, Bool, Int32?, Int32, Int32, Int32) -> AdmitDecision
+
+pub fn cutoff_covers_entry(Int32, Int32, Int32, Int32) -> Bool
+
+pub fn decide_requeue(Bool, Bool, Bool) -> RequeueDecision
+
+// Errors
+
+// Types and methods
+pub(all) enum AdmitDecision {
+  AdmitNew(Int32)
+  Coalesced(Int32)
+  RejectScopeInactive
+  RejectInvalidSession
+  RejectPendingFull
+}
+
+pub(all) enum RequeueDecision {
+  RequeueAtFront
+  DropStaleOrClosed
+  DropSuperseded
+}
+
+// Type aliases
+
+// Traits

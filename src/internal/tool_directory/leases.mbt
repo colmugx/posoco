@@ -23,6 +23,9 @@ pub fn ToolVersionLeases::acquire(
   self : ToolVersionLeases,
   registry : ToolContributionRegistry,
 ) -> Unit {
+  if !self.operation.is_empty() {
+    registry.release_versions(self.operation)
+  }
   self.operation = self.captured.copy()
   registry.retain_versions(self.operation)
 }

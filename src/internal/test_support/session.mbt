@@ -7,23 +7,23 @@ pub(all) enum SessionOp {
   OpSave(
     id~ : String,
     metadata~ : Map[String, Json],
-    result~ : Result[Unit, @error.SessionError]
+    result~ : Result[Unit, @error.SessionError],
   )
   OpAppend(
     id~ : String,
     from_index~ : Int32,
     messages~ : Array[@kernel.Message],
-    result~ : Result[Unit, @error.SessionError]
+    result~ : Result[Unit, @error.SessionError],
   )
   OpCheckpoint(
     id~ : String,
     checkpoint~ : @port.SessionCheckpoint,
-    result~ : Result[Unit, @error.SessionError]
+    result~ : Result[Unit, @error.SessionError],
   )
   OpTruncate(
     id~ : String,
     from_index~ : Int32,
-    result~ : Result[Unit, @error.SessionError]
+    result~ : Result[Unit, @error.SessionError],
   )
 }
 

@@ -135,7 +135,7 @@ pub(all) enum ToolContributionError {
   CleanupPending(
     revision~ : Int32,
     state~ : ToolContributionState,
-    detail~ : String
+    detail~ : String,
   )
 }
 

@@ -8,10 +8,6 @@ import {
   "moonbitlang/core/async",
 }
 
-import {
-  "moonbitlang/core/async",
-} for "wbtest"
-
 options(
   "allow-experimental-packages": [ "moonbitlang/core/async" ],
 )

@@ -57,14 +57,14 @@ fn validate_compiled(
   let faults = schema.faults(arguments) catch {
     error => return Err(evaluation_error_diagnostic(error))
   }
-  match faults.get(0) {
-    Some(fault) =>
+  match faults {
+    [fault, ..] =>
       Err({
         json_path: dollar_path(fault.instance_path),
         expected: "\{fault.keyword} (\{fault.schema_path})",
         actual: fault.message,
       })
-    None => Ok(())
+    [] => Ok(())
   }
 }
 

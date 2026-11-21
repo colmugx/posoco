@@ -70,7 +70,7 @@ async fn Puppet::handle_compact(
   let attempted : Result[Result[CompactResult, @kernel.ModelFailure], Error] = Ok(
     self.config.host.compact(
       scope,
-      messages[:],
+      messages,
       snap.tool_definitions().filter(def => def.exposure is Direct),
       snap.call_options(),
       compact_cmd.trigger(),
@@ -422,10 +422,10 @@ fn Puppet::record_context_estimate(
       (previous.model_id, previous.window_tokens, previous.compact_threshold)
     None => (snap.model_id(), snap.context_window(), snap.compact_threshold())
   }
-  let (tokens, source) = if has_provider_replay_state(messages[:]) {
+  let (tokens, source) = if has_provider_replay_state(messages) {
     (None, @types.Unknown)
   } else {
-    (Some(estimate_tokens_of_messages(messages[:])), @types.Estimated)
+    (Some(estimate_tokens_of_messages(messages)), @types.Estimated)
   }
   self.context_states[sid] = {
     session_id: sid,
@@ -524,7 +524,7 @@ pub async fn Puppet::compact_standalone(
   let attempted : Result[Result[CompactResult, @kernel.ModelFailure], Error] = Ok(
     self.config.host.compact(
       scope,
-      messages[:],
+      messages,
       snap.tool_definitions().filter(def => def.exposure is Direct),
       snap.call_options(),
       trigger,

@@ -41,7 +41,7 @@ pub impl Show for Phase with fn to_string(self : Phase) -> String {
 pub(all) enum RunOutcome {
   Completed(
     final_message~ : @kernel.Message,
-    tool_results~ : FixedArray[@kernel.ToolOutcome]
+    tool_results~ : FixedArray[@kernel.ToolOutcome],
   )
   Failed(reason~ : FailureReason)
   Cancelled(reason~ : CancelReason)
@@ -148,9 +148,7 @@ fn RunState::initial_core(
   session_id~ : SessionId,
   budget~ : Budget,
   transcript~ : @kernel.Transcript,
-) -> RunState where {
-  proof_ensure: result => phase_inv(result),
-} {
+) -> RunState {
   RunState::mk_core(
     run_id,
     session_id,
@@ -172,15 +170,6 @@ fn RunState::initial_core(
 }
 
 ///|
-/// Pure construction core: build a RunState directly from `FixedArray`
-/// fields, POSITIONALLY (contracted bodies may only make positional calls,
-/// so the label-free parameter order — mirroring the struct field order
-/// exactly — is part of this seam). No raise, no validation: the caller
-/// supplies phase-consistent fields and the constructor law below turns
-/// them into `phase_inv` of the result, plus a faithful move of the
-/// budget-consumption snapshot. All raising entry points
-/// (`initial`/`transition`/`with_tool_results`) go through the pure cores
-/// and run `validate` defensively.
 fn RunState::mk_core(
   run_id : RunId,
   session_id : SessionId,
@@ -201,14 +190,7 @@ fn RunState::mk_core(
   ],
   tool_call_positions : Map[String, Int32],
   suspension_requirement : SuspensionRequirement?,
-) -> RunState where {
-  proof_require: phase_fields_ok(
-    phase, pending_effects, outcome, suspension_requirement,
-  ),
-  proof_ensure: result => {
-    phase_inv(result) && consumed_eq(result.budget_consumed, budget_consumed)
-  },
-} {
+) -> RunState {
   {
     run_id,
     session_id,
@@ -255,10 +237,10 @@ fn RunState::validate(self : RunState) -> RunState raise KernelError {
     }
     AwaitingModel => {
       let model_count = count_call_model(self.pending_effects)
-      if model_count != 1 {
+      if self.pending_effects.length() != 1 || model_count != 1 {
         raise constructor_illegal_phase(
           "AwaitingModel",
-          "expected exactly 1 pending CallModel effect, found \{model_count}",
+          "expected exactly 1 pending CallModel effect, found \{model_count} of \{self.pending_effects.length()}",
         )
       }
       if self.outcome is Some(_) {
@@ -318,64 +300,25 @@ fn constructor_illegal_phase(phase : String, detail : String) -> KernelError {
 }
 
 ///|
-/// Count pending `CallModel` effects.
-///
-/// Contract: the runtime counter agrees with the logic-side prefix counter
-/// `count_call_model_upto` (state_proof.mbtp) over the full array. The
-/// functional loop carries `acc == count_call_model_upto(effects, i)` as
-/// its invariant; `validate` (an uncontracted caller) keeps using this as
-/// its phase-domain check. (Body patterns use explicit `label = _`
-/// wildcards — the proof frontend rejects `..` rest patterns inside
-/// contracted function bodies.)
-fn count_call_model(
-  effects : FixedArray[Effect],
-) -> Int32 where {
-  proof_ensure: result => {
-    result == count_call_model_upto(effects, effects.length())
-  },
-} {
-  for i = 0, acc = 0; i < effects.length(); {
-    match effects[i] {
-      CallModel(effect_id=_, payload=_) => continue i + 1, acc + 1
-      _ => continue i + 1, acc
+fn count_call_model(effects : FixedArray[Effect]) -> Int32 {
+  let mut acc = 0
+  for effect in effects {
+    if effect is CallModel(..) {
+      acc += 1
     }
-  } nobreak {
-    acc
-  } where {
-    proof_invariant: 0 <= i,
-    proof_invariant: i <= effects.length(),
-    proof_invariant: acc == count_call_model_upto(effects, i),
-    proof_yield: res => res == count_call_model_upto(effects, effects.length()),
   }
+  acc
 }
 
 ///|
-/// Count pending `ExecuteTool` effects.
-///
-/// Contract: the runtime counter agrees with the logic-side prefix counter
-/// `count_execute_tool_upto` over the full array.
-fn count_execute_tool(
-  effects : FixedArray[Effect],
-) -> Int32 where {
-  proof_ensure: result => {
-    result == count_execute_tool_upto(effects, effects.length())
-  },
-} {
-  for i = 0, acc = 0; i < effects.length(); {
-    match effects[i] {
-      ExecuteTool(effect_id=_, payload=_) => continue i + 1, acc + 1
-      _ => continue i + 1, acc
+fn count_execute_tool(effects : FixedArray[Effect]) -> Int32 {
+  let mut acc = 0
+  for effect in effects {
+    if effect is ExecuteTool(..) {
+      acc += 1
     }
-  } nobreak {
-    acc
-  } where {
-    proof_invariant: 0 <= i,
-    proof_invariant: i <= effects.length(),
-    proof_invariant: acc == count_execute_tool_upto(effects, i),
-    proof_yield: res => {
-      res == count_execute_tool_upto(effects, effects.length())
-    },
   }
+  acc
 }
 
 ///|
@@ -546,12 +489,7 @@ fn RunState::transition_core(
   ],
   tool_call_positions~ : Map[String, Int32],
   suspension_requirement~ : SuspensionRequirement?,
-) -> RunState where {
-  proof_require: phase_inv(self) &&
-  phase_fields_ok(phase, pending_effects, outcome, suspension_requirement) &&
-  consumed_le(self.budget_consumed, budget_consumed),
-  proof_ensure: result => phase_inv(result) && budget_monotone(self, result),
-} {
+) -> RunState {
   let cv = match catalog_version {
     Some(v) => v
     None => self.catalog_version
@@ -584,17 +522,12 @@ fn RunState::transition_core(
 fn RunState::with_tool_results(
   self : RunState,
   tool_results : Array[(@kernel.CallId, @kernel.ToolOutcome)],
-  completed_tool_results~ : Map[
-    String,
-    (@kernel.ToolName, @kernel.ToolOutcome, Int32),
-  ] = self.completed_tool_results.copy(),
-  tool_call_positions~ : Map[String, Int32] = self.tool_call_positions.copy(),
 ) -> RunState raise KernelError {
   RunState::with_tool_results_core(
     self,
     FixedArray::from_array(tool_results),
-    completed_tool_results~,
-    tool_call_positions~,
+    completed_tool_results=self.completed_tool_results.copy(),
+    tool_call_positions=self.tool_call_positions.copy(),
   ).validate()
 }
 
@@ -610,10 +543,7 @@ fn RunState::with_tool_results_core(
     (@kernel.ToolName, @kernel.ToolOutcome, Int32),
   ],
   tool_call_positions~ : Map[String, Int32],
-) -> RunState where {
-  proof_require: phase_inv(self),
-  proof_ensure: result => phase_inv(result),
-} {
+) -> RunState {
   RunState::mk_core(
     self.run_id,
     self.session_id,

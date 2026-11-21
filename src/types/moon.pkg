@@ -2,4 +2,5 @@ import {
   "moonbitlang/core/json",
   "colmugx/posoco/error",
   "colmugx/posoco/kernel",
+  "colmugx/posoco/internal/proof/stream" @proof_stream,
 }

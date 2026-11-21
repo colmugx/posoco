@@ -1,0 +1,44 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "colmugx/posoco/internal/proof/versions"
+
+// Values
+pub fn append_meta(VersionMeta, Int32) -> VersionMeta
+
+pub fn facts_finish_run(FactsLifecycle, Int32) -> FactsLifecycle
+
+pub fn facts_stop(FactsLifecycle, Int32) -> FactsLifecycle
+
+pub fn find_full_anchor(FixedArray[BodyKind], Int32) -> Int32
+
+pub fn next_source_snapshot_ver(Int32) -> Int32
+
+pub fn rewrite_meta(VersionMeta, Int32) -> VersionMeta
+
+pub fn validate_prefix(Int32, Int32) -> Bool
+
+// Errors
+
+// Types and methods
+pub(all) enum BodyKind {
+  Full(Int32)
+  Append(Int32)
+}
+
+pub(all) enum FactsLifecycle {
+  Empty
+  Tracking(Int32)
+  Complete
+  Stopped(Int32)
+  MissingProvenance
+}
+
+pub(all) struct VersionMeta {
+  kind : BodyKind
+  total_len : Int32
+  source_session : Int32?
+  source_version : Int32?
+}
+
+// Type aliases
+
+// Traits

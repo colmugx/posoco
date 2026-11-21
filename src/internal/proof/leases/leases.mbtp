@@ -1,0 +1,47 @@
+///|
+fn bool_to_int(b : Bool) -> Int {
+  if b {
+    1
+  } else {
+    0
+  }
+}
+
+///|
+predicate lease_inv(s : VersionLeaseState) {
+  s.revision >= 1 &&
+  s.retained_count >= 0 &&
+  s.refs >= 0 &&
+  s.refs == bool_to_int(s.op_held) + s.retained_count &&
+  (!s.revoked || !s.active)
+}
+
+///|
+predicate release_operation_post(
+  s : VersionLeaseState,
+  unconfirmed : Bool,
+  result : VersionLeaseState,
+) {
+  if !s.op_held {
+    result.refs == s.refs && result.retained_count == s.retained_count
+  } else {
+    if unconfirmed {
+      result.refs == s.refs && result.retained_count == s.retained_count + 1
+    } else {
+      result.refs == s.refs - 1 && result.retained_count == s.retained_count
+    }
+  }
+}
+
+///|
+predicate release_retained_post(
+  s : VersionLeaseState,
+  unconfirmed : Bool,
+  result : VersionLeaseState,
+) {
+  if unconfirmed {
+    result.refs == s.refs && result.retained_count == s.retained_count
+  } else {
+    result.retained_count == 0 && result.refs == s.refs - s.retained_count
+  }
+}

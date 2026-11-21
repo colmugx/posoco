@@ -13,14 +13,14 @@ pub(all) enum StreamChunk {
     index~ : Int32,
     id~ : String?,
     name~ : String?,
-    arguments_delta~ : String?
+    arguments_delta~ : String?,
   )
   Usage(
     input_tokens~ : Int32,
     output_tokens~ : Int32,
     total_tokens~ : Int32,
     cached_input_tokens~ : Int32?,
-    uncached_input_tokens~ : Int32?
+    uncached_input_tokens~ : Int32?,
   )
   Finish(reason~ : String)
 }
@@ -50,7 +50,7 @@ pub fn StreamChunk::validate(self : StreamChunk) -> Result[Unit, String] {
       output_tokens~,
       total_tokens~,
       cached_input_tokens~,
-      uncached_input_tokens~
+      uncached_input_tokens~,
     ) => {
       let usage : @kernel.Usage = {
         input_tokens: Some(input_tokens),
@@ -189,26 +189,33 @@ pub fn StreamAccumulator::push(
     TextDelta(token~) => self.text_buf.write_string(token)
     ReasoningDelta(token~) => self.reasoning_buf.write_string(token)
     ToolCallDelta(index~, id~, name~, arguments_delta~) => {
-      // Provider tool-call indexes are a continuous 0-based sequence: a new
-      // call may introduce exactly the next slot, while later deltas may
-      // revisit an existing slot. Reject a sparse index before any array
-      // access or allocation, so a malformed chunk cannot leave placeholder
-      // builders in the completion.
-      if index > self.tool_calls.length() {
-        raise @error.ModelError::ResponseParse(
-          "stream tool-call index is sparse; expected an existing index or the next contiguous 0-based index",
-        )
-      }
-      if index == self.tool_calls.length() {
-        self.tool_calls.push(ToolCallBuilder())
+      match @proof_stream.check_tool_index(self.tool_calls.length(), index) {
+        RejectSparse =>
+          raise @error.ModelError::ResponseParse(
+            "stream tool-call index is sparse; expected an existing index or the next contiguous 0-based index",
+          )
+        AcceptAppend(_) => self.tool_calls.push(ToolCallBuilder())
+        AcceptExisting(_) => ()
       }
       let builder = self.tool_calls[index]
       match id {
-        Some(v) => builder.id = v
+        Some(v) =>
+          if @proof_stream.merge_first_nonempty(builder.id == "", true, v == "")
+            is WriteIncoming {
+            builder.id = v
+          }
         None => ()
       }
       match name {
-        Some(v) => builder.name = v
+        Some(v) =>
+          if @proof_stream.merge_first_nonempty(
+              builder.name == "",
+              true,
+              v == "",
+            )
+            is WriteIncoming {
+            builder.name = v
+          }
         None => ()
       }
       match arguments_delta {
@@ -221,7 +228,7 @@ pub fn StreamAccumulator::push(
       output_tokens~,
       total_tokens~,
       cached_input_tokens~,
-      uncached_input_tokens~
+      uncached_input_tokens~,
     ) => {
       self.usage_input = Some(input_tokens)
       self.usage_cached = cached_input_tokens

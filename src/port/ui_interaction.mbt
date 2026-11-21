@@ -193,7 +193,7 @@ pub(all) enum UiInteractionChange {
   Settled(
     owner~ : String,
     request_id~ : String,
-    outcome~ : UiInteractionOutcome
+    outcome~ : UiInteractionOutcome,
   )
 }
 

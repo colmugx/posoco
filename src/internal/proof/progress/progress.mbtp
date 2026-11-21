@@ -1,0 +1,4 @@
+///|
+predicate cursor_inv(s : CursorState) {
+  s.cursor >= 0
+}

@@ -31,30 +31,39 @@ fn EventRuntime::enqueue(
 }
 
 ///|
-/// Deliver queued notifications until none remain. A re-entrant publish only
-/// appends to the queue: the active loop takes it as the next batch, so
-/// listener frames never nest and order stays FIFO.
+let max_drain_batches : Int32 = 1024
+
+///|
 fn EventRuntime::drain(self : EventRuntime) -> Unit {
   if self.delivering.val {
     return
   }
   self.delivering.val = true
-  while !self.queue.is_empty() {
+  defer {
+    self.delivering.val = false
+  }
+  let mut batches = 0
+  while !self.queue.is_empty() &&
+        !self.closed.val &&
+        batches < max_drain_batches {
+    batches = batches + 1
     let batch = self.queue.copy()
     self.queue.clear()
     let listeners = self.listeners.copy()
     for queued in batch {
-      // The listener snapshot is taken once per batch and not re-read during
-      // delivery: additions and cancellations inside a batch take effect from
-      // the next one.
+      if self.closed.val {
+        break
+      }
       for listener in listeners {
+        if self.closed.val {
+          break
+        }
         if listener_accepts(listener, queued.namespace_) {
           (listener.handler)(envelope_of(queued))
         }
       }
     }
   }
-  self.delivering.val = false
 }
 
 ///|

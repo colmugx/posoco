@@ -197,7 +197,7 @@ test "agent control/initial confirmation projects Applied once, scoped to the co
           match applied[0] {
             MessageApplied(
               command_id=applied_id,
-              delivery=@types.MessageDeliveryKind::Turn
+              delivery=@types.MessageDeliveryKind::Turn,
             ) => assert_eq(applied_id, command_id)
             other => fail("expected MessageApplied(Turn), got \{repr(other)}")
           }

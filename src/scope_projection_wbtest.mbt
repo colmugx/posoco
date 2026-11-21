@@ -224,3 +224,22 @@ async test "scope_projection/tool_loop_events_and_hook_stages_share_run" {
     assert_eq(scope.turn_id, turn_scope.turn_id)
   }
 }
+
+///|
+fn scope_test_tool_call_with_usage(total : Int32) -> @kernel.ModelCallResult {
+  let base = @test_support.tk_tool_call_response("echo", "call_1", Json::null())
+  let completion : @kernel.Completion = Completion(
+    content=[],
+    tool_calls=base.completion.tool_calls(),
+    reasoning=None,
+    finish_reason=ToolCalls,
+    usage=Some({
+      input_tokens: Some(total),
+      output_tokens: Some(0),
+      total_tokens: Some(total),
+      cached_input_tokens: None,
+      uncached_input_tokens: None,
+    }),
+  )
+  { completion, processed_messages: [], }
+}

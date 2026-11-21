@@ -1,0 +1,22 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "colmugx/posoco/internal/proof/child_policy"
+
+// Values
+pub fn child_depth_allowed(Int32, Int32) -> Bool
+
+pub fn child_policy_allowed(PolicyLevel, PolicyLevel) -> Bool
+
+pub fn has_pending_child(FixedArray[Int32], Int32) -> Bool
+
+// Errors
+
+// Types and methods
+pub(all) enum PolicyLevel {
+  Parallel
+  Sequential
+  Exclusive
+}
+
+// Type aliases
+
+// Traits

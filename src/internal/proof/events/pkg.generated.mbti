@@ -1,0 +1,41 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "colmugx/posoco/internal/proof/events"
+
+// Values
+pub fn authorize_publish(Bool, NamespaceTag, PayloadKind) -> PublishDecision
+
+pub fn cancel_subscription(SubscriptionState) -> CancelOutcome
+
+pub fn listener_accepts(NamespaceTag?, NamespaceTag) -> Bool
+
+// Errors
+
+// Types and methods
+pub(all) struct CancelOutcome {
+  state : SubscriptionState
+  should_run : Bool
+}
+
+pub(all) enum NamespaceTag {
+  Posoco
+  Extension(Int32)
+}
+
+pub(all) enum PayloadKind {
+  Core
+  Community
+}
+
+pub(all) enum PublishDecision {
+  Allowed
+  ErrClosed
+  ErrReservedEvent
+}
+
+pub(all) struct SubscriptionState {
+  active : Bool
+}
+
+// Type aliases
+
+// Traits

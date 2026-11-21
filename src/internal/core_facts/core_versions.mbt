@@ -92,7 +92,7 @@ priv suberror CoreVersionError {
     sid~ : String,
     version~ : Int32,
     prefix~ : Int32,
-    available~ : Int32
+    available~ : Int32,
   )
 }
 

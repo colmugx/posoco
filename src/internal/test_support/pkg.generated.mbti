@@ -29,6 +29,8 @@ pub fn tk_ok_result(String) -> @kernel.ToolOutcome
 
 pub fn tk_scope(session_id? : String, run_id? : String, pressure? : @kernel.ContextPressure?) -> @kernel.InvocationScope
 
+pub async fn tk_sleep(Int32) -> Unit noraise
+
 pub fn tk_stop_response(String) -> @kernel.ModelCallResult
 
 pub fn tk_tool_call_ctx(name~ : String, arguments? : @json.Json) -> @port.ToolCallContext

@@ -28,7 +28,7 @@ pub(all) enum DecisionQuestion {
     id~ : String,
     instructions~ : Json,
     true_criteria~ : Json?,
-    false_criteria~ : Json?
+    false_criteria~ : Json?,
   )
   /// Select one named alternative and return the complete probability
   /// distribution over the supplied options.
@@ -82,13 +82,13 @@ pub(all) enum DecisionAnswer {
     id~ : String,
     selected~ : String,
     probabilities~ : Array[DecisionNamedProbability],
-    confidence~ : Double?
+    confidence~ : Double?,
   )
   ScoreAnswer(
     id~ : String,
     score~ : Double,
     probabilities~ : Array[Double],
-    confidence~ : Double?
+    confidence~ : Double?,
   )
 }
 

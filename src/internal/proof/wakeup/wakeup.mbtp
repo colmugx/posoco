@@ -1,0 +1,57 @@
+///|
+predicate is_some_int(v : Option[Int]) {
+  match v {
+    Some(_) => true
+    None => false
+  }
+}
+
+///|
+predicate admit_post(
+  closed : Bool,
+  scope_active : Bool,
+  active_session_matches : Bool,
+  existing_slot : Option[Int],
+  pending_len : Int,
+  max_pending : Int,
+  current_gen : Int,
+  result : AdmitDecision,
+) {
+  match result {
+    RejectScopeInactive => closed || !scope_active
+    RejectInvalidSession => !closed && scope_active && !active_session_matches
+    RejectPendingFull =>
+      !closed &&
+      scope_active &&
+      active_session_matches &&
+      !is_some_int(existing_slot) &&
+      pending_len >= max_pending
+    Coalesced(next_gen) =>
+      !closed &&
+      scope_active &&
+      active_session_matches &&
+      is_some_int(existing_slot) &&
+      next_gen == current_gen + 1
+    AdmitNew(next_gen) =>
+      !closed &&
+      scope_active &&
+      active_session_matches &&
+      !is_some_int(existing_slot) &&
+      pending_len < max_pending &&
+      next_gen == current_gen + 1
+  }
+}
+
+///|
+predicate requeue_post(
+  closed : Bool,
+  entry_stale : Bool,
+  key_present : Bool,
+  result : RequeueDecision,
+) {
+  match result {
+    DropStaleOrClosed => closed || entry_stale
+    DropSuperseded => !closed && !entry_stale && key_present
+    RequeueAtFront => !closed && !entry_stale && !key_present
+  }
+}

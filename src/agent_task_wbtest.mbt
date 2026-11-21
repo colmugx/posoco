@@ -634,7 +634,7 @@ async test "managed_tasks/rejects_malformed_applied_ids_before_model_call" {
   }
   match result {
     Err(
-      @error.AgentError::Runtime(@error.RuntimeError::InvocationFailed(detail))
+      @error.AgentError::Runtime(@error.RuntimeError::InvocationFailed(detail)),
     ) => assert_true(detail.contains("malformed posoco.task.applied_ids"))
     _ =>
       fail("malformed applied-id metadata must fail during session admission")

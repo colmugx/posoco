@@ -451,10 +451,12 @@ fn UiRuntime::push_change(
     ignore(self.changes.remove(0))
     self.base_seq = self.base_seq + 1
   }
-  self.notify({
-    cursor: { generation: self.generation, seq: self.seq, },
-    change: @port.UiChange::Resource(change=ui_copy_change(change)),
-  })
+  if !self.subscribers.is_empty() {
+    self.notify({
+      cursor: { generation: self.generation, seq: self.seq, },
+      change: @port.UiChange::Resource(change=ui_copy_change(change)),
+    })
+  }
 }
 
 ///|
@@ -485,8 +487,6 @@ fn ui_check_cursor(
 }
 
 ///|
-/// Commit one accepted mutation: revision, live state and ownership land
-/// first, then the change is published.
 fn UiRuntime::commit(
   self : UiRuntime,
   snapshot : @port.UiResourceSnapshot,
@@ -494,20 +494,17 @@ fn UiRuntime::commit(
   context : UiCallContext,
 ) -> @port.UiResourceSnapshot {
   let key = ui_resource_key(snapshot.resource.owner, snapshot.resource.key)
-  let stored = ui_copy_snapshot(snapshot)
-  self.revisions[key] = stored.revision
-  self.live[key] = stored
+  self.revisions[key] = snapshot.revision
+  self.live[key] = snapshot
   self.bind_operation_resource(context, key)
   self.push_change(
     if created {
-      @port.UiResourceChange::Published(snapshot=ui_copy_snapshot(stored))
+      @port.UiResourceChange::Published(snapshot=ui_copy_snapshot(snapshot))
     } else {
-      @port.UiResourceChange::Replaced(snapshot=ui_copy_snapshot(stored))
+      @port.UiResourceChange::Replaced(snapshot=ui_copy_snapshot(snapshot))
     },
   )
-  // The publisher gets its own copy so later caller-side mutation cannot
-  // reach the live table.
-  ui_copy_snapshot(stored)
+  ui_copy_snapshot(snapshot)
 }
 
 ///|
@@ -960,10 +957,8 @@ async fn UiRuntime::dispatch(
       None => None
     },
   }
-  // Reserve before the first await.
   self.reserve_receipt(request)
   defer self.release_reservation(request.request_id)
-  errdefer self.release_reservation(request.request_id)
   let called : Result[Result[Unit, String], String] = Ok(handler(invocation)) catch {
     error => Err(error.to_string())
   }

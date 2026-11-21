@@ -118,8 +118,7 @@ impl SessionPort with fn checkpoint(
   checkpoint : SessionCheckpoint,
 ) -> Unit raise @error.SessionError {
   match checkpoint.metadata {
-    None =>
-      self.append_messages(id, checkpoint.from_index, checkpoint.messages[:])
+    None => self.append_messages(id, checkpoint.from_index, checkpoint.messages)
     Some(metadata) => {
       let session = self.load(id)
       let merged = session.messages.copy()

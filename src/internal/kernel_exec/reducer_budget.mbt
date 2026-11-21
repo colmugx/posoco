@@ -1,11 +1,20 @@
 /// Budget accounting helpers shared by the model and tool folds.
 
 ///|
+fn saturating_add_nonneg(a : Int32, b : Int32) -> Int32 {
+  if a < 0 || b <= 0 {
+    a
+  } else {
+    @proof_budget.saturating_add_nonneg(a, b)
+  }
+}
+
+///|
 fn bump_model_step(
   consumed : BudgetConsumed,
   usage : @kernel.Usage?,
 ) -> BudgetConsumed {
-  let model_steps = consumed.model_steps + 1
+  let model_steps = saturating_add_nonneg(consumed.model_steps, 1)
   match usage {
     Some(u) => {
       let added = match u.total_tokens {
@@ -16,15 +25,16 @@ fn bump_model_step(
         model_steps,
         tool_rounds: consumed.tool_rounds,
         tool_calls: consumed.tool_calls,
-        observed_total_tokens: consumed.observed_total_tokens + added,
+        observed_total_tokens: saturating_add_nonneg(
+          consumed.observed_total_tokens,
+          added,
+        ),
         any_usage_verified: consumed.any_usage_verified ||
         u.total_tokens is Some(_),
         last_context_tokens: usage_context_occupancy(u),
       }
     }
     None =>
-      // A step without usage leaves the context size unknown: the transcript
-      // has grown since the last reliable reading, so the stale one must go.
       {
         model_steps,
         tool_rounds: consumed.tool_rounds,
@@ -37,16 +47,13 @@ fn bump_model_step(
 }
 
 ///|
-/// Context occupancy of one call from its usage: `total_tokens` when
-/// reported, else `input_tokens + output_tokens` when both are. Partial
-/// readings (only one of input/output) are not a reliable size — stay
-/// unknown rather than guessing low.
 fn usage_context_occupancy(u : @kernel.Usage) -> Int32? {
   match u.total_tokens {
     Some(total) => Some(total)
     None =>
       match (u.input_tokens, u.output_tokens) {
-        (Some(input), Some(output)) => Some(input + output)
+        (Some(input), Some(output)) =>
+          Some(saturating_add_nonneg(input, output))
         _ => None
       }
   }
@@ -57,14 +64,10 @@ fn bump_tool_batch(
   consumed : BudgetConsumed,
   executable_calls : Int32,
 ) -> BudgetConsumed {
-  // This helper is only called after validation established a non-empty
-  // ExecuteTool batch. Count when effects are declared, never as individual
-  // completions arrive: completion order is nondeterministic under parallel
-  // execution and must not alter budget accounting.
   {
     model_steps: consumed.model_steps,
-    tool_rounds: consumed.tool_rounds + 1,
-    tool_calls: consumed.tool_calls + executable_calls,
+    tool_rounds: saturating_add_nonneg(consumed.tool_rounds, 1),
+    tool_calls: saturating_add_nonneg(consumed.tool_calls, executable_calls),
     observed_total_tokens: consumed.observed_total_tokens,
     any_usage_verified: consumed.any_usage_verified,
     last_context_tokens: consumed.last_context_tokens,
