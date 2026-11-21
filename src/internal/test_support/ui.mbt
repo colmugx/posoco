@@ -1,15 +1,4 @@
 ///|
-/// `RecordingUiPort` — testkit UiPort that records every `render` and replies
-/// to `request` from a scripted queue.
-///
-/// Use this in tests to:
-/// - assert extensions emitted the expected render sequence;
-/// - script request responses (Input/Confirm/Select) without a real UI;
-/// - verify that downstream code reacts correctly to `Unsupported`/`Cancelled`.
-///
-/// The struct is intentionally not `pub(all)`-field-exposing: tests inspect
-/// state through methods (`rendered_intents`, `next_request_response`, etc.)
-/// so the recording layout can evolve without breaking tests.
 
 ///|
 pub(all) struct RecordingUiPort {
@@ -118,10 +107,6 @@ pub impl @port.UiPort for RecordingUiPort with fn request(
   if self.unsupported_mode {
     raise Unsupported(detail="RecordingUiPort is in unsupported_mode")
   }
-  // FIFO: drain from the front. Array::remove panics on out-of-bounds, so we
-  // guard with an explicit length check and raise Unsupported (not a panic)
-  // when the script is empty — that way CompositeUiPort can fall through and
-  // tests see a typed error instead of a runtime crash.
   if self.scripted_responses.length() == 0 {
     raise Unsupported(
       detail="RecordingUiPort script exhausted; no response for request",

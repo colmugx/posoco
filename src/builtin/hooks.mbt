@@ -1,11 +1,4 @@
 ///|
-/// Built-in adapters: Posoco-provided implementations of port traits.
-///
-/// These structs are concrete adapters, not extension contracts — they live
-/// in the root package (not `src/port/`) so the port package contains only
-/// the intentional `pub(open)` traits community extensions implement.
-/// Extension authors may register their own hook implementations instead of
-/// or alongside these.
 
 // SystemPromptHook — PipelineHook impl that assembles + injects the prompt
 
@@ -141,7 +134,6 @@ pub fn UiRenderHook::UiRenderHook(ui~ : &@port.UiPort) -> UiRenderHook {
 }
 
 ///|
-/// Render a tool-completed stage to the Notice slot.
 fn UiRenderHook::render_tool_completed(
   self : UiRenderHook,
   call : @kernel.ToolCall,
@@ -160,7 +152,6 @@ fn UiRenderHook::render_tool_completed(
 }
 
 ///|
-/// Render a failure stage to the Status slot.
 fn UiRenderHook::render_failure(
   self : UiRenderHook,
   key : String,

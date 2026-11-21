@@ -20,7 +20,6 @@ pub extend ChatOptions with Debug::{to_repr}
 ///
 /// `NoStream` lets the modelport skip chunk wire-format work entirely (no SSE
 /// parsing, no callback construction). `Stream(cb)` asks it to emit each chunk
-/// to `cb` as a `StreamChunk`. The ADR §2.11 rationale still holds — streaming
 /// is a host/telemetry concern, not a transcript fact — but the chunk contract
 /// is now the canonical `StreamChunk` type, not a private JSON shape.
 #derive(Debug)

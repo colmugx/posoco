@@ -1,9 +1,6 @@
 ///|
 /// The phase gate. Holds the current macro-phase and (optionally) the
 /// outstanding lease. All transitions go through `transition` / `acquire`
-/// / `release`, which validate and raise typed errors on misuse.
-///
-/// Construction: `PhaseGate::idle()` is the only public constructor.
 pub struct PhaseGate {
   phase : PuppetPhase
   lease : OperationLease?
@@ -61,16 +58,11 @@ pub fn PhaseGate::is_quiescent(self : PhaseGate) -> Bool {
 ///|
 /// Decide whether an operation class is allowed in the current phase.
 /// Returns `Ok` if allowed, or a typed `PuppetError` describing the
-/// rejection (never a bare bool — the rejection reason is part of the
-/// contract).
 pub fn PhaseGate::authorise(
   self : PhaseGate,
   operation : OperationClass,
 ) -> Unit raise PuppetError {
   match (self.phase, operation) {
-    // Idle accepts Prompt (prompt/continue/resume is a new Run start in this
-    // state) and Structural (reserved). It rejects InFlight (no active
-    // Run to modify).
     (Idle, Prompt) => ()
     (Idle, Structural) => ()
     (Idle, InFlight) =>
@@ -95,10 +87,6 @@ pub fn PhaseGate::authorise(
         operation~,
         detail="structural operations require Idle phase",
       )
-
-    // Suspended accepts resume (InFlight, since it operates on the suspended
-    // Run) and abort. It rejects Prompt (no new Run while suspended) and
-    // Structural.
     (Suspended, InFlight) => ()
     (Suspended, Prompt) =>
       raise OperationNotAllowedInPhase(
@@ -132,12 +120,6 @@ pub fn PhaseGate::authorise(
 ///|
 /// Acquire a structural lease for a new prompt/continue. Returns the updated
 /// gate and the lease on success. Raises typed errors for:
-/// - lease already held (LeaseHeld)
-/// - phase does not accept Prompt (OperationNotAllowedInPhase)
-///
-/// The lease binds the gate to the given run_id / turn_id; subsequent
-/// InFlight commands must target these IDs. The gate's `lease` / `active_run_id`
-/// / `active_turn_id` fields are updated atomically with the lease creation.
 pub fn PhaseGate::acquire_prompt(
   self : PhaseGate,
   operation_id : String,
@@ -169,12 +151,6 @@ pub fn PhaseGate::acquire_prompt(
 ///|
 /// Acquire a lease for resume from Suspended. The run_id must match the
 /// suspended run; the turn_id is inherited (resume does not allocate a new
-/// turn). Returns the updated gate and the lease.
-///
-/// The lease replaces the previous prompt lease (the original prompt's
-/// operation_id is no longer the holder). This is correct because resume
-/// is a new authorisation point: subsequent abort/release must use the
-/// resume operation_id, not the prompt's.
 pub fn PhaseGate::acquire_resume(
   self : PhaseGate,
   operation_id : String,
@@ -243,9 +219,6 @@ pub fn PhaseGate::release(
 ///|
 /// Apply a transition. The caller
 /// it has already acquired/released the lease as appropriate. Raises typed
-/// error on illegal transitions.
-///
-/// The legal edges are encoded here once; everything else is rejected.
 pub fn PhaseGate::transition(
   self : PhaseGate,
   to : PuppetPhase,
@@ -259,12 +232,6 @@ pub fn PhaseGate::transition(
       detail="no legal edge between these phases",
     )
   }
-  // Side-effects of specific transitions:
-  // - Active→Suspended: keep run_id/turn_id/lease, set suspension_id (caller
-  //   passes it via `transition_to_suspended`).
-  // - Suspended→Active: clear suspension_id, keep run_id/turn_id/lease.
-  // - →Idle: clear lease, run_id, turn_id, suspension_id.
-  // - →ShuttingDown or →Shutdown: keep nothing relevant.
   match to {
     Idle =>
       {
@@ -275,9 +242,6 @@ pub fn PhaseGate::transition(
         active_suspension_id: None,
       }
     Active =>
-      // From Suspended: clear suspension_id.
-      // From Idle: run_id/turn_id set by `bind_run` (called by the puppet
-      // before transition).
       {
         phase: Active,
         lease: self.lease,
@@ -325,8 +289,6 @@ pub fn PhaseGate::transition(
 }
 
 ///|
-/// Legal-edge table for PuppetPhase transitions. Single source of truth
-/// for what transitions are allowed; `transition` and tests both consult it.
 fn check_transition(from : PuppetPhase, to : PuppetPhase) -> Bool {
   match (from, to) {
     // From Idle: only to Active (prompt) or ShuttingDown.

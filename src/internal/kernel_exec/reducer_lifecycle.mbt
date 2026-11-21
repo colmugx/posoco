@@ -144,8 +144,6 @@ fn reduce_suspended(
 }
 
 ///|
-/// Enter Suspended from AwaitingModel: drop the pending CallModel behind a
-/// CancelOutstanding effect, then emit RunSuspended.
 fn reduce_suspend(
   state : RunState,
   requirement : SuspensionRequirement,
@@ -190,7 +188,6 @@ fn reduce_suspend(
 }
 
 ///|
-/// Cancel with no pending effects (ReadyForModel, Suspended).
 fn reduce_cancel_ready(
   state : RunState,
   detail : String?,
@@ -265,8 +262,6 @@ fn reduce_cancel_tool_facts(
 }
 
 ///|
-/// Cancel with pending effects (AwaitingModel, AwaitingTools): emit
-/// CancelOutstanding for them, then terminate.
 fn reduce_cancel_with_pending(
   state : RunState,
   detail : String?,
@@ -314,6 +309,48 @@ fn reduce_cancel_with_pending(
 }
 
 ///|
+fn reduce_terminal_fail_with_pending(
+  state : RunState,
+  reason : FailureReason,
+  cancel_reason : CancelReason,
+) -> ReduceOutput raise KernelError {
+  let pending = state.pending_effects()
+  if pending.is_empty() {
+    return reduce_terminal_fail(state, reason)
+  }
+  let cancel_effect_id = state.next_effect_id()
+  let cancel_payload : CancelOutstandingPayload = {
+    effect_ids: FixedArray::from_array(pending.map(fn(e) { e.effect_id() })),
+    reason: cancel_reason,
+  }
+  let effects : Array[Effect] = [
+    CancelOutstanding(effect_id=cancel_effect_id, payload=cancel_payload),
+  ]
+  let events : Array[KernelEvent] = [
+    CancelRequested(
+      effect_ids=Array::from_iter(cancel_payload.effect_ids.iter()),
+      reason=cancel_reason,
+    ),
+    RunFailed(reason~),
+  ]
+  let terminal_state = state.transition(
+    phase=Terminal,
+    transcript=state.transcript(),
+    pending_effects=[],
+    next_event_sequence=advance_seq_by(state, events.length()),
+    next_effect_id=state.next_effect_id().add(1),
+    current_model_step_id=state.current_model_step_id(),
+    catalog_version=None,
+    budget_consumed=state.budget_consumed(),
+    outcome=Some(Failed(reason~)),
+    completed_tool_results=Map::from_array([]),
+    tool_call_positions=Map::from_array([]),
+    suspension_requirement=None,
+  )
+  reduce_output(terminal_state, effects, events)
+}
+
+///|
 fn reduce_terminal_fail(
   state : RunState,
   reason : FailureReason,
@@ -328,8 +365,6 @@ fn reduce_terminal_fail(
 }
 
 ///|
-/// Terminate the Run with Failed, optionally with extra events emitted before
-/// the terminal event and a custom transcript/budget.
 fn reduce_terminal_fail_with(
   state : RunState,
   transcript : @kernel.Transcript,
@@ -388,7 +423,6 @@ fn reduce_terminal_cancel(
 }
 
 ///|
-/// Invariant violations always terminate Failed; never silently downgraded.
 fn reduce_invariant_violation(
   state : RunState,
   category : InvariantCategory,
@@ -419,11 +453,6 @@ fn reject_input(
 }
 
 ///|
-/// Fold a host-side transcript rewrite (pre-model hook chain, compact
-/// Replace) into state. The reducer is the sole transcript writer, so
-/// the pump submits rewritten messages as an input and this branch commits
-/// them with a `TranscriptRewritten` event. Phase and pending effects are
-/// untouched; the event sequence advances by one.
 fn reduce_transcript_rewrite(
   state : RunState,
   payload : TranscriptRewritePayload,
@@ -475,11 +504,6 @@ fn reduce_transcript_rewrite(
 }
 
 ///|
-/// Fold a steer message into state: append it to the transcript and commit a
-/// `UserMessageAppended` event. Only `ReadyForModel` reaches this branch (the
-/// step boundary where no assistant/tool pairing can be broken); phase,
-/// pending effects and `model_step_id` are untouched, so the steer consumes
-/// neither a model step nor a step budget unit.
 fn reduce_steer_appended(
   state : RunState,
   payload : SteerAppendedPayload,

@@ -1,37 +1,27 @@
 ///|
-/// Agent-owned runtime behind the owner-bound UI protocol: the single
-/// authority for resources and pending interactions.
 
 ///|
-/// Retained change window. A cursor older than this must re-read a baseline.
 let ui_change_window : Int32 = 64
 
 ///|
-/// Accepted-request window for action deduplication.
 let ui_receipt_window : Int32 = 64
 
 ///|
-/// Retained window of settled interactions, for receipt replay and late-answer
-/// reporting.
 let ui_interaction_window : Int32 = 64
 
 ///|
-/// Pending questions one runtime holds at once.
 let ui_max_pending_interactions : Int32 = 64
 
 ///|
-/// Connected host leases one runtime holds at once.
 let ui_max_host_connections : Int32 = 16
 
 ///|
-/// Entries one capability list may declare.
 let ui_max_host_capability_entries : Int32 = 64
 
 ///|
 let ui_key_max_length : Int32 = 128
 
 ///|
-/// Namespace reserved for framework kinds.
 let ui_reserved_namespace : String = "posoco"
 
 ///|
@@ -52,8 +42,6 @@ priv struct UiReceipt {
 }
 
 ///|
-/// One open question. `outcome` is `None` until it settles; `waiters` counts
-/// calls currently blocked in `wait`.
 priv struct UiInteractionRecord {
   snapshot : @port.UiInteractionSnapshot
   mut outcome : @port.UiInteractionOutcome?
@@ -61,21 +49,17 @@ priv struct UiInteractionRecord {
 }
 
 ///|
-/// One connected host lease; `capabilities` is a private copy.
 priv struct UiHostConnectionRecord {
   mut capabilities : @port.UiHostCapabilities
 }
 
 ///|
-/// One queued push delivery for one subscriber (a private copy).
 priv struct UiDelivery {
   cursor : @port.UiCursor
   change : @port.UiChange
 }
 
 ///|
-/// One push subscriber; `active` is cleared by unsubscribe, a failing listener
-/// or `close`.
 priv struct UiSubscriber {
   id : Int32
   mut active : Bool
@@ -179,8 +163,6 @@ pub fn UiRuntime::generation(self : UiRuntime) -> Int32 {
 ///|
 /// Build the owner-bound resource capability for one manifest id. This is the
 /// composition-delivered capability: it owns `OwnerBound` resources and can
-/// capture the currently admitted operation through
-/// `UiResources::operation`.
 pub fn UiRuntime::capability(
   self : UiRuntime,
   owner : String,
@@ -217,8 +199,6 @@ pub fn UiRuntime::host(self : UiRuntime) -> @port.UiHost {
 ///|
 /// Close the protocol: capabilities reject every later mutation, handlers are
 /// dropped, pending questions settle as `Closed`, subscribers are dropped and
-/// the host feeds end. A handler already running is not force-revoked; its
-/// outcome still returns but stores no new state.
 pub fn UiRuntime::close(self : UiRuntime) -> Unit {
   if self.closed {
     return
@@ -248,8 +228,6 @@ fn ui_resource_key(owner : String, key : String) -> String {
 }
 
 ///|
-/// Manifest ids are the first half of the internal resource key, so an owner
-/// carrying the separator (or empty) could alias another owner's resources.
 fn ui_validate_owner(owner : String) -> @port.UiResourceError? {
   if owner == "" {
     return Some(ui_invalid("resource owner must not be empty"))
@@ -454,8 +432,6 @@ fn UiRuntime::push_change(
 }
 
 ///|
-/// Cursor validation shared by both feeds: a foreign generation or a position
-/// outside the retained window is answered with `SnapshotRequired`.
 fn ui_check_cursor(
   cursor : @port.UiCursor,
   generation : Int32,
@@ -725,7 +701,6 @@ fn ui_copy_request(request : @port.UiActionRequest) -> @port.UiActionRequest {
 }
 
 ///|
-/// Reserve the request id before the owner handler is awaited.
 fn UiRuntime::reserve_receipt(
   self : UiRuntime,
   request : @port.UiActionRequest,
@@ -745,7 +720,6 @@ fn UiRuntime::reserve_receipt(
 }
 
 ///|
-/// Trim the window oldest-first, never dropping an in-flight reservation.
 fn UiRuntime::evict_receipts(self : UiRuntime) -> Unit {
   let mut index = 0
   while self.receipt_order.length() > ui_receipt_window &&
@@ -765,7 +739,6 @@ fn UiRuntime::evict_receipts(self : UiRuntime) -> Unit {
 }
 
 ///|
-/// Record the outcome of an accepted dispatch; a closed runtime stores nothing.
 fn UiRuntime::settle_receipt(
   self : UiRuntime,
   request_id : String,
@@ -785,8 +758,6 @@ fn UiRuntime::settle_receipt(
 }
 
 ///|
-/// Drop an unsettled reservation; idempotent, and the window slot goes with
-/// it.
 fn UiRuntime::release_reservation(
   self : UiRuntime,
   request_id : String,
@@ -830,10 +801,6 @@ fn ui_validate_payload(
 }
 
 ///|
-/// Accept, validate and route one host action. Everything up to the handler
-/// call is synchronous; the request id is reserved before the handler is
-/// awaited, so a duplicate gets `InProgress`/`Conflict` and a settled id
-/// replays its stored receipt.
 async fn UiRuntime::dispatch(
   self : UiRuntime,
   request : @port.UiActionRequest,

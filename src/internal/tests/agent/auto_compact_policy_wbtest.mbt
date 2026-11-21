@@ -48,7 +48,7 @@ impl @port.ModelPort for PolicyModel with fn provider_config(self) -> @port.Prov
 
 ///|
 fn policy_reported(
-  context_window~ : Int32? = None,
+  context_window~ : Int32?,
   compact_threshold~ : Double? = None,
 ) -> @port.ProviderConfig {
   ProviderConfig(

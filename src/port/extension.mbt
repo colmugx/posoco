@@ -1,8 +1,4 @@
 ///|
-/// Every agent contributor implements Extension. Returns an `ExtensionManifest`
-/// listing which ports it provides (ModelPort, ToolProvider, SessionPort, etc.).
-/// Posoco is a protocol, not a framework — an agent is the composition of
-/// extensions.
 
 // ExtensionManifest — value type returned by Extension::manifest
 

@@ -1,19 +1,4 @@
 ///|
-/// Budget, Deadline and Cancel contracts for the functional
-/// Kernel.
-///
-/// Key invariants:
-/// - The reducer NEVER reads a clock. Deadlines are delivered as
-///   `DeadlineReached` inputs; the reducer only compares its own budget
-///   counters.
-/// - Budget dimensions are `Int?` because the host may not configure every
-///   dimension. Unknown usage is NEVER reported as 0.
-/// - Cancel is idempotent: the second `CancelRequested` after
-///   `Terminal(Cancelled)` is a typed rejection, not a new terminal event.
-///
-/// Run/Session/Effect identity and the Cancel contracts are canonical wire
-/// types defined in `@kernel` (`domain_run.mbt`) and re-exported via this
-/// package's `imports.mbt` — single source of truth lives in `@kernel`.
 
 ///|
 /// Identifier for a single model step within a Run. Monotonic per Run; the

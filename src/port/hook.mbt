@@ -1,19 +1,4 @@
 ///|
-/// One hook trait: interception points across nearly the whole agent
-/// lifecycle — turn begin/end, before/after the model, before/after tools.
-/// Each method is a distinct point with its own precise contract: the
-/// semantics of "can abort", "can rewrite" and "read-only" must not be
-/// squeezed into one signature. Every method has a default
-/// implementation, so implementors override only the points they care
-/// about, and adding a new interception point is non-breaking: one
-/// defaulted method here plus one call site in the pump — manifest,
-/// aggregation and config signatures stay untouched. Hooks run in
-/// registration order at every point.
-///
-/// Hooks run synchronously *in the async flow*: async spreads — IO in a
-/// method body propagates through async — but the pipeline dispatches each
-/// hook sequentially, awaiting one before the next, and never spawns
-/// threads or workers, so registration order is preserved everywhere.
 
 // PipelineHook errors and decisions
 
@@ -215,7 +200,6 @@ impl PipelineHook with fn tool_exposure(_self, _definition : @kernel.ToolDef) ->
 }
 
 ///|
-/// Default `before_model`: pass messages through unchanged.
 impl PipelineHook with fn before_model(_self, messages : Array[@kernel.Message]) -> Array[
   @kernel.Message,
 ] {
@@ -223,7 +207,6 @@ impl PipelineHook with fn before_model(_self, messages : Array[@kernel.Message])
 }
 
 ///|
-/// Default `before_tool`: approve the call unchanged.
 impl PipelineHook with fn before_tool(_self, call : @kernel.ToolCall) -> ToolDecision {
   Approve(call~)
 }
@@ -238,13 +221,11 @@ impl PipelineHook with fn on_post_event(
 }
 
 ///|
-/// Default `on_turn_begin`: no-op.
 impl PipelineHook with fn on_turn_begin(_self) -> Unit {
   ()
 }
 
 ///|
-/// Default `on_turn_end`: no-op. Sync body satisfies the async slot.
 impl PipelineHook with fn on_turn_end(_self) -> Unit {
   ()
 }

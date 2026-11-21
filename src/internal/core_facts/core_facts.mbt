@@ -1,12 +1,4 @@
 ///|
-/// Runtime-only shadow of the core transcript facts.
-///
-/// This is deliberately separate from `CoreVersionStore`: the store is the
-/// immutable version model, while this struct owns the per-operation state,
-/// source capture, and duplicate-boundary bookkeeping. Nothing here feeds
-/// `load_session_for_operation`. A committed boundary is captured
-/// synchronously from the Puppet after the journal barrier; `Tracking` alone
-/// never means a complete readable transcript.
 priv struct CoreSourceCapture {
   session_id : String
   /// Deep snapshot of the exact source the model consumer receives.
@@ -529,12 +521,12 @@ pub fn CoreFacts::record_boundary(
     }
     return
   }
-  let current : Result[CoreCurrent, CoreVersionError] = Ok(
-    self.store.current(session_id),
+  let current_messages : Result[Array[@kernel.Message], CoreVersionError] = Ok(
+    self.store.head_messages_readonly(session_id),
   ) catch {
     error => Err(error)
   }
-  let current = match current {
+  let current_messages = match current_messages {
     Ok(value) => value
     Err(error) => {
       self.state[session_id] = Stopped(
@@ -553,7 +545,7 @@ pub fn CoreFacts::record_boundary(
       return
     }
   }
-  if core_shadow_messages_equal(current.session.messages, messages) {
+  if core_shadow_messages_equal(current_messages, messages) {
     self.last_commit[session_id] = {
       run_id,
       revision: committed_revision,
@@ -565,8 +557,8 @@ pub fn CoreFacts::record_boundary(
     return
   }
   let recorded : Result[Int32, CoreVersionError] = Ok(
-    if core_shadow_messages_is_prefix(current.session.messages, messages) {
-      let tail = messages[current.session.messages.length():].to_owned()
+    if core_shadow_messages_is_prefix(current_messages, messages) {
+      let tail = messages[current_messages.length():].to_owned()
       self.store.append(session_id, tail, metadata)
     } else {
       self.store.rewrite(session_id, messages, metadata)

@@ -14,27 +14,17 @@ priv struct Agent {
 }
 
 ///|
-fn agent_config(
-  max_tool_rounds~ : Int32? = None,
-  max_tool_calls~ : Int32? = None,
-  max_tool_depth~ : Int32? = None,
-  temperature~ : Double? = None,
-  max_output_tokens~ : Int32? = None,
-  model_context_window~ : Int32? = None,
-  compact_threshold~ : Double? = None,
-  system_prompt~ : String? = None,
-  memory_inbound_timeout_ms~ : Int32? = None,
-) -> RuntimeConfig {
+fn agent_config(max_tool_rounds~ : Int32?) -> RuntimeConfig {
   {
     max_tool_rounds,
-    max_tool_calls,
-    max_tool_depth,
-    temperature,
-    max_output_tokens,
-    model_context_window,
-    compact_threshold,
-    system_prompt,
-    memory_inbound_timeout_ms,
+    max_tool_calls: None,
+    max_tool_depth: None,
+    temperature: None,
+    max_output_tokens: None,
+    model_context_window: None,
+    compact_threshold: None,
+    system_prompt: None,
+    memory_inbound_timeout_ms: None,
   }
 }
 

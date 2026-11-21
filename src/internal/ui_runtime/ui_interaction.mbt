@@ -1,6 +1,4 @@
 ///|
-/// Interaction half of the UI runtime: the pending table, the bounded retained
-/// window of settled questions, and the interaction feed.
 
 ///|
 fn ui_interaction_key(owner : String, request_id : String) -> String {
@@ -48,8 +46,6 @@ fn ui_copy_interaction_change(
 }
 
 ///|
-/// Owner ids are the first half of the internal key; an empty or
-/// separator-carrying owner could alias another owner's questions.
 fn ui_validate_interaction_owner(owner : String) -> @port.UiInteractionError? {
   if owner == "" {
     return Some(ui_interaction_invalid("interaction owner must not be empty"))
@@ -120,8 +116,6 @@ fn ui_validate_interaction_request(
 }
 
 ///|
-/// An answer must fit the body the owner declared; anything else leaves the
-/// question pending so the host can answer again.
 fn ui_validate_interaction_answer(
   body : @port.UiInteractionBody,
   answer : @port.UiInteractionAnswer,
@@ -147,7 +141,6 @@ fn ui_validate_interaction_answer(
 }
 
 ///|
-/// Map a terminal outcome to what a waiter returns.
 fn ui_interaction_outcome_result(
   outcome : @port.UiInteractionOutcome,
 ) -> Result[@port.UiInteractionAnswer, @port.UiInteractionError] {
@@ -179,8 +172,6 @@ pub fn UiRuntime::interactions(
 }
 
 ///|
-/// Everything that must be true before a question may be created; split from
-/// creation so `ask` can run it synchronously.
 fn UiRuntime::check_open_interaction(
   self : UiRuntime,
   owner : String,
@@ -208,8 +199,6 @@ fn UiRuntime::check_open_interaction(
 }
 
 ///|
-/// Create the pending record and announce it. The caller has already passed
-/// `check_open_interaction`, so this cannot fail.
 fn UiRuntime::create_interaction(
   self : UiRuntime,
   owner : String,
@@ -237,8 +226,6 @@ fn UiRuntime::create_interaction(
 }
 
 ///|
-/// Open one question. Opening is allowed without a connected host; it never
-/// starts waiting by itself.
 fn UiRuntime::open_interaction(
   self : UiRuntime,
   owner : String,
@@ -252,8 +239,6 @@ fn UiRuntime::open_interaction(
 }
 
 ///|
-/// Atomic one-shot question: validation, host matching and creation happen in
-/// one synchronous admission step.
 async fn UiRuntime::ask_interaction(
   self : UiRuntime,
   owner : String,
@@ -275,9 +260,6 @@ async fn UiRuntime::ask_interaction(
 }
 
 ///|
-/// Owner-bound lookup by local request id. Reads a copy, never settles or
-/// waits; unknown or evicted ids are `NotFound`; a retained settled question is
-/// still found.
 fn UiRuntime::find_interaction(
   self : UiRuntime,
   owner : String,
@@ -302,8 +284,6 @@ fn UiRuntime::find_interaction(
 }
 
 ///|
-/// Resolve a ref to its record, rejecting foreign generations and malformed
-/// owners before any state is touched.
 fn UiRuntime::interaction_record(
   self : UiRuntime,
   interaction : @port.UiInteractionRef,
@@ -348,8 +328,6 @@ fn UiRuntime::push_interaction_change(
 }
 
 ///|
-/// Settle one question exactly once and wake every waiter in the same
-/// synchronous step.
 fn UiRuntime::settle_interaction(
   self : UiRuntime,
   key : String,
@@ -380,7 +358,6 @@ fn UiRuntime::settle_interaction(
 }
 
 ///|
-/// Trim the retained window oldest-first, never dropping a pending question.
 fn UiRuntime::evict_interactions(self : UiRuntime) -> Unit {
   let mut index = 0
   while self.interaction_order.length() > ui_interaction_window &&
@@ -400,8 +377,6 @@ fn UiRuntime::evict_interactions(self : UiRuntime) -> Unit {
 }
 
 ///|
-/// Answer one pending question from the host; validation happens before any
-/// state change.
 fn UiRuntime::answer_interaction(
   self : UiRuntime,
   request : @port.UiInteractionAnswerRequest,
@@ -445,7 +420,6 @@ fn UiRuntime::answer_interaction(
 }
 
 ///|
-/// Dismiss one pending question: the user closed the prompt without choosing.
 fn UiRuntime::dismiss_interaction(
   self : UiRuntime,
   interaction : @port.UiInteractionRef,
@@ -470,7 +444,6 @@ fn UiRuntime::dismiss_interaction(
 }
 
 ///|
-/// Owner-initiated withdrawal of its own pending question.
 fn UiRuntime::withdraw_interaction(
   self : UiRuntime,
   owner : String,
@@ -499,11 +472,6 @@ fn UiRuntime::withdraw_interaction(
 }
 
 ///|
-/// Wait for one question to settle. `defer` releases the waiter on every exit;
-/// losing the last waiter to cancellation settles the question as
-/// `WaitCancelled`. Without a host declaring the body kind the call returns
-/// `HostUnavailable` and leaves the question pending; only the owning
-/// capability may wait; an already settled question reports its outcome.
 async fn UiRuntime::wait_interaction(
   self : UiRuntime,
   owner : String,
@@ -572,8 +540,6 @@ async fn UiRuntime::wait_interaction(
 }
 
 ///|
-/// Release one waiter; abandon the question only when the last waiter ended by
-/// cancellation and no outcome was recorded.
 fn UiRuntime::release_waiter(
   self : UiRuntime,
   key : String,
@@ -619,7 +585,6 @@ fn UiRuntime::interactions_since(
 }
 
 ///|
-/// Pending questions in open order, as copies the reader may keep or mutate.
 fn UiRuntime::pending_snapshots(
   self : UiRuntime,
 ) -> Array[@port.UiInteractionSnapshot] {
@@ -637,8 +602,6 @@ fn UiRuntime::pending_snapshots(
 }
 
 ///|
-/// Close-path settlement: every pending question ends as `Closed` and its
-/// waiters are released; feed writes are skipped.
 fn UiRuntime::settle_all_interactions_closed(self : UiRuntime) -> Unit {
   for key in self.pending_order {
     match self.interactions.get(key) {

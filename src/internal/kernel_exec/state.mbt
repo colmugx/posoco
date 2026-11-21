@@ -1,7 +1,4 @@
 ///|
-/// RunState — single source of truth for a Run.
-/// The reducer is the ONLY writer. Every transition produces a fresh RunState.
-/// Phase invariants: Initializing/ReadyForModel/AwaitingModel/AwaitingTools/Suspended/Terminal.
 
 ///|
 #derive(Eq, Debug)
@@ -117,9 +114,6 @@ pub struct RunState {
 ///|
 /// Construct the initial `Initializing` state. Accepts only `Start` input.
 /// Thin raising wrapper over `initial_core`: everything
-/// except the defensive `validate` lives in the pure, contracted core. The
-/// empty `Transcript` is built here because `@kernel.Transcript::empty`
-/// carries no contract and therefore cannot appear in a contracted body.
 pub fn RunState::initial(
   run_id~ : RunId,
   session_id~ : SessionId,
@@ -134,15 +128,6 @@ pub fn RunState::initial(
 }
 
 ///|
-/// Pure core of `initial`: assemble the `Initializing` seed state. Every
-/// field value is either a literal (empty effect/tool ledgers, `None`
-/// outcome/suspension) or a zero-argument contracted constructor
-/// (`EventSequence::initial` / `EffectId::first` / `ModelStepId::first` /
-/// `BudgetConsumed::zero` / `CatalogVersion(0)`), so the whole body
-/// lowerers to the proof backend.
-///
-/// Contract: the seed state satisfies the phase invariant (empty pending
-/// effects, no outcome, no suspension — the `Initializing` domain).
 fn RunState::initial_core(
   run_id~ : RunId,
   session_id~ : SessionId,
@@ -212,84 +197,45 @@ fn RunState::mk_core(
 }
 
 ///|
-/// Check phase/pending/outcome invariants. Raises `KernelError::ConstructorInvariant` on violation.
+fn to_proof_phase(phase : Phase) -> @proof_phase.Phase {
+  match phase {
+    Initializing => Initializing
+    ReadyForModel => ReadyForModel
+    AwaitingModel => AwaitingModel
+    AwaitingTools => AwaitingTools
+    Suspended => Suspended
+    Terminal => Terminal
+  }
+}
+
+///|
 fn RunState::validate(self : RunState) -> RunState raise KernelError {
-  match self.phase {
-    Initializing => {
-      if !self.pending_effects.is_empty() {
-        raise constructor_illegal_phase(
-          "Initializing", "pending effects must be empty",
-        )
-      }
-      if self.outcome is Some(_) {
-        raise constructor_illegal_phase("Initializing", "outcome must be None")
-      }
-    }
-    ReadyForModel => {
-      if !self.pending_effects.is_empty() {
-        raise constructor_illegal_phase(
-          "ReadyForModel", "pending effects must be empty",
-        )
-      }
-      if self.outcome is Some(_) {
-        raise constructor_illegal_phase("ReadyForModel", "outcome must be None")
-      }
-    }
-    AwaitingModel => {
-      let model_count = count_call_model(self.pending_effects)
-      if self.pending_effects.length() != 1 || model_count != 1 {
-        raise constructor_illegal_phase(
-          "AwaitingModel",
-          "expected exactly 1 pending CallModel effect, found \{model_count} of \{self.pending_effects.length()}",
-        )
-      }
-      if self.outcome is Some(_) {
-        raise constructor_illegal_phase("AwaitingModel", "outcome must be None")
-      }
-    }
-    AwaitingTools => {
-      let exec_count = count_execute_tool(self.pending_effects)
-      if exec_count == 0 {
-        raise constructor_illegal_phase(
-          "AwaitingTools", "expected at least 1 pending ExecuteTool effect, found 0",
-        )
-      }
-      if self.outcome is Some(_) {
-        raise constructor_illegal_phase("AwaitingTools", "outcome must be None")
-      }
-    }
-    Suspended => {
-      if !self.pending_effects.is_empty() {
-        raise constructor_illegal_phase(
-          "Suspended", "pending effects must be empty",
-        )
-      }
-      if self.outcome is Some(_) {
-        raise constructor_illegal_phase(
-          "Suspended", "outcome must be None (Suspended is not terminal)",
-        )
-      }
-      if self.suspension_requirement is None {
-        raise constructor_illegal_phase(
-          "Suspended", "suspension_requirement must be Some",
-        )
-      }
-    }
-    Terminal => {
-      if !self.pending_effects.is_empty() {
-        raise constructor_illegal_phase(
-          "Terminal", "pending effects must be empty",
-        )
-      }
-      if self.outcome is None {
-        raise constructor_illegal_phase("Terminal", "outcome must be Some")
-      }
-      if self.suspension_requirement is Some(_) {
-        raise constructor_illegal_phase(
-          "Terminal", "suspension_requirement must be None at Terminal",
-        )
-      }
-    }
+  let pending_model = count_call_model(self.pending_effects)
+  let pending_tools = count_execute_tool(self.pending_effects)
+  if self.pending_effects.length() != pending_model + pending_tools {
+    raise constructor_illegal_phase(
+      self.phase.to_string(),
+      "unexpected non-model/non-tool pending effect",
+    )
+  }
+  let proof_state : @proof_phase.PhaseState = {
+    phase: to_proof_phase(self.phase),
+    pending_model,
+    pending_tools,
+    has_outcome: self.outcome is Some(_),
+    has_suspension: self.suspension_requirement is Some(_),
+    model_step_id: if self.phase is Initializing {
+      0
+    } else {
+      self.current_model_step_id.to_int()
+    },
+    event_seq: self.next_event_sequence.to_int(),
+  }
+  if !@proof_phase.check_phase_inv(proof_state) {
+    raise constructor_illegal_phase(
+      self.phase.to_string(),
+      "phase invariant violated (pending_model=\{pending_model}, pending_tools=\{pending_tools})",
+    )
   }
   self
 }
@@ -347,9 +293,6 @@ pub fn RunState::pending_effects(self : RunState) -> Array[Effect] {
 }
 
 ///|
-/// Internal read-only snapshot of the tool-result ledger as an `Array`.
-/// `tool_results` stays `FixedArray` internally (proof representation);
-/// reducer-side builders keep working on `Array` and convert at this boundary.
 fn RunState::tool_results_snapshot(
   self : RunState,
 ) -> Array[(@kernel.CallId, @kernel.ToolOutcome)] {
@@ -423,10 +366,6 @@ pub impl Show for RunState with fn to_string(self : RunState) -> String {
 ///|
 /// Produce the next state from raw fields, running invariants.
 /// Exposed at package level for the reducer.
-/// Thin raising wrapper over `transition_core`: the
-/// `Array` boundary converts to `FixedArray` exactly once here, and
-/// `tool_results` moves into the next state as the same `FixedArray`.
-/// `validate` stays as the defensive bottom layer.
 pub fn RunState::transition(
   self : RunState,
   phase~ : Phase,
@@ -463,15 +402,6 @@ pub fn RunState::transition(
 }
 
 ///|
-/// Pure core of `transition`: reassemble the state from explicit
-/// next-step fields while carrying `run_id`/`session_id`/`budget` and the
-/// tool-result ledger over from `self` unchanged.
-///
-/// Contract: given a phase-invariant `self`, phase-consistent next fields
-/// (`phase_fields_ok`) and non-decreasing consumption
-/// (`consumed_le`), the result satisfies `phase_inv` and is
-/// budget-monotone (`budget_monotone`) — the constructive preservation
-/// law that lets runtime `validate` degrade to a defensive layer.
 fn RunState::transition_core(
   self : RunState,
   phase~ : Phase,
@@ -515,10 +445,6 @@ fn RunState::transition_core(
 }
 
 ///|
-/// Replace the run-local tool-result ledger while preserving other state fields.
-/// Thin raising wrapper over `with_tool_results_core`: the
-/// `Array` boundary converts once; every other field — including the
-/// pending-effects `FixedArray` — moves without copying.
 fn RunState::with_tool_results(
   self : RunState,
   tool_results : Array[(@kernel.CallId, @kernel.ToolOutcome)],
@@ -532,9 +458,6 @@ fn RunState::with_tool_results(
 }
 
 ///|
-/// Pure core of `with_tool_results`: same phase domain, fresh ledger.
-/// The tool-result ledger is not part of `phase_inv`, so preserving every
-/// phase-relevant field verbatim preserves the invariant.
 fn RunState::with_tool_results_core(
   self : RunState,
   tool_results : FixedArray[(@kernel.CallId, @kernel.ToolOutcome)],

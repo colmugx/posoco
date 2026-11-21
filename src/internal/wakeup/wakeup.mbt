@@ -8,13 +8,9 @@ pub(open) trait WakeupHost {
 }
 
 ///|
-/// Envelope key cap: tags beyond this length are rejected at admission.
 let wakeup_tag_max_length : Int32 = 80
 
 ///|
-/// Pending-ticket cap per session. A session that reaches it is rejected with
-/// `PendingFull` rather than growing the ledger without bound; coalescing onto
-/// an already pending tag stays accepted.
 let wakeup_max_pending : Int32 = 64
 
 ///|
@@ -183,11 +179,6 @@ fn WakeupRuntime::emit_wakeup_event(
 }
 
 ///|
-/// Synchronous admission. Coalesces on (session, tag) and records the latest
-/// requirement generation on every request; a coalesced request keeps its
-/// ticket (one `requested` event at creation). During execution the key is
-/// free again, so a same-key request forms the next ticket at a new
-/// generation.
 fn WakeupRuntime::request(
   self : WakeupRuntime,
   extension_id : String,
@@ -267,8 +258,6 @@ fn WakeupRuntime::request(
 }
 
 ///|
-/// Commit the armed cutoff: pending entries at or before `cutoff` were covered
-/// by the ordinary input that took the snapshot; later ones survive.
 fn WakeupRuntime::satisfy_covered(
   self : WakeupRuntime,
   session_id : String,
@@ -312,9 +301,6 @@ fn WakeupRuntime::forget(self : WakeupRuntime, entry : WakeupPending) -> Unit {
 }
 
 ///|
-/// Take the oldest pending ticket when the owner is idle. The idle check and
-/// the caller's admission have no await between them, so a wakeup turn never
-/// steals the guard from an already admitted operation.
 fn WakeupRuntime::take_next(
   self : WakeupRuntime,
   host : &WakeupHost,
@@ -354,8 +340,6 @@ fn WakeupRuntime::notify_state_change(self : WakeupRuntime) -> Unit {
 }
 
 ///|
-/// `seen` is read before the condition, so a state change racing the caller's
-/// own condition check advanced the epoch and must not be slept through.
 async fn WakeupRuntime::wait_for_change(
   self : WakeupRuntime,
   seen : Int32,
@@ -375,9 +359,6 @@ async fn WakeupRuntime::pump_loop(
     match self.take_next(host) {
       Some(entry) => {
         if self.execute_ticket(host, entry) {
-          // Re-queued behind a live incumbent: wait for its settled
-          // broadcast; a settle that already raced the Busy return advanced
-          // the epoch past `seen`, so this returns instead of sleeping.
           self.wait_for_change(seen)
         }
         continue

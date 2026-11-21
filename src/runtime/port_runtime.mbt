@@ -1,15 +1,6 @@
 ///|
-/// `PortRuntime` — the default `Runtime`: delegates every effect to the
-/// composed extension ports (`ModelPort` + `ToolProvider`s). Cancellation
-/// routes to providers that registered a `ToolCancellable` facet for the
-/// effect; every other id reports `NotPropagated`.
-///
-/// Host builders wrap this type and override the methods they need instead
-/// of implementing `Runtime` from scratch.
 
 ///|
-/// Map `@error.ModelError` (raised by ModelPort) to the kernel's
-/// `ModelFailure` so it can travel through the reducer as data.
 fn model_error_to_failure(error : @error.ModelError) -> @kernel.ModelFailure {
   match error {
     RequestBuild(reason) => RequestBuild(reason~)
@@ -25,11 +16,6 @@ fn model_error_to_failure(error : @error.ModelError) -> @kernel.ModelFailure {
 }
 
 ///|
-/// Decode the provider-agnostic subset of the canonical call-options bag.
-///
-/// `ChatOptions` intentionally cannot represent provider-specific fields. Do
-/// not drop those fields: reject them at this boundary so the caller can route
-/// the original bag to a host that understands it.
 fn decode_chat_options(
   call_options : Json,
 ) -> Result[@types.ChatOptions, @kernel.ModelFailure] {

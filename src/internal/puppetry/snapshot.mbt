@@ -1,31 +1,4 @@
 ///|
-/// Immutable TurnSnapshot.
-///
-/// ADR §4 rule 2: `TurnSnapshot` captured at turn start does NOT reference
-/// caller-mutable Arrays/Maps. MoonBit containers must be explicitly copied
-/// or converted to immutable domain values.
-///
-/// The snapshot captures:
-/// - run/turn identity (typed wrappers)
-/// - immutable per-turn run policy (including deep-copied call options)
-/// - tool catalog identity (CatalogVersion + copied definitions array)
-/// - budget envelope (immutable struct)
-/// - deadline (optional)
-/// - hook/lifecycle/subscriber provenance (string summaries only — never
-///   trait references; the snapshot is data, not a live wiring)
-///
-/// What the snapshot does NOT carry:
-/// - runtime port references (those are Puppet-owned; the snapshot only carries
-///   provenance strings for diagnostics)
-/// - prompt text or tool arguments (those are in the RunState transcript)
-/// - mutable handles to the original config arrays
-///
-/// Snapshot identity is computed deterministically from the captured
-/// values; Map iteration order does NOT affect it (sorted keys).
-
-// ──────────────────────────────────────────────────────────────────────────
-// TurnSnapshot
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 /// Immutable capture of a turn's configuration. Constructed once via
@@ -64,10 +37,6 @@ pub extend TurnSnapshot with Eq::{not_equal, equal}
 
 ///|
 pub extend TurnSnapshot with Debug::{to_repr}
-
-// ──────────────────────────────────────────────────────────────────────────
-// Capture input (builder pattern)
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 /// Policy that may vary between prompts on the same long-lived Puppet.
@@ -113,21 +82,9 @@ pub extend TurnSnapshotInput with Eq::{not_equal, equal}
 ///|
 pub extend TurnSnapshotInput with Debug::{to_repr}
 
-// ──────────────────────────────────────────────────────────────────────────
-// Capture — the only constructor
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 /// Capture a `TurnSnapshot` from the given input. The snapshot owns a deep
 /// copy of the catalog definitions and call options; the caller's original
-/// arrays/maps are not aliased.
-///
-/// Raises `PuppetError::SnapshotInvalid` for:
-/// - empty model_id
-/// - empty catalog (zero tools is legal but warned)
-/// - negative budget dimensions
-/// - deadline in the past (caller's responsibility to check, but we still
-///   reject if deadline < 0)
 pub fn TurnSnapshot::capture(
   input : TurnSnapshotInput,
 ) -> TurnSnapshot raise PuppetError {
@@ -135,10 +92,6 @@ pub fn TurnSnapshot::capture(
   if input.policy.model_id == "" {
     raise SnapshotInvalid(detail="model_id must be non-empty")
   }
-  // Empty catalog is legal — a pure-chat run with no tools is valid. The
-  // snapshot records zero definitions; the reducer's unknown-tool path
-  // handles any tool calls emitted despite the empty catalog.
-  // Validate budget dimensions are non-negative where Some.
   check_budget(input.policy.budget)
   match input.policy.context_window {
     Some(value) if value <= 0 =>
@@ -221,14 +174,7 @@ fn check_budget(budget : Budget) -> Unit raise PuppetError {
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Fingerprint (deterministic)
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
-/// Deterministic fingerprint. Inputs are concatenated in a fixed order;
-/// Map iteration order does NOT contribute (we use only the catalog version
-/// + sorted definition names).
 fn compute_fingerprint(input : TurnSnapshotInput, policy : RunPolicy) -> String {
   // Tool names sorted alphabetically.
   let names : Array[String] = []
@@ -267,10 +213,6 @@ fn opt_to_str(n : Int32?) -> String {
     None => "_"
   }
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// Accessors
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 pub fn TurnSnapshot::run_id(self : TurnSnapshot) -> RunId {
@@ -352,22 +294,9 @@ pub fn TurnSnapshot::subscriber_provenance(
   self.subscriber_provenance.copy()
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Redacted debug view
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 /// Redacted single-line view for logs and diagnostics. Excludes:
 /// - tool arguments / call_options payload (may contain secrets)
-/// - tool definition bodies (only name + owner shown)
-/// - prompt content (the snapshot never stores prompt text, but we also
-///   exclude `call_options` payload)
-///
-/// Includes:
-/// - identity chain (run/turn/session/catalog version)
-/// - tool names (not arguments)
-/// - budget dimensions
-/// - fingerprint
 pub fn TurnSnapshot::to_redacted_string(self : TurnSnapshot) -> String {
   let names : Array[String] = []
   for def in self.tool_definitions {
@@ -378,7 +307,6 @@ pub fn TurnSnapshot::to_redacted_string(self : TurnSnapshot) -> String {
 }
 
 ///|
-/// Take the first 8 chars of the fingerprint for compact display.
 fn fp_prefix(s : String) -> String {
   let chars : Array[Char] = []
   let mut n = 0

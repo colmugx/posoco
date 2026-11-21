@@ -1,10 +1,4 @@
 ///|
-/// Package-level re-exports of Kernel types so puppetry files use
-/// unqualified names. Single source of truth — do not duplicate aliases
-/// elsewhere (the compiler rejects a second definition).
-///
-/// Canonical protocol types come from the public `kernel` package; internal
-/// execution machinery comes from `internal/kernel_exec`.
 using @kernel {
   type Message,
   type Transcript,

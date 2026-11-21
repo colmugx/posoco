@@ -1,6 +1,4 @@
 ///|
-/// Host-side entry to the UI protocol: resources, pending interactions and the
-/// ordered feed that reports both.
 
 ///|
 /// Position in the resource change feed.

@@ -1,7 +1,4 @@
 ///|
-/// A parent holds its root scheduling slot until its subtree settles. Siblings
-/// reuse the kernel scheduler, so new Parallel work may join a Parallel wave,
-/// but later work never jumps a queued Sequential/Exclusive sibling.
 async fn Puppet::start_ready_children(
   self : Puppet,
   tree : ToolTree,

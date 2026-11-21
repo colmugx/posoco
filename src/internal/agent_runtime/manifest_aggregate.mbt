@@ -1,13 +1,6 @@
 ///|
-/// Manifest aggregation — merges `Array[&Extension]` into a single
-/// `AggregatedPorts` value for the agent constructor.
 
 ///|
-/// A registered Lifecycle contributor paired with its declared capability
-/// requirements. The pairing survives aggregation so the composition can
-/// gate each contributor's `CompositionView` on its own declared `requires`
-/// at `Lifecycle::on_compose` delivery time. The manifest id also binds
-/// Agent-owned capabilities to their declaring extension.
 priv struct LifecycleEntry {
   id : String
   requires : Array[@port.Capability]
@@ -15,9 +8,6 @@ priv struct LifecycleEntry {
 }
 
 ///|
-/// Flattened port bundle ready for the agent constructor. The `model` field
-/// is a single value (multi-model routing is solved in-extension), and `ui`
-/// is wrapped into one UiPort reference (the agent never sees a bare array).
 priv struct AggregatedPorts {
   model : &@port.ModelPort
   decision : &@port.DecisionPort?
@@ -37,7 +27,6 @@ priv struct AggregatedPorts {
 }
 
 ///|
-/// Order follows extension array order; collisions fail fast.
 fn aggregate_extensions(
   exts : Array[&@port.Extension],
   events~ : @event_runtime.EventRuntime,
@@ -189,9 +178,6 @@ fn aggregate_extensions(
     Err(error) =>
       abort("unexpected observer registration error: \{repr(error)}")
   }
-  // UI cardinality: 0 → NoopUiPort (unwrapped: a UI-less composition never
-  // waits for a user, so no request events), 1 → wrapped passthrough,
-  // 2+ → wrapped CompositeUiPort.
   let ui_ref : &@port.UiPort = match ui.length() {
     0 => (NoopUiPort() : &@port.UiPort)
     1 =>
@@ -223,12 +209,6 @@ fn aggregate_extensions(
 }
 
 ///|
-/// Core-owned wrapper around the aggregated `UiPort`. Every interactive user
-/// request (permission confirm, plan review, ask_question) entering the port
-/// broadcasts `UserRequestStarted` / `UserRequestFinished` to the observer bus,
-/// so presence-style observers can surface "waiting for user" without coupling
-/// to a single caller. It only sees requests resolved from a `CompositionView`
-/// (requires `Capability::Ui`); raw contributor holders bypass it.
 priv struct UserRequestObservingUiPort {
   inner : &@port.UiPort
   events : @event_runtime.EventRuntime

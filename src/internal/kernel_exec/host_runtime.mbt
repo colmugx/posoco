@@ -1,7 +1,4 @@
 ///|
-/// Host-side runtime contract for executing Kernel Effects: the reducer emits
-/// Effects, the host executes them. All inputs/outputs are canonical Kernel
-/// types, and the reducer never calls this async trait.
 
 ///|
 /// Streaming chunk callback; interpreting `StreamChunk` stays a host concern.

@@ -1,8 +1,4 @@
 ///|
-/// Projection from reducer-declared ExecuteTool effects to Kernel scheduler
-/// waves. This is deliberately a narrow adapter: scheduling policy stays in
-/// the pure Kernel, while the Puppet receives only ordered effect batches to
-/// execute at side-effect boundaries.
 
 ///|
 fn scheduled_tool_effect_waves(
@@ -84,9 +80,6 @@ fn scheduled_tool_effect_waves(
 }
 
 ///|
-/// Recover one reducer-declared effect for a scheduler call id. Duplicates
-/// and omissions are hard invariants; this function never selects an
-/// arbitrary effect or drops a declared one.
 fn find_pending_effect_for_call(
   pending : Array[Effect],
   call : ToolCall,

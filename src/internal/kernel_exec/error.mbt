@@ -1,5 +1,4 @@
 ///|
-/// Typed Kernel errors — constructor validation and reducer invariant violations.
 
 // Invariant categories (one home per failure
 
@@ -67,9 +66,6 @@ pub impl Show for InvariantCategory with fn to_string(self : InvariantCategory) 
 ///|
 /// Why a Run terminated with `Failed`. Mirrors ADR §2.4 taxonomy: model
 /// parse / transport / runtime, kernel invariant, budget, deadline.
-///
-/// `Cancelled` is a separate outcome (`RunOutcome::Cancelled`) and uses
-/// `CancelReason`, never `FailureReason`.
 #derive(Eq, Debug)
 pub(all) enum FailureReason {
   ModelParseFailure(detail~ : String)
@@ -133,10 +129,6 @@ pub impl Show for FailureReason with fn to_string(self : FailureReason) -> Strin
 ///|
 /// Unified error type raised by Kernel constructors (`RunState::*`) and the
 /// reducer.
-///
-/// Variant `ReducerInvariant` is the only one that terminates a Run; the
-/// other variants are raised synchronously from constructors before the Run
-/// starts.
 pub(all) suberror KernelError {
   /// Constructor invariant violation. Run was never created.
   ConstructorInvariant(category~ : InvariantCategory)

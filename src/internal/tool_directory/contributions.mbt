@@ -1,7 +1,4 @@
 ///|
-/// One owner's directory slot. `version` is the active version the capture
-/// projects; a withdraw clears it while the tombstone keeps the revision
-/// sequence so a later publish continues it.
 priv struct OwnerSlot {
   mut revision : Int32
   mut version : Int32?
@@ -23,10 +20,6 @@ pub(all) enum ToolCatalogChange {
 ///|
 /// Definitions and executors are committed together; only operation admission
 /// derives a catalog and a binding projection from this authority.
-///
-/// Every accepted contribution is a version record. The owner slot points at
-/// the active version; superseded versions stay alive only while an operation
-/// references them or while their retire is still pending.
 pub struct ToolContributionRegistry {
   priv base : Array[ToolEntry]
   priv mut captured_defs : Array[@kernel.ToolDef]
@@ -61,9 +54,6 @@ pub fn ToolContributionRegistry::ToolContributionRegistry(
     versions: Map::from_array([]),
     slots: Map::from_array([]),
     next_version: 1,
-    // The constructor already recorded the base definitions as captured; a
-    // first admission whose directory is unchanged must not rebuild the catalog
-    // (and must not report a spurious capture fact).
     pending_capture: false,
     generation: 0,
     closed: Ref(false),
@@ -129,8 +119,6 @@ fn ToolContributionRegistry::names_of(
 ///|
 /// Validate a candidate group against the complete directory, publish it as a
 /// new version, then retire versions that lost every reference. Every
-/// validation and the authoritative commit happen before the first await; a
-/// rejected group changes nothing.
 pub async fn ToolContributionRegistry::replace(
   self : ToolContributionRegistry,
   owner : String,
@@ -267,9 +255,6 @@ pub async fn ToolContributionRegistry::withdraw(
       None => ()
     }
     if mode is Hard {
-      // Every live version of this owner — including versions an earlier
-      // replace or soft withdrawal already superseded — is irrevocably
-      // revoked, so no operation may start a new call through them.
       for id, version in self.versions {
         if version.owner == owner && !version.gate.revoked {
           version.revoke()
@@ -373,7 +358,20 @@ pub async fn ToolContributionRegistry::retire_unreferenced(
     if owner is Some(expected) && version.owner != expected {
       continue
     }
-    if version.active || version.refs > 0 || version.retiring {
+    let lease_state : @proof_leases.VersionLeaseState = {
+      active: version.active,
+      revoked: version.gate.revoked,
+      op_held: version.refs > 0,
+      retained_count: if version.refs > 1 {
+        version.refs - 1
+      } else {
+        0
+      },
+      refs: version.refs,
+      retiring: version.retiring,
+      revision: version.revision,
+    }
+    if !@proof_leases.can_retire(lease_state) {
       continue
     }
     version.retiring = true

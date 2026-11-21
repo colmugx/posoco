@@ -1,24 +1,4 @@
 ///|
-/// Puppet event dispatch.
-///
-/// Post-commit event dispatcher. Receives envelopes CONSTRUCTED AFTER the
-/// journal barrier succeeds; assigns monotonic `seq` per run; dispatches
-/// in registration order; awaits each subscriber.
-///
-/// Default: ALL subscribers are
-/// correctness-critical. A subscriber failure fails the run with
-/// `PuppetError::SubscriberFailed`; the journal entry is already durable
-/// (commit happened before dispatch). No best-effort escape hatch.
-///
-/// Subscribers never receive a journal writer. If a subscriber needs to add
-/// a domain entry, it must do so via a `JournalContributor` at the NEXT
-/// savepoint; attempting to reach the journal from a subscriber is a
-/// contract violation detected at composition (the subscriber trait has no
-/// such method).
-
-// ──────────────────────────────────────────────────────────────────────────
-// EventEnvelope — wraps a KernelEvent with identity + seq + revision
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 /// A KernelEvent wrapped with run/session identity, monotonic sequence
@@ -92,24 +72,9 @@ pub impl Show for EventEnvelope with fn to_string(self : EventEnvelope) -> Strin
   "EventEnvelope(run=\{self.run_id.to_string()}, turn=\{self.turn_id.to_string()}, seq=\{self.seq}, rev=\{self.committed_revision}, \{self.event.to_string()})"
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// EventSubscriber trait
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 /// Port: post-commit event subscriber. Receives one envelope at a time,
 /// in strict seq order, after the journal barrier succeeds.
-///
-/// Subscribers must not:
-/// - mutate the envelope (it's passed by value, but the inner KernelEvent
-///   is immutable anyway)
-/// - reach into the journal (the trait exposes no writer)
-/// - re-enter the Puppet via structural commands
-///
-/// Subscribers may:
-/// - read the envelope and any derived state
-/// - raise `SubscriberError` to fail the run (correctness-critical default)
-/// - maintain internal mutable state (e.g. a log buffer)
 pub(open) trait EventSubscriber {
   /// Stable identifier for this subscriber. Used in diagnostics.
   fn subscriber_id(Self) -> String
@@ -141,10 +106,6 @@ pub impl Show for SubscriberError with fn to_string(self : SubscriberError) -> S
       "ContractViolation(\{subscriber_id}: \{detail})"
   }
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// NoopSubscriber — default subscriber that does nothing
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 /// Default subscriber that drops every event. Useful as a baseline
@@ -188,16 +149,9 @@ pub impl EventSubscriber for NoopSubscriber with fn on_event(
   ()
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// EventDispatcher — assigns seq, awaits subscribers in registration order
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 /// Post-commit event dispatcher. Holds the per-run seq counter and the
 /// subscriber list. The Puppet constructs one dispatcher per Run; seq
-/// starts at 1 for each Run (seq 0 is reserved for "no events yet").
-///
-/// ADR §5 step 6: dispatcher runs ONLY after commit succeeds.
 pub struct EventDispatcher {
   subscribers : Array[&EventSubscriber]
   /// Per-run seq counter. Incremented before each dispatch.
@@ -252,9 +206,6 @@ pub fn EventDispatcher::next_seq(self : EventDispatcher) -> Int32 {
 ///|
 /// Dispatch a single KernelEvent to all subscribers. Assigns the next seq,
 /// builds the envelope, and awaits each subscriber in order.
-///
-/// Raises `PuppetError::SubscriberFailed` if any subscriber raises. The
-/// dispatcher stops at the first failure (correctness-critical default).
 pub async fn EventDispatcher::dispatch(
   self : EventDispatcher,
   event : KernelEvent,

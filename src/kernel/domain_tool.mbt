@@ -1,10 +1,4 @@
 ///|
-/// Canonical tool-definition types for the functional Kernel.
-///
-/// ADR §2.7, §2.8, §2.11: the catalog snapshot is the single source of truth
-/// for tool definitions (model-visible) AND for execution owners. The
-/// reducer/executor never re-resolves owners from a separate routing cache.
-/// Tool execution policy is explicit data — not inferred from the tool name.
 
 ///|
 /// How a tool may be batched with other tools in the same model completion.

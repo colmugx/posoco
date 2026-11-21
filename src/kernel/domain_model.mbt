@@ -1,9 +1,4 @@
 ///|
-/// Canonical model-step types for the functional Kernel.
-///
-/// ADR `docs/design/08-functional-kernel-contract.md` §2.1, §2.11: the
-/// assistant completion is the single source of truth for tool calls and
-/// reasoning. The canonical type has one authoritative owner for each fact.
 
 ///|
 /// Token usage reported by the model for a single step. The Kernel only counts
@@ -75,7 +70,6 @@ pub impl Show for Usage with fn to_string(self : Usage) -> String {
 ///|
 /// A completed assistant step. The `message` field is the canonical assistant
 /// message that the reducer appends to the transcript; tool calls and reasoning
-/// live there (single source of truth, ADR §2.11). The `usage` field reports
 /// token consumption observed for this step, which the reducer may aggregate
 /// into the Run budget.
 ///

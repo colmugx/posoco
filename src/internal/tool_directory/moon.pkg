@@ -6,6 +6,7 @@ import {
   "colmugx/posoco/error",
   "colmugx/posoco/internal/diagnostic",
   "colmugx/posoco/internal/message_snapshot",
+  "colmugx/posoco/internal/proof/leases" @proof_leases,
 }
 
 options(

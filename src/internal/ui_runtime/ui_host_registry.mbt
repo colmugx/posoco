@@ -1,6 +1,4 @@
 ///|
-/// Host connection registry: capability declarations, matching and the
-/// per-connection answer/dismiss routes.
 
 ///|
 fn ui_copy_host_capabilities(
@@ -153,9 +151,6 @@ fn UiRuntime::forget_host_connection(self : UiRuntime, id : Int32) -> Unit {
 }
 
 ///|
-/// Attach one host lease. The capability lists are copied before they are
-/// stored, and the returned handle is the only way to update, detach, answer or
-/// dismiss through this lease.
 fn UiRuntime::connect_host(
   self : UiRuntime,
   capabilities : @port.UiHostCapabilities,
@@ -192,8 +187,6 @@ fn UiRuntime::connect_host(
 }
 
 ///|
-/// Replace the declarations of a live lease; the registry epoch moves so
-/// every waiter re-checks.
 fn UiRuntime::update_host_connection(
   self : UiRuntime,
   id : Int32,
@@ -216,7 +209,6 @@ fn UiRuntime::update_host_connection(
 }
 
 ///|
-/// Release a lease. Idempotent, and never closes the Agent or another host.
 fn UiRuntime::detach_host_connection(
   self : UiRuntime,
   id : Int32,
@@ -235,7 +227,6 @@ fn UiRuntime::detach_host_connection(
 }
 
 ///|
-/// True while at least one connected host declares the question's body kind.
 fn UiRuntime::interaction_supported(
   self : UiRuntime,
   body : @port.UiInteractionBody,
@@ -254,8 +245,6 @@ fn UiRuntime::interaction_supported(
 }
 
 ///|
-/// Resolve one online lease and require it to declare the question's body kind,
-/// so a connection cannot answer a prompt it never said it could display.
 fn UiRuntime::connection_for_interaction(
   self : UiRuntime,
   id : Int32,
@@ -311,8 +300,6 @@ fn UiRuntime::connection_dismiss(
 }
 
 ///|
-/// Per-connection display support for one live resource, in attach order; an
-/// empty result means no host is connected.
 fn UiRuntime::host_support(
   self : UiRuntime,
   owner : String,

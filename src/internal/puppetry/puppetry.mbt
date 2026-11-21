@@ -1,25 +1,4 @@
 ///|
-/// Puppet orchestration — the single long-lived pump.
-///
-/// The Puppet is the ONLY loop in the product that drives RunState forward
-/// across model/tool rounds. It composes:
-/// - PhaseGate — macro-phase gating + lease
-/// - TurnSnapshot — immutable turn capture
-/// - ControlMailbox — steer/follow-up/resume/abort + idle barrier
-/// - RunJournal + SavepointCoordinator — append-only journal
-/// - EventDispatcher — post-commit event dispatch
-/// - reducer + execute_one — reused unchanged
-///
-/// The pump NEVER decides termination by inspecting `tool_calls.is_empty()`.
-/// It only drives reducer-declared effects. If the reducer declares zero
-/// effects and the state is not terminal, the pump stops and waits for
-/// external input (prompt/resume).
-///
-/// Single-writer: only the pump advances journal revision. Only the pump
-/// emits envelopes. Only the pump allocates seq.
-// ──────────────────────────────────────────────────────────────────────────
-// prompt — start a new run
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 /// Complete input for one prompt on a long-lived Puppet. Composition-static
@@ -120,20 +99,6 @@ pub impl Show for PromptResult with fn to_string(self : PromptResult) -> String 
 ///|
 /// Prompt the Puppet with an initial user message. Only legal when the
 /// phase is Idle.
-///
-/// Steps:
-/// 1. Acquire prompt lease via the phase gate.
-/// 2. Capture TurnSnapshot.
-/// 3. Bind ControlMailbox to the new run/turn.
-/// 4. Transition to Active.
-/// 5. Let the pump atomically commit the initial boundary (`InputAccepted`,
-///    `RunStarted`, and first model intent) before any model effect.
-/// 6. Run the pump until terminal or suspended.
-/// 7. On terminal, dispatch terminal event, release lease, return.
-///
-/// `run_id` / `turn_id` are caller-supplied (host generates them; the
-/// Puppet does not allocate). This keeps cross-process resume possible
-/// without a central id factory.
 pub async fn Puppet::prompt(
   self : Puppet,
   request : PromptRequest,
@@ -141,7 +106,6 @@ pub async fn Puppet::prompt(
   let run_id = request.run_id
   let turn_id = request.turn_id
   let session_id = request.session_id
-  // Step 1: acquire lease.
   let (gate_with_lease, _lease) = self.phase_gate.acquire_prompt(
     request.operation_id,
     run_id,
@@ -151,7 +115,6 @@ pub async fn Puppet::prompt(
   }
   self.phase_gate = gate_with_lease
   self.last_completed_transcript = None
-  // Step 2: capture snapshot (validation happens here).
   let snap_input : TurnSnapshotInput = {
     run_id,
     turn_id,
@@ -167,12 +130,8 @@ pub async fn Puppet::prompt(
     // Roll back the lease on snapshot failure.
     e => return self.finalize_rejected(error=e)
   }
-  // Step 3: bind mailbox.
   self.mailbox.bind_run(run_id, turn_id)
-  // Step 4: transition to Active. `drive_run` commits the initial boundary
-  // before it can dispatch the first model effect.
   self.phase_gate = self.phase_gate.transition(Active)
-  // Step 5: run the pump.
   let result = self.drive_run(
     run_id,
     turn_id,
@@ -180,13 +139,8 @@ pub async fn Puppet::prompt(
     request.initial_messages.copy(),
     snap,
   )
-  // Step 7: release lease and return.
   result
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// wait_idle — delegate to mailbox
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 /// Wait until the Puppet reaches a quiescent status. Returns Idle,
@@ -196,23 +150,9 @@ pub async fn Puppet::wait_idle(self : Puppet) -> QuiescentStatus {
   self.mailbox.wait_idle()
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Post-event hook fire helper
-// ──────────────────────────────────────────────────────────────────────────
+///|
 
 ///|
-/// Fire every registered hook's `on_post_event` for a completed effect.
-/// The `PipelineHook::on_post_event` contract is non-raising: handlers cannot fail
-/// in a typed way, and a contract violation aborts loudly (aborts are not
-/// catchable). Components with fallible internal work must catch it
-/// themselves and surface it as a `secondary_failure` observer event —
-/// see the Agent's `emit_secondary_failure` wiring. Post-event stages only
-/// exist inside a run, so
-/// the attribution scope is always delivered as `Some`.
-
-///|
-/// Async because `on_post_event` is an async slot; the noraise slot
-/// contract keeps this helper non-failing.
 async fn Puppet::fire_post_event_hooks(
   self : Puppet,
   input : RunInput,

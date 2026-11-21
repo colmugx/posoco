@@ -1,13 +1,4 @@
 ///|
-/// Canonical run/turn/effect identity and cancel contracts (M1, ADR §2.5,
-/// §2.6, §2.9). These types are part of the public wire contract: advanced
-/// runtimes correlate effect execution and cancellation with them, while the
-/// reducer remains their sole allocator.
-///
-/// Promoted from `internal/kernel_exec`/`internal/puppetry` so the public
-/// runtime seam (`colmugx/posoco/runtime`) can name effect/run/turn identity
-/// without importing internal packages. Internal packages alias these
-/// definitions — this file is the single source of truth.
 
 ///|
 /// Stable identifier for a single Run. Supplied by the host in the `Start`

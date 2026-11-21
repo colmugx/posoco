@@ -55,10 +55,6 @@ fn is_compact_step(step : ScriptedModelStep) -> Bool {
 ///|
 /// ModelPort fake that plays a fixed script. Each `chat` call consumes one
 /// chat step in order (`Compact`/`CompactFail` steps are skipped and left for
-/// `compact` calls, which conversely skip chat steps). When the matching
-/// script is exhausted the next call fails with
-/// `ModelError::Transport("scripted_model_exhausted at call <N>")` — it never
-/// silently repeats the last response.
 pub(all) struct ScriptedModel {
   steps : Array[ScriptedModelStep]
   mut index : Int32
@@ -307,9 +303,6 @@ pub impl @port.ModelPort for ScriptedModel with fn provider_config(_self) -> @po
 ///|
 /// ModelPort fake that records the `InvocationScope` received by every
 /// `chat`/`compact` call. Chat behaviour is scripted like `ScriptedModel`;
-/// `compact` returns `compact_result` when set, otherwise raises
-/// `ResponseParse` (same contract as `ScriptedModel`). Use it to pin the
-/// scope-flow contract end to end.
 pub struct ScopeRecordingModel {
   scripted : ScriptedModel
   compact_result : @kernel.CompactResult?

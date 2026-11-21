@@ -1,6 +1,4 @@
 ///|
-/// One listener registration. `namespace_` is the namespace filter the
-/// listener asked for (`None` = every namespace).
 priv struct Listener {
   id : Int32
   namespace_ : @events.EventNamespace?
@@ -8,9 +6,6 @@ priv struct Listener {
 }
 
 ///|
-/// One queued notification. Core payloads carry the enqueue-time snapshot in
-/// `core`; community payloads are values and are delivered as published. The
-/// namespace is recorded at enqueue so a capability cannot re-tag it later.
 priv struct QueuedEvent {
   namespace_ : @events.EventNamespace
   scope : @types.EventScope?
@@ -21,8 +16,6 @@ priv struct QueuedEvent {
 ///|
 /// Agent-owned synchronous notification runtime. One instance per Agent; core
 /// notifications and community events share this queue, registration order
-/// and per-batch listener snapshot. No background task and no process-global
-/// bus: producers enqueue, the outermost publish drains.
 pub struct EventRuntime {
   priv listeners : Array[Listener]
   priv queue : Array[QueuedEvent]
@@ -139,8 +132,6 @@ pub fn EventRuntime::capability(
 ///|
 /// End the runtime: later publishes and subscriptions fail with `Closed`,
 /// queued events are dropped, and listener/queue references are released so
-/// capabilities and extension callbacks stop retaining each other. Cancelling
-/// a subscription after close stays a no-op.
 pub fn EventRuntime::close(self : EventRuntime) -> Unit {
   if self.closed.val {
     return

@@ -140,26 +140,23 @@ pub fn validate_tool_child(
 }
 
 ///|
-/// Model call ids are untrusted strings, so a generated spelling is not a
-/// reserved namespace. Avoid both the transcript's root ids and pending ids.
-fn child_call_id(state : RunState, effect_id : EffectId) -> @kernel.CallId {
-  let used : Map[String, Bool] = Map::from_array([])
-  for message in state.transcript().messages_snapshot() {
-    if message is AssistantMessage(tool_calls~, ..) {
-      for call in tool_calls {
-        used[call.call_id.to_string()] = true
-      }
-    }
-  }
+fn has_pending_call_id(state : RunState, candidate : String) -> Bool {
   for effect in state.pending_effects() {
-    if effect is ExecuteTool(payload~, ..) {
-      used[payload.call_id.to_string()] = true
+    if effect is ExecuteTool(payload~, ..) &&
+      payload.call_id.to_string() == candidate {
+      return true
     }
   }
+  false
+}
+
+///|
+fn child_call_id(state : RunState, effect_id : EffectId) -> @kernel.CallId {
   let mut name = state.run_id().to_string() +
     ":child:" +
     effect_id.to_int().to_string()
-  while used.contains(name) {
+  while state.tool_call_positions.contains(name) ||
+        has_pending_call_id(state, name) {
     name += ":"
   }
   @kernel.CallId::unchecked(name)

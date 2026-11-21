@@ -1,12 +1,4 @@
 ///|
-/// Structured application logging capability for extensions.
-///
-/// LogPort is intentionally storage-agnostic: Posoco defines the record and
-/// durability contract, while adapters decide whether records land in JSONL,
-/// SQLite, stderr, OpenTelemetry, or a composite sink.
-///
-/// Consumers choose the durability level per record. The sink owns timestamps,
-/// sequence numbers, rotation, integrity metadata, and physical layout.
 
 ///|
 #derive(Eq, Debug)

@@ -1,13 +1,6 @@
 ///|
 /// Buffered, per-turn dispatcher for `StreamChunk` telemetry. Chunk payloads
 /// are immutable scalar values; the dispatcher buffers only, and every
-/// delivery goes through the event runtime. The turn's `EventScope` is
-/// captured at construction, so chunks and drop notices stay attributed to
-/// the turn that produced them.
-///
-/// Lifecycle: one dispatcher per turn; `drain_loop` runs for the turn's
-/// duration, then `flush` followed by `close`. Nothing may be enqueued after
-/// `close` — `enqueue` on a closed queue is a no-op.
 pub struct ChunkDispatcher {
   priv queue : @aqueue.Queue[@types.TurnEvent]
   priv mut depth : Int32
@@ -44,12 +37,18 @@ pub fn ChunkDispatcher::enqueue(
     return
   }
   let event : @types.TurnEvent = StreamChunkReceived(chunk~)
-  let put_ok : Bool = self.queue.try_put(event) catch { _ => return }
+  let put_ok : Bool = self.queue.try_put(event) catch {
+    @aqueue.QueueAlreadyClosed => return
+    _ => return
+  }
   if put_ok {
     self.depth = self.depth + 1
     return
   }
-  let evicted : @types.TurnEvent? = self.queue.try_get() catch { _ => None }
+  let evicted : @types.TurnEvent? = self.queue.try_get() catch {
+    @aqueue.QueueAlreadyClosed => None
+    _ => None
+  }
   match evicted {
     Some(_) => {
       self.dropped = self.dropped + 1
@@ -57,7 +56,10 @@ pub fn ChunkDispatcher::enqueue(
     }
     None => ()
   }
-  let put_ok2 : Bool = self.queue.try_put(event) catch { _ => false }
+  let put_ok2 : Bool = self.queue.try_put(event) catch {
+    @aqueue.QueueAlreadyClosed => false
+    _ => false
+  }
   if put_ok2 {
     self.depth = self.depth + 1
   } else if !self.closed {

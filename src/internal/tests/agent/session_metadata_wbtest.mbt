@@ -737,3 +737,225 @@ async test "t05_turn_result_tool_outcomes_do_not_alias_held_transcript_or_next_i
     fail("TurnResult tool outcome aliased Agent state into next_input")
   }
 }
+
+///|
+/// Session checkpoint regression tests.
+///
+/// Pure append turns are persisted as coherent checkpoints; committed
+/// assistant/tool steps advance the same cursor during the turn. Transcript
+/// rewrites (compact, fork, hook rewrite) fall back to a full save.
+
+///|
+fn append_config() -> AgentConfig {
+  agent_config(max_tool_rounds=Some(10))
+}
+
+///|
+async test "t06_sequential_turns_use_append_not_full_save" {
+  let model = @test_support.ScriptedModel([
+    Respond(@test_support.tk_stop_response("first")),
+    Respond(@test_support.tk_stop_response("second")),
+  ])
+  let store = @test_support.RecordingSessionPort()
+  let agent = Agent(
+    events=EventSystem(),
+    exts=[
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store]),
+    ],
+    config=append_config(),
+  )
+  let _ = agent.run_turn(@test_support.tk_user_msg("hello"), "s1")
+  let _ = agent.run_turn(@test_support.tk_user_msg("world"), "s1")
+  let ops = store.ops()
+  let mut save_count = 0
+  let mut checkpoint_count = 0
+  for op in ops {
+    match op {
+      OpSave(id="s1", ..) => save_count = save_count + 1
+      OpCheckpoint(id="s1", ..) => checkpoint_count = checkpoint_count + 1
+      _ => ()
+    }
+  }
+  // The first dirty initialization performs one full alignment; later pure
+  // appends stay on checkpoints and do not degrade into another full save.
+  assert_eq(save_count, 1)
+  assert_true(checkpoint_count >= 3)
+}
+
+///|
+fn compact_trigger_response(total_tokens : Int32) -> @kernel.ModelCallResult {
+  // Tool-calls response keeps the pump in ReadyForModel so the auto-compact
+  // safe-point is reached; the tool outcome is ignored by the test.
+  let base = @test_support.tk_tool_call_response("echo", "call_1", Json::null())
+  let completion : @kernel.Completion = Completion(
+    content=[],
+    tool_calls=base.completion.tool_calls(),
+    reasoning=None,
+    finish_reason=ToolCalls,
+    usage=Some({
+      input_tokens: Some(total_tokens),
+      output_tokens: Some(0),
+      total_tokens: Some(total_tokens),
+      cached_input_tokens: None,
+      uncached_input_tokens: None,
+    }),
+  )
+  { completion, processed_messages: [], }
+}
+
+///|
+async test "t06_compact_turn_uses_full_save_not_append" {
+  let model = @test_support.ScopeRecordingModel(
+    [
+      Respond(@test_support.tk_stop_response("first")),
+      Respond(compact_trigger_response(95)),
+      Respond(@test_support.tk_stop_response("done")),
+    ],
+    compact_result={
+      compacted_messages: [@test_support.tk_user_msg("summary")],
+      mode: Replace,
+    },
+  )
+  let tools = @test_support.RecordingToolProvider(
+    [@test_support.tk_tool_def("echo", "echo tool")],
+    Map::from_array([("echo", OutcomeOk(@test_support.tk_ok_result("echoed")))]),
+  )
+  let store = @test_support.RecordingSessionPort()
+  let agent = Agent(
+    events=EventSystem(),
+    exts=[
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="tools", tools=[tools], sessions=[store]),
+    ],
+    config=agent_config(
+      max_tool_rounds=Some(10),
+      model_context_window=Some(100),
+      compact_threshold=Some(0.9),
+    ),
+  )
+  // First turn: small response, no compact, should append.
+  let _ = agent.run_turn(@test_support.tk_user_msg("hello"), "s2")
+  // Second turn: response reports 95 tokens (> 90 threshold), triggers
+  // compact Replace, which must fall back to full save.
+  let _ = agent.run_turn(@test_support.tk_user_msg("world"), "s2")
+  let ops = store.ops()
+  let mut save_count = 0
+  let mut checkpoint_count = 0
+  for op in ops {
+    match op {
+      OpSave(id="s2", ..) => save_count = save_count + 1
+      OpCheckpoint(id="s2", ..) => checkpoint_count = checkpoint_count + 1
+      _ => ()
+    }
+  }
+  assert_true(checkpoint_count >= 2)
+  // One initial full alignment plus the compact Replace full save.
+  assert_eq(save_count, 2)
+}
+
+///|
+async test "committed model and tool steps advance the durable cursor" {
+  let model = @test_support.ScriptedModel([
+    Respond(
+      @test_support.tk_tool_call_response(
+        "echo",
+        "checkpoint-call",
+        Json::null(),
+      ),
+    ),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("done"),
+    ),
+  ])
+  let tools = @test_support.RecordingToolProvider(
+    [@test_support.tk_tool_def("echo", "echo")],
+    Map::from_array([("echo", OutcomeOk(@test_support.tk_ok_result("tool-ok")))]),
+  )
+  let store = @test_support.RecordingSessionPort()
+  let agent = Agent(
+    events=EventSystem(),
+    exts=[
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", tools=[tools], sessions=[store]),
+    ],
+    config=append_config(),
+  )
+  ignore(agent.run_turn(@test_support.tk_user_msg("run it"), "step-checkpoint"))
+  let cursors : Array[Int32] = []
+  for op in store.ops() {
+    match op {
+      OpCheckpoint(id="step-checkpoint", checkpoint~, ..) if !checkpoint.messages.is_empty() =>
+        cursors.push(checkpoint.from_index)
+      _ => ()
+    }
+  }
+  debug_inspect(cursors, content="[1, 2, 3]")
+}
+
+///|
+/// Rewind primitive regression tests: `SessionPort::truncate`.
+///
+/// The Agent reloads persisted history from the store at the start of every
+/// turn, so truncating the store changes what the next turn sees. This test
+/// pins the Agent-level end-to-end behaviour.
+
+///|
+/// The assistant reply persisted by turn 1 in the scripted two-turn history.
+fn truncate_first_assistant() -> @kernel.Message {
+  AssistantMessage(
+    content=[Text("first")],
+    tool_calls=[],
+    reasoning=None,
+    finish_reason=Stop,
+  )
+}
+
+///|
+async test "rewind_truncate_changes_history_seen_by_next_agent_turn" {
+  let model = @test_support.ScriptedModel([
+    Respond(@test_support.tk_stop_response("first")),
+    Respond(@test_support.tk_stop_response("second")),
+    Respond(@test_support.tk_stop_response("third")),
+  ])
+  let store = @test_support.RecordingSessionPort()
+  let agent = Agent(
+    events=EventSystem(),
+    exts=[
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store]),
+    ],
+    config=agent_config(max_tool_rounds=Some(10)),
+  )
+  let _ = agent.run_turn(@test_support.tk_user_msg("hello"), "s1")
+  let _ = agent.run_turn(@test_support.tk_user_msg("world"), "s1")
+  // External rewind changes only the projection; the existing Agent keeps
+  // its confirmed core history.
+  store.truncate("s1", 2)
+  let fresh_model = @test_support.ScriptedModel([
+    Respond(@test_support.tk_stop_response("fresh")),
+  ])
+  let fresh = Agent(
+    events=EventSystem(),
+    exts=[
+      @test_support.tk_ext(id="model", model=Some(fresh_model)),
+      @test_support.tk_ext(id="io", sessions=[store]),
+    ],
+    config=agent_config(max_tool_rounds=Some(10)),
+  )
+  let _ = fresh.run_turn(@test_support.tk_user_msg("new"), "s1")
+  let fresh_prompt = fresh_model.received_messages[0]
+  assert_eq(fresh_prompt.length(), 3)
+  assert_true(fresh_prompt[0] == @test_support.tk_user_msg("hello"))
+  assert_true(fresh_prompt[1] == truncate_first_assistant())
+  assert_true(fresh_prompt[2] == @test_support.tk_user_msg("new"))
+  // The existing Agent still reads core, not the externally truncated store.
+  let _ = agent.run_turn(@test_support.tk_user_msg("more"), "s1")
+  assert_eq(model.received_messages.length(), 3)
+  let prompt = model.received_messages[2]
+  assert_eq(prompt.length(), 5)
+  assert_true(prompt[0] == @test_support.tk_user_msg("hello"))
+  assert_true(prompt[1] == truncate_first_assistant())
+  assert_true(prompt[2] == @test_support.tk_user_msg("world"))
+  assert_true(prompt[4] == @test_support.tk_user_msg("more"))
+}

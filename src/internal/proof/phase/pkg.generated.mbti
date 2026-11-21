@@ -2,6 +2,8 @@
 package "colmugx/posoco/internal/proof/phase"
 
 // Values
+pub fn check_phase_inv(PhaseState) -> Bool
+
 pub fn phase_initial() -> PhaseState
 
 pub fn step_phase(PhaseState, TransitionKind) -> StepResult

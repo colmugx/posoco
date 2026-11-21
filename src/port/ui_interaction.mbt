@@ -1,6 +1,4 @@
 ///|
-/// Owner-bound structured interactions. A resource is state the host renders;
-/// an interaction is a question the host has to answer.
 
 ///|
 /// Address of one interaction: owner-local id plus the runtime generation that

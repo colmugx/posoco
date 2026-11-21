@@ -1,17 +1,6 @@
-// ──────────────────────────────────────────────────────────────────────────
-// Effect completion folding — reducer then durable savepoint
-// ──────────────────────────────────────────────────────────────────────────
+///|
 
 ///|
-/// Fold one completed effect through the reducer, declare the next model
-/// effect when the reducer reaches `ReadyForModel`, and commit the complete
-/// side-effect boundary before returning. Execution and scheduling remain
-/// outside this helper; it is only the reducer → boundary-journal seam.
-
-///|
-/// Outcome of `fold_effect_input`. Either the next state to drive, or a
-/// terminal PromptResult to return early (used by auto-compact when the
-/// modelport chose NewThread — the run stops with CompactCompleted).
 priv enum FoldOutcome {
   Continue(RunState)
   Return(PromptResult)
@@ -71,12 +60,6 @@ async fn Puppet::finish_step_boundary(
   snap : TurnSnapshot,
 ) -> FoldOutcome raise PuppetError {
   self.record_context_reading(session_id, completed_state, snap)
-  // Auto-compact threshold check. If the reducer just landed in
-  // ReadyForModel AND observed token usage crossed the threshold, fire
-  // a compact (trigger=Auto) BEFORE declaring the next model effect.
-  // NewThread mode stops the turn with CompactCompleted; Replace
-  // updates the state and we proceed to declare_model_effect_if_ready
-  // on the post-compact transcript.
   let rewrite_events : Array[KernelEvent] = []
   let state_after_auto_compact = if completed_state.phase() == ReadyForModel {
     let compact = match self.check_auto_compact(completed_state, snap) {
@@ -140,23 +123,13 @@ async fn Puppet::finish_step_boundary(
   } else {
     completed_state
   }
-  // Journal order stays causal: the effect-completion events that produced
-  // the pre-compact state come first, then the compact rewrite, then any
-  // steer message injected at this boundary, then the next declared model
-  // intent — all committed in one boundary.
   let prior_events = completed_events
   for event in rewrite_events {
     prior_events.push(event)
   }
-  // Steer consumption belongs after auto-compact (an injected message must not
-  // be rewritten away immediately) and before the next model intent (so the
-  // fact, the message and that intent share one boundary).
   let state_after_steer = self.consume_into_state(
     state_after_auto_compact, prior_events,
   )
-  // Terminal ends the turn with no further delivery point, so every steer still
-  // queued is reported in this same boundary instead of being cleared with the
-  // run binding. It is never converted into a follow-up.
   if state_after_steer.phase() == Terminal {
     self.drain_undelivered(prior_events, "turn ended before delivery")
   }
@@ -192,10 +165,6 @@ async fn Puppet::finish_step_boundary(
 }
 
 ///|
-/// The pump is allowed to request a model step only after the reducer has
-/// reached `ReadyForModel`. Merge that declared intent into the same durable
-/// boundary as the fact that made it ready; the model effect is never
-/// dispatched before this boundary commits.
 fn declare_model_effect_if_ready(
   state : RunState,
   prior_events : Array[KernelEvent],
@@ -225,14 +194,6 @@ fn declare_model_effect_if_ready(
 }
 
 ///|
-/// Consume every steer queued for this run into the transcript, appending each
-/// `UserMessageAppended` to `events` so the caller commits the message together
-/// with the fact that made the boundary safe.
-///
-/// Only `ReadyForModel` consumes: appending a user message while a model or
-/// tool effect is still pending would break assistant/tool adjacency. Nothing
-/// is consumed in any other phase, so a steer accepted late stays queued for
-/// the next step boundary (or the terminal residual path).
 fn Puppet::consume_into_state(
   self : Puppet,
   state : RunState,
@@ -269,11 +230,6 @@ fn Puppet::consume_into_state(
 }
 
 ///|
-/// Report every steer still queued as `SteerUndelivered`, appending the events
-/// to `events` so they commit inside the run's terminal boundary.
-///
-/// Unconfirmed selections remain in the inbox if this boundary fails.
-/// Step messages never become follow-ups automatically.
 fn Puppet::drain_undelivered(
   self : Puppet,
   events : Array[KernelEvent],

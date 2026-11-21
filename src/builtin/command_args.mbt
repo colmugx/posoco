@@ -1,5 +1,4 @@
 ///|
-/// Tokenize a slash argument string, honoring double-quoted spans.
 fn tokenize_args(text : String) -> Array[String] {
   let tokens : Array[String] = []
   let mut current = StringBuilder()
@@ -24,7 +23,6 @@ fn tokenize_args(text : String) -> Array[String] {
 }
 
 ///|
-/// Coerce a string token to Json matching the param's ptype.
 fn coerce_param(p : @port.CommandParam, raw : String) -> Result[Json, String] {
   match p.ptype {
     Str => Ok(Json::string(raw))
@@ -50,7 +48,6 @@ fn coerce_param(p : @port.CommandParam, raw : String) -> Result[Json, String] {
 }
 
 ///|
-/// Split a `key=value` token into (key, value). Returns None if no `=`.
 fn split_kv(token : String) -> (String, String)? {
   let bytes = token.to_array()
   let mut i = 0
@@ -66,7 +63,6 @@ fn split_kv(token : String) -> (String, String)? {
 }
 
 ///|
-/// Find a CommandParam by name in an array. Returns None if not found.
 fn find_param(
   params : Array[@port.CommandParam],
   name : String,

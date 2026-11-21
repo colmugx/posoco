@@ -1,17 +1,6 @@
 ///|
-/// Effect declarations for the functional Kernel.
-///
-/// Effects are pure data — the reducer declares them, the stateless executor
-/// executes ONE at a time. No effect payload ever carries a trait reference.
-///
-/// Each `Effect` carries its `effect_id` and the `model_step_id` it belongs
-/// to; the executor returns a completion input that must match these.
 
 ///|
-/// Payload for `Effect::CallModel`. The executor uses `catalog_version` to
-/// re-derive the same definitions the model was prompted against; a stale
-/// version returned by the executor would be a kernel invariant failure
-/// detected at completion correlation.
 // Proof-side token model: contracts only tag-match `Effect` variants and
 // never read payload fields; the int mapping is a trusted opaque bridge.
 #derive(Eq, Debug)
@@ -38,8 +27,6 @@ pub extend CallModelPayload with Debug::{to_repr}
 ///|
 /// Payload for `Effect::ExecuteTool`. The executor looks up
 /// `catalog_version`+`owner` in the runtime registry; if either is missing,
-/// the executor returns a typed `ToolFailed` input carrying an
-/// `InvariantCategory::MissingOwner`/`StaleSnapshot`.
 #derive(Eq, Debug)
 pub(all) struct ExecuteToolPayload {
   model_step_id : ModelStepId
@@ -62,9 +49,6 @@ pub extend ExecuteToolPayload with Eq::{not_equal, equal}
 pub extend ExecuteToolPayload with Debug::{to_repr}
 
 ///|
-/// The one tool-call projection for every payload carrying `call_id` /
-/// `tool_name` / `arguments`, so the scheduler, hooks and events all report the
-/// same call shape.
 fn tool_call_projection(
   call_id : @kernel.CallId,
   tool_name : @kernel.ToolName,
@@ -97,8 +81,6 @@ pub fn ToolFailedPayload::tool_call(
 ///|
 /// Payload for `Effect::CancelOutstanding`. Lists the effect ids the reducer
 /// wants the executor to stop; the executor records a `CancelDisposition`
-/// per id (fake executors report `Propagated`; a real adapter may report
-/// `NotPropagated`).
 #derive(Eq, Debug)
 pub(all) struct CancelOutstandingPayload {
   /// Effect ids that should be cancelled. May be empty (the executor should
@@ -120,9 +102,6 @@ pub extend CancelOutstandingPayload with Debug::{to_repr}
 ///|
 /// A single declared Effect. Each variant carries its own id and the
 /// `model_step_id` it belongs to. The executor consumes exactly one Effect at
-/// a time and returns exactly one completion Input.
-///
-/// `effect_id` is unique per Run and allocated by the reducer.
 #derive(Eq, Debug)
 pub(all) enum Effect {
   CallModel(effect_id~ : EffectId, payload~ : CallModelPayload)

@@ -1,6 +1,4 @@
 ///|
-/// One ordinary turn's armed input cutoff, keyed by its unique run id so
-/// commit and unwind can never touch another turn's arm.
 priv struct WakeupCutoffArm {
   key : String
   session : String
@@ -37,8 +35,6 @@ pub fn WakeupRuntime::disarm_cutoff(self : WakeupRuntime, key : String) -> Unit 
 }
 
 ///|
-/// Commit when the armed run's `RunStarted` is committed: `before_model`
-/// succeeded and the initial real input is durable.
 fn WakeupRuntime::commit_cutoff(
   self : WakeupRuntime,
   key : String,
