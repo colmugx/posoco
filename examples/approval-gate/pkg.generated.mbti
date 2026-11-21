@@ -1,0 +1,30 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "colmugx/posoco-approval-gate"
+
+import {
+  "colmugx/posoco/error",
+  "colmugx/posoco/kernel",
+  "colmugx/posoco/port",
+  "colmugx/posoco/types",
+}
+
+// Values
+
+// Errors
+
+// Types and methods
+type DeployApp
+pub impl @port.Extension for DeployApp
+
+type DeployModel
+pub impl @port.ModelPort for DeployModel
+
+type DeployTools
+pub impl @port.ToolProvider for DeployTools
+
+type DeploymentPolicy
+pub impl @port.PipelineHook for DeploymentPolicy
+
+// Type aliases
+
+// Traits

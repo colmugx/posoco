@@ -1,0 +1,31 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "colmugx/posoco-live-tool-swap"
+
+import {
+  "colmugx/posoco/error",
+  "colmugx/posoco/kernel",
+  "colmugx/posoco/port",
+  "colmugx/posoco/types",
+}
+
+// Values
+
+// Errors
+
+// Types and methods
+type QuoteApp
+pub impl @port.Extension for QuoteApp
+
+type QuoteModel
+pub impl @port.ModelPort for QuoteModel
+
+type ShippingCalculator
+pub impl @port.ToolProvider for ShippingCalculator
+
+type ShippingCatalog
+pub impl @port.Extension for ShippingCatalog
+pub impl @port.Lifecycle for ShippingCatalog
+
+// Type aliases
+
+// Traits

@@ -1,0 +1,27 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "colmugx/posoco-incident-triage"
+
+import {
+  "colmugx/posoco/error",
+  "colmugx/posoco/kernel",
+  "colmugx/posoco/port",
+  "colmugx/posoco/types",
+}
+
+// Values
+
+// Errors
+
+// Types and methods
+type IncidentModel
+pub impl @port.ModelPort for IncidentModel
+
+type IncidentTools
+pub impl @port.ToolProvider for IncidentTools
+
+type OnCallApp
+pub impl @port.Extension for OnCallApp
+
+// Type aliases
+
+// Traits
