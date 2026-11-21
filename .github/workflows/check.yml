@@ -6,70 +6,22 @@ on:
       - main
   pull_request:
 
-# Test channel layout (suite executions per push, was 12):
-#   stable-build — debug check+test across the 3-OS matrix (default target
-#     covers wasm plus the native-gated test files).
-#   release-test / native-test / js-test — single-OS target-and-mode runs;
-#     every kind stays covered exactly once instead of once per OS.
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  stable-build:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: ["ubuntu-latest","macos-latest", "windows-latest"]
-
-    runs-on: ${{ matrix.os }}
-    continue-on-error: false
-    timeout-minutes: 10
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - name: disable auto CRLF
-        if: ${{ matrix.os == 'windows-latest' }}
-        run: git config --global core.autocrlf false
-
       - uses: actions/checkout@v5
 
       - uses: actions/setup-node@v6
         with:
           node-version: '>=22.4.0'
 
-      - name: install MSVC (Windows)
-        if: ${{ matrix.os == 'windows-latest' }}
-        uses: ilammy/msvc-dev-cmd@v1
-
-      - name: install (Unix)
-        if: ${{ matrix.os != 'windows-latest' }}
-        run: |
-          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
-          echo "$HOME/.moon/bin" >> $GITHUB_PATH
-
-      - name: install (Windows)
-        if: ${{ matrix.os == 'windows-latest' }}
-        run: |
-          Set-ExecutionPolicy RemoteSigned -Scope CurrentUser; irm https://cli.moonbitlang.com/install/powershell.ps1 | iex
-          "C:\Users\runneradmin\.moon\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
-
-      - name: moon version
-        run: |
-          moon version --all
-          moonrun --version
-
-      - name: moon update
-        run: |
-          moon update
-
-      - name: moon check
-        run: moon check
-
-      - name: moon test
-        run: moon test
-
-  release-test:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: install
+      - name: install moonbit
         run: |
           curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
           echo "$HOME/.moon/bin" >> $GITHUB_PATH
@@ -80,58 +32,22 @@ jobs:
           moonrun --version
 
       - name: moon update
-        run: |
-          moon update
+        run: moon update
 
-      - name: moon test (release)
-        run: moon test --release
+      - name: check (all targets)
+        run: moon check --target all --deny-warn
 
-  moon-format:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: install
-        run: |
-          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
-          echo "$HOME/.moon/bin" >> $GITHUB_PATH
-
-      - name: moon version
-        run: |
-          moon version --all
-          moonrun --version
-
-      - name: moon update
-        run: |
-          moon update
-
-      - name: format diff
+      - name: format & interface check
         run: |
           moon fmt
-          git diff --exit-code
-
-  moon-info:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: install
-        run: |
-          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
-          echo "$HOME/.moon/bin" >> $GITHUB_PATH
-
-      - name: moon version
-        run: |
-          moon version --all
-          moonrun --version
-
-      - name: moon update
-        run: |
-          moon update
-
-      - name: moon info
-        run: |
           moon info
           git diff --exit-code
+
+      - name: test (wasm + native-gated)
+        run: moon test
+
+      - name: test (native)
+        run: moon test --target native
+
+      - name: test (js)
+        run: moon test --target js

@@ -1,3 +1,5 @@
+name: publish
+
 on:
   release:
     types: [released]
@@ -6,13 +8,11 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v6
-        with:
-          node-version: '>=22.4.0'
+      - uses: actions/checkout@v5
 
-      - name: install
+      - name: install moonbit
         run: |
           curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
           echo "$HOME/.moon/bin" >> $GITHUB_PATH
@@ -23,30 +23,20 @@ jobs:
           moonrun --version
 
       - name: moon update
-        run: |
-          moon update
+        run: moon update
 
-      - name: moon check
-        run: moon check
-
-      - name: moon info
+      - name: verify
         run: |
+          moon check --target all --deny-warn
+          moon fmt
           moon info
           git diff --exit-code
-
-      - name: moon test
-        run: |
           moon test
-
-      - name: format diff
-        run: |
-          moon fmt
-          git diff --exit-code
 
       - name: publish
         run: |
-          echo $SECRET > ~/.moon/credentials.json
+          trap 'rm -f ~/.moon/credentials.json' EXIT
+          printf '%s\n' "$SECRET" > ~/.moon/credentials.json
           moon publish
-          rm ~/.moon/credentials.json
         env:
           SECRET: ${{ secrets.MOONCAKES_TOKEN }}
