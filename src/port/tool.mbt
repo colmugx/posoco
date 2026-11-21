@@ -78,7 +78,7 @@ pub async fn ToolCallContext::invoke(
   match self.invoke_ {
     Some(invoke) =>
       invoke(name, arguments) catch {
-        error => raise @error.RuntimeError::InvocationFailed(error.to_string())
+        error => raise InvocationFailed(error.to_string())
       }
     None =>
       Interrupted(

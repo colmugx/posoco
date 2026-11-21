@@ -1,13 +1,13 @@
 ///|
 /// Budget, Deadline and Cancel contracts for the functional
-/// Kernel (ADR §2.5, §2.6, §2.9).
+/// Kernel.
 ///
 /// Key invariants:
 /// - The reducer NEVER reads a clock. Deadlines are delivered as
 ///   `DeadlineReached` inputs; the reducer only compares its own budget
 ///   counters.
 /// - Budget dimensions are `Int?` because the host may not configure every
-///   dimension. Unknown usage is NEVER reported as 0 (ADR §2.9).
+///   dimension. Unknown usage is NEVER reported as 0.
 /// - Cancel is idempotent: the second `CancelRequested` after
 ///   `Terminal(Cancelled)` is a typed rejection, not a new terminal event.
 ///
@@ -82,7 +82,7 @@ pub fn EventSequence::to_int(self : EventSequence) -> Int32 {
 }
 
 ///|
-/// Budget dimensions tracked per Run (ADR §2.9). `Int?` → `None` means unbounded.
+/// Budget dimensions tracked per Run. `Int?` → `None` means unbounded.
 /// The reducer increments consumed counters as it declares effects.
 #derive(Eq, Debug)
 pub(all) struct Budget {

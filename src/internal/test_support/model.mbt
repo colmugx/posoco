@@ -232,9 +232,7 @@ pub impl @port.ModelPort for ScriptedModel with fn chat(
       self.parked_calls = self.parked_calls + 1
       let mut parked = true
       while parked {
-        // pause() is noraise since async 0.22: a cancellation arrives as a
-        // runtime signal, so capture it explicitly to keep raising the typed
-        // Transport error the pump turns into a structured failure.
+        // Capture cancellation explicitly so the fake raises a typed Transport error.
         let outcome : Result[Unit?, Error] = Ok(
           @async.handle_cancellation(async fn() { @async.pause() }),
         ) catch {

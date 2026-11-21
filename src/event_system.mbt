@@ -21,7 +21,7 @@ pub struct EventSystem {
 /// }
 /// ```
 pub fn EventSystem::EventSystem() -> EventSystem {
-  { runtime: @event_runtime.EventRuntime(), owned: false, }
+  { runtime: EventRuntime(), owned: false, }
 }
 
 ///|

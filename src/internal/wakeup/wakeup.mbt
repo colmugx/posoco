@@ -66,7 +66,7 @@ pub fn WakeupRuntime::WakeupRuntime(
     next_ticket_seq: 0,
     next_operation_seq: 0,
     epoch: 0,
-    wake: @cond_var.Cond::Cond(),
+    wake: Cond(),
     events,
     order: [],
     by_key: Map::from_array([]),
@@ -91,14 +91,10 @@ pub fn WakeupRuntime::activate(
   self : WakeupRuntime,
 ) -> Unit raise @error.AgentError {
   if self.closed {
-    raise @error.AgentError::Runtime(
-      @error.RuntimeError::InvocationFailed("wakeup runtime is closed"),
-    )
+    raise Runtime(InvocationFailed("wakeup runtime is closed"))
   }
   if self.scope_active {
-    raise @error.AgentError::Runtime(
-      @error.RuntimeError::InvocationFailed("wakeup scope is already active"),
-    )
+    raise Runtime(InvocationFailed("wakeup scope is already active"))
   }
   self.scope_active = true
 }

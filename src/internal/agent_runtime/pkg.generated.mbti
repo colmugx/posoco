@@ -1,0 +1,62 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "colmugx/posoco/internal/agent_runtime"
+
+import {
+  "colmugx/posoco/error",
+  "colmugx/posoco/events",
+  "colmugx/posoco/internal/event_runtime",
+  "colmugx/posoco/internal/puppetry",
+  "colmugx/posoco/kernel",
+  "colmugx/posoco/port",
+  "colmugx/posoco/runtime",
+  "colmugx/posoco/types",
+}
+
+// Values
+
+// Errors
+
+// Types and methods
+pub struct AgentRuntime {
+  // private fields
+}
+pub fn AgentRuntime::commands(Self) -> Array[&@port.CommandPort]
+pub async fn AgentRuntime::compact_session(Self, String) -> @types.CompactOutcome raise @error.AgentError
+pub fn AgentRuntime::compose(exts~ : Array[&@port.Extension], config~ : RuntimeConfig, events~ : @event_runtime.EventRuntime, ui_projection? : Bool, host_override? : &@runtime.Runtime?) -> Self raise @error.CompositionError
+pub async fn AgentRuntime::context_state(Self, String) -> @types.ContextState?
+pub fn AgentRuntime::control(Self) -> ControlCore
+pub async fn AgentRuntime::resume_turn(Self, String, continuation? : String) -> @types.TurnResult raise @error.AgentError
+pub async fn[X] AgentRuntime::run_scoped_with(Self, async () -> X) -> X
+pub async fn AgentRuntime::run_turn(Self, @kernel.Message, String) -> @types.TurnResult raise @error.AgentError
+pub fn AgentRuntime::set_active_session(Self, String?) -> Unit
+pub async fn AgentRuntime::shutdown(Self) -> Unit
+pub fn AgentRuntime::subscribe_events(Self, (@events.EventEnvelope) -> Unit, namespace_? : @events.EventNamespace?) -> Result[@events.Subscription, @events.EventError]
+pub fn AgentRuntime::ui_host(Self) -> @port.UiHost
+
+pub struct ControlCore {
+  // private fields
+}
+pub fn ControlCore::abort_active(Self, String?) -> @runtime.EnqueueOutcome
+pub fn ControlCore::active_run_id(Self) -> @kernel.RunId?
+pub fn ControlCore::active_turn_id(Self) -> @kernel.TurnId?
+pub fn ControlCore::current_address(Self) -> @puppetry.MessageAddress?
+pub fn ControlCore::enqueue_follow_up(Self, @kernel.Message, expected? : @puppetry.MessageAddress?) -> @runtime.EnqueueOutcome
+pub fn ControlCore::enqueue_steer(Self, @kernel.Message, expected? : @puppetry.MessageAddress?) -> @runtime.EnqueueOutcome
+pub fn ControlCore::pending_follow_ups(Self) -> Int32
+pub fn ControlCore::pending_steers(Self) -> Int32
+
+pub(all) struct RuntimeConfig {
+  max_tool_rounds : Int32?
+  max_tool_calls : Int32?
+  max_tool_depth : Int32?
+  temperature : Double?
+  max_output_tokens : Int32?
+  model_context_window : Int32?
+  compact_threshold : Double?
+  system_prompt : String?
+  memory_inbound_timeout_ms : Int32?
+}
+
+// Type aliases
+
+// Traits

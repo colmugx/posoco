@@ -139,7 +139,7 @@ pub struct ToolCatalogBuilder {
   entries : Array[CatalogEntry]
   by_name : Map[String, CatalogEntry]
   /// Compiled JSON Schema plan per visible name, built in `add`. Compilation
-  /// is the composition gate (ADR §2.7): a schema that does not compile is a
+  /// is the composition gate: a schema that does not compile is a
   /// hard failure, and the finished snapshot validates calls from these plans.
   compiled : Map[String, @json-schema.Schema]
   mut finished : Bool
@@ -193,7 +193,7 @@ pub fn ToolCatalogBuilder::add(
     )
   }
   // Schema validation: must be object or boolean at top level, and must
-  // compile under the JSON Schema validator (ADR §2.7). The compiled plan is
+  // compile under the JSON Schema validator. The compiled plan is
   // cached here and transferred to the snapshot for call-time validation.
   match check_schema_top_level(def.input_schema) {
     Err(detail) => raise MalformedSchema(visible_name~, detail~)

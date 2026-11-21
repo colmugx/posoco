@@ -1,5 +1,5 @@
 ///|
-/// Tool-argument schema validation (ADR §2.7), backed by `colmugx/json-schema`
+/// Tool-argument schema validation, backed by `colmugx/json-schema`
 /// (JSON Schema 2020-12). Schemas compile once at catalog composition: any
 /// `Schema::compile` failure is a composition hard failure, and the compiled
 /// plan validates every call. Nothing is silently skipped.
@@ -22,9 +22,9 @@ fn compile_tool_schema(
   schema : Json,
 ) -> @json-schema.Schema raise CatalogCompositionError {
   @json-schema.Schema::compile(schema) catch {
-    @json-schema.CompileError::UnsupportedKeyword(keyword~, ..) =>
+    UnsupportedKeyword(keyword~, ..) =>
       raise UnsupportedSchemaKeyword(visible_name~, keyword~)
-    @json-schema.CompileError::UnsupportedPattern(..) =>
+    UnsupportedPattern(..) =>
       raise UnsupportedSchemaKeyword(visible_name~, keyword="pattern")
     error =>
       raise MalformedSchema(visible_name~, detail=explain_compile_error(error))

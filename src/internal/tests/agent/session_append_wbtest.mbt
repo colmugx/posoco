@@ -1,0 +1,154 @@
+///|
+/// Session checkpoint regression tests.
+///
+/// Pure append turns are persisted as coherent checkpoints; committed
+/// assistant/tool steps advance the same cursor during the turn. Transcript
+/// rewrites (compact, fork, hook rewrite) fall back to a full save.
+
+///|
+fn append_config() -> AgentConfig {
+  agent_config(max_tool_rounds=Some(10))
+}
+
+///|
+async test "t06_sequential_turns_use_append_not_full_save" {
+  let model = @test_support.ScriptedModel([
+    Respond(@test_support.tk_stop_response("first")),
+    Respond(@test_support.tk_stop_response("second")),
+  ])
+  let store = @test_support.RecordingSessionPort()
+  let agent = Agent(
+    events=EventSystem(),
+    exts=[
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", sessions=[store]),
+    ],
+    config=append_config(),
+  )
+  let _ = agent.run_turn(@test_support.tk_user_msg("hello"), "s1")
+  let _ = agent.run_turn(@test_support.tk_user_msg("world"), "s1")
+  let ops = store.ops()
+  let mut save_count = 0
+  let mut checkpoint_count = 0
+  for op in ops {
+    match op {
+      OpSave(id="s1", ..) => save_count = save_count + 1
+      OpCheckpoint(id="s1", ..) => checkpoint_count = checkpoint_count + 1
+      _ => ()
+    }
+  }
+  // The first dirty initialization performs one full alignment; later pure
+  // appends stay on checkpoints and do not degrade into another full save.
+  assert_eq(save_count, 1)
+  assert_true(checkpoint_count >= 3)
+}
+
+///|
+fn compact_trigger_response(total_tokens : Int32) -> @kernel.ModelCallResult {
+  // Tool-calls response keeps the pump in ReadyForModel so the auto-compact
+  // safe-point is reached; the tool outcome is ignored by the test.
+  let base = @test_support.tk_tool_call_response("echo", "call_1", Json::null())
+  let completion : @kernel.Completion = Completion(
+    content=[],
+    tool_calls=base.completion.tool_calls(),
+    reasoning=None,
+    finish_reason=ToolCalls,
+    usage=Some({
+      input_tokens: Some(total_tokens),
+      output_tokens: Some(0),
+      total_tokens: Some(total_tokens),
+      cached_input_tokens: None,
+      uncached_input_tokens: None,
+    }),
+  )
+  { completion, processed_messages: [], }
+}
+
+///|
+async test "t06_compact_turn_uses_full_save_not_append" {
+  let model = @test_support.ScopeRecordingModel(
+    [
+      Respond(@test_support.tk_stop_response("first")),
+      Respond(compact_trigger_response(95)),
+      Respond(@test_support.tk_stop_response("done")),
+    ],
+    compact_result={
+      compacted_messages: [@test_support.tk_user_msg("summary")],
+      mode: Replace,
+    },
+  )
+  let tools = @test_support.RecordingToolProvider(
+    [@test_support.tk_tool_def("echo", "echo tool")],
+    Map::from_array([("echo", OutcomeOk(@test_support.tk_ok_result("echoed")))]),
+  )
+  let store = @test_support.RecordingSessionPort()
+  let agent = Agent(
+    events=EventSystem(),
+    exts=[
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="tools", tools=[tools], sessions=[store]),
+    ],
+    config=agent_config(
+      max_tool_rounds=Some(10),
+      model_context_window=Some(100),
+      compact_threshold=Some(0.9),
+    ),
+  )
+  // First turn: small response, no compact, should append.
+  let _ = agent.run_turn(@test_support.tk_user_msg("hello"), "s2")
+  // Second turn: response reports 95 tokens (> 90 threshold), triggers
+  // compact Replace, which must fall back to full save.
+  let _ = agent.run_turn(@test_support.tk_user_msg("world"), "s2")
+  let ops = store.ops()
+  let mut save_count = 0
+  let mut checkpoint_count = 0
+  for op in ops {
+    match op {
+      OpSave(id="s2", ..) => save_count = save_count + 1
+      OpCheckpoint(id="s2", ..) => checkpoint_count = checkpoint_count + 1
+      _ => ()
+    }
+  }
+  assert_true(checkpoint_count >= 2)
+  // One initial full alignment plus the compact Replace full save.
+  assert_eq(save_count, 2)
+}
+
+///|
+async test "committed model and tool steps advance the durable cursor" {
+  let model = @test_support.ScriptedModel([
+    Respond(
+      @test_support.tk_tool_call_response(
+        "echo",
+        "checkpoint-call",
+        Json::null(),
+      ),
+    ),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("done"),
+    ),
+  ])
+  let tools = @test_support.RecordingToolProvider(
+    [@test_support.tk_tool_def("echo", "echo")],
+    Map::from_array([("echo", OutcomeOk(@test_support.tk_ok_result("tool-ok")))]),
+  )
+  let store = @test_support.RecordingSessionPort()
+  let agent = Agent(
+    events=EventSystem(),
+    exts=[
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", tools=[tools], sessions=[store]),
+    ],
+    config=append_config(),
+  )
+  ignore(agent.run_turn(@test_support.tk_user_msg("run it"), "step-checkpoint"))
+  let cursors : Array[Int32] = []
+  for op in store.ops() {
+    match op {
+      OpCheckpoint(id="step-checkpoint", checkpoint~, ..) if !checkpoint.messages.is_empty() =>
+        cursors.push(checkpoint.from_index)
+      _ => ()
+    }
+  }
+  debug_inspect(cursors, content="[1, 2, 3]")
+}

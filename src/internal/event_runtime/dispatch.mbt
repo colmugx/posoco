@@ -6,7 +6,7 @@ fn EventRuntime::publish(
   event : @events.Event,
 ) -> Result[Unit, @events.EventError] {
   if self.closed.val {
-    return Err(@events.EventError::Closed)
+    return Err(Closed)
   }
   self.enqueue(namespace_, scope, event)
   Ok(())
@@ -84,13 +84,13 @@ fn listener_accepts(
 fn envelope_of(queued : QueuedEvent) -> @events.EventEnvelope {
   match queued.core {
     Some(core) =>
-      @events.EventEnvelope(
+      EventEnvelope(
         namespace_=queued.namespace_,
         scope=queued.scope,
         event=@events.Core(@event_snapshot.snapshot_turn_event(core)),
       )
     None =>
-      @events.EventEnvelope(
+      EventEnvelope(
         namespace_=queued.namespace_,
         scope=queued.scope,
         event=queued.event,

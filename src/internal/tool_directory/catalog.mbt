@@ -47,7 +47,7 @@ pub fn build_catalog_from_defs(
 
 ///|
 fn snapshot_tool_def(tool : @kernel.ToolDef) -> @kernel.ToolDef {
-  @kernel.ToolDef(
+  ToolDef(
     name=tool.name,
     description=tool.description,
     input_schema=@message_snapshot.snapshot_json(tool.input_schema),

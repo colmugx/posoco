@@ -113,7 +113,7 @@ pub fn OperationGuard::begin_execution(
         operation_id,
         cancel_requested: false,
         cancel_worker: None,
-        settle: @cond_var.Cond::Cond(),
+        settle: Cond(),
         settled: false,
       })
     _ => ()

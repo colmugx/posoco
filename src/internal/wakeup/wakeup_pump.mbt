@@ -18,11 +18,9 @@ fn wakeup_envelope_head(tag : String) -> String {
 fn wakeup_envelope_message(tag : String, note : String) -> @kernel.Message {
   let head = wakeup_envelope_head(tag)
   if note == "" {
-    @kernel.Message::UserMessage(content=[@kernel.Content::Text(head)])
+    UserMessage(content=[Text(head)])
   } else {
-    @kernel.Message::UserMessage(content=[
-      @kernel.Content::Text("\{head} \{note}"),
-    ])
+    UserMessage(content=[Text("\{head} \{note}")])
   }
 }
 
@@ -83,12 +81,12 @@ async fn WakeupRuntime::execute_ticket(
     // Busy is a queueing signal, not a terminal state: no terminal and no
     // executing event fired, so re-queue at the head and wait for the
     // incumbent's settled notification.
-    Err(@error.AgentError::Busy(..)) => {
+    Err(Busy(..)) => {
       let requeued = self.requeue_front(entry)
       terminal.val = Some("requeued")
       return requeued
     }
-    Err(@error.AgentError::Cancelled(_)) => "wakeup_cancelled"
+    Err(Cancelled(_)) => "wakeup_cancelled"
     Err(_) => "wakeup_failed"
   }
   terminal.val = Some(label)

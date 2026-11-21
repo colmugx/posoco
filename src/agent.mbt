@@ -1,13 +1,5 @@
 ///|
-using @bridge {type RuntimeHostShim}
-
-///|
 /// Agent-level runtime config: provider-agnostic tuning and run budget.
-/// `max_tool_rounds` bounds the tool rounds of one turn: `Some(n)` allows n
-/// full rounds and rejects the (n+1)-th batch atomically; `Some(0)` forbids
-/// tool execution; `None` is unbounded (the recommended product default —
-/// the human abort and compaction govern loop length, matching peer coding
-/// agents).
 pub struct AgentConfig {
   max_tool_rounds : Int32?
   max_tool_calls : Int32?
@@ -30,8 +22,7 @@ pub struct AgentConfig {
 
 ///|
 /// Construct an `AgentConfig` naming only the knobs you set; every omitted
-/// knob is `None`. Prefer this over record literals so new optional fields
-/// never break construction sites.
+/// knob is `None`.
 pub fn agent_config(
   max_tool_rounds~ : Int32? = None,
   max_tool_calls~ : Int32? = None,
@@ -57,500 +48,26 @@ pub fn agent_config(
 }
 
 ///|
-/// Encode the provider-agnostic chat options for `RunPolicy.call_options`.
-/// Provider-specific configuration belongs to the ModelPort extension and
-/// never crosses the canonical HostRuntime seam.
-fn AgentConfig::to_call_options_json(self : AgentConfig) -> Json {
-  let fields : Map[String, Json] = Map::from_array([])
-  match self.temperature {
-    Some(t) => fields["temperature"] = Json::number(t)
-    None => ()
+fn AgentConfig::to_runtime_config(
+  self : AgentConfig,
+) -> @agent_runtime.RuntimeConfig {
+  {
+    max_tool_rounds: self.max_tool_rounds,
+    max_tool_calls: self.max_tool_calls,
+    max_tool_depth: self.max_tool_depth,
+    temperature: self.temperature,
+    max_output_tokens: self.max_output_tokens,
+    model_context_window: self.model_context_window,
+    compact_threshold: self.compact_threshold,
+    system_prompt: self.system_prompt,
+    memory_inbound_timeout_ms: self.memory_inbound_timeout_ms,
   }
-  match self.max_output_tokens {
-    Some(n) => fields["max_output_tokens"] = Json::number(n.to_double())
-    None => ()
-  }
-  Json::object(fields)
 }
 
 ///|
-priv struct AgentRuntime {
-  puppet : @puppetry.Puppet
-  /// The aggregated ModelPort, queried per turn for the active model's
-  /// self-reported context window / compact threshold. Reference equality
-  /// with the port the Puppet executes through — no second composition path.
-  model : &@port.ModelPort
-  events : @event_runtime.EventRuntime
-  /// The composed hook chain in interception order — the same array the
-  /// Puppet executes — retained for Agent-level dispatch points that fire
-  /// outside the pump (`PipelineHook::on_turn_end`).
-  hooks : Array[&@port.PipelineHook]
-  /// The aggregated memory sources paired with their manifest ids; drives
-  /// the session-opening inbound injection and the built-in memory tools.
-  memory : Array[(String, &@port.MemoryPort)]
-  /// Sessions whose inbound read already ran (freeze-even-if-empty: an
-  /// empty or failed read never retries within this process).
-  memory_inbound_attempted : Map[String, Bool]
-  sessions : Array[&@port.SessionPort]
-  lifecycle : Array[&@port.Lifecycle]
-  commands : Array[&@port.CommandPort]
-  builtin_command_port : BuiltinCommandPort
-  control : AgentControl
-  task_runtime : @task.TaskRuntime
-  /// Centralized single-operation admission/settlement state.
-  operations : @operation_guard.OperationGuard
-  /// Agent-owned wakeup ledger and pump.
-  wakeup : @wakeup.WakeupRuntime
-  /// Agent-owned UI resource protocol state: one owner-bound capability per
-  /// declaring extension and the host-side baseline/change feed over it.
-  ui_runtime : @ui.UiRuntime
-  config : AgentConfig
-  mut next_catalog_version : Int32
-  /// Agent-owned dynamic tool contributions (one owner-bound group per
-  /// declaring manifest). Empty and inert unless an extension declares
-  /// `Capability::ToolContribution`.
-  tool_contributions : ToolContributionRegistry
-  /// Revocations of the admitted operation's captured bindings.
-  tool_revocations : @puppetry.ToolRevocationFacts
-  /// Tool name → contributed version of the installed capture.
-  binding_versions : Ref[Map[String, Int32]]
-  /// Captured / operation / retained version sets with their joint lease
-  /// invariants (see `ToolVersionLeases`).
-  versions : @directory.ToolVersionLeases
-  /// Only replaced at operation admission. Each effect receives its captured
-  /// provider in a private Runtime context, not a mutable host name route.
-  tool_bindings : Ref[Map[String, &@port.ToolProvider]]
-  tool_runtime : RuntimeHostShim
-  mut next_run_seq : Int32
-  mut shutdown_started : Bool
-  mut shutdown_complete : Bool
-  mut next_lifecycle_shutdown : Int32
-  /// Whether lifecycle contributors have received their once-per-Agent
-  /// `on_start` notification. Fired inside the first `run_single_turn`,
-  /// after the shutdown guard and before the first `TurnStarted`.
-  mut start_notified : Bool
-  /// Synchronous product-boundary guard for the full `run_turn` call,
-  /// including any follow-ups drained by that call.  The guard is acquired
-  /// before the first await so a rejected concurrent call cannot mutate
-  /// turn-scoped state before Puppet reports its lease as busy.
-  mut turn_active : Bool
-  /// Per-turn chunk dispatcher handle. The callback installed in the Puppet
-  /// reads this reference to route `StreamChunk` events to the active turn's
-  /// buffered queue; `run_turn_via_puppet` creates and swaps the dispatcher
-  /// for each turn. Only the installing turn may clear it, which the
-  /// generation below pins down.
-  chunk_dispatcher : Ref[@chunk_dispatch.ChunkDispatcher?]
-  /// Generation of the installed chunk dispatcher. Bumped on every install so
-  /// a turn's cleanup drops its own dispatcher and never a later turn's.
-  mut chunk_dispatcher_generation : Int32
-  /// Persisted-prefix bookkeeping (cursor + rewrite-dirty) shared with the
-  /// committed-event checkpoint subscriber; see `@session_state.SessionProgress`.
-  progress : @session_state.SessionProgress
-  /// Shadow core facts shared with the checkpoint subscriber. It never feeds
-  /// the production load path; compact/fork/rewrite are not mirrored here.
-  core_facts : @core_facts.CoreFacts
-  /// The committed-event projection subscriber. Retained so the turn-failure
-  /// path can close still-pending tool calls with `ToolCallAbandoned`: the
-  /// Puppet's host-level rejection path (`reject_run`) intentionally emits
-  /// no terminal kernel event, so the Agent synthesizes the closure here.
-  event_subscriber : @event_projection.EventProjection
-  session_output : @session_output.SessionOutput
-  /// Core-confirmed NewThread outputs awaiting a full write-all. Keyed by the
-  /// child session id; in-process only.
-}
-
-///|
-/// Public deep module for agent developers. The runtime representation is a
-/// private handle so canonical execution machinery never enters the interface.
+/// Public deep module for agent developers.
 pub struct Agent {
-  priv runtime : AgentRuntime
-}
-
-///|
-/// Reject out-of-range AgentConfig knobs before any port wiring happens.
-fn validate_agent_config(
-  config : AgentConfig,
-) -> Unit raise @error.CompositionError {
-  match config.max_tool_rounds {
-    Some(value) if value < 0 =>
-      raise ManifestSchemaError(
-        manifest_id="agent.config",
-        detail="max_tool_rounds must be non-negative",
-      )
-    _ => ()
-  }
-  for
-    (name, limit) in [
-      ("max_tool_calls", config.max_tool_calls),
-      ("max_tool_depth", config.max_tool_depth),
-    ] {
-    if limit is Some(value) && value < 0 {
-      raise ManifestSchemaError(
-        manifest_id="agent.config",
-        detail=name + " must be non-negative",
-      )
-    }
-  }
-  match config.model_context_window {
-    Some(value) if value <= 0 =>
-      raise ManifestSchemaError(
-        manifest_id="agent.config",
-        detail="model_context_window must be positive",
-      )
-    _ => ()
-  }
-  match config.compact_threshold {
-    Some(value) if value <= 0.0 || value > 1.0 =>
-      raise ManifestSchemaError(
-        manifest_id="agent.config",
-        detail="compact_threshold must be in (0, 1]",
-      )
-    _ => ()
-  }
-  match config.memory_inbound_timeout_ms {
-    Some(value) if value <= 0 =>
-      raise ManifestSchemaError(
-        manifest_id="agent.config",
-        detail="memory_inbound_timeout_ms must be positive",
-      )
-    _ => ()
-  }
-}
-
-///|
-fn compose_tool_catalog(
-  agg : AggregatedPorts,
-) -> (@kernel_exec.ToolCatalogSnapshot, Array[ToolEntry]) raise @error.CompositionError {
-  let entries = agg.tools.copy()
-  if !agg.memory.is_empty() {
-    let provider : &@port.ToolProvider = @memory.MemoryToolProvider(
-      sources=agg.memory,
-      on_failure=reason => {
-        emit_secondary_failure(agg.events, "memory_search", reason)
-      },
-    )
-    for definition in provider.list_tools() {
-      entries.push(ToolEntry::bound(definition, "posoco.core", provider))
-    }
-  }
-  ignore(@directory.entry_routing(entries))
-  (
-    build_catalog_from_defs(entries.map(e => e.definition), CatalogVersion(1)),
-    entries,
-  )
-}
-
-///|
-/// One composed hook chain, in interception order: system-prompt projection
-/// first, extension-registered hooks next, UI rendering last (opt-in, so
-/// extensions see events before the renderer). Memory has no hook: inbound
-/// context is injected at the turn boundary (see `run_turn_via_puppet`) and
-/// reads/writes go through the built-in MemoryToolProvider.
-fn compose_hook_chain(
-  agg : AggregatedPorts,
-  config : AgentConfig,
-  ui_projection : Bool,
-) -> Array[&@port.PipelineHook] {
-  let composed_hooks : Array[&@port.PipelineHook] = []
-  // 1. System prompt projection. The base prompt lives in AgentConfig so the
-  // host can seed a stable system message without inventing a contributor.
-  let base_prompt = match config.system_prompt {
-    Some(p) => p
-    None => ""
-  }
-  if base_prompt != "" || !agg.prompt_contributors.is_empty() {
-    let sections : Array[SystemPromptSection] = []
-    for pair in agg.prompt_contributors {
-      let (mid, contributor) = pair
-      sections.push(SystemPromptSection(id=mid, contributor~))
-    }
-    let sys_hook = SystemPromptHook(base_prompt~, contributors=sections)
-    composed_hooks.push(sys_hook as &@port.PipelineHook)
-  }
-  for h in agg.hooks {
-    composed_hooks.push(h)
-  }
-  // UI projection is opt-in: the built-in render policy is installed only
-  // when the host asks for it via `ui_projection=true`.
-  if ui_projection {
-    let ui_hook = UiRenderHook(ui=agg.ui)
-    composed_hooks.push(ui_hook as &@port.PipelineHook)
-  }
-  composed_hooks
-}
-
-///|
-fn create_agent_stream_callback(
-  events : @event_runtime.EventRuntime,
-  dispatcher_ref : Ref[@chunk_dispatch.ChunkDispatcher?],
-) -> @kernel_exec.HostChunkCallback? {
-  // Listeners may attach after Agent construction, including from the host.
-  let cb = fn(chunk : @types.StreamChunk) {
-    if !events.has_listeners() {
-      return
-    }
-    match dispatcher_ref.val {
-      Some(dispatcher) => dispatcher.enqueue(chunk)
-      None => ()
-    }
-  }
-  Some(cb)
-}
-
-///|
-/// Assemble the control mailbox, the built-in command port front end, the
-/// aggregated command ports, and the effect-execution host (the caller's
-/// override when provided, else a shim over the aggregated ports). A host
-/// override receives the same captured bindings as the default runtime.
-fn compose_mailbox_and_host(
-  agg : AggregatedPorts,
-  host_override : &@runtime.Runtime?,
-  bindings : Ref[Map[String, &@port.ToolProvider]],
-) -> (
-  &@puppetry.Mailbox,
-  BuiltinCommandPort,
-  Array[&@port.CommandPort],
-  &@kernel_exec.HostRuntime,
-  RuntimeHostShim,
-) {
-  let mailbox_ref : &@puppetry.Mailbox = @puppetry.ControlMailbox()
-  let builtin_command_port = BuiltinCommandPort(mailbox_ref)
-  let command_ports = compose_agent_commands(agg.commands, builtin_command_port)
-  let runtime : &@runtime.Runtime = host_override.unwrap_or(
-    @runtime.PortRuntime(model=agg.model),
-  )
-  let shim = RuntimeHostShim(
-    runtime,
-    bindings,
-    cancel_settle_ms=operation_cancel_settle_ms,
-    on_cleanup_failure=reason => {
-      emit_secondary_failure(agg.events, "tool_cleanup", reason)
-    },
-  )
-  (mailbox_ref, builtin_command_port, command_ports, shim, shim)
-}
-
-///|
-/// Shared composition path for both public constructors. `host_override`
-/// is `Some(shimmed runtime)` for `Agent::with_runtime`; `None` builds the
-/// default `PortRuntime` over the aggregated ports and shims it through the
-/// same path — there is exactly one way to assemble an Agent.
-///
-fn AgentRuntime::compose(
-  agg : AggregatedPorts,
-  config : AgentConfig,
-  ui_projection : Bool,
-  host_override : &@runtime.Runtime?,
-) -> Agent raise @error.CompositionError {
-  validate_agent_config(config)
-  let (catalog, entries) = compose_tool_catalog(agg)
-  let launch_gate = @kernel_exec.ToolLaunchGate::ToolLaunchGate()
-  let tool_revocations = @puppetry.ToolRevocationFacts::ToolRevocationFacts()
-  let binding_versions : Ref[Map[String, Int32]] = Ref(Map::from_array([]))
-  let tool_contributions = ToolContributionRegistry::ToolContributionRegistry(
-    entries,
-    launcher=launch_gate,
-    on_change=change => emit_tool_catalog_change(agg.events, change),
-    on_revoke=fn(versions, _names) {
-      let affected : Array[String] = []
-      for name, version in binding_versions.val {
-        if versions.contains(version) {
-          affected.push(name)
-        }
-      }
-      tool_revocations.add(affected)
-    },
-  )
-  let static_tools = tool_contributions.captured_tools()
-  let composed_hooks = compose_hook_chain(agg, config, ui_projection)
-  let tool_bindings = Ref(static_tools.copy())
-  let (mailbox_ref, builtin_command_port, command_ports, host, tool_runtime) = compose_mailbox_and_host(
-    agg, host_override, tool_bindings,
-  )
-  let journal = @puppetry.InMemoryJournal()
-  let chunk_dispatcher_ref : Ref[@chunk_dispatch.ChunkDispatcher?] = Ref(None)
-  let context_state_of : Ref[((String) -> @types.ContextState?)?] = Ref(None)
-  let task_runtime = @task.TaskRuntime::TaskRuntime()
-  // Core-owned ready projection after a background outcome is
-  // successfully enqueued into its session inbox. No outcome payload —
-  // receipt identity, attribution, and authoritative status only.
-  task_runtime.set_ready_notifier(fn(outcome) {
-    emit_custom_event(
-      agg.events,
-      None,
-      "posoco.tasks",
-      "background_outcome_ready",
-      [
-        ("task_id", Json::string(outcome.receipt.id)),
-        ("session", Json::string(outcome.receipt.session_id)),
-        ("extension_id", Json::string(outcome.receipt.extension_id)),
-        ("label", Json::string(outcome.receipt.label)),
-        (
-          "status",
-          Json::string(@task.task_outcome_status_label(outcome.status)),
-        ),
-      ],
-    )
-  })
-  // The wakeup ledger is built before the on_compose loop so
-  // extensions receive a fully constructed capability; the pump joins at
-  // run_scoped startup. No runtime backfill is needed — the ledger owns its
-  // admission state, and execution goes through the completed Agent.
-  let wakeup = @wakeup.WakeupRuntime::WakeupRuntime(events=agg.events)
-  let ui_runtime = @ui.UiRuntime::UiRuntime()
-  errdefer ui_runtime.close()
-  let operations = @operation_guard.OperationGuard::OperationGuard()
-  let control = AgentControl(mailbox_ref)
-  control.set_abort_hook(fn(run_id) {
-    task_runtime.cancel_foreground_for_run(run_id)
-  })
-  control.install_message_events(agg.events)
-  let progress = @session_state.SessionProgress::SessionProgress()
-  let core_facts = @core_facts.CoreFacts::CoreFacts()
-  let checkpoint_subscriber = @session_checkpoint.SessionCheckpointSubscriber::SessionCheckpointSubscriber(
-    agg.sessions,
-    progress,
-  )
-  let event_subscriber = @event_projection.EventProjection::EventProjection(
-    agg.events,
-    chunk_dispatcher_ref,
-    context_state_of~,
-    acknowledge_message=Some(fn(command_id) {
-      control.inbox.acknowledge_step_delivery(command_id)
-    }),
-  )
-  // Wakeup input cutoff: commits the armed cutoff on the arming run's
-  // committed RunStarted. Registered before any turn can arm, after the
-  // checkpoint subscriber and before the observer projection, so externally
-  // notified RunStarted events see the coverage already updated.
-  let wakeup_cutoff_subscriber = @wakeup.WakeupCutoffSubscriber::WakeupCutoffSubscriber(
-    wakeup,
-  )
-  let puppet_config : @puppetry.PuppetConfig = {
-    host,
-    catalog,
-    journal: journal as &@puppetry.RunJournal,
-    contributors: [],
-    subscribers: [
-      checkpoint_subscriber as &@puppetry.EventSubscriber,
-      wakeup_cutoff_subscriber as &@puppetry.EventSubscriber,
-      event_subscriber as &@puppetry.EventSubscriber,
-    ],
-    stream_chunks: create_agent_stream_callback(
-      agg.events,
-      chunk_dispatcher_ref,
-    ),
-    hooks: composed_hooks,
-    tool_call_owners: agg.tool_call_owners,
-    max_tool_depth: config.max_tool_depth,
-    max_iterations: match config.max_tool_rounds {
-      // The pump burns 2 iterations per tool round (AwaitingModel +
-      // AwaitingTools) plus one terminal iteration. Size the backstop so
-      // the kernel budget is always the limit that fires first; with an
-      // unbounded budget there is no pump cap either.
-      Some(rounds) => Some(2 * rounds + 1)
-      None => None
-    },
-    commands: command_ports,
-    mailbox: mailbox_ref,
-  }
-  // Deliver composed capabilities to lifecycle contributors, in
-  // registration order. Every composition gate has passed by this point
-  // (config checks, collision checks, atomic catalog), so
-  // the view carries the final composed ports. An extension raising here
-  // (e.g. CompositionError::ExtensionComposeFailed for an undeclared
-  // capability) fails the composition loudly; no partial Agent is produced.
-  for entry in agg.lifecycle {
-    let task_capability = task_runtime.capability(entry.id)
-    let wakeup_capability = wakeup.capability(entry.id)
-    let contribution_capability = tool_contributions.capability(entry.id)
-    let view = @port.CompositionView::resolve(
-      requires=entry.requires,
-      model=agg.model,
-      decision=agg.decision,
-      log=agg.log,
-      ui=agg.ui,
-      ui_resources=Some(ui_runtime.capability(entry.id)),
-      ui_interactions=Some(ui_runtime.interactions(entry.id)),
-      tasks=Some(task_capability),
-      wakeup=Some(wakeup_capability),
-      tool_contributions=Some(contribution_capability),
-      events=Some(agg.events.capability(entry.id)),
-    )
-    entry.port.on_compose(view)
-  }
-  let puppet = @puppetry.Puppet(puppet_config)
-  puppet.install_tool_lifecycle(launch_gate, tool_revocations)
-  puppet.set_source_observer(
-    Some(fn(run_id, session_id, messages, prefix) {
-      core_facts.capture_source(
-        run_id.to_string(),
-        session_id,
-        messages,
-        prefix,
-      )
-    }),
-  )
-  puppet.set_core_fact_observer(
-    Some(fn(fact) {
-      core_facts.record_boundary(
-        fact.run_id.to_string(),
-        fact.session_id,
-        fact.committed_revision,
-        fact.savepoint_id,
-        fact.is_terminal,
-        fact.messages,
-      )
-    }),
-  )
-  let runtime : AgentRuntime = {
-    puppet,
-    model: agg.model,
-    events: agg.events,
-    hooks: composed_hooks,
-    memory: agg.memory,
-    memory_inbound_attempted: Map::from_array([]),
-    sessions: agg.sessions,
-    lifecycle: agg.lifecycle.map(fn(entry) { entry.port }),
-    commands: agg.commands,
-    builtin_command_port,
-    control,
-    task_runtime,
-    operations,
-    wakeup,
-    ui_runtime,
-    config,
-    next_catalog_version: 2,
-    tool_contributions,
-    tool_revocations,
-    binding_versions,
-    versions: @directory.ToolVersionLeases::ToolVersionLeases(),
-    tool_bindings,
-    tool_runtime,
-    next_run_seq: 1,
-    shutdown_started: false,
-    shutdown_complete: false,
-    next_lifecycle_shutdown: agg.lifecycle.length() - 1,
-    start_notified: false,
-    turn_active: false,
-    chunk_dispatcher: chunk_dispatcher_ref,
-    chunk_dispatcher_generation: 0,
-    progress,
-    core_facts,
-    event_subscriber,
-    session_output: @session_output.SessionOutput::SessionOutput(),
-  }
-  builtin_command_port.idle_compact.val = Some(async fn(
-    session_id,
-  ) -> Result[@types.CompactOutcome, @error.AgentError] {
-    Ok(runtime.compact_session(session_id)) catch {
-      error => Err(error)
-    }
-  })
-  context_state_of.val = Some(fn(session_id) {
-    runtime.puppet.session_context_state(session_id)
-  })
-  { runtime, }
+  priv runtime : @agent_runtime.AgentRuntime
 }
 
 ///|
@@ -558,14 +75,6 @@ fn AgentRuntime::compose(
 /// Aggregation order is the array order; collisions fail-fast.
 /// At least one extension must contribute a `ModelPort`.
 /// `events` transfers one host-created EventSystem to this Agent exclusively.
-/// A construction failure after takeover closes the resource and revokes its
-/// capabilities; a rejected second takeover leaves the first Agent untouched.
-/// Successful composition keeps it open until Agent.shutdown completes.
-///
-/// `ui_projection` (default `false`): when `true`, Posoco's built-in
-/// render policy (`UiRenderHook` over the aggregated `UiPort`) is appended
-/// to the hook chain. Hosts with their own UI policy leave it off and
-/// register their own `PipelineHook` instead.
 pub fn Agent::Agent(
   exts~ : Array[&@port.Extension],
   config~ : AgentConfig,
@@ -574,20 +83,18 @@ pub fn Agent::Agent(
 ) -> Agent raise @error.CompositionError {
   let event_runtime = events.claim()
   errdefer event_runtime.close()
-  let agg = aggregate_extensions(exts, events=event_runtime)
-  AgentRuntime::compose(agg, config, ui_projection, None)
+  let runtime = @agent_runtime.AgentRuntime::compose(
+    exts~,
+    config=config.to_runtime_config(),
+    events=event_runtime,
+    ui_projection~,
+  )
+  { runtime, }
 }
 
 ///|
 /// Advanced constructor (experimental runtime seam): same Agent, same
 /// default assembly, but the caller supplies the effect-execution runtime.
-/// `runtime` is typically a wrapper around `@runtime.PortRuntime` that
-/// overrides only the methods it needs (e.g. `execute_tool` +
-/// `cancel_effects` for cancellation propagation). Plain extension authors
-/// do not need this — see `docs/RUNTIME.md`.
-/// The required `events` resource follows the same exclusive takeover,
-/// construction-failure revocation, and shutdown lifetime as Agent().
-///
 pub fn Agent::with_runtime(
   exts~ : Array[&@port.Extension],
   config~ : AgentConfig,
@@ -597,588 +104,20 @@ pub fn Agent::with_runtime(
 ) -> Agent raise @error.CompositionError {
   let event_runtime = events.claim()
   errdefer event_runtime.close()
-  let agg = aggregate_extensions(exts, events=event_runtime)
-  AgentRuntime::compose(agg, config, ui_projection, Some(runtime))
+  let agent_runtime = @agent_runtime.AgentRuntime::compose(
+    exts~,
+    config=config.to_runtime_config(),
+    events=event_runtime,
+    ui_projection~,
+    host_override=Some(runtime),
+  )
+  { runtime: agent_runtime, }
 }
 
 ///|
 /// Own an Agent and all of its managed work for one structured lifetime.
-/// The body receives the same Agent value that extensions use for turns;
-/// returning, raising, or being cancelled closes the task scope and then
-/// shuts down the Agent.
 pub async fn[X] Agent::run_scoped(self : Agent, body : async (Agent) -> X) -> X {
-  if !self.runtime.task_runtime.scope_available() {
-    raise @error.AgentError::Runtime(
-      @error.RuntimeError::InvocationFailed(
-        "task scope is already active or the Agent is closed",
-      ),
-    )
-  }
-  // `with_task_group` is `Unit`-valued: the body value crosses in a cell.
-  let body_outcome : Ref[X?] = Ref(None)
-  @async.with_task_group(async fn(group) {
-    let owns_scope = Ref(false)
-    // A raw cancellation signal bypasses the catch around `body(self)`
-    // below, so the scope shutdown must also run on the unwind path
-    // (async 0.22). Idempotent: shutdown is a no-op once completed.
-    errdefer (if owns_scope.val {
-      ignore(
-        Ok(@async.protect_from_cancel(async fn() { self.runtime.shutdown() })) catch {
-          error => {
-            emit_secondary_failure(
-              self.runtime.events,
-              "run_scoped_shutdown",
-              error.to_string(),
-            )
-            Err(error)
-          }
-        },
-      )
-    })
-    let startup : Result[Unit, Error] = Ok(
-      {
-        self.runtime.task_runtime.activate(group)
-        owns_scope.val = true
-        self.runtime.wakeup.activate()
-        self.runtime.notify_start_if_first()
-        // Startup lifecycle completed: only now may the pump drive turns,
-        // so a lifecycle `on_start` never races a wakeup turn.
-        self.runtime.wakeup.start_pump(group, self.runtime)
-      },
-    ) catch {
-      error => Err(error)
-    }
-    let body_result : Result[X, Error] = match startup {
-      Err(error) => Err(error)
-      Ok(_) => Ok(body(self)) catch { error => Err(error) }
-    }
-    let shutdown_result : Result[Unit, Error] = if owns_scope.val {
-      Ok(@async.protect_from_cancel(async fn() { self.runtime.shutdown() })) catch {
-        error => Err(error)
-      }
-    } else {
-      Ok(())
-    }
-    match body_result {
-      Ok(value) =>
-        match shutdown_result {
-          Ok(_) => body_outcome.val = Some(value)
-          Err(error) => raise error
-        }
-      Err(error) =>
-        match shutdown_result {
-          Ok(_) => raise error
-          Err(cleanup_error) => {
-            emit_secondary_failure(
-              self.runtime.events,
-              "run_scoped_shutdown",
-              cleanup_error.to_string(),
-            )
-            raise error
-          }
-        }
-    }
-  })
-  match body_outcome.val {
-    Some(value) => value
-    None =>
-      raise @error.AgentError::Runtime(
-        @error.RuntimeError::InvocationFailed("run_scoped: no body outcome"),
-      )
-  }
-}
-
-///|
-async fn AgentRuntime::shutdown(self : AgentRuntime) -> Unit {
-  if self.shutdown_complete {
-    return
-  }
-  self.shutdown_started = true
-  // Closes on raise/cancellation; the success path closes after `on_shutdown`
-  // below.
-  errdefer self.ui_runtime.close()
-  // Contribution handles close with the Agent: an extension holding the
-  // owner-bound capability can no longer publish or withdraw, and no later
-  // operation is admitted to capture a new directory.
-  self.tool_contributions.close()
-  // Wakeup closes first: no new admission can succeed, the pump stops
-  // taking tickets, and pending scheduling requests die with the scope
-  // (dropped after managed work settles). A ticket already executing
-  // settles through its own ordinary turn lifecycle.
-  self.wakeup.begin_shutdown()
-  // The Puppet rejects every phase-gated step once shutdown begins, so an
-  // operation already in flight must settle through its ordinary turn
-  // lifecycle before the phase transition; the pump stopped taking tickets
-  // above. Pending requests are not dropped until execution and managed
-  // work have settled (spec shutdown order).
-  self.settle_operation_for_shutdown()
-  self.tool_runtime.cleanup_unconfirmed()
-
-  let task_shutdown : Result[Unit, @error.AgentError] = Ok(
-    self.task_runtime.shutdown(),
-  ) catch {
-    error => Err(error)
-  }
-  match task_shutdown {
-    Ok(_) => ()
-    Err(error) => {
-      self.wakeup.drop_pending()
-      @task.emit_managed_task_shutdown_failure(
-        self.events,
-        error.to_string(),
-        self.task_runtime.shutdown_straggler_detail(),
-      )
-      raise error
-    }
-  }
-  // Pending scheduling requests die with the scope only after the admitted
-  // execution and managed work have settled (spec shutdown order). The
-  // failure branch above drops them as a fallback; drop_pending is
-  // idempotent, so this is the single drop in the success path.
-  self.wakeup.drop_pending()
-  self.puppet.shutdown() catch {
-    error =>
-      raise @error.AgentError::Runtime(
-        InvocationFailed(
-          "puppet shutdown: " + @diagnostic.safe_error_label(error.to_string()),
-        ),
-      )
-  }
-  while self.next_lifecycle_shutdown >= 0 {
-    // Advance the cursor only after successful cleanup. If an extension
-    // shutdown fails, the error remains loud and a retry resumes at the
-    // failing extension instead of skipping it or repeating completed ones.
-    self.lifecycle[self.next_lifecycle_shutdown].on_shutdown()
-    self.next_lifecycle_shutdown = self.next_lifecycle_shutdown - 1
-  }
-  // UI resources close last: after `on_shutdown`'s final publishes.
-  self.ui_runtime.close()
-  // Core-managed contribution versions retire last: every operation, managed
-  // task and extension shutdown above has already completed, so no new use can
-  // start. An extension is never asked to withdraw on a closed handle. A retire
-  // that fails keeps its pending slot, is reported as a cleanup failure, and
-  // leaves `shutdown_complete` false so a retry resumes the same versions
-  // instead of repeating already-retired ones.
-  self.release_retained_versions()
-  self.tool_contributions.begin_retire_all()
-  ignore(self.tool_contributions.retire_unreferenced())
-  let cleanup = self.tool_contributions.pending_cleanup()
-  if !cleanup.is_empty() {
-    raise @error.AgentError::Runtime(
-      @error.RuntimeError::InvocationFailed(
-        "tool version cleanup pending: \{cleanup.length()} version(s): " +
-        @diagnostic.safe_error_label(cleanup[0].detail),
-      ),
-    )
-  }
-  self.events.close()
-  self.shutdown_complete = true
-}
-
-///|
-fn agent_error_category(error : Error) -> String {
-  match error {
-    @error.AgentError::Model(_) => "AgentError::Model"
-    @error.AgentError::Session(_) => "AgentError::Session"
-    @error.AgentError::Runtime(_) => "AgentError::Runtime"
-    @error.AgentError::ToolLoopExceeded(..) => "AgentError::ToolLoopExceeded"
-    @error.AgentError::Busy(..) => "AgentError::Busy"
-    @error.AgentError::PipelineAborted(_) => "AgentError::PipelineAborted"
-    @error.AgentError::Cancelled(_) => "AgentError::Cancelled"
-    @error.AgentError::AutoCompactFailed(_) => "AgentError::AutoCompactFailed"
-    _ => "Unclassified"
-  }
-}
-
-///|
-fn AgentRuntime::emit_turn_event(
-  self : AgentRuntime,
-  scope : @types.EventScope?,
-  event : @types.TurnEvent,
-) -> Unit {
-  self.events.emit_core(scope, event)
-}
-
-///|
-/// Dispatch `PipelineHook::on_turn_begin` in registration order, after the
-/// `TurnStarted` observer projection and before the pump's first
-/// `before_model`. Symmetric with `dispatch_on_turn_end`: pre-turn failures
-/// (the shutdown guard, a lifecycle `on_start` raise) dispatch nothing — the
-/// turn never began. A raise is a secondary failure: observers get a
-/// `secondary_failure` event, the turn still proceeds, and later hooks still
-/// run. Cancellation travels as a runtime signal that bypasses this handler,
-/// so only genuine defects are reported.
-async fn AgentRuntime::dispatch_on_turn_begin(
-  self : AgentRuntime,
-) -> Unit noraise {
-  for hook in self.hooks {
-    hook.on_turn_begin() catch {
-      error =>
-        emit_secondary_failure(self.events, "on_turn_begin", error.to_string())
-    }
-  }
-}
-
-///|
-/// Dispatch `PipelineHook::on_turn_end` in registration order, after the terminal
-/// observer projection and just before `run_single_turn` returns. Dispatched
-/// whenever the turn reached a typed terminal — completed, failed, or
-/// cancelled. The terminal outcome is not a payload — hooks read it from the
-/// Observer channel (`TurnCompleted` / `TurnFailed` / `TurnCancelled`), which
-/// fires first. A raise is a secondary failure: observers get a
-/// `secondary_failure` event, the turn's primary outcome is never replaced,
-/// and later hooks still run. A hard cancellation that unwinds the turn
-/// outside every `catch` skips this dispatch; the terminal is projected from
-/// the unwind fallback instead.
-async fn AgentRuntime::dispatch_on_turn_end(
-  self : AgentRuntime,
-) -> Unit noraise {
-  for hook in self.hooks {
-    hook.on_turn_end() catch {
-      error =>
-        emit_secondary_failure(self.events, "on_turn_end", error.to_string())
-    }
-  }
-}
-
-///|
-/// Emit a sanitized secondary-failure diagnostic to every observer's
-/// session-level channel. Secondary failures never replace the primary
-/// outcome; the payload carries only a bounded category label, never the
-/// failing component's raw payload. (`Observer::on_event` is non-raising by
-/// contract; a violating observer aborts loudly, as error transparency
-/// requires.)
-fn AgentRuntime::drain_core_facts_errors(self : AgentRuntime) -> Unit {
-  for detail in self.core_facts.take_errors() {
-    emit_secondary_failure(self.events, "core_shadow_boundary", detail)
-  }
-}
-
-///|
-fn emit_secondary_failure(
-  events : @event_runtime.EventRuntime,
-  hook_point : String,
-  detail : String,
-) -> Unit {
-  let event : @types.TurnEvent = Custom(
-    source="posoco.core",
-    label="secondary_failure",
-    data=Json::object(
-      Map::from_array([
-        ("hook_point", Json::string(hook_point)),
-        ("error", Json::string(@diagnostic.safe_error_label(detail))),
-      ]),
-    ),
-  )
-  // Hook closures and refresh paths hold no run identity.
-  events.emit_core(None, event)
-}
-
-///|
-fn AgentRuntime::ensure_agent_running(
-  self : AgentRuntime,
-) -> Unit raise @error.AgentError {
-  if self.shutdown_started {
-    raise Runtime(InvocationFailed("agent is shut down"))
-  }
-}
-
-///|
-/// Cap on follow-up turns drained within a single `run_turn` call, aligned
-/// with the control queue bound. Prevents an unbounded follow-up chain from
-/// monopolising one call; leftovers stay queued for the next call.
-let follow_up_drain_limit : Int32 = 64
-
-///|
-/// Run one agent turn, then drain any follow-ups submitted while it (or a
-/// drained follow-up turn) was in flight. Each drained follow-up drives its
-/// own full turn on the same session — same boundaries, same observer
-/// events — and the last turn's `TurnResult` is returned.
-async fn AgentRuntime::run_turn(
-  self : AgentRuntime,
-  input : @kernel.Message,
-  session_id : String,
-) -> @types.TurnResult raise @error.AgentError {
-  self.run_turn_with_mode(input, session_id, false)
-}
-
-///|
-/// Run a turn under the Agent's single-operation guard. Recovery may replay a
-/// persisted trailing user message; ordinary turns and drained follow-ups
-/// always append their input. `origin` labels the admitted operation
-/// (turn/resume/wakeup) for the started/settled projection; `operation_label`
-/// overrides the minted operation id (the wakeup pump's `agent_wakeup_N`).
-async fn AgentRuntime::run_turn_with_mode(
-  self : AgentRuntime,
-  input : @kernel.Message,
-  session_id : String,
-  resume_persisted_user : Bool,
-  origin~ : OperationOrigin = Turn,
-  operation_label~ : String? = None,
-  on_admitted~ : ((OperationAdmission) -> Unit)? = None,
-) -> @types.TurnResult raise @error.AgentError {
-  let admission = self.admit_operation(session_id, origin, operation_label~)
-  // Synchronous post-admission hook: the wakeup display envelope fires only
-  // after the operation actually holds the guard — never before and never
-  // for a Busy rejection.
-  match on_admitted {
-    Some(hook) => hook(admission)
-    None => ()
-  }
-  // A host hard-cancel delivers a raw cancellation signal that bypasses the
-  // catch below (a re-raising with_task_group can surface it raw), so the
-  // guard and the operation must also release on unwind or the Agent stays
-  // wedged busy. Retire is `nocancel` and release is sync, so the cancel
-  // signal cannot truncate this cleanup between the two steps.
-  errdefer (if self.operations.current_id() == Some(admission.operation_id) {
-    self.retire_released_versions()
-    self.release_operation(admission, Cancelled)
-  })
-  let result : Result[@types.TurnResult, @error.AgentError] = Ok(
-    self.execute_operation(admission, async fn() -> Result[
-      @types.TurnResult,
-      @error.AgentError,
-    ] {
-      let typed : Result[@types.TurnResult, @error.AgentError] = Ok(
-        {
-          let mut result = self.run_single_turn(
-            input, session_id, resume_persisted_user, admission,
-          )
-          let mut drained = 0
-          while drained < follow_up_drain_limit {
-            match self.control.select_follow_up() {
-              Some(command) => {
-                drained = drained + 1
-                let follow_up = self.mint_turn_identity(session_id)
-                // The selected record stays in the inbox until this turn's
-                // initial commit confirms it; associating the id here — before
-                // the Puppet can commit anything — fixes that confirmation to
-                // exactly this turn.
-                self.control.arm_follow_up(
-                  command.command_id,
-                  follow_up.run_id,
-                  follow_up.turn_id,
-                )
-                result = self.run_single_turn(
-                  command.message,
-                  session_id,
-                  false,
-                  admission_for_follow_up(admission, follow_up),
-                )
-              }
-              None => break
-            }
-          }
-          result
-        },
-      ) catch {
-        error => Err(error)
-      }
-      typed
-    }),
-  ) catch {
-    error => Err(error)
-  }
-  let outcome = match result {
-    Ok(_) => Completed
-    Err(error) => error.operation_outcome()
-  }
-  // Managed version settlement runs before the guard is released: the
-  // operation's lease is returned, unreferenced versions are retired, and a
-  // retire failure stays a secondary diagnostic instead of masking `result`.
-  self.retire_released_versions()
-  self.release_operation(admission, outcome)
-  match result {
-    Ok(value) => value
-    Err(error) => raise error
-  }
-}
-
-///|
-/// Wrap a follow-up turn's freshly minted identity as the continuation of
-/// the admitted operation: same root operation id and session, own
-/// per-turn identity. The operation-level projection stays the single
-/// started/settled pair from admission, and a follow-up's wakeup cutoff
-/// commits correlated to the root operation — never a fabricated
-/// per-drain label.
-fn admission_for_follow_up(
-  parent : OperationAdmission,
-  identity : TurnIdentity,
-) -> OperationAdmission {
-  {
-    operation_id: parent.operation_id,
-    origin: Turn,
-    identity,
-    session_id: identity.session_id.to_string(),
-  }
-}
-
-///|
-async fn AgentRuntime::notify_start_if_first(
-  self : AgentRuntime,
-) -> Unit raise @error.AgentError {
-  if self.start_notified {
-    return
-  }
-  for lc in self.lifecycle {
-    lc.on_start() catch {
-      error =>
-        raise Runtime(
-          InvocationFailed(
-            "lifecycle on_start: " +
-            @diagnostic.safe_error_label(error.to_string()),
-          ),
-        )
-    }
-  }
-  self.start_notified = true
-}
-
-///|
-/// Terminal bookkeeping of one turn: whether `TurnStarted` was published and
-/// whether this turn's single terminal has been projected.
-priv struct TurnTerminal {
-  mut started : Bool
-  mut settled : Bool
-}
-
-///|
-/// Project the turn's one terminal. The marker is set before the projection so
-/// a listener re-entering the Agent cannot observe — or provoke — a second
-/// terminal, and the unwind fallback stays idempotent.
-fn AgentRuntime::settle_turn_terminal(
-  self : AgentRuntime,
-  identity : TurnIdentity,
-  terminal : TurnTerminal,
-  event : @types.TurnEvent,
-) -> Unit {
-  if terminal.settled {
-    return
-  }
-  terminal.settled = true
-  self.emit_turn_event(Some(identity.scope()), event)
-}
-
-///|
-/// Close the tool calls a cancelled turn left pending; the Puppet emits no
-/// closing kernel event for a hard-cancelled run.
-fn AgentRuntime::abandon_pending_calls(
-  self : AgentRuntime,
-  identity : TurnIdentity,
-  reason : String,
-) -> Unit {
-  self.event_subscriber.drain_pending(Some(identity.scope()), reason)
-}
-
-///|
-/// Run exactly one turn: delegate to Puppet; emit start/end events for
-/// observers. `admission` carries the per-turn identity minted at operation
-/// admission (initial turns) or at drain time (follow-ups).
-///
-/// `TurnStarted` is followed by exactly one terminal: `TurnCompleted` on
-/// success, `TurnFailed` on a primary failure, and `TurnCancelled` on soft
-/// cancellation, hard cancellation, or shutdown. Cancellation is its own
-/// category, never a failure.
-#warnings("-fragile_catch_all")
-async fn AgentRuntime::run_single_turn(
-  self : AgentRuntime,
-  input : @kernel.Message,
-  session_id : String,
-  resume_persisted_user : Bool,
-  admission : OperationAdmission,
-) -> @types.TurnResult raise @error.AgentError {
-  self.ensure_agent_running()
-  self.notify_start_if_first()
-  let identity = admission.identity
-  defer self.core_facts.finish_run(
-    session_id,
-    identity.run_id.to_string(),
-    "turn_ended_without_terminal",
-  )
-  defer self.drain_core_facts_errors()
-  self.task_runtime.begin_operation(
-    session_id,
-    identity.run_id,
-    identity.turn_id,
-  )
-  // The inbox turn binding opens the step window under the admitted
-  // operation; every per-turn exit settles the step messages it still holds.
-  self.control.bind_turn(identity.run_id, identity.turn_id)
-  defer self.settle_turn_messages(identity)
-  // Covers a hard cancellation that bypasses `catch`: a started-but-unsettled
-  // turn still owes its one terminal.
-  let terminal = TurnTerminal::{ started: false, settled: false, }
-  errdefer (if terminal.started && !terminal.settled {
-    self.abandon_pending_calls(identity, "turn cancelled")
-    self.settle_turn_terminal(identity, terminal, TurnCancelled)
-  })
-  terminal.started = true
-  self.emit_turn_event(Some(identity.scope()), TurnStarted)
-  // Turn-begin hooks fire after the TurnStarted projection and before the
-  // pump's first before_model. Pre-turn failures above dispatch nothing —
-  // symmetric with on_turn_end's terminal-position semantics.
-  self.dispatch_on_turn_begin()
-
-  let result = self.run_turn_via_puppet(
-    input,
-    session_id,
-    identity,
-    resume_persisted_user,
-    admission.operation_id,
-  ) catch {
-    primary => {
-      let cleanup : Result[Unit, @error.AgentError] = Ok(
-        self.task_runtime.finish_active_operation(),
-      ) catch {
-        error => Err(error)
-      }
-      match cleanup {
-        Ok(_) => ()
-        Err(error) =>
-          emit_secondary_failure(
-            self.events,
-            "foreground_task_cleanup",
-            error.to_string(),
-          )
-      }
-      // The Puppet emits no terminal kernel event on rejection: close
-      // still-pending tool calls before the terminal synthesis.
-      let cancelled = primary is @error.AgentError::Cancelled(_)
-      let reason = if cancelled { "turn cancelled" } else { "turn failed" }
-      self.abandon_pending_calls(identity, reason)
-      let event : @types.TurnEvent = if cancelled {
-        TurnCancelled
-      } else {
-        TurnFailed("turn failed: " + agent_error_category(primary))
-      }
-      self.settle_turn_terminal(identity, terminal, event)
-      self.dispatch_on_turn_end()
-      raise primary
-    }
-  }
-
-  let cleanup : Result[Unit, @error.AgentError] = Ok(
-    self.task_runtime.finish_active_operation(),
-  ) catch {
-    error => Err(error)
-  }
-  match cleanup {
-    Ok(_) => {
-      self.settle_turn_terminal(identity, terminal, TurnCompleted)
-      self.dispatch_on_turn_end()
-      result
-    }
-    Err(error) => {
-      self.abandon_pending_calls(identity, "turn failed")
-      self.settle_turn_terminal(
-        identity,
-        terminal,
-        TurnFailed("turn failed: AgentError::Runtime"),
-      )
-      self.dispatch_on_turn_end()
-      raise error
-    }
-  }
+  self.runtime.run_scoped_with(async fn() { body(self) })
 }
 
 ///|
@@ -1191,21 +130,13 @@ pub async fn Agent::run_turn(
 }
 
 ///|
-/// Resume an interrupted turn from its persisted transcript. If the
-/// transcript ends with a user message, that message is replayed as the
-/// model input without appending a duplicate. Otherwise `continuation` is
-/// appended as a new user message.
+/// Resume an interrupted turn from its persisted transcript.
 pub async fn Agent::resume_turn(
   self : Agent,
   session_id : String,
   continuation~ : String = "continue",
 ) -> @types.TurnResult raise @error.AgentError {
-  self.runtime.run_turn_with_mode(
-    @kernel.Message::UserMessage(content=[@kernel.Content::Text(continuation)]),
-    session_id,
-    true,
-    origin=Resume,
-  )
+  self.runtime.resume_turn(session_id, continuation~)
 }
 
 ///|
@@ -1221,24 +152,7 @@ pub async fn Agent::context_state(
   self : Agent,
   session_id : String,
 ) -> @types.ContextState? {
-  match self.runtime.puppet.session_context_state(session_id) {
-    Some(state) => Some(state)
-    None => {
-      let loaded_result : Result[@types.Session, @error.AgentError] = Ok(
-        self.runtime.load_session_for_operation(session_id),
-      ) catch {
-        error => Err(error)
-      }
-      let loaded : @types.Session? = match loaded_result {
-        Ok(session) => Some(session)
-        Err(_) => None
-      }
-      match loaded {
-        Some(session) => @types.ContextState::from_metadata(session.metadata)
-        None => None
-      }
-    }
-  }
+  self.runtime.context_state(session_id)
 }
 
 ///|
@@ -1247,37 +161,34 @@ pub async fn Agent::shutdown(self : Agent) -> Unit {
 }
 
 ///|
-/// Bind the host's currently active window session (`None` clears the
-/// binding; the initial state is `None`). Synchronous and usable while the
-/// host is idle; it never raises, never releases the operation guard, and
-/// never cancels a running user turn — an already admitted operation settles
-/// through its own lifecycle.
-///
-/// Wakeup admission only accepts this session: `request` for any other
-/// session, or while no session is bound, fails with `InvalidSession`, and
-/// a request never binds on its own. Changing the binding drops the
-/// previous window's pending tickets with one `wakeup_dropped` terminal
-/// each; binding the same session again does not drop valid tickets, and
-/// binding a previously bound session does not revive its dropped tickets.
+/// Bind the host's currently active window session (`None` clears the binding).
 pub fn Agent::set_active_session(self : Agent, session_id : String?) -> Unit {
-  self.runtime.wakeup.set_active_session(session_id)
+  self.runtime.set_active_session(session_id)
 }
 
 ///|
-/// The host's entry to the UI resource protocol: one atomic baseline of live
-/// resources plus a cursor, an in-process change feed from that cursor, and
-/// action dispatch back to the publishing extension. Resources are published
-/// by extensions through `CompositionView::ui_resources`; the host never
-/// constructs owner identity itself.
+/// Host entry to the UI resource protocol.
 pub fn Agent::ui_host(self : Agent) -> @port.UiHost {
-  self.runtime.ui_runtime.host()
+  self.runtime.ui_host()
 }
 
 ///|
-/// The Agent's control handle (experimental runtime seam). Advanced hosts
-/// use it to abort the active run or to submit follow-up messages that the
-/// Agent consumes at turn boundaries. The handle is identity-guarded:
-/// submissions against a stale or absent run are rejected at enqueue time.
+/// The Agent's control handle (experimental runtime seam).
 pub fn Agent::control(self : Agent) -> AgentControl {
-  self.runtime.control
+  { core: self.runtime.control(), }
+}
+
+///|
+/// Listen to this Agent's notifications without acquiring publication rights.
+pub fn Agent::subscribe_events(
+  self : Agent,
+  handler : (@events.EventEnvelope) -> Unit,
+  namespace_~ : @events.EventNamespace? = None,
+) -> Result[@events.Subscription, @events.EventError] {
+  self.runtime.subscribe_events(handler, namespace_~)
+}
+
+///|
+pub fn Agent::commands(self : Agent) -> Array[&@port.CommandPort] {
+  self.runtime.commands()
 }

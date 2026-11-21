@@ -15,10 +15,8 @@ async fn Puppet::drive_run(
   initial_messages : Array[Message],
   snap : TurnSnapshot,
 ) -> PromptResult raise PuppetError {
-  // Since async 0.22 a cancellation signal bypasses every catch below, so an
-  // abnormal unwind would otherwise leave the phase gate Active forever and
-  // wedge the next operation. Emergency-release the run binding on unwind;
-  // every normal return has already finalized through reject/accept paths.
+  // Release the run binding on cancellation unwind so the phase gate cannot
+  // stay stuck Active.
   errdefer {
     self.release_run_binding()
     self.mailbox.set_quiescent(Idle)

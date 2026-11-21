@@ -30,14 +30,12 @@ async test "managed_tasks/foreground_settlement_deadline_preserves_operation_own
     let handle = match
       runtime.submit("supervised-test", {
         session_id: "supervised-session",
-        mode: @port.TaskMode::Foreground,
+        mode: Foreground,
         label: "protected-cleanup",
         timeout_ms: None,
         run: async fn() {
           @async.protect_from_cancel(async fn() { ignore(gate.get()) })
-          @kernel.Message::UserMessage(content=[
-            @kernel.Content::Text("released"),
-          ])
+          UserMessage(content=[Text("released")])
         },
       }) {
       Ok(value) => value
@@ -50,11 +48,7 @@ async test "managed_tasks/foreground_settlement_deadline_preserves_operation_own
       error => Err(error)
     }
     match cleanup {
-      Err(
-        @error.AgentError::Runtime(
-          @error.RuntimeError::InvocationFailed(detail),
-        ),
-      ) =>
+      Err(Runtime(InvocationFailed(detail))) =>
         assert_true(
           detail.contains("foreground task cleanup deadline exceeded"),
         )
@@ -71,18 +65,14 @@ async test "managed_tasks/foreground_settlement_deadline_preserves_operation_own
       error => Err(error)
     }
     match blocked {
-      Err(
-        @error.AgentError::Runtime(
-          @error.RuntimeError::InvocationFailed(detail),
-        ),
-      ) =>
+      Err(Runtime(InvocationFailed(detail))) =>
         assert_true(detail.contains("foreground task cleanup is still pending"))
       _ => fail("a stale foreground task must keep operation ownership")
     }
 
     gate.put(1)
     let outcome = handle.wait()
-    assert_true(outcome.status is @port.TaskStatus::Cancelled(_))
+    assert_true(outcome.status is Cancelled(_))
 
     runtime.begin_operation(
       "next-session",
@@ -111,15 +101,11 @@ async test "managed_tasks/shutdown_settles_cooperative_background_work" {
             receipt: {
               id: "shutdown-cooperative",
               session_id: "shutdown-session",
-              mode: @port.TaskMode::Background,
+              mode: Background,
               label: "cooperative",
               extension_id: "shutdown-test",
             },
-            status: @port.TaskStatus::Completed(
-              message=@kernel.Message::UserMessage(content=[
-                @kernel.Content::Text("done"),
-              ]),
-            ),
+            status: Completed(message=UserMessage(content=[Text("done")])),
           }
         },
         label="cooperative",
@@ -131,7 +117,7 @@ async test "managed_tasks/shutdown_settles_cooperative_background_work" {
       receipt: {
         id: "shutdown-cooperative",
         session_id: "shutdown-session",
-        mode: @port.TaskMode::Background,
+        mode: Background,
         label: "cooperative",
         extension_id: "shutdown-test",
       },
@@ -158,7 +144,7 @@ async test "managed_tasks/shutdown_deadline_reports_straggler_and_can_retry" {
     let receipt : @port.TaskReceipt = {
       id: "shutdown-stuck",
       session_id: "shutdown-session",
-      mode: @port.TaskMode::Background,
+      mode: Background,
       label: "stuck-worker",
       extension_id: "shutdown-test",
     }
@@ -167,10 +153,7 @@ async test "managed_tasks/shutdown_deadline_reports_straggler_and_can_retry" {
         async fn() {
           started.put(())
           @async.protect_from_cancel(async fn() { ignore(gate.get()) })
-          @port.TaskOutcome::{
-            receipt,
-            status: @port.TaskStatus::Cancelled(reason="released"),
-          }
+          @port.TaskOutcome::{ receipt, status: Cancelled(reason="released"), }
         },
         label="stuck-worker",
       ) {
@@ -184,11 +167,7 @@ async test "managed_tasks/shutdown_deadline_reports_straggler_and_can_retry" {
       error => Err(error)
     }
     match first {
-      Err(
-        @error.AgentError::Runtime(
-          @error.RuntimeError::InvocationFailed(detail),
-        ),
-      ) => {
+      Err(Runtime(InvocationFailed(detail))) => {
         assert_true(detail.contains("managed task shutdown deadline exceeded"))
         assert_true(detail.contains("extension=shutdown-test"))
         assert_true(detail.contains("label=stuck-worker"))
@@ -257,11 +236,11 @@ test "managed_tasks/commit_outcomes_clears_committed_and_keeps_the_rest" {
       receipt: {
         id,
         session_id: "commit-session",
-        mode: @port.TaskMode::Background,
+        mode: Background,
         label: id,
         extension_id: "commit-test",
       },
-      status: @port.TaskStatus::Cancelled(reason="settled"),
+      status: Cancelled(reason="settled"),
     }
   }
   runtime.enqueue_outcome(outcome("committed-one"))

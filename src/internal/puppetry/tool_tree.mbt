@@ -134,7 +134,7 @@ fn ToolTree::launch(
         )
       }
       let reply = ChildReply::{
-        ready: @cond_var.Cond::Cond(),
+        ready: Cond(),
         result: None,
         effect_id: None,
         started: false,
@@ -184,7 +184,7 @@ async fn Puppet::execute_tool_tree(
   hook_scope : @types.EventScope,
 ) -> PumpStep raise PuppetError {
   let tree = ToolTree::{
-    queue: @aqueue.Queue(kind=Unbounded),
+    queue: Queue(kind=Unbounded),
     active: Ref(true),
     scopes: Map::from_array([]),
     replies: [],
@@ -359,11 +359,11 @@ async fn Puppet::execute_tool_tree(
                           !facts.is_revoked(call.name.to_string()) {
                       @async.sleep(effect_abort_poll_ms)
                     }
-                    Some(FinalizedToolCall::{
+                    Some({
                       call,
                       consent_scope: None,
                       rejection: Some(
-                        @kernel.ToolOutcome::NotExecuted(
+                        NotExecuted(
                           reason=Revoked,
                           original_call_id=call.call_id,
                         ),

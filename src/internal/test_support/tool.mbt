@@ -125,7 +125,7 @@ pub fn tk_tool_call_ctx(
   name~ : String,
   arguments~ : Json = Json::null(),
 ) -> @port.ToolCallContext {
-  @port.ToolCallContext(
+  ToolCallContext(
     effect_id=@kernel.EffectId::first(),
     call_id=@kernel.CallId::unchecked("call_1"),
     name=@kernel.ToolName::unchecked(name),

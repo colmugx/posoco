@@ -1,5 +1,5 @@
 ///|
-/// Puppet orchestration — the single long-lived pump (ADR §2.1, §4, §6).
+/// Puppet orchestration — the single long-lived pump.
 ///
 /// The Puppet is the ONLY loop in the product that drives RunState forward
 /// across model/tool rounds. It composes:
@@ -121,7 +121,7 @@ pub impl Show for PromptResult with fn to_string(self : PromptResult) -> String 
 /// Prompt the Puppet with an initial user message. Only legal when the
 /// phase is Idle.
 ///
-/// Steps (ADR §6.1):
+/// Steps:
 /// 1. Acquire prompt lease via the phase gate.
 /// 2. Capture TurnSnapshot.
 /// 3. Bind ControlMailbox to the new run/turn.

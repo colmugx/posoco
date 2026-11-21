@@ -1,0 +1,977 @@
+///|
+struct FixedPromptContributor {
+  text : String
+}
+
+///|
+pub extend FixedPromptContributor with @port.SystemPromptContributor::{
+  system_prompt,
+}
+
+///|
+pub impl @port.SystemPromptContributor for FixedPromptContributor with fn system_prompt(
+  self : FixedPromptContributor,
+) -> String {
+  self.text
+}
+
+///|
+struct MutablePromptContributor {
+  text : Ref[String]
+}
+
+///|
+pub extend MutablePromptContributor with @port.SystemPromptContributor::{
+  system_prompt,
+}
+
+///|
+pub impl @port.SystemPromptContributor for MutablePromptContributor with fn system_prompt(
+  self : MutablePromptContributor,
+) -> String {
+  self.text.val
+}
+
+///|
+struct StartSettingLifecycle {
+  target : Ref[String]
+}
+
+///|
+pub extend StartSettingLifecycle with @port.Lifecycle::{
+  on_compose,
+  on_shutdown,
+  on_start,
+}
+
+///|
+pub impl @port.Lifecycle for StartSettingLifecycle with fn on_start(
+  self : StartSettingLifecycle,
+) -> Unit {
+  self.target.val = "after_start"
+}
+
+///|
+pub impl @port.Lifecycle for StartSettingLifecycle with fn on_compose(
+  _self : StartSettingLifecycle,
+  _ctx : @port.CompositionView,
+) -> Unit {
+  ()
+}
+
+///|
+pub impl @port.Lifecycle for StartSettingLifecycle with fn on_shutdown(
+  _self : StartSettingLifecycle,
+) -> Unit {
+  ()
+}
+
+///|
+struct CountingPromptContributor {
+  reads : Ref[Int32]
+}
+
+///|
+pub extend CountingPromptContributor with @port.SystemPromptContributor::{
+  system_prompt,
+}
+
+///|
+pub impl @port.SystemPromptContributor for CountingPromptContributor with fn system_prompt(
+  self : CountingPromptContributor,
+) -> String {
+  self.reads.val = self.reads.val + 1
+  "COUNTED"
+}
+
+///|
+struct FailingInboundPort {
+  _dummy : Unit
+}
+
+///|
+pub extend FailingInboundPort with @port.MemoryPort::{
+  inbound,
+  search,
+  delete,
+  store,
+}
+
+///|
+pub impl @port.MemoryPort for FailingInboundPort with fn inbound(
+  _self : FailingInboundPort,
+  session_id~ : String,
+  request~ : String,
+) -> String? raise @error.MemoryError {
+  raise Inbound("always fails for \{session_id} \{request}")
+}
+
+///|
+pub impl @port.MemoryPort for FailingInboundPort with fn store(
+  _self : FailingInboundPort,
+  content~ : String,
+  metadata~ : Map[String, Json],
+) -> String raise @error.MemoryError {
+  raise Store("always fails: \{content} \{metadata.length()}")
+}
+
+///|
+pub impl @port.MemoryPort for FailingInboundPort with fn search(
+  _self : FailingInboundPort,
+  query~ : String,
+  top_k? : Int32,
+) -> String? raise @error.MemoryError {
+  ignore(top_k)
+  raise Search("always fails: \{query}")
+}
+
+///|
+pub impl @port.MemoryPort for FailingInboundPort with fn delete(
+  _self : FailingInboundPort,
+  id : String,
+) -> Unit raise @error.MemoryError {
+  raise Delete("always fails: \{id}")
+}
+
+///|
+struct SlowInboundPort {
+  _dummy : Unit
+}
+
+///|
+pub extend SlowInboundPort with @port.MemoryPort::{
+  inbound,
+  search,
+  delete,
+  store,
+}
+
+///|
+pub impl @port.MemoryPort for SlowInboundPort with fn inbound(
+  _self : SlowInboundPort,
+  session_id~ : String,
+  request~ : String,
+) -> String? raise @error.MemoryError {
+  @test_support.tk_sleep(200)
+  Some("too late for \{session_id} \{request}")
+}
+
+///|
+pub impl @port.MemoryPort for SlowInboundPort with fn store(
+  _self : SlowInboundPort,
+  content~ : String,
+  metadata~ : Map[String, Json],
+) -> String raise @error.MemoryError {
+  "slow-\{content.length()}-\{metadata.length()}"
+}
+
+///|
+pub impl @port.MemoryPort for SlowInboundPort with fn search(
+  _self : SlowInboundPort,
+  query~ : String,
+  top_k? : Int32,
+) -> String? raise @error.MemoryError {
+  ignore((query, top_k))
+  None
+}
+
+///|
+pub impl @port.MemoryPort for SlowInboundPort with fn delete(
+  _self : SlowInboundPort,
+  id : String,
+) -> Unit raise @error.MemoryError {
+  ignore(id)
+}
+
+///|
+fn expect_inbound_message(
+  message : @kernel.Message,
+  bodies : Array[String],
+) -> Unit raise {
+  match message {
+    UserMessage(content~) =>
+      match content {
+        [Text(text), ..] =>
+          assert_eq(
+            text,
+            @posoco.MEMORY_INBOUND_LEAD + "\n\n" + bodies.join("\n\n"),
+          )
+        _ => fail("expected Text content in inbound memory message")
+      }
+    _ => fail("expected UserMessage inbound memory at this index")
+  }
+}
+
+///|
+fn secondary_failure_errors(
+  observer : @test_support.RecordingObserver,
+  hook_point : String,
+) -> Array[String] raise {
+  let out : Array[String] = []
+  for e in observer.events() {
+    match e {
+      Custom(source~, label~, data~) =>
+        if source == "posoco.core" && label == "secondary_failure" {
+          match data {
+            Object(fields) =>
+              match fields.get("hook_point") {
+                Some(String(hp)) if hp == hook_point =>
+                  match fields.get("error") {
+                    Some(String(err)) => out.push(err)
+                    _ => fail("secondary_failure event missing 'error'")
+                  }
+                _ => ()
+              }
+            _ => fail("secondary_failure data must be a JSON object")
+          }
+        }
+      _ => ()
+    }
+  }
+  out
+}
+
+///|
+fn build_memory_agent(
+  model : @test_support.ScriptedModel,
+  memory : Array[&@port.MemoryPort],
+  store : @test_support.RecordingSessionPort,
+  observer : @test_support.RecordingObserver,
+  system_prompt : String?,
+  timeout_ms : Int32?,
+) -> Agent raise @error.CompositionError {
+  let config : AgentConfig = agent_config(
+    max_tool_rounds=Some(10),
+    system_prompt~,
+    memory_inbound_timeout_ms=timeout_ms,
+  )
+  Agent(
+    events=EventSystem(),
+    exts=[
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="memory", memory~),
+      @test_support.tk_ext(id="io", sessions=[store], observers=[observer]),
+    ],
+    config~,
+  )
+}
+
+///|
+async test "m38_sysprompt/config_base_precedes_contributors" {
+  let contributor : &@port.SystemPromptContributor = FixedPromptContributor::{
+    text: "from_ext",
+  }
+  let model = @test_support.ScriptedModel([
+    Respond(@test_support.tk_stop_response("ok")),
+  ])
+  let agent = Agent(
+    events=EventSystem(),
+    exts=[
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="ext", prompt_contributors=[contributor]),
+      @test_support.tk_ext(id="io", sessions=[
+        @test_support.RecordingSessionPort(),
+      ]),
+    ],
+    config=agent_config(
+      max_tool_rounds=Some(10),
+      system_prompt=Some("host_base"),
+    ),
+  )
+  ignore(agent.run_turn(@test_support.tk_user_msg("hi"), "session_base"))
+  assert_true(model.received_messages.length() == 1)
+  let prompt = model.received_messages[0]
+  assert_true(prompt.length() >= 1)
+  match prompt[0] {
+    SystemMessage(content~) =>
+      match content {
+        [Text(s)] => assert_eq(s, "host_base\n\nfrom_ext")
+        _ => fail("expected canonical single Text content")
+      }
+    _ => fail("expected SystemMessage at index 0")
+  }
+}
+
+///|
+async test "m38_sysprompt/lazy_assembly_reads_post_on_start" {
+  let text_ref = Ref("before_start")
+  let contributor = MutablePromptContributor::{ text: text_ref, }
+  let starter : &@port.Lifecycle = StartSettingLifecycle::{ target: text_ref, }
+  let model = @test_support.ScriptedModel([
+    Respond(@test_support.tk_stop_response("ok")),
+  ])
+  let store = @test_support.RecordingSessionPort()
+  let agent = Agent(
+    events=EventSystem(),
+    exts=[
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="lifecycle", lifecycle=[starter]),
+      @test_support.tk_ext(id="ext", prompt_contributors=[
+        contributor as &@port.SystemPromptContributor,
+      ]),
+      @test_support.tk_ext(id="io", sessions=[store]),
+    ],
+    config=agent_config(max_tool_rounds=Some(10)),
+  )
+  ignore(agent.run_turn(@test_support.tk_user_msg("hi"), "session_lazy"))
+  assert_true(model.received_messages.length() == 1)
+  let prompt = model.received_messages[0]
+  match prompt[0] {
+    SystemMessage(content~) =>
+      match content {
+        [Text(s)] => assert_eq(s, "after_start")
+        _ => fail("expected canonical single Text content")
+      }
+    _ => fail("expected SystemMessage at index 0")
+  }
+}
+
+///|
+async test "m38_sysprompt/same_ext_contributors_join_without_headers" {
+  let c1 : &@port.SystemPromptContributor = FixedPromptContributor::{
+    text: "ONE",
+  }
+  let c2 : &@port.SystemPromptContributor = FixedPromptContributor::{
+    text: "TWO",
+  }
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("ok"),
+    ),
+  ])
+  let agent = Agent(
+    events=EventSystem(),
+    exts=[
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="ext", prompt_contributors=[c1, c2]),
+      @test_support.tk_ext(id="io", sessions=[
+        @test_support.RecordingSessionPort(),
+      ]),
+    ],
+    config=agent_config(max_tool_rounds=Some(10)),
+  )
+  ignore(agent.run_turn(@test_support.tk_user_msg("hi"), "session_same_ext"))
+  let prompt = model.received_messages[0]
+  match prompt[0] {
+    SystemMessage(content~) =>
+      match content {
+        [Text(s)] => assert_eq(s, "ONE\n\nTWO")
+        _ => fail("expected canonical single Text content")
+      }
+    _ => fail("expected SystemMessage at index 0")
+  }
+}
+
+///|
+async test "m38_sysprompt/contributor_read_once_across_rounds_turns_sessions" {
+  let reads = Ref(0)
+  let contributor : &@port.SystemPromptContributor = CountingPromptContributor::{
+    reads,
+  }
+  let model = @test_support.ScriptedModel([
+    Respond(@test_support.tk_tool_call_response("echo", "call_1", Json::null())),
+    Respond(@test_support.tk_stop_response("done")),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("second turn"),
+    ),
+    Respond(@test_support.tk_stop_response("other session")),
+  ])
+  let tools = @test_support.RecordingToolProvider(
+    [@test_support.tk_tool_def("echo", "echo tool")],
+    Map::from_array([("echo", OutcomeOk(@test_support.tk_ok_result("echoed")))]),
+  )
+  let agent = Agent(
+    events=EventSystem(),
+    exts=[
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="tools", tools=[tools]),
+      @test_support.tk_ext(id="ext", prompt_contributors=[contributor]),
+      @test_support.tk_ext(id="io", sessions=[
+        @test_support.RecordingSessionPort(),
+      ]),
+    ],
+    config=agent_config(max_tool_rounds=Some(10)),
+  )
+  ignore(agent.run_turn(@test_support.tk_user_msg("one"), "session_a"))
+  ignore(agent.run_turn(@test_support.tk_user_msg("two"), "session_a"))
+  ignore(agent.run_turn(@test_support.tk_user_msg("three"), "session_b"))
+  assert_eq(reads.val, 1)
+  assert_eq(model.received_messages.length(), 4)
+  for prompt in model.received_messages {
+    match prompt[0] {
+      SystemMessage(content~) =>
+        match content {
+          [Text(s)] => assert_eq(s, "COUNTED")
+          _ => fail("expected canonical single Text system content")
+        }
+      _ => fail("expected SystemMessage at index 0")
+    }
+  }
+}
+
+///|
+async test "m38_memory/fresh_session_injects_once" {
+  let model = @test_support.ScriptedModel([
+    Respond(@test_support.tk_stop_response("ok")),
+  ])
+  let mem = @test_support.ScriptedMemoryPort(inbounds=[Some("fact one")])
+  let agent = build_memory_agent(
+    model,
+    [mem as &@port.MemoryPort],
+    @test_support.RecordingSessionPort(),
+    @test_support.RecordingObserver(),
+    Some("SYS"),
+    None,
+  )
+  ignore(agent.run_turn(@test_support.tk_user_msg("hello"), "session_1"))
+  assert_eq(mem.call_count(), 1)
+  assert_eq(mem.received_sessions(), ["session_1"])
+  assert_eq(mem.received_requests(), ["hello"])
+  assert_eq(model.received_messages.length(), 1)
+  let prompt = model.received_messages[0]
+  assert_eq(prompt.length(), 3)
+  match prompt[0] {
+    SystemMessage(content~) =>
+      match content {
+        [Text(s), ..] => assert_eq(s, "SYS")
+        _ => fail("expected Text content in system message")
+      }
+    _ => fail("expected SystemMessage at index 0")
+  }
+  expect_inbound_message(prompt[1], ["fact one"])
+  match prompt[2] {
+    UserMessage(content~) =>
+      match content {
+        [Text(s), ..] => assert_eq(s, "hello")
+        _ => fail("expected Text content in the user input")
+      }
+    _ => fail("expected the real input at index 2")
+  }
+}
+
+///|
+async test "m38_memory/second_turn_no_reread_prefix_stable" {
+  let model = @test_support.ScriptedModel([
+    Respond(@test_support.tk_stop_response("ok")),
+    Respond(@test_support.tk_stop_response("ok")),
+  ])
+  let mem = @test_support.ScriptedMemoryPort(inbounds=[Some("fact")])
+  let agent = build_memory_agent(
+    model,
+    [mem as &@port.MemoryPort],
+    @test_support.RecordingSessionPort(),
+    @test_support.RecordingObserver(),
+    Some("SYS"),
+    None,
+  )
+  ignore(agent.run_turn(@test_support.tk_user_msg("hello"), "session_1"))
+  ignore(agent.run_turn(@test_support.tk_user_msg("again"), "session_1"))
+  assert_eq(mem.call_count(), 1)
+  let first = model.received_messages[0]
+  let second = model.received_messages[1]
+  assert_eq(first.length(), 3)
+  for i in 0..<first.length() {
+    assert_eq(second[i], first[i])
+  }
+  assert_true(second.length() > first.length())
+}
+
+///|
+async test "m38_memory/empty_inbound_spends_attempt_per_session" {
+  let model = @test_support.ScriptedModel([
+    Respond(@test_support.tk_stop_response("ok")),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("ok"),
+    ),
+    Respond(@test_support.tk_stop_response("ok")),
+  ])
+  let mem = @test_support.ScriptedMemoryPort(inbounds=[
+    None,
+    Some("second session fact"),
+  ])
+  let observer = @test_support.RecordingObserver()
+  let agent = build_memory_agent(
+    model,
+    [mem as &@port.MemoryPort],
+    @test_support.RecordingSessionPort(),
+    observer,
+    None,
+    None,
+  )
+  let first_turn = agent.run_turn(@test_support.tk_user_msg("q1"), "session_1")
+  assert_eq(first_turn.final_session_id, "session_1")
+  assert_eq(model.received_messages[0].length(), 1)
+  ignore(agent.run_turn(@test_support.tk_user_msg("q2"), "session_1"))
+  assert_eq(mem.call_count(), 1)
+  assert_eq(model.received_messages[1].length(), 3)
+  match model.received_messages[1][0] {
+    UserMessage(content~) =>
+      match content {
+        [Text(s), ..] => assert_eq(s, "q1")
+        _ => fail("expected Text content")
+      }
+    _ => fail("expected history replay to start with the first input")
+  }
+  ignore(agent.run_turn(@test_support.tk_user_msg("q3"), "session_2"))
+  assert_eq(mem.call_count(), 2)
+  assert_eq(mem.received_sessions(), ["session_1", "session_2"])
+  assert_eq(model.received_messages[2].length(), 2)
+  expect_inbound_message(model.received_messages[2][0], ["second session fact"])
+  let mut completed = 0
+  let mut failed = 0
+  for e in observer.events() {
+    match e {
+      TurnCompleted => completed = completed + 1
+      TurnFailed(_) => failed = failed + 1
+      _ => ()
+    }
+  }
+  assert_eq(completed, 3)
+  assert_eq(failed, 0)
+}
+
+///|
+async test "m38_memory/resume_skips_read_and_replays_prefix" {
+  let model1 = @test_support.ScriptedModel([
+    Respond(@test_support.tk_stop_response("ok")),
+  ])
+  let mem1 = @test_support.ScriptedMemoryPort(inbounds=[Some("fact")])
+  let store = @test_support.RecordingSessionPort()
+  let agent1 = build_memory_agent(
+    model1,
+    [mem1 as &@port.MemoryPort],
+    store,
+    @test_support.RecordingObserver(),
+    Some("SYS"),
+    None,
+  )
+  ignore(agent1.run_turn(@test_support.tk_user_msg("hello"), "session_1"))
+  let model2 = @test_support.ScriptedModel([
+    Respond(@test_support.tk_stop_response("ok")),
+  ])
+  let mem2 = @test_support.ScriptedMemoryPort(inbounds=[Some("CHANGED")])
+  let agent2 = build_memory_agent(
+    model2,
+    [mem2 as &@port.MemoryPort],
+    store,
+    @test_support.RecordingObserver(),
+    Some("SYS"),
+    None,
+  )
+  ignore(agent2.run_turn(@test_support.tk_user_msg("resume"), "session_1"))
+  assert_eq(mem2.call_count(), 0)
+  let first = model1.received_messages[0]
+  let second = model2.received_messages[0]
+  for i in 0..<first.length() {
+    assert_eq(second[i], first[i])
+  }
+  assert_true(second.length() > first.length())
+}
+
+///|
+async test "m38_memory/preseeded_history_never_injects" {
+  let model = @test_support.ScriptedModel([
+    Respond(@test_support.tk_stop_response("ok")),
+  ])
+  let mem = @test_support.ScriptedMemoryPort(inbounds=[
+    Some("must never be read"),
+  ])
+  let store = @test_support.RecordingSessionPort()
+  store.seed("session_pre", {
+    messages: [
+      @test_support.tk_user_msg("old question"),
+      AssistantMessage(
+        content=[Text("old answer")],
+        tool_calls=[],
+        reasoning=None,
+        finish_reason=Stop,
+      ),
+    ],
+    metadata: Map::from_array([]),
+  })
+  let agent = build_memory_agent(
+    model,
+    [mem as &@port.MemoryPort],
+    store,
+    @test_support.RecordingObserver(),
+    None,
+    None,
+  )
+  ignore(
+    agent.run_turn(@test_support.tk_user_msg("new question"), "session_pre"),
+  )
+  assert_eq(mem.call_count(), 0)
+  let prompt = model.received_messages[0]
+  assert_eq(prompt.length(), 3)
+  match prompt[0] {
+    UserMessage(content~) =>
+      match content {
+        [Text(s), ..] => assert_eq(s, "old question")
+        _ => fail("expected Text content")
+      }
+    _ => fail("expected the seeded history to start unshifted")
+  }
+}
+
+///|
+async test "m38_memory/two_providers_merge_into_one_message" {
+  let model = @test_support.ScriptedModel([
+    Respond(@test_support.tk_stop_response("ok")),
+  ])
+  let notes = @test_support.ScriptedMemoryPort(inbounds=[Some("notes fact")])
+  let book = @test_support.ScriptedMemoryPort(inbounds=[Some("book fact")])
+  let agent = build_memory_agent(
+    model,
+    [notes as &@port.MemoryPort, book as &@port.MemoryPort],
+    @test_support.RecordingSessionPort(),
+    @test_support.RecordingObserver(),
+    None,
+    None,
+  )
+  ignore(agent.run_turn(@test_support.tk_user_msg("query"), "session_1"))
+  assert_eq(notes.call_count(), 1)
+  assert_eq(book.call_count(), 1)
+  let prompt = model.received_messages[0]
+  assert_eq(prompt.length(), 2)
+  expect_inbound_message(prompt[0], ["notes fact", "book fact"])
+}
+
+///|
+async test "m38_memory/failing_provider_does_not_mask_sibling" {
+  let model = @test_support.ScriptedModel([
+    Respond(@test_support.tk_stop_response("ok")),
+  ])
+  let failing : &@port.MemoryPort = FailingInboundPort::{ _dummy: (), }
+  let ok = @test_support.ScriptedMemoryPort(inbounds=[Some("recovered")])
+  let observer = @test_support.RecordingObserver()
+  let agent = build_memory_agent(
+    model,
+    [failing, ok as &@port.MemoryPort],
+    @test_support.RecordingSessionPort(),
+    observer,
+    None,
+    None,
+  )
+  let result = agent.run_turn(@test_support.tk_user_msg("query"), "session_1")
+  assert_eq(result.final_session_id, "session_1")
+  let prompt = model.received_messages[0]
+  assert_eq(prompt.length(), 2)
+  expect_inbound_message(prompt[0], ["recovered"])
+  let failures = secondary_failure_errors(observer, "memory_inbound")
+  assert_eq(failures.length(), 1)
+  assert_true(failures[0].contains("MemoryError::Inbound"))
+}
+
+///|
+async test "m38_memory/inbound_timeout_emits_secondary_failure" {
+  let model = @test_support.ScriptedModel([
+    Respond(@test_support.tk_stop_response("ok")),
+  ])
+  let slow : &@port.MemoryPort = SlowInboundPort::{ _dummy: (), }
+  let observer = @test_support.RecordingObserver()
+  let agent = build_memory_agent(
+    model,
+    [slow],
+    @test_support.RecordingSessionPort(),
+    observer,
+    None,
+    Some(1),
+  )
+  let result = agent.run_turn(@test_support.tk_user_msg("query"), "session_1")
+  assert_eq(result.final_session_id, "session_1")
+  assert_eq(model.received_messages[0].length(), 1)
+  let failures = secondary_failure_errors(observer, "memory_inbound")
+  assert_eq(failures.length(), 1)
+  assert_true(failures[0].contains("timeout"))
+}
+
+///|
+async test "m38_memory/e2e_memory_search_tool_reaches_sources" {
+  let mem = @test_support.ScriptedMemoryPort(inbounds=[Some("opening fact")], search_script=[
+    Some("searched hit"),
+  ])
+  let model = @test_support.ScriptedModel([
+    Respond(
+      @test_support.tk_tool_call_response(
+        "memory_search",
+        "call_1",
+        Json::object(Map::from_array([("query", Json::string("prefs"))])),
+      ),
+    ),
+    Respond(@test_support.tk_stop_response("done")),
+  ])
+  let agent = build_memory_agent(
+    model,
+    [mem as &@port.MemoryPort],
+    @test_support.RecordingSessionPort(),
+    @test_support.RecordingObserver(),
+    None,
+    None,
+  )
+  let result = agent.run_turn(@test_support.tk_user_msg("query"), "session_1")
+  assert_eq(result.final_session_id, "session_1")
+  assert_eq(mem.call_count(), 1)
+  assert_eq(mem.received_searches(), [("prefs", None)])
+  assert_eq(result.tool_results, [@test_support.tk_ok_result("searched hit")])
+  assert_eq(model.received_messages[0].length(), 2)
+  expect_inbound_message(model.received_messages[0][0], ["opening fact"])
+}
+
+///|
+async test "m38_memory/memory_search_collision_at_composition" {
+  let tools = @test_support.RecordingToolProvider(
+    [
+      @test_support.tk_tool_def(
+        "memory_search", "extension echo of the core tool",
+      ),
+    ],
+    Map::from_array([]),
+  )
+  let mem = @test_support.ScriptedMemoryPort(inbounds=[])
+  let composition_result = Ok(
+    Agent(
+      events=EventSystem(),
+      exts=[
+        @test_support.tk_ext(
+          id="model",
+          model=Some(@test_support.ScriptedModel([])),
+        ),
+        @test_support.tk_ext(id="tools", tools=[tools]),
+        @test_support.tk_ext(id="memory", memory=[mem as &@port.MemoryPort]),
+        @test_support.tk_ext(id="io", sessions=[
+          @test_support.RecordingSessionPort(),
+        ]),
+      ],
+      config=agent_config(max_tool_rounds=Some(10)),
+    ),
+  ) catch {
+    e => Err(e)
+  }
+  match composition_result {
+    Err(ToolCollision(name, msg, ..)) => {
+      assert_eq(name, "memory_search")
+      assert_true(msg.contains("collision"))
+    }
+    _ => fail("expected ToolCollision for extension 'memory_search'")
+  }
+}
+
+///|
+struct SameLengthAgentHook {}
+
+///|
+pub extend SameLengthAgentHook with @port.PipelineHook::{
+  tool_exposure,
+  on_turn_begin,
+  on_post_event,
+  before_model,
+  before_tool,
+  on_turn_end,
+}
+
+///|
+pub impl @port.PipelineHook for SameLengthAgentHook with fn before_model(
+  _self,
+  _messages : Array[@kernel.Message],
+) -> Array[@kernel.Message] raise @port.HookAbort {
+  [UserMessage(content=[Text("rewritten-by-hook")])]
+}
+
+///|
+async test "m38_hooks/same_length_rewrite_reaches_model" {
+  let model = @test_support.ScriptedModel([
+    Respond(@test_support.tk_stop_response("ok")),
+  ])
+  let store = @test_support.RecordingSessionPort()
+  let observer = @test_support.RecordingObserver()
+  let agent = Agent(
+    events=EventSystem(),
+    exts=[
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="hook", hooks=[SameLengthAgentHook::{ }]),
+      @test_support.tk_ext(id="io", sessions=[store], observers=[observer]),
+    ],
+    config=agent_config(max_tool_rounds=Some(10)),
+  )
+  let result = agent.run_turn(
+    @test_support.tk_user_msg("original"),
+    "session_rewrite",
+  )
+  ignore(result)
+  assert_eq(model.received_messages.length(), 1)
+  let received = model.received_messages[0]
+  assert_eq(received.length(), 1)
+  match received[0] {
+    UserMessage(content~) =>
+      match content[0] {
+        Text(text) => assert_eq(text, "rewritten-by-hook")
+        _ => fail("expected text content")
+      }
+    _ => fail("expected rewritten user message")
+  }
+  let mut completed = 0
+  let mut failed = 0
+  for e in observer.events() {
+    match e {
+      TurnCompleted => completed = completed + 1
+      TurnFailed(_) => failed = failed + 1
+      _ => ()
+    }
+  }
+  assert_eq(completed, 1)
+  assert_eq(failed, 0)
+}
+
+///|
+struct ModeIndicatorHook {
+  mode : Ref[String]
+}
+
+///|
+fn ModeIndicatorHook::envelope(self : ModeIndicatorHook) -> String {
+  "<mode-state>\nCurrent mode: \{self.mode.val}\n</mode-state>"
+}
+
+///|
+pub impl @port.PipelineHook for ModeIndicatorHook with fn before_model(
+  self : ModeIndicatorHook,
+  messages : Array[@kernel.Message],
+) -> Array[@kernel.Message] raise @port.HookAbort {
+  let envelope = self.envelope()
+  let mut i = messages.length() - 1
+  while i >= 0 {
+    match messages[i] {
+      UserMessage(content=[Text(text), ..]) if text.contains("<mode-state>") => {
+        if text == envelope {
+          return messages
+        }
+        break
+      }
+      _ => ()
+    }
+    i = i - 1
+  }
+  let out : Array[@kernel.Message] = []
+  for m in messages {
+    out.push(m)
+  }
+  out.push(UserMessage(content=[Text(envelope)]))
+  out
+}
+
+///|
+pub extend ModeIndicatorHook with @port.PipelineHook::{
+  tool_exposure,
+  on_turn_begin,
+  on_post_event,
+  before_model,
+  before_tool,
+  on_turn_end,
+}
+
+///|
+fn mode_notification_texts(messages : Array[@kernel.Message]) -> Array[String] {
+  let out : Array[String] = []
+  for m in messages {
+    match m {
+      UserMessage(content=[Text(text), ..]) if text.contains("<mode-state>") =>
+        out.push(text)
+      _ => ()
+    }
+  }
+  out
+}
+
+///|
+async test "m38_sysprompt/dynamic_mode_notification_appends_once_on_change" {
+  let mode = Ref("act")
+  let hook : &@port.PipelineHook = ModeIndicatorHook::{ mode, }
+  let model = @test_support.ScriptedModel([
+    Respond(@test_support.tk_tool_call_response("echo", "call_1", Json::null())),
+    Respond(@test_support.tk_stop_response("done")),
+    Respond(@test_support.tk_stop_response("same mode")),
+    Respond(@test_support.tk_stop_response("mode changed")),
+  ])
+  let tools = @test_support.RecordingToolProvider(
+    [@test_support.tk_tool_def("echo", "echo tool")],
+    Map::from_array([("echo", OutcomeOk(@test_support.tk_ok_result("echoed")))]),
+  )
+  let agent = Agent(
+    events=EventSystem(),
+    exts=[
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="tools", tools=[tools]),
+      @test_support.tk_ext(id="hook", hooks=[hook]),
+      @test_support.tk_ext(id="io", sessions=[
+        @test_support.RecordingSessionPort(),
+      ]),
+    ],
+    config=agent_config(max_tool_rounds=Some(10)),
+  )
+  ignore(agent.run_turn(@test_support.tk_user_msg("do it"), "session_mode"))
+  assert_eq(model.received_messages.length(), 2)
+  assert_eq(mode_notification_texts(model.received_messages[0]).length(), 1)
+  assert_eq(mode_notification_texts(model.received_messages[1]).length(), 1)
+  match model.received_messages[0][0] {
+    UserMessage(content~) =>
+      match content {
+        [Text(s), ..] => assert_eq(s, "do it")
+        _ => fail("expected Text content")
+      }
+    _ => fail("expected the real input to stay at index 0")
+  }
+  ignore(agent.run_turn(@test_support.tk_user_msg("again"), "session_mode"))
+  assert_eq(mode_notification_texts(model.received_messages[2]).length(), 1)
+  mode.val = "plan"
+  ignore(agent.run_turn(@test_support.tk_user_msg("switch"), "session_mode"))
+  let notifications = mode_notification_texts(model.received_messages[3])
+  assert_eq(notifications.length(), 2)
+  assert_true(notifications[0].contains("act"))
+  assert_true(notifications[1].contains("plan"))
+}
+
+///|
+fn build_ui_agent(
+  ui : @test_support.RecordingUiPort,
+  ui_projection : Bool,
+) -> Agent raise @error.CompositionError {
+  let model = @test_support.ScriptedModel([
+    Respond(@test_support.tk_tool_call_response("echo", "call_1", Json::null())),
+    Respond(@test_support.tk_stop_response("done")),
+  ])
+  let tools = @test_support.RecordingToolProvider(
+    [@test_support.tk_tool_def("echo", "echo tool")],
+    Map::from_array([("echo", OutcomeOk(@test_support.tk_ok_result("echoed")))]),
+  )
+  Agent(
+    events=EventSystem(),
+    exts=[
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", tools=[tools], ui=[ui], sessions=[
+        @test_support.RecordingSessionPort(),
+      ]),
+    ],
+    config=agent_config(max_tool_rounds=Some(10)),
+    ui_projection~,
+  )
+}
+
+///|
+async test "br5_ui_projection/default_off_renders_nothing" {
+  let ui = @test_support.RecordingUiPort()
+  let agent = build_ui_agent(ui, false)
+  let result = agent.run_turn(@test_support.tk_user_msg("hi"), "session_ui_off")
+  assert_eq(result.final_session_id, "session_ui_off")
+  assert_eq(ui.render_count(), 0)
+}
+
+///|
+async test "br5_ui_projection/opt_in_renders_tool_notice" {
+  let ui = @test_support.RecordingUiPort()
+  let agent = build_ui_agent(ui, true)
+  let result = agent.run_turn(@test_support.tk_user_msg("hi"), "session_ui_on")
+  assert_eq(result.final_session_id, "session_ui_on")
+  assert_true(ui.render_count() > 0)
+  let notices = ui.rendered_in_slot(Notice)
+  assert_eq(notices.length(), 1)
+}

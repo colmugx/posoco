@@ -134,7 +134,7 @@ pub impl @port.DecisionPort for ScriptedDecisionPort with fn evaluate(
   let _ = context
   self.received.push(snapshot_decision_request(request))
   if self.index >= self.steps.length() {
-    raise @error.DecisionError::Transport(
+    raise Transport(
       "scripted_decision_exhausted at call \{self.received.length()} (script had \{self.steps.length()} steps)",
     )
   }

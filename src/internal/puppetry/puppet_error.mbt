@@ -16,14 +16,14 @@
 ///   final shutdown transition.
 
 // ──────────────────────────────────────────────────────────────────────────
-// PuppetPhase (ADR §4 — Q7.1 recommendation: `PuppetPhase`)
+// PuppetPhase
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
 /// Product-level macro phase. Distinct from the kernel `Phase` (per-Run
 /// micro-state owned by the reducer).
 ///
-/// Allowed transitions (ADR §4 diagram):
+/// Allowed transitions:
 /// - Idle → Active            (prompt / continue accepted)
 /// - Active → Suspended       (reducer enters Suspended)
 /// - Suspended → Active       (resume)
@@ -65,7 +65,7 @@ pub impl Show for PuppetPhase with fn to_string(self : PuppetPhase) -> String {
 
 ///|
 /// Whether this phase is quiescent — the union of Idle, Suspended and
-/// Shutdown per ADR §4. `wait_idle` wakes when the Puppet reaches any of
+/// Shutdown `wait_idle` wakes when the Puppet reaches any of
 /// these (with distinct typed status, never conflating Suspended with a
 /// terminal outcome).
 pub fn PuppetPhase::is_quiescent(self : PuppetPhase) -> Bool {
@@ -129,7 +129,7 @@ pub impl Show for OperationClass with fn to_string(self : OperationClass) -> Str
 // ──────────────────────────────────────────────────────────────────────────
 
 ///|
-/// A structural lease. At most one is held at any time (ADR §4 rule 1).
+/// A structural lease. At most one is held at any time.
 /// Acquired by `prompt`/`continue`/`resume`; released on terminal outcome,
 /// abort, or shutdown. Records the owner operation id and the phase at which
 /// the lease was acquired so release can validate provenance.
@@ -288,7 +288,7 @@ pub(all) suberror PuppetError {
 }
 
 ///|
-/// Why a savepoint failed (ADR §5 failure handling).
+/// Why a savepoint failed.
 #derive(Eq, Debug)
 pub(all) enum SavepointFailureCause {
   /// Contributor raised or returned Err.

@@ -112,9 +112,7 @@ async test "t07_valid_tool_json_still_parses" {
 async test "t07_model_error_emits_turnfailed_not_turncompleted" {
   // When the model raises, the observer must see TurnFailed (from the model
   // error path) and MUST NOT see TurnCompleted.
-  let model = @test_support.ScriptedModel([
-    @test_support.ScriptedModelStep::Fail(Transport("network down")),
-  ])
+  let model = @test_support.ScriptedModel([Fail(Transport("network down"))])
   let store = @test_support.RecordingSessionPort()
   let obs = @test_support.RecordingObserver()
   let agent = @posoco.Agent(
@@ -152,7 +150,7 @@ async test "t07_rate_limited_model_surfaces_quota_scheduling_data" {
   // A provider quota verdict must reach the caller with its provider code,
   // reset time, and message intact — never collapsed to a generic failure.
   let model = @test_support.ScriptedModel([
-    @test_support.ScriptedModelStep::Fail(
+    Fail(
       RateLimited({
         message: "free quota exceeded",
         reset_at_ms: Some(1756400000000L),
@@ -210,9 +208,7 @@ fn count_terminal_events(events : Array[TurnEvent]) -> Int32 {
 ///|
 async test "t07_save_error_emits_exactly_one_turnfailed" {
   let model = @test_support.ScriptedModel([
-    @test_support.ScriptedModelStep::Respond(
-      @test_support.tk_stop_response("done"),
-    ),
+    Respond(@test_support.tk_stop_response("done")),
   ])
   let store = @test_support.RecordingSessionPort()
   store.fail_save("save-fail")
@@ -242,7 +238,7 @@ async test "t07_save_error_emits_exactly_one_turnfailed" {
 ///|
 async test "t07_model_failure_keeps_primary_after_input_checkpoint" {
   let model = @test_support.ScriptedModel([
-    @test_support.ScriptedModelStep::Fail(Transport("primary network failure")),
+    Fail(Transport("primary network failure")),
   ])
   let store = @test_support.RecordingSessionPort()
   let obs = @test_support.RecordingObserver()
@@ -330,9 +326,7 @@ async test "t07_load_error_emits_one_safe_turnfailed" {
 async test "t07_afterturn_hook_failure_is_observable_but_nonfatal" {
   // A PreModelHook abort still emits exactly one terminal event.
   let model = @test_support.ScriptedModel([
-    @test_support.ScriptedModelStep::Respond(
-      @test_support.tk_stop_response("done"),
-    ),
+    Respond(@test_support.tk_stop_response("done")),
   ])
   let store = @test_support.RecordingSessionPort()
   let obs = @test_support.RecordingObserver()
@@ -368,7 +362,7 @@ async test "t07_afterturn_hook_failure_is_observable_but_nonfatal" {
 async test "t07_error_hook_failure_preserves_primary_and_is_observable" {
   // A PreModelHook abort before the model call surfaces as PipelineAborted.
   let model = @test_support.ScriptedModel([
-    @test_support.ScriptedModelStep::Fail(Transport("primary network failure")),
+    Fail(Transport("primary network failure")),
   ])
   let store = @test_support.RecordingSessionPort()
   let obs = @test_support.RecordingObserver()
@@ -400,7 +394,7 @@ async test "t07_error_hook_failure_preserves_primary_and_is_observable" {
 ///|
 async test "t07_turnerror_hook_failure_preserves_primary_and_is_observable" {
   let model = @test_support.ScriptedModel([
-    @test_support.ScriptedModelStep::Fail(Transport("primary network failure")),
+    Fail(Transport("primary network failure")),
   ])
   let store = @test_support.RecordingSessionPort()
   let obs = @test_support.RecordingObserver()
@@ -434,23 +428,14 @@ async test "t07_aftertool_hook_failure_is_observable_but_nonfatal" {
   // A pre_model_hook abort before the second model call surfaces as
   // PipelineAborted.
   let model = @test_support.ScriptedModel([
-    @test_support.ScriptedModelStep::Respond(
+    Respond(
       @test_support.tk_tool_call_response("probe", "tc_secondary", Json::null()),
     ),
-    @test_support.ScriptedModelStep::Respond(
-      @test_support.tk_stop_response("done"),
-    ),
+    Respond(@test_support.tk_stop_response("done")),
   ])
   let provider = @test_support.RecordingToolProvider(
     [@test_support.tk_tool_def("probe", "")],
-    Map::from_array([
-      (
-        "probe",
-        @test_support.ScriptedToolOutcome::OutcomeOk(
-          @test_support.tk_ok_result("ok"),
-        ),
-      ),
-    ]),
+    Map::from_array([("probe", OutcomeOk(@test_support.tk_ok_result("ok")))]),
   )
   let store = @test_support.RecordingSessionPort()
   let obs = @test_support.RecordingObserver()
@@ -557,20 +542,13 @@ async test "t07_premodel_abort_emits_turnstarted_and_one_terminal_event" {
 ///|
 async test "t07_tool_loop_emits_exactly_one_turnfailed" {
   let model = @test_support.ScriptedModel([
-    @test_support.ScriptedModelStep::Respond(
+    Respond(
       @test_support.tk_tool_call_response("probe", "tc_loop", Json::null()),
     ),
   ])
   let provider = @test_support.RecordingToolProvider(
     [@test_support.tk_tool_def("probe", "")],
-    Map::from_array([
-      (
-        "probe",
-        @test_support.ScriptedToolOutcome::OutcomeOk(
-          @test_support.tk_ok_result("ok"),
-        ),
-      ),
-    ]),
+    Map::from_array([("probe", OutcomeOk(@test_support.tk_ok_result("ok")))]),
   )
   let store = @test_support.RecordingSessionPort()
   let obs = @test_support.RecordingObserver()

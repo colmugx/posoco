@@ -1,4 +1,8 @@
 ///|
+/// Stable memory-inbound lead used by existing consumers.
+pub const MEMORY_INBOUND_LEAD : String = @memory.MEMORY_INBOUND_LEAD
+
+///|
 pub fn build_tool_result_message(
   call : @kernel.ToolCall,
   result : @kernel.ToolOutcome,
@@ -34,7 +38,6 @@ pub fn build_error_message(
 
 ///|
 /// No-op CommandPort: declares no commands, invoke always raises NotFound.
-/// Useful as a default or for testing.
 pub(all) struct NoopCommandPort {}
 
 ///|
@@ -52,3 +55,6 @@ pub impl @port.CommandPort for NoopCommandPort with fn invoke(
 ) -> @port.CommandOutcome raise @error.CommandError {
   raise NotFound(id)
 }
+
+///|
+pub extend NoopCommandPort with @port.CommandPort::{commands, invoke}

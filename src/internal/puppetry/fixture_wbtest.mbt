@@ -430,7 +430,7 @@ async test "puppet/C-NEGATIVE-USAGE-FAILS-BEFORE-MODEL-COMPLETED" {
 ///|
 async test "puppet/C-INVALID-STREAM-CHUNK-NOT-BROADCAST" {
   let host = FixtureHost([Ok(fixture_stop("must fail"))], Map::from_array([])).with_stream_chunks([
-      @types.StreamChunk::ToolCallDelta(
+      ToolCallDelta(
         index=3,
         id=Some("sparse"),
         name=Some("echo"),
@@ -471,7 +471,7 @@ async test "puppet/C-INVALID-STREAM-CHUNK-HOST-RAISE-PRIMARY" {
       Map::from_array([]),
     )
     .with_stream_chunks([
-      @types.StreamChunk::ToolCallDelta(
+      ToolCallDelta(
         index=3,
         id=Some("sparse"),
         name=Some("echo"),
@@ -523,7 +523,7 @@ async test "puppet/C-INVALID-STREAM-CHUNK-RETURNED-RATE-LIMITED-PRIMARY" {
     ],
     Map::from_array([]),
   ).with_stream_chunks([
-    @types.StreamChunk::ToolCallDelta(
+    ToolCallDelta(
       index=3,
       id=Some("sparse"),
       name=Some("echo"),

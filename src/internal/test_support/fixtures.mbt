@@ -12,8 +12,8 @@
 /// messages when `processed_messages` is empty. See
 /// `PortRuntime::call_model` for the substitution logic.
 pub fn tk_stop_response(text : String) -> @kernel.ModelCallResult {
-  let completion : @kernel.Completion = @kernel.Completion(
-    content=[@kernel.Text(text)],
+  let completion : @kernel.Completion = Completion(
+    content=[Text(text)],
     tool_calls=[],
     reasoning=None,
     finish_reason=Stop,
@@ -34,7 +34,7 @@ pub fn tk_tool_call_response(
     name: @kernel.ToolName::unchecked(tool_name),
     arguments: args,
   }
-  let completion : @kernel.Completion = @kernel.Completion(
+  let completion : @kernel.Completion = Completion(
     content=[],
     tool_calls=[call],
     reasoning=None,
@@ -47,7 +47,7 @@ pub fn tk_tool_call_response(
 ///|
 /// Build a user message.
 pub fn tk_user_msg(text : String) -> @kernel.Message {
-  UserMessage(content=[@kernel.Text(text)])
+  UserMessage(content=[Text(text)])
 }
 
 ///|
@@ -56,7 +56,7 @@ pub fn tk_user_msg(text : String) -> @kernel.Message {
 /// Policy is `Parallel` (the declared default; composition honors it
 /// as-is). Provenance is `None`.
 pub fn tk_tool_def(name : String, description : String) -> @kernel.ToolDef {
-  @kernel.ToolDef(
+  ToolDef(
     name=@kernel.ToolName::unchecked(name),
     description~,
     input_schema=Json::object(Map::from_array([])),
@@ -340,7 +340,7 @@ pub fn tk_ext(
     None => []
   }
   ManifestOnly(
-    @port.ExtensionManifest(
+    ExtensionManifest(
       id~,
       models~,
       decisions~,
@@ -372,9 +372,7 @@ pub fn tk_view(
   ui~ : &@port.UiPort,
   wakeup~ : @port.WakeupPort? = None,
 ) -> @port.CompositionView {
-  let tasks = @port.Tasks::from_submit(submit=fn(_) {
-    Err(@port.TaskSubmitError::Unavailable)
-  })
+  let tasks = @port.Tasks::from_submit(submit=fn(_) { Err(Unavailable) })
   @port.CompositionView::resolve(
     requires~,
     model~,
