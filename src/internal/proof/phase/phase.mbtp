@@ -1,0 +1,152 @@
+///|
+predicate is_initializing(p : Phase) {
+  match p {
+    Initializing => true
+    _ => false
+  }
+}
+
+///|
+predicate is_ready(p : Phase) {
+  match p {
+    ReadyForModel => true
+    _ => false
+  }
+}
+
+///|
+predicate is_awaiting_model(p : Phase) {
+  match p {
+    AwaitingModel => true
+    _ => false
+  }
+}
+
+///|
+predicate is_awaiting_tools(p : Phase) {
+  match p {
+    AwaitingTools => true
+    _ => false
+  }
+}
+
+///|
+predicate is_suspended(p : Phase) {
+  match p {
+    Suspended => true
+    _ => false
+  }
+}
+
+///|
+predicate is_terminal(p : Phase) {
+  match p {
+    Terminal => true
+    _ => false
+  }
+}
+
+///|
+predicate is_terminal_event(e : EventTag) {
+  match e {
+    RunCompleted => true
+    RunFailed => true
+    RunCancelled => true
+    NonTerminalEvent => false
+  }
+}
+
+///|
+predicate is_terminal_event_opt(e : Option[EventTag]) {
+  match e {
+    Some(ev) => is_terminal_event(ev)
+    None => false
+  }
+}
+
+///|
+predicate phase_inv(s : PhaseState) {
+  s.model_step_id >= 0 &&
+  s.event_seq >= 0 &&
+  (match s.phase {
+    Initializing =>
+      s.pending_model == 0 &&
+      s.pending_tools == 0 &&
+      !s.has_outcome &&
+      !s.has_suspension &&
+      s.model_step_id == 0
+    ReadyForModel =>
+      s.pending_model == 0 &&
+      s.pending_tools == 0 &&
+      !s.has_outcome &&
+      !s.has_suspension &&
+      s.model_step_id >= 1
+    AwaitingModel =>
+      s.pending_model == 1 &&
+      s.pending_tools == 0 &&
+      !s.has_outcome &&
+      !s.has_suspension &&
+      s.model_step_id >= 1
+    AwaitingTools =>
+      s.pending_model == 0 &&
+      s.pending_tools >= 1 &&
+      !s.has_outcome &&
+      !s.has_suspension &&
+      s.model_step_id >= 1
+    Suspended =>
+      s.pending_model == 0 &&
+      s.pending_tools == 0 &&
+      !s.has_outcome &&
+      s.has_suspension &&
+      s.model_step_id >= 1
+    Terminal =>
+      s.pending_model == 0 &&
+      s.pending_tools == 0 &&
+      s.has_outcome &&
+      !s.has_suspension
+  })
+}
+
+///|
+predicate terminal_absorbing(prev : PhaseState, res : StepResult) {
+  if is_terminal(prev.phase) {
+    is_terminal(res.state.phase) &&
+    res.emitted_terminal == 0 &&
+    !is_terminal_event_opt(res.terminal_event)
+  } else {
+    true
+  }
+}
+
+///|
+predicate exactly_one_terminal_event(prev : PhaseState, res : StepResult) {
+  if !is_terminal(prev.phase) && is_terminal(res.state.phase) {
+    res.emitted_terminal == 1 && is_terminal_event_opt(res.terminal_event)
+  } else {
+    if !is_terminal(res.state.phase) {
+      res.emitted_terminal == 0 && !is_terminal_event_opt(res.terminal_event)
+    } else {
+      true
+    }
+  }
+}
+
+///|
+predicate ready_step_monotone(prev : PhaseState, next : PhaseState) {
+  if !is_ready(prev.phase) && is_ready(next.phase) {
+    next.model_step_id > prev.model_step_id
+  } else {
+    true
+  }
+}
+
+///|
+predicate step_post(prev : PhaseState, res : StepResult) {
+  phase_inv(res.state) &&
+  res.state.event_seq ==
+    prev.event_seq + res.emitted_non_terminal + res.emitted_terminal &&
+  res.state.model_step_id >= prev.model_step_id &&
+  terminal_absorbing(prev, res) &&
+  exactly_one_terminal_event(prev, res) &&
+  ready_step_monotone(prev, res.state)
+}

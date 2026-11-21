@@ -604,8 +604,8 @@ async test "managed_tasks/nested_scope_rejects_without_closing_outer_scope" {
     match nested {
       Err(
         @error.AgentError::Runtime(
-          @error.RuntimeError::InvocationFailed(reason)
-        )
+          @error.RuntimeError::InvocationFailed(reason),
+        ),
       ) => assert_true(reason.contains("already active"))
       _ => fail("nested run_scoped must reject with the active-scope error")
     }

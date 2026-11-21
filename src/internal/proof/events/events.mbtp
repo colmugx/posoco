@@ -1,0 +1,49 @@
+///|
+predicate ns_eq(a : NamespaceTag, b : NamespaceTag) {
+  match (a, b) {
+    (Posoco, Posoco) => true
+    (Extension(x), Extension(y)) => x == y
+    _ => false
+  }
+}
+
+///|
+predicate is_extension(ns : NamespaceTag) {
+  match ns {
+    Extension(_) => true
+    Posoco => false
+  }
+}
+
+///|
+predicate is_core(p : PayloadKind) {
+  match p {
+    Core => true
+    Community => false
+  }
+}
+
+///|
+predicate authorize_post(
+  closed : Bool,
+  cap_ns : NamespaceTag,
+  payload : PayloadKind,
+  result : PublishDecision,
+) {
+  match result {
+    ErrClosed => closed
+    ErrReservedEvent => !closed && is_extension(cap_ns) && is_core(payload)
+    Allowed => !closed && !(is_extension(cap_ns) && is_core(payload))
+  }
+}
+
+///|
+predicate listener_accepts_spec(
+  filter : Option[NamespaceTag],
+  ns : NamespaceTag,
+) {
+  match filter {
+    None => true
+    Some(f) => ns_eq(f, ns)
+  }
+}

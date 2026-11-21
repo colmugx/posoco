@@ -89,7 +89,7 @@ async test "turn path fixates dangling trailing tool calls into the next model w
     is ToolMessage(
       call_id=synthesized_id,
       tool_name=synthesized_tool,
-      outcome=RuntimeFailure(error_category~, message~)
+      outcome=RuntimeFailure(error_category~, message~),
     ) else {
     fail("expected the synthesized interrupted output directly after the owner")
   }

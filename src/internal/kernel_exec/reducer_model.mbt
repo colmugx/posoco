@@ -101,13 +101,8 @@ fn reduce_model_completed(
         ),
       )
   }
-  if pending_id != payload.effect_id {
-    return reduce_invariant_violation(
-      state,
-      StaleCorrelation(effect_id=payload.effect_id),
-    )
-  }
-  if payload.model_step_id != state.current_model_step_id() {
+  if pending_id != payload.effect_id ||
+    payload.model_step_id != state.current_model_step_id() {
     return reduce_invariant_violation(
       state,
       StaleCorrelation(effect_id=payload.effect_id),
@@ -226,7 +221,7 @@ fn reduce_model_completed(
     let terminal_event : KernelEvent = RunCompleted(
       final_message_summary=completion_summary(completion),
       model_steps=next_consumed.model_steps,
-      tool_calls=0,
+      tool_calls=next_consumed.tool_calls,
     )
     return reduce_output(terminal_state, [], [step_completed, terminal_event])
   }
@@ -274,7 +269,8 @@ fn reduce_model_completed_with_tools(
     match classify_rejected_outcome(catalog, call) {
       Some(outcome) => {
         let updated = record_rejected_call(
-          transcript, tool_results, call, outcome, rejected_calls, rejected_outcomes,
+          transcript, tool_call_positions, tool_results, call, outcome, rejected_calls,
+          rejected_outcomes,
         )
         transcript = updated.0
         tool_results = updated.1
@@ -437,10 +433,9 @@ pub fn classify_rejected_outcome(
 }
 
 ///|
-/// Merge one rejected call's NotExecuted outcome into the transcript, the
-/// tool-result ledger and the rejected-batch arrays, preserving source order.
 fn record_rejected_call(
   transcript : @kernel.Transcript,
+  tool_call_positions : Map[String, Int32],
   tool_results : Array[(@kernel.CallId, @kernel.ToolOutcome)],
   call : @kernel.ToolCall,
   outcome : @kernel.ToolOutcome,
@@ -449,12 +444,13 @@ fn record_rejected_call(
 ) -> (@kernel.Transcript, Array[(@kernel.CallId, @kernel.ToolOutcome)]) {
   let transcript = insert_tool_message_in_source_order(
     transcript,
+    tool_call_positions,
     call.call_id,
     call.name,
     outcome,
   )
   let tool_results = insert_tool_result_in_source_order(
-    transcript,
+    tool_call_positions,
     tool_results,
     call.call_id,
     outcome,
@@ -481,7 +477,8 @@ fn reduce_model_failed(
         ),
       )
   }
-  if pending_id != payload.effect_id {
+  if pending_id != payload.effect_id ||
+    payload.model_step_id != state.current_model_step_id() {
     return reduce_invariant_violation(
       state,
       StaleCorrelation(effect_id=payload.effect_id),

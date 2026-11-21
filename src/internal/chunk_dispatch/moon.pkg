@@ -4,15 +4,6 @@ import {
   "moonbitlang/core/async/aqueue",
 }
 
-import {
-  "colmugx/posoco/events",
-  "colmugx/posoco/kernel",
-  "moonbitlang/core/async",
-} for "wbtest"
-
 options(
-  "allow-experimental-packages": [
-    "moonbitlang/core/async",
-    "moonbitlang/core/async/aqueue",
-  ],
+  "allow-experimental-packages": [ "moonbitlang/core/async/aqueue" ],
 )

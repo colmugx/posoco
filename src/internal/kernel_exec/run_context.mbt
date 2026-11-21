@@ -31,35 +31,17 @@ pub extend ModelStepId with Eq::{not_equal, equal}
 pub extend ModelStepId with Debug::{to_repr}
 
 ///|
-/// Contract: the first model step is exactly 1, establishing the non-negative
-/// lower bound for every reducer-allocated id (ids only grow via `next`).
-/// (Contracts read the `value` field directly: runtime `.mbt` function calls
-/// such as `to_int` are not lowerable inside logic bodies.)
-pub fn ModelStepId::first() -> ModelStepId where {
-  proof_ensure: result => result.value == 1 && result.value >= 0,
-} {
+pub fn ModelStepId::first() -> ModelStepId {
   { value: 1, }
 }
 
 ///|
-/// Contract: strictly monotonic — the next id is exactly the current id plus 1.
-pub fn ModelStepId::next(
-  self : ModelStepId,
-) -> ModelStepId where {
-  proof_ensure: result => result.value == self.value + 1,
-} {
+pub fn ModelStepId::next(self : ModelStepId) -> ModelStepId {
   { value: self.value + 1, }
 }
 
 ///|
-/// Contract: projection identity — `to_int` exposes the underlying counter
-/// unchanged. (Non-negativity holds for reducer-allocated ids by induction
-/// over `first`/`next`, not for arbitrary externally constructed values.)
-pub fn ModelStepId::to_int(
-  self : ModelStepId,
-) -> Int32 where {
-  proof_ensure: result => result == self.value,
-} {
+pub fn ModelStepId::to_int(self : ModelStepId) -> Int32 {
   self.value
 }
 
@@ -85,34 +67,17 @@ pub extend EventSequence with Eq::{not_equal, equal}
 pub extend EventSequence with Debug::{to_repr}
 
 ///|
-/// Contract: the sequence starts at exactly 0, the non-negative lower bound
-/// for every reducer-allocated sequence number. (Reads the `value` field —
-/// runtime function calls are not lowerable in logic bodies.)
-pub fn EventSequence::initial() -> EventSequence where {
-  proof_ensure: result => result.value == 0 && result.value >= 0,
-} {
+pub fn EventSequence::initial() -> EventSequence {
   { value: 0, }
 }
 
 ///|
-/// Contract: strictly monotonic — the next sequence is exactly the current
-/// one plus 1.
-pub fn EventSequence::next(
-  self : EventSequence,
-) -> EventSequence where {
-  proof_ensure: result => result.value == self.value + 1,
-} {
+pub fn EventSequence::next(self : EventSequence) -> EventSequence {
   { value: self.value + 1, }
 }
 
 ///|
-/// Contract: projection identity — `to_int` exposes the underlying counter
-/// unchanged.
-pub fn EventSequence::to_int(
-  self : EventSequence,
-) -> Int32 where {
-  proof_ensure: result => result == self.value,
-} {
+pub fn EventSequence::to_int(self : EventSequence) -> Int32 {
   self.value
 }
 
@@ -197,58 +162,49 @@ pub extend BudgetConsumed with Eq::{not_equal, equal}
 pub extend BudgetConsumed with Debug::{to_repr}
 
 ///|
-/// Contract: `zero` produces all-zero counters and no verified usage.
-pub fn BudgetConsumed::zero() -> BudgetConsumed where {
-  proof_ensure: result => zero_post(result),
-} {
+pub fn BudgetConsumed::zero() -> BudgetConsumed {
+  let z = @proof_budget.budget_consumed_zero()
   {
-    model_steps: 0,
-    tool_rounds: 0,
-    tool_calls: 0,
-    observed_total_tokens: 0,
-    any_usage_verified: false,
-    last_context_tokens: None,
+    model_steps: z.model_steps,
+    tool_rounds: z.tool_rounds,
+    tool_calls: z.tool_calls,
+    observed_total_tokens: z.observed_total_tokens,
+    any_usage_verified: z.any_usage_verified,
+    last_context_tokens: z.last_context_tokens,
   }
 }
 
 ///|
-/// Returns the dimension that is now exceeded (if any), or `UnknownUsage` if token budget exists but no usage verified.
-/// Limit semantics are exclusive: limit N allows N full units and rejects the
-/// declaration that would push consumption to N+1. (Token observation keeps
-/// `>=`: it compares an observed reading, not a declaration count.)
-///
-/// Contract: `exceeded_post` (budget_proof.mbtp) — the result names the
-/// FIRST dimension over its exclusive limit in declaration order
-/// (ModelSteps, ToolRounds, ToolCalls, TotalTokens); a `None` limit never
-/// produces that dimension's `Exceeded`; a token limit with unverified
-/// usage is `UnknownUsage(TotalTokens)`, never conflated with `Exceeded`.
-///
-/// NOTE: the per-dimension checks are inlined as explicit `match` branches
-/// (no local closure) — local closures inside contracted function bodies
-/// are silently skipped by the proof frontend (FORMAL-VERIFICATION §1.3).
 pub fn BudgetConsumed::exceeded(
   self : BudgetConsumed,
   limit : Budget,
-) -> BudgetState where {
-  proof_ensure: result => exceeded_post(self, limit, result),
-} {
-  match limit.max_model_steps {
-    Some(max) if self.model_steps > max => Exceeded(ModelSteps)
-    _ =>
-      match limit.max_tool_rounds {
-        Some(max) if self.tool_rounds > max => Exceeded(ToolRounds)
-        _ =>
-          match limit.max_tool_calls {
-            Some(max) if self.tool_calls > max => Exceeded(ToolCalls)
-            _ =>
-              match limit.max_total_tokens {
-                Some(_) if !self.any_usage_verified => UnknownUsage(TotalTokens)
-                Some(max) if self.observed_total_tokens >= max =>
-                  Exceeded(TotalTokens)
-                _ => WithinBudget
-              }
-          }
-      }
+) -> BudgetState {
+  let res = @proof_budget.check_exceeded(
+    {
+      model_steps: self.model_steps,
+      tool_rounds: self.tool_rounds,
+      tool_calls: self.tool_calls,
+      observed_total_tokens: self.observed_total_tokens,
+      any_usage_verified: self.any_usage_verified,
+      last_context_tokens: self.last_context_tokens,
+    },
+    {
+      max_model_steps: limit.max_model_steps,
+      max_tool_rounds: limit.max_tool_rounds,
+      max_tool_calls: limit.max_tool_calls,
+      max_total_tokens: limit.max_total_tokens,
+    },
+  )
+  match res {
+    WithinBudget => WithinBudget
+    Exceeded(ModelSteps) => Exceeded(ModelSteps)
+    Exceeded(ToolRounds) => Exceeded(ToolRounds)
+    Exceeded(ToolCalls) => Exceeded(ToolCalls)
+    Exceeded(TotalTokens) => Exceeded(TotalTokens)
+    UnknownUsage(ModelSteps) => UnknownUsage(ModelSteps)
+    UnknownUsage(ToolRounds) => UnknownUsage(ToolRounds)
+    UnknownUsage(ToolCalls) => UnknownUsage(ToolCalls)
+    UnknownUsage(TotalTokens) => UnknownUsage(TotalTokens)
   }
 }
 

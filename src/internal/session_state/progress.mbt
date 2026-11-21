@@ -1,44 +1,59 @@
 ///|
-/// Persisted-prefix bookkeeping owned by the Agent and shared by two writers:
-/// the terminal/full-save path (absolute cursor positions) and the
-/// committed-event checkpoint subscriber (one message per boundary). `cursors`
-/// tracks how much of a session's transcript is confirmed written to every
-/// store; `dirty` marks sessions whose canonical transcript was rewritten
-/// (compact/hook rewrite) so incremental projection pauses until the next
-/// terminal full save re-establishes a canonical prefix. Both maps have a
-/// single mutation surface — these methods.
 pub struct SessionProgress {
-  cursors : Map[String, Int32]
-  dirty : Map[String, Bool]
+  priv states : Map[String, @proof_progress.CursorState]
 }
 
 ///|
 pub fn SessionProgress::SessionProgress() -> SessionProgress {
-  { cursors: Map::from_array([]), dirty: Map::from_array([]), }
+  { states: Map::from_array([]), }
 }
 
 ///|
-/// Absolute cursor set: the next incremental append starts at this length.
-/// Used by rewrites, restores, and full saves.
+fn SessionProgress::state_of(
+  self : SessionProgress,
+  session_id : String,
+) -> @proof_progress.CursorState {
+  match self.states.get(session_id) {
+    Some(value) => value
+    None => @proof_progress.cursor_init()
+  }
+}
+
+///|
 pub fn SessionProgress::set_cursor(
   self : SessionProgress,
   session_id : String,
   length : Int32,
 ) -> Unit {
-  self.cursors[session_id] = length
+  self.states[session_id] = @proof_progress.set_cursor_checked(
+    self.state_of(session_id),
+    length,
+  )
 }
 
 ///|
-/// Cursor after one more committed message (boundary subscriber path).
 pub fn SessionProgress::advance_one(
   self : SessionProgress,
   session_id : String,
 ) -> Unit {
-  let cursor = match self.cursors.get(session_id) {
-    Some(value) => value
-    None => 0
-  }
-  self.cursors[session_id] = cursor + 1
+  self.states[session_id] = @proof_progress.advance_one_if_clean(
+    self.state_of(session_id),
+  )
+}
+
+///|
+pub fn SessionProgress::cursor(
+  self : SessionProgress,
+  session_id : String,
+) -> Int32? {
+  self.states.get(session_id).map(fn(s) { s.cursor })
+}
+
+///|
+pub fn SessionProgress::tracked_sessions(
+  self : SessionProgress,
+) -> Array[String] {
+  Array::from_iter(self.states.keys())
 }
 
 ///|
@@ -46,10 +61,7 @@ pub fn SessionProgress::cursor_or_zero(
   self : SessionProgress,
   session_id : String,
 ) -> Int32 {
-  match self.cursors.get(session_id) {
-    Some(value) => value
-    None => 0
-  }
+  self.state_of(session_id).cursor
 }
 
 ///|
@@ -57,7 +69,9 @@ pub fn SessionProgress::mark_dirty(
   self : SessionProgress,
   session_id : String,
 ) -> Unit {
-  self.dirty[session_id] = true
+  self.states[session_id] = @proof_progress.mark_dirty(
+    self.state_of(session_id),
+  )
 }
 
 ///|
@@ -65,7 +79,9 @@ pub fn SessionProgress::mark_clean(
   self : SessionProgress,
   session_id : String,
 ) -> Unit {
-  self.dirty.remove(session_id)
+  self.states[session_id] = @proof_progress.mark_clean(
+    self.state_of(session_id),
+  )
 }
 
 ///|
@@ -73,5 +89,5 @@ pub fn SessionProgress::is_dirty(
   self : SessionProgress,
   session_id : String,
 ) -> Bool {
-  self.dirty.contains(session_id)
+  self.state_of(session_id).dirty
 }

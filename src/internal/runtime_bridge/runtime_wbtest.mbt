@@ -91,6 +91,20 @@ pub impl @port.ToolProvider for ParkingTool with fn list_tools(
 }
 
 ///|
+#cfg(target="wasm-gc")
+async fn bridge_sleep(ms : Int32) -> Unit noraise {
+  @async.sleep(ms) catch {
+    _ => ()
+  }
+}
+
+///|
+#cfg(not(target="wasm-gc"))
+async fn bridge_sleep(ms : Int32) -> Unit noraise {
+  @async.sleep(ms)
+}
+
+///|
 pub impl @port.ToolProvider for ParkingTool with fn execute(
   self : ParkingTool,
   ctx : @port.ToolCallContext,
@@ -99,7 +113,7 @@ pub impl @port.ToolProvider for ParkingTool with fn execute(
     (ctx.register_cancel)(self as &@port.ToolCancellable)
   }
   if self.park {
-    @async.sleep(5_000)
+    bridge_sleep(5_000)
   }
   Success(content="parked", structured=None)
 }

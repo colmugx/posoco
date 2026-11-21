@@ -205,13 +205,13 @@ pub(all) suberror PuppetError {
     from~ : PuppetPhase,
     to~ : PuppetPhase,
     operation~ : OperationClass,
-    detail~ : String
+    detail~ : String,
   )
   /// Operation class not allowed in this phase (e.g. Structural while Active).
   OperationNotAllowedInPhase(
     phase~ : PuppetPhase,
     operation~ : OperationClass,
-    detail~ : String
+    detail~ : String,
   )
   /// A structural lease is already held; second concurrent prompt rejected.
   LeaseHeld(operation_id~ : String, held_by~ : String)
@@ -233,7 +233,7 @@ pub(all) suberror PuppetError {
   SuspensionIdMismatch(
     target_run_id~ : RunId,
     expected~ : String,
-    actual~ : String
+    actual~ : String,
   )
   /// Abort called on a run that is already terminal.
   AbortNoActiveRun(run_id~ : RunId)
@@ -251,13 +251,13 @@ pub(all) suberror PuppetError {
   LifecycleStartupFailed(
     node_id~ : String,
     cause~ : String,
-    rollback_failures~ : Array[(String, String)]
+    rollback_failures~ : Array[(String, String)],
   )
   /// Lifecycle node failed to shut down cleanly.
   LifecycleShutdownFailed(
     node_id~ : String,
     cause~ : String,
-    other_failures~ : Array[(String, String)]
+    other_failures~ : Array[(String, String)],
   )
   /// Duplicate lifecycle node id or double registration.
   LifecycleDuplicate(node_id~ : String)
@@ -265,7 +265,7 @@ pub(all) suberror PuppetError {
   SubscriberFailed(
     subscriber_id~ : String,
     cause~ : String,
-    committed_revision~ : Int32
+    committed_revision~ : Int32,
   )
   // ── Pump / orchestration (T06) ──
   /// Driver exceeded its iteration safety bound.

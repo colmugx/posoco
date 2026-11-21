@@ -152,7 +152,7 @@ pub impl @port.MemoryPort for SlowInboundPort with fn inbound(
   session_id~ : String,
   request~ : String,
 ) -> String? raise @error.MemoryError {
-  @async.sleep(200)
+  @test_support.tk_sleep(200)
   Some("too late for \{session_id} \{request}")
 }
 

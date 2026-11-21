@@ -3,8 +3,7 @@ import {
   "colmugx/posoco/types",
   "colmugx/json-schema",
   "moonbitlang/core/debug",
+  "colmugx/posoco/internal/proof/budget" @proof_budget,
+  "colmugx/posoco/internal/proof/child_policy" @proof_child,
+  "colmugx/posoco/internal/proof/scheduler" @proof_scheduler,
 }
-
-warnings = "-missing_pattern_payload"
-
-proof_enabled = true

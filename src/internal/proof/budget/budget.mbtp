@@ -1,0 +1,126 @@
+///|
+predicate opt_bounded_nonneg(v : Option[Int]) {
+  match v {
+    Some(n) => n >= 0 && n <= 2_147_483_647
+    None => true
+  }
+}
+
+///|
+predicate saturating_add_bounds(a : Int, b : Int, result : Int) {
+  result >= a &&
+  result >= b &&
+  result >= 0 &&
+  result <= 2_147_483_647
+}
+
+///|
+predicate saturating_add_exact(a : Int, b : Int, result : Int) {
+  if a <= 2_147_483_647 - b {
+    result == a + b
+  } else {
+    result == 2_147_483_647
+  }
+}
+
+///|
+predicate consumed_inv(c : BudgetConsumed) {
+  c.model_steps >= 0 &&
+  c.model_steps <= 2_147_483_647 &&
+  c.tool_rounds >= 0 &&
+  c.tool_rounds <= 2_147_483_647 &&
+  c.tool_calls >= 0 &&
+  c.tool_calls <= 2_147_483_647 &&
+  c.observed_total_tokens >= 0 &&
+  c.observed_total_tokens <= 2_147_483_647 &&
+  opt_bounded_nonneg(c.last_context_tokens)
+}
+
+///|
+predicate consumed_le(prev : BudgetConsumed, curr : BudgetConsumed) {
+  curr.model_steps >= prev.model_steps &&
+  curr.tool_rounds >= prev.tool_rounds &&
+  curr.tool_calls >= prev.tool_calls &&
+  curr.observed_total_tokens >= prev.observed_total_tokens &&
+  (!prev.any_usage_verified || curr.any_usage_verified)
+}
+
+///|
+predicate is_none_opt(v : Option[Int]) {
+  match v {
+    None => true
+    Some(_) => false
+  }
+}
+
+///|
+predicate zero_post(z : BudgetConsumed) {
+  z.model_steps == 0 &&
+  z.tool_rounds == 0 &&
+  z.tool_calls == 0 &&
+  z.observed_total_tokens == 0 &&
+  !z.any_usage_verified &&
+  is_none_opt(z.last_context_tokens)
+}
+
+///|
+predicate check_ok(consumed : Int, max_opt : Option[Int]) {
+  match max_opt {
+    Some(max) => consumed > max
+    None => false
+  }
+}
+
+///|
+predicate counts_within(c : BudgetConsumed, limit : Budget) {
+  !check_ok(c.model_steps, limit.max_model_steps) &&
+  !check_ok(c.tool_rounds, limit.max_tool_rounds) &&
+  !check_ok(c.tool_calls, limit.max_tool_calls)
+}
+
+///|
+predicate token_unknown(c : BudgetConsumed, limit : Budget) {
+  match limit.max_total_tokens {
+    Some(_) => !c.any_usage_verified
+    None => false
+  }
+}
+
+///|
+predicate token_exceeded(c : BudgetConsumed, limit : Budget) {
+  match limit.max_total_tokens {
+    Some(max) => c.any_usage_verified && c.observed_total_tokens >= max
+    None => false
+  }
+}
+
+///|
+predicate token_within(c : BudgetConsumed, limit : Budget) {
+  match limit.max_total_tokens {
+    Some(max) => c.any_usage_verified && c.observed_total_tokens < max
+    None => true
+  }
+}
+
+///|
+predicate exceeded_post(
+  c : BudgetConsumed,
+  limit : Budget,
+  result : BudgetState,
+) {
+  match result {
+    Exceeded(ModelSteps) => check_ok(c.model_steps, limit.max_model_steps)
+    Exceeded(ToolRounds) =>
+      !check_ok(c.model_steps, limit.max_model_steps) &&
+      check_ok(c.tool_rounds, limit.max_tool_rounds)
+    Exceeded(ToolCalls) =>
+      !check_ok(c.model_steps, limit.max_model_steps) &&
+      !check_ok(c.tool_rounds, limit.max_tool_rounds) &&
+      check_ok(c.tool_calls, limit.max_tool_calls)
+    Exceeded(TotalTokens) => counts_within(c, limit) && token_exceeded(c, limit)
+    UnknownUsage(TotalTokens) =>
+      counts_within(c, limit) && token_unknown(c, limit)
+    UnknownUsage(_) => false
+    WithinBudget => counts_within(c, limit) && token_within(c, limit)
+  }
+}

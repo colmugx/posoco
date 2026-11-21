@@ -383,7 +383,7 @@ pub(all) enum TurnEvent {
     effect_id~ : @kernel.EffectId,
     parent_effect_id~ : @kernel.EffectId,
     root_effect_id~ : @kernel.EffectId,
-    depth~ : Int32
+    depth~ : Int32,
   )
   /// An Agent-owned directory fact: contribution published/withdrawn, an
   /// operation captured a catalog version, or a retire failed. It is not a
@@ -396,12 +396,12 @@ pub(all) enum TurnEvent {
     call~ : @kernel.ToolCall,
     content~ : String,
     structured~ : Json?,
-    attachments~ : Array[@kernel.Content]
+    attachments~ : Array[@kernel.Content],
   )
   ToolCallFailed(call~ : @kernel.ToolCall, failure~ : @kernel.ToolFailure)
   ToolCallRejected(
     call~ : @kernel.ToolCall,
-    reason~ : @kernel.NotExecutedReason
+    reason~ : @kernel.NotExecutedReason,
   )
   ToolCallAbandoned(call~ : @kernel.ToolCall, reason~ : String)
   ModelResponseReceived(message~ : @kernel.Message, usage~ : @kernel.Usage?)
@@ -409,7 +409,7 @@ pub(all) enum TurnEvent {
     from~ : String,
     to~ : String,
     messages_before~ : Int32,
-    messages_after~ : Int32
+    messages_after~ : Int32,
   )
   TurnCompleted
   TurnFailed(String)
@@ -444,7 +444,7 @@ pub(all) enum TurnEvent {
     trigger~ : String,
     mode~ : String,
     final_session_id~ : String,
-    messages_after~ : Int32
+    messages_after~ : Int32,
   )
   OperationFinalized(operation~ : String, outcome~ : String, detail~ : String)
   Custom(source~ : String, label~ : String, data~ : Json)
@@ -470,7 +470,7 @@ pub(all) enum TurnEvent {
   MessageUndelivered(
     command_id~ : String,
     delivery~ : MessageDeliveryKind,
-    reason~ : String
+    reason~ : String,
   )
 }
 
@@ -493,7 +493,7 @@ pub impl Show for TurnEvent with fn to_string(self : TurnEvent) -> String {
       effect_id~,
       parent_effect_id~,
       root_effect_id~,
-      depth~
+      depth~,
     ) =>
       "ToolChildDeclared(\{call_id.to_string()}, effect=\{effect_id.to_int()}, parent=\{parent_effect_id.to_int()}, root=\{root_effect_id.to_int()}, depth=\{depth})"
     ToolCatalogChanged(payload~) =>

@@ -6,7 +6,7 @@ pub(all) enum ScriptedModelStep {
   Respond(@kernel.ModelCallResult)
   Stream(
     chunks~ : Array[@types.StreamChunk],
-    response~ : @kernel.ModelCallResult
+    response~ : @kernel.ModelCallResult,
   )
   StreamParked(chunks~ : Array[@types.StreamChunk])
   Fail(@error.ModelError)
@@ -146,7 +146,7 @@ pub async fn ScriptedModel::chat_direct(
 ) -> @kernel.ModelCallResult raise @error.ModelError {
   (self as &@port.ModelPort).chat(
     tk_scope(),
-    messages[:],
+    messages,
     tools,
     options,
     NoStream,

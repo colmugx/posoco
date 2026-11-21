@@ -269,7 +269,7 @@ fn kernel_event_payload(event : KernelEvent) -> Json {
       parent_effect_id~,
       root_effect_id~,
       depth~,
-      call~
+      call~,
     ) =>
       Json::object(
         Map::from_array([
@@ -465,13 +465,13 @@ priv enum RunExitDisposition {
     run_id~ : RunId,
     turn_id~ : TurnId,
     outcome~ : RunOutcome,
-    transcript~ : Transcript
+    transcript~ : Transcript,
   )
   Suspended(
     run_id~ : RunId,
     turn_id~ : TurnId,
     suspension_id~ : String,
-    requirement_kind~ : String
+    requirement_kind~ : String,
   )
   ReleasedNoCommit(result~ : PromptResult)
 }

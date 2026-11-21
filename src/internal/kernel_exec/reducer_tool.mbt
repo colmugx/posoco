@@ -152,7 +152,7 @@ fn reduce_tool_completed(
       pending_effects=[],
       next_event_sequence=advance_seq_by(state, events.length()),
       next_effect_id=state.next_effect_id(),
-      current_model_step_id=state.current_model_step_id(),
+      current_model_step_id=state.current_model_step_id().next(),
       catalog_version=None,
       budget_consumed=state.budget_consumed(),
       outcome=None,
@@ -188,8 +188,20 @@ fn reduce_tool_failed(
   state : RunState,
   payload : ToolFailedPayload,
 ) -> ReduceOutput raise KernelError {
-  // Correlation check.
   let pending = state.pending_effects()
+  for effect in pending {
+    if effect is ExecuteTool(payload=child, ..) &&
+      child.parent is Some((parent_id, _, _)) &&
+      parent_id == payload.effect_id {
+      return reduce_invariant_violation(
+        state,
+        IllegalPhase(
+          phase="AwaitingTools",
+          detail="parent failed with unjoined children",
+        ),
+      )
+    }
+  }
   let mut found = false
   let mut matched_call : @kernel.ToolCall? = None
   for e in pending {
@@ -227,7 +239,15 @@ fn reduce_tool_failed(
         HostRejected(reason~) => ("HostRejected", reason)
         RateLimited(reason~, ..) => ("RateLimited", reason)
       }
-    None => ("Unknown", "no runtime detail supplied")
+    None =>
+      (
+        "Unknown",
+        if payload.reason != "" {
+          payload.reason
+        } else {
+          "no runtime detail supplied"
+        },
+      )
   }
   let outcome : @kernel.ToolOutcome = RuntimeFailure(
     error_category=cat,
@@ -282,7 +302,7 @@ fn reduce_tool_failed(
       pending_effects=[],
       next_event_sequence=advance_seq_by(state, events.length()),
       next_effect_id=state.next_effect_id(),
-      current_model_step_id=state.current_model_step_id(),
+      current_model_step_id=state.current_model_step_id().next(),
       catalog_version=None,
       budget_consumed=state.budget_consumed(),
       outcome=None,
@@ -329,47 +349,19 @@ fn remove_execute_tool_effect(
 }
 
 ///|
-/// Return the stable source position of a tool call in the canonical
-/// transcript. Positions span all assistant messages in the Run, so results
-/// from multiple tool rounds remain deterministic as well as results within a
-/// parallel batch.
-fn tool_call_position(
-  transcript : @kernel.Transcript,
-  call_id : @kernel.CallId,
-) -> Int32? {
-  let mut position = 0
-  let mut found : Int32? = None
-  for message in transcript.messages_snapshot() {
-    match message {
-      AssistantMessage(tool_calls~, ..) =>
-        for call in tool_calls {
-          if call.call_id == call_id {
-            found = Some(position)
-          }
-          position = position + 1
-        }
-      _ => ()
-    }
-  }
-  found
-}
-
-///|
-/// Insert a completed tool message next to the assistant message that
-/// requested it, ordered by the model's source call order rather than host
-/// completion order.
 fn insert_tool_message_in_source_order(
   transcript : @kernel.Transcript,
+  tool_call_positions : Map[String, Int32],
   call_id : @kernel.CallId,
   tool_name : @kernel.ToolName,
   outcome : @kernel.ToolOutcome,
 ) -> @kernel.Transcript {
-  let messages = transcript.messages_snapshot()
-  let target_position = match tool_call_position(transcript, call_id) {
+  let target_position = match tool_call_positions.get(call_id.to_string()) {
     Some(position) => position
     None =>
       return transcript.append(ToolMessage(call_id~, tool_name~, outcome~))
   }
+  let messages = transcript.messages_snapshot()
   let mut assistant_index : Int32? = None
   for i, message in messages {
     match message {
@@ -389,7 +381,7 @@ fn insert_tool_message_in_source_order(
       for i in (index + 1)..<messages.length() {
         match messages[i] {
           ToolMessage(call_id=existing_call_id, ..) =>
-            match tool_call_position(transcript, existing_call_id) {
+            match tool_call_positions.get(existing_call_id.to_string()) {
               Some(existing_position) if existing_position < target_position =>
                 position = i + 1
               _ => ()
@@ -415,16 +407,13 @@ fn insert_tool_message_in_source_order(
 }
 
 ///|
-/// Keep the terminal `RunOutcome` ordered by the same source positions as the
-/// canonical transcript. The call id is internal bookkeeping; only outcomes
-/// cross the public terminal boundary.
 fn insert_tool_result_in_source_order(
-  transcript : @kernel.Transcript,
+  tool_call_positions : Map[String, Int32],
   existing : Array[(@kernel.CallId, @kernel.ToolOutcome)],
   call_id : @kernel.CallId,
   outcome : @kernel.ToolOutcome,
 ) -> Array[(@kernel.CallId, @kernel.ToolOutcome)] {
-  let target_position = match tool_call_position(transcript, call_id) {
+  let target_position = match tool_call_positions.get(call_id.to_string()) {
     Some(position) => position
     None => existing.length()
   }
@@ -433,7 +422,7 @@ fn insert_tool_result_in_source_order(
   for record in existing {
     let (existing_call_id, _) = record
     let existing_position = match
-      tool_call_position(transcript, existing_call_id) {
+      tool_call_positions.get(existing_call_id.to_string()) {
       Some(position) => position
       None => target_position + existing.length() + 1
     }
@@ -456,15 +445,12 @@ fn insert_tool_result_in_source_order(
 let missing_tool_position : Int32 = 2147483647
 
 ///|
-/// Insertion-sort an array of staged tool records by source position. Used
-/// instead of `Array::sort` because the tuple contains `CallId`, which does
-/// not implement `Compare`.
 fn sort_tool_records_by_position(
   records : Array[
     (@kernel.CallId, @kernel.ToolName, @kernel.ToolOutcome, Int32),
   ],
 ) -> Unit {
-  for i = 1; i < records.length(); i = i + 1 {
+  for i in 1..<records.length() {
     let key = records[i]
     let mut j = i - 1
     while j >= 0 && records[j].3 > key.3 {
@@ -479,7 +465,7 @@ fn sort_tool_records_by_position(
 fn sort_result_records_by_position(
   records : Array[(@kernel.CallId, @kernel.ToolOutcome, Int32)],
 ) -> Unit {
-  for i = 1; i < records.length(); i = i + 1 {
+  for i in 1..<records.length() {
     let key = records[i]
     let mut j = i - 1
     while j >= 0 && records[j].2 > key.2 {

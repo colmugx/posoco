@@ -1,0 +1,30 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "colmugx/posoco/internal/proof/identity_exposure"
+
+// Values
+pub fn exposure_narrow(ExposureLevel, ExposureLevel) -> ExposureLevel
+
+pub fn next_monotonic_id(Int32) -> Int32
+
+pub fn usage_scalars_valid(UsageScalars) -> Bool
+
+// Errors
+
+// Types and methods
+pub(all) enum ExposureLevel {
+  Direct
+  Deferred
+  Disabled
+}
+
+pub(all) struct UsageScalars {
+  input_tokens : Int32?
+  output_tokens : Int32?
+  total_tokens : Int32?
+  cached_input_tokens : Int32?
+  uncached_input_tokens : Int32?
+}
+
+// Type aliases
+
+// Traits

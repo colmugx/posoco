@@ -671,8 +671,7 @@ impl @port.ModelPort for ParkedChatModel with fn chat(
   self.calls = self.calls + 1
   if self.calls == 1 {
     self.entered.val = true
-    // Parked until the hard cancel unwinds this call; never elapses in a test.
-    @async.sleep(600_000)
+    @test_support.tk_sleep(600_000)
   }
   @test_support.tk_stop_response(self.reply)
 }

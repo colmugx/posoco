@@ -188,7 +188,7 @@ pub impl @puppetry.EventSubscriber for EventProjection with fn on_event(
       parent_effect_id~,
       root_effect_id~,
       depth~,
-      call~
+      call~,
     ) =>
       self.emit(
         Some(scope),

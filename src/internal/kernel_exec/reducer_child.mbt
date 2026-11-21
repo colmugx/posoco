@@ -93,6 +93,15 @@ pub fn declare_tool_child(
 }
 
 ///|
+fn to_proof_policy(p : @kernel.ExecutionPolicy) -> @proof_child.PolicyLevel {
+  match p {
+    Parallel => Parallel
+    Sequential => Sequential
+    Exclusive => Exclusive
+  }
+}
+
+///|
 pub fn validate_tool_child(
   catalog : ToolCatalogSnapshot,
   parent : ExecuteToolPayload,
@@ -102,17 +111,29 @@ pub fn validate_tool_child(
   if classify_rejected_outcome(catalog, call, direct=false) is Some(rejected) {
     return Some(rejected)
   }
-  let target = catalog.find(call.name).unwrap().definition
+  let target = match catalog.find(call.name) {
+    Some(entry) => entry.definition
+    None =>
+      return Some(
+        NotExecuted(reason=UnknownTool, original_call_id=call.call_id),
+      )
+  }
   let reason : @kernel.NotExecutedReason? = if !allowed_owners.contains(
       target.owner.to_string(),
     ) {
     Some(OwnerNotAllowed)
   } else {
-    let caller_policy = catalog.find(parent.tool_name).unwrap().definition.policy
-    match (caller_policy, target.policy) {
-      (Parallel, Sequential | Exclusive) | (Sequential, Exclusive) =>
-        Some(PolicyConflict)
-      _ => None
+    match catalog.find(parent.tool_name) {
+      Some(parent_entry) =>
+        if @proof_child.child_policy_allowed(
+            to_proof_policy(parent_entry.definition.policy),
+            to_proof_policy(target.policy),
+          ) {
+          None
+        } else {
+          Some(PolicyConflict)
+        }
+      None => Some(UnknownTool)
     }
   }
   reason.map(reason => NotExecuted(reason~, original_call_id=call.call_id))

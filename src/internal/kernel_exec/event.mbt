@@ -58,7 +58,7 @@ pub(all) enum KernelEvent {
   /// subscribers do not need to reconstruct it from the transcript.
   ModelStepCompleted(
     model_step_id~ : ModelStepId,
-    completion~ : @kernel.Completion
+    completion~ : @kernel.Completion,
   )
   /// Emitted when a tool batch is dispatched (one event per batch, not per
   /// tool). The calls retain their names and parsed arguments so a committed
@@ -67,7 +67,7 @@ pub(all) enum KernelEvent {
   /// count; arguments never enter durable diagnostic summaries.
   ToolBatchStarted(
     model_step_id~ : ModelStepId,
-    calls~ : Array[@kernel.ToolCall]
+    calls~ : Array[@kernel.ToolCall],
   )
   /// Identity of an actual child effect. Followed by the ordinary per-node
   /// tool lifecycle, without inserting a synthetic assistant message.
@@ -76,7 +76,7 @@ pub(all) enum KernelEvent {
     parent_effect_id~ : EffectId,
     root_effect_id~ : EffectId,
     depth~ : Int32,
-    call~ : @kernel.ToolCall
+    call~ : @kernel.ToolCall,
   )
   /// A child scope ended without an outcome. This is not a provider failure
   /// and never creates a model ToolMessage.
@@ -90,7 +90,7 @@ pub(all) enum KernelEvent {
   ToolCompleted(
     call~ : @kernel.ToolCall,
     outcome~ : @kernel.ToolOutcome,
-    parent_effect_id~ : EffectId?
+    parent_effect_id~ : EffectId?,
   )
   /// Emitted when the reducer's pre-pass validation rejects calls before
   /// they become `ExecuteTool` effects (unknown tool, schema mismatch).
@@ -100,7 +100,7 @@ pub(all) enum KernelEvent {
   ToolCallsPreRejected(
     model_step_id~ : ModelStepId,
     calls~ : Array[@kernel.ToolCall],
-    outcomes~ : Array[@kernel.ToolOutcome]
+    outcomes~ : Array[@kernel.ToolOutcome],
   )
   /// Emitted when the pre-tool hook chain finalizes a call as executable
   /// (plain approval or explicit consent). `consent_scope` names what a
@@ -110,7 +110,7 @@ pub(all) enum KernelEvent {
   ToolCallApproved(
     model_step_id~ : ModelStepId,
     call~ : @kernel.ToolCall,
-    consent_scope~ : String?
+    consent_scope~ : String?,
   )
   /// Emitted immediately before a scheduled tool wave launches (`@async.all`
   /// barrier). One event per wave; the projection expands it into per-call
@@ -118,12 +118,12 @@ pub(all) enum KernelEvent {
   /// to durable diagnostic summaries.
   ToolWaveStarted(
     model_step_id~ : ModelStepId,
-    calls~ : Array[@kernel.ToolCall]
+    calls~ : Array[@kernel.ToolCall],
   )
   /// Emitted when entering the `Suspended` phase. Non-terminal.
   RunSuspended(
     requirement~ : SuspensionRequirement,
-    model_step_id~ : ModelStepId
+    model_step_id~ : ModelStepId,
   )
   /// Emitted when leaving `Suspended` via `Resume`. Non-terminal.
   RunResumed(model_step_id~ : ModelStepId)
@@ -133,7 +133,7 @@ pub(all) enum KernelEvent {
   BudgetExhausted(
     dimension~ : BudgetDimension,
     consumed~ : Int32,
-    limit~ : Int32
+    limit~ : Int32,
   )
   /// Emitted when an input is rejected (post-terminal, illegal-for-phase).
   /// Always non-terminal: rejections never change state.
@@ -145,7 +145,7 @@ pub(all) enum KernelEvent {
   TranscriptRewritten(
     messages_before~ : Int32,
     messages_after~ : Int32,
-    reason~ : String
+    reason~ : String,
   )
   /// Emitted when a steer message is committed to the transcript at a step
   /// boundary. Carries the body for in-memory observers and session
@@ -160,7 +160,7 @@ pub(all) enum KernelEvent {
   RunCompleted(
     final_message_summary~ : String,
     model_steps~ : Int32,
-    tool_calls~ : Int32
+    tool_calls~ : Int32,
   )
   /// Failed termination. Exactly once per Run.
   RunFailed(reason~ : FailureReason)
@@ -237,19 +237,11 @@ pub impl Show for KernelEvent with fn to_string(self : KernelEvent) -> String {
 /// Contract: the classifier agrees with the structural spec predicate
 /// `is_terminal_event` (event_proof.mbtp) on every event — the anchor for
 /// the "exactly one terminal event per Run" theorem. `RunSuspended`
-/// (quiescent, non-terminal) and `InputRejected` (never terminal, never
-/// state-changing) are deliberately excluded.
-/// (Body patterns use explicit `label = _` wildcards — the proof frontend
-/// rejects `..` rest patterns inside contracted function bodies.)
-pub fn KernelEvent::is_terminal(
-  self : KernelEvent,
-) -> Bool where {
-  proof_ensure: result => result == is_terminal_event(self),
-} {
+
+///|
+pub fn KernelEvent::is_terminal(self : KernelEvent) -> Bool {
   match self {
-    RunCompleted(final_message_summary=_, model_steps=_, tool_calls=_) => true
-    RunFailed(reason=_) => true
-    RunCancelled(reason=_) => true
+    RunCompleted(..) | RunFailed(..) | RunCancelled(..) => true
     _ => false
   }
 }

@@ -61,7 +61,7 @@ pub(all) enum QuiescentStatus {
   Suspended(
     run_id~ : RunId,
     suspension_id~ : String,
-    requirement_kind~ : String
+    requirement_kind~ : String,
   )
   /// Run reached terminal outcome; carries the outcome for the caller.
   Terminal(outcome~ : RunOutcome)

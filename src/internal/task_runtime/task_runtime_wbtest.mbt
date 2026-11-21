@@ -52,8 +52,8 @@ async test "managed_tasks/foreground_settlement_deadline_preserves_operation_own
     match cleanup {
       Err(
         @error.AgentError::Runtime(
-          @error.RuntimeError::InvocationFailed(detail)
-        )
+          @error.RuntimeError::InvocationFailed(detail),
+        ),
       ) =>
         assert_true(
           detail.contains("foreground task cleanup deadline exceeded"),
@@ -73,8 +73,8 @@ async test "managed_tasks/foreground_settlement_deadline_preserves_operation_own
     match blocked {
       Err(
         @error.AgentError::Runtime(
-          @error.RuntimeError::InvocationFailed(detail)
-        )
+          @error.RuntimeError::InvocationFailed(detail),
+        ),
       ) =>
         assert_true(detail.contains("foreground task cleanup is still pending"))
       _ => fail("a stale foreground task must keep operation ownership")
@@ -186,8 +186,8 @@ async test "managed_tasks/shutdown_deadline_reports_straggler_and_can_retry" {
     match first {
       Err(
         @error.AgentError::Runtime(
-          @error.RuntimeError::InvocationFailed(detail)
-        )
+          @error.RuntimeError::InvocationFailed(detail),
+        ),
       ) => {
         assert_true(detail.contains("managed task shutdown deadline exceeded"))
         assert_true(detail.contains("extension=shutdown-test"))

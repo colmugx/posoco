@@ -15,7 +15,6 @@
 // Proof-side token model: contracts only tag-match `Effect` variants and
 // never read payload fields; the int mapping is a trusted opaque bridge.
 #derive(Eq, Debug)
-#proof_external("int.Int", "int")
 pub(all) struct CallModelPayload {
   model_step_id : ModelStepId
   /// Read-only snapshot of the messages to send to the model. The executor
@@ -42,7 +41,6 @@ pub extend CallModelPayload with Debug::{to_repr}
 /// the executor returns a typed `ToolFailed` input carrying an
 /// `InvariantCategory::MissingOwner`/`StaleSnapshot` (ADR §2.5).
 #derive(Eq, Debug)
-#proof_external("int.Int", "int")
 pub(all) struct ExecuteToolPayload {
   model_step_id : ModelStepId
   call_id : @kernel.CallId
@@ -102,7 +100,6 @@ pub fn ToolFailedPayload::tool_call(
 /// per id (fake executors report `Propagated`; a real adapter may report
 /// `NotPropagated`).
 #derive(Eq, Debug)
-#proof_external("int.Int", "int")
 pub(all) struct CancelOutstandingPayload {
   /// Effect ids that should be cancelled. May be empty (the executor should
   /// still return `CancelAcked` for idempotency, ADR §2.5 rule 5).

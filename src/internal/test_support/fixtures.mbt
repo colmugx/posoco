@@ -433,3 +433,17 @@ pub extend RecordingLifecycle with @port.Lifecycle::{
   on_start,
   on_shutdown,
 }
+
+///|
+#cfg(target="wasm-gc")
+pub async fn tk_sleep(ms : Int32) -> Unit noraise {
+  @async.sleep(ms) catch {
+    _ => ()
+  }
+}
+
+///|
+#cfg(not(target="wasm-gc"))
+pub async fn tk_sleep(ms : Int32) -> Unit noraise {
+  @async.sleep(ms)
+}

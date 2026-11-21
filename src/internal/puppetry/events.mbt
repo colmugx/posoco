@@ -1,5 +1,5 @@
 ///|
-/// Puppet event dispatch (ADR §5 step 6, §6 subscriber rules).
+/// Puppet event dispatch.
 ///
 /// Post-commit event dispatcher. Receives envelopes CONSTRUCTED AFTER the
 /// journal barrier succeeds; assigns monotonic `seq` per run; dispatches

@@ -63,7 +63,7 @@ pub(all) enum PromptResult {
     turn_id~ : TurnId,
     parent_session_id~ : String,
     new_session_id~ : String,
-    forked_messages~ : Array[@kernel.Message]
+    forked_messages~ : Array[@kernel.Message],
   )
   /// Compact completed. The pump consumed a `CompactCommand`
   /// (manual `/compact`) or auto-triggered compact (90% context-window
@@ -83,7 +83,7 @@ pub(all) enum PromptResult {
     mode~ : @kernel.CompactMode,
     trigger~ : @kernel.CompactTrigger,
     new_session_id~ : String?,
-    compacted_messages~ : Array[@kernel.Message]
+    compacted_messages~ : Array[@kernel.Message],
   )
 }
 
@@ -102,7 +102,7 @@ pub impl Show for PromptResult with fn to_string(self : PromptResult) -> String 
       turn_id~,
       parent_session_id~,
       new_session_id~,
-      forked_messages~
+      forked_messages~,
     ) =>
       "ForkCompleted(run=\{run_id.to_string()}, turn=\{turn_id.to_string()}, parent=\{parent_session_id}, new=\{new_session_id}, msgs=\{forked_messages.length()})"
     CompactCompleted(
@@ -111,7 +111,7 @@ pub impl Show for PromptResult with fn to_string(self : PromptResult) -> String 
       mode~,
       trigger~,
       new_session_id~,
-      compacted_messages~
+      compacted_messages~,
     ) =>
       "CompactCompleted(run=\{run_id.to_string()}, turn=\{turn_id.to_string()}, mode=\{mode}, trigger=\{trigger}, new=\{match new_session_id { Some(id) => id; None => "-" }}, msgs=\{compacted_messages.length()})"
   }

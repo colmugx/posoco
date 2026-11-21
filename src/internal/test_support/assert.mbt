@@ -11,7 +11,7 @@ pub fn event_trace_mismatch(
   } else {
     actual.length()
   }
-  for i = 0; i < n; i = i + 1 {
+  for i in 0..<n {
     if expected[i] != actual[i] {
       return Some(
         "event_trace_mismatch at index \{i}: expected \{expected[i].to_string()}, got \{actual[i].to_string()}",
@@ -57,7 +57,7 @@ pub fn assert_events_contain(
     return
   }
   let mut hi = 0
-  for ni = 0; ni < needle.length(); ni = ni + 1 {
+  for ni in 0..<needle.length() {
     let mut found = false
     while hi < haystack.length() {
       if haystack[hi] == needle[ni] {

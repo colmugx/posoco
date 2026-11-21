@@ -12,6 +12,7 @@ pub struct ChunkDispatcher {
   priv queue : @aqueue.Queue[@types.TurnEvent]
   priv mut depth : Int32
   priv mut dropped : Int32
+  priv mut closed : Bool
   priv events : @event_runtime.EventRuntime
   priv scope : @types.EventScope
 }
@@ -28,6 +29,7 @@ pub fn ChunkDispatcher::ChunkDispatcher(
     queue: Queue(kind=Blocking(chunk_queue_capacity)),
     depth: 0,
     dropped: 0,
+    closed: false,
     events,
     scope,
   }
@@ -38,6 +40,9 @@ pub fn ChunkDispatcher::enqueue(
   self : ChunkDispatcher,
   chunk : @types.StreamChunk,
 ) -> Unit {
+  if self.closed {
+    return
+  }
   let event : @types.TurnEvent = StreamChunkReceived(chunk~)
   let put_ok : Bool = self.queue.try_put(event) catch { _ => return }
   if put_ok {
@@ -55,6 +60,8 @@ pub fn ChunkDispatcher::enqueue(
   let put_ok2 : Bool = self.queue.try_put(event) catch { _ => false }
   if put_ok2 {
     self.depth = self.depth + 1
+  } else if !self.closed {
+    self.dropped = self.dropped + 1
   }
 }
 
@@ -101,5 +108,6 @@ pub async fn ChunkDispatcher::drain_loop(self : ChunkDispatcher) -> Unit {
 
 ///|
 pub fn ChunkDispatcher::close(self : ChunkDispatcher) -> Unit {
+  self.closed = true
   self.queue.close()
 }

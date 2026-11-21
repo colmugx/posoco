@@ -9,7 +9,7 @@ pub(all) suberror CatalogCompositionError {
   NameCollision(
     visible_name~ : String,
     first_provenance~ : String,
-    conflicting_provenance~ : String
+    conflicting_provenance~ : String,
   )
   /// Two tools came from the same source with conflicting definitions.
   DuplicateProvenance(visible_name~ : String, provenance~ : String)

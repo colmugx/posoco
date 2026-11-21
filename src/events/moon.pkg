@@ -1,3 +1,4 @@
 import {
   "colmugx/posoco/types",
+  "colmugx/posoco/internal/proof/events" @proof_events,
 }

@@ -6,6 +6,7 @@ import {
   "colmugx/posoco/internal/diagnostic",
   "colmugx/posoco/internal/event_runtime",
   "colmugx/posoco/internal/puppetry",
+  "colmugx/posoco/internal/proof/wakeup" @proof_wakeup,
   "moonbitlang/core/async",
   "moonbitlang/core/async/cond_var",
 }

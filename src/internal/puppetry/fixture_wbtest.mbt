@@ -66,15 +66,6 @@ fn FixtureHost::with_model_transport_failure(self : FixtureHost) -> FixtureHost 
 }
 
 ///|
-fn FixtureHost::with_compact_result(
-  self : FixtureHost,
-  result : CompactResult,
-) -> FixtureHost {
-  self.compact_result = Some(result)
-  self
-}
-
-///|
 pub fn FixtureHost::model_call_count(self : FixtureHost) -> Int32 {
   self.model_call_count
 }
@@ -559,8 +550,8 @@ async test "puppet/C-INVALID-STREAM-CHUNK-RETURNED-RATE-LIMITED-PRIMARY" {
   match puppet.wait_idle() {
     Terminal(
       outcome=Failed(
-        reason=ModelQuotaExhausted(detail~, reset_at_ms~, provider_code~)
-      )
+        reason=ModelQuotaExhausted(detail~, reset_at_ms~, provider_code~),
+      ),
     ) => {
       assert_true(detail.contains("fixture returned rate limit"))
       assert_false(detail.contains("stream chunk validation failed"))
@@ -593,7 +584,7 @@ async test "puppet/C-MISSING-OWNER-IS-INVARIANT" {
   assert_true(fixture_prompt(puppet, "missing_owner") is Accepted(_))
   match puppet.wait_idle() {
     Terminal(
-      outcome=Failed(reason=InvariantViolation(category=MissingOwner(..)))
+      outcome=Failed(reason=InvariantViolation(category=MissingOwner(..))),
     ) => ()
     status =>
       fail(
@@ -751,7 +742,7 @@ async test "puppet/C-CONTRIBUTION-VALIDATION-FAIL" {
   match fixture_prompt(puppet, "contribution") {
     // The raising contributor's id must survive into the typed cause.
     Rejected(
-      error=SavepointFailed(cause=ContributorRaised(contributor_id~, ..), ..)
+      error=SavepointFailed(cause=ContributorRaised(contributor_id~, ..), ..),
     ) => assert_eq(contributor_id, "bad")
     other =>
       fail("expected typed savepoint rejection, got " + other.to_string())
@@ -878,4 +869,99 @@ async test "puppet/C-WAIT-IDLE-REPORTS-THE-CURRENT-RUN" {
       assert_eq(detail, "second-offline")
     status => fail("expected run 2's terminal, got " + status.to_string())
   }
+}
+
+///|
+priv struct FailingContributor {
+  id : String
+}
+
+///|
+fn FailingContributor::FailingContributor(id : String) -> FailingContributor {
+  { id, }
+}
+
+///|
+impl JournalContributor for FailingContributor with fn contributor_id(self) -> String {
+  self.id
+}
+
+///|
+impl JournalContributor for FailingContributor with fn provenance(_self) -> String {
+  "failing"
+}
+
+///|
+impl JournalContributor for FailingContributor with fn contribute(
+  self,
+  _ctx : PreCommitContext,
+) -> JournalContribution raise ContributionError {
+  raise Internal(contributor_id=self.id, detail="injected failure")
+}
+
+///|
+priv struct RecordingSubscriber {
+  id_value : String
+  received : Array[EventEnvelope]
+}
+
+///|
+fn RecordingSubscriber::RecordingSubscriber(id : String) -> RecordingSubscriber {
+  { id_value: id, received: [], }
+}
+
+///|
+fn RecordingSubscriber::received(
+  self : RecordingSubscriber,
+) -> Array[EventEnvelope] {
+  self.received.copy()
+}
+
+///|
+impl EventSubscriber for RecordingSubscriber with fn subscriber_id(self) -> String {
+  self.id_value
+}
+
+///|
+impl EventSubscriber for RecordingSubscriber with fn provenance(_self) -> String {
+  "recording"
+}
+
+///|
+impl EventSubscriber for RecordingSubscriber with fn on_event(
+  self,
+  envelope : EventEnvelope,
+) -> Unit raise SubscriberError {
+  self.received.push(envelope)
+}
+
+///|
+priv struct FailingSubscriber {
+  id_value : String
+}
+
+///|
+fn FailingSubscriber::FailingSubscriber(id : String) -> FailingSubscriber {
+  { id_value: id, }
+}
+
+///|
+impl EventSubscriber for FailingSubscriber with fn subscriber_id(self) -> String {
+  self.id_value
+}
+
+///|
+impl EventSubscriber for FailingSubscriber with fn provenance(_self) -> String {
+  "failing"
+}
+
+///|
+impl EventSubscriber for FailingSubscriber with fn on_event(
+  self,
+  _envelope : EventEnvelope,
+) -> Unit raise SubscriberError {
+  raise Internal(
+    subscriber_id=self.id_value,
+    detail="injected subscriber failure",
+  )
 }

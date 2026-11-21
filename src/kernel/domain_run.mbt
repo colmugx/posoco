@@ -154,32 +154,17 @@ pub extend EffectId with Hash::{hash, hash_combine}
 pub extend EffectId with Debug::{to_repr}
 
 ///|
-/// Contract: the counter origin is exactly 1 (strictly positive start).
-pub fn EffectId::first() -> EffectId where {
-  proof_ensure: result => effect_id_first_ok(result),
-} {
+pub fn EffectId::first() -> EffectId {
   { value: 1, }
 }
 
 ///|
-/// Contract: strictly monotonic — the next id is exactly the current id
-/// plus 1, so ids never repeat going forward.
-pub fn EffectId::next(
-  self : EffectId,
-) -> EffectId where {
-  proof_ensure: result => effect_id_next_ok(self, result),
-} {
-  { value: self.value + 1, }
+pub fn EffectId::next(self : EffectId) -> EffectId {
+  { value: @proof_identity.next_monotonic_id(self.value), }
 }
 
 ///|
-/// Contract: projection identity — `to_int` exposes the underlying counter
-/// unchanged.
-pub fn EffectId::to_int(
-  self : EffectId,
-) -> Int32 where {
-  proof_ensure: result => effect_id_to_int_ok(self, result),
-} {
+pub fn EffectId::to_int(self : EffectId) -> Int32 {
   self.value
 }
 
@@ -192,10 +177,6 @@ pub impl Show for EffectId with fn to_string(self : EffectId) -> String {
 }
 
 ///|
-/// Catalog version — bumped every time a snapshot is built. The reducer and
-/// executor correlate `CallModel` and `ExecuteTool` effects back to the exact
-/// snapshot version the model was prompted against; a mismatch is a kernel
-/// invariant failure (`InvariantViolation::StaleSnapshot`).
 #derive(Eq, Debug)
 pub(all) struct CatalogVersion {
   value : Int32
@@ -208,23 +189,12 @@ pub extend CatalogVersion with Eq::{not_equal, equal}
 pub extend CatalogVersion with Debug::{to_repr}
 
 ///|
-/// Contract: the canonical constructor wraps its argument unchanged.
-pub fn CatalogVersion::CatalogVersion(
-  value : Int32,
-) -> CatalogVersion where {
-  proof_ensure: result => catalog_version_mk_ok(result, value),
-} {
+pub fn CatalogVersion::CatalogVersion(value : Int32) -> CatalogVersion {
   { value, }
 }
 
 ///|
-/// Contract: projection identity — `to_int` exposes the wrapped version
-/// unchanged.
-pub fn CatalogVersion::to_int(
-  self : CatalogVersion,
-) -> Int32 where {
-  proof_ensure: result => catalog_version_to_int_ok(self, result),
-} {
+pub fn CatalogVersion::to_int(self : CatalogVersion) -> Int32 {
   self.value
 }
 

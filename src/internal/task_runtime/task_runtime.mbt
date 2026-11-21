@@ -8,9 +8,11 @@ let foreground_task_settle_timeout_ms : Int32 = 5_000
 let managed_task_shutdown_settle_timeout_ms : Int32 = 5_000
 
 ///|
-/// Applied task ids may survive a session-store restart, so a process-local
-/// counter alone cannot identify a new runtime. Use the platform entropy
-/// source and fail activation if it is unavailable.
+let hex_digits : ReadOnlyArray[Char] = [
+  '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
+]
+
+///|
 fn next_task_runtime_identity() -> String raise @error.AgentError {
   let bytes = match @env.rand(16) {
     Some(value) => value
@@ -21,14 +23,11 @@ fn next_task_runtime_identity() -> String raise @error.AgentError {
         ),
       )
   }
-  let hex : Array[Char] = [
-    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
-  ]
   let out = StringBuilder()
   for i in 0..<bytes.length() {
     let byte = bytes[i].to_int()
-    out.write_char(hex[(byte >> 4) & 0x0f])
-    out.write_char(hex[byte & 0x0f])
+    out.write_char(hex_digits[(byte >> 4) & 0x0f])
+    out.write_char(hex_digits[byte & 0x0f])
   }
   out.to_string()
 }

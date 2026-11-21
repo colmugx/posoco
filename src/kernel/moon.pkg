@@ -1,1 +1,3 @@
-proof_enabled = true
+import {
+  "colmugx/posoco/internal/proof/identity_exposure" @proof_identity,
+}

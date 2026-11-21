@@ -12,7 +12,7 @@ pub(all) suberror SchedulingError {
   /// Unknown tool reached the scheduler — upstream invariant broken.
   UnknownToolReachedScheduler(
     call_id~ : @kernel.CallId,
-    name~ : @kernel.ToolName
+    name~ : @kernel.ToolName,
   )
   /// `expected_version` mismatch with the snapshot.
   StaleSnapshotVersion(expected~ : CatalogVersion, actual~ : CatalogVersion)
@@ -111,69 +111,61 @@ pub impl Show for ExecutionPlan with fn to_string(self : ExecutionPlan) -> Strin
 /// Schedule validated calls into execution waves per `ExecutionPolicy`.
 /// Raises `SchedulingError` on duplicate call_id, unknown tool, or
 /// stale snapshot version.
+fn to_scheduler_policy(
+  policy : @kernel.ExecutionPolicy,
+) -> @proof_scheduler.Policy {
+  match policy {
+    Parallel => Parallel
+    Sequential => Sequential
+    Exclusive => Exclusive
+  }
+}
+
+///|
 pub fn schedule(
   snapshot : ToolCatalogSnapshot,
   expected_version : CatalogVersion,
   calls : Array[@kernel.ToolCall],
 ) -> ExecutionPlan raise SchedulingError {
-  if snapshot.version() != expected_version {
+  if !@proof_scheduler.catalog_version_matches(
+      expected_version.to_int(),
+      snapshot.version().to_int(),
+    ) {
     raise StaleSnapshotVersion(
       expected=expected_version,
       actual=snapshot.version(),
     )
   }
   let seen : Map[String, Unit] = Map::from_array([])
+  let resolved_policies : Array[@kernel.ExecutionPolicy] = []
+  let proof_policies_arr : Array[@proof_scheduler.Policy] = []
   for c in calls {
     let id = c.call_id.to_string()
     if seen.contains(id) {
       raise DuplicateCallId(call_id=c.call_id)
     }
     seen[id] = ()
-    if !snapshot.contains(c.name) {
-      raise UnknownToolReachedScheduler(call_id=c.call_id, name=c.name)
-    }
-  }
-  let waves : Array[ExecutionWave] = []
-  let current_calls : Array[@kernel.ToolCall] = []
-  let current_policies : Array[@kernel.ExecutionPolicy] = []
-  fn flush(
-    waves : Array[ExecutionWave],
-    current_calls : Array[@kernel.ToolCall],
-    current_policies : Array[@kernel.ExecutionPolicy],
-  ) -> Unit {
-    if !current_calls.is_empty() {
-      waves.push({
-        calls: current_calls.copy(),
-        policies: current_policies.copy(),
-      })
-      current_calls.clear()
-      current_policies.clear()
-    }
-  }
-  for c in calls {
     let entry = match snapshot.find(c.name) {
       Some(e) => e
       None => raise UnknownToolReachedScheduler(call_id=c.call_id, name=c.name)
     }
-    let policy = entry.definition.policy
-    match policy {
-      Exclusive => {
-        flush(waves, current_calls, current_policies)
-        waves.push({ calls: [c], policies: [policy], })
-      }
-      Sequential => {
-        flush(waves, current_calls, current_policies)
-        current_calls.push(c)
-        current_policies.push(policy)
-        flush(waves, current_calls, current_policies)
-      }
-      Parallel => {
-        current_calls.push(c)
-        current_policies.push(policy)
-      }
-    }
+    resolved_policies.push(entry.definition.policy)
+    proof_policies_arr.push(to_scheduler_policy(entry.definition.policy))
   }
-  flush(waves, current_calls, current_policies)
+  let proof_policies = FixedArray::from_array(proof_policies_arr)
+  let waves : Array[ExecutionWave] = []
+  let mut start = 0
+  while start < calls.length() {
+    let stop = @proof_scheduler.next_wave_end(proof_policies, start)
+    let wave_calls : Array[@kernel.ToolCall] = []
+    let wave_policies : Array[@kernel.ExecutionPolicy] = []
+    for i in start..<stop {
+      wave_calls.push(calls[i])
+      wave_policies.push(resolved_policies[i])
+    }
+    waves.push({ calls: wave_calls, policies: wave_policies, })
+    start = stop
+  }
   { waves, }
 }
 

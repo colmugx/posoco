@@ -1,1 +1,3 @@
-
+import {
+  "colmugx/posoco/internal/proof/progress" @proof_progress,
+}

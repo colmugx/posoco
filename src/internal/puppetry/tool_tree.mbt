@@ -280,10 +280,23 @@ async fn Puppet::execute_tool_tree(
                 )
                 continue
               }
-              let parent = @kernel_exec.find_tool_effect(
-                state.pending_effects(),
-                parent_id,
-              ).unwrap()
+              let parent = match
+                @kernel_exec.find_tool_effect(
+                  state.pending_effects(),
+                  parent_id,
+                ) {
+                Some(found) => found
+                None => {
+                  reply.finish(
+                    Interrupted(
+                      reason="parent tool has settled",
+                      cancellation=AlreadySettled,
+                      side_effects_possible=false,
+                    ),
+                  )
+                  continue
+                }
+              }
               let allowed = self.config.tool_call_owners
                 .get(parent.owner.to_string())
                 .unwrap_or([])

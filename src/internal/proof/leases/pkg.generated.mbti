@@ -1,0 +1,34 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "colmugx/posoco/internal/proof/leases"
+
+// Values
+pub fn acquire_operation(VersionLeaseState) -> VersionLeaseState
+
+pub fn apply_hard_withdraw(VersionLeaseState) -> VersionLeaseState
+
+pub fn apply_soft_withdraw(VersionLeaseState) -> VersionLeaseState
+
+pub fn can_retire(VersionLeaseState) -> Bool
+
+pub fn release_operation(VersionLeaseState, Bool) -> VersionLeaseState
+
+pub fn release_retained(VersionLeaseState, Bool) -> VersionLeaseState
+
+pub fn version_init(Int32) -> VersionLeaseState
+
+// Errors
+
+// Types and methods
+pub(all) struct VersionLeaseState {
+  active : Bool
+  revoked : Bool
+  op_held : Bool
+  retained_count : Int32
+  refs : Int32
+  retiring : Bool
+  revision : Int32
+}
+
+// Type aliases
+
+// Traits

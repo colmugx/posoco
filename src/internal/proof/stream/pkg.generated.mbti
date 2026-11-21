@@ -1,0 +1,25 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "colmugx/posoco/internal/proof/stream"
+
+// Values
+pub fn check_tool_index(Int32, Int32) -> IndexDecision
+
+pub fn merge_first_nonempty(Bool, Bool, Bool) -> LatchDecision
+
+// Errors
+
+// Types and methods
+pub(all) enum IndexDecision {
+  AcceptExisting(Int32)
+  AcceptAppend(Int32)
+  RejectSparse
+}
+
+pub(all) enum LatchDecision {
+  KeepExisting
+  WriteIncoming
+}
+
+// Type aliases
+
+// Traits

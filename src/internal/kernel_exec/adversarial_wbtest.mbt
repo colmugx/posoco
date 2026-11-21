@@ -289,3 +289,12 @@ test "ADVERSARIAL-D5a: hostile tool names accepted and pollute trace" {
   assert_true(plan.trace().contains("a\nb"))
   assert_true(plan.trace().contains("x:y"))
 }
+
+///|
+fn make_call(call_id : String, name : String) -> @kernel.ToolCall {
+  {
+    call_id: @kernel.CallId::unchecked(call_id),
+    name: @kernel.ToolName::unchecked(name),
+    arguments: Json::object(Map::from_array([])),
+  }
+}

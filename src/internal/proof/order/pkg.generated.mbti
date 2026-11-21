@@ -1,0 +1,13 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "colmugx/posoco/internal/proof/order"
+
+// Values
+pub fn insertion_sort_positions(FixedArray[Int32]) -> Unit
+
+// Errors
+
+// Types and methods
+
+// Type aliases
+
+// Traits

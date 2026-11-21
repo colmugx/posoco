@@ -5,13 +5,7 @@
 /// `execute_one` verbatim and supplies the pump around it, while the pure
 /// reducer never calls into this module.
 
-// ──────────────────────────────────────────────────────────────────────────
-// ModelId (binding identity)
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
-/// Identifier for a model binding, carried so telemetry/events can name the
-/// model behind a completion. The Kernel reducer only ever sees model step ids.
 #derive(Eq, Hash, Debug)
 pub(all) struct ModelId {
   value : String
@@ -45,16 +39,7 @@ pub fn ModelId::to_string(self : ModelId) -> String {
   self.value
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// execute_one — stateless single-effect dispatch via HostRuntime
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
-/// Context passed to `execute_one`. The catalog snapshot is carried here, not
-/// re-resolved from a registry, because the reducer already validated against
-/// `catalog_version`; the model must see exactly those definitions.
-/// `run_id`/`session_id` plus the per-effect `effect_id` form the
-/// `InvocationScope`.
 priv struct ExecutionContext {
   host : &@kernel_exec.HostRuntime
   catalog : @kernel_exec.ToolCatalogSnapshot
@@ -190,7 +175,7 @@ async fn execute_call_model(
   let attempted : Result[Result[ModelCallResult, @kernel.ModelFailure], Error] = Ok(
     ctx.host.call_model(
       scope,
-      payload.messages[:],
+      payload.messages,
       tool_definitions,
       payload.call_options,
       checked_on_chunk,
@@ -203,14 +188,14 @@ async fn execute_call_model(
     // primary outcome; a malformed callback must not reclassify it as parse.
     Err(error) => raise execution_error("CallModel", error)
     Ok(Ok(result)) =>
-      match stream_failure.get(0) {
-        Some(reason) =>
+      match stream_failure {
+        [reason, ..] =>
           ModelFailed(payload={
             effect_id,
             model_step_id: payload.model_step_id,
             failure: Parse(reason="stream chunk validation failed: " + reason),
           })
-        None =>
+        [] =>
           match result.completion.usage {
             Some(usage) =>
               match usage.validate() {
