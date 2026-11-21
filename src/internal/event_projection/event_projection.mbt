@@ -1,9 +1,4 @@
 ///|
-/// Agent-facing projection of committed Puppet envelopes. It never scans a
-/// final transcript: the pending call cache is correlation state populated by
-/// `ToolBatchStarted` and consumed by completion events. Committed pending
-/// events retain the model's original call; completion events carry the
-/// canonical call that reached the host.
 priv struct PendingToolProjection {
   call : @kernel.ToolCall
   mut started : Bool
@@ -12,9 +7,6 @@ priv struct PendingToolProjection {
 ///|
 /// Observer-side projection of committed Puppet envelopes: the Agent's own
 /// event subscriber. The pending-call correlation state and the whole
-/// projection algorithm live here and nowhere else; callers only construct
-/// one, install it as a subscriber and, when a run ends without folding its
-/// tool completions, call `drain_pending`.
 pub struct EventProjection {
   priv events : @event_runtime.EventRuntime
   priv pending_calls : Map[String, PendingToolProjection]
@@ -69,9 +61,6 @@ fn EventProjection::emit(
   scope : @types.EventScope?,
   event : @types.TurnEvent,
 ) -> Unit {
-  // Piggyback flush: catch up buffered chunk telemetry before every committed
-  // event so listeners see chunks before ModelResponseReceived, ToolCallPending,
-  // etc., and so they catch up at boundaries during an unbroken SSE burst.
   match self.chunk_dispatcher.val {
     Some(dispatcher) => dispatcher.flush()
     None => ()
@@ -116,10 +105,6 @@ fn EventProjection::emit_tool_result(
       ToolCallFailed(call~, failure=ReportedError(content~, structured~))
     RuntimeFailure(error_category~, message~) =>
       ToolCallFailed(call~, failure=Runtime(category=error_category, message~))
-    // Supersession by a committed user message is not a rejection: no
-    // decision refused the call, the call simply never runs, so it closes as
-    // an abandonment like every other orphaned call. The pending entry was
-    // already removed above, so the correlation cache stays clean.
     NotExecuted(reason=SupersededByMessage, ..) =>
       ToolCallAbandoned(call~, reason="superseded by message")
     NotExecuted(reason~, ..) => ToolCallRejected(call~, reason~)
@@ -130,9 +115,6 @@ fn EventProjection::emit_tool_result(
 ///|
 /// Abandon every still-pending call. Used when a run ends without folding
 /// their completions (cancel, terminal hook failure, suspension) and
-/// defensively when a new run starts over leftovers. With `scope` the drain
-/// attributes to the run that owned the calls; `None` marks out-of-run
-/// cleanup.
 pub fn EventProjection::drain_pending(
   self : EventProjection,
   scope : @types.EventScope?,
@@ -165,9 +147,6 @@ pub impl @puppetry.EventSubscriber for EventProjection with fn on_event(
       self.drain_pending(None, "run restarted before completion")
     RunSuspended(..) => self.drain_pending(Some(scope), "run suspended")
     RunCompleted(..) | RunFailed(..) | RunCancelled(..) =>
-      // Terminal-only drain: cancelled tool effects still receive their
-      // closing ToolCompleted events between CancelRequested and the
-      // terminal event, so draining any earlier would break pairing.
       self.drain_pending(Some(scope), "run terminal")
     ToolCallsPreRejected(calls~, outcomes~, ..) =>
       // Pre-pass rejects never entered the pipeline: emit the rejection
@@ -239,10 +218,6 @@ pub impl @puppetry.EventSubscriber for EventProjection with fn on_event(
         Some(scope),
         ModelResponseReceived(message~, usage=completion.usage),
       )
-      // The puppet recorded this step's usage into the session's context
-      // state before the boundary committed, so the lookup is fresh.
-      // Projecting per model step keeps the ctx indicator at the same
-      // cadence as cache — every round, not only at turn boundaries.
       match self.context_state_of.val {
         Some(lookup) =>
           match lookup(envelope.session_id().to_string()) {

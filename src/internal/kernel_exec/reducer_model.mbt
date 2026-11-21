@@ -54,10 +54,6 @@ fn reduce_awaiting_model(
   catalog : ToolCatalogSnapshot,
   input : RunInput,
 ) -> ReduceOutput raise KernelError {
-  // Race priority: DeadlineReached beats a completion in the same tick, and
-  // CancelRequested beats a completion only if it was queued earlier. The
-  // reducer treats arrival order as already-decided (no batching), so each
-  // input is applied as it comes.
   match input {
     ModelCompleted(payload~) => reduce_model_completed(state, catalog, payload)
     ModelCompletedWithSteering(payload~) =>
@@ -67,11 +63,19 @@ fn reduce_awaiting_model(
     ModelFailed(payload~) => reduce_model_failed(state, payload)
     CancelRequested(payload~) =>
       reduce_cancel_with_pending(state, payload.detail)
-    DeadlineReached(_) => reduce_terminal_fail(state, DeadlineReached)
+    DeadlineReached(_) =>
+      reduce_terminal_fail_with_pending(state, DeadlineReached, DeadlineReached)
     BudgetExhausted(payload~) =>
-      reduce_terminal_fail(state, BudgetExhausted(dimension=payload.dimension))
+      reduce_terminal_fail_with_pending(
+        state,
+        BudgetExhausted(dimension=payload.dimension),
+        HostRequested(detail=Some("budget exhausted")),
+      )
     SuspendRequested(payload~) => reduce_suspend(state, payload.requirement)
-    TranscriptRewrite(payload~) => reduce_transcript_rewrite(state, payload)
+    TranscriptRewrite(_) =>
+      reject_input(
+        state, input, "AwaitingModel: model step in flight; cannot rewrite transcript",
+      )
     Start(_) | Resume(_) | ToolCompleted(_) | ToolFailed(_) =>
       reject_input(state, input, "AwaitingModel: input not legal here")
     SteerAppended(_) =>
@@ -109,10 +113,6 @@ fn reduce_model_completed(
     )
   }
   let completion = payload.completion
-  // ModelCompleted is a direct reducer input as well as the executor's
-  // normal output. Re-validate the canonical usage before constructing the
-  // assistant message or bumping BudgetConsumed; otherwise a caller that
-  // bypasses HostRuntime can make observed_total_tokens move backwards.
   match completion.usage {
     Some(usage) =>
       match usage.validate() {
@@ -126,31 +126,32 @@ fn reduce_model_completed(
       }
     None => ()
   }
-  match completion.finish_reason() {
-    Length =>
-      return reduce_terminal_fail(
-        append_completion_to_state(state, completion),
-        ModelParseFailure(detail="finish_reason=Length"),
-      )
-    _ => ()
-  }
   let assistant_msg = @kernel.AssistantMessage(
     content=completion.message.content.copy(),
     tool_calls=completion.message.tool_calls.copy(),
     reasoning=completion.message.reasoning,
     finish_reason=completion.message.finish_reason,
   )
-  // The modelport may have elided entries; its processed messages become the
-  // transcript body, followed by the new assistant message.
   let base_transcript = @kernel.Transcript::from_array(
     payload.processed_messages,
   )
   let transcript = base_transcript.append(assistant_msg)
+  let next_consumed = bump_model_step(state.budget_consumed(), completion.usage)
+  match completion.finish_reason() {
+    Length =>
+      return reduce_terminal_fail_with(
+        state,
+        transcript,
+        next_consumed,
+        ModelParseFailure(detail="finish_reason=Length"),
+        [],
+      )
+    _ => ()
+  }
   let step_completed : KernelEvent = ModelStepCompleted(
     model_step_id=payload.model_step_id,
     completion~,
   )
-  let next_consumed = bump_model_step(state.budget_consumed(), completion.usage)
   let usage_check = next_consumed.exceeded(state.budget())
   match usage_check {
     Exceeded(dim) =>
@@ -172,11 +173,6 @@ fn reduce_model_completed(
   }
   if !completion.has_tool_calls() {
     if continue_turn {
-      // The steer message accepted during this step re-opens the step
-      // boundary: commit the assistant completion and return to ReadyForModel
-      // so the next step sees the appended message. The run does not end, so
-      // no terminal event is emitted and the outcome stays unset. A Terminal
-      // run can never reach this fold (post-terminal rejection runs first).
       let next_state = state.transition(
         phase=ReadyForModel,
         transcript~,
@@ -250,10 +246,6 @@ fn reduce_model_completed_with_tools(
   // all tool completions in this wave instead of rescanning per result.
   let tool_call_positions = build_tool_call_ledger(transcript)
   let calls = completion.tool_calls()
-  // Pre-pass: split into NotExecuted outcomes (written to transcript) and
-  // validated calls (become ExecuteTool effects). Rejected (call, outcome)
-  // pairs are collected in source order; their events are emitted together
-  // after the loop. Duplicate call_id is an invariant failure.
   let seen : Map[String, Unit] = Map::from_array([])
   let rejected_calls : Array[@kernel.ToolCall] = []
   let rejected_outcomes : Array[@kernel.ToolOutcome] = []
@@ -300,11 +292,6 @@ fn reduce_model_completed_with_tools(
         }
     }
   }
-  // Pre-pass-rejected calls are "submitted → resolved NotExecuted" but
-  // never enter the execution pipeline. They surface as one dedicated
-  // event per rejected batch; the projection emits a rejection per call
-  // without a pending marker. Effect calls below keep their paired
-  // batch-start → completion discipline.
   if !rejected_calls.is_empty() {
     events.push(
       ToolCallsPreRejected(
@@ -334,9 +321,6 @@ fn reduce_model_completed_with_tools(
     let next_state = next_state.with_tool_results(tool_results)
     return reduce_output(next_state, [], events)
   }
-  // Account for the entire executable batch before exposing any effect to the
-  // host. This makes the tool limits atomic: a batch that reaches a limit
-  // cannot partially execute, and parallel waves cannot bypass accounting.
   let next_tool_consumed = bump_tool_batch(next_consumed, effects.length())
   match next_tool_consumed.exceeded(state.budget()) {
     Exceeded(dim) => {
@@ -359,9 +343,6 @@ fn reduce_model_completed_with_tools(
     }
     UnknownUsage(_) | WithinBudget => ()
   }
-  // Emit ToolBatchStarted covering only the calls that became effects. The
-  // pre-pass-rejected calls (if any) already got their own batch-start +
-  // completions above.
   let batch_calls : Array[@kernel.ToolCall] = []
   for e in effects {
     match e {
@@ -398,37 +379,31 @@ pub fn classify_rejected_outcome(
   call : @kernel.ToolCall,
   direct~ : Bool = true,
 ) -> @kernel.ToolOutcome? {
-  if !catalog.contains(call.name) {
-    return Some(NotExecuted(reason=UnknownTool, original_call_id=call.call_id))
+  let entry = match catalog.find(call.name) {
+    Some(entry) => entry
+    None =>
+      return Some(
+        NotExecuted(reason=UnknownTool, original_call_id=call.call_id),
+      )
   }
-  match catalog.find(call.name) {
-    Some(entry) =>
-      if entry.definition.exposure is Disabled ||
-        (direct && entry.definition.exposure is Deferred) {
-        return Some(
-          NotExecuted(reason=NotOffered, original_call_id=call.call_id),
-        )
-      }
-    None => ()
+  if entry.definition.exposure is Disabled ||
+    (direct && entry.definition.exposure is Deferred) {
+    return Some(NotExecuted(reason=NotOffered, original_call_id=call.call_id))
   }
-  match catalog.validate_arguments(call.name, call.arguments) {
-    Err(diag) =>
-      if is_unknown_tool_diagnostic(diag) {
-        // Should be unreachable (we checked contains above), but be safe.
-        Some(NotExecuted(reason=UnknownTool, original_call_id=call.call_id))
-      } else {
-        Some(
-          NotExecuted(
-            reason=SchemaMismatch(
-              json_path=diag.json_path,
-              expected=diag.expected,
-              actual=diag.actual,
-            ),
-            original_call_id=call.call_id,
+  match catalog.validate_known_arguments(call.name, call.arguments) {
+    None => Some(NotExecuted(reason=UnknownTool, original_call_id=call.call_id))
+    Some(Err(diag)) =>
+      Some(
+        NotExecuted(
+          reason=SchemaMismatch(
+            json_path=diag.json_path,
+            expected=diag.expected,
+            actual=diag.actual,
           ),
-        )
-      }
-    Ok(_) => None
+          original_call_id=call.call_id,
+        ),
+      )
+    Some(Ok(_)) => None
   }
 }
 
@@ -494,31 +469,6 @@ fn reduce_model_failed(
       ModelQuotaExhausted(detail=reason, reset_at_ms~, provider_code~)
   }
   reduce_terminal_fail(state, reason)
-}
-
-///|
-fn append_completion_to_state(
-  state : RunState,
-  completion : @kernel.Completion,
-) -> RunState raise KernelError {
-  let msg = @kernel.AssistantMessage(
-    content=completion.message.content.copy(),
-    tool_calls=completion.message.tool_calls.copy(),
-    reasoning=completion.message.reasoning,
-    finish_reason=completion.message.finish_reason,
-  )
-  state.transition(
-    phase=state.phase(),
-    transcript=state.transcript().append(msg),
-    pending_effects=state.pending_effects(),
-    next_event_sequence=state.next_event_sequence(),
-    next_effect_id=state.next_effect_id(),
-    current_model_step_id=state.current_model_step_id(),
-    catalog_version=None,
-    budget_consumed=state.budget_consumed(),
-    outcome=state.outcome(),
-    suspension_requirement=state.suspension_requirement(),
-  )
 }
 
 ///|

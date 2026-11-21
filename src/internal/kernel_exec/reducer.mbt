@@ -1,17 +1,4 @@
 ///|
-/// Pure reducer for the functional Kernel.
-///
-/// This file is the SOLE arbiter of phase transitions. Given a RunState and
-/// a RunInput, the reducer returns the next RunState, the effects the
-/// executor should run next, and the domain events the interpreter should
-/// publish. The reducer MUST NOT:
-/// - import async, fs, http, time, or random
-/// - import any host or provider trait
-/// - import non-canonical product data — it works only on canonical domain
-///   types
-/// - mutate caller-owned arrays/maps
-///
-/// Purity is enforced by a boundary lint in T03/T09 acceptance.
 
 ///|
 /// Result of a single `reduce(state, input)` call.
@@ -31,7 +18,6 @@ pub extend ReduceOutput with Eq::{not_equal, equal}
 pub extend ReduceOutput with Debug::{to_repr}
 
 ///|
-/// Construct a ReduceOutput. Internal helper used by the reducer branches.
 fn reduce_output(
   next_state : RunState,
   effects : Array[Effect],
@@ -73,9 +59,6 @@ pub fn reduce(
   catalog : ToolCatalogSnapshot,
   input : RunInput,
 ) -> ReduceOutput raise KernelError {
-  // Post-terminal rejection: any input after Terminal is a typed rejection.
-  // The state is unchanged; no new terminal event is emitted; the
-  // transcript is not mutated.
   match state.phase() {
     Terminal => reduce_post_terminal(state, input)
     Initializing => reduce_initializing(state, catalog, input)
@@ -87,7 +70,6 @@ pub fn reduce(
 }
 
 ///|
-/// Allocate the next event sequence number.
 fn next_seq(state : RunState) -> EventSequence {
   state.next_event_sequence().next()
 }

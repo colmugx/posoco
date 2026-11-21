@@ -1,20 +1,6 @@
 ///|
-/// Agent operation lifecycle: one admission point for the single-operation
-/// guard and one release point projecting `operation_started` /
-/// `operation_settled` exactly once per admission.
-///
-/// The lifecycle sits above the per-turn identity layer: one admitted operation
-/// covers the initial turn plus every follow-up drained inside the same call,
-/// and the `on_turn_begin` / `on_turn_end` hook dispatches that bracket them.
-/// Settling is independent of the turn's terminal (`TurnCompleted` /
-/// `TurnFailed` / `TurnCancelled`) and of the internal `OperationFinalized`
-/// phase event — settled is emitted only after the guard is released, on
-/// normal, failure, soft- and hard-cancel paths alike.
 
 ///|
-/// What kind of host-visible operation holds the guard. Ordinary user input
-/// is `Turn`; `Resume` replays a persisted interrupted turn; `Compact` is a
-/// manual compaction; `Wakeup` is an extension-requested ordinary turn.
 priv enum OperationOrigin {
   Turn
   Resume
@@ -49,8 +35,6 @@ fn OperationOutcome::label(self : OperationOutcome) -> String {
 }
 
 ///|
-/// Map a terminal `AgentError` onto the settled outcome: cancellation is a
-/// first-class settled state, everything else is a failure.
 fn agent_error_operation_outcome(error : @error.AgentError) -> OperationOutcome {
   match error {
     Cancelled(_) => Cancelled
@@ -59,11 +43,6 @@ fn agent_error_operation_outcome(error : @error.AgentError) -> OperationOutcome 
 }
 
 ///|
-/// Identity of one admitted operation. Minted at admission so even the busy
-/// rejection path and the `operation_started` projection can name the
-/// incumbent; `identity` is the first turn's per-turn identity and
-/// `operation_id` labels that turn's Puppet request (`agent_run_turn_N`,
-/// `agent_compact_session_N`, `agent_wakeup_N`).
 priv struct OperationAdmission {
   operation_id : String
   origin : OperationOrigin
@@ -72,10 +51,6 @@ priv struct OperationAdmission {
 }
 
 ///|
-/// Register the spawned worker under the admitted operation's execution record
-/// and replay an already-requested cancellation to it, covering the eager-spawn
-/// race where shutdown asks for cancellation between admission and this
-/// registration. Runs synchronously before the guarded caller's first await.
 fn[X] AgentRuntime::register_operation_execution(
   self : AgentRuntime,
   admission : OperationAdmission,
@@ -87,34 +62,17 @@ fn[X] AgentRuntime::register_operation_execution(
 }
 
 ///|
-/// Execute the admitted operation body on a dedicated worker task so the Agent
-/// owns a cancellation handle for it; the typed `AgentError` travels as data
-/// through the worker boundary. The group/join boundary runs under
-/// `handle_cancellation`: a caller cancellation first unwinds the worker
-/// through its ordinary lifecycle (the spawned-body errdefer), the group joins
-/// every child, and only then is the signal mapped to `AgentError::Cancelled`,
-/// so callers see a typed, catchable error instead of a raw signal. A
-/// worker cancellation surfaces from the joined `wait` as
-/// `@async.WaitedTaskAlreadyCancelled` and is reported the same way, only after
-/// the worker fully unwound.
 async fn[X] AgentRuntime::execute_operation(
   self : AgentRuntime,
   admission : OperationAdmission,
   body : async () -> Result[X, @error.AgentError],
 ) -> X raise @error.AgentError {
-  // Typed outcome the worker body produced, captured synchronously the moment
-  // body() returns (before any await), so a caller cancellation landing at the
-  // outer task-group boundary cannot discard the body's own typed reason.
   let body_outcome : Ref[Result[X, @error.AgentError]?] = Ref(None)
   // `with_task_group` is `Unit`-valued: the joined outcome crosses in a cell.
   let joined_outcome : Ref[Result[X, @error.AgentError]?] = Ref(None)
   let outcome : Result[X, @error.AgentError]? = @async.handle_cancellation(async fn() {
     @async.with_task_group(async fn(group) {
       let worker = group.spawn(async fn() -> Result[X, @error.AgentError] {
-        // Unconditional-on-unwind cleanup: the foreground task cleanup and
-        // the pending-call drain run here, before the guard releases.
-        // finish_active_operation is idempotent, so typed catch paths cannot
-        // double-run it; the raw cancellation signal keeps propagating.
         errdefer {
           let cleanup : Result[Unit, @error.AgentError] = Ok(
             self.task_runtime.finish_active_operation(),
@@ -146,13 +104,7 @@ async fn[X] AgentRuntime::execute_operation(
         }
         let result = match startup {
           Ok(_) => {
-            // Retry a retire that a previous commit left pending. The
-            // directory itself is already committed, so this cannot change it,
-            // and a failure here is only a secondary diagnostic.
             self.retire_pending_versions()
-            // Recovery is an async, guard-held phase before the new request.
-            // A failure propagates and prevents body() from running; the
-            // pending records stay for the next operation.
             let body_drained : Result[Unit, @error.AgentError] = Ok(
               self.drain_body_recovery_outputs(admission.session_id),
             ) catch {
@@ -179,10 +131,6 @@ async fn[X] AgentRuntime::execute_operation(
       let joined : Result[X, @error.AgentError] = worker.wait() catch {
         error =>
           if error is @async.WaitedTaskAlreadyCancelled {
-            // The worker already performed its protected cleanup on unwind
-            // (see the spawned-body errdefer); map the joined cancellation to
-            // the typed cancelled outcome only, with the origin's own detail:
-            // compact names its cancellation, everything else stays generic.
             Err(
               Cancelled(
                 match admission.origin {
@@ -204,10 +152,6 @@ async fn[X] AgentRuntime::execute_operation(
       }
       joined_outcome.val = Some(joined)
     }) catch {
-      // Ordinary group failures become the contextualized runtime error. A
-      // caller cancellation bypasses this catch too, but the surrounding
-      // handle_cancellation intercepts it only after the group has fully
-      // joined, mapping it to the typed Cancelled outcome below.
       error =>
         joined_outcome.val = Some(
           Err(
@@ -228,10 +172,6 @@ async fn[X] AgentRuntime::execute_operation(
         )
     }
   }) catch {
-    // `handle_cancellation` itself is typed to raise the wide `Error`; only
-    // a genuine non-cancellation defect from the fully joined group reaches
-    // this arm at runtime. It is preserved as a typed failure (never
-    // confused with the mapped Cancelled outcome below).
     error =>
       Some(
         Err(
@@ -248,10 +188,6 @@ async fn[X] AgentRuntime::execute_operation(
     Some(Ok(value)) => value
     Some(Err(error)) => raise error
     None =>
-      // The outer boundary was cancelled and has fully joined. If the worker
-      // body completed before that, its captured typed error is raised
-      // unchanged; a captured success or non-cancellation failure is never
-      // rewritten into cancellation detail.
       match body_outcome.val {
         Some(Err(error)) => raise error
         _ =>
@@ -266,40 +202,22 @@ async fn[X] AgentRuntime::execute_operation(
 }
 
 ///|
-/// Request cancellation of the tracked operation execution: the flag feeds
-/// the registration recheck for a not-yet-registered worker, the closure
-/// reaches an already-registered one. This never clears `current` and never
-/// fakes a settled outcome — the worker's own unwind performs the release.
 fn AgentRuntime::cancel_operation_execution(self : AgentRuntime) -> Unit {
   self.operations.request_cancel()
 }
 
 ///|
-/// Bounded graceful window before shutdown actively cancels an in-flight
-/// operation.
 let operation_shutdown_grace_ms : Int32 = 5_000
 
 ///|
-/// Bounded settle budget after an active cancellation: the unwind (catch
-/// paths, foreground task cleanup, guard release) must finish here or
-/// shutdown fails loudly instead of closing the Puppet under live work.
 let operation_cancel_settle_ms : Int32 = 5_000
 
 ///|
-/// Straggler detail for the bounded-shutdown diagnostic: names the
-/// operation that outlived its cancellation budget.
 fn AgentRuntime::operation_straggler_detail(self : AgentRuntime) -> String {
   self.operations.straggler_detail()
 }
 
 ///|
-/// Settle the in-flight operation during shutdown: a finite graceful window
-/// lets an admitted operation finish its ordinary lifecycle; if it is still
-/// alive, the tracked execution is actively cancelled and its unwind must
-/// finish within the bounded budget. A worker that outlives cancellation
-/// (a noncooperative shielded child cannot be force-joined) fails shutdown
-/// loudly with the straggler detail, and the Puppet is never closed under
-/// live work.
 async fn AgentRuntime::settle_operation_for_shutdown(
   self : AgentRuntime,
 ) -> Unit raise @error.AgentError {
@@ -338,9 +256,6 @@ async fn AgentRuntime::settle_operation_for_shutdown(
 }
 
 ///|
-/// Emit a core-owned `Custom` projection to every observer. Operation-level
-/// and wakeup-level events hold no per-turn identity, so `scope` is `None`
-/// by design (session attribution travels in the event data).
 fn emit_custom_event(
   events : @event_runtime.EventRuntime,
   scope : @types.EventScope?,
@@ -357,11 +272,6 @@ fn emit_custom_event(
 }
 
 ///|
-/// Admit the next single operation or reject the caller with the structured
-/// `AgentError::Busy`. Sets the single-operation guard before the first
-/// await, so a rejected concurrent call cannot mutate turn-scoped state.
-/// The wakeup label override lets the wakeup pump name its operations
-/// without reaching into the turn identity counter.
 fn AgentRuntime::admit_operation(
   self : AgentRuntime,
   session_id : String,
@@ -420,19 +330,11 @@ fn AgentRuntime::admit_operation(
       )
   }
   errdefer self.ui_runtime.settle_operation(operation_id)
-  // Startup may publish dynamic tools asynchronously. Its first operation
-  // holds this guard, then captures once after startup; later admissions
-  // keep their synchronous pre-await capture.
-  // The admitted operation gets a fresh revocation fact set: only versions
-  // hard-withdrawn while this operation runs can refuse its launches.
   self.tool_revocations.reset()
   if self.start_notified {
     self.capture_tool_contributions(operation_id=admission.operation_id)
   }
   self.acquire_operation_versions()
-  // The admitted operation owns the inbox for its whole life: steers and
-  // follow-ups submitted while it holds the guard land under its address,
-  // and nothing can attach to the previous operation's inbox state.
   self.control.bind_operation(admission.operation_id, session_id)
   self.turn_active = true
   self.operations.begin_execution(admission.operation_id)
@@ -451,9 +353,6 @@ fn AgentRuntime::admit_operation(
 }
 
 ///|
-/// Settle the step window of one finished turn: step messages the pump never
-/// confirmed become public `MessageUndelivered` events scoped to the turn
-/// that accepted them.
 fn AgentRuntime::settle_turn_messages(
   self : AgentRuntime,
   identity : TurnIdentity,
@@ -464,9 +363,6 @@ fn AgentRuntime::settle_turn_messages(
 }
 
 ///|
-/// Settle the whole operation's inbox before the guard releases: step and
-/// turn leftovers alike are reported, and the inbox is closed so a later
-/// admission cannot inherit this operation's records.
 fn AgentRuntime::settle_operation_messages(self : AgentRuntime) -> Unit {
   for command in self.control.finish_operation() {
     self.emit_message_undelivered(command, "operation ended before delivery")
@@ -490,11 +386,6 @@ fn AgentRuntime::emit_message_undelivered(
 }
 
 ///|
-/// Release the guard and project `operation_settled` exactly once. The
-/// settled event fires after `turn_active` is already cleared, so observers
-/// that react to it (the wakeup pump, hosts) can admit the next operation
-/// immediately. Idempotent: a hard-cancel unwind racing the normal release
-/// never duplicates the projection.
 fn AgentRuntime::release_operation(
   self : AgentRuntime,
   admission : OperationAdmission,

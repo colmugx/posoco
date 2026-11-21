@@ -1,34 +1,8 @@
 ///|
-/// Journal contribution + pre-commit seam + savepoint coordinator.
-///
-/// Contract:
-/// 1. Reducer/canonical transition produces base entries.
-/// 2. Registered JournalContributors receive an immutable PreCommitContext
-///    (registration order) and each returns a JournalContribution of
-///    proposed entries, or a typed ContributionError.
-/// 3. SavepointCoordinator validates each contribution: allowed entry kind
-///    for this savepoint, identity match, parent revision + sequence
-///    consistency, no duplicate entry id, size bound, permission.
-/// 4. Coordinator merges base + validated contributions, freezes the pending
-///    batch (expected revision, entry ids, savepoint).
-/// 5. Coordinator calls RunJournal.append(frozen_batch) + durability barrier.
-/// 6. Only post-commit does the Puppet dispatch events.
-///
-/// Post-freeze mutation by any contributor/subscriber is a contract
-/// violation; the coordinator detects this by comparing entry id sets
-/// before and after freezing.
-
-// ──────────────────────────────────────────────────────────────────────────
-// PreCommitContext — immutable view handed to contributors
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 /// Immutable context handed to each JournalContributor at pre-commit time.
 /// Contributors read this to decide what (if anything) to propose.
-///
-/// The context carries NO mutable references and NO journal writer. A
-/// contributor that needs to add a domain entry must return it via
-/// JournalContribution; it cannot reach into the journal directly.
 #derive(Eq, Debug)
 pub(all) struct PreCommitContext {
   run_id : RunId
@@ -51,18 +25,9 @@ pub extend PreCommitContext with Eq::{not_equal, equal}
 ///|
 pub extend PreCommitContext with Debug::{to_repr}
 
-// ──────────────────────────────────────────────────────────────────────────
-// JournalContribution — what a contributor proposes
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 /// Typed contribution from a JournalContributor. Carries:
 /// - `contributor_id`: stable identifier of the proposing contributor
-/// - `provenance`: human-readable provenance string for diagnostics
-/// - `proposed_entries`: entries the contributor wants added to this savepoint
-///
-/// The contributor does NOT specify the committed revision (the coordinator
-/// assigns it). It does NOT mark entries as committed (the journal does).
 #derive(Eq, Debug)
 pub(all) struct JournalContribution {
   contributor_id : String
@@ -97,10 +62,6 @@ pub fn JournalContribution::with_entries(
   { contributor_id, provenance, proposed_entries: entries.copy(), }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// ContributionError — typed errors from contributors
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 /// Typed error a contributor returns (or raises) when it cannot produce a
 /// contribution. The coordinator surfaces this as `SavepointFailed` with
@@ -125,21 +86,9 @@ pub impl Show for ContributionError with fn to_string(self : ContributionError) 
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// JournalContributor trait (Q7.3 recommendation: pub(open) trait)
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 /// Port: pre-commit contributor. Receives an immutable PreCommitContext,
 /// returns a JournalContribution of proposed entries or a typed error.
-///
-/// Contributors never receive a RunJournal reference; they cannot write
-/// directly. If they need a domain entry persisted, they must propose it
-/// here and let the coordinator commit it atomically.
-///
-/// No production contributor ships today; the trait exists so extensions
-/// (e.g. memory persistence, observation logging) can register without
-/// modifying the Puppet pump.
 pub(open) trait JournalContributor {
   /// Stable identifier for this contributor. Used in diagnostics and in
   /// the contribution's `contributor_id` field.
@@ -152,10 +101,6 @@ pub(open) trait JournalContributor {
   /// JournalContribution (possibly empty) or raises ContributionError.
   fn contribute(Self, PreCommitContext) -> JournalContribution raise ContributionError
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// NoopContributor — default contributor that proposes nothing
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 /// Default contributor that proposes nothing. Used when no extension needs
@@ -195,18 +140,9 @@ pub impl JournalContributor for NoopContributor with fn contribute(
   JournalContribution::empty(self.id, "noop")
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// SavepointCoordinator — the freeze→commit→barrier orchestrator
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 /// Frozen pending batch. Built by `prepare_batch`; committed by `commit`.
 /// Once frozen, neither contributors nor subscribers can mutate it.
-///
-/// `expected_revision` is the revision the journal SHOULD be at when this
-/// batch commits. If the journal has advanced past this revision (e.g.
-/// concurrent commit elsewhere — impossible with the single-writer journal
-/// today, but the check stays), the commit fails with `BarrierFailed`.
 #derive(Eq, Debug)
 pub(all) struct FrozenBatch {
   savepoint_id : String
@@ -224,22 +160,7 @@ pub extend FrozenBatch with Eq::{not_equal, equal}
 ///|
 pub extend FrozenBatch with Debug::{to_repr}
 
-// ──────────────────────────────────────────────────────────────────────────
-// Prepare + validate + freeze
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
-/// Prepare a frozen batch for a savepoint. Steps:
-/// 1. Call each contributor in registration order with PreCommitContext.
-/// 2. Validate every contribution entry (kind, identity, dedup).
-/// 3. Merge base entries + validated contributions.
-/// 4. Freeze the batch (compute expected_revision + entry keys).
-///
-/// Raises:
-/// - `PuppetError::SavepointFailed(_, ContributorRaised(_))` if any
-///   contributor raises/returns Err.
-/// - `PuppetError::SavepointFailed(_, ValidationFailed(_))` if any entry
-///   fails validation.
 fn prepare_batch(
   ctx : PreCommitContext,
   contributors : Array[&JournalContributor],
@@ -314,8 +235,6 @@ fn prepare_batch(
 }
 
 ///|
-/// Validate a single entry against the pre-commit context. Returns Err on
-/// any violation.
 fn validate_entry(
   entry : JournalEntry,
   ctx : PreCommitContext,
@@ -359,18 +278,7 @@ fn validate_entry(
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Commit — the single point that advances revision
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
-/// Commit a frozen batch to the journal. Verifies post-freeze integrity
-/// (entry keys unchanged), then delegates to `RunJournal.append`. Returns
-/// the new committed revision.
-///
-/// Raises:
-/// - `SavepointFailed(_, BarrierFailed(_))` if post-freeze mutation
-///   detected or the journal append fails.
 fn commit_batch(
   journal : &RunJournal,
   batch : FrozenBatch,

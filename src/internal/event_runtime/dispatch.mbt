@@ -78,9 +78,6 @@ fn listener_accepts(
 }
 
 ///|
-/// One envelope per delivery. Core payloads are snapshot again per receiver so
-/// no listener can mutate what the next listener gets; community payloads are
-/// the published value (immutable-by-convention, no generic deep copy).
 fn envelope_of(queued : QueuedEvent) -> @events.EventEnvelope {
   match queued.core {
     Some(core) =>

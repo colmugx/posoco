@@ -1,22 +1,6 @@
 ///|
-/// Tool-argument schema validation, backed by `colmugx/json-schema`
-/// (JSON Schema 2020-12). Schemas compile once at catalog composition: any
-/// `Schema::compile` failure is a composition hard failure, and the compiled
-/// plan validates every call. Nothing is silently skipped.
-///
-/// Diagnostic contract (unchanged from the previous subset validator): a
-/// `SchemaDiagnostic` reports only a structural JSON path plus schema-side
-/// expectations. `Fault.instance_path` is a structural pointer, every
-/// `Fault.message` in json-schema 0.1.3 is a fixed category string (only
-/// schema-declared names are ever interpolated), and a payload-leak guard
-/// test pins this contract.
 
 ///|
-/// Compile a tool input schema at composition time. Maps compiler failures
-/// onto the established composition error surface: unsupported keywords and
-/// patterns keep the dedicated `UnsupportedSchemaKeyword` variant; malformed
-/// schemas, unknown dialects/vocabularies and depth overruns report as
-/// `MalformedSchema`.
 fn compile_tool_schema(
   visible_name : String,
   schema : Json,
@@ -48,8 +32,6 @@ fn explain_compile_error(error : @json-schema.CompileError) -> String {
 }
 
 ///|
-/// Validate arguments against a compiled schema. Returns the first fault as a
-/// payload-free diagnostic, or `Ok(())` when the arguments conform.
 fn validate_compiled(
   schema : @json-schema.Schema,
   arguments : Json,
@@ -69,9 +51,6 @@ fn validate_compiled(
 }
 
 ///|
-/// Evaluation-stage failures describe pathological arguments (depth, numeric
-/// representation), not compiler defects, so they surface through the same
-/// `SchemaDiagnostic` channel as ordinary mismatches.
 fn evaluation_error_diagnostic(error : Error) -> @kernel.SchemaDiagnostic {
   match error {
     @json-schema.EvaluationError::DepthLimit(limit) =>
@@ -106,10 +85,6 @@ fn all_digits(text : String) -> Bool {
 }
 
 ///|
-/// Convert an RFC 6901 JSON Pointer to the catalog's "$"-rooted path
-/// notation ("" → "$", "/a/0" → "$.a[0]"), matching the previous validator's
-/// diagnostic format. Escapes (~0/~1) are decoded; property segments render
-/// naively, exactly like the previous formatter.
 fn dollar_path(pointer : String) -> String {
   if pointer == "" {
     return "$"

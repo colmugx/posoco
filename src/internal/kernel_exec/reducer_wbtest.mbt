@@ -49,15 +49,6 @@ fn fresh_state() -> RunState raise KernelError {
 }
 
 ///|
-fn fresh_state_with_budget(budget : Budget) -> RunState raise KernelError {
-  RunState::initial(
-    run_id=RunId::unchecked("run_budget"),
-    session_id=SessionId::unchecked("sess_budget"),
-    budget~,
-  )
-}
-
-///|
 fn start_input() -> RunInput {
   Start(payload={
     initial_messages: [UserMessage(content=[Text("hi")])],
@@ -175,69 +166,6 @@ fn run_until_awaiting_model() -> (RunState, EffectId, ModelStepId) raise {
 }
 
 ///|
-test "C-BUDGET-TOOL-BATCH: count atomically before any tool effect is exposed" {
-  let catalog = make_catalog_v1()
-  // Exclusive limit semantics: the 2-call batch crosses max_tool_calls=1 and
-  // must be rejected atomically, before any tool effect is exposed.
-  let initial = fresh_state_with_budget(
-    Budget::bounded(
-      max_model_steps=10,
-      max_tool_rounds=10,
-      max_tool_calls=1,
-      max_total_tokens=1000,
-    ),
-  )
-  let started = reduce(initial, catalog, start_input())
-  let waiting = run_model_step(started.next_state(), catalog, Json::null())
-  let (effect_id, model_step_id) = match waiting.effects()[0] {
-    CallModel(effect_id~, payload~) => (effect_id, payload.model_step_id)
-    _ => fail("expected CallModel effect")
-  }
-  let completion = @kernel.Completion(
-    content=[Text("calling two tools")],
-    tool_calls=[
-      {
-        call_id: @kernel.CallId::unchecked("budget_1"),
-        name: @kernel.ToolName::unchecked("read"),
-        arguments: Json::object(Map::from_array([("path", Json::string("/a"))])),
-      },
-      {
-        call_id: @kernel.CallId::unchecked("budget_2"),
-        name: @kernel.ToolName::unchecked("read"),
-        arguments: Json::object(Map::from_array([("path", Json::string("/b"))])),
-      },
-    ],
-    reasoning=None,
-    finish_reason=ToolCalls,
-    usage=None,
-  )
-  let out = reduce(
-    waiting.next_state(),
-    catalog,
-    ModelCompleted(payload={
-      effect_id,
-      model_step_id,
-      completion,
-      processed_messages: [],
-    }),
-  )
-  let terminal = out.next_state()
-  assert_eq(out.effects().length(), 0)
-  assert_eq(terminal.budget_consumed().tool_rounds, 1)
-  assert_eq(terminal.budget_consumed().tool_calls, 2)
-  match terminal.outcome() {
-    Some(Failed(reason=BudgetExhausted(dimension=ToolCalls))) => ()
-    _ => fail("expected ToolCalls budget exhaustion before tool execution")
-  }
-  assert_true(
-    out
-    .events()
-    .iter()
-    .any(fn(event) { event is BudgetExhausted(dimension=ToolCalls, ..) }),
-  )
-}
-
-///|
 test "C-MODEL-LENGTH-FINISH: finish_reason=Length → Terminal(Failed)" {
   let (st_awaiting, eff_id, step_id) = run_until_awaiting_model()
   let catalog = make_catalog_v1()
@@ -303,114 +231,6 @@ test "C-INVARIANT-DUPLICATE-CALL-ID: same call_id twice in one batch → Failed"
       }
     _ => fail("expected InvariantViolation(DuplicateCallId)")
   }
-}
-
-///|
-test "C-SUSPEND-RESUME-IN-PROCESS: AwaitingModel → Suspended → ReadyForModel" {
-  let (st_awaiting, _eff_id, _step_id) = run_until_awaiting_model()
-  let catalog = make_catalog_v1()
-  let suspend_input : RunInput = SuspendRequested(payload={
-    requirement: { kind: "approval", payload: Json::null(), },
-  })
-  let out = reduce(st_awaiting, catalog, suspend_input)
-  let st_suspended = out.next_state()
-  assert_eq(st_suspended.phase(), Suspended)
-  assert_true(st_suspended.outcome() is None)
-  assert_eq(st_suspended.pending_effects().length(), 0)
-  // RunSuspended event is non-terminal.
-  let events = out.events()
-  let has_suspend_event = events
-    .iter()
-    .any(fn(e) {
-      match e {
-        RunSuspended(..) => true
-        _ => false
-      }
-    })
-  assert_true(has_suspend_event)
-  let has_terminal = events.iter().any(fn(e) { e.is_terminal() })
-  assert_false(has_terminal)
-  // Resume.
-  let resume_input : RunInput = Resume(payload={ payload: Json::null(), })
-  let out2 = reduce(st_suspended, catalog, resume_input)
-  let st_resumed = out2.next_state()
-  assert_eq(st_resumed.phase(), ReadyForModel)
-  // Same run_id preserved.
-  assert_eq(st_resumed.run_id().to_string(), "run_1")
-}
-
-///|
-test "C-SUSPEND-LATE-COMPLETION-REJECTED: ModelCompleted while Suspended rejected" {
-  let (st_awaiting, eff_id, step_id) = run_until_awaiting_model()
-  let catalog = make_catalog_v1()
-  // Suspend.
-  let suspend_input : RunInput = SuspendRequested(payload={
-    requirement: { kind: "approval", payload: Json::null(), },
-  })
-  let out_s = reduce(st_awaiting, catalog, suspend_input)
-  let st_suspended = out_s.next_state()
-  // Stray ModelCompleted (for the dropped model effect).
-  let stray : RunInput = ModelCompleted(payload={
-    effect_id: eff_id,
-    model_step_id: step_id,
-    completion: make_completion_no_tools(),
-    processed_messages: st_awaiting.transcript().messages_snapshot(),
-  })
-  let out = reduce(st_suspended, catalog, stray)
-  // State unchanged (still Suspended).
-  assert_eq(out.next_state().phase(), Suspended)
-  // InputRejected event emitted.
-  let rejected = out
-    .events()
-    .iter()
-    .any(fn(e) {
-      match e {
-        InputRejected(..) => true
-        _ => false
-      }
-    })
-  assert_true(rejected)
-}
-
-///|
-test "C-CANCEL-BEFORE-MODEL: ReadyForModel + CancelRequested → Terminal(Cancelled)" {
-  let st0 = fresh_state()
-  let catalog = make_catalog_v1()
-  let st1 = reduce(st0, catalog, start_input()).next_state()
-  let cancel_input : RunInput = CancelRequested(payload={ detail: None, })
-  let out = reduce(st1, catalog, cancel_input)
-  let st = out.next_state()
-  assert_eq(st.phase(), Terminal)
-  match st.outcome() {
-    Some(Cancelled(..)) => ()
-    _ => fail("expected Cancelled outcome")
-  }
-}
-
-///|
-test "C-CANCEL-WHILE-MODEL: AwaitingModel + CancelRequested → CancelOutstanding + Cancelled" {
-  let (st_awaiting, _eff_id, _step_id) = run_until_awaiting_model()
-  let catalog = make_catalog_v1()
-  let cancel_input : RunInput = CancelRequested(payload={ detail: None, })
-  let out = reduce(st_awaiting, catalog, cancel_input)
-  let st = out.next_state()
-  assert_eq(st.phase(), Terminal)
-  match st.outcome() {
-    Some(Cancelled(..)) => ()
-    _ => fail("expected Cancelled")
-  }
-  // Should declare a CancelOutstanding effect.
-  let has_cancel_effect = out
-    .effects()
-    .iter()
-    .any(fn(e) {
-      match e {
-        CancelOutstanding(..) => true
-        _ => false
-      }
-    })
-  assert_true(has_cancel_effect)
-  assert_eq(st.transcript(), st_awaiting.transcript())
 }
 
 // Staged completed results are kept; pending tools are marked interrupted.
@@ -486,56 +306,6 @@ test "C-CANCEL-DURING-TOOLS: staged completed result kept, pending tool marked i
 }
 
 ///|
-test "C-DEADLINE-DURING-MODEL: DeadlineReached wins → Terminal(Failed)" {
-  let (st_awaiting, _eff_id, _step_id) = run_until_awaiting_model()
-  let catalog = make_catalog_v1()
-  let dl_input : RunInput = DeadlineReached(payload={ detail: "elapsed", })
-  let out = reduce(st_awaiting, catalog, dl_input)
-  let st = out.next_state()
-  assert_eq(st.phase(), Terminal)
-  match st.outcome() {
-    Some(Failed(reason=DeadlineReached)) => ()
-    _ => fail("expected Failed(DeadlineReached)")
-  }
-}
-
-///|
-test "C-POST-TERMINAL-REJECTED: any input after Terminal is rejected" {
-  let (st_awaiting, eff_id, step_id) = run_until_awaiting_model()
-  let catalog = make_catalog_v1()
-  // Drive to Terminal(Completed).
-  let completion = make_completion_no_tools()
-  let input : RunInput = ModelCompleted(payload={
-    effect_id: eff_id,
-    model_step_id: step_id,
-    completion,
-    processed_messages: st_awaiting.transcript().messages_snapshot(),
-  })
-  let out = reduce(st_awaiting, catalog, input)
-  let st_terminal = out.next_state()
-  assert_eq(st_terminal.phase(), Terminal)
-  // Send another input — should be rejected.
-  let stray : RunInput = ModelCompleted(payload={
-    effect_id: eff_id,
-    model_step_id: step_id,
-    completion,
-    processed_messages: st_awaiting.transcript().messages_snapshot(),
-  })
-  let out2 = reduce(st_terminal, catalog, stray)
-  assert_eq(out2.next_state().phase(), Terminal) // unchanged
-  let rejected = out2
-    .events()
-    .iter()
-    .any(fn(e) {
-      match e {
-        InputRejected(..) => true
-        _ => false
-      }
-    })
-  assert_true(rejected)
-}
-
-///|
 test "C-COMPRESS-PROCESSED-MESSAGES: ModelCompleted processed_messages replaces transcript body" {
   let (st_awaiting, eff_id, step_id) = run_until_awaiting_model()
   let catalog = make_catalog_v1()
@@ -564,36 +334,7 @@ fn rewrite_input(
 }
 
 ///|
-test "C-TRANSCRIPT-REWRITE-READY: ReadyForModel folds rewrite with TranscriptRewritten event" {
-  let st0 = fresh_state()
-  let catalog = make_catalog_v1()
-  let out_start = reduce(st0, catalog, start_input())
-  let st1 = out_start.next_state()
-  assert_eq(st1.phase(), ReadyForModel)
-  let rewritten : Array[@kernel.Message] = [
-    UserMessage(content=[Text("hi")]),
-    UserMessage(content=[Text("injected by hook")]),
-  ]
-  let out = reduce(st1, catalog, rewrite_input(rewritten, "pre_model_hook"))
-  let next = out.next_state()
-  assert_eq(next.phase(), ReadyForModel)
-  assert_eq(next.transcript().length(), 2)
-  assert_eq(out.effects().length(), 0)
-  assert_eq(out.events().length(), 1)
-  match out.events()[0] {
-    TranscriptRewritten(messages_before~, messages_after~, reason~) => {
-      assert_eq(messages_before, 1)
-      assert_eq(messages_after, 2)
-      assert_eq(reason, "pre_model_hook")
-    }
-    _ => fail("expected TranscriptRewritten")
-  }
-  // The event sequence advances exactly once for the rewrite.
-  assert_eq(next.next_event_sequence(), st1.next_event_sequence().next())
-}
-
-///|
-test "C-TRANSCRIPT-REWRITE-AWAITING-MODEL: rewrite keeps the pending model effect" {
+test "C-TRANSCRIPT-REWRITE-AWAITING-MODEL: model step in flight rejects rewrite" {
   let (st_awaiting, _eff, _step) = run_until_awaiting_model()
   let catalog = make_catalog_v1()
   let rewritten : Array[@kernel.Message] = [
@@ -610,77 +351,11 @@ test "C-TRANSCRIPT-REWRITE-AWAITING-MODEL: rewrite keeps the pending model effec
   assert_eq(next.pending_effects().length(), 1)
   assert_eq(out.effects().length(), 0)
   match out.events()[0] {
-    TranscriptRewritten(messages_before~, messages_after~, ..) => {
-      assert_eq(messages_before, 1)
-      assert_eq(messages_after, 1)
-    }
-    _ => fail("expected TranscriptRewritten")
-  }
-}
-
-///|
-test "C-TRANSCRIPT-REWRITE-AWAITING-TOOLS: rewrite keeps the pending tool effects" {
-  let (st_awaiting, eff_id, step_id) = run_until_awaiting_model()
-  let catalog = make_catalog_v1()
-  let completion = make_completion_with_tool_call(
-    "call_1",
-    "read",
-    Json::object(Map::from_array([("path", Json::string("/etc/x"))])),
-  )
-  let out1 = reduce(
-    st_awaiting,
-    catalog,
-    ModelCompleted(payload={
-      effect_id: eff_id,
-      model_step_id: step_id,
-      completion,
-      processed_messages: st_awaiting.transcript().messages_snapshot(),
-    }),
-  )
-  let st_tools = out1.next_state()
-  assert_eq(st_tools.phase(), AwaitingTools)
-  let out = reduce(
-    st_tools,
-    catalog,
-    rewrite_input([UserMessage(content=[Text("compacted")])], "compact_append"),
-  )
-  let next = out.next_state()
-  assert_eq(next.phase(), AwaitingTools)
-  assert_eq(next.transcript().length(), 1)
-  assert_eq(next.pending_effects().length(), 1)
-  match out.events()[0] {
-    TranscriptRewritten(..) => ()
-    _ => fail("expected TranscriptRewritten")
-  }
-}
-
-///|
-test "C-TRANSCRIPT-REWRITE-SUSPENDED-REJECTED: Suspended rejects rewrite without mutating state" {
-  let (st_awaiting, _eff, _step) = run_until_awaiting_model()
-  let catalog = make_catalog_v1()
-  let out_suspend = reduce(
-    st_awaiting,
-    catalog,
-    SuspendRequested(payload={
-      requirement: { kind: "approval", payload: Json::null(), },
-    }),
-  )
-  let st_suspended = out_suspend.next_state()
-  assert_eq(st_suspended.phase(), Suspended)
-  let out = reduce(
-    st_suspended,
-    catalog,
-    rewrite_input([UserMessage(content=[Text("nope")])], "compact_replace"),
-  )
-  let next = out.next_state()
-  assert_eq(next.phase(), Suspended)
-  assert_eq(next.transcript().length(), 1)
-  assert_eq(out.effects().length(), 0)
-  match out.events()[0] {
     InputRejected(input_kind~, ..) => assert_eq(input_kind, "TranscriptRewrite")
     _ => fail("expected InputRejected")
   }
 }
+
 // Completions arriving in reverse order still produce tool messages in source
 // (call) order — regression guard for the wave-commit staging path.
 

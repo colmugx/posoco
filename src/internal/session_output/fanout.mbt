@@ -1,9 +1,4 @@
 ///|
-/// Multi-store session output execution: the write-all and append-safe
-/// checkpoint waves. These are pure IO mechanics — every store receives its own
-/// deep snapshot, all stores are dispatched, and the first failure in port
-/// order is reported. Operation selection, cursor/dirty accounting and event
-/// ordering stay with the caller.
 
 ///|
 pub fn contextualize_session_error(
@@ -31,10 +26,6 @@ pub fn contextualize_session_error(
 }
 
 ///|
-/// Contextualize a generic `Error` raised by a parallel session-save wave as a
-/// `SessionError::Save`. The thunks themselves return `Result[Unit,
-/// SessionError]`, so this path only handles async-runtime/cancellation errors
-/// that escape `@async.all` itself.
 fn save_error_context(
   error : Error,
   session_id : String,
@@ -47,8 +38,6 @@ fn save_error_context(
 ///|
 /// Save one session body to every configured store (write-all). Each store
 /// receives its own deep snapshot so a misbehaving store cannot mutate
-/// another store's payload; `operation` labels both error contexts verbatim.
-/// An empty store list dispatches nothing and succeeds.
 pub async fn save_all(
   stores : Array[&@port.SessionPort],
   session_id : String,
@@ -83,8 +72,6 @@ pub async fn save_all(
 ///|
 /// Commit one append-safe session boundary to every configured store. Each
 /// store receives its own snapshot of the tail and of the metadata
-/// replacement; `operation` labels both error contexts verbatim. Cursor
-/// accounting belongs to the caller and only happens after this returns.
 pub async fn checkpoint_all(
   stores : Array[&@port.SessionPort],
   session_id : String,

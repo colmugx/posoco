@@ -1,10 +1,4 @@
 ///|
-/// RunInput — facts the outside world has observed (ADR §2.1, §2.5, §2.6,
-/// §2.9).
-///
-/// The reducer is the single arbiter: given a RunState and a RunInput, the
-/// next state, declared effects and emitted events are deterministic. The
-/// reducer never reads a clock; deadlines and budgets arrive as inputs.
 
 ///|
 /// The initial input that drives a Run out of `Initializing`. Carries the
@@ -95,7 +89,6 @@ pub extend ToolFailedPayload with Eq::{not_equal, equal}
 pub extend ToolFailedPayload with Debug::{to_repr}
 
 ///|
-/// Host or adapter requested cancellation. ADR §2.5 race rules apply.
 #derive(Eq, Debug)
 pub(all) struct CancelRequestedPayload {
   detail : String?
@@ -166,10 +159,6 @@ pub extend ResumePayload with Debug::{to_repr}
 ///|
 /// Host-side transcript rewrite (pre-model hook chain, compact Replace).
 /// The reducer is the sole transcript writer: pumps never mutate the
-/// transcript directly, they submit the rewritten messages as this input and
-/// the reducer commits them with a `TranscriptRewritten` event so the journal
-/// records the fact. `reason` identifies the producer; current producers are
-/// "pre_model_hook", "compact_replace" and "compact_append".
 #derive(Eq, Debug)
 pub(all) struct TranscriptRewritePayload {
   rewritten_messages : Array[@kernel.Message]
@@ -229,9 +218,6 @@ pub extend RunInput with Eq::{not_equal, equal}
 pub extend RunInput with Debug::{to_repr}
 
 ///|
-/// Stable string label for the input kind. Used by `InputRejected` events
-/// and by debug/conformance output. The string form is part of the contract
-/// (replay-equal), so it must not drift.
 fn RunInput::kind(self : RunInput) -> String {
   match self {
     Start(..) => "Start"

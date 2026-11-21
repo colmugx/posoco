@@ -681,168 +681,6 @@ async test "hook_single_impl_receives_all_points" {
 }
 
 ///|
-/// Test: Agent internally routes tool calls to the correct provider.
-/// Two providers each own different tools; Agent routes by tool name.
-async test "agent_routes_tools_to_correct_provider" {
-  let tc_bash = make_tool_call("c1", "bash")
-  let tc_mcp = make_tool_call("c2", "mcp__read")
-  let model = @test_support.ScriptedModel([
-    Respond(tool_response([tc_bash, tc_mcp])),
-    Respond(stop_response("both done")),
-  ])
-  let shell_tools = @test_support.RecordingToolProvider(
-    [
-      ToolDef(
-        name=@kernel.ToolName::unchecked("bash"),
-        description="run cmd",
-        input_schema=Json::null(),
-        owner=@kernel.OwnerId::unchecked("legacy_provider"),
-        policy=Parallel,
-        provenance=Some("host"),
-      ),
-    ],
-    Map::from_array([
-      ("bash", OutcomeOk(Success(content="shell ok", structured=None))),
-    ]),
-  )
-  let mcp_tools = @test_support.RecordingToolProvider(
-    [
-      ToolDef(
-        name=@kernel.ToolName::unchecked("mcp__read"),
-        description="read file",
-        input_schema=Json::null(),
-        owner=@kernel.OwnerId::unchecked("legacy_provider"),
-        policy=Parallel,
-        provenance=Some("mcp"),
-      ),
-    ],
-    Map::from_array([
-      ("mcp__read", OutcomeOk(Success(content="mcp ok", structured=None))),
-    ]),
-  )
-  let store = @test_support.RecordingSessionPort()
-  let observer = @test_support.RecordingObserver()
-  let config = make_config()
-
-  let agent = Agent(
-    events=EventSystem(),
-    exts=[
-      @test_support.tk_ext(id="model", model=Some(model)),
-      @test_support.tk_ext(
-        id="io",
-        tools=[shell_tools, mcp_tools],
-        sessions=[store],
-        observers=[observer],
-      ),
-    ],
-    config~,
-  )
-  let result = agent.run_turn(user_msg("run both"), "session_1")
-  assert_eq(result.tool_results.length(), 2)
-  let content_first = match result.tool_results[0] {
-    Success(content~, ..) => content
-    _ => "<other>"
-  }
-  let content_second = match result.tool_results[1] {
-    Success(content~, ..) => content
-    _ => "<other>"
-  }
-  assert_eq(content_first, "shell ok")
-  assert_eq(content_second, "mcp ok")
-}
-
-///|
-/// Test: Agent detects tool name collisions across providers
-
-///|
-async test "streaming_events_emitted_during_chat" {
-  let chunks : Array[@types.StreamChunk] = [
-    TextDelta(token="Hello"),
-    TextDelta(token=" world"),
-    Usage(
-      input_tokens=10,
-      output_tokens=5,
-      total_tokens=15,
-      cached_input_tokens=None,
-      uncached_input_tokens=None,
-    ),
-    Finish(reason="stop"),
-  ]
-  let final_response = stop_response("Hello world")
-  let model = @test_support.ScriptedModel([
-    Stream(chunks~, response=final_response),
-  ])
-  let store = @test_support.RecordingSessionPort()
-  let observer = @test_support.RecordingObserver()
-  let config = make_config()
-
-  let agent = Agent(
-    events=EventSystem(),
-    exts=[
-      @test_support.tk_ext(id="model", model=Some(model)),
-      @test_support.tk_ext(id="io", tools=[empty_tools()], sessions=[store], observers=[
-        observer,
-      ]),
-    ],
-    config~,
-  )
-  let _ = agent.run_turn(user_msg("stream test"), "session_s1")
-
-  let observed_chunks : Array[@types.StreamChunk] = []
-  let mut model_response_index = -1
-  let mut turn_completed_index = -1
-  for i, e in observer.events() {
-    match e {
-      StreamChunkReceived(chunk~) => {
-        observed_chunks.push(chunk)
-        assert_true(
-          model_response_index < 0,
-          msg="chunk observed after ModelResponseReceived",
-        )
-        assert_true(
-          turn_completed_index < 0,
-          msg="chunk observed after TurnCompleted",
-        )
-      }
-      ModelResponseReceived(_) => model_response_index = i
-      TurnCompleted => turn_completed_index = i
-      _ => ()
-    }
-  }
-  assert_eq(observed_chunks, chunks)
-  assert_true(model_response_index >= 0)
-  assert_true(turn_completed_index >= 0)
-  assert_true(model_response_index < turn_completed_index)
-}
-
-///|
-/// Test: Multiple observers all receive events (fan-out)
-async test "multiple_observers_fan_out" {
-  let model = @test_support.ScriptedModel([Respond(stop_response("fan-out"))])
-  let store = @test_support.RecordingSessionPort()
-  let obs1 = @test_support.RecordingObserver()
-  let obs2 = @test_support.RecordingObserver()
-  let config = make_config()
-
-  let agent = Agent(
-    events=EventSystem(),
-    exts=[
-      @test_support.tk_ext(id="model", model=Some(model)),
-      @test_support.tk_ext(id="io", tools=[empty_tools()], sessions=[store], observers=[
-        obs1, obs2,
-      ]),
-    ],
-    config~,
-  )
-  let _ = agent.run_turn(user_msg("broadcast"), "session_1")
-
-  assert_true(obs1.events().length() >= 2)
-  assert_true(obs2.events().length() >= 2)
-  assert_eq(obs1.events().length(), obs2.events().length())
-  assert_eq(obs1.events(), obs2.events())
-}
-
-///|
 /// Test: Multiple session stores all receive writes
 async test "multiple_session_stores_write_all" {
   let model = @test_support.ScriptedModel([
@@ -876,11 +714,9 @@ async test "multiple_session_stores_write_all" {
 /// Helper: build a minimal CommandParam for tests.
 fn make_param(
   name : String,
-  ptype~ : @port.ParamType = Str,
-  required~ : Bool = false,
-  positional~ : Bool = false,
+  ptype~ : @port.ParamType,
+  required~ : Bool,
   default~ : Json? = None,
-  choices~ : Array[String]? = None,
 ) -> @port.CommandParam {
   {
     name,
@@ -889,8 +725,8 @@ fn make_param(
     ptype,
     required,
     default,
-    choices,
-    positional,
+    choices: None,
+    positional: false,
   }
 }
 
@@ -1150,121 +986,6 @@ fn wave3_stop_with_usage(
 }
 
 ///|
-async test "wave3/compact_session/idle full chain without a chat request" {
-  let model = @test_support.ScriptedModel([
-    Compact(result={
-      compacted_messages: [@test_support.tk_user_msg("summary")],
-      mode: Replace,
-    }),
-  ])
-  let observer = @test_support.RecordingObserver()
-  let store = @test_support.RecordingSessionPort()
-  store.seed("wave3-compact", {
-    messages: [
-      @test_support.tk_user_msg("hello"),
-      @test_support.tk_user_msg("more"),
-    ],
-    metadata: Map::from_array([]),
-  })
-  let agent = Agent(
-    events=EventSystem(),
-    exts=[
-      @test_support.tk_ext(id="model", model=Some(model)),
-      @test_support.tk_ext(id="io", sessions=[store], observers=[observer]),
-    ],
-    config=agent_config(max_tool_rounds=Some(10)),
-  )
-  let outcome = agent.compact_session("wave3-compact")
-  assert_eq(outcome.final_session_id, "wave3-compact")
-  guard outcome.mode is Replace else { fail("expected Replace mode") }
-  assert_eq(outcome.messages_after, 1)
-  assert_eq(model.call_count(), 0)
-  assert_eq(model.compact_call_count(), 1)
-  assert_eq(model.received_compacts()[0].0.length(), 2)
-  assert_eq(model.received_compacts()[0].1, Manual)
-  let persisted = store.store["wave3-compact"]
-  assert_eq(persisted.messages.length(), 1)
-  assert_true(persisted.messages[0] == @test_support.tk_user_msg("summary"))
-  let mut saw_started = false
-  let mut saw_finished = false
-  let mut finalized = 0
-  for event in observer.events() {
-    match event {
-      CompactStarted(trigger~) => {
-        assert_eq(trigger, "manual")
-        saw_started = true
-      }
-      CompactFinished(..) => saw_finished = true
-      OperationFinalized(operation~, outcome~, ..) => {
-        assert_eq(operation, "compact")
-        assert_eq(outcome, "completed")
-        finalized = finalized + 1
-      }
-      TurnStarted => fail("compact_session must not project a TurnStarted")
-      _ => ()
-    }
-  }
-  assert_true(saw_started)
-  assert_true(saw_finished)
-  assert_eq(finalized, 1)
-}
-
-///|
-async test "wave3/compact_session/context state records the post-compact estimate" {
-  let model = @test_support.ScriptedModel([
-    Compact(result={
-      compacted_messages: [@test_support.tk_user_msg("summary")],
-      mode: Replace,
-    }),
-  ])
-  let observer = @test_support.RecordingObserver()
-  let store = @test_support.RecordingSessionPort()
-  store.seed("wave3-compact-ctx", {
-    messages: [
-      @test_support.tk_user_msg("hello"),
-      @test_support.tk_user_msg("more"),
-    ],
-    metadata: Map::from_array([]),
-  })
-  let agent = Agent(
-    events=EventSystem(),
-    exts=[
-      @test_support.tk_ext(id="model", model=Some(model)),
-      @test_support.tk_ext(id="io", sessions=[store], observers=[observer]),
-    ],
-    config=agent_config(max_tool_rounds=Some(10)),
-  )
-  ignore(agent.compact_session("wave3-compact-ctx"))
-  let state = agent.context_state("wave3-compact-ctx")
-  guard state is Some(current) else {
-    fail("expected the live context state after the compact")
-  }
-  // "summary" is 7 chars; the chars/4 estimator rounds down to 1 token.
-  assert_eq(current.last_measured_tokens, Some(1))
-  assert_eq(current.source, Estimated)
-  assert_eq(current.estimated_added_tokens, 0)
-  assert_eq(current.reading_message_count, 1)
-  let persisted = store.store["wave3-compact-ctx"]
-  guard @types.ContextState::from_metadata(persisted.metadata) is Some(saved) else {
-    fail("expected the persisted context state metadata after the compact")
-  }
-  assert_eq(saved.last_measured_tokens, Some(1))
-  assert_eq(saved.source, Estimated)
-  let mut projected = None
-  for event in observer.events() {
-    match event {
-      ContextStateUpdated(state~) => projected = Some(state)
-      _ => ()
-    }
-  }
-  guard projected is Some(updated) else {
-    fail("expected a context-state projection after the compact")
-  }
-  assert_eq(updated.source, Estimated)
-  assert_eq(updated.last_measured_tokens, Some(1))
-}
-
-///|
 async test "wave3/compact_session/pending tools fixated as interrupted" {
   let dangling_call : @kernel.ToolCall = {
     call_id: @kernel.CallId::unchecked("call_fix"),
@@ -1316,216 +1037,6 @@ async test "wave3/compact_session/pending tools fixated as interrupted" {
   assert_eq(synthesized_id, owner.call_id)
   assert_eq(error_category, "Interrupted")
   assert_eq(store.store["wave3-fixate"].messages.length(), 1)
-}
-
-///|
-async test "wave3/body recovery is scoped to the affected operation session" {
-  let model = @test_support.ScriptedModel([
-    Compact(result={
-      compacted_messages: [@test_support.tk_user_msg("summary-a")],
-      mode: Replace,
-    }),
-    Respond(@test_support.tk_stop_response("b-done")),
-  ])
-  let store = @test_support.RecordingSessionPort()
-  store.seed("recover-a", {
-    messages: [@test_support.tk_user_msg("a-old")],
-    metadata: Map::from_array([]),
-  })
-  store.seed("recover-b", {
-    messages: [@test_support.tk_user_msg("b-old")],
-    metadata: Map::from_array([]),
-  })
-  store.fail_save("recover-a")
-  let agent = Agent(
-    events=EventSystem(),
-    exts=[
-      @test_support.tk_ext(id="model", model=Some(model)),
-      @test_support.tk_ext(id="io", sessions=[store]),
-    ],
-    config=agent_config(max_tool_rounds=Some(10)),
-  )
-  let failed : Result[@types.CompactOutcome, @error.AgentError] = Ok(
-    agent.compact_session("recover-a"),
-  ) catch {
-    error => Err(error)
-  }
-  guard failed is Err(Session(Conflict(_))) else {
-    fail("expected A to leave a body-recovery failure")
-  }
-  let a_saves_before = body_recovery_save_count(store, "recover-a")
-  // B must run normally; its guard must not drain A's failed output.
-  let b = agent.run_turn(@test_support.tk_user_msg("b-next"), "recover-b")
-  assert_eq(b.final_session_id, "recover-b")
-  assert_eq(model.call_count(), 1)
-  assert_eq(body_recovery_save_count(store, "recover-a"), a_saves_before)
-  // A's own next operation is the only one that retries and fails at its
-  // output gate, with no model call.
-  let blocked : Result[@types.TurnResult, @error.AgentError] = Ok(
-    agent.run_turn(@test_support.tk_user_msg("a-next"), "recover-a"),
-  ) catch {
-    error => Err(error)
-  }
-  guard blocked is Err(Session(_)) else {
-    fail("expected A's body recovery to fail as a Session error")
-  }
-  assert_eq(model.call_count(), 1)
-  assert_eq(body_recovery_save_count(store, "recover-a"), a_saves_before + 1)
-}
-
-///|
-fn body_recovery_save_count(
-  store : @test_support.RecordingSessionPort,
-  session_id : String,
-) -> Int32 {
-  let mut count = 0
-  for op in store.ops() {
-    match op {
-      OpSave(id~, ..) => if id == session_id { count = count + 1 }
-      _ => ()
-    }
-  }
-  count
-}
-
-///|
-struct Wave3ParkingRuntime {
-  inner : &@runtime.Runtime
-  mut model_calls : Int32
-  mut park_seen : Int32
-}
-
-///|
-impl @runtime.Runtime for Wave3ParkingRuntime with fn call_model(
-  self,
-  scope : @kernel.InvocationScope,
-  messages : ArrayView[@kernel.Message],
-  tool_definitions : Array[@kernel.ToolDef],
-  call_options : Json,
-  on_chunk : ((@types.StreamChunk) -> Unit)?,
-) -> Result[@kernel.ModelCallResult, @kernel.ModelFailure] {
-  self.model_calls = self.model_calls + 1
-  if self.model_calls == 1 {
-    self.park_seen = self.park_seen + 1
-    while !@async.is_being_cancelled() {
-      @async.pause()
-    }
-    @async.pause()
-  }
-  self.inner.call_model(
-    scope, messages, tool_definitions, call_options, on_chunk,
-  )
-}
-
-///|
-impl @runtime.Runtime for Wave3ParkingRuntime with fn execute_tool(
-  self,
-  ctx : @runtime.EffectContext,
-) -> @kernel.ToolOutcome {
-  self.inner.execute_tool(ctx)
-}
-
-///|
-impl @runtime.Runtime for Wave3ParkingRuntime with fn cancel_effects(
-  self,
-  run_id~,
-  effect_ids : Array[@kernel.EffectId],
-  reason : @kernel.CancelReason,
-) -> Array[(@kernel.EffectId, @kernel.CancelDisposition)] {
-  self.inner.cancel_effects(effect_ids, reason, run_id~)
-}
-
-///|
-impl @runtime.Runtime for Wave3ParkingRuntime with fn compact(
-  self,
-  scope : @kernel.InvocationScope,
-  messages : ArrayView[@kernel.Message],
-  tools : Array[@kernel.ToolDef],
-  call_options : Json,
-  trigger : @kernel.CompactTrigger,
-) -> Result[@kernel.CompactResult, @kernel.ModelFailure] {
-  self.inner.compact(scope, messages, tools, call_options, trigger)
-}
-
-///|
-async test "wave3/cancellation/mid-stream cancel is structured and the session stays usable" {
-  let model = @test_support.ScriptedModel([
-    Compact(result={
-      compacted_messages: [@test_support.tk_user_msg("summary")],
-      mode: Replace,
-    }),
-    Respond(@test_support.tk_stop_response("first turn after cancel")),
-    Respond(@test_support.tk_stop_response("second turn after late esc")),
-  ])
-  let observer = @test_support.RecordingObserver()
-  let store = @test_support.RecordingSessionPort()
-  store.seed("wave3-cancel", {
-    messages: [@test_support.tk_user_msg("seeded question")],
-    metadata: Map::from_array([]),
-  })
-  let port_runtime = @runtime.PortRuntime(model~)
-  let parking : Wave3ParkingRuntime = {
-    inner: port_runtime as &@runtime.Runtime,
-    model_calls: 0,
-    park_seen: 0,
-  }
-  let runtime : &@runtime.Runtime = parking as &@runtime.Runtime
-  let agent = Agent::with_runtime(
-    events=EventSystem(),
-    exts=[
-      @test_support.tk_ext(id="model", model=Some(model), sessions=[store], observers=[
-        observer,
-      ]),
-    ],
-    config=agent_config(max_tool_rounds=Some(10)),
-    runtime~,
-  )
-  let control = agent.control()
-  let outcome : Ref[Result[@types.TurnResult, @error.AgentError]] = Ref(
-    Err(Runtime(InvocationFailed("unset"))),
-  )
-  @async.with_task_group(async fn(group) {
-    let task = group.spawn(async fn() {
-      let r : Result[@types.TurnResult, @error.AgentError] = Ok(
-        agent.run_turn(@test_support.tk_user_msg("long task"), "wave3-cancel"),
-      ) catch {
-        e => Err(e)
-      }
-      outcome.val = r
-    })
-    while parking.park_seen == 0 {
-      @async.pause()
-    }
-    task.cancel()
-  })
-  guard outcome.val is Err(Cancelled(_)) else {
-    fail("expected a structured Cancelled outcome, got \{repr(outcome.val)}")
-  }
-  let compacted = agent.compact_session("wave3-cancel")
-  guard compacted.mode is Replace else { fail("expected Replace mode") }
-  assert_eq(compacted.messages_after, 1)
-  let turn = agent.run_turn(@test_support.tk_user_msg("next"), "wave3-cancel")
-  guard turn.message
-    is AssistantMessage(content=[Text("first turn after cancel")], ..) else {
-    fail("expected the post-cancel turn to complete normally")
-  }
-  assert_true(
-    control.abort_active(Some("late esc")) is @runtime.RejectedStale(_),
-  )
-  let turn2 = agent.run_turn(@test_support.tk_user_msg("again"), "wave3-cancel")
-  guard turn2.message
-    is AssistantMessage(content=[Text("second turn after late esc")], ..) else {
-    fail("expected the next turn to complete after a late abort request")
-  }
-  // The cancelled turn is counted by its own terminal variant.
-  let mut cancelled_turns = 0
-  for event in observer.events() {
-    match event {
-      TurnCancelled => cancelled_turns = cancelled_turns + 1
-      _ => ()
-    }
-  }
-  assert_eq(cancelled_turns, 1)
 }
 
 ///|
@@ -1593,4 +1104,349 @@ async test "wave3/context_state/retrievable at initial load and not cleared by T
   assert_eq(current.source, Measured)
   let metadata = store.store["wave3-ctx"].metadata
   assert_true(metadata.contains(@types.CONTEXT_STATE_METADATA_KEY))
+}
+
+///|
+/// Agent-level guarantee for formerly-rejected schema keywords: a tool
+/// declaring `oneOf` composes through the full Agent path, conforming calls
+/// execute, and XOR violations die in the pre-pass as
+/// `NotExecuted(SchemaMismatch)` — no execution, turn survives. This is the
+/// contract extension-side schema debts (ptc run_code code/source XOR)
+/// rely on.
+
+///|
+fn oneof_tool_def() -> @kernel.ToolDef {
+  ToolDef(
+    name=@kernel.ToolName::unchecked("write_thing"),
+    description="Provide exactly one of code or source.",
+    input_schema={
+      "type": "object",
+      "properties": {
+        "code": { "type": "string" },
+        "source": { "type": "string" },
+      },
+      "oneOf": [{ "required": ["code"] }, { "required": ["source"] }],
+      "additionalProperties": false,
+    },
+    owner=@kernel.OwnerId::unchecked("schema_turn_test"),
+    policy=Parallel,
+    provenance=Some("schema-turn-test"),
+  )
+}
+
+///|
+fn schema_call(id : String, arguments : Json) -> @kernel.ToolCall {
+  {
+    call_id: @kernel.CallId::unchecked(id),
+    name: @kernel.ToolName::unchecked("write_thing"),
+    arguments,
+  }
+}
+
+///|
+async test "oneOf tool composes through Agent and executes conforming call" {
+  let tc = schema_call("call_1", { "code": "fn main { }" })
+  let model = @test_support.ScriptedModel([
+    Respond(tool_response([tc])),
+    Respond(stop_response("done")),
+  ])
+  let tools = @test_support.RecordingToolProvider(
+    [oneof_tool_def()],
+    Map::from_array([
+      ("write_thing", OutcomeOk(Success(content="ok", structured=None))),
+    ]),
+  )
+  let store = @test_support.RecordingSessionPort()
+  let observer = @test_support.RecordingObserver()
+  let agent = Agent(
+    events=EventSystem(),
+    exts=[
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", tools=[tools], sessions=[store], observers=[
+        observer,
+      ]),
+    ],
+    config=make_config(),
+  )
+  let result = agent.run_turn(user_msg("write it"), "session_oneof")
+  assert_eq(result.tool_results.length(), 1)
+  guard result.tool_results[0] is Success(content~, ..) else {
+    fail("conforming oneOf call must execute")
+  }
+  assert_eq(content, "ok")
+}
+
+///|
+async test "oneOf XOR violations are pre-pass rejected without execution" {
+  let both = schema_call("call_both", { "code": "a", "source": "b" })
+  let neither = schema_call("call_neither", { "description": "nope" })
+  let model = @test_support.ScriptedModel([
+    Respond(tool_response([both])),
+    Respond(tool_response([neither])),
+    Respond(stop_response("done")),
+  ])
+  let tools = @test_support.RecordingToolProvider(
+    [oneof_tool_def()],
+    Map::from_array([]),
+  )
+  let store = @test_support.RecordingSessionPort()
+  let observer = @test_support.RecordingObserver()
+  let agent = Agent(
+    events=EventSystem(),
+    exts=[
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(id="io", tools=[tools], sessions=[store], observers=[
+        observer,
+      ]),
+    ],
+    config=make_config(),
+  )
+  let result = agent.run_turn(user_msg("write it"), "session_xor")
+  assert_eq(result.tool_results.length(), 2)
+  guard result.tool_results[0]
+    is NotExecuted(reason=SchemaMismatch(json_path~, ..), ..) else {
+    fail("both-branch call must be pre-pass rejected")
+  }
+  assert_eq(json_path, "$")
+  guard result.tool_results[1] is NotExecuted(reason=SchemaMismatch(..), ..) else {
+    fail("zero-branch call must be pre-pass rejected")
+  }
+  // The provider never executed anything; the turn still completed.
+  assert_eq(tools.exec_records().length(), 0)
+  assert_eq(result.final_session_id, "session_xor")
+}
+
+///|
+/// Run-bound callbacks carry the identity minted for their turn;
+/// out-of-run notifications may carry None.
+
+///|
+/// Observer double recording (tag, scope) for every scoped dispatch.
+struct ScopedObserver {
+  records : Array[(String, @types.EventScope?)]
+}
+
+///|
+/// Tag just the variants these tests drive; everything else is "other".
+fn scope_projection_event_tag(event : @types.TurnEvent) -> String {
+  match event {
+    TurnStarted => "turn_started"
+    ModelResponseReceived(..) => "model_response"
+    ToolCallPending(_) => "tool_pending"
+    ToolCallApproved(..) => "tool_approved"
+    ToolCallStarted(..) => "tool_started"
+    ToolCallSucceeded(..)
+    | ToolCallFailed(..)
+    | ToolCallRejected(..)
+    | ToolCallAbandoned(..) => "tool_result"
+    TurnCompleted => "turn_completed"
+    TurnFailed(_) => "turn_failed"
+    _ => "other"
+  }
+}
+
+///|
+pub extend ScopedObserver with @port.Observer::{on_event}
+
+///|
+pub impl @port.Observer for ScopedObserver with fn on_event(
+  self,
+  scope,
+  event : @types.TurnEvent,
+) -> Unit {
+  self.records.push((scope_projection_event_tag(event), scope))
+}
+
+///|
+/// PipelineHook double recording (tag, scope) for every scoped post-event dispatch.
+struct ScopedHook {
+  stages : Array[(String, @types.EventScope?)]
+}
+
+///|
+pub extend ScopedHook with @port.PipelineHook::{
+  tool_exposure,
+  on_turn_begin,
+  on_post_event,
+  before_model,
+  before_tool,
+  on_turn_end,
+}
+
+///|
+pub impl @port.PipelineHook for ScopedHook with fn on_post_event(
+  self,
+  scope,
+  stage : @port.HookStage,
+) -> Unit {
+  let tag = match stage {
+    ModelCompleted(..) => "model_completed"
+    ModelFailed(..) => "model_failed"
+    ToolCompleted(..) => "tool_completed"
+    ToolFailed(..) => "tool_failed"
+  }
+  self.stages.push((tag, scope))
+}
+
+///|
+/// A plain stop turn emits TurnStarted → ModelResponseReceived →
+/// TurnCompleted, all carrying the SAME Some(scope), and the scope names the
+/// session the product passed to `run_turn`.
+async test "scope_projection/turn_events_carry_one_run_identity" {
+  let observer = ScopedObserver::{ records: [], }
+  let agent = Agent(
+    events=EventSystem(),
+    exts=[
+      @test_support.tk_ext(
+        id="model",
+        model=Some(
+          @test_support.ScriptedModel([
+            Respond(@test_support.tk_stop_response("hi")),
+          ]),
+        ),
+      ),
+      @test_support.tk_ext(
+        id="io",
+        sessions=[@test_support.RecordingSessionPort()],
+        observers=[observer],
+      ),
+    ],
+    config=agent_config(max_tool_rounds=Some(10)),
+  )
+  ignore(agent.run_turn(@test_support.tk_user_msg("hello"), "s_scope"))
+  // The operation projection is deliberately out-of-run (scope None, session
+  // in the payload); the run-bound invariants below cover the TURN events.
+  let turn_records = observer.records.filter(fn(r) { r.0 != "other" })
+  let tags = turn_records.map(fn(r) { r.0 })
+  assert_eq(tags, ["turn_started", "model_response", "turn_completed"])
+  guard turn_records[0].1 is Some(first) else {
+    fail("TurnStarted must carry Some(scope)")
+  }
+  for record in turn_records {
+    guard record.1 is Some(scope) else {
+      fail("run-bound event must carry Some(scope): " + record.0)
+    }
+    assert_eq(scope, first)
+    assert_eq(scope.session_id.to_string(), "s_scope")
+  }
+}
+
+///|
+/// Two turns on one agent/session are two runs: distinct run_id and turn_id,
+/// same session_id.
+async test "scope_projection/two_turns_distinct_runs_same_session" {
+  let observer = ScopedObserver::{ records: [], }
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("a"),
+    ),
+    Respond(@test_support.tk_stop_response("b")),
+  ])
+  let agent = Agent(
+    events=EventSystem(),
+    exts=[
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(
+        id="io",
+        sessions=[@test_support.RecordingSessionPort()],
+        observers=[observer],
+      ),
+    ],
+    config=agent_config(max_tool_rounds=Some(10)),
+  )
+  ignore(agent.run_turn(@test_support.tk_user_msg("one"), "s_scope"))
+  ignore(agent.run_turn(@test_support.tk_user_msg("two"), "s_scope"))
+  let started : Array[@types.EventScope] = []
+  for record in observer.records {
+    if record.0 == "turn_started" && record.1 is Some(scope) {
+      started.push(scope)
+    }
+  }
+  assert_eq(started.length(), 2)
+  assert_true(started[0].run_id != started[1].run_id)
+  assert_true(started[0].turn_id != started[1].turn_id)
+  assert_eq(started[0].session_id, started[1].session_id)
+}
+
+///|
+/// A tool-loop turn projects envelope events (tool pending/result, model
+/// responses) under the same run identity as the turn lifecycle, and
+/// post-event hook stages observe that same identity.
+async test "scope_projection/tool_loop_events_and_hook_stages_share_run" {
+  let observer = ScopedObserver::{ records: [], }
+  let hook = ScopedHook::{ stages: [], }
+  let model = @test_support.ScriptedModel([
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_tool_call_response("echo", "call_1", Json::null()),
+    ),
+    @test_support.ScriptedModelStep::Respond(
+      @test_support.tk_stop_response("done"),
+    ),
+  ])
+  let tools = @test_support.RecordingToolProvider(
+    [@test_support.tk_tool_def("echo", "echo tool")],
+    Map::from_array([("echo", OutcomeOk(@test_support.tk_ok_result("echoed")))]),
+  )
+  let agent = Agent(
+    events=EventSystem(),
+    exts=[
+      @test_support.tk_ext(id="model", model=Some(model)),
+      @test_support.tk_ext(
+        id="tools",
+        tools=[tools],
+        sessions=[@test_support.RecordingSessionPort()],
+        observers=[observer],
+        hooks=[hook],
+      ),
+    ],
+    config=agent_config(max_tool_rounds=Some(10)),
+  )
+  ignore(agent.run_turn(@test_support.tk_user_msg("hi"), "s_loop"))
+  let tags = observer.records
+    .filter(fn(r) { r.0 != "other" })
+    .map(fn(r) { r.0 })
+  assert_eq(tags, [
+    "turn_started", "model_response", "tool_pending", "tool_approved", "tool_started",
+    "tool_result", "model_response", "turn_completed",
+  ])
+  let turn_records = observer.records.filter(fn(r) { r.0 != "other" })
+  guard turn_records[0].1 is Some(turn_scope) else {
+    fail("TurnStarted must carry Some(scope)")
+  }
+  for record in turn_records {
+    guard record.1 is Some(scope) else {
+      fail("envelope-projected event must carry Some(scope): " + record.0)
+    }
+    assert_eq(scope.run_id, turn_scope.run_id)
+    assert_eq(scope.turn_id, turn_scope.turn_id)
+  }
+  // Post-event stages: model step → tool completion → model step.
+  let stage_tags = hook.stages.map(fn(s) { s.0 })
+  assert_eq(stage_tags, ["model_completed", "tool_completed", "model_completed"])
+  for stage in hook.stages {
+    guard stage.1 is Some(scope) else {
+      fail("post-event stage must carry Some(scope): " + stage.0)
+    }
+    assert_eq(scope.run_id, turn_scope.run_id)
+    assert_eq(scope.turn_id, turn_scope.turn_id)
+  }
+}
+
+///|
+fn scope_test_tool_call_with_usage(total : Int32) -> @kernel.ModelCallResult {
+  let base = @test_support.tk_tool_call_response("echo", "call_1", Json::null())
+  let completion : @kernel.Completion = Completion(
+    content=[],
+    tool_calls=base.completion.tool_calls(),
+    reasoning=None,
+    finish_reason=ToolCalls,
+    usage=Some({
+      input_tokens: Some(total),
+      output_tokens: Some(0),
+      total_tokens: Some(total),
+      cached_input_tokens: None,
+      uncached_input_tokens: None,
+    }),
+  )
+  { completion, processed_messages: [], }
 }

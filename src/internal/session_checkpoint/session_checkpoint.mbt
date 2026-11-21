@@ -1,18 +1,8 @@
 ///|
-/// Observed-subscriber projection of committed Puppet envelopes into the
-/// SessionPort checkpoint stream. It owns nothing else: no transcript scan, no
-/// full-save path, no pending-output retry. The shared persisted-prefix
-/// bookkeeping (`SessionProgress`) stays Agent-owned and is passed in, because
-/// the terminal/full-save path advances the same cursors with absolute
-/// positions.
 
 ///|
 /// Correctness-critical persistence projection for committed model/tool facts.
 /// Agent checkpoints the admitted input before Puppet starts; this subscriber
-/// then awaits SessionPort checkpoints after each committed assistant/tool
-/// boundary. A transcript rewrite marks the session dirty and pauses
-/// incremental projection until the terminal full save re-establishes a
-/// canonical prefix.
 pub struct SessionCheckpointSubscriber {
   priv stores : Array[&@port.SessionPort]
   priv progress : @session_state.SessionProgress
@@ -131,9 +121,6 @@ pub impl @puppetry.EventSubscriber for SessionCheckpointSubscriber with fn on_ev
       }
     }
     ToolCallsPreRejected(calls~, outcomes~, ..) => {
-      // Pre-pass rejects are reducer-transcript facts (NotExecuted tool
-      // messages); mirror them exactly like folded completions. Build the
-      // whole batch first so one event sequence covers all its messages.
       let messages : Array[@kernel.Message] = []
       for i in 0..<calls.length() {
         messages.push(

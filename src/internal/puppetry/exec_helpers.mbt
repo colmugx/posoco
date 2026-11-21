@@ -1,13 +1,7 @@
 ///|
-/// Abort watcher cadence. Mirrors the SSE reader's 16ms yield interval: fine
-/// enough that an ESC abort feels immediate while an effect is in flight,
-/// coarse enough to add no measurable overhead to the awaited effect.
 let effect_abort_poll_ms : Int32 = 16
 
 ///|
-/// Block until the control mailbox records an abort for the active run. Runs
-/// as the losing side of `@async.any`: when the effect settles first, `any`
-/// cancels this loop at its sleep suspension point.
 async fn await_abort_requested(mailbox : &Mailbox) -> Unit {
   while !mailbox.abort_requested() {
     @async.sleep(effect_abort_poll_ms)
@@ -15,14 +9,6 @@ async fn await_abort_requested(mailbox : &Mailbox) -> Unit {
 }
 
 ///|
-/// Race the single reducer-declared model effect against the mailbox abort
-/// flag. Provider failures travel as `ModelFailed` data; raised host defects
-/// never become a fabricated completion.
-///
-/// Returns `None` when abort was requested while the call was in flight: the
-/// effect task is cancelled, its partial result discarded (cancellation has no
-/// reducer completion input), and the pump falls back to its loop top where
-/// `pump_abort` feeds `CancelRequested`.
 async fn execute_model_effect(
   effect : Effect,
   context : ExecutionContext,
@@ -46,13 +32,10 @@ async fn execute_model_effect(
 }
 
 ///|
-/// Propagate reducer-declared cancellation effects at their terminal boundary.
-/// Cancellation has no reducer completion input: converting it into a tool or
-/// model result would fabricate a fact. Malformed reports fail the run loudly.
 async fn propagate_terminal_cancellations(
   effects : Array[Effect],
   context : ExecutionContext,
-  on_cancel~ : (Array[(EffectId, CancelDisposition)]) -> Unit = fn(_) { () },
+  on_cancel~ : (Array[(EffectId, CancelDisposition)]) -> Unit,
 ) -> Unit raise PuppetError {
   for effect in effects {
     match effect {
@@ -89,9 +72,6 @@ async fn propagate_terminal_cancellations(
 }
 
 ///|
-/// Verify that a host reported exactly one disposition for every requested
-/// effect. `NotPropagated` is an explicit adapter fact; missing, duplicate,
-/// or foreign ids are contract failures.
 fn validate_cancel_dispositions(
   expected : Array[EffectId],
   reported : Array[(EffectId, CancelDisposition)],
@@ -135,9 +115,6 @@ fn validate_cancel_dispositions(
 }
 
 ///|
-/// Convert an executor-raised error into an observable typed product error;
-/// typed cancellation outcomes and host defects stay distinct, and neither
-/// becomes a normal tool result or a synthetic model completion.
 fn execution_error(phase : String, error : Error) -> PuppetError {
   match error {
     EffectExecutionCancelled(phase=inner_phase) =>

@@ -1,23 +1,4 @@
 ///|
-/// Control commands + idle barrier.
-///
-/// Step and turn messages share the Agent-owned `MessageInbox`. The pump
-/// selects step messages at safe boundaries; Agent selects turn messages
-/// when starting a new turn with a new run/turn identity. Resume commands are
-/// separately addressed by `(target_run_id, suspension_id)` and must satisfy
-/// the suspension requirement.
-///
-/// Plus an **idle barrier**: a `@cond_var.Cond` that `wait_idle` waits on,
-/// woken when the Puppet reaches a quiescent phase (Idle / Suspended /
-/// Terminal / Shutdown). A bound run reports `Active`, which never satisfies
-/// the barrier.
-///
-/// IDs: every command carries the IDs required for safe-point
-/// correlation. Stale IDs are rejected at enqueue time, not at consume time.
-
-// ──────────────────────────────────────────────────────────────────────────
-// CommandId — typed wrapper
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 /// Stable identifier for a control command. Used in diagnostics and in
@@ -64,10 +45,6 @@ pub impl Show for CommandId with fn to_string(self : CommandId) -> String {
   self.value
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// QueuePolicy
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 /// How a mailbox consumes its queue at a single safe point.
 #derive(Eq, Debug)
@@ -97,15 +74,9 @@ pub impl Show for QueuePolicy with fn to_string(self : QueuePolicy) -> String {
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Command types
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 /// A steer command: a message appended to the transcript at the next step
 /// boundary. Identity is validated against the active run/turn at enqueue
-/// time only — a steer is never stale at consume time, it is delivered at the
-/// next safe point or reported undelivered.
 #derive(Eq, Debug)
 pub(all) struct SteerCommand {
   command_id : CommandId
@@ -156,21 +127,9 @@ pub extend AbortCommand with Eq::{not_equal, equal}
 ///|
 pub extend AbortCommand with Debug::{to_repr}
 
-// ──────────────────────────────────────────────────────────────────────────
-// Fork / Compact commands
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 /// User request to fork the current thread at a message index. Carries the
 /// run/turn IDs observed at enqueue so the pump can correlate at the consume
-/// safe point. `fork_index` is the position in the transcript at which the
-/// new thread splits from the current one (clamped to `[0, length]`).
-///
-/// Fork is copy-on-write: the original thread is never mutated. The pump
-/// snapshots the transcript's first `fork_index` messages, writes them as a
-/// new session (carrying `parent_thread_id` lineage), and returns
-/// `PromptResult::ForkCompleted`. The current turn then continues on the
-/// original thread.
 #derive(Eq, Debug)
 pub(all) struct ForkCommand {
   command_id : CommandId
@@ -223,10 +182,6 @@ pub fn CompactCommand::trigger(self : CompactCommand) -> @kernel.CompactTrigger 
   self.trigger
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// EnqueueResult — what enqueue returns
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 /// Result of enqueuing a control command.
 #derive(Eq, Debug)
@@ -264,12 +219,6 @@ pub impl Show for EnqueueResult with fn to_string(self : EnqueueResult) -> Strin
       "AbortAlreadyRequested(\{command_id.to_string()})"
   }
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// Mailbox trait — lets the long-lived Puppet and product command ports share
-// one `ControlMailbox`. `pub(open)` so alternative implementations (recorded
-// replay, clustered) can substitute without touching the pump.
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 /// Control-plane abstraction over the run's command queues and idle

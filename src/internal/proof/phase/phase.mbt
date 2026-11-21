@@ -58,6 +58,53 @@ pub(all) struct StepResult {
 }
 
 ///|
+pub fn check_phase_inv(
+  s : PhaseState,
+) -> Bool where {
+  proof_ensure: result => result == phase_inv(s),
+} {
+  s.model_step_id >= 0 &&
+  s.event_seq >= 0 &&
+  (match s.phase {
+    Initializing =>
+      s.pending_model == 0 &&
+      s.pending_tools == 0 &&
+      !s.has_outcome &&
+      !s.has_suspension &&
+      s.model_step_id == 0
+    ReadyForModel =>
+      s.pending_model == 0 &&
+      s.pending_tools == 0 &&
+      !s.has_outcome &&
+      !s.has_suspension &&
+      s.model_step_id >= 1
+    AwaitingModel =>
+      s.pending_model == 1 &&
+      s.pending_tools == 0 &&
+      !s.has_outcome &&
+      !s.has_suspension &&
+      s.model_step_id >= 1
+    AwaitingTools =>
+      s.pending_model == 0 &&
+      s.pending_tools >= 1 &&
+      !s.has_outcome &&
+      !s.has_suspension &&
+      s.model_step_id >= 1
+    Suspended =>
+      s.pending_model == 0 &&
+      s.pending_tools == 0 &&
+      !s.has_outcome &&
+      s.has_suspension &&
+      s.model_step_id >= 1
+    Terminal =>
+      s.pending_model == 0 &&
+      s.pending_tools == 0 &&
+      s.has_outcome &&
+      !s.has_suspension
+  })
+}
+
+///|
 pub fn phase_initial() -> PhaseState where {
   proof_ensure: result => {
     phase_inv(result) &&

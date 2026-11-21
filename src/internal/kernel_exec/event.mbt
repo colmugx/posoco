@@ -1,15 +1,10 @@
 ///|
-/// KernelEvent — pure domain events emitted by the reducer.
-/// Events are unstamped (wall-clock added externally) for replay equality.
-/// Terminal events appear at most once per Run.
 
 // Run-level events
 
 ///|
 /// Emitted when the reducer first transitions out of `Initializing` (the
 /// `Start` input). The `RunStarted` event is non-terminal.
-///
-/// `RunStarted` is the product's sole start event.
 #derive(Eq, Debug)
 pub(all) struct StartedDetails {
   run_id : RunId
@@ -231,12 +226,6 @@ pub impl Show for KernelEvent with fn to_string(self : KernelEvent) -> String {
 }
 
 ///|
-/// Whether this event is terminal (one of RunCompleted/RunFailed/RunCancelled).
-/// Used by conformance tests to assert exactly-once terminal semantics.
-///
-/// Contract: the classifier agrees with the structural spec predicate
-/// `is_terminal_event` (event_proof.mbtp) on every event — the anchor for
-/// the "exactly one terminal event per Run" theorem. `RunSuspended`
 
 ///|
 pub fn KernelEvent::is_terminal(self : KernelEvent) -> Bool {
@@ -247,9 +236,6 @@ pub fn KernelEvent::is_terminal(self : KernelEvent) -> Bool {
 }
 
 ///|
-/// Package-wide bounded single-line label helper for event, error and
-/// reducer summaries. Mirrors root `safe_error_label`; kept package-local
-/// so kernel files carry no production cross-package dependency.
 fn safe_label(value : String) -> String {
   let chars : Array[Char] = []
   let mut truncated = false
@@ -272,8 +258,6 @@ fn safe_label(value : String) -> String {
 }
 
 ///|
-/// Text length of a message body, used by bounded summaries. Image payloads
-/// contribute nothing: their byte length is not a readable proxy for size.
 fn message_content_chars(message : @kernel.Message) -> Int32 {
   let content = match message {
     SystemMessage(content~) => content

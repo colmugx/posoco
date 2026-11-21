@@ -571,6 +571,7 @@ pub struct ToolLaunchGate {
   // private fields
 }
 pub fn ToolLaunchGate::ToolLaunchGate() -> Self
+pub fn ToolLaunchGate::clear_run(Self, String) -> Unit
 pub fn ToolLaunchGate::record_refusal(Self, String, Int32, @kernel.NotExecutedReason) -> Unit
 pub fn ToolLaunchGate::take_refusal(Self, String, Int32) -> @kernel.NotExecutedReason?
 

@@ -1,7 +1,4 @@
 ///|
-/// Bounded, injection-safe envelope header field: the tag is untrusted
-/// extension input, so it is length-capped and newline-flattened, then JSON
-/// string-escaped, so the header closes exactly once whatever it contains.
 fn wakeup_envelope_field(value : String, cap : Int32) -> String {
   Json::string(@diagnostic.bounded_error_label(value, cap))
   .stringify()
@@ -25,8 +22,6 @@ fn wakeup_envelope_message(tag : String, note : String) -> @kernel.Message {
 }
 
 ///|
-/// Run one ticket as an ordinary turn. Returns `true` only when the turn was
-/// re-queued behind a live incumbent.
 async fn WakeupRuntime::execute_ticket(
   self : WakeupRuntime,
   host : &WakeupHost,
@@ -45,10 +40,6 @@ async fn WakeupRuntime::execute_ticket(
   } else {
     "\{head} \{entry.note}"
   }
-  // Exactly one terminal per ticket: a raw pump cancellation bypasses the
-  // catch below, so this unwind emitter still fires once, after the operation
-  // settled cancelled on its own unwind, and the cancellation keeps
-  // propagating raw.
   let terminal : Ref[String?] = Ref(None)
   errdefer (match terminal.val {
     Some(_) => ()
@@ -78,9 +69,6 @@ async fn WakeupRuntime::execute_ticket(
   }
   let label = match result {
     Ok(_) => "wakeup_completed"
-    // Busy is a queueing signal, not a terminal state: no terminal and no
-    // executing event fired, so re-queue at the head and wait for the
-    // incumbent's settled notification.
     Err(Busy(..)) => {
       let requeued = self.requeue_front(entry)
       terminal.val = Some("requeued")

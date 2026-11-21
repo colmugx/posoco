@@ -1,12 +1,4 @@
-// ──────────────────────────────────────────────────────────────────────────
-// commit_boundary — the deterministic pre-commit → freeze → commit → dispatch
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
-/// Commit one fixed side-effect boundary: dispatch every KernelEvent only after
-/// the single journal barrier succeeds, and persist only the
-/// recovery-relevant primary fact so append count tracks side effects rather
-/// than observer events.
 async fn Puppet::commit_boundary(
   self : Puppet,
   state : RunState,
@@ -49,9 +41,6 @@ async fn Puppet::commit_boundary(
   }
   let batch = prepare_batch(ctx, self.config.contributors)
   let committed_rev = commit_batch(self.config.journal, batch)
-  // Capture the full committed RunState synchronously before any await. A
-  // cancellation during subscriber dispatch must not lose an already
-  // committed fact.
   self.publish_core_fact({
     run_id,
     turn_id,
@@ -81,11 +70,6 @@ async fn Puppet::commit_boundary(
 }
 
 ///|
-/// Select the one boundary category for a reducer transition in a single pass:
-/// priority is terminal → suspension → tool outcome → assistant completion →
-/// input. Events with no natural category (intents such as `ModelStepStarted`)
-/// never win, and the assistant fallback applies only when nothing matched.
-/// This is a fixed runtime rule, not an extension-selectable policy.
 fn boundary_kind_for_events(events : Array[KernelEvent]) -> SavepointKind {
   let mut best_rank = -1
   let mut best_kind = AssistantCommitted
@@ -108,7 +92,6 @@ fn boundary_kind_for_events(events : Array[KernelEvent]) -> SavepointKind {
 }
 
 ///|
-/// Choose the persisted primary fact within a multi-event boundary.
 fn event_to_boundary_kind(event : KernelEvent) -> SavepointKind {
   match event {
     RunStarted(..) => InputAccepted
@@ -124,9 +107,6 @@ fn event_to_boundary_kind(event : KernelEvent) -> SavepointKind {
 }
 
 ///|
-/// Construct the one durable entry for a boundary. The entry kind describes
-/// the recovery boundary; event payloads keep their exact event kind for
-/// inspection without forcing a durability barrier per observer event.
 fn boundary_entry(
   state : RunState,
   kind : SavepointKind,
@@ -135,7 +115,7 @@ fn boundary_entry(
   turn_id : TurnId,
   session_id : SessionId,
   savepoint_id : String,
-  initial_command~ : String? = None,
+  initial_command~ : String?,
 ) -> JournalEntry raise PuppetError {
   if events.is_empty() {
     raise ReducerInvariantViolation(
@@ -145,21 +125,16 @@ fn boundary_entry(
       ),
     )
   }
-  let (summary, payload) = if kind == InputAccepted {
+  let (summary, payload) : (String, Json) = if kind == InputAccepted {
     (
       "InputAccepted(run=\{run_id.to_string()})",
-      Json::object(
-        Map::from_array([
-          ("kind", Json::string("InputAccepted")),
-          ("run_id", Json::string(run_id.to_string())),
-          ("turn_id", Json::string(turn_id.to_string())),
-          ("session_id", Json::string(session_id.to_string())),
-          (
-            "catalog_version",
-            Json::number(state.catalog_version().to_int().to_double()),
-          ),
-        ]),
-      ),
+      {
+        "kind": "InputAccepted",
+        "run_id": run_id.to_string(),
+        "turn_id": turn_id.to_string(),
+        "session_id": session_id.to_string(),
+        "catalog_version": state.catalog_version().to_int().to_double(),
+      },
     )
   } else {
     let primary = boundary_primary_event(events, kind)
@@ -226,44 +201,32 @@ fn boundary_primary_event(
 }
 
 ///|
-/// Convert a committed domain event into a bounded, machine-readable journal
-/// payload: event facts and safe summaries only. Prompts, tool arguments, image
-/// data and tool result bodies stay outside the journal.
 fn kernel_event_payload(event : KernelEvent) -> Json {
   match event {
     RunStarted(details~) =>
-      Json::object(
-        Map::from_array([
-          ("kind", Json::string("RunStarted")),
-          ("run_id", Json::string(details.run_id.to_string())),
-          ("session_id", Json::string(details.session_id.to_string())),
-        ]),
-      )
+      {
+        "kind": "RunStarted",
+        "run_id": details.run_id.to_string(),
+        "session_id": details.session_id.to_string(),
+      }
     ModelStepStarted(model_step_id~, effect_id~) =>
-      Json::object(
-        Map::from_array([
-          ("kind", Json::string("ModelStepStarted")),
-          ("model_step_id", Json::number(model_step_id.to_int().to_double())),
-          ("effect_id", Json::number(effect_id.to_int().to_double())),
-        ]),
-      )
+      {
+        "kind": "ModelStepStarted",
+        "model_step_id": model_step_id.to_int().to_double(),
+        "effect_id": effect_id.to_int().to_double(),
+      }
     ModelStepCompleted(model_step_id~, ..) =>
-      Json::object(
-        Map::from_array([
-          ("kind", Json::string("ModelStepCompleted")),
-          ("model_step_id", Json::number(model_step_id.to_int().to_double())),
-          // KernelEvent::Show intentionally excludes message/provider payloads.
-          ("summary", Json::string(event.to_string())),
-        ]),
-      )
+      {
+        "kind": "ModelStepCompleted",
+        "model_step_id": model_step_id.to_int().to_double(),
+        "summary": event.to_string(),
+      }
     ToolBatchStarted(model_step_id~, calls~) =>
-      Json::object(
-        Map::from_array([
-          ("kind", Json::string("ToolBatchStarted")),
-          ("model_step_id", Json::number(model_step_id.to_int().to_double())),
-          ("call_count", Json::number(calls.length().to_double())),
-        ]),
-      )
+      {
+        "kind": "ToolBatchStarted",
+        "model_step_id": model_step_id.to_int().to_double(),
+        "call_count": calls.length().to_double(),
+      }
     ToolChildDeclared(
       effect_id~,
       parent_effect_id~,
@@ -271,177 +234,111 @@ fn kernel_event_payload(event : KernelEvent) -> Json {
       depth~,
       call~,
     ) =>
-      Json::object(
-        Map::from_array([
-          ("kind", Json::string("ToolChildDeclared")),
-          ("effect_id", Json::number(effect_id.to_int().to_double())),
-          (
-            "parent_effect_id",
-            Json::number(parent_effect_id.to_int().to_double()),
-          ),
-          ("root_effect_id", Json::number(root_effect_id.to_int().to_double())),
-          ("depth", Json::number(depth.to_double())),
-          ("call_id", Json::string(call.call_id.to_string())),
-        ]),
-      )
+      {
+        "kind": "ToolChildDeclared",
+        "effect_id": effect_id.to_int().to_double(),
+        "parent_effect_id": parent_effect_id.to_int().to_double(),
+        "root_effect_id": root_effect_id.to_int().to_double(),
+        "depth": depth.to_double(),
+        "call_id": call.call_id.to_string(),
+      }
     ToolChildAbandoned(call~, parent_effect_id~) =>
-      Json::object(
-        Map::from_array([
-          ("kind", Json::string("ToolChildAbandoned")),
-          ("call_id", Json::string(call.call_id.to_string())),
-          (
-            "parent_effect_id",
-            Json::number(parent_effect_id.to_int().to_double()),
-          ),
-        ]),
-      )
+      {
+        "kind": "ToolChildAbandoned",
+        "call_id": call.call_id.to_string(),
+        "parent_effect_id": parent_effect_id.to_int().to_double(),
+      }
     ToolCompleted(call~, outcome~, parent_effect_id~) =>
-      // The committed call is available to in-memory subscribers, but this
-      // durable diagnostic payload intentionally excludes its arguments.
-      Json::object(
-        Map::from_array([
-          ("kind", Json::string("ToolCompleted")),
-          ("call_id", Json::string(call.call_id.to_string())),
-          ("outcome", Json::string(outcome.summary())),
-          (
-            "parent_effect_id",
-            match parent_effect_id {
-              Some(id) => Json::number(id.to_int().to_double())
-              None => Json::null()
-            },
-          ),
-        ]),
-      )
+      {
+        "kind": "ToolCompleted",
+        "call_id": call.call_id.to_string(),
+        "outcome": outcome.summary(),
+        "parent_effect_id": match parent_effect_id {
+          Some(id) => Json::number(id.to_int().to_double())
+          None => Json::null()
+        },
+      }
     ToolCallsPreRejected(model_step_id~, calls~, ..) =>
-      Json::object(
-        Map::from_array([
-          ("kind", Json::string("ToolCallsPreRejected")),
-          ("model_step_id", Json::number(model_step_id.to_int().to_double())),
-          ("call_count", Json::number(calls.length().to_double())),
-        ]),
-      )
+      {
+        "kind": "ToolCallsPreRejected",
+        "model_step_id": model_step_id.to_int().to_double(),
+        "call_count": calls.length().to_double(),
+      }
     ToolCallApproved(model_step_id~, call~, consent_scope~) =>
-      Json::object(
-        Map::from_array([
-          ("kind", Json::string("ToolCallApproved")),
-          ("model_step_id", Json::number(model_step_id.to_int().to_double())),
-          ("call_id", Json::string(call.call_id.to_string())),
-          (
-            "consent_scope",
-            match consent_scope {
-              Some(scope) => Json::string(safe_label(scope))
-              None => Json::null()
-            },
-          ),
-        ]),
-      )
+      {
+        "kind": "ToolCallApproved",
+        "model_step_id": model_step_id.to_int().to_double(),
+        "call_id": call.call_id.to_string(),
+        "consent_scope": match consent_scope {
+          Some(scope) => Json::string(safe_label(scope))
+          None => Json::null()
+        },
+      }
     ToolWaveStarted(model_step_id~, calls~) =>
-      Json::object(
-        Map::from_array([
-          ("kind", Json::string("ToolWaveStarted")),
-          ("model_step_id", Json::number(model_step_id.to_int().to_double())),
-          ("call_count", Json::number(calls.length().to_double())),
-        ]),
-      )
+      {
+        "kind": "ToolWaveStarted",
+        "model_step_id": model_step_id.to_int().to_double(),
+        "call_count": calls.length().to_double(),
+      }
     RunSuspended(requirement~, model_step_id~) =>
-      Json::object(
-        Map::from_array([
-          ("kind", Json::string("RunSuspended")),
-          ("requirement_kind", Json::string(requirement.kind)),
-          ("model_step_id", Json::number(model_step_id.to_int().to_double())),
-        ]),
-      )
+      {
+        "kind": "RunSuspended",
+        "requirement_kind": requirement.kind,
+        "model_step_id": model_step_id.to_int().to_double(),
+      }
     RunResumed(model_step_id~) =>
-      Json::object(
-        Map::from_array([
-          ("kind", Json::string("RunResumed")),
-          ("model_step_id", Json::number(model_step_id.to_int().to_double())),
-        ]),
-      )
+      {
+        "kind": "RunResumed",
+        "model_step_id": model_step_id.to_int().to_double(),
+      }
     CancelRequested(effect_ids~, reason~) =>
-      Json::object(
-        Map::from_array([
-          ("kind", Json::string("CancelRequested")),
-          ("effect_count", Json::number(effect_ids.length().to_double())),
-          ("reason", Json::string(reason.to_string())),
-        ]),
-      )
+      {
+        "kind": "CancelRequested",
+        "effect_count": effect_ids.length().to_double(),
+        "reason": reason.to_string(),
+      }
     BudgetExhausted(dimension~, consumed~, limit~) =>
-      Json::object(
-        Map::from_array([
-          ("kind", Json::string("BudgetExhausted")),
-          ("dimension", Json::string(dimension.to_string())),
-          ("consumed", Json::number(consumed.to_double())),
-          ("limit", Json::number(limit.to_double())),
-        ]),
-      )
+      {
+        "kind": "BudgetExhausted",
+        "dimension": dimension.to_string(),
+        "consumed": consumed.to_double(),
+        "limit": limit.to_double(),
+      }
     InputRejected(input_kind~, reason~) =>
-      Json::object(
-        Map::from_array([
-          ("kind", Json::string("InputRejected")),
-          ("input_kind", Json::string(input_kind)),
-          ("reason", Json::string(reason)),
-        ]),
-      )
+      { "kind": "InputRejected", "input_kind": input_kind, "reason": reason }
     TranscriptRewritten(messages_before~, messages_after~, reason~) =>
-      Json::object(
-        Map::from_array([
-          ("kind", Json::string("TranscriptRewritten")),
-          ("messages_before", Json::number(messages_before.to_double())),
-          ("messages_after", Json::number(messages_after.to_double())),
-          ("reason", Json::string(reason)),
-        ]),
-      )
-    // Steer facts are summarized: the message body is available to in-memory
-    // observers, never to the durable journal.
+      {
+        "kind": "TranscriptRewritten",
+        "messages_before": messages_before.to_double(),
+        "messages_after": messages_after.to_double(),
+        "reason": reason,
+      }
     UserMessageAppended(command_id~, message~) =>
-      Json::object(
-        Map::from_array([
-          ("kind", Json::string("UserMessageAppended")),
-          ("command_id", Json::string(command_id)),
-          (
-            "content_chars",
-            Json::number(message_body_chars(message).to_double()),
-          ),
-        ]),
-      )
+      {
+        "kind": "UserMessageAppended",
+        "command_id": command_id,
+        "content_chars": message_body_chars(message).to_double(),
+      }
     SteerUndelivered(command_id~, reason~) =>
-      Json::object(
-        Map::from_array([
-          ("kind", Json::string("SteerUndelivered")),
-          ("command_id", Json::string(command_id)),
-          ("reason", Json::string(safe_label(reason))),
-        ]),
-      )
+      {
+        "kind": "SteerUndelivered",
+        "command_id": command_id,
+        "reason": safe_label(reason),
+      }
     RunCompleted(final_message_summary~, model_steps~, tool_calls~) =>
-      Json::object(
-        Map::from_array([
-          ("kind", Json::string("RunCompleted")),
-          ("summary", Json::string(final_message_summary)),
-          ("model_steps", Json::number(model_steps.to_double())),
-          ("tool_calls", Json::number(tool_calls.to_double())),
-        ]),
-      )
-    RunFailed(reason~) =>
-      Json::object(
-        Map::from_array([
-          ("kind", Json::string("RunFailed")),
-          ("reason", Json::string(reason.to_string())),
-        ]),
-      )
+      {
+        "kind": "RunCompleted",
+        "summary": final_message_summary,
+        "model_steps": model_steps.to_double(),
+        "tool_calls": tool_calls.to_double(),
+      }
+    RunFailed(reason~) => { "kind": "RunFailed", "reason": reason.to_string() }
     RunCancelled(reason~) =>
-      Json::object(
-        Map::from_array([
-          ("kind", Json::string("RunCancelled")),
-          ("reason", Json::string(reason.to_string())),
-        ]),
-      )
+      { "kind": "RunCancelled", "reason": reason.to_string() }
   }
 }
 
 ///|
-/// Text length of a message body, for bounded journal summaries. Image
-/// payloads contribute nothing: their byte length is not a readable proxy.
 fn message_body_chars(message : Message) -> Int32 {
   let content = match message {
     SystemMessage(content~) => content
@@ -497,9 +394,6 @@ fn Puppet::finalize_run(
       Accepted(run_id~, turn_id~)
     }
     ReleasedNoCommit(result~) => {
-      // The run ended without a terminal outcome (fork, new-thread compact).
-      // The mailbox is quiescent again, so `wait_idle` must not block on the
-      // `Active` status `bind_run` installed.
       self.release_run_binding()
       self.mailbox.set_quiescent(Idle)
       result
@@ -517,15 +411,15 @@ fn Puppet::finalize_rejected(
 
 ///|
 fn Puppet::release_run_binding(self : Puppet) -> Unit {
+  match (self.launch_gate, self.mailbox.active_run_id()) {
+    (Some(gate), Some(run_id)) => gate.clear_run(run_id.to_string())
+    _ => ()
+  }
   self.phase_gate = PhaseGate::idle()
   self.mailbox.clear_run()
 }
 
 ///|
-/// Put the Puppet back into a quiescent, retryable state after a host-level
-/// failure prevented a terminal outcome. The typed error stays the
-/// caller-visible diagnostic, and cleanup must leave no stale lease or active
-/// mailbox behind.
 fn Puppet::reject_run(self : Puppet, error~ : PuppetError) -> PromptResult {
   self.release_run_binding()
   self.mailbox.set_quiescent(Idle)

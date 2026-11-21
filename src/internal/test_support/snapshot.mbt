@@ -1,14 +1,6 @@
 ///|
-/// Conformance testkit for Posoco.
-///
-/// Scripted, recording fakes that let tests assert behavior contracts
-/// (event order, metadata fidelity, tool-outcome consistency) rather than
-/// implementation details: they record call order, arguments, and metadata
-/// snapshots, and fail loudly when a script is exhausted.
 
 ///|
-/// Deep-copy a session so a fake never aliases caller-owned messages or
-/// metadata.
 fn snapshot_session(
   messages : Array[@kernel.Message],
   metadata : Map[String, Json],

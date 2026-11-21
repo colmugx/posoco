@@ -1,7 +1,4 @@
 ///|
-/// Model-call result and compact protocol.
-/// Posoco decides WHEN to compact; modelport decides HOW via `ModelPort::compact`.
-/// `processed_messages` is the dynamic-removal channel (always present).
 
 ///|
 /// Return value of `HostRuntime::call_model` and `ModelPort::chat`. Bundles

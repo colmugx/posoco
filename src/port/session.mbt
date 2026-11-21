@@ -1,10 +1,4 @@
 ///|
-/// SessionPort: persist and load conversation sessions by id.
-///
-/// Methods use the `raise` style (matching ModelPort/CommandPort) instead of
-/// returning `Result`. This eliminates the Result-plus-async redundancy and
-/// lets js-target adapters (e.g. JsonlSessionPort) implement the trait
-/// directly instead of going through `load_async`/`save_async` side-paths.
 
 ///|
 /// One append-safe session durability boundary. `from_index` is the number
@@ -56,10 +50,6 @@ pub(open) trait SessionPort {
 }
 
 ///|
-/// Default `SessionPort::truncate`: compatibility fallback for stores that do
-/// not implement native truncation. Failures from the underlying load/save are
-/// re-raised with their variant preserved and an `operation='truncate'` context
-/// label, mirroring the agent-boundary error contextualization style.
 impl SessionPort with fn truncate(self, id : String, from_index : Int32) -> Unit raise @error.SessionError {
   let session = self.load(id) catch {
     error =>
@@ -88,8 +78,6 @@ impl SessionPort with fn truncate(self, id : String, from_index : Int32) -> Unit
 }
 
 ///|
-/// Default `SessionPort::append_messages`: compatibility fallback for stores
-/// that do not implement true append. Loads, concatenates, and saves.
 impl SessionPort with fn append_messages(
   self,
   id : String,
@@ -106,12 +94,6 @@ impl SessionPort with fn append_messages(
 }
 
 ///|
-/// Default `SessionPort::checkpoint`: keep the legacy fast append path when
-/// metadata is unchanged. When metadata changed, load the persisted snapshot,
-/// merge the tail, and save one coherent Session snapshot. `from_index` is a
-/// logical cursor; the compatibility fallback deliberately does not require it
-/// to equal the physical message count because replay fixation can insert
-/// transient messages that are not persisted.
 impl SessionPort with fn checkpoint(
   self,
   id : String,

@@ -1,10 +1,4 @@
 ///|
-/// Built-in memory surface: the fixed lead line for the session-opening
-/// memory message, the inbound collector behind the Agent's injection step,
-/// and the `memory_search` / `memory_add` tool provider built over the
-/// aggregated `MemoryPort` sources. Like the other built-in adapters, these
-/// live in the root package (not `src/port/`) — concrete adapters, not
-/// extension contracts.
 
 ///|
 /// Fixed lead line core puts in front of the injected memory message — the
@@ -14,10 +8,6 @@ pub const MEMORY_INBOUND_LEAD : String =
   #|Recalled memory for this session may be stale or incomplete; verify against the current conversation before relying on it.
 
 ///|
-/// One provider's inbound read with an optional per-call timeout. Any
-/// failure — provider raise or timeout — is reported via `on_failure`
-/// (cancellation is not a defect and is not reported) and contributes
-/// nothing (`None`).
 async fn memory_inbound_one(
   source : String,
   port : &@port.MemoryPort,
@@ -51,10 +41,6 @@ async fn memory_inbound_one(
 ///|
 /// Fetch inbound memory bodies for every provider concurrently. Failures and
 /// timeouts are reported via `on_failure` and swallowed — the session
-/// continues without that provider's content. `noraise`: every
-/// `MemoryPort::inbound` raise is caught locally, so the injection step it
-/// feeds never widens its raise set. Results stay in provider-registration
-/// order because `@async.all` returns values in submission order.
 pub async fn collect_memory_inbound(
   sources : Array[(String, &@port.MemoryPort)],
   session_id : String,
@@ -99,7 +85,6 @@ pub fn memory_inbound_message(bodies : Array[String]) -> @kernel.Message {
 }
 
 ///|
-/// JSON-schema fragment for one tool argument: `{"type": <t>}`.
 fn memory_arg_schema(ty : String) -> Json {
   Json::object(Map::from_array([("type", Json::string(ty))]))
 }
@@ -163,8 +148,6 @@ fn memory_add_schema() -> Json {
 }
 
 ///|
-/// Read a required string argument from a tool call's JSON object args.
-/// `Err` carries the model-facing diagnostic.
 fn memory_required_string_arg(
   args : Map[String, Json],
   tool : String,
@@ -180,11 +163,6 @@ fn memory_required_string_arg(
 ///|
 /// Built-in ToolProvider over the aggregated memory sources: exposes
 /// `memory_search` / `memory_add` to the model and fans each call out to
-/// every matching provider. Provider failures are reported via `on_failure`
-/// (the Agent wires it to the `secondary_failure` observer event) and never
-/// abort the calling turn. A search where every source missed AND at least
-/// one failed renders the failures as a model-visible `ToolReportedError`
-/// instead of a false clean miss (the add path mirrors this with receipts).
 pub struct MemoryToolProvider {
   sources : Array[(String, &@port.MemoryPort)]
   on_failure : (String) -> Unit
@@ -228,8 +206,6 @@ pub impl @port.ToolProvider for MemoryToolProvider with fn list_tools(
 }
 
 ///|
-/// Model-visible outcome for a search whose whole source wave failed: the
-/// per-source failure text is unavailable, so the wave reason is the report.
 fn memory_search_wave_failure(reason : String) -> @kernel.ToolOutcome {
   ToolReportedError(
     content="memory_search: no source completed (\{reason})",
@@ -299,9 +275,6 @@ async fn MemoryToolProvider::execute_memory_search(
   if !hits.is_empty() {
     Success(content=hits.join("\n\n"), structured=None)
   } else if !failures.is_empty() {
-    // No source produced a hit, so a "clean miss" would be a lie: report
-    // the failures (hits outrank failures above, keeping usable results
-    // free of error noise).
     ToolReportedError(content=failures.join("\n"), structured=None)
   } else {
     Success(content="No matching memory.", structured=None)

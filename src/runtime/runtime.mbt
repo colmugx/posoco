@@ -1,13 +1,4 @@
 ///|
-/// Public runtime seam (experimental): `Runtime` is the supported
-/// correspondence of the internal effect-execution boundary. Advanced hosts
-/// implement or wrap it to customize how effects are executed — cancellation
-/// propagation, effect correlation, remote execution — while Posoco keeps
-/// owning the run loop, journal, mailbox, and session commit.
-///
-/// Vocabulary: **Ports** are for extension authors (default path);
-/// **Runtime** is for host builders (`Agent::with_runtime`). The run loop
-/// itself is never public.
 
 ///|
 /// Stable execution context for a single tool effect. `effect_id` is the

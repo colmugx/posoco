@@ -3,4 +3,5 @@ import {
   "colmugx/posoco/types",
   "colmugx/posoco/internal/message_snapshot",
   "colmugx/posoco/internal/diagnostic",
+  "colmugx/posoco/internal/proof/versions" @proof_versions,
 }

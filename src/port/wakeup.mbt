@@ -1,15 +1,4 @@
 ///|
-/// Agent-owned session wakeup capability: extension-requested ordinary turns.
-///
-/// Core never wakes a session on its own. Extensions that hold knowledge the
-/// model has not seen (a finished background task, a file watcher debounce, a
-/// timer deadline, an inbound server push) use `request` to ask the Agent to
-/// run one ordinary turn for the session. The Agent executes the request
-/// through the single-operation lifecycle as a normal `run_turn` — same
-/// journal, boundaries, observers and cancel semantics as a host turn.
-///
-/// The port is a concrete composed value (like `Tasks`), not a replaceable
-/// trait: wakeup admission is Agent-owned and has no extension-side substitute.
 
 ///|
 /// Opaque admission ticket. `id` is stable per pending (session, tag) entry;

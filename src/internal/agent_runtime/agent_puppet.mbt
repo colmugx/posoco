@@ -1,15 +1,6 @@
 ///|
-/// Agent-owned Puppet composition and per-prompt projection.
-///
-/// Composition-static state is built exactly once in `Agent::Agent`: catalog,
-/// HostRuntime adapter, journal, committed-event subscriber, mailbox and
-/// Puppet. Per-turn execution lives in `agent_turn.mbt`; this file keeps the
-/// per-prompt identity minted before `TurnStarted` is projected.
 
 ///|
-/// Per-turn identity minted by the Agent before `TurnStarted` is projected,
-/// so every turn event — including the first — carries attribution scope.
-/// The same identity drives the Puppet prompt request.
 priv struct TurnIdentity {
   seq : Int32
   run_id : @kernel.RunId
@@ -18,9 +9,6 @@ priv struct TurnIdentity {
 }
 
 ///|
-/// Allocate the next unique run/turn identity. The counter is Agent-owned
-/// and monotonic, so two calls on the same Agent never share run/turn ids
-/// while still using the same Puppet and journal.
 fn AgentRuntime::mint_turn_identity(
   self : AgentRuntime,
   session_id : String,
@@ -36,7 +24,6 @@ fn AgentRuntime::mint_turn_identity(
 }
 
 ///|
-/// The attribution scope projected onto this turn's observer events.
 fn TurnIdentity::scope(self : TurnIdentity) -> @types.EventScope {
   { session_id: self.session_id, run_id: self.run_id, turn_id: self.turn_id, }
 }

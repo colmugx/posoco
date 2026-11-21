@@ -170,9 +170,6 @@ fn ToolTree::launch(
 }
 
 ///|
-/// Drive one already-scheduled root wave and its children. The pump alone
-/// mutates RunState and journals facts. Provider tasks only submit requests
-/// and return executor inputs; they never run hooks or choose an executor.
 async fn Puppet::execute_tool_tree(
   self : Puppet,
   wave : Array[Effect],
@@ -218,19 +215,13 @@ async fn Puppet::execute_tool_tree(
           await_abort_requested(context.mailbox)
           tree.queue.put(Abort)
         })
-        // Hard withdrawal of a captured binding must reach in-flight effects.
-        // Only the watcher observes the fact; the tree loop owns cancellation and
-        // never fabricates a provider result.
         match context.revocations {
           Some(facts) => {
             let mut seen = facts.generation()
             group.spawn_bg(async fn() {
               while true {
-                @async.sleep(effect_abort_poll_ms)
-                if facts.generation() != seen {
-                  seen = facts.generation()
-                  tree.queue.put(Revocations)
-                }
+                seen = facts.wait_change(seen)
+                tree.queue.put(Revocations)
               }
             })
           }
@@ -355,9 +346,10 @@ async fn Puppet::execute_tool_tree(
                 ]
                 if context.revocations is Some(facts) {
                   contenders.push(async fn() {
+                    let mut seen = facts.generation()
                     while !tree.is_revoked(parent_id, facts) &&
                           !facts.is_revoked(call.name.to_string()) {
-                      @async.sleep(effect_abort_poll_ms)
+                      seen = facts.wait_change(seen)
                     }
                     Some({
                       call,

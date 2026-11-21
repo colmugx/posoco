@@ -150,23 +150,47 @@ pub fn ContextState::from_metadata(
         _ => return None
       }
       let context_version = match fields.get("context_version") {
-        Some(Number(n, ..)) => n.to_int()
+        Some(Number(n, ..)) => {
+          let v = n.to_int()
+          if v < 0 {
+            return None
+          }
+          v
+        }
         _ => return None
       }
       let last_measured : Int32? = match fields.get("last_measured_tokens") {
-        Some(Number(n, ..)) => Some(n.to_int())
+        Some(Number(n, ..)) => {
+          let v = n.to_int()
+          if v < 0 {
+            return None
+          }
+          Some(v)
+        }
         _ => None
       }
       let estimated_added = match fields.get("estimated_added_tokens") {
-        Some(Number(n, ..)) => n.to_int()
+        Some(Number(n, ..)) => {
+          let v = n.to_int()
+          if v < 0 {
+            return None
+          }
+          v
+        }
         _ => 0
       }
       let window : Int32? = match fields.get("window_tokens") {
-        Some(Number(n, ..)) => Some(n.to_int())
+        Some(Number(n, ..)) => {
+          let v = n.to_int()
+          if v <= 0 {
+            return None
+          }
+          Some(v)
+        }
         _ => None
       }
       let threshold = match fields.get("compact_threshold") {
-        Some(Number(n, ..)) => n
+        Some(Number(n, ..)) => if n > 0.0 && n <= 1.0 { n } else { return None }
         _ => return None
       }
       let source : ContextReadingSource = match fields.get("source") {
@@ -179,7 +203,13 @@ pub fn ContextState::from_metadata(
         _ => Unknown
       }
       let reading_count = match fields.get("reading_message_count") {
-        Some(Number(n, ..)) => n.to_int()
+        Some(Number(n, ..)) => {
+          let v = n.to_int()
+          if v < 0 {
+            return None
+          }
+          v
+        }
         _ => 0
       }
       Some({

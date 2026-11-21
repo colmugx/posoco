@@ -1,8 +1,6 @@
 ///|
 /// A candidate is accepted only after Agent installs its catalog. The paired
 /// bindings cannot be recomputed from a later registry state: one frozen entry
-/// set yields the definitions, the executor bindings and the version lease
-/// together.
 pub struct ToolDirectoryCapture {
   catalog : @kernel_exec.ToolCatalogSnapshot
   bindings : Map[String, &@port.ToolProvider]

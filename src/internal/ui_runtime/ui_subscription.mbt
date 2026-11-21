@@ -1,5 +1,4 @@
 ///|
-/// Push observation half of the UI runtime.
 
 ///|
 fn ui_copy_delivery(delivery : UiDelivery) -> UiDelivery {
@@ -14,8 +13,6 @@ fn ui_copy_delivery(delivery : UiDelivery) -> UiDelivery {
 }
 
 ///|
-/// Register a subscriber; baseline and registration come from one synchronous
-/// step.
 fn UiRuntime::subscribe(
   self : UiRuntime,
   listener : (@port.UiFeedBatch) -> Result[Unit, String],
@@ -48,8 +45,6 @@ fn UiRuntime::subscribe(
 }
 
 ///|
-/// Stop delivery for one subscriber. Idempotent, and safe from inside the
-/// listener: the queue is cleared and nothing is delivered afterwards.
 fn UiRuntime::unsubscribe(self : UiRuntime, id : Int32) -> Unit {
   match self.subscribers.get(id) {
     Some(subscriber) => {
@@ -70,7 +65,6 @@ fn UiRuntime::unsubscribe(self : UiRuntime, id : Int32) -> Unit {
 }
 
 ///|
-/// Queue one change for every active subscriber and drain the queues.
 fn UiRuntime::notify(self : UiRuntime, delivery : UiDelivery) -> Unit {
   if self.subscribers.is_empty() {
     return
@@ -102,8 +96,6 @@ fn UiRuntime::has_queued_delivery(self : UiRuntime) -> Bool {
 }
 
 ///|
-/// Deliver until every queue is empty, one batch per subscriber per round, so
-/// a re-entrant publisher cannot starve other subscribers.
 fn UiRuntime::flush_subscribers(self : UiRuntime) -> Unit {
   if self.delivering {
     return
@@ -124,8 +116,6 @@ fn UiRuntime::flush_subscribers(self : UiRuntime) -> Unit {
 }
 
 ///|
-/// Deliver exactly one queued batch to one subscriber; an `Err` ends that
-/// subscription and reports the failure once.
 fn UiRuntime::deliver_next(self : UiRuntime, subscriber : UiSubscriber) -> Unit {
   let delivery = subscriber.queue.remove(0)
   let batch : @port.UiFeedBatch = {
@@ -139,7 +129,6 @@ fn UiRuntime::deliver_next(self : UiRuntime, subscriber : UiSubscriber) -> Unit 
 }
 
 ///|
-/// Drop a failing subscriber and report it after removal.
 fn UiRuntime::drop_subscriber(
   self : UiRuntime,
   subscriber : UiSubscriber,
@@ -156,7 +145,6 @@ fn UiRuntime::drop_subscriber(
 }
 
 ///|
-/// Close-path cleanup: every subscription ends; no listener is called again.
 fn UiRuntime::drop_all_subscribers(self : UiRuntime) -> Unit {
   for id in self.subscriber_order.copy() {
     match self.subscribers.get(id) {

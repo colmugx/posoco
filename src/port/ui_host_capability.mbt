@@ -1,5 +1,4 @@
 ///|
-/// Host capability negotiation and connection leases.
 
 ///|
 /// What one connected host promises to display and answer. An empty

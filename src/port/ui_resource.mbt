@@ -1,5 +1,4 @@
 ///|
-/// Owner-bound UI presentation resources.
 
 ///|
 /// Where a resource belongs.

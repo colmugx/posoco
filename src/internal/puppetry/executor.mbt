@@ -1,9 +1,4 @@
 ///|
-/// Imperative shell that turns ONE reducer-declared Effect into ONE structured
-/// RunInput. It holds no RunState, queues, journals or barriers; all provider
-/// interaction goes through `@kernel_exec.HostRuntime`. The Puppet reuses
-/// `execute_one` verbatim and supplies the pump around it, while the pure
-/// reducer never calls into this module.
 
 ///|
 #derive(Eq, Hash, Debug)
@@ -77,11 +72,6 @@ fn ExecutionContext::ExecutionContext(
 }
 
 ///|
-/// Execute ONE Effect and return ONE structured RunInput fed straight back to
-/// `reduce`; every call is independent. `CallModel` must forward the catalog
-/// definitions (never an empty array). `CancelOutstanding` has already been
-/// terminal-transitioned by the reducer, so it is propagated at the terminal
-/// boundary instead of being converted here.
 async fn execute_one(
   effect : @kernel_exec.Effect,
   ctx : ExecutionContext,
@@ -107,9 +97,6 @@ async fn execute_call_model(
   ctx : ExecutionContext,
   on_chunk : @kernel_exec.HostChunkCallback?,
 ) -> @kernel_exec.RunInput raise PuppetError {
-  // Forward the REAL catalog definitions the reducer validated against; an
-  // empty array here would hide a missing-catalog bug as a successful but
-  // tool-blind model call.
   let tool_definitions = ctx.catalog
     .definitions()
     .filter(def => def.exposure is Direct)
@@ -121,12 +108,6 @@ async fn execute_call_model(
     pressure: None,
   }
 
-  // The callback is a live boundary: providers may invoke it before their
-  // final ModelCallResult exists, so validate here too. Indexes follow the
-  // continuous 0-based StreamAccumulator protocol — reuse allowed, skipping
-  // not. HostChunkCallback cannot raise, so the guarantee is only that an
-  // invalid chunk and every later chunk stop reaching the sink/observer,
-  // accumulator and reducer.
   let stream_failure : Array[String] = []
   let mut highest_tool_index = -1
   let checked_on_chunk : @kernel_exec.HostChunkCallback? = match on_chunk {
@@ -241,9 +222,6 @@ async fn execute_execute_tool(
   payload : @kernel_exec.ExecuteToolPayload,
   ctx : ExecutionContext,
 ) -> @kernel_exec.RunInput raise PuppetError {
-  // Owner resolution lives in the host. `NotExecuted` is reducer-side (unknown
-  // tool / schema mismatch, decided BEFORE the effect is declared), so a host
-  // returning it is a contract violation that must surface, not be masked.
   guard ctx.tool_scope is Some(scope) else {
     raise EffectExecutionFailed(
       phase="ExecuteTool",
@@ -267,9 +245,6 @@ async fn execute_execute_tool(
     Err(error) =>
       raise EffectExecutionFailed(phase="ExecuteTool", cause=error.to_string())
   }
-  // A refusal our own launch gate recorded means the provider was never
-  // entered: that is a real, typed non-execution, not a host inventing
-  // `NotExecuted`. Anything else keeps the contract-violation treatment.
   let gated = match outcome {
     NotExecuted(..) =>
       match ctx.launch_gate {

@@ -43,7 +43,6 @@ struct OperationDesk {
 
 ///|
 fn OperationDesk::new(
-  panel~ : Bool = true,
   card~ : Bool = false,
   probe_migration~ : Bool = false,
   probe_stale~ : Bool = false,
@@ -58,7 +57,7 @@ fn OperationDesk::new(
     stale_support: [],
     stale_removals: [],
     migration_attempts: [],
-    panel,
+    panel: true,
     card,
     probe_migration,
     probe_stale,

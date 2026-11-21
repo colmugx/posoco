@@ -303,10 +303,6 @@ pub fn task_outcome_status_label(status : @port.TaskStatus) -> String {
 }
 
 ///|
-/// Fire the core-owned ready projection after a background outcome was
-/// successfully enqueued. The notification precedes any wakeup turn's input
-/// read for the session (the outcome is already in the inbox); core does not
-/// auto-request from it — deciding to request stays with the extension.
 fn TaskRuntime::notify_background_outcome_ready(
   self : TaskRuntime,
   outcome : @port.TaskOutcome,
@@ -586,8 +582,6 @@ pub fn TaskRuntime::peek_outcomes(
 }
 
 ///|
-/// Copy the message payload carried by a task terminal so queued delivery and
-/// repeated handle waits cannot share mutable content with the worker result.
 fn snapshot_task_outcome(outcome : @port.TaskOutcome) -> @port.TaskOutcome {
   let status = match outcome.status {
     Completed(message~) =>
@@ -694,11 +688,6 @@ pub fn TaskRuntime::shutdown_straggler_detail(self : TaskRuntime) -> String {
 
 ///|
 /// Close task admission and bounded-settle all live managed work.
-///
-/// The deadline bounds Posoco's settlement observation only. Managed tasks
-/// remain children of the owning async TaskGroup, so a worker that ignores
-/// cooperative cancellation can still keep the structured scope alive after
-/// this method reports the offending task.
 pub async fn TaskRuntime::shutdown(
   self : TaskRuntime,
 ) -> Unit raise @error.AgentError {
@@ -757,15 +746,11 @@ pub fn emit_managed_task_shutdown_failure(
   let event : @types.TurnEvent = Custom(
     source="posoco.core",
     label="secondary_failure",
-    data=Json::object(
-      Map::from_array([
-        ("hook_point", Json::string("managed_task_shutdown")),
-        ("error", Json::string(@diagnostic.safe_error_label(error))),
-        // Core-generated task identity/status, not worker error text: keep it
-        // intact so late supervisor status is not lost to the error-label cap.
-        ("stragglers", Json::string(stragglers)),
-      ]),
-    ),
+    data={
+      "hook_point": "managed_task_shutdown",
+      "error": @diagnostic.safe_error_label(error),
+      "stragglers": stragglers,
+    },
   )
   events.emit_core(None, event)
 }

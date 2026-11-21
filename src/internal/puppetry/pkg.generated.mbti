@@ -622,6 +622,7 @@ pub fn ToolRevocationFacts::add(Self, Array[String]) -> Unit
 pub fn ToolRevocationFacts::generation(Self) -> Int32
 pub fn ToolRevocationFacts::is_revoked(Self, String) -> Bool
 pub fn ToolRevocationFacts::reset(Self) -> Unit
+pub async fn ToolRevocationFacts::wait_change(Self, Int32) -> Int32
 
 #derive(Eq, @debug.Debug)
 pub struct TurnSnapshot {

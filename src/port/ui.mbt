@@ -1,8 +1,4 @@
 ///|
-/// UiPort: structured UI intents and interactive requests. UI-toolkit-
-/// agnostic — hosts implement this trait and translate intents into
-/// their rendering primitives. Three responsibilities: `ui_descriptor`,
-/// `render`, `request`.
 
 // Semantic slots and bodies
 

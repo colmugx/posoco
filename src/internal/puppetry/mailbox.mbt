@@ -1,22 +1,9 @@
-// ──────────────────────────────────────────────────────────────────────────
-// ControlMailbox — message inbox + structural controls + idle barrier
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
-/// Default max queue depth per mailbox. Beyond this, enqueue returns
-/// `RejectedQueueFull`. The bound is deliberately conservative and may be tuned.
 let default_max_queue_depth : Int32 = 64
 
 ///|
 /// The control mailbox bundle. One instance per Puppet; tracks the
 /// currently-active run_id (so stale commands targeting an old run are
-/// rejected at enqueue time without needing to consult the phase gate).
-///
-/// Message submission/selection is synchronous, including from sibling tasks
-/// while the pump awaits model/tool work. `MessageInbox` retains selected
-/// messages until commit; clearing a run does not discard those records.
-/// Structural fork/compact commands keep their separate queues, and resume
-/// remains addressed by suspension id.
 pub struct ControlMailbox {
   messages : MessageInbox
   /// Fork command queue. OneAtATime policy — the pump consumes one
@@ -131,10 +118,6 @@ pub impl Mailbox for ControlMailbox with fn bind_run(
 ///|
 /// Clear the active run binding. Structural commands are dropped; message
 /// records remain in the inbox for Agent's explicit settlement.
-///
-/// The quiescent status is left alone on purpose: the terminal/suspended
-/// status of the run that just ended stays observable, and the next
-/// `bind_run` moves the mailbox back to `Active`.
 pub impl Mailbox for ControlMailbox with fn clear_run(self : ControlMailbox) -> Unit {
   self.active_run_id = None
   self.active_turn_id = None
@@ -192,10 +175,6 @@ pub impl Mailbox for ControlMailbox with fn fork_depth(self : ControlMailbox) ->
 pub impl Mailbox for ControlMailbox with fn compact_depth(self : ControlMailbox) -> Int32 {
   self.compact_depth
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// Enqueue — steer / follow_up / resume / abort
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 pub impl Mailbox for ControlMailbox with fn enqueue_steer(
@@ -265,9 +244,6 @@ pub impl Mailbox for ControlMailbox with fn enqueue_abort(
         return AbortAlreadyRequested(command_id=cmd.command_id)
       }
       self.abort_requested = true
-      // Deliberately no idle-barrier broadcast: abort does not quiesce the
-      // run. The pump observes `abort_requested` at its next safe point and
-      // sets the terminal status there, which is what wakes `wait_idle`.
       Accepted(command_id=cmd.command_id)
     }
   }
@@ -276,8 +252,6 @@ pub impl Mailbox for ControlMailbox with fn enqueue_abort(
 ///|
 /// Enqueue a fork command. Rejects if no active run or stale ids
 /// or queue full. The pump consumes one fork per safe point — fork is
-/// OneAtATime policy, not All (a fork creates a new session, batching
-/// makes no sense).
 pub impl Mailbox for ControlMailbox with fn enqueue_fork(
   self : ControlMailbox,
   cmd : ForkCommand,
@@ -296,7 +270,10 @@ pub impl Mailbox for ControlMailbox with fn enqueue_fork(
           depth=self.fork_depth,
         )
       }
-      let put_ok : Bool = self.fork_queue.try_put(cmd) catch { _ => false }
+      let put_ok : Bool = self.fork_queue.try_put(cmd) catch {
+        @aqueue.QueueAlreadyClosed => false
+        _ => false
+      }
       if !put_ok {
         return RejectedQueueFull(
           command_id=cmd.command_id,
@@ -313,8 +290,6 @@ pub impl Mailbox for ControlMailbox with fn enqueue_fork(
 ///|
 /// Enqueue a compact command. Rejects if no active run or stale ids
 /// or queue full. The pump consumes one compact per safe point — compact
-/// is OneAtATime policy (batching multiple compacts back-to-back on the
-/// same transcript is a no-op).
 pub impl Mailbox for ControlMailbox with fn enqueue_compact(
   self : ControlMailbox,
   cmd : CompactCommand,
@@ -333,7 +308,10 @@ pub impl Mailbox for ControlMailbox with fn enqueue_compact(
           depth=self.compact_depth,
         )
       }
-      let put_ok : Bool = self.compact_queue.try_put(cmd) catch { _ => false }
+      let put_ok : Bool = self.compact_queue.try_put(cmd) catch {
+        @aqueue.QueueAlreadyClosed => false
+        _ => false
+      }
       if !put_ok {
         return RejectedQueueFull(
           command_id=cmd.command_id,
@@ -346,10 +324,6 @@ pub impl Mailbox for ControlMailbox with fn enqueue_compact(
     _ => RejectedStale(command_id=cmd.command_id, reason="no active run")
   }
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// Consume — called by the Puppet at safe points
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 /// Select queued step messages in FIFO order. Records remain in the inbox
@@ -376,7 +350,10 @@ pub impl Mailbox for ControlMailbox with fn consume_steers(
 pub impl Mailbox for ControlMailbox with fn consume_one_fork(
   self : ControlMailbox,
 ) -> ForkCommand? {
-  let next : ForkCommand? = self.fork_queue.try_get() catch { _ => None }
+  let next : ForkCommand? = self.fork_queue.try_get() catch {
+    @aqueue.QueueAlreadyClosed => None
+    _ => None
+  }
   match next {
     Some(cmd) => {
       self.fork_depth = self.fork_depth - 1
@@ -389,13 +366,13 @@ pub impl Mailbox for ControlMailbox with fn consume_one_fork(
 ///|
 /// Consume one compact command (OneAtATime policy). The Puppet calls
 /// this at the safe point after fork check. Auto compacts (triggered by
-/// context-window pressure) bypass this queue and call `execute_compact`
-/// directly, but they still go through the same `HostRuntime::compact`
-/// path. Returns the oldest compact if any, else None.
 pub impl Mailbox for ControlMailbox with fn consume_one_compact(
   self : ControlMailbox,
 ) -> CompactCommand? {
-  let next : CompactCommand? = self.compact_queue.try_get() catch { _ => None }
+  let next : CompactCommand? = self.compact_queue.try_get() catch {
+    @aqueue.QueueAlreadyClosed => None
+    _ => None
+  }
   match next {
     Some(cmd) => {
       self.compact_depth = self.compact_depth - 1
@@ -422,10 +399,6 @@ pub impl Mailbox for ControlMailbox with fn take_resume(
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Idle barrier — wait_idle / notify
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 /// Current quiescent status. Set by the Puppet via `set_quiescent`.
 pub impl Mailbox for ControlMailbox with fn quiescent_status(
@@ -449,12 +422,6 @@ pub impl Mailbox for ControlMailbox with fn set_quiescent(
 ///|
 /// Wait until the mailbox reaches a quiescent status. Implemented via
 /// `@cond_var.Cond::wait` — NOT polling, NOT sleep. Multiple waiters all
-/// wake on `set_quiescent`.
-///
-/// Returns the first non-`Active` status observed. `Active` (a run in
-/// flight) always keeps waiting, so a wakeup that does not quiesce the
-/// mailbox — a spurious one, or the `Active` status `bind_run` installs —
-/// cannot make a late waiter read a stale `Terminal`.
 pub impl Mailbox for ControlMailbox with fn wait_idle(self : ControlMailbox) -> QuiescentStatus {
   for ;; {
     let status = self.quiescent_status

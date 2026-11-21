@@ -1,35 +1,4 @@
 ///|
-/// Owner-bound dynamic tool contribution capability.
-///
-/// The Agent composes one value per declaring extension and delivers it
-/// through `CompositionView::tool_contributions`, gated on
-/// `Capability::ToolContribution`. It is a concrete value rather than a
-/// public trait on purpose: contribution commits are Agent-owned, and there
-/// is no host-replaceable registry port. Unlike `Tasks`, the capability is
-/// bound to the manifest that declared it — the caller cannot publish for
-/// another owner.
-///
-/// Contract:
-/// - `replace` validates the whole provider group atomically against the
-///   complete candidate directory (static composition tools plus every other
-///   owner's active group). A rejected group changes nothing.
-/// - `replace` reads the provider's definitions exactly once and deep-copies
-///   them; the accepted revision is bound to that provider as its executor.
-/// - Both `replace` and `withdraw` are async because the committed change can
-///   immediately retire superseded versions that no operation references.
-///   Every candidate check and the authoritative publish/withdraw happen
-///   before the first await, so a failure never half-changes the directory.
-/// - Accepted changes affect future operations only. An operation that was
-///   already admitted keeps the catalog and execution table it captured at
-///   admission, including follow-up turns drained by the same operation.
-/// - `withdraw` defaults to a soft withdrawal: future operations no longer see
-///   the group, admitted operations keep using it. A hard withdrawal revokes
-///   every live version of the owner, so no operation can start a new call
-///   through them and affected in-flight effects are cancelled.
-/// - Retire callbacks must be bounded and safe to retry. A failed retire keeps
-///   the version in the pending-cleanup set, is reported on the actual commit
-///   ACK, and is retried by later commits, operation settlement and shutdown.
-/// - After `Agent::shutdown` every change is rejected with `Closed`.
 
 ///|
 /// What a withdraw request means for still-live versions of the owner.

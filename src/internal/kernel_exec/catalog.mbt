@@ -97,8 +97,6 @@ pub impl Eq for ToolCatalogSnapshot with fn equal(
 }
 
 ///|
-/// Debug projection: the declared catalog only. Rendered through a plain
-/// derivable record because `@json-schema.Schema` plans are opaque.
 #derive(Debug)
 priv struct SnapshotRepr {
   version : CatalogVersion
@@ -126,15 +124,6 @@ pub extend ToolCatalogSnapshot with Debug::{to_repr}
 ///|
 /// Incremental builder for `ToolCatalogSnapshot`. Validates each insertion
 /// atomically: any composition failure aborts the build and the builder
-/// cannot be reused.
-///
-/// Typical use:
-/// ```moonbit nocheck
-/// let snapshot = ToolCatalogBuilder()
-///   .add(def1)
-///   .add(def2)
-///   .finish(version=CatalogVersion(1))
-/// ```
 pub struct ToolCatalogBuilder {
   entries : Array[CatalogEntry]
   by_name : Map[String, CatalogEntry]
@@ -158,13 +147,6 @@ pub fn ToolCatalogBuilder::ToolCatalogBuilder() -> ToolCatalogBuilder {
 ///|
 /// Add a tool definition. Validates:
 /// - non-empty name (already enforced by `ToolDef`, but double-check)
-/// - no name collision
-/// - no duplicate provenance+name
-/// - supported schema keywords only
-/// - well-formed schema (object or boolean at top level)
-///
-/// Returns the builder for chaining. Raises `CatalogCompositionError` on
-/// any composition hard failure.
 pub fn ToolCatalogBuilder::add(
   self : ToolCatalogBuilder,
   def : @kernel.ToolDef,
@@ -192,9 +174,6 @@ pub fn ToolCatalogBuilder::add(
       conflicting_provenance=curr_prov,
     )
   }
-  // Schema validation: must be object or boolean at top level, and must
-  // compile under the JSON Schema validator. The compiled plan is
-  // cached here and transferred to the snapshot for call-time validation.
   match check_schema_top_level(def.input_schema) {
     Err(detail) => raise MalformedSchema(visible_name~, detail~)
     Ok(_) => ()
@@ -283,14 +262,17 @@ pub fn ToolCatalogSnapshot::size(self : ToolCatalogSnapshot) -> Int32 {
 }
 
 ///|
-/// Validate parsed arguments against the named tool's input schema. Used by
-/// the reducer (T03) when folding `ModelCompleted`. Returns:
-/// - Ok(()) if the args conform
-/// - Err(SchemaDiagnostic) if the args are well-formed JSON but fail the
-///   schema
-///
-/// Unknown tool name returns `Err` with a diagnostic that the reducer maps
-/// to `ToolOutcome::NotExecuted(UnknownTool)`.
+fn ToolCatalogSnapshot::validate_known_arguments(
+  self : ToolCatalogSnapshot,
+  name : @kernel.ToolName,
+  arguments : Json,
+) -> Result[Unit, @kernel.SchemaDiagnostic]? {
+  self.compiled
+  .get(name.to_string())
+  .map(schema => validate_compiled(schema, arguments))
+}
+
+///|
 pub fn ToolCatalogSnapshot::validate_arguments(
   self : ToolCatalogSnapshot,
   name : @kernel.ToolName,

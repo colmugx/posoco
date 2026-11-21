@@ -1,9 +1,6 @@
 ///|
-/// Operation-owned lifetime of presentation resources, driven by the Agent's
-/// admission/release lifecycle.
 
 ///|
-/// Which capability a mutation arrived through.
 priv enum UiCallContext {
   /// The composition-delivered capability: owns `OwnerBound` resources.
   Owner
@@ -13,8 +10,6 @@ priv enum UiCallContext {
 }
 
 ///|
-/// Rejection shared by every mutation that arrives through an operation handle
-/// whose operation is gone.
 fn ui_operation_gone(operation_id : String) -> @port.UiResourceError {
   InvalidInput(
     reason="operation \{operation_id} is no longer admitted; an operation-bound UI capability never outlives its operation",
@@ -118,8 +113,6 @@ pub fn UiRuntime::operation_capability(
 }
 
 ///|
-/// Build the restricted capability for one already captured operation; every
-/// callback re-checks that same id.
 fn UiRuntime::bind_operation_capability(
   self : UiRuntime,
   owner : String,
@@ -146,7 +139,6 @@ fn UiRuntime::bind_operation_capability(
 }
 
 ///|
-/// Capability query through an operation-bound handle.
 fn UiRuntime::operation_host_support(
   self : UiRuntime,
   owner : String,
@@ -175,8 +167,6 @@ fn UiRuntime::operation_host_support(
 }
 
 ///|
-/// Re-acquire the capability for one captured operation; `Closed` outranks a
-/// missing operation.
 fn UiRuntime::acquire_operation_capability(
   self : UiRuntime,
   owner : String,
@@ -192,8 +182,6 @@ fn UiRuntime::acquire_operation_capability(
 }
 
 ///|
-/// Handler registration is owner-scoped; the handle is dead once its
-/// operation settles.
 fn UiRuntime::operation_action_handler(
   self : UiRuntime,
   owner : String,
@@ -210,7 +198,6 @@ fn UiRuntime::operation_action_handler(
 }
 
 ///|
-/// A captured handle is only usable while its own operation is the live one.
 fn UiRuntime::check_call_context(
   self : UiRuntime,
   context : UiCallContext,
@@ -226,8 +213,6 @@ fn UiRuntime::check_call_context(
 }
 
 ///|
-/// Whether the caller may take over an already live resource with the same
-/// key; a resource never changes lifetime or operation.
 fn UiRuntime::check_takeover(
   self : UiRuntime,
   context : UiCallContext,
@@ -271,8 +256,6 @@ fn UiRuntime::check_takeover(
 }
 
 ///|
-/// Record that the live resource at `key` belongs to the caller's operation.
-/// Only an operation context binds; `OwnerBound` callers have no operation.
 fn UiRuntime::bind_operation_resource(
   self : UiRuntime,
   context : UiCallContext,
@@ -298,9 +281,6 @@ fn UiRuntime::bind_operation_resource(
 }
 
 ///|
-/// Whether a withdrawal is addressable from this capability: the owner
-/// capability may withdraw anything it published; an operation handle only its
-/// own operation's resources.
 fn UiRuntime::owns_live_resource(
   self : UiRuntime,
   context : UiCallContext,

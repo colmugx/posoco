@@ -1,18 +1,8 @@
 ///|
-/// Built-in slash command port for `/compact` and `/fork-here`.
-/// `invoke` enqueues a signal on the ControlMailbox for the pump's safe points.
-/// The BuiltinCommandPort holds a reference to the Puppet's ControlMailbox.
-/// It is constructed once by `Agent::Agent` from the long-lived mailbox
-/// reference, then merged with extension commands when the one PuppetConfig
-/// is assembled. Extension commands with the same id
-/// (`compact` / `fork-here`) take precedence — the product layer can
-/// override the builtins by declaring a command with that id.
 
 ///|
 /// Built-in command processor. Holds a borrowed `&Mailbox` so `/compact`
 /// and `/fork-here` can enqueue fork/compact signals. The mailbox
-/// reference is shared with the Puppet and the Agent: one `ControlMailbox`
-/// instance, three views. The Agent owns the concrete composition.
 pub struct BuiltinCommandPort {
   mailbox : &@puppetry.Mailbox
   /// Idle-compact entry bound by `Agent::Agent` after composition. The port
@@ -42,8 +32,6 @@ pub fn BuiltinCommandPort::BuiltinCommandPort(
 }
 
 ///|
-/// Helper: mint a unique command id. Combines a stable prefix with the
-/// port's monotonic counter so the same id is never returned twice.
 fn BuiltinCommandPort::next_command_id(
   self : BuiltinCommandPort,
   prefix : String,
@@ -102,8 +90,6 @@ pub impl @port.CommandPort for BuiltinCommandPort with fn commands(
 }
 
 ///|
-/// Normalized command ids for `invoke`, so the enable guard is written once
-/// per builtin and the enqueue skeleton below stays id-agnostic.
 priv enum BuiltinCommandKind {
   Compact
   ForkHere
@@ -124,7 +110,6 @@ fn BuiltinCommandPort::resolve_command(
 }
 
 ///|
-/// Shared enqueue → CommandOutcome skeleton for `/compact` and `/fork-here`.
 fn enqueue_outcome(
   name : String,
   accepted_feedback : String,
@@ -264,11 +249,6 @@ pub extend BuiltinCommandPort with @port.CommandPort::{commands, invoke}
 ///|
 /// Parse the optional `index` argument for `/fork-here`. Recognises:
 /// - `{"index": N}` (object form)
-/// - `N` (bare number, used by positional slash parsers)
-/// Defaults to `0` when absent or unparseable (the caller can override
-/// by passing a positive index). A future iteration can return the
-/// current transcript length when omitted, but that requires the
-/// transcript reference the BuiltinCommandPort does not hold today.
 pub fn parse_fork_index(args : Json) -> Int32 {
   match args {
     Object(map) =>
@@ -288,15 +268,6 @@ pub fn parse_fork_index(args : Json) -> Int32 {
 ///|
 /// Build the agent's full command list: the builtins
 /// (`/compact`, `/fork-here`) registered first, followed by the extension
-/// commands. Extensions that declare a command with id `compact` or
-/// `fork-here` are dropped from the list — they override the builtins by
-/// being the only one with that id. This keeps the BuiltinCommandPort
-/// as a sensible default that products can replace.
-///
-/// The builtin port is a per-Agent singleton (constructed once in
-/// `Agent::Agent`), so its `seq` counter stays monotonic across turns.
-/// This method merely borrows it into the per-turn command list — it does
-/// NOT reconstruct the port.
 pub fn compose_agent_commands(
   commands : Array[&@port.CommandPort],
   builtin_command_port : BuiltinCommandPort,
@@ -308,9 +279,6 @@ pub fn compose_agent_commands(
       extension_ids[def.id] = ()
     }
   }
-  // If any extension declares `compact` or `fork-here`, the builtin is
-  // skipped — the extension version wins. Otherwise the builtin is the
-  // default.
   builtin_command_port.compact_enabled = !extension_ids.contains("compact")
   builtin_command_port.fork_enabled = !extension_ids.contains("fork-here")
   let result : Array[&@port.CommandPort] = []

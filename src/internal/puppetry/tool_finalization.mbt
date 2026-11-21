@@ -6,8 +6,6 @@ priv struct FinalizedToolCall {
 }
 
 ///|
-/// Every hook sees a private copy; a later rewrite invalidates consent granted
-/// to an earlier exact call.
 async fn finalize_tool_call(
   catalog : @kernel_exec.ToolCatalogSnapshot,
   hooks : Array[&@port.PipelineHook],
@@ -56,9 +54,6 @@ async fn finalize_tool_call(
     Some(call) => call != current
     None => false
   }
-  // Final pre-start check AFTER the hook chain: a target whose contributing
-  // version was hard-withdrawn must not start, even when a hook rewrote it into
-  // that name or granted consent while the withdrawal landed.
   let revoked = match revocations {
     Some(facts) => facts.is_revoked(current.name.to_string())
     None => false

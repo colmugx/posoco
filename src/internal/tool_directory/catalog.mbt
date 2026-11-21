@@ -1,6 +1,4 @@
 ///|
-/// The Kernel accepts only an object or boolean top-level schema; providers
-/// signal "no schema" with `Json::null()`, which becomes `{}` here.
 fn normalize_tool_schema(schema : Json) -> Json {
   match schema {
     Null => Json::object(Map::from_array([]))

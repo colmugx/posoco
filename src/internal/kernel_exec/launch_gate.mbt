@@ -30,3 +30,19 @@ pub fn ToolLaunchGate::take_refusal(
   self.refusals.remove(key)
   found
 }
+
+///|
+pub fn ToolLaunchGate::clear_run(
+  self : ToolLaunchGate,
+  run_id : String,
+) -> Unit {
+  let doomed : Array[(String, Int32)] = []
+  for key, _ in self.refusals {
+    if key.0 == run_id {
+      doomed.push(key)
+    }
+  }
+  for key in doomed {
+    self.refusals.remove(key)
+  }
+}

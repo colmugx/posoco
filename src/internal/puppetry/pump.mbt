@@ -1,12 +1,4 @@
-// ──────────────────────────────────────────────────────────────────────────
-// drive_run — the single long-lived pump
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
-/// Drive a run to terminal or suspended, returning the terminal outcome or a
-/// typed failure. This is the ONLY loop in the product that drives RunState: it
-/// loops over reducer transitions and reuses `execute_one` per pending effect,
-/// never inferring termination from `tool_calls.is_empty()`.
 async fn Puppet::drive_run(
   self : Puppet,
   run_id : RunId,
@@ -107,10 +99,6 @@ async fn Puppet::drive_run(
     }
     None => out0.next_state()
   }
-  // The first step consumes steers too: the initial declaration below is the
-  // last point before the first model request, so a steer accepted while the
-  // hooks or the pre-request compact ran must land here rather than wait for
-  // the first response.
   let steered : Result[RunState, PuppetError] = Ok(
     self.consume_into_state(pre_compact_state, initial_events),
   ) catch {
@@ -180,9 +168,6 @@ async fn Puppet::drive_run(
         }
       }
     }
-    // Safe point: fork. Fork is copy-on-write, so the original transcript is
-    // never mutated; the current turn stops and the product layer may then
-    // drive the new lineage session as a separate turn.
     match self.mailbox.consume_one_fork() {
       Some(fork_cmd) =>
         return self.pump_fork(state, fork_cmd, session_id, run_id, turn_id)
@@ -277,17 +262,12 @@ async fn Puppet::drive_run(
 }
 
 ///|
-/// One pump step's outcome: keep driving with the next `RunState`, or stop
-/// and return the given `PromptResult` (terminal, suspended, or rejected).
 priv enum PumpStep {
   ContinueWith(RunState)
   StopWith(PromptResult)
 }
 
 ///|
-/// Abort safe point: feed `CancelRequested` into the reducer, propagate the
-/// reducer-declared cancellations at their terminal boundary, and commit the
-/// `RunTerminal` boundary. The caller checks `mailbox.abort_requested()`.
 async fn Puppet::pump_abort(
   self : Puppet,
   state : RunState,
@@ -325,10 +305,6 @@ async fn Puppet::pump_abort(
         Err(error) => return StopWith(self.finalize_rejected(error~))
         Ok(_) => ()
       }
-      // The abort ends the run before the next delivery point, so queued
-      // steers are reported in this same `RunTerminal` boundary rather than
-      // dropped by `clear_run`. Only the undelivered half runs here: nothing
-      // may be appended to a transcript whose terminal state already committed.
       let terminal_events = out.events()
       self.drain_undelivered(terminal_events, "run aborted before delivery")
       let cr : Result[Unit, PuppetError] = Ok(
@@ -355,11 +331,6 @@ async fn Puppet::pump_abort(
 }
 
 ///|
-/// Fork safe point: snapshot the transcript's first `fork_index` messages,
-/// capture the core source, release the lease, and stop the turn with
-/// `ForkCompleted`. The Agent is the sole SessionPort writer. Fork is
-/// copy-on-write: the original transcript is never mutated. Always stops the
-/// pump.
 fn Puppet::pump_fork(
   self : Puppet,
   state : RunState,
@@ -384,9 +355,6 @@ fn Puppet::pump_fork(
   let new_session_id = parent_session_id +
     "_fork_" +
     fork_cmd.command_id().to_string()
-  // Capture the actual safe-point transcript before the Agent forms the child
-  // core fact and output. The Agent freezes a deep snapshot; `fork_index` is
-  // the child body's prefix.
   self.capture_source(run_id, parent_session_id, transcript_msgs, fork_index)
   // Release lease + clear mailbox before returning ForkCompleted so
   // the next prompt can bind cleanly.
@@ -404,9 +372,6 @@ fn Puppet::pump_fork(
 }
 
 ///|
-/// Manual-compact safe point: apply one consumed compact command. The
-/// rewrite events are journaled here before the loop continues; the
-/// rewritten transcript is the durable fact the next model step builds on.
 async fn Puppet::pump_compact(
   self : Puppet,
   state : RunState,
@@ -457,9 +422,6 @@ async fn Puppet::pump_compact(
 }
 
 ///|
-/// ReadyForModel step: fold any queued steer, run the before_model hook chain,
-/// fold any hook transcript rewrite through the reducer, declare the next model
-/// intent, and commit all of it in one durable boundary.
 async fn Puppet::pump_ready_for_model(
   self : Puppet,
   state : RunState,
@@ -471,9 +433,6 @@ async fn Puppet::pump_ready_for_model(
   iter : Int32,
 ) -> PumpStep noraise {
   let mut state = state
-  // The turn's first model step has no effect completion to fold, so steer
-  // consumption happens here instead. It runs before the hook chain so
-  // `before_model` observes the complete transcript.
   let prior_events : Array[KernelEvent] = []
   let steered : Result[RunState, PuppetError] = Ok(
     self.consume_into_state(state, prior_events),
@@ -514,12 +473,6 @@ async fn Puppet::pump_ready_for_model(
       ),
     )
   }
-  // Fold the hook-rewritten transcript through the reducer — the sole
-  // transcript writer — so the rewrite is journaled as a TranscriptRewritten
-  // event in the same boundary as the next model intent. Comparison is by
-  // content, not length: a same-length rewrite (e.g. system-prompt
-  // replacement) is real and must not be dropped. A physical-equality check
-  // first skips the O(N) comparison when no hook allocated a new array.
   if hook_changed && current_messages != initial_messages {
     let rewrite_input : RunInput = TranscriptRewrite(payload={
       rewritten_messages: current_messages,
@@ -550,10 +503,6 @@ async fn Puppet::pump_ready_for_model(
       }
     }
   }
-  // The auto-compact threshold check lives in `fold_effect_input`, not here:
-  // ReadyForModel only fires on the very first model step, so a check here
-  // would never see post-tool usage observations. Folding is where the
-  // reducer's budget update is observable before the next model effect.
   let declared : Result[(RunState, Array[KernelEvent]), PuppetError] = Ok(
     declare_model_effect_if_ready(
       state,
@@ -592,8 +541,6 @@ async fn Puppet::pump_ready_for_model(
 }
 
 ///|
-/// AwaitingModel step: execute the single pending model effect and fold its
-/// completion through the reducer and the durable boundary.
 async fn Puppet::pump_awaiting_model(
   self : Puppet,
   state : RunState,
@@ -626,9 +573,6 @@ async fn Puppet::pump_awaiting_model(
   }
   let input = match executed {
     Err(error) => return StopWith(self.finalize_rejected(error~))
-    // Abort landed while the model call was in flight. The effect result is
-    // discarded; the loop top's abort check feeds CancelRequested to the
-    // reducer, which declares CancelOutstanding for the still-pending effect.
     Ok(None) => return ContinueWith(state)
     Ok(Some(value)) => value
   }
@@ -657,15 +601,8 @@ async fn Puppet::pump_awaiting_model(
 }
 
 ///|
-/// AwaitingTools step: finalize every pending tool call through the complete
-/// pre_tool hook chain, validate and reschedule the final calls, then execute
-/// their parallel waves and fold every completion. Later waves are not
-/// launched once the run reached terminal/suspended or an abort was requested.
 
 ///|
-/// Hook inputs and consent records own independent JSON trees. A hook is
-/// allowed to retain and mutate its input, but that mutation must never reach
-/// reducer-owned pending effects or an earlier consent snapshot.
 fn snapshot_tool_call(call : ToolCall) -> ToolCall {
   @message_snapshot.snapshot_tool_call(call)
 }
@@ -771,11 +708,6 @@ async fn Puppet::pump_awaiting_tools(
     }
   }
 
-  // The reducer correlates completions against its pending effect payload.
-  // Replace that payload before folding hook outcomes or executing tools so
-  // the final name/arguments/owner remain canonical all the way through the
-  // transcript and correlation checks. Rejected effects stay present until
-  // their explicit NotExecuted input is folded.
   let normalized_result : Result[RunState, PuppetError] = Ok(
     state.transition(
       phase=AwaitingTools,
@@ -806,10 +738,6 @@ async fn Puppet::pump_awaiting_tools(
     Ok(value) => value
   }
 
-  // Publish approvals for every call the chain finalized as executable.
-  // Each event carries the final canonical call and the surviving consent
-  // scope (None for plain approval). One durable boundary per batch keeps
-  // the fact ordered before any wave-start or completion event.
   if !approved_finalized.is_empty() {
     let approved_events : Array[KernelEvent] = []
     for finalized in approved_finalized {
@@ -838,9 +766,6 @@ async fn Puppet::pump_awaiting_tools(
     }
   }
 
-  // Resolve explicit hook rejections before launching side effects. This
-  // keeps the pending-effect correlation valid while making the rejection
-  // durable through the normal reducer path.
   for rejection_index, input in hook_rejected_inputs {
     let folded : Result[FoldOutcome, PuppetError] = Ok(
       self.fold_effect_input(
@@ -895,10 +820,6 @@ async fn Puppet::pump_awaiting_tools(
         state, dispatcher, run_id, turn_id, session_id, snap,
       )
     }
-    // Announce the launch before the wave driver starts: one durable
-    // boundary per wave, one event per wave, expanded per call by the
-    // projection. Observers therefore see execution begin instead of
-    // inferring it from a later completion.
     let wave_calls : Array[@kernel.ToolCall] = []
     let mut wave_model_step : ModelStepId? = None
     for effect in wave {
@@ -955,9 +876,6 @@ async fn Puppet::pump_awaiting_tools(
         state, dispatcher, run_id, turn_id, session_id, snap,
       )
     }
-    // The wave driver receives child requests while roots wait, and folds
-    // root outcomes in source order. On abort it returns the latest state,
-    // including pending children, for the normal CancelRequested boundary.
     let executed = self.execute_tool_tree(
       wave, state, exec_ctx, dispatcher, turn_id, snap, hook_scope,
     ) catch {
@@ -967,9 +885,6 @@ async fn Puppet::pump_awaiting_tools(
       StopWith(result) => return StopWith(result)
       ContinueWith(next) => state = next
     }
-    // Abort is observed at a side-effect boundary. Do not launch a later
-    // wave after it was requested; the next pump iteration feeds
-    // CancelRequested into the reducer.
     if state.phase() == Terminal ||
       state.phase() == Suspended ||
       self.mailbox.abort_requested() {

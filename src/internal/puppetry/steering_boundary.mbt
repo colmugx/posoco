@@ -1,6 +1,4 @@
 ///|
-/// Only called before any root starts or after the whole launched wave joins.
-/// Per-root completion folding must not replace another root's real result.
 fn Puppet::supersede_pending_tools(
   self : Puppet,
   state : RunState,

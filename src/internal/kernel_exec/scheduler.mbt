@@ -1,8 +1,4 @@
 ///|
-/// Deterministic ToolScheduler for the functional Kernel.
-/// Given a catalog snapshot and source-order tool calls (pre-validated by the reducer),
-/// produces ordered execution waves. Parallel neighbours share a wave; Exclusive
-/// forms a barrier before and after; Sequential occupies a single-element wave.
 
 ///|
 /// Why scheduling failed. Each variant is a kernel-invariant failure.
@@ -36,8 +32,6 @@ pub impl Show for SchedulingError with fn to_string(self : SchedulingError) -> S
 ///|
 /// A single wave of tool calls that MAY execute in parallel. Wave membership
 /// is determined by the execution policies of adjacent calls; executor is
-/// free to run them in any order, but the reducer places outcomes back in
-/// source order regardless of completion order.
 #derive(Eq, Debug)
 pub(all) struct ExecutionWave {
   /// Calls in this wave, in source order.
@@ -108,9 +102,6 @@ pub impl Show for ExecutionPlan with fn to_string(self : ExecutionPlan) -> Strin
 }
 
 ///|
-/// Schedule validated calls into execution waves per `ExecutionPolicy`.
-/// Raises `SchedulingError` on duplicate call_id, unknown tool, or
-/// stale snapshot version.
 fn to_scheduler_policy(
   policy : @kernel.ExecutionPolicy,
 ) -> @proof_scheduler.Policy {

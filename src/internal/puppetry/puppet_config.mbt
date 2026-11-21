@@ -1,7 +1,3 @@
-// ──────────────────────────────────────────────────────────────────────────
-// PuppetConfig — composition root
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 /// Inputs to build a Puppet. The host is any `&HostRuntime` satisfying the
 /// canonical effect-execution contract; catalog-composition validation stays
@@ -40,10 +36,6 @@ pub(all) struct PuppetConfig {
   /// ports and product-layer controllers.
   mailbox : &Mailbox
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// Puppet — the assembled pump
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 /// One committed boundary handed synchronously to the Agent core. `messages`
@@ -138,8 +130,6 @@ pub fn Puppet::set_core_fact_observer(
 }
 
 ///|
-/// Publish one committed boundary. This is synchronous and must stay free of
-/// observer dispatch and store I/O.
 fn Puppet::publish_core_fact(self : Puppet, fact : CoreFactCommit) -> Unit {
   match self.core_fact_observer {
     Some(observer) => observer(fact)
@@ -219,10 +209,6 @@ pub fn Puppet::mailbox(self : Puppet) -> &Mailbox {
 pub fn Puppet::is_quiescent(self : Puppet) -> Bool {
   self.phase_gate.is_quiescent()
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// Shutdown — phase gate + idle barrier wake
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 /// Shut the pump down. Idempotent.

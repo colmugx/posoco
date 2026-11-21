@@ -1,37 +1,8 @@
 ///|
-/// Puppet phase gate.
-///
-/// ADR §4: the Puppet maintains a macro-level phase machine ON TOP OF the
-/// reducer's `Phase`. The reducer phase describes one Run's micro-state; the
-/// Puppet phase describes the product-level macro-state that gates which
-/// host commands are accepted.
-///
-/// Invariants:
-/// - At most one structural `OperationLease` is held at any time.
-/// - `release` validates the owner; releasing a lease you don't own is a
-///   typed error (never a silent success).
-/// - `Suspended` retains the original `run_id` / `turn_id` so resume can
-///   continue with monotonic sequence.
-/// - Transitions out of `ShuttingDown` / `Shutdown` are illegal except the
-///   final shutdown transition.
-
-// ──────────────────────────────────────────────────────────────────────────
-// PuppetPhase
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 /// Product-level macro phase. Distinct from the kernel `Phase` (per-Run
 /// micro-state owned by the reducer).
-///
-/// Allowed transitions:
-/// - Idle → Active            (prompt / continue accepted)
-/// - Active → Suspended       (reducer enters Suspended)
-/// - Suspended → Active       (resume)
-/// - Active → Terminalizing   (terminal outcome committed)
-/// - Suspended → Terminalizing (abort)
-/// - Terminalizing → Idle     (terminal event dispatched + cleanup)
-/// - Idle/Suspended/Active → ShuttingDown  (host shutdown call; Active defers)
-/// - ShuttingDown → Shutdown  (lifecycle rollback complete)
 #derive(Eq, Debug)
 pub(all) enum PuppetPhase {
   Idle
@@ -66,8 +37,6 @@ pub impl Show for PuppetPhase with fn to_string(self : PuppetPhase) -> String {
 ///|
 /// Whether this phase is quiescent — the union of Idle, Suspended and
 /// Shutdown `wait_idle` wakes when the Puppet reaches any of
-/// these (with distinct typed status, never conflating Suspended with a
-/// terminal outcome).
 pub fn PuppetPhase::is_quiescent(self : PuppetPhase) -> Bool {
   match self {
     Idle => true
@@ -87,15 +56,9 @@ pub fn PuppetPhase::is_accepting(self : PuppetPhase) -> Bool {
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// OperationClass
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 /// Class of operation the phase gate is asked to authorise. ADR §6.8
 /// reserves a `Structural` slot (branch/compact/retry); no structural
-/// operation is implemented yet, but the gate already knows how to reject them
-/// outside `Idle`.
 #derive(Eq, Debug)
 pub(all) enum OperationClass {
   /// `prompt`, `continue`, `resume` — start or continue a Run.
@@ -124,15 +87,9 @@ pub impl Show for OperationClass with fn to_string(self : OperationClass) -> Str
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// OperationLease
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 /// A structural lease. At most one is held at any time.
 /// Acquired by `prompt`/`continue`/`resume`; released on terminal outcome,
-/// abort, or shutdown. Records the owner operation id and the phase at which
-/// the lease was acquired so release can validate provenance.
 #derive(Eq, Debug)
 pub(all) struct OperationLease {
   /// Stable identifier for the operation that acquired the lease. Typically
@@ -182,22 +139,9 @@ pub fn OperationLease::acquired_phase(self : OperationLease) -> PuppetPhase {
   self.acquired_phase
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// TurnId — canonical definition lives in `@kernel` (`domain_run.mbt`);
-// this package aliases it via `imports.mbt`.
-// ──────────────────────────────────────────────────────────────────────────
-
-// ──────────────────────────────────────────────────────────────────────────
-// PuppetError (phase gate subset; extended by T04/T05)
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 /// Typed errors raised by the Puppet. Single suberror type because MoonBit
 /// can raise only one error type per function — all Puppet subsystems
-/// contribute variants here (phase/journal/lifecycle/event/control).
-///
-/// Variants are grouped by subsystem; new subsystems append, they do not
-/// rename existing variants.
 pub(all) suberror PuppetError {
   // ── Phase gate (T02) ──
   /// Operation requested in a phase that does not accept it.
@@ -378,15 +322,11 @@ pub impl Show for PuppetError with fn to_string(self : PuppetError) -> String {
 }
 
 ///|
-/// Bounded single-line label helper. Mirrors `safe_event_label` so the error
-/// file has no cross-file dependency.
 fn safe_label(value : String) -> String {
   safe_label_bounded(value, 64)
 }
 
 ///|
-/// Bounded label with an explicit cap; only the compact effect-failure arm
-/// uses a cap wider than `safe_label`'s.
 fn safe_label_bounded(value : String, cap : Int32) -> String {
   let chars : Array[Char] = []
   let mut truncated = false

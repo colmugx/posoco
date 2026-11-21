@@ -1,24 +1,4 @@
 ///|
-/// RunJournal — append-only, single-writer journal for Puppet savepoints
-///.
-///
-/// Contract:
-/// - Entries are append-only. No update, no delete of committed entries.
-/// - Revision is monotonic: each successful append advances the revision
-///   by exactly 1.
-/// - Identity (run/session/turn/savepoint) is validated on append; mismatched
-///   identity or post-terminal appends raise typed errors.
-/// - Suspended does NOT close the journal: legal resume may append more
-///   entries under the same run id.
-/// - The journal stores Posoco canonical domain entries only — never provider
-///   wire messages.
-///
-/// `InMemoryJournal` is the first adapter; a durable JSONL/SQLite store would
-/// implement the same `RunJournal` trait.
-
-// ──────────────────────────────────────────────────────────────────────────
-// SavepointKind
-// ──────────────────────────────────────────────────────────────────────────
 
 ///|
 /// The savepoint kind an entry belongs to. Each savepoint commits atomically:
@@ -58,10 +38,6 @@ pub impl Show for SavepointKind with fn to_string(self : SavepointKind) -> Strin
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// JournalEntryIdentity — typed identity for each entry
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 /// Stable identifier for a journal entry. The (run_id, savepoint_id,
 /// entry_seq) triple uniquely locates an entry within the journal.
@@ -93,17 +69,9 @@ pub impl Show for JournalEntryIdentity with fn to_string(
   "EntryId(run=\{self.run_id.to_string()}, sp=\{self.savepoint_id}, seq=\{self.entry_seq}, kind=\{self.kind.to_string()})"
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// JournalEntry — the stored record
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 /// A single journal entry. Carries identity + a redacted summary string +
 /// an opaque canonical payload (Json). The journal never interprets the
-/// payload — it's pure storage.
-///
-/// Payload size is bounded; oversize entries fail validation at the
-/// coordinator (pre-write).
 #derive(Eq, Debug)
 pub(all) struct JournalEntry {
   identity : JournalEntryIdentity
@@ -122,25 +90,8 @@ pub extend JournalEntry with Eq::{not_equal, equal}
 ///|
 pub extend JournalEntry with Debug::{to_repr}
 
-// ──────────────────────────────────────────────────────────────────────────
-// RunJournal trait (port — Q7.2 recommendation: pub(open) trait)
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 /// Port: append-only journal with monotonic revision and identity validation.
-///
-/// `InMemoryJournal` is the only implementation today.
-///
-/// The trait intentionally exposes ONLY:
-/// - `append`: commit a frozen batch (advances revision)
-/// - `revision`: read current committed revision
-/// - `entries_for_run`: read projection (replay)
-/// - `entries_for_savepoint`: read a single savepoint's entries
-///
-/// It does NOT expose:
-/// - any mutation of committed entries
-/// - any writer handle that subscribers could obtain
-/// - any "propose" or "contribute" method (that's the coordinator's job)
 pub(open) trait RunJournal {
   /// Append a frozen batch of entries atomically. All entries commit at the
   /// same revision window (each gets revision = current+N). Returns the new
@@ -165,20 +116,10 @@ pub(open) trait RunJournal {
   fn entries_for_savepoint(Self, RunId, String) -> Array[JournalEntry]
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// InMemoryJournal — first adapter
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 /// Append-only in-memory journal. Stores entries in an Array; revision is
 /// derived from the array length (entry N has revision N).
-///
-/// Thread-safety: the runtime is single-threaded and the Puppet is the only
-/// writer; a durable adapter would add its own concurrency control.
 pub struct InMemoryJournal {
-  // Field visibility is package-private: only this file constructs the
-  // journal. The Puppet holds a `&RunJournal` reference; callers cannot
-  // reach into fields.
   entries : Array[JournalEntry]
   /// Set of (run_id, savepoint_id, entry_seq) triples already committed.
   /// Used to reject duplicate entry ids at append time.
@@ -210,7 +151,6 @@ pub fn InMemoryJournal::append_count(self : InMemoryJournal) -> Int32 {
 }
 
 ///|
-/// Internal: build the dedup key for an entry identity.
 fn entry_dedup_key(id : JournalEntryIdentity) -> String {
   "\{id.run_id.to_string()}|\{id.savepoint_id}|\{id.entry_seq}"
 }
@@ -246,9 +186,6 @@ pub impl RunJournal for InMemoryJournal with fn entries_for_savepoint(
 }
 
 ///|
-/// Internal: append implementation. Split from the trait method so other
-/// in-file helpers (e.g. FailOnNthJournal) can call it directly without
-/// going through trait dispatch.
 fn InMemoryJournal::append_impl(
   self : InMemoryJournal,
   batch : Array[JournalEntry],
@@ -256,7 +193,6 @@ fn InMemoryJournal::append_impl(
   if batch.is_empty() {
     return self.revision_impl()
   }
-  // Phase 1: validate the entire batch BEFORE mutating any state.
   for entry in batch {
     let key = entry_dedup_key(entry.identity)
     if self.seen_ids.contains(key) {
@@ -274,7 +210,6 @@ fn InMemoryJournal::append_impl(
       )
     }
   }
-  // Phase 2: commit.
   self.append_count = self.append_count + 1
   let mut next_rev = self.revision_impl() + 1
   for entry in batch {
@@ -332,16 +267,9 @@ fn InMemoryJournal::entries_for_savepoint_impl(
   out
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Test helpers — fail-on-Nth append adapter
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
 /// Test adapter: wraps an InMemoryJournal and fails on the Nth append call
 /// with a typed barrier failure. Used by the C-JOURNAL-APPEND-FAIL fixture.
-///
-/// The wrapped journal is NOT mutated when the failure triggers (the outer
-/// adapter raises before delegating).
 pub struct FailOnNthJournal {
   inner : InMemoryJournal
   fail_on : Int32

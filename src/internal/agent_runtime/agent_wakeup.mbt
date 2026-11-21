@@ -1,7 +1,4 @@
 ///|
-/// Root-side host bridge for the wakeup ledger: the only wakeup code that
-/// knows `AgentRuntime`. A wakeup ticket is an ordinary turn through the
-/// single-operation lifecycle and nothing else.
 impl @wakeup.WakeupHost for AgentRuntime with fn wakeup_idle(
   self : AgentRuntime,
 ) -> Bool {

@@ -29,13 +29,11 @@ pub(open) trait Lifecycle {
 }
 
 ///|
-/// Default `on_compose`: no wiring needed.
 impl Lifecycle with fn on_compose(_self, _ctx : CompositionView) -> Unit {
   ()
 }
 
 ///|
-/// Default `on_start`: nothing to boot. Sync body satisfies the async slot.
 impl Lifecycle with fn on_start(_self) -> Unit {
   ()
 }

@@ -1,8 +1,4 @@
 ///|
-/// Provider-neutral semantic judgement primitives. A DecisionPort evaluates
-/// structured state against independent typed questions and returns
-/// probabilities; policy, authority, and execution stay with the consuming
-/// extension.
 
 ///|
 /// One named alternative for a `Choice` question.

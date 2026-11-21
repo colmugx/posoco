@@ -11,9 +11,14 @@ fn reduce_awaiting_tools(
     ToolFailed(payload~) => reduce_tool_failed(state, payload)
     CancelRequested(payload~) =>
       reduce_cancel_with_pending(state, payload.detail)
-    DeadlineReached(_) => reduce_terminal_fail(state, DeadlineReached)
+    DeadlineReached(_) =>
+      reduce_terminal_fail_with_pending(state, DeadlineReached, DeadlineReached)
     BudgetExhausted(payload~) =>
-      reduce_terminal_fail(state, BudgetExhausted(dimension=payload.dimension))
+      reduce_terminal_fail_with_pending(
+        state,
+        BudgetExhausted(dimension=payload.dimension),
+        HostRequested(detail=Some("budget exhausted")),
+      )
     SuspendRequested(_) =>
       reject_input(
         state, input, "AwaitingTools: tools in flight; cannot suspend",
@@ -33,8 +38,6 @@ fn reduce_awaiting_tools(
 }
 
 ///|
-/// Fold a tool completion into state, returning to ReadyForModel once the last
-/// pending effect is resolved.
 fn reduce_tool_completed(
   state : RunState,
   payload : ToolCompletedPayload,
@@ -136,10 +139,6 @@ fn reduce_tool_completed(
   )
   let events = [event]
   if new_pending.is_empty() {
-    // Wave boundary: commit all staged outcomes to the transcript and
-    // tool-result ledger in one source-ordered rebuild, then return to
-    // ReadyForModel. Tool consumption was already recorded atomically when
-    // the reducer declared this batch's ExecuteTool effects.
     let (committed_transcript, committed_tool_results) = commit_tool_wave(
       state.transcript(),
       state.tool_call_positions,
@@ -181,9 +180,6 @@ fn reduce_tool_completed(
 }
 
 ///|
-/// Tool failed (runtime or invariant failure). Runtime failures become a
-/// `ToolOutcome::RuntimeFailure` and the Run continues. Invariant failures
-/// terminate the Run with Failed.
 fn reduce_tool_failed(
   state : RunState,
   payload : ToolFailedPayload,
@@ -439,10 +435,39 @@ fn insert_tool_result_in_source_order(
 }
 
 ///|
-/// Fallback source position for call ids no longer present in the transcript
-/// (e.g. after a rewrite that removed the owning assistant message). Sorts
-/// to the end, matching the previous append-at-end behavior.
 let missing_tool_position : Int32 = 2147483647
+
+///|
+fn[T] sort_records_by_position(records : Array[T], key : (T) -> Int32) -> Unit {
+  if records.length() <= 1 {
+    return
+  }
+  let buckets : Map[Int32, Array[T]] = Map::from_array([])
+  let unique_pos : Array[Int32] = []
+  for rec in records {
+    let p = key(rec)
+    match buckets.get(p) {
+      Some(bucket) => bucket.push(rec)
+      None => {
+        buckets[p] = [rec]
+        unique_pos.push(p)
+      }
+    }
+  }
+  let sorted_pos = FixedArray::from_array(unique_pos)
+  @proof_order.insertion_sort_positions(sorted_pos)
+  let mut idx = 0
+  for p in sorted_pos {
+    match buckets.get(p) {
+      Some(bucket) =>
+        for rec in bucket {
+          records[idx] = rec
+          idx += 1
+        }
+      None => ()
+    }
+  }
+}
 
 ///|
 fn sort_tool_records_by_position(
@@ -450,36 +475,17 @@ fn sort_tool_records_by_position(
     (@kernel.CallId, @kernel.ToolName, @kernel.ToolOutcome, Int32),
   ],
 ) -> Unit {
-  for i in 1..<records.length() {
-    let key = records[i]
-    let mut j = i - 1
-    while j >= 0 && records[j].3 > key.3 {
-      records[j + 1] = records[j]
-      j = j - 1
-    }
-    records[j + 1] = key
-  }
+  sort_records_by_position(records, fn(r) { r.3 })
 }
 
 ///|
 fn sort_result_records_by_position(
   records : Array[(@kernel.CallId, @kernel.ToolOutcome, Int32)],
 ) -> Unit {
-  for i in 1..<records.length() {
-    let key = records[i]
-    let mut j = i - 1
-    while j >= 0 && records[j].2 > key.2 {
-      records[j + 1] = records[j]
-      j = j - 1
-    }
-    records[j + 1] = key
-  }
+  sort_records_by_position(records, fn(r) { r.2 })
 }
 
 ///|
-/// Build an incremental ledger mapping each call id in the transcript to its
-/// stable source position among all assistant messages. Scans the transcript
-/// once per wave declaration / rewrite, not once per result.
 fn build_tool_call_ledger(
   transcript : @kernel.Transcript,
 ) -> Map[String, Int32] {
@@ -499,8 +505,6 @@ fn build_tool_call_ledger(
 }
 
 ///|
-/// Find the index of the assistant message that owns any of the staged call
-/// ids. All staged results in one wave belong to the same assistant message.
 fn find_owning_assistant_index(
   messages : Array[@kernel.Message],
   staged : Map[String, (@kernel.ToolName, @kernel.ToolOutcome, Int32)],
@@ -526,9 +530,6 @@ fn find_owning_assistant_index(
 }
 
 ///|
-/// Commit all staged tool outcomes to the transcript and tool-result ledger
-/// in a single wave-boundary rebuild. Returns the new transcript and the new
-/// tool-result array. This is O(N) once per wave instead of O(K·N) per result.
 fn commit_tool_wave(
   transcript : @kernel.Transcript,
   ledger : Map[String, Int32],
@@ -628,7 +629,6 @@ fn commit_tool_wave(
 }
 
 ///|
-/// Project the run-local ledger into the public terminal result shape.
 fn tool_outcomes(
   records : FixedArray[(@kernel.CallId, @kernel.ToolOutcome)],
 ) -> FixedArray[@kernel.ToolOutcome] {
@@ -638,9 +638,4 @@ fn tool_outcomes(
     out.push(outcome)
   }
   FixedArray::from_array(out)
-}
-
-///|
-fn is_unknown_tool_diagnostic(diag : @kernel.SchemaDiagnostic) -> Bool {
-  diag.actual.contains("unknown tool")
 }

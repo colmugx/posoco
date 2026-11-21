@@ -1,15 +1,4 @@
-// ──────────────────────────────────────────────────────────────────────────
-// Fork + Compact safe-point handlers
-// ──────────────────────────────────────────────────────────────────────────
-
 ///|
-/// Outcome of `handle_compact`: either the pump should return the given
-/// `PromptResult` (compact::NewThread stops the turn with CompactCompleted),
-/// or it should adopt the new `RunState` and continue the loop (Replace),
-/// or it should reject the run (compact failed). `UpdatedState`
-/// carries the reducer-emitted rewrite events; the CALLER commits them into
-/// the next boundary so journal order stays causal (the rewrite follows the
-/// facts that produced the pre-compact state).
 priv enum CompactFlow {
   ReturnedResult(PromptResult)
   UpdatedState(RunState, Array[KernelEvent])
@@ -17,20 +6,6 @@ priv enum CompactFlow {
 }
 
 ///|
-/// Apply one compact command. Calls `HostRuntime::compact` (which forwards
-/// to `ModelPort::compact`) and applies the result according to its
-/// `CompactMode`:
-/// - **NewThread**: return `PromptResult::CompactCompleted` with the new id;
-///   release the lease and stop the turn. The Agent forms the child core fact
-///   and is the sole SessionPort writer.
-/// - **Replace**: rebuild the transcript from `compacted_messages` and
-///   return `UpdatedState`. The loop continues on the same session id.
-///
-/// Replace folds the transcript change through the reducer — the sole
-/// transcript writer — as a `TranscriptRewrite` input, so the compact is
-/// journaled as a `TranscriptRewritten` event instead of an untracked
-/// mutation. `commit_boundary` is NOT called here; the caller commits the
-/// returned events at the next boundary.
 async fn Puppet::handle_compact(
   self : Puppet,
   state : RunState,
@@ -42,20 +17,12 @@ async fn Puppet::handle_compact(
   snap : TurnSnapshot,
 ) -> CompactFlow raise PuppetError {
   let messages = state.transcript().messages_snapshot()
-  // Capture the exact pre-model transcript. The Agent deep-snapshots it before
-  // `host.compact`, so model-side mutation of the input view cannot rewrite the
-  // source used for the NewThread child.
   self.capture_source(
     run_id,
     session_id.to_string(),
     messages,
     messages.length(),
   )
-  // Compact is host-driven (a mailbox command), not a reducer-allocated
-  // effect — hence `effect_id: None`. Run/session identity still applies.
-  // The resolved window/threshold and the latest verified occupancy ride
-  // along so modelports size their compact strategy from real numbers
-  // instead of re-estimating from characters.
   let pressure : @kernel.ContextPressure = {
     window_tokens: snap.context_window(),
     occupancy_tokens: state.budget_consumed().last_context_tokens,
@@ -100,9 +67,6 @@ async fn Puppet::handle_compact(
       let new_session_id = session_id.to_string() +
         "_compact_" +
         compact_cmd.command_id().to_string()
-      // NewThread stops the turn without a `RunTerminal` boundary, so steers
-      // accepted while the compact ran would be dropped silently by
-      // `clear_run`; report them in one final boundary instead.
       let steer_events : Array[KernelEvent] = []
       self.drain_undelivered(
         steer_events, "turn stopped by compact before delivery",
@@ -140,11 +104,6 @@ async fn Puppet::handle_compact(
 }
 
 ///|
-/// Fold a compact transcript change through the reducer — the sole
-/// transcript writer — as a `TranscriptRewrite` input, so the compact is
-/// journaled as a `TranscriptRewritten` event instead of an untracked
-/// mutation. `commit_boundary` is NOT called here; the caller commits the
-/// returned events at the next boundary.
 fn Puppet::rewrite_transcript_for_compact(
   self : Puppet,
   state : RunState,
@@ -173,22 +132,6 @@ fn Puppet::rewrite_transcript_for_compact(
 }
 
 ///|
-/// Check whether auto-compact should fire on this iteration. Returns
-/// `Some(CompactCommand{trigger=Auto})` when the LATEST verified context
-/// occupancy crossed `context_window * compact_threshold`. Returns `None`
-/// when:
-/// - `context_window` is `None` (auto-compact disabled), OR
-/// - occupancy is unknown (no computable usage reading yet, or the
-///   transcript was just rewritten by a compact), OR
-/// - occupancy is below the threshold, OR
-/// - this context version already spent its auto-compact attempt.
-///
-/// Occupancy is the latest call's own usage, NOT the run-wide cumulative
-/// total: several large-but-far-from-full calls must not sum into a false
-/// trigger, and `max_total_tokens` keeps policing the cumulative account.
-///
-/// The command_id is deterministic per (run_id, model_step_id) so two
-/// checks in the same step cannot enqueue duplicates.
 fn Puppet::check_auto_compact(
   self : Puppet,
   state : RunState,
@@ -227,11 +170,7 @@ fn Puppet::check_auto_compact(
       target_run_id: state.run_id(),
       target_turn_id: match self.mailbox.active_turn_id() {
         Some(t) => t
-        None =>
-          // Defensive: if mailbox is unbound we cannot correlate. The
-          // pump is inside drive_run so the mailbox MUST be bound; this
-          // branch is unreachable in practice.
-          return None
+        None => return None
       },
       trigger: Auto,
     })
@@ -407,9 +346,6 @@ fn has_provider_replay_state(messages : ArrayView[Message]) -> Bool {
 }
 
 ///|
-/// Canonical text cannot estimate provider-owned replay state. After a
-/// rewrite, keep its occupancy unknown until genuine model usage arrives;
-/// canonical-only windows retain the char-based estimate.
 fn Puppet::record_context_estimate(
   self : Puppet,
   session_id : SessionId,
@@ -477,9 +413,6 @@ pub async fn Puppet::compact_standalone(
   }
   self.phase_gate = gate_with_lease
   self.last_completed_transcript = None
-  // Externally cancelled unwinds bypass finalize_run/finalize_rejected below;
-  // release the gate and run binding so the same Agent/session accepts the
-  // next operation.
   errdefer {
     self.release_run_binding()
     self.mailbox.set_quiescent(Idle)
@@ -534,9 +467,6 @@ pub async fn Puppet::compact_standalone(
   }
   let compact_result = match attempted {
     Err(error) =>
-      // A cancellation of the host compact travels as a runtime signal and
-      // is translated at the Agent compact boundary; a raised error here is
-      // an ordinary host defect.
       return self.finalize_rejected(
         error=EffectExecutionFailed(
           phase="compact_session",

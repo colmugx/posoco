@@ -1,7 +1,4 @@
 ///|
-/// Canonical transcript message types for the functional Kernel.
-/// Tool calls, reasoning, and finish_reason live only on `AssistantMessage`.
-/// Pure data — no IO, no trait references, no async.
 
 ///|
 /// Canonical content block. `Text` is the common case; `Image` carries a
@@ -177,15 +174,6 @@ pub impl Show for Reasoning with fn to_string(self : Reasoning) -> String {
 }
 
 ///|
-/// Canonical conversation message. The role determines which payload is
-/// legal, making invalid role/payload combinations unrepresentable.
-///
-/// Invariants:
-/// - `SystemMessage` / `UserMessage` never carry tool calls.
-/// - `AssistantMessage` is the ONLY variant that carries tool calls, the
-///   ONLY variant that carries reasoning.
-/// - `ToolMessage` is the ONLY variant that carries a `call_id` correlation
-///   and a `ToolOutcome`. It never carries tool calls.
 // Proof-side token model: no contract inspects message internals; the int
 // mapping is a trusted opaque bridge. A future spec that reasons about
 // message order or contents needs a real sequence model here first.
@@ -436,7 +424,6 @@ pub impl Show for ToolFailure with fn to_string(self : ToolFailure) -> String {
 }
 
 ///|
-/// Internal bounded single-line label helper for safe diagnostics.
 fn safe_outcome_label(value : String) -> String {
   let chars : Array[Char] = []
   let mut truncated = false
@@ -459,9 +446,6 @@ fn safe_outcome_label(value : String) -> String {
 }
 
 ///|
-/// Canonical conversation transcript. Every transition produces a fresh array
-/// (the reducer never mutates caller-owned arrays, ADR §2.10). The reducer is
-/// the only writer.
 // Proof-side token model: phase_inv carries the transcript opaquely; the
 // int mapping is a trusted opaque bridge (see state_proof.mbtp).
 #derive(Eq, Debug)

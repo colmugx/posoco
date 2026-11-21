@@ -9,9 +9,6 @@ using @directory {
 }
 
 ///|
-/// Project one directory fact to observers. This is an Agent-owned composition
-/// fact, not a reducer/journal fact, so it carries no run scope and names the
-/// operation explicitly when it has one.
 fn emit_tool_catalog_change(
   events : @event_runtime.EventRuntime,
   change : @directory.ToolCatalogChange,
@@ -53,8 +50,6 @@ fn emit_tool_catalog_change(
 }
 
 ///|
-/// Project an operation-level capture fact: which catalog version this
-/// operation installed and how many tools it covers.
 fn emit_catalog_captured(
   events : @event_runtime.EventRuntime,
   operation_id : String,
@@ -75,12 +70,9 @@ fn emit_catalog_captured(
 }
 
 ///|
-/// Capture the directory into the Puppet at operation admission and take the
-/// new version lease. A capture that changed nothing keeps the installed
-/// bindings and their versions instead of re-capturing.
 fn AgentRuntime::capture_tool_contributions(
   self : AgentRuntime,
-  operation_id? : String,
+  operation_id~ : String,
 ) -> Unit raise @error.AgentError {
   if self.tool_contributions.is_closed() {
     return
@@ -109,28 +101,20 @@ fn AgentRuntime::capture_tool_contributions(
   self.versions.install_captured(capture.versions())
   self.next_catalog_version += 1
   self.tool_contributions.accept_capture(capture)
-  match operation_id {
-    Some(id) =>
-      emit_catalog_captured(
-        self.events,
-        id,
-        catalog_version,
-        capture.catalog.definitions().length(),
-      )
-    None => ()
-  }
+  emit_catalog_captured(
+    self.events,
+    operation_id,
+    catalog_version,
+    capture.catalog.definitions().length(),
+  )
 }
 
 ///|
-/// Retain the installed capture's versions once for the admitted operation.
 fn AgentRuntime::acquire_operation_versions(self : AgentRuntime) -> Unit {
   self.versions.acquire(self.tool_contributions)
 }
 
 ///|
-/// Give the admitted operation's lease back. When an execution's termination is
-/// still unconfirmed the lease is retained instead: an unknown execution keeps
-/// the version — and therefore its resources — alive.
 fn AgentRuntime::release_operation_versions(self : AgentRuntime) -> Unit {
   self.versions.release_operation(
     self.tool_contributions,
@@ -139,8 +123,6 @@ fn AgentRuntime::release_operation_versions(self : AgentRuntime) -> Unit {
 }
 
 ///|
-/// Release retained leases once every unconfirmed execution has a terminal
-/// disposition. Called after runtime cleanup confirms that state, never before.
 fn AgentRuntime::release_retained_versions(self : AgentRuntime) -> Unit {
   self.versions.release_retained(
     self.tool_contributions,
@@ -149,10 +131,6 @@ fn AgentRuntime::release_retained_versions(self : AgentRuntime) -> Unit {
 }
 
 ///|
-/// Retire versions that lost every reference, then retry pending ones. Never
-/// raises: a retire failure is reported as a secondary diagnostic and stays
-/// pending for the next attempt. `nocancel` keeps sync finalizers that follow
-/// in a `defer`/`errdefer` from being skipped by cancellation.
 async fn AgentRuntime::retire_released_versions(
   self : AgentRuntime,
 ) -> Unit noraise + nocancel {
@@ -171,7 +149,6 @@ async fn AgentRuntime::retire_released_versions(
 }
 
 ///|
-/// Retry the pending-cleanup set without touching the current lease.
 async fn AgentRuntime::retire_pending_versions(
   self : AgentRuntime,
 ) -> Unit noraise {

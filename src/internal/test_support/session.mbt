@@ -162,8 +162,6 @@ pub fn RecordingSessionPort::save_snapshots(
 }
 
 ///|
-/// The configured save failure for `id`, if one was armed via `fail_save`.
-/// Shared guard of every mutating store operation.
 fn RecordingSessionPort::guard_save(
   self : RecordingSessionPort,
   id : String,
@@ -176,9 +174,6 @@ fn RecordingSessionPort::guard_save(
 }
 
 ///|
-/// Record an operation, then surface its failure: ops keep arrival order and
-/// a configured error raises only after being recorded. Shared tail of
-/// load/save/append/truncate.
 fn[T] RecordingSessionPort::record(
   self : RecordingSessionPort,
   op : SessionOp,

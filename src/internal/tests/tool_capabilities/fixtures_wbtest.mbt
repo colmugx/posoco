@@ -138,9 +138,8 @@ fn ContributionPublisher::capability(
 async fn ContributionPublisher::publish(
   self : ContributionPublisher,
   provider : &@port.ToolProvider,
-  retire? : @port.ToolRetire,
 ) -> @port.ToolContributionCommit {
-  let commit = match self.capability().replace(provider~, retire?) {
+  let commit = match self.capability().replace(provider~) {
     Ok(commit) => commit
     Err(error) =>
       abort("tool contribution publish rejected: " + error.to_string())

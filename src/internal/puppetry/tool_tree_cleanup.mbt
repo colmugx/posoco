@@ -10,8 +10,6 @@ fn ToolTree::record_cancellations(
 }
 
 ///|
-/// Runs after the structured group has stopped its provider tasks. Fibre
-/// cancellation is not a provider stop receipt, so keep each real report.
 async fn ToolTree::cleanup(self : ToolTree, context : ExecutionContext) -> Unit {
   self.active.val = false
   let ids = self.executing.values().to_array()
@@ -74,10 +72,6 @@ fn ToolTree::is_revoked(
 }
 
 ///|
-/// Cancel hard-withdrawn bindings and their descendants, not unrelated roots.
-/// Only the actual `cancel_effects` report is recorded: a `Propagated` signal is
-/// not a stop, and the executor keeps waiting for the provider's own result
-/// instead of fabricating one.
 async fn cancel_revoked_effects(
   tree : ToolTree,
   context : ExecutionContext,
