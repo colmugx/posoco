@@ -105,7 +105,9 @@ flowchart TD
 
   AFTER_M --> HAS_TOOLS{"回复里有工具调用？"}
 
-  HAS_TOOLS -->|没有| SAVE_FINAL
+  HAS_TOOLS -->|没有| WAKEUP{"有可投递到当前 step 的 wakeup？"}
+  WAKEUP -->|否| SAVE_FINAL
+  WAKEUP -->|是| NEXT_MODEL
   HAS_TOOLS -->|有| TOOL_LOOP
 
   TOOL_LOOP["工具波次计数 +1"] --> EXCEED{"超过 max_tool_rounds？"}
@@ -123,7 +125,7 @@ flowchart TD
   EXEC --> TOOL_CP["committed tool boundary<br/>await SessionPort.checkpoint()"]
   TOOL_CP --> MERGE["工具终态事件（Succeeded / Failed / Rejected / Abandoned）<br/>工具结果追加到 messages"]
 
-  MERGE --> NEXT_MODEL["继续下一轮模型调用（before_model 不重跑）"]
+  MERGE --> NEXT_MODEL["继续下一轮模型调用（有新 wakeup 输入时重跑 before_model）"]
   NEXT_MODEL --> COMPACT
 
   SAVE_FINAL["terminal finalize<br/>纯追加 → checkpoint；rewrite/compact → full save<br/>无 store → no-op"] -->|成功| OBS_DONE["observer.on_event(TurnCompleted)"]
