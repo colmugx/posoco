@@ -148,6 +148,7 @@ pub(all) struct CoreFactCommit {
   savepoint_id : String
   is_terminal : Bool
   messages : Array[@kernel.Message]
+  metadata : Map[String, @json.Json]?
 }
 
 #derive(Eq, @debug.Debug)
@@ -173,7 +174,7 @@ pub struct EventDispatcher {
   session_id : @kernel.SessionId
 }
 pub fn EventDispatcher::EventDispatcher(@kernel.RunId, @kernel.TurnId, @kernel.SessionId) -> Self
-pub async fn EventDispatcher::dispatch(Self, @kernel_exec.KernelEvent, Int32) -> Unit raise PuppetError
+pub async fn EventDispatcher::dispatch(Self, @kernel_exec.KernelEvent, Int32, step_session? : @types.Session?) -> Unit raise PuppetError
 pub fn EventDispatcher::next_seq(Self) -> Int32
 pub fn EventDispatcher::register(Self, &EventSubscriber) -> Unit
 pub fn EventDispatcher::subscriber_count(Self) -> Int32
@@ -186,8 +187,9 @@ pub(all) struct EventEnvelope {
   seq : Int32
   committed_revision : Int32
   event : @kernel_exec.KernelEvent
+  step_session : @types.Session?
 }
-pub fn EventEnvelope::EventEnvelope(run_id~ : @kernel.RunId, turn_id~ : @kernel.TurnId, session_id~ : @kernel.SessionId, seq~ : Int32, committed_revision~ : Int32, event~ : @kernel_exec.KernelEvent) -> Self
+pub fn EventEnvelope::EventEnvelope(run_id~ : @kernel.RunId, turn_id~ : @kernel.TurnId, session_id~ : @kernel.SessionId, seq~ : Int32, committed_revision~ : Int32, event~ : @kernel_exec.KernelEvent, step_session? : @types.Session?) -> Self
 pub fn EventEnvelope::equal(Self, Self) -> Bool
 pub fn EventEnvelope::event(Self) -> @kernel_exec.KernelEvent
 pub fn EventEnvelope::is_terminal(Self) -> Bool
@@ -466,6 +468,7 @@ pub struct Puppet {
   mut tool_revocations : ToolRevocationFacts?
   mut source_observer : ((@kernel.RunId, String, Array[@kernel.Message], Int32) -> Unit)?
   mut core_fact_observer : ((CoreFactCommit) -> Unit)?
+  mut step_context_source : (() -> Bool, () -> StepContext?)?
 }
 pub fn Puppet::Puppet(PuppetConfig) -> Self
 pub fn Puppet::adopt_context_state(Self, String, @types.ContextState) -> Unit
@@ -482,6 +485,7 @@ pub fn Puppet::replace_catalog(Self, @kernel_exec.ToolCatalogSnapshot) -> Bool
 pub fn Puppet::session_context_state(Self, String) -> @types.ContextState?
 pub fn Puppet::set_core_fact_observer(Self, ((CoreFactCommit) -> Unit)?) -> Unit
 pub fn Puppet::set_source_observer(Self, ((@kernel.RunId, String, Array[@kernel.Message], Int32) -> Unit)?) -> Unit
+pub fn Puppet::set_step_context_source(Self, (() -> Bool, () -> StepContext?)?) -> Unit
 pub fn Puppet::shutdown(Self) -> Unit raise PuppetError
 pub async fn Puppet::wait_idle(Self) -> QuiescentStatus
 
@@ -613,6 +617,14 @@ pub(all) struct SteerCommand {
 pub fn SteerCommand::equal(Self, Self) -> Bool
 pub fn SteerCommand::not_equal(Self, Self) -> Bool
 pub fn SteerCommand::to_repr(Self) -> @debug.Repr
+
+pub(all) struct StepContext {
+  messages : Array[@kernel.Message]
+  metadata : Map[String, @json.Json]
+  metadata_changed : Bool
+  is_current : () -> Bool
+  confirm : (@types.EventScope, String) -> Unit
+}
 
 pub struct ToolRevocationFacts {
   // private fields

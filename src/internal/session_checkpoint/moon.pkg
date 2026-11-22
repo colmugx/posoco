@@ -2,10 +2,12 @@ import {
   "colmugx/posoco/kernel",
   "colmugx/posoco/port",
   "colmugx/posoco/error",
+  "colmugx/posoco/types",
   "colmugx/posoco/internal/puppetry",
   "colmugx/posoco/internal/message_snapshot",
   "colmugx/posoco/internal/diagnostic",
   "colmugx/posoco/internal/session_state",
+  "colmugx/posoco/internal/session_output",
   "moonbitlang/core/async",
 }
 

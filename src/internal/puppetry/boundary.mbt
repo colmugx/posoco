@@ -9,9 +9,24 @@ async fn Puppet::commit_boundary(
   turn_id : TurnId,
   session_id : SessionId,
   boundary_id_prefix : String,
+  step_context~ : StepContext? = None,
 ) -> Unit raise PuppetError {
   if kind is RunTerminal {
     self.mailbox.message_inbox().close_step()
+  }
+  let step_lease = match step_context {
+    Some(_) => {
+      guard self.phase_gate.lease() is Some(lease) else {
+        raise ReducerInvariantViolation(
+          category=IllegalPhase(
+            phase="step_context",
+            detail="missing active operation lease",
+          ),
+        )
+      }
+      Some(lease)
+    }
+    None => None
   }
   let pre_commit_rev = self.config.journal.revision()
   let savepoint_id = "\{boundary_id_prefix}_r\{pre_commit_rev}"
@@ -41,6 +56,10 @@ async fn Puppet::commit_boundary(
   }
   let batch = prepare_batch(ctx, self.config.contributors)
   let committed_rev = commit_batch(self.config.journal, batch)
+  let messages = state.transcript().messages_snapshot()
+  let step_session : @types.Session? = step_context.map(fn(context) {
+    { messages, metadata: context.metadata, }
+  })
   self.publish_core_fact({
     run_id,
     turn_id,
@@ -48,7 +67,11 @@ async fn Puppet::commit_boundary(
     committed_revision: committed_rev,
     savepoint_id,
     is_terminal: kind is RunTerminal,
-    messages: state.transcript().messages_snapshot(),
+    messages,
+    metadata: match step_context {
+      Some(context) if context.metadata_changed => Some(context.metadata)
+      _ => None
+    },
   })
   // Confirm before any subscriber can suspend or submit more input.
   let inbox = self.mailbox.message_inbox()
@@ -62,10 +85,13 @@ async fn Puppet::commit_boundary(
       _ => ()
     }
   }
+  if step_context is Some(context) && step_lease is Some(lease) {
+    (context.confirm)({ run_id, turn_id, session_id, }, lease.operation_id())
+  }
   // Every event is published after the one boundary commit. They share its
   // committed revision while EventDispatcher preserves a strict event seq.
   for event in events {
-    dispatcher.dispatch(event, committed_rev)
+    dispatcher.dispatch(event, committed_rev, step_session~)
   }
 }
 
@@ -79,8 +105,10 @@ fn boundary_kind_for_events(events : Array[KernelEvent]) -> SavepointKind {
       RunSuspended(..) => (3, RunSuspended)
       ToolCompleted(..) | ToolCallsPreRejected(..) => (2, ToolCommitted)
       ModelStepCompleted(..) => (1, AssistantCommitted)
-      RunStarted(..) | UserMessageAppended(..) | SteerUndelivered(..) =>
-        (0, InputAccepted)
+      RunStarted(..)
+      | UserMessageAppended(..)
+      | StepContextAppended(..)
+      | SteerUndelivered(..) => (0, InputAccepted)
       _ => (-1, AssistantCommitted)
     }
     if rank > best_rank {
@@ -95,7 +123,8 @@ fn boundary_kind_for_events(events : Array[KernelEvent]) -> SavepointKind {
 fn event_to_boundary_kind(event : KernelEvent) -> SavepointKind {
   match event {
     RunStarted(..) => InputAccepted
-    UserMessageAppended(..) | SteerUndelivered(..) => InputAccepted
+    UserMessageAppended(..) | StepContextAppended(..) | SteerUndelivered(..) =>
+      InputAccepted
     ModelStepCompleted(..) => AssistantCommitted
     ToolCompleted(..) | ToolCallsPreRejected(..) => ToolCommitted
     ToolChildDeclared(..) | ToolCallApproved(..) | ToolWaveStarted(..) =>
@@ -319,6 +348,8 @@ fn kernel_event_payload(event : KernelEvent) -> Json {
         "command_id": command_id,
         "content_chars": message_body_chars(message).to_double(),
       }
+    StepContextAppended(message_count~) =>
+      { "kind": "StepContextAppended", "messages": message_count.to_double() }
     SteerUndelivered(command_id~, reason~) =>
       {
         "kind": "SteerUndelivered",

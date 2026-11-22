@@ -84,7 +84,7 @@ fn reduce_ready_for_model(
     SuspendRequested(_) =>
       reject_input(state, input, "ReadyForModel: nothing to suspend")
     ModelCompleted(_)
-    | ModelCompletedWithSteering(_)
+    | ModelCompletedContinue(_)
     | ModelFailed(_)
     | ToolCompleted(_)
     | ToolFailed(_) =>
@@ -128,7 +128,7 @@ fn reduce_suspended(
     Start(_)
     | SuspendRequested(_)
     | ModelCompleted(_)
-    | ModelCompletedWithSteering(_)
+    | ModelCompletedContinue(_)
     | ModelFailed(_)
     | ToolCompleted(_)
     | ToolFailed(_)
@@ -508,13 +508,42 @@ fn reduce_steer_appended(
   state : RunState,
   payload : SteerAppendedPayload,
 ) -> ReduceOutput raise KernelError {
-  let messages = state.transcript().messages_snapshot()
-  messages.push(payload.message)
-  let transcript = @kernel.Transcript::from_array(messages)
-  let event : KernelEvent = UserMessageAppended(
-    command_id=payload.command_id,
-    message=payload.message,
+  append_step_messages(
+    state,
+    [payload.message],
+    UserMessageAppended(command_id=payload.command_id, message=payload.message),
   )
+}
+
+///|
+pub fn append_step_context(
+  state : RunState,
+  messages : Array[@kernel.Message],
+) -> ReduceOutput raise KernelError {
+  if state.phase() != ReadyForModel {
+    raise IllegalTransition(
+      run_id=state.run_id(),
+      phase=state.phase().to_string(),
+      input_kind="append_step_context",
+      detail="step context is only valid in ReadyForModel",
+    )
+  }
+  append_step_messages(
+    state,
+    messages,
+    StepContextAppended(message_count=messages.length()),
+  )
+}
+
+///|
+fn append_step_messages(
+  state : RunState,
+  tail : Array[@kernel.Message],
+  event : KernelEvent,
+) -> ReduceOutput raise KernelError {
+  let messages = state.transcript().messages_snapshot()
+  messages.append(tail)
+  let transcript = @kernel.Transcript::from_array(messages)
   let next_state = state.transition(
     phase=state.phase(),
     transcript~,

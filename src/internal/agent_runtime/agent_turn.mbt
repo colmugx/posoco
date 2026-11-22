@@ -26,11 +26,8 @@ async fn AgentRuntime::run_turn_via_puppet(
     // matches the core snapshot, so the next write must be a full alignment.
     self.progress.mark_dirty(session_id)
   }
-  let wakeup_cutoff_key = identity.run_id.to_string()
-  defer self.wakeup.disarm_cutoff(wakeup_cutoff_key)
   let mut has_peeked_task_outcomes = false
   if !resume_persisted_user {
-    self.wakeup.arm_cutoff(wakeup_cutoff_key, session_id, operation_id)
     let pending = self.task_runtime.peek_outcomes(session_id)
     has_peeked_task_outcomes = !pending.is_empty()
     for outcome in pending {
@@ -40,8 +37,6 @@ async fn AgentRuntime::run_turn_via_puppet(
     }
   }
   let (input, current_turn_start) = match messages.last() {
-    // Replay-resume carries no new information, so it never covers wakeup
-    // demand; compact does not reach this function at all.
     Some(last) if resume_persisted_user && last is UserMessage(..) =>
       (@message_snapshot.snapshot_message(last), messages.length() - 1)
     _ => {
@@ -243,6 +238,20 @@ async fn AgentRuntime::run_puppet_turn_body(
   current_turn_start : Int32,
   current_metadata : Map[String, Json],
 ) -> @types.TurnResult raise @error.AgentError {
+  let applied_task_ids = @task.parse_task_applied_ids(current_metadata)
+  self.puppet.set_step_context_source(
+    Some(
+      (
+        fn() { self.wakeup.has_step_wakeup(session_id) },
+        fn() {
+          self.snapshot_step_wakeup(
+            session_id, current_metadata, applied_task_ids,
+          )
+        },
+      ),
+    ),
+  )
+  defer self.puppet.set_step_context_source(None)
   let prompt_result = self.puppet.prompt(request) catch {
     e =>
       // A cancellation inside the prompt travels as a runtime signal and is
@@ -322,17 +331,11 @@ async fn AgentRuntime::run_puppet_turn_body(
         InvocationFailed("puppet did not produce a terminal transcript"),
       )
   }
-  let transcript_msgs = final_transcript.messages_snapshot()
-  let mut final_message : @kernel.Message = input
-  let all_results : Array[@kernel.ToolOutcome] = []
-  for i in current_turn_start..<transcript_msgs.length() {
-    let message = transcript_msgs[i]
-    match message {
-      AssistantMessage(..) => final_message = message
-      ToolMessage(outcome~, ..) =>
-        all_results.push(@message_snapshot.snapshot_tool_outcome(outcome))
-      _ => ()
-    }
+  guard self.puppet.last_terminal_outcome()
+    is Some(Completed(final_message~, tool_results~)) else {
+    raise Runtime(
+      InvocationFailed("puppet did not produce a completed run outcome"),
+    )
   }
 
   // Save session (write-all, with carried metadata).
@@ -349,7 +352,9 @@ async fn AgentRuntime::run_puppet_turn_body(
 
   let result : @types.TurnResult = {
     message: @message_snapshot.snapshot_message(final_message),
-    tool_results: all_results,
+    tool_results: Array::from_iter(
+      tool_results.iter().map(@message_snapshot.snapshot_tool_outcome),
+    ),
     final_session_id: session_id,
   }
   result

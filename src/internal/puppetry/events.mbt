@@ -15,6 +15,7 @@ pub(all) struct EventEnvelope {
   /// Subscribers can correlate events to journal entries via this.
   committed_revision : Int32
   event : KernelEvent
+  step_session : @types.Session?
 }
 
 ///|
@@ -60,8 +61,9 @@ pub fn EventEnvelope::EventEnvelope(
   seq~ : Int32,
   committed_revision~ : Int32,
   event~ : KernelEvent,
+  step_session~ : @types.Session? = None,
 ) -> EventEnvelope {
-  { run_id, turn_id, session_id, seq, committed_revision, event, }
+  { run_id, turn_id, session_id, seq, committed_revision, event, step_session, }
 }
 
 ///|
@@ -210,6 +212,7 @@ pub async fn EventDispatcher::dispatch(
   self : EventDispatcher,
   event : KernelEvent,
   committed_revision : Int32,
+  step_session~ : @types.Session? = None,
 ) -> Unit raise PuppetError {
   let seq = self.next_seq
   self.next_seq = self.next_seq + 1
@@ -221,6 +224,7 @@ pub async fn EventDispatcher::dispatch(
     seq~,
     committed_revision~,
     event~,
+    step_session~,
   )
   for subscriber in self.subscribers {
     let sid = subscriber.subscriber_id()

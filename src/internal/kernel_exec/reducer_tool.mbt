@@ -27,7 +27,7 @@ fn reduce_awaiting_tools(
     Start(_)
     | Resume(_)
     | ModelCompleted(_)
-    | ModelCompletedWithSteering(_)
+    | ModelCompletedContinue(_)
     | ModelFailed(_) =>
       reject_input(state, input, "AwaitingTools: input not legal here")
     SteerAppended(_) =>

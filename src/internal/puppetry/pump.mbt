@@ -40,15 +40,8 @@ async fn Puppet::drive_run(
   }
   // Inside a run the identity is always known, so hooks always see `Some`.
   let hook_scope : @types.EventScope = { session_id, run_id, turn_id, }
-  // before_model hooks may rewrite or abort the initial messages.
-  let mut seeded_messages = initial_messages.copy()
-  for hook in self.config.hooks {
-    seeded_messages = hook.before_model(seeded_messages) catch {
-      Aborted(reason~) =>
-        return self.finalize_rejected(
-          error=HookRejected(reason="pre_model_hook: " + reason),
-        )
-    }
+  let seeded_messages = self.apply_before_model(initial_messages) catch {
+    error => return self.finalize_rejected(error~)
   }
   let start_input : RunInput = Start(payload={
     initial_messages: seeded_messages,
@@ -108,10 +101,9 @@ async fn Puppet::drive_run(
     Err(error) => return self.finalize_rejected(error~)
     Ok(value) => value
   }
-  let (initial_state, initial_boundary_events) = declare_model_effect_if_ready(
+  let (initial_state, initial_boundary_events, step_context) = self.declare_model_effect_if_ready(
     state_after_steer,
     initial_events,
-    self.config.catalog,
     snap.call_options(),
   ) catch {
     error => return self.finalize_rejected(error~)
@@ -128,6 +120,7 @@ async fn Puppet::drive_run(
       turn_id,
       session_id,
       "sp_input",
+      step_context~,
     ),
   ) catch {
     e => Err(e)
@@ -137,7 +130,7 @@ async fn Puppet::drive_run(
     Ok(_) =>
       if pre_compact_fired ||
         initial_boundary_events.any(fn(event) {
-          event is UserMessageAppended(..)
+          event is UserMessageAppended(..) || event is StepContextAppended(..)
         }) {
         self.record_context_estimate(
           session_id,
@@ -149,10 +142,11 @@ async fn Puppet::drive_run(
   state = initial_state
   let mut iter = 0
   let max_iter = self.config.max_iterations
+  let wakeup_continuations = Ref(0)
   while state.phase() != Terminal && state.phase() != Suspended {
     iter = iter + 1
     match max_iter {
-      Some(m) if iter > m =>
+      Some(m) if iter - wakeup_continuations.val > m =>
         return self.finalize_rejected(error=PumpLoopExceeded(iterations=iter))
       _ => ()
     }
@@ -202,7 +196,7 @@ async fn Puppet::drive_run(
         match
           self.pump_awaiting_model(
             state, exec_ctx, dispatcher, run_id, turn_id, session_id, snap, iter,
-            hook_scope,
+            hook_scope, wakeup_continuations,
           ) {
           StopWith(result) => return result
           ContinueWith(next_state) => state = next_state
@@ -443,79 +437,22 @@ async fn Puppet::pump_ready_for_model(
     Err(error) => return StopWith(self.finalize_rejected(error~))
     Ok(next_state) => state = next_state
   }
-  // Rewrites chain — each hook sees the previous output — and the result
-  // replaces the reducer's transcript for the next CallModel effect.
-  let initial_messages = state.transcript().messages_snapshot()
-  let mut current_messages = initial_messages
-  let mut hook_aborted = false
-  let mut abort_reason = ""
-  let mut hook_changed = false
-  for hook in self.config.hooks {
-    let new_messages = hook.before_model(current_messages) catch {
-      Aborted(reason~) => {
-        hook_aborted = true
-        abort_reason = reason
-        []
-      }
-    }
-    if !physical_equal(new_messages, current_messages) {
-      hook_changed = true
-    }
-    current_messages = new_messages
-    if hook_aborted {
-      break
-    }
-  }
-  if hook_aborted {
-    return StopWith(
-      self.finalize_rejected(
-        error=HookRejected(reason="pre_model_hook: " + abort_reason),
-      ),
-    )
-  }
-  if hook_changed && current_messages != initial_messages {
-    let rewrite_input : RunInput = TranscriptRewrite(payload={
-      rewritten_messages: current_messages,
-      reason: "pre_model_hook",
-    })
-    let reduced : Result[ReduceOutput, KernelError] = Ok(
-      reduce(state, self.config.catalog, rewrite_input),
-    ) catch {
-      e => Err(e)
-    }
-    match reduced {
-      Err(e) =>
-        return StopWith(
-          self.finalize_rejected(
-            error=ReducerInvariantViolation(
-              category=IllegalPhase(
-                phase="ReadyForModel",
-                detail="pre_model_hook transcript rewrite: " + e.to_string(),
-              ),
-            ),
-          ),
-        )
-      Ok(out) => {
-        state = out.next_state()
-        for event in out.events() {
-          prior_events.push(event)
-        }
-      }
-    }
-  }
-  let declared : Result[(RunState, Array[KernelEvent]), PuppetError] = Ok(
-    declare_model_effect_if_ready(
+  let declared : Result[
+    (RunState, Array[KernelEvent], StepContext?),
+    PuppetError,
+  ] = Ok(
+    self.declare_model_effect_if_ready(
       state,
       prior_events,
-      self.config.catalog,
       snap.call_options(),
+      run_hooks=true,
     ),
   ) catch {
     error => Err(error)
   }
   match declared {
     Err(error) => return StopWith(self.finalize_rejected(error~))
-    Ok((next_state, events)) => {
+    Ok((next_state, events, step_context)) => {
       state = next_state
       let cr : Result[Unit, PuppetError] = Ok(
         self.commit_boundary(
@@ -527,6 +464,7 @@ async fn Puppet::pump_ready_for_model(
           turn_id,
           session_id,
           "sp_ready_\{iter}",
+          step_context~,
         ),
       ) catch {
         e => Err(e)
@@ -552,6 +490,7 @@ async fn Puppet::pump_awaiting_model(
   snap : TurnSnapshot,
   iter : Int32,
   hook_scope : @types.EventScope,
+  wakeup_continuations : Ref[Int32],
 ) -> PumpStep noraise {
   let pending = state.pending_effects()
   if pending.length() != 1 {
@@ -586,6 +525,7 @@ async fn Puppet::pump_awaiting_model(
       session_id,
       "sp_model_effect_\{iter}",
       snap,
+      wakeup_continuations=Some(wakeup_continuations),
     ),
   ) catch {
     error => Err(error)

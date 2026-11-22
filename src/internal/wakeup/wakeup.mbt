@@ -45,9 +45,6 @@ pub struct WakeupRuntime {
   priv order : Array[WakeupPending]
   /// session → tag → pending entry (coalescing lookup).
   priv by_key : Map[String, Map[String, WakeupPending]]
-  /// Per-session latest requirement generation, bumped on every request.
-  priv generations : Map[String, Int32]
-  priv mut cutoff_arm : WakeupCutoffArm?
 }
 
 ///|
@@ -66,8 +63,6 @@ pub fn WakeupRuntime::WakeupRuntime(
     events,
     order: [],
     by_key: Map::from_array([]),
-    generations: Map::from_array([]),
-    cutoff_arm: None,
   }
 }
 
@@ -153,6 +148,7 @@ fn WakeupRuntime::emit_wakeup_event(
   entry : WakeupPending,
   operation_id~ : String? = None,
   envelope~ : String? = None,
+  step_scope~ : @types.EventScope? = None,
 ) -> Unit {
   let ticket = entry.ticket
   let fields : Array[(String, Json)] = [
@@ -170,12 +166,16 @@ fn WakeupRuntime::emit_wakeup_event(
     Some(text) => fields.push(("envelope", Json::string(text)))
     None => ()
   }
+  if step_scope is Some(scope) {
+    fields.push(("delivery", Json::string("step")))
+    fields.push(("turn_id", Json::string(scope.turn_id.to_string())))
+  }
   let event : @types.TurnEvent = Custom(
     source="posoco.wakeup",
     label~,
     data=Json::object(Map::from_array(fields)),
   )
-  self.events.emit_core(None, event)
+  self.events.emit_core(step_scope, event)
 }
 
 ///|
@@ -210,10 +210,6 @@ fn WakeupRuntime::request(
       )
     None => return Err(InvalidSession(reason="no active session is bound"))
   }
-  let generation = match self.generations.get(session) {
-    Some(value) => value + 1
-    None => 1
-  }
   let session_map = match self.by_key.get(session) {
     Some(existing) => existing
     None => {
@@ -224,16 +220,14 @@ fn WakeupRuntime::request(
   }
   match session_map.get(tag) {
     Some(entry) => {
-      self.generations[session] = generation
       entry.note = note
-      entry.latest_requirement = generation
+      entry.latest_requirement = entry.latest_requirement + 1
       Ok(entry.ticket)
     }
     None => {
       if session_map.length() >= wakeup_max_pending {
         return Err(PendingFull(session~, limit=wakeup_max_pending))
       }
-      self.generations[session] = generation
       self.next_ticket_seq = self.next_ticket_seq + 1
       let ticket : @port.WakeupTicket = {
         id: "wakeup_ticket_\{self.next_ticket_seq}",
@@ -245,7 +239,7 @@ fn WakeupRuntime::request(
         ticket,
         extension_id,
         note,
-        latest_requirement: generation,
+        latest_requirement: 1,
         activation: self.active_generation,
       }
       session_map[tag] = entry
@@ -254,36 +248,6 @@ fn WakeupRuntime::request(
       self.notify_state_change()
       Ok(ticket)
     }
-  }
-}
-
-///|
-fn WakeupRuntime::satisfy_covered(
-  self : WakeupRuntime,
-  session_id : String,
-  cutoff : Int32,
-  operation_id : String,
-) -> Unit {
-  let covered : Array[WakeupPending] = []
-  let mut index = 0
-  while index < self.order.length() {
-    let entry = self.order[index]
-    if entry.ticket.session == session_id && entry.latest_requirement <= cutoff {
-      covered.push(entry)
-      ignore(self.order.remove(index))
-    } else {
-      index = index + 1
-    }
-  }
-  for entry in covered {
-    self.forget(entry)
-  }
-  for entry in covered {
-    self.emit_wakeup_event(
-      "wakeup_satisfied",
-      entry,
-      operation_id=Some(operation_id),
-    )
   }
 }
 

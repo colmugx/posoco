@@ -121,9 +121,10 @@ pub impl Show for HookStage with fn to_string(self : HookStage) -> String {
 ///   dispatch nothing — the turn never began. A raise is a secondary
 ///   failure — reported to observers, never failing the turn — and later
 ///   hooks still run; cancellation is not a defect.
-/// - `before_model`: invoked before the model is called. Can rewrite
-///   messages or raise `HookAbort`. Multiple hooks form a chained rewrite
-///   pipeline — each hook sees the previous hook's output.
+/// - `before_model`: invoked at turn entry and before requests carrying new
+///   wakeup input. It can rewrite the candidate messages or raise `HookAbort`.
+///   Each hook sees the previous hook's output. Reading a new wakeup at
+///   the first model boundary may run the chain again after turn entry.
 /// - `before_tool`: invoked before every tool execution. Every hook is
 ///   evaluated; merge precedence on `ToolDecision` (consent beats
 ///   Reject; Defer still aborts the run).

@@ -49,6 +49,16 @@ pub(all) struct CoreFactCommit {
   savepoint_id : String
   is_terminal : Bool
   messages : Array[@kernel.Message]
+  metadata : Map[String, Json]?
+}
+
+///|
+pub(all) struct StepContext {
+  messages : Array[@kernel.Message]
+  metadata : Map[String, Json]
+  metadata_changed : Bool
+  is_current : () -> Bool
+  confirm : (@types.EventScope, String) -> Unit
 }
 
 ///|
@@ -80,6 +90,7 @@ pub struct Puppet {
   /// Synchronous post-journal/pre-dispatch core fact sink. `None` keeps the
   /// Agent core detached from Puppet commits.
   mut core_fact_observer : ((CoreFactCommit) -> Unit)?
+  mut step_context_source : (() -> Bool, () -> StepContext?)?
 }
 
 ///|
@@ -96,6 +107,7 @@ pub fn Puppet::Puppet(config : PuppetConfig) -> Puppet {
     tool_revocations: None,
     source_observer: None,
     core_fact_observer: None,
+    step_context_source: None,
   }
 }
 
@@ -127,6 +139,14 @@ pub fn Puppet::set_core_fact_observer(
   observer : ((CoreFactCommit) -> Unit)?,
 ) -> Unit {
   self.core_fact_observer = observer
+}
+
+///|
+pub fn Puppet::set_step_context_source(
+  self : Puppet,
+  source : (() -> Bool, () -> StepContext?)?,
+) -> Unit {
+  self.step_context_source = source
 }
 
 ///|

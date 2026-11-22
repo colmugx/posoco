@@ -1,11 +1,11 @@
 ///|
 
 ///|
-/// Correctness-critical persistence projection for committed model/tool facts.
-/// Agent checkpoints the admitted input before Puppet starts; this subscriber
+/// Projects committed model, tool and step input facts to the session stores.
 pub struct SessionCheckpointSubscriber {
   priv stores : Array[&@port.SessionPort]
   priv progress : @session_state.SessionProgress
+  priv mut last_step_revision : Int32
 }
 
 ///|
@@ -13,7 +13,7 @@ pub fn SessionCheckpointSubscriber::SessionCheckpointSubscriber(
   stores : Array[&@port.SessionPort],
   progress : @session_state.SessionProgress,
 ) -> SessionCheckpointSubscriber {
-  { stores, progress, }
+  { stores, progress, last_step_revision: -1, }
 }
 
 ///|
@@ -38,21 +38,22 @@ pub impl @puppetry.EventSubscriber for SessionCheckpointSubscriber with fn prove
 }
 
 ///|
-async fn SessionCheckpointSubscriber::append_committed_message(
+async fn SessionCheckpointSubscriber::checkpoint_committed_messages(
   self : SessionCheckpointSubscriber,
   session_id : String,
-  message : @kernel.Message,
+  messages : Array[@kernel.Message],
 ) -> Unit raise @puppetry.SubscriberError {
   if self.stores.is_empty() {
     return
   }
   let cursor = self.progress.cursor_or_zero(session_id)
+  errdefer self.progress.mark_dirty(session_id)
   let results : Array[Result[Unit, @error.SessionError]] = @async.all(
     self.stores.map(fn(store) {
       () => {
         let checkpoint : @port.SessionCheckpoint = {
           from_index: cursor,
-          messages: [@message_snapshot.snapshot_message(message)],
+          messages: @message_snapshot.snapshot_messages(messages),
           metadata: None,
         }
         Ok(store.checkpoint(session_id, checkpoint)) catch {
@@ -80,7 +81,31 @@ async fn SessionCheckpointSubscriber::append_committed_message(
         )
     }
   }
-  self.progress.advance_one(session_id)
+  self.progress.set_cursor(session_id, cursor + messages.length())
+}
+
+///|
+async fn SessionCheckpointSubscriber::save_step_session(
+  self : SessionCheckpointSubscriber,
+  session_id : String,
+  session : @types.Session,
+) -> Unit raise @puppetry.SubscriberError {
+  errdefer self.progress.mark_dirty(session_id)
+  @session_output.save_all(
+    self.stores,
+    session_id,
+    session.messages,
+    session.metadata,
+    "wakeup_step_checkpoint",
+  ) catch {
+    error =>
+      raise Internal(
+        subscriber_id="agent_session_checkpoint",
+        detail=error.to_string(),
+      )
+  }
+  self.progress.set_cursor(session_id, session.messages.length())
+  self.progress.mark_clean(session_id)
 }
 
 ///|
@@ -88,7 +113,19 @@ pub impl @puppetry.EventSubscriber for SessionCheckpointSubscriber with fn on_ev
   self : SessionCheckpointSubscriber,
   envelope : @puppetry.EventEnvelope,
 ) -> Unit raise @puppetry.SubscriberError {
+  if self.stores.is_empty() {
+    return
+  }
   let session_id = envelope.session_id().to_string()
+  if envelope.step_session is Some(session) {
+    // A provider or hook can rewrite the prefix; individual events cannot reconstruct it.
+    let revision = envelope.committed_revision
+    if self.last_step_revision != revision {
+      self.save_step_session(session_id, session)
+      self.last_step_revision = revision
+    }
+    return
+  }
   match envelope.event() {
     RunStarted(..) => ()
     TranscriptRewritten(..) => self.progress.mark_dirty(session_id)
@@ -96,7 +133,7 @@ pub impl @puppetry.EventSubscriber for SessionCheckpointSubscriber with fn on_ev
     // appended incrementally or the session store silently lags the core fact.
     UserMessageAppended(message~, ..) =>
       if !self.progress.is_dirty(session_id) {
-        self.append_committed_message(session_id, message)
+        self.checkpoint_committed_messages(session_id, [message])
       }
     ModelStepCompleted(completion~, ..) => {
       let payload = completion.message
@@ -107,7 +144,7 @@ pub impl @puppetry.EventSubscriber for SessionCheckpointSubscriber with fn on_ev
         finish_reason=payload.finish_reason,
       )
       if !self.progress.is_dirty(session_id) {
-        self.append_committed_message(session_id, message)
+        self.checkpoint_committed_messages(session_id, [message])
       }
     }
     ToolCompleted(call~, outcome~, parent_effect_id=None) => {
@@ -117,7 +154,7 @@ pub impl @puppetry.EventSubscriber for SessionCheckpointSubscriber with fn on_ev
         outcome~,
       )
       if !self.progress.is_dirty(session_id) {
-        self.append_committed_message(session_id, message)
+        self.checkpoint_committed_messages(session_id, [message])
       }
     }
     ToolCallsPreRejected(calls~, outcomes~, ..) => {
@@ -133,7 +170,7 @@ pub impl @puppetry.EventSubscriber for SessionCheckpointSubscriber with fn on_ev
       }
       if !self.progress.is_dirty(session_id) {
         for message in messages {
-          self.append_committed_message(session_id, message)
+          self.checkpoint_committed_messages(session_id, [message])
         }
       }
     }

@@ -56,9 +56,7 @@ fn reduce_awaiting_model(
 ) -> ReduceOutput raise KernelError {
   match input {
     ModelCompleted(payload~) => reduce_model_completed(state, catalog, payload)
-    ModelCompletedWithSteering(payload~) =>
-      // Same completion payload, but a steer message was folded into this
-      // step: a no-tool completion must not end the run.
+    ModelCompletedContinue(payload~) =>
       reduce_model_completed(state, catalog, payload, continue_turn=true)
     ModelFailed(payload~) => reduce_model_failed(state, payload)
     CancelRequested(payload~) =>

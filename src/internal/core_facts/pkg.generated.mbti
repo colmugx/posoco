@@ -28,7 +28,7 @@ pub fn CoreFacts::hydrate(Self, String, Array[@kernel.Message], Map[String, @jso
 pub fn CoreFacts::mark_missing_provenance(Self, String) -> Unit
 pub fn CoreFacts::read_session(Self, String) -> @types.Session raise CoreReadError
 pub fn CoreFacts::read_source(Self, String) -> @types.Session?
-pub fn CoreFacts::record_boundary(Self, String, String, Int32, String, Bool, Array[@kernel.Message]) -> Unit
+pub fn CoreFacts::record_boundary(Self, String, String, Int32, String, Bool, Array[@kernel.Message], metadata_update? : Map[String, @json.Json]?) -> Unit
 pub fn CoreFacts::record_new_thread(Self, String, String, String, Array[@kernel.Message], Map[String, @json.Json]) -> Result[Unit, String]
 pub fn CoreFacts::record_terminal(Self, String, String, Array[@kernel.Message], Map[String, @json.Json]) -> Result[Unit, String]
 pub fn CoreFacts::stop(Self, String, String, String) -> Unit

@@ -21,6 +21,8 @@ pub fn task_outcome_message(@port.TaskOutcome) -> @kernel.Message
 
 pub fn task_outcome_status_label(@port.TaskStatus) -> String
 
+pub fn write_applied_task_ids(Map[String, @json.Json], Array[String]) -> Unit
+
 // Errors
 
 // Types and methods
@@ -35,12 +37,14 @@ pub fn TaskRuntime::capability(Self, String) -> @port.Tasks
 pub fn TaskRuntime::commit_outcomes(Self, String) -> Unit
 pub async fn TaskRuntime::finish_active_operation(Self) -> Unit raise @error.AgentError + nocancel
 pub fn TaskRuntime::has_inflight(Self, String) -> Bool
+pub fn TaskRuntime::include_inflight(Self, String, Array[String]) -> Unit
 pub fn TaskRuntime::metadata_with_applied_outcomes(Self, String, Map[String, @json.Json]) -> Map[String, @json.Json] raise @error.AgentError
 pub fn TaskRuntime::peek_outcomes(Self, String) -> Array[@port.TaskOutcome]
 pub fn TaskRuntime::scope_available(Self) -> Bool
 pub fn TaskRuntime::set_ready_notifier(Self, (@port.TaskOutcome) -> Unit) -> Unit
 pub async fn TaskRuntime::shutdown(Self) -> Unit raise @error.AgentError
 pub fn TaskRuntime::shutdown_straggler_detail(Self) -> String
+pub fn TaskRuntime::snapshot_outcomes(Self, String, excluding~ : Array[String]) -> Array[@port.TaskOutcome]
 
 // Type aliases
 

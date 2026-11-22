@@ -194,11 +194,8 @@ pub extend SteerAppendedPayload with Debug::{to_repr}
 pub(all) enum RunInput {
   Start(payload~ : StartPayload)
   ModelCompleted(payload~ : ModelCompletedPayload)
-  /// A model completion that raced an accepted steer message: the same
-  /// completion payload, but the run must not end on a no-tool completion —
-  /// the steer re-opens the step boundary instead (explicit kind so replay
-  /// and rejection labels stay distinct from `ModelCompleted`).
-  ModelCompletedWithSteering(payload~ : ModelCompletedPayload)
+  /// A no-tool completion must leave room for pending step input.
+  ModelCompletedContinue(payload~ : ModelCompletedPayload)
   ModelFailed(payload~ : ModelFailedPayload)
   ToolCompleted(payload~ : ToolCompletedPayload)
   ToolFailed(payload~ : ToolFailedPayload)
@@ -222,7 +219,7 @@ fn RunInput::kind(self : RunInput) -> String {
   match self {
     Start(..) => "Start"
     ModelCompleted(..) => "ModelCompleted"
-    ModelCompletedWithSteering(..) => "ModelCompletedWithSteering"
+    ModelCompletedContinue(..) => "ModelCompletedContinue"
     ModelFailed(..) => "ModelFailed"
     ToolCompleted(..) => "ToolCompleted"
     ToolFailed(..) => "ToolFailed"
@@ -245,8 +242,8 @@ pub impl Show for RunInput with fn to_string(self : RunInput) -> String {
     Start(..) => "Start"
     ModelCompleted(payload~) =>
       "ModelCompleted(effect=\{payload.effect_id.to_int()})"
-    ModelCompletedWithSteering(payload~) =>
-      "ModelCompletedWithSteering(effect=\{payload.effect_id.to_int()})"
+    ModelCompletedContinue(payload~) =>
+      "ModelCompletedContinue(effect=\{payload.effect_id.to_int()})"
     ModelFailed(payload~) => "ModelFailed(effect=\{payload.effect_id.to_int()})"
     ToolCompleted(payload~) =>
       "ToolCompleted(effect=\{payload.effect_id.to_int()}, call=\{payload.call_id.to_string()})"

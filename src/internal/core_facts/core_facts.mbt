@@ -457,6 +457,7 @@ pub fn CoreFacts::record_boundary(
   savepoint_id : String,
   is_terminal : Bool,
   messages : Array[@kernel.Message],
+  metadata_update~ : Map[String, Json]? = None,
 ) -> Unit {
   match self.state.get(session_id) {
     Some(Tracking(run_id=state_run)) if state_run == run_id => ()
@@ -486,6 +487,7 @@ pub fn CoreFacts::record_boundary(
       return
     }
   }
+  let metadata = metadata_update.unwrap_or(metadata)
   if !self.store.sessions.contains(session_id) {
     let recorded : Result[Int32, CoreVersionError] = Ok(
       self.store.record_full(session_id, messages, metadata),
@@ -494,6 +496,11 @@ pub fn CoreFacts::record_boundary(
     }
     match recorded {
       Ok(_) => {
+        if metadata_update is Some(_) {
+          self.metadata[session_id] = @message_snapshot.snapshot_metadata(
+            metadata,
+          )
+        }
         self.last_commit[session_id] = {
           run_id,
           revision: committed_revision,
@@ -545,7 +552,8 @@ pub fn CoreFacts::record_boundary(
       return
     }
   }
-  if core_shadow_messages_equal(current_messages, messages) {
+  if metadata_update is None &&
+    core_shadow_messages_equal(current_messages, messages) {
     self.last_commit[session_id] = {
       run_id,
       revision: committed_revision,
@@ -568,6 +576,11 @@ pub fn CoreFacts::record_boundary(
   }
   match recorded {
     Ok(_) => {
+      if metadata_update is Some(_) {
+        self.metadata[session_id] = @message_snapshot.snapshot_metadata(
+          metadata,
+        )
+      }
       self.last_commit[session_id] = {
         run_id,
         revision: committed_revision,

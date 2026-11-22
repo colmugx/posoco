@@ -164,7 +164,7 @@ async fn Puppet::fire_post_event_hooks(
     return
   }
   let stage : HookStage = match input {
-    ModelCompleted(payload~) | ModelCompletedWithSteering(payload~) =>
+    ModelCompleted(payload~) | ModelCompletedContinue(payload~) =>
       ModelCompleted(completion=payload.completion)
     ModelFailed(payload~) => ModelFailed(failure=payload.failure)
     ToolCompleted(payload~) =>

@@ -307,9 +307,6 @@ pub fn AgentRuntime::compose(
       control.inbox.acknowledge_step_delivery(command_id)
     }),
   )
-  let wakeup_cutoff_subscriber = @wakeup.WakeupCutoffSubscriber::WakeupCutoffSubscriber(
-    wakeup,
-  )
   let puppet_config : @puppetry.PuppetConfig = {
     host,
     catalog,
@@ -317,7 +314,6 @@ pub fn AgentRuntime::compose(
     contributors: [],
     subscribers: [
       checkpoint_subscriber as &@puppetry.EventSubscriber,
-      wakeup_cutoff_subscriber as &@puppetry.EventSubscriber,
       event_subscriber as &@puppetry.EventSubscriber,
     ],
     stream_chunks: create_agent_stream_callback(
@@ -374,6 +370,7 @@ pub fn AgentRuntime::compose(
         fact.savepoint_id,
         fact.is_terminal,
         fact.messages,
+        metadata_update=fact.metadata,
       )
     }),
   )

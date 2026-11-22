@@ -10,6 +10,8 @@ import {
 }
 
 // Values
+pub fn append_step_context(RunState, Array[@kernel.Message]) -> ReduceOutput raise KernelError
+
 pub fn classify_rejected_outcome(ToolCatalogSnapshot, @kernel.ToolCall, direct? : Bool) -> @kernel.ToolOutcome?
 
 pub fn declare_tool_child(RunState, ToolCatalogSnapshot, @kernel.EffectId, @kernel.ToolName, @json.Json, Array[String], Int32?) -> (ReduceOutput, Effect, @kernel.ToolOutcome?) raise KernelError
@@ -291,6 +293,7 @@ pub(all) enum KernelEvent {
   InputRejected(input_kind~ : String, reason~ : String)
   TranscriptRewritten(messages_before~ : Int32, messages_after~ : Int32, reason~ : String)
   UserMessageAppended(command_id~ : String, message~ : @kernel.Message)
+  StepContextAppended(message_count~ : Int32)
   SteerUndelivered(command_id~ : String, reason~ : String)
   RunCompleted(final_message_summary~ : String, model_steps~ : Int32, tool_calls~ : Int32)
   RunFailed(reason~ : FailureReason)
@@ -383,7 +386,7 @@ pub fn ResumePayload::to_repr(Self) -> @debug.Repr
 pub(all) enum RunInput {
   Start(payload~ : StartPayload)
   ModelCompleted(payload~ : ModelCompletedPayload)
-  ModelCompletedWithSteering(payload~ : ModelCompletedPayload)
+  ModelCompletedContinue(payload~ : ModelCompletedPayload)
   ModelFailed(payload~ : ModelFailedPayload)
   ToolCompleted(payload~ : ToolCompletedPayload)
   ToolFailed(payload~ : ToolFailedPayload)

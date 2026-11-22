@@ -146,6 +146,7 @@ pub(all) enum KernelEvent {
   /// boundary. Carries the body for in-memory observers and session
   /// persistence; durable journal summaries keep only a character count.
   UserMessageAppended(command_id~ : String, message~ : @kernel.Message)
+  StepContextAppended(message_count~ : Int32)
   /// Emitted for a steer accepted earlier but never applied because the run
   /// ended first. The host keeps the input so the user can resend it; it is
   /// never converted into a follow-up.
@@ -216,6 +217,8 @@ pub impl Show for KernelEvent with fn to_string(self : KernelEvent) -> String {
       "TranscriptRewritten(\{messages_before}->\{messages_after} messages, \{safe_label(reason)})"
     UserMessageAppended(command_id~, message~) =>
       "UserMessageAppended(command=\{command_id}, content_chars=\{message_content_chars(message)})"
+    StepContextAppended(message_count~) =>
+      "StepContextAppended(\{message_count} messages)"
     SteerUndelivered(command_id~, reason~) =>
       "SteerUndelivered(command=\{command_id}, \{safe_label(reason)})"
     RunCompleted(final_message_summary~, model_steps~, tool_calls~) =>

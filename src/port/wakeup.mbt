@@ -47,16 +47,23 @@ pub extend WakeupError with Eq::{not_equal, equal}
 pub extend WakeupError with Debug::{to_repr}
 
 ///|
-/// Queue one ordinary turn for the session. Synchronous by contract:
-/// callable from task bodies, observer callbacks, and hook tails — never
-/// awaits. The session must be the Agent's currently bound active window
-/// session (set by the host through `Agent::set_active_session`); pending
-/// tickets die when that binding changes or the process exits, and are not
-/// revived by binding the same session again. Coalescing key is
-/// `(session, tag)`: a pending entry returns the same ticket (the requested
-/// event fires once), while every request updates the entry's latest
-/// requirement generation. A request that lands after an input snapshot is
-/// never satisfied by that snapshot.
+/// Queue a wakeup for the session. At an eligible step boundary in a turn
+/// for that session, pending wakeups can enter the turn as separate input
+/// messages. A ticket is satisfied only after the journal commits the
+/// boundary that applies its message. `wakeup_satisfied` is scoped to the
+/// actual turn and reports `delivery=step` and the operation id. If the
+/// Agent is idle, the pump can instead start an ordinary turn for the ticket.
+/// Wakeup alone can extend a turn at most 64 times; outstanding tickets remain
+/// eligible for the idle pump.
+///
+/// Requests are synchronous and never await, including from task bodies,
+/// observer callbacks, and hook tails. The session must be the Agent's
+/// currently bound active window session (set by `Agent::set_active_session`).
+/// Pending tickets are dropped when that binding changes and do not survive
+/// process exit. Requests for a pending `(session, tag)` return the same
+/// ticket and replace its note without another `wakeup_requested` event.
+/// A request made after a step snapshot remains pending even if the earlier
+/// message is committed.
 pub struct WakeupPort {
   priv request_ : (String, String, String) -> Result[WakeupTicket, WakeupError]
 }

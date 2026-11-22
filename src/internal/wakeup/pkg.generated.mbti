@@ -4,9 +4,9 @@ package "colmugx/posoco/internal/wakeup"
 import {
   "colmugx/posoco/error",
   "colmugx/posoco/internal/event_runtime",
-  "colmugx/posoco/internal/puppetry",
   "colmugx/posoco/kernel",
   "colmugx/posoco/port",
+  "colmugx/posoco/types",
   "moonbitlang/core/async",
 }
 
@@ -15,28 +15,26 @@ import {
 // Errors
 
 // Types and methods
-pub struct WakeupCutoffSubscriber {
-  // private fields
-}
-pub fn WakeupCutoffSubscriber::WakeupCutoffSubscriber(WakeupRuntime) -> Self
-pub async fn WakeupCutoffSubscriber::on_event(Self, @puppetry.EventEnvelope) -> Unit raise @puppetry.SubscriberError
-pub fn WakeupCutoffSubscriber::provenance(Self) -> String
-pub fn WakeupCutoffSubscriber::subscriber_id(Self) -> String
-pub impl @puppetry.EventSubscriber for WakeupCutoffSubscriber
-
 pub struct WakeupRuntime {
   // private fields
 }
 pub fn WakeupRuntime::WakeupRuntime(events~ : @event_runtime.EventRuntime) -> Self
 pub fn WakeupRuntime::activate(Self) -> Unit raise @error.AgentError
-pub fn WakeupRuntime::arm_cutoff(Self, String, String, String) -> Unit
 pub fn WakeupRuntime::begin_shutdown(Self) -> Unit
 pub fn WakeupRuntime::capability(Self, String) -> @port.WakeupPort
-pub fn WakeupRuntime::disarm_cutoff(Self, String) -> Unit
+pub fn WakeupRuntime::confirm_step(Self, WakeupStep, @types.EventScope, String) -> Unit
 pub fn WakeupRuntime::drop_pending(Self) -> Unit
+pub fn WakeupRuntime::has_step_wakeup(Self, String) -> Bool
 pub fn WakeupRuntime::notify_operation_settled(Self) -> Unit
 pub fn WakeupRuntime::set_active_session(Self, String?) -> Unit
+pub fn WakeupRuntime::snapshot_step(Self, String) -> WakeupStep?
 pub fn WakeupRuntime::start_pump(Self, @async.TaskGroup, &WakeupHost) -> Unit
+
+pub struct WakeupStep {
+  messages : Array[@kernel.Message]
+  // private fields
+}
+pub fn WakeupStep::is_current(Self) -> Bool
 
 // Type aliases
 

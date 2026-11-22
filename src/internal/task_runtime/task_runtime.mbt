@@ -521,12 +521,20 @@ pub fn TaskRuntime::metadata_with_applied_outcomes(
       }
     None => ()
   }
+  write_applied_task_ids(metadata, ids)
+  metadata
+}
+
+///|
+pub fn write_applied_task_ids(
+  metadata : Map[String, Json],
+  ids : Array[String],
+) -> Unit {
   if !ids.is_empty() {
     metadata[task_outcomes_applied_metadata_key] = Json::array(
       ids.map(fn(id) { Json::string(id) }),
     )
   }
-  metadata
 }
 
 ///|
@@ -573,12 +581,39 @@ pub fn TaskRuntime::peek_outcomes(
   self : TaskRuntime,
   session_id : String,
 ) -> Array[@port.TaskOutcome] {
-  let pending : Array[@port.TaskOutcome] = match self.outcomes.get(session_id) {
-    Some(values) => values.map(snapshot_task_outcome)
-    None => []
-  }
+  let pending = self.snapshot_outcomes(session_id, excluding=[])
   self.inflight[session_id] = pending.map(fn(outcome) { outcome.receipt.id })
   pending
+}
+
+///|
+pub fn TaskRuntime::snapshot_outcomes(
+  self : TaskRuntime,
+  session_id : String,
+  excluding~ : Array[String],
+) -> Array[@port.TaskOutcome] {
+  match self.outcomes.get(session_id) {
+    Some(values) =>
+      values.filter_map(fn(outcome) {
+        if excluding.contains(outcome.receipt.id) {
+          None
+        } else {
+          Some(snapshot_task_outcome(outcome))
+        }
+      })
+    None => []
+  }
+}
+
+///|
+pub fn TaskRuntime::include_inflight(
+  self : TaskRuntime,
+  session_id : String,
+  ids : Array[String],
+) -> Unit {
+  let inflight = self.inflight.get(session_id).unwrap_or([])
+  inflight.append(ids)
+  self.inflight[session_id] = inflight
 }
 
 ///|
