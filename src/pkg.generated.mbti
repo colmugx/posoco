@@ -14,6 +14,10 @@ import {
 // Values
 pub const MEMORY_INBOUND_LEAD : String = "Recalled memory for this session may be stale or incomplete; verify against the current conversation before relying on it."
 
+pub const PARENT_FORK_INDEX_KEY : String = "posoco.parent_fork_index"
+
+pub const PARENT_THREAD_ID_KEY : String = "posoco.parent_thread_id"
+
 pub const SESSION_TITLE_METADATA_KEY : String = "posoco.title"
 
 pub fn agent_config(max_tool_rounds? : Int32?, max_tool_calls? : Int32?, max_tool_depth? : Int32?, temperature? : Double?, max_output_tokens? : Int32?, model_context_window? : Int32?, compact_threshold? : Double?, system_prompt? : String?, memory_inbound_timeout_ms? : Int32?) -> AgentConfig
@@ -37,7 +41,9 @@ pub fn Agent::commands(Self) -> Array[&@port.CommandPort]
 pub async fn Agent::compact_session(Self, String) -> @types.CompactOutcome raise @error.AgentError
 pub async fn Agent::context_state(Self, String) -> @types.ContextState?
 pub fn Agent::control(Self) -> AgentControl
+pub async fn Agent::fork_session(Self, String, new_session_id? : String, at_message_index? : Int32, metadata? : Map[String, @json.Json]) -> @types.ForkOutcome raise @error.AgentError
 pub async fn Agent::resume_turn(Self, String, continuation? : String) -> @types.TurnResult raise @error.AgentError
+pub async fn Agent::rewind_session(Self, String, Int32) -> @types.RewindOutcome raise @error.AgentError
 pub async fn[X] Agent::run_scoped(Self, async (Self) -> X) -> X
 pub async fn Agent::run_turn(Self, @kernel.Message, String) -> @types.TurnResult raise @error.AgentError
 pub fn Agent::set_active_session(Self, String?) -> Unit
@@ -116,6 +122,8 @@ pub using @port {type CommandType}
 
 pub using @kernel {type CompactMode}
 
+pub using @types {type CompactOutcome}
+
 pub using @kernel {type CompactResult}
 
 pub using @kernel {type CompactTrigger}
@@ -133,6 +141,10 @@ pub using @port {type CompositionView}
 pub using @kernel {type Content}
 
 pub using @kernel {type ContextPressure}
+
+pub using @types {type ContextReadingSource}
+
+pub using @types {type ContextState}
 
 pub using @port {type DecisionAnswer}
 
@@ -173,6 +185,8 @@ pub using @kernel {type ExecutionPolicy}
 pub using @port {type ExtensionManifest}
 
 pub using @kernel {type FinishReason}
+
+pub using @types {type ForkOutcome}
 
 pub using @port {type HookAbort}
 
@@ -218,6 +232,8 @@ pub using @error {type RateLimitInfo}
 
 pub using @kernel {type Reasoning}
 
+pub using @types {type RewindOutcome}
+
 pub using @kernel {type RunId}
 
 pub using @error {type RuntimeError}
@@ -227,6 +243,8 @@ pub using @types {type Session}
 pub using @port {type SessionCheckpoint}
 
 pub using @error {type SessionError}
+
+pub using @port {type SessionFork}
 
 pub using @kernel {type SessionId}
 

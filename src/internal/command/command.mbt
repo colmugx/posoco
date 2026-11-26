@@ -11,6 +11,13 @@ pub struct BuiltinCommandPort {
   idle_compact : Ref[
     (async (String) -> Result[@types.CompactOutcome, @error.AgentError])?,
   ]
+  /// Idle-fork entry bound by `Agent::Agent` after composition.
+  idle_fork : Ref[
+    (async (String, String?, Int32?) -> Result[
+      @types.ForkOutcome,
+      @error.AgentError,
+    ])?,
+  ]
   /// Monotonic counter for command ids. Lives on the port so successive
   /// invokes produce distinct ids without needing wall-clock time.
   mut seq : Int32
@@ -25,6 +32,7 @@ pub fn BuiltinCommandPort::BuiltinCommandPort(
   {
     mailbox,
     idle_compact: Ref(None),
+    idle_fork: Ref(None),
     seq: 0,
     compact_enabled: true,
     fork_enabled: true,
@@ -172,6 +180,58 @@ async fn BuiltinCommandPort::invoke_idle_compact(
 }
 
 ///|
+async fn BuiltinCommandPort::invoke_idle_fork(
+  self : BuiltinCommandPort,
+  args : Json,
+) -> @port.CommandOutcome {
+  let (session_id, new_session_id) = match args {
+    Object(fields) => {
+      let sid = match fields.get("session_id") {
+        Some(String(s)) => s
+        _ => ""
+      }
+      let new_sid = match fields.get("new_session_id") {
+        Some(String(s)) if s != "" => Some(s)
+        _ => None
+      }
+      (sid, new_sid)
+    }
+    String(s) => (s, None)
+    _ => ("", None)
+  }
+  if session_id == "" {
+    return Failure(
+      reason="fork-here requires a \"session_id\" argument when no run is active",
+    )
+  }
+  let index = parse_fork_index(args)
+  match self.idle_fork.val {
+    Some(idle_fork) => {
+      let attempted : Result[@types.ForkOutcome, @error.AgentError] = idle_fork(
+        session_id, new_session_id, index,
+      )
+      match attempted {
+        Err(error) =>
+          Failure(
+            reason="fork-here failed: " +
+              @diagnostic.bounded_error_label(error.to_string(), 512),
+          )
+        Ok(outcome) =>
+          Success(
+            feedback="fork completed (session '\{outcome.new_session_id}', \{outcome.messages_after} messages)",
+            structured=None,
+            ui_hint=Some(Toast),
+          )
+      }
+    }
+    None =>
+      Failure(
+        reason="no active run and no agent runtime bound: fork-here unavailable",
+      )
+  }
+}
+
+///|
 pub impl @port.CommandPort for BuiltinCommandPort with fn invoke(
   self : BuiltinCommandPort,
   id : String,
@@ -216,8 +276,6 @@ pub impl @port.CommandPort for BuiltinCommandPort with fn invoke(
     ForkHere =>
       match (self.mailbox.active_run_id(), self.mailbox.active_turn_id()) {
         (Some(run_id), Some(turn_id)) => {
-          // Parse optional `index` from args. Default is the current
-          // transcript length (fork at the tail).
           let index = parse_fork_index(args)
           let command_id = self.next_command_id("fork")
           let cmd : @puppetry.ForkCommand = {
@@ -226,18 +284,29 @@ pub impl @port.CommandPort for BuiltinCommandPort with fn invoke(
             target_turn_id: turn_id,
             fork_index: index,
           }
-          enqueue_outcome(
-            "fork",
-            "fork queued at index \{index}, will execute at the next safe point",
-            self.mailbox.enqueue_fork(cmd),
-          )
+          let feedback = match index {
+            Some(i) =>
+              "fork queued at index \{i}, will execute at the next safe point"
+            None => "fork queued at tail, will execute at the next safe point"
+          }
+          enqueue_outcome("fork", feedback, self.mailbox.enqueue_fork(cmd))
         }
-        _ =>
-          Failure(
-            reason="no active run: " +
-              id +
-              " can only be invoked while a turn is in flight",
-          )
+        _ => {
+          let attempted : Result[@port.CommandOutcome, @error.AgentError] = Ok(
+            self.invoke_idle_fork(args),
+          ) catch {
+            error => Err(Runtime(InvocationFailed(error.to_string())))
+          }
+          let outcome : @port.CommandOutcome = match attempted {
+            Ok(value) => value
+            Err(error) =>
+              Failure(
+                reason="fork-here failed: " +
+                  @diagnostic.bounded_error_label(error.to_string(), 512),
+              )
+          }
+          outcome
+        }
       }
   }
 }
@@ -247,21 +316,17 @@ pub impl @port.CommandPort for BuiltinCommandPort with fn invoke(
 pub extend BuiltinCommandPort with @port.CommandPort::{commands, invoke}
 
 ///|
-/// Parse the optional `index` argument for `/fork-here`. Recognises:
-/// - `{"index": N}` (object form)
-pub fn parse_fork_index(args : Json) -> Int32 {
+/// Parse the optional `index` argument for `/fork-here`. Recognises
+/// `{"index": N}` or a bare `N`, returning `None` when omitted.
+pub fn parse_fork_index(args : Json) -> Int32? {
   match args {
     Object(map) =>
-      if map.contains("index") {
-        match map["index"] {
-          Number(n, ..) => n.to_int()
-          _ => 0
-        }
-      } else {
-        0
+      match map.get("index") {
+        Some(Number(n, ..)) => Some(n.to_int())
+        _ => None
       }
-    Number(n, ..) => n.to_int()
-    _ => 0
+    Number(n, ..) => Some(n.to_int())
+    _ => None
   }
 }
 

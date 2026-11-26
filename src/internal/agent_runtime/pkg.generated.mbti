@@ -10,6 +10,7 @@ import {
   "colmugx/posoco/port",
   "colmugx/posoco/runtime",
   "colmugx/posoco/types",
+  "moonbitlang/core/json",
 }
 
 // Values
@@ -25,7 +26,9 @@ pub async fn AgentRuntime::compact_session(Self, String) -> @types.CompactOutcom
 pub fn AgentRuntime::compose(exts~ : Array[&@port.Extension], config~ : RuntimeConfig, events~ : @event_runtime.EventRuntime, ui_projection? : Bool, host_override? : &@runtime.Runtime?) -> Self raise @error.CompositionError
 pub async fn AgentRuntime::context_state(Self, String) -> @types.ContextState?
 pub fn AgentRuntime::control(Self) -> ControlCore
+pub async fn AgentRuntime::fork_session(Self, String, new_session_id? : String?, at_message_index? : Int32?, metadata? : Map[String, @json.Json]) -> @types.ForkOutcome raise @error.AgentError
 pub async fn AgentRuntime::resume_turn(Self, String, continuation? : String) -> @types.TurnResult raise @error.AgentError
+pub async fn AgentRuntime::rewind_session(Self, String, Int32) -> @types.RewindOutcome raise @error.AgentError
 pub async fn[X] AgentRuntime::run_scoped_with(Self, async () -> X) -> X
 pub async fn AgentRuntime::run_turn(Self, @kernel.Message, String) -> @types.TurnResult raise @error.AgentError
 pub fn AgentRuntime::set_active_session(Self, String?) -> Unit

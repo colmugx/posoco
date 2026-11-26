@@ -187,6 +187,11 @@ pub fn Puppet::adopt_context_state(
 }
 
 ///|
+pub fn Puppet::clear_context_state(self : Puppet, session_id : String) -> Unit {
+  self.context_states.remove(session_id)
+}
+
+///|
 pub fn Puppet::last_completed_transcript(self : Puppet) -> Transcript? {
   self.last_completed_transcript
 }

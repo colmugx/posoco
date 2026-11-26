@@ -148,6 +148,34 @@ pub async fn Agent::compact_session(
 }
 
 ///|
+/// Fork `[0, at_message_index)` of `session_id` into a new session.
+pub async fn Agent::fork_session(
+  self : Agent,
+  session_id : String,
+  new_session_id? : String,
+  at_message_index? : Int32,
+  metadata~ : Map[String, Json] = Map::from_array([]),
+) -> @types.ForkOutcome raise @error.AgentError {
+  self.runtime.fork_session(
+    session_id,
+    new_session_id~,
+    at_message_index~,
+    metadata~,
+  )
+}
+
+///|
+/// Rewind `session_id` to `[0, to_message_index)`, keeping the Agent's
+/// authoritative transcript, journal revision, and session stores aligned.
+pub async fn Agent::rewind_session(
+  self : Agent,
+  session_id : String,
+  to_message_index : Int32,
+) -> @types.RewindOutcome raise @error.AgentError {
+  self.runtime.rewind_session(session_id, to_message_index)
+}
+
+///|
 pub async fn Agent::context_state(
   self : Agent,
   session_id : String,

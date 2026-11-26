@@ -335,12 +335,13 @@ fn Puppet::pump_fork(
 ) -> PromptResult raise PuppetError {
   let transcript_msgs = state.transcript().messages_snapshot()
   let len = transcript_msgs.length()
-  let fork_index = if fork_cmd.fork_index < 0 {
+  let requested = fork_cmd.fork_index.unwrap_or(len)
+  let fork_index = if requested < 0 {
     0
-  } else if fork_cmd.fork_index > len {
+  } else if requested > len {
     len
   } else {
-    fork_cmd.fork_index
+    requested
   }
   let forked_messages : Array[@kernel.Message] = Array::from_iter(
     transcript_msgs.iter().take(fork_index),
@@ -359,6 +360,7 @@ fn Puppet::pump_fork(
         turn_id~,
         parent_session_id~,
         new_session_id~,
+        fork_index~,
         forked_messages~,
       ),
     ),

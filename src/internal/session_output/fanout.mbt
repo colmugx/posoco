@@ -108,3 +108,68 @@ pub async fn checkpoint_all(
     }
   }
 }
+
+///|
+/// Fork a prefix of `from_id` into `session_id` across every configured store.
+pub async fn fork_all(
+  stores : Array[&@port.SessionPort],
+  session_id : String,
+  from_id : String,
+  at_index : Int32,
+  messages : Array[@kernel.Message],
+  metadata : Map[String, Json],
+  operation : String,
+) -> Unit raise @error.AgentError {
+  let results : Array[Result[Unit, @error.SessionError]] = @async.all(
+    stores.map(fn(store) {
+      () => {
+        let fork : @port.SessionFork = {
+          from_id,
+          at_index,
+          messages: @message_snapshot.snapshot_messages(messages),
+          metadata: @message_snapshot.snapshot_metadata(metadata),
+        }
+        Ok(store.fork(session_id, fork)) catch {
+          error => Err(error)
+        }
+      }
+    }),
+  ) catch {
+    error => raise save_error_context(error, session_id, operation)
+  }
+  for result in results {
+    match result {
+      Ok(_) => ()
+      Err(error) =>
+        raise contextualize_session_error(error, session_id, operation)
+    }
+  }
+}
+
+///|
+/// Truncate `session_id` to `[0, from_index)` across every configured store.
+pub async fn truncate_all(
+  stores : Array[&@port.SessionPort],
+  session_id : String,
+  from_index : Int32,
+  operation : String,
+) -> Unit raise @error.AgentError {
+  let results : Array[Result[Unit, @error.SessionError]] = @async.all(
+    stores.map(fn(store) {
+      () => {
+        Ok(store.truncate(session_id, from_index)) catch {
+          error => Err(error)
+        }
+      }
+    }),
+  ) catch {
+    error => raise save_error_context(error, session_id, operation)
+  }
+  for result in results {
+    match result {
+      Ok(_) => ()
+      Err(error) =>
+        raise contextualize_session_error(error, session_id, operation)
+    }
+  }
+}

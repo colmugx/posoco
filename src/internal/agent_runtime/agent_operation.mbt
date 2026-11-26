@@ -5,6 +5,8 @@ priv enum OperationOrigin {
   Turn
   Resume
   Compact
+  Fork
+  Rewind
   Wakeup
 }
 
@@ -14,6 +16,8 @@ fn OperationOrigin::label(self : OperationOrigin) -> String {
     Turn => "turn"
     Resume => "resume"
     Compact => "compact"
+    Fork => "fork"
+    Rewind => "rewind"
     Wakeup => "wakeup"
   }
 }
@@ -135,6 +139,8 @@ async fn[X] AgentRuntime::execute_operation(
               Cancelled(
                 match admission.origin {
                   Compact => "compact cancelled"
+                  Fork => "fork cancelled"
+                  Rewind => "rewind cancelled"
                   _ => "operation execution cancelled"
                 },
               ),
@@ -194,6 +200,8 @@ async fn[X] AgentRuntime::execute_operation(
           raise Cancelled(
             match admission.origin {
               Compact => "compact cancelled"
+              Fork => "fork cancelled"
+              Rewind => "rewind cancelled"
               _ => "operation execution cancelled"
             },
           )
@@ -299,6 +307,8 @@ fn AgentRuntime::admit_operation(
       match origin {
         Turn | Resume => "agent_run_turn_\{identity.seq}"
         Compact => "agent_compact_session_\{identity.seq}"
+        Fork => "agent_fork_session_\{identity.seq}"
+        Rewind => "agent_rewind_session_\{identity.seq}"
         Wakeup => "agent_wakeup_\{identity.seq}"
       }
   }
@@ -421,5 +431,66 @@ fn AgentRuntime::release_operation(
     // The wakeup pump waits for this notification when a host operation
     // holds the guard; wake it so a deferred wakeup ticket re-arms.
     self.wakeup.notify_operation_settled()
+  }
+}
+
+///|
+async fn[X] AgentRuntime::run_admitted_operation(
+  self : AgentRuntime,
+  session_id : String,
+  origin : OperationOrigin,
+  body : async (OperationAdmission) -> X raise @error.AgentError,
+) -> X raise @error.AgentError {
+  let admission = self.admit_operation(session_id, origin)
+  errdefer (if self.operations.current_id() == Some(admission.operation_id) {
+    self.retire_released_versions()
+    self.release_operation(admission, Cancelled)
+  })
+  let result : Result[X, @error.AgentError] = Ok(
+    self.execute_operation(admission, async fn() -> Result[X, @error.AgentError] {
+      let typed : Result[X, @error.AgentError] = Ok(body(admission)) catch {
+        error => Err(error)
+      }
+      typed
+    }),
+  ) catch {
+    error => Err(error)
+  }
+  let cleanup : Result[Unit, @error.AgentError] = Ok(
+    self.task_runtime.finish_active_operation(),
+  ) catch {
+    error => Err(error)
+  }
+  let outcome = match result {
+    Ok(_) => Completed
+    Err(error) => agent_error_operation_outcome(error)
+  }
+  self.retire_released_versions()
+  self.release_operation(admission, outcome)
+  match result {
+    Ok(value) =>
+      match cleanup {
+        Ok(_) => value
+        Err(error) => {
+          emit_secondary_failure(
+            self.events,
+            "foreground_task_cleanup",
+            error.to_string(),
+          )
+          raise error
+        }
+      }
+    Err(error) => {
+      match cleanup {
+        Err(cleanup_error) =>
+          emit_secondary_failure(
+            self.events,
+            "foreground_task_cleanup",
+            cleanup_error.to_string(),
+          )
+        Ok(_) => ()
+      }
+      raise error
+    }
   }
 }

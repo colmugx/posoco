@@ -17,6 +17,7 @@ pub struct NewThreadOutput {
   messages : Array[@kernel.Message]
   metadata : Map[String, Json]
   save_label : String
+  fork_at_index : Int32?
 }
 
 ///|
@@ -28,6 +29,7 @@ fn NewThreadOutput::snapshot(self : NewThreadOutput) -> NewThreadOutput {
     messages: @message_snapshot.snapshot_messages(self.messages),
     metadata: @message_snapshot.snapshot_metadata(self.metadata),
     save_label: self.save_label,
+    fork_at_index: self.fork_at_index,
   }
 }
 
@@ -82,6 +84,7 @@ pub fn SessionOutput::stage_new_thread(
   messages : Array[@kernel.Message],
   metadata : Map[String, Json],
   save_label : String,
+  fork_at_index~ : Int32? = None,
 ) -> Unit {
   self.pending_new_thread[child_session_id] = {
     scope,
@@ -90,6 +93,7 @@ pub fn SessionOutput::stage_new_thread(
     messages: @message_snapshot.snapshot_messages(messages),
     metadata: @message_snapshot.snapshot_metadata(metadata),
     save_label,
+    fork_at_index,
   }
 }
 

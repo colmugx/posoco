@@ -25,6 +25,7 @@ pub fn snapshot_turn_event(event : @types.TurnEvent) -> @types.TurnEvent {
     | ToolChildDeclared(..)
     | ToolCatalogChanged(..)
     | SessionRedirect(..)
+    | SessionRewound(..)
     | TurnCompleted
     | TurnFailed(_)
     | TurnCancelled

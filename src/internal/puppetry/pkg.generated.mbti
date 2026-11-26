@@ -219,11 +219,11 @@ pub(all) struct ForkCommand {
   command_id : CommandId
   target_run_id : @kernel.RunId
   target_turn_id : @kernel.TurnId
-  fork_index : Int32
+  fork_index : Int32?
 }
 pub fn ForkCommand::command_id(Self) -> CommandId
 pub fn ForkCommand::equal(Self, Self) -> Bool
-pub fn ForkCommand::fork_index(Self) -> Int32
+pub fn ForkCommand::fork_index(Self) -> Int32?
 pub fn ForkCommand::not_equal(Self, Self) -> Bool
 pub fn ForkCommand::to_repr(Self) -> @debug.Repr
 
@@ -449,7 +449,7 @@ pub(all) enum PromptResult {
   Accepted(run_id~ : @kernel.RunId, turn_id~ : @kernel.TurnId)
   LeaseBusy(held_by~ : String)
   Rejected(error~ : PuppetError)
-  ForkCompleted(run_id~ : @kernel.RunId, turn_id~ : @kernel.TurnId, parent_session_id~ : String, new_session_id~ : String, forked_messages~ : Array[@kernel.Message])
+  ForkCompleted(run_id~ : @kernel.RunId, turn_id~ : @kernel.TurnId, parent_session_id~ : String, new_session_id~ : String, fork_index~ : Int32, forked_messages~ : Array[@kernel.Message])
   CompactCompleted(run_id~ : @kernel.RunId, turn_id~ : @kernel.TurnId, mode~ : @kernel.CompactMode, trigger~ : @kernel.CompactTrigger, new_session_id~ : String?, compacted_messages~ : Array[@kernel.Message])
 }
 pub fn PromptResult::output(Self, &Logger) -> Unit
@@ -472,8 +472,10 @@ pub struct Puppet {
 }
 pub fn Puppet::Puppet(PuppetConfig) -> Self
 pub fn Puppet::adopt_context_state(Self, String, @types.ContextState) -> Unit
+pub fn Puppet::clear_context_state(Self, String) -> Unit
 pub async fn Puppet::compact_standalone(Self, @kernel.RunId, @kernel.TurnId, @kernel.SessionId, Array[@kernel.Message], RunPolicy, String, @kernel.CompactTrigger) -> PromptResult raise PuppetError
 pub fn Puppet::context_version(Self) -> Int32
+pub fn Puppet::estimate_session_context(Self, @kernel.RunId, @kernel.TurnId, @kernel.SessionId, Array[@kernel.Message], RunPolicy) -> Unit
 pub fn Puppet::install_tool_lifecycle(Self, @kernel_exec.ToolLaunchGate, ToolRevocationFacts) -> Unit
 pub fn Puppet::is_quiescent(Self) -> Bool
 pub fn Puppet::last_completed_transcript(Self) -> @kernel.Transcript?
@@ -482,6 +484,7 @@ pub fn Puppet::mailbox(Self) -> &Mailbox
 pub fn Puppet::phase(Self) -> PuppetPhase
 pub async fn Puppet::prompt(Self, PromptRequest) -> PromptResult raise PuppetError
 pub fn Puppet::replace_catalog(Self, @kernel_exec.ToolCatalogSnapshot) -> Bool
+pub async fn Puppet::rewind_standalone(Self, @kernel.RunId, @kernel.TurnId, @kernel.SessionId, Array[@kernel.Message], Array[@kernel.Message], RunPolicy, String) -> Unit raise PuppetError
 pub fn Puppet::session_context_state(Self, String) -> @types.ContextState?
 pub fn Puppet::set_core_fact_observer(Self, ((CoreFactCommit) -> Unit)?) -> Unit
 pub fn Puppet::set_source_observer(Self, ((@kernel.RunId, String, Array[@kernel.Message], Int32) -> Unit)?) -> Unit

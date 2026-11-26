@@ -1,4 +1,83 @@
 ///|
+fn AgentRuntime::current_run_policy(self : AgentRuntime) -> @puppetry.RunPolicy {
+  let live = self.model.provider_config()
+  {
+    model_id: "agent",
+    call_options: self.config.to_call_options_json(),
+    budget: {
+      max_model_steps: None,
+      max_tool_rounds: self.config.max_tool_rounds,
+      max_tool_calls: self.config.max_tool_calls,
+      max_total_tokens: None,
+    },
+    context_window: match self.config.model_context_window {
+      Some(window) => Some(window)
+      None => live.context_window
+    },
+    compact_threshold: match self.config.compact_threshold {
+      Some(threshold) => threshold
+      None =>
+        match live.compact_threshold {
+          Some(threshold) => threshold
+          None => 0.88
+        }
+    },
+  }
+}
+
+///|
+fn sanitize_child_metadata(metadata : Map[String, Json]) -> Map[String, Json] {
+  let copy = @message_snapshot.snapshot_metadata(metadata)
+  copy.remove(@types.CONTEXT_STATE_METADATA_KEY)
+  copy.remove("posoco.task.applied_ids")
+  copy.remove(@types.PARENT_THREAD_ID_KEY)
+  copy.remove(@types.PARENT_FORK_INDEX_KEY)
+  copy
+}
+
+///|
+async fn AgentRuntime::persist_derived_session(
+  self : AgentRuntime,
+  scope : @types.EventScope,
+  parent_session_id : String,
+  new_session_id : String,
+  messages : Array[@kernel.Message],
+  metadata : Map[String, Json],
+  save_label : String,
+  fork_at_index~ : Int32? = None,
+) -> Unit raise @error.AgentError {
+  match
+    self.core_facts.record_new_thread(
+      scope.run_id.to_string(),
+      parent_session_id,
+      new_session_id,
+      messages,
+      metadata,
+    ) {
+    Ok(_) => ()
+    Err(detail) => {
+      self.core_facts.mark_missing_provenance(new_session_id)
+      raise Runtime(InvocationFailed("core child fact failed: " + detail))
+    }
+  }
+  self.core_facts.stop(parent_session_id, scope.run_id.to_string(), "diversion")
+  self.session_output.stage_new_thread(
+    scope,
+    parent_session_id,
+    new_session_id,
+    messages,
+    metadata,
+    save_label,
+    fork_at_index~,
+  )
+  self.session_output.execute_new_thread(new_session_id, async fn(
+    pending,
+  ) -> Unit raise @error.AgentError {
+    self.write_new_thread_output(pending)
+  })
+}
+
+///|
 async fn AgentRuntime::persist_new_thread_session(
   self : AgentRuntime,
   scope : @types.EventScope,
@@ -12,22 +91,7 @@ async fn AgentRuntime::persist_new_thread_session(
     metadata: Map::from_array([]),
   }
   let with_lineage = new_session.with_parent_thread_id(parent_session_id)
-  match
-    self.core_facts.record_new_thread(
-      scope.run_id.to_string(),
-      parent_session_id,
-      new_session_id,
-      with_lineage.messages,
-      with_lineage.metadata,
-    ) {
-    Ok(_) => ()
-    Err(detail) => {
-      self.core_facts.mark_missing_provenance(new_session_id)
-      raise Runtime(InvocationFailed("core child fact failed: " + detail))
-    }
-  }
-  self.core_facts.stop(parent_session_id, scope.run_id.to_string(), "diversion")
-  self.session_output.stage_new_thread(
+  self.persist_derived_session(
     scope,
     parent_session_id,
     new_session_id,
@@ -35,11 +99,36 @@ async fn AgentRuntime::persist_new_thread_session(
     with_lineage.metadata,
     save_label,
   )
-  self.session_output.execute_new_thread(new_session_id, async fn(
-    pending,
-  ) -> Unit raise @error.AgentError {
-    self.write_new_thread_output(pending)
-  })
+}
+
+///|
+async fn AgentRuntime::persist_fork_session(
+  self : AgentRuntime,
+  scope : @types.EventScope,
+  parent_session_id : String,
+  new_session_id : String,
+  fork_index : Int32,
+  can_cow_fork : Bool,
+  messages : Array[@kernel.Message],
+  base_metadata : Map[String, Json],
+  save_label : String,
+) -> Unit raise @error.AgentError {
+  let new_session : @types.Session = {
+    messages: @message_snapshot.snapshot_messages(messages),
+    metadata: sanitize_child_metadata(base_metadata),
+  }
+  let with_lineage = new_session.with_fork_lineage(
+    parent_session_id, fork_index,
+  )
+  self.persist_derived_session(
+    scope,
+    parent_session_id,
+    new_session_id,
+    with_lineage.messages,
+    with_lineage.metadata,
+    save_label,
+    fork_at_index=if can_cow_fork { Some(fork_index) } else { None },
+  )
 }
 
 ///|
@@ -47,13 +136,26 @@ async fn AgentRuntime::write_new_thread_output(
   self : AgentRuntime,
   pending : @session_output.NewThreadOutput,
 ) -> Unit raise @error.AgentError {
-  @session_output.save_all(
-    self.sessions,
-    pending.child_session_id,
-    pending.messages,
-    pending.metadata,
-    pending.save_label,
-  )
+  match pending.fork_at_index {
+    Some(at_index) =>
+      @session_output.fork_all(
+        self.sessions,
+        pending.child_session_id,
+        pending.parent_session_id,
+        at_index,
+        pending.messages,
+        pending.metadata,
+        pending.save_label,
+      )
+    None =>
+      @session_output.save_all(
+        self.sessions,
+        pending.child_session_id,
+        pending.messages,
+        pending.metadata,
+        pending.save_label,
+      )
+  }
   if !self.sessions.is_empty() {
     self.progress.set_cursor(
       pending.child_session_id,
@@ -107,14 +209,21 @@ async fn AgentRuntime::complete_fork_turn(
   identity : TurnIdentity,
   parent_session_id : String,
   new_session_id : String,
+  fork_index : Int32,
   forked_messages : Array[@kernel.Message],
   input : @kernel.Message,
 ) -> @types.TurnResult raise @error.AgentError {
-  self.persist_new_thread_session(
+  let can_cow_fork = fork_index > 0 &&
+    !self.progress.is_dirty(parent_session_id) &&
+    self.progress.cursor_or_zero(parent_session_id) >= fork_index
+  self.persist_fork_session(
     identity.scope(),
     parent_session_id,
     new_session_id,
+    fork_index,
+    can_cow_fork,
     forked_messages,
+    Map::from_array([]),
     "fork_save",
   )
   let result : @types.TurnResult = {

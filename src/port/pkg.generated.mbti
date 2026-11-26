@@ -327,6 +327,17 @@ pub fn SessionCheckpoint::equal(Self, Self) -> Bool
 pub fn SessionCheckpoint::not_equal(Self, Self) -> Bool
 pub fn SessionCheckpoint::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
+pub(all) struct SessionFork {
+  from_id : String
+  at_index : Int32
+  messages : Array[@kernel.Message]
+  metadata : Map[String, @json.Json]
+}
+pub fn SessionFork::equal(Self, Self) -> Bool
+pub fn SessionFork::not_equal(Self, Self) -> Bool
+pub fn SessionFork::to_repr(Self) -> @debug.Repr
+
 pub struct TaskHandle {
   // private fields
 }
@@ -1135,6 +1146,7 @@ pub(open) trait SessionPort {
   async fn append_messages(Self, String, Int32, ArrayView[@kernel.Message]) -> Unit raise @error.SessionError = _
   async fn checkpoint(Self, String, SessionCheckpoint) -> Unit raise @error.SessionError = _
   async fn truncate(Self, String, Int32) -> Unit raise @error.SessionError = _
+  async fn fork(Self, String, SessionFork) -> Unit raise @error.SessionError = _
 }
 
 pub(open) trait SystemPromptContributor {

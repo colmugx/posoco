@@ -14,7 +14,11 @@ pub async fn checkpoint_all(Array[&@port.SessionPort], String, Int32, Array[@ker
 
 pub fn contextualize_session_error(@error.SessionError, String, String) -> @error.AgentError
 
+pub async fn fork_all(Array[&@port.SessionPort], String, String, Int32, Array[@kernel.Message], Map[String, @json.Json], String) -> Unit raise @error.AgentError
+
 pub async fn save_all(Array[&@port.SessionPort], String, Array[@kernel.Message], Map[String, @json.Json], String) -> Unit raise @error.AgentError
+
+pub async fn truncate_all(Array[&@port.SessionPort], String, Int32, String) -> Unit raise @error.AgentError
 
 // Errors
 
@@ -26,6 +30,7 @@ pub struct NewThreadOutput {
   messages : Array[@kernel.Message]
   metadata : Map[String, @json.Json]
   save_label : String
+  fork_at_index : Int32?
 }
 
 pub struct SessionOutput {
@@ -36,7 +41,7 @@ pub async fn SessionOutput::execute_new_thread(Self, String, async (NewThreadOut
 pub async fn SessionOutput::recover_body(Self, String, async (@types.Session) -> Unit raise @error.AgentError) -> Unit raise @error.AgentError
 pub async fn SessionOutput::recover_new_threads(Self, async (NewThreadOutput) -> Unit raise @error.AgentError) -> Unit raise @error.AgentError
 pub fn SessionOutput::stage_body(Self, String, @types.Session) -> Unit
-pub fn SessionOutput::stage_new_thread(Self, @types.EventScope, String, String, Array[@kernel.Message], Map[String, @json.Json], String) -> Unit
+pub fn SessionOutput::stage_new_thread(Self, @types.EventScope, String, String, Array[@kernel.Message], Map[String, @json.Json], String, fork_at_index? : Int32?) -> Unit
 
 // Type aliases
 

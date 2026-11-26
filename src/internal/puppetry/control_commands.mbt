@@ -135,7 +135,7 @@ pub(all) struct ForkCommand {
   command_id : CommandId
   target_run_id : RunId
   target_turn_id : TurnId
-  fork_index : Int32
+  fork_index : Int32?
 }
 
 ///|
@@ -150,7 +150,7 @@ pub fn ForkCommand::command_id(self : ForkCommand) -> CommandId {
 }
 
 ///|
-pub fn ForkCommand::fork_index(self : ForkCommand) -> Int32 {
+pub fn ForkCommand::fork_index(self : ForkCommand) -> Int32? {
   self.fork_index
 }
 

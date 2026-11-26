@@ -23,6 +23,23 @@ pub extend SessionCheckpoint with Eq::{not_equal, equal}
 pub extend SessionCheckpoint with Debug::{to_repr}
 
 ///|
+/// Prefix-branch payload for `SessionPort::fork`. `[0, at_index)` of `from_id`
+/// becomes the initial transcript of the forked session carrying `metadata`.
+#derive(Eq, Debug)
+pub(all) struct SessionFork {
+  from_id : String
+  at_index : Int32
+  messages : Array[@kernel.Message]
+  metadata : Map[String, Json]
+}
+
+///|
+pub extend SessionFork with Eq::{not_equal, equal}
+
+///|
+pub extend SessionFork with Debug::{to_repr}
+
+///|
 pub(open) trait SessionPort {
   async fn load(Self, id : String) -> @types.Session raise @error.SessionError
   async fn save(Self, id : String, session : @types.Session) -> Unit raise @error.SessionError
@@ -47,6 +64,10 @@ pub(open) trait SessionPort {
   /// session, slices the messages, and performs a full save (the same legal
   /// whole-session path compact uses), preserving metadata.
   async fn truncate(Self, id : String, from_index : Int32) -> Unit raise @error.SessionError = _
+  /// Fork `[0, fork.at_index)` of `fork.from_id` into session `id` with
+  /// `fork.metadata`. Stores supporting structural/copy-on-write branching can
+  /// override this method; the default persists `fork.messages` via `save`.
+  async fn fork(Self, id : String, fork : SessionFork) -> Unit raise @error.SessionError = _
 }
 
 ///|
@@ -110,4 +131,9 @@ impl SessionPort with fn checkpoint(
       self.save(id, { messages: merged, metadata, })
     }
   }
+}
+
+///|
+impl SessionPort with fn fork(self, id : String, fork : SessionFork) -> Unit raise @error.SessionError {
+  self.save(id, { messages: fork.messages, metadata: fork.metadata, })
 }

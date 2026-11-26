@@ -13,7 +13,7 @@ import {
 // Values
 pub fn compose_agent_commands(Array[&@port.CommandPort], BuiltinCommandPort) -> Array[&@port.CommandPort]
 
-pub fn parse_fork_index(@json.Json) -> Int32
+pub fn parse_fork_index(@json.Json) -> Int32?
 
 // Errors
 
@@ -21,6 +21,7 @@ pub fn parse_fork_index(@json.Json) -> Int32
 pub struct BuiltinCommandPort {
   mailbox : &@puppetry.Mailbox
   idle_compact : @ref.Ref[(async (String) -> Result[@types.CompactOutcome, @error.AgentError])?]
+  idle_fork : @ref.Ref[(async (String, String?, Int32?) -> Result[@types.ForkOutcome, @error.AgentError])?]
   mut seq : Int32
   mut compact_enabled : Bool
   mut fork_enabled : Bool

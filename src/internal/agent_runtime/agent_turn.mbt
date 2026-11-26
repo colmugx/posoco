@@ -296,9 +296,16 @@ async fn AgentRuntime::run_puppet_turn_body(
       raise Runtime(
         InvocationFailed("puppet rejected the prompt: " + error.to_string()),
       )
-    ForkCompleted(parent_session_id~, new_session_id~, forked_messages~, ..) =>
+    ForkCompleted(
+      parent_session_id~,
+      new_session_id~,
+      fork_index~,
+      forked_messages~,
+      ..
+    ) =>
       return self.complete_fork_turn(
-        identity, parent_session_id, new_session_id, forked_messages, input,
+        identity, parent_session_id, new_session_id, fork_index, forked_messages,
+        input,
       )
     CompactCompleted(mode~, new_session_id~, compacted_messages~, ..) =>
       return self.complete_compact_turn(

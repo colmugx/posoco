@@ -418,6 +418,15 @@ pub fn AgentRuntime::compose(
       error => Err(error)
     }
   })
+  builtin_command_port.idle_fork.val = Some(async fn(
+    session_id,
+    new_session_id,
+    at_message_index,
+  ) -> Result[@types.ForkOutcome, @error.AgentError] {
+    Ok(runtime.fork_session(session_id, new_session_id~, at_message_index~)) catch {
+      error => Err(error)
+    }
+  })
   context_state_of.val = Some(fn(session_id) {
     runtime.puppet.session_context_state(session_id)
   })

@@ -3,63 +3,11 @@ pub async fn AgentRuntime::compact_session(
   self : AgentRuntime,
   session_id : String,
 ) -> @types.CompactOutcome raise @error.AgentError {
-  let admission = self.admit_operation(session_id, Compact)
-  errdefer (if self.operations.current_id() == Some(admission.operation_id) {
-    self.retire_released_versions()
-    self.release_operation(admission, Cancelled)
+  self.run_admitted_operation(session_id, Compact, async fn(
+    admission,
+  ) -> @types.CompactOutcome raise @error.AgentError {
+    self.run_compact_operation(admission)
   })
-  let result : Result[@types.CompactOutcome, @error.AgentError] = Ok(
-    self.execute_operation(admission, async fn() -> Result[
-      @types.CompactOutcome,
-      @error.AgentError,
-    ] {
-      let typed : Result[@types.CompactOutcome, @error.AgentError] = Ok(
-        self.run_compact_operation(admission),
-      ) catch {
-        error => Err(error)
-      }
-      typed
-    }),
-  ) catch {
-    error => Err(error)
-  }
-  let cleanup : Result[Unit, @error.AgentError] = Ok(
-    self.task_runtime.finish_active_operation(),
-  ) catch {
-    error => Err(error)
-  }
-  let outcome = match result {
-    Ok(_) => Completed
-    Err(error) => agent_error_operation_outcome(error)
-  }
-  self.retire_released_versions()
-  self.release_operation(admission, outcome)
-  match result {
-    Ok(value) =>
-      match cleanup {
-        Ok(_) => value
-        Err(error) => {
-          emit_secondary_failure(
-            self.events,
-            "foreground_task_cleanup",
-            error.to_string(),
-          )
-          raise error
-        }
-      }
-    Err(error) => {
-      match cleanup {
-        Err(cleanup_error) =>
-          emit_secondary_failure(
-            self.events,
-            "foreground_task_cleanup",
-            cleanup_error.to_string(),
-          )
-        Ok(_) => ()
-      }
-      raise error
-    }
-  }
 }
 
 ///|
@@ -115,29 +63,7 @@ async fn AgentRuntime::run_compact_operation(
         ),
       )
   }
-  let live = self.model.provider_config()
-  let policy : @puppetry.RunPolicy = {
-    model_id: "agent",
-    call_options: self.config.to_call_options_json(),
-    budget: {
-      max_model_steps: None,
-      max_tool_rounds: self.config.max_tool_rounds,
-      max_tool_calls: self.config.max_tool_calls,
-      max_total_tokens: None,
-    },
-    context_window: match self.config.model_context_window {
-      Some(window) => Some(window)
-      None => live.context_window
-    },
-    compact_threshold: match self.config.compact_threshold {
-      Some(threshold) => threshold
-      None =>
-        match live.compact_threshold {
-          Some(threshold) => threshold
-          None => 0.88
-        }
-    },
-  }
+  let policy = self.current_run_policy()
   self.emit_turn_event(Some(scope), CompactStarted(trigger="manual"))
   let prompt_result = match
     (Ok(

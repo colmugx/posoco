@@ -31,6 +31,11 @@ pub extend Session with Debug::{to_repr}
 pub const PARENT_THREAD_ID_KEY = "posoco.parent_thread_id"
 
 ///|
+/// Metadata key under which the 0-based parent message count at fork time is
+/// stored when a session is forked from another thread.
+pub const PARENT_FORK_INDEX_KEY = "posoco.parent_fork_index"
+
+///|
 pub const CONTEXT_STATE_METADATA_KEY = "posoco.context_state"
 
 ///|
@@ -240,11 +245,57 @@ pub(all) struct CompactOutcome {
 pub extend CompactOutcome with Eq::{not_equal, equal}
 
 ///|
+#derive(Eq, Debug)
+pub(all) struct ForkOutcome {
+  parent_session_id : String
+  new_session_id : String
+  fork_index : Int32
+  messages_after : Int32
+}
+
+///|
+pub extend ForkOutcome with Eq::{not_equal, equal}
+
+///|
+pub extend ForkOutcome with Debug::{to_repr}
+
+///|
+#derive(Eq, Debug)
+pub(all) struct RewindOutcome {
+  session_id : String
+  messages_before : Int32
+  messages_after : Int32
+}
+
+///|
+pub extend RewindOutcome with Eq::{not_equal, equal}
+
+///|
+pub extend RewindOutcome with Debug::{to_repr}
+
+///|
 /// Read the parent thread id from a session's metadata. Returns `None` when
 /// the key is absent or not a string.
 pub fn Session::parent_thread_id(self : Session) -> String? {
   match self.metadata.get(PARENT_THREAD_ID_KEY) {
     Some(String(s)) => Some(s)
+    _ => None
+  }
+}
+
+///|
+/// Read the parent fork index from a session's metadata. Returns `None` when
+/// the key is absent or not a non-negative integer.
+pub fn Session::parent_fork_index(self : Session) -> Int32? {
+  match self.metadata.get(PARENT_FORK_INDEX_KEY) {
+    Some(Number(n, ..)) => {
+      let v = n.to_int()
+      if v >= 0 && v.to_double() == n {
+        Some(v)
+      } else {
+        None
+      }
+    }
     _ => None
   }
 }
@@ -258,6 +309,20 @@ pub fn Session::with_parent_thread_id(
 ) -> Session {
   let new_metadata : Map[String, Json] = self.metadata.copy()
   new_metadata[PARENT_THREAD_ID_KEY] = Json::string(parent_thread_id)
+  { messages: self.messages, metadata: new_metadata, }
+}
+
+///|
+/// Construct a Session with both parent thread id and fork index recorded in
+/// its metadata.
+pub fn Session::with_fork_lineage(
+  self : Session,
+  parent_thread_id : String,
+  fork_index : Int32,
+) -> Session {
+  let new_metadata : Map[String, Json] = self.metadata.copy()
+  new_metadata[PARENT_THREAD_ID_KEY] = Json::string(parent_thread_id)
+  new_metadata[PARENT_FORK_INDEX_KEY] = Json::number(fork_index.to_double())
   { messages: self.messages, metadata: new_metadata, }
 }
 
@@ -441,6 +506,11 @@ pub(all) enum TurnEvent {
     messages_before~ : Int32,
     messages_after~ : Int32,
   )
+  SessionRewound(
+    session_id~ : String,
+    messages_before~ : Int32,
+    messages_after~ : Int32,
+  )
   TurnCompleted
   TurnFailed(String)
   /// The turn ended because it was cancelled, not because anything failed.
@@ -542,6 +612,8 @@ pub impl Show for TurnEvent with fn to_string(self : TurnEvent) -> String {
       "ToolCallAbandoned(\{call.call_id.to_string()}, \{reason})"
     ModelResponseReceived(..) => "ModelResponseReceived"
     SessionRedirect(from~, to~, ..) => "SessionRedirect(from:\{from}, to:\{to})"
+    SessionRewound(session_id~, messages_before~, messages_after~) =>
+      "SessionRewound(session=\{session_id}, \{messages_before} → \{messages_after})"
     TurnCompleted => "TurnCompleted"
     TurnFailed(msg) => "TurnFailed(\{msg})"
     TurnCancelled => "TurnCancelled"

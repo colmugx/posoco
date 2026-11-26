@@ -11,6 +11,8 @@ import {
 // Values
 pub const CONTEXT_STATE_METADATA_KEY : String = "posoco.context_state"
 
+pub const PARENT_FORK_INDEX_KEY : String = "posoco.parent_fork_index"
+
 pub const PARENT_THREAD_ID_KEY : String = "posoco.parent_thread_id"
 
 pub const SESSION_TITLE_METADATA_KEY : String = "posoco.title"
@@ -81,6 +83,17 @@ pub fn EventScope::not_equal(Self, Self) -> Bool
 pub fn EventScope::to_repr(Self) -> @debug.Repr
 
 #derive(Eq, @debug.Debug)
+pub(all) struct ForkOutcome {
+  parent_session_id : String
+  new_session_id : String
+  fork_index : Int32
+  messages_after : Int32
+}
+pub fn ForkOutcome::equal(Self, Self) -> Bool
+pub fn ForkOutcome::not_equal(Self, Self) -> Bool
+pub fn ForkOutcome::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
 pub(all) enum MessageDeliveryKind {
   Step
   Turn
@@ -93,14 +106,26 @@ pub fn MessageDeliveryKind::to_string(Self) -> String
 pub impl Show for MessageDeliveryKind
 
 #derive(Eq, @debug.Debug)
+pub(all) struct RewindOutcome {
+  session_id : String
+  messages_before : Int32
+  messages_after : Int32
+}
+pub fn RewindOutcome::equal(Self, Self) -> Bool
+pub fn RewindOutcome::not_equal(Self, Self) -> Bool
+pub fn RewindOutcome::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
 pub(all) struct Session {
   messages : Array[@kernel.Message]
   metadata : Map[String, @json.Json]
 }
 pub fn Session::equal(Self, Self) -> Bool
 pub fn Session::not_equal(Self, Self) -> Bool
+pub fn Session::parent_fork_index(Self) -> Int32?
 pub fn Session::parent_thread_id(Self) -> String?
 pub fn Session::to_repr(Self) -> @debug.Repr
+pub fn Session::with_fork_lineage(Self, String, Int32) -> Self
 pub fn Session::with_parent_thread_id(Self, String) -> Self
 
 #derive(@debug.Debug)
@@ -201,6 +226,7 @@ pub(all) enum TurnEvent {
   ToolCallAbandoned(call~ : @kernel.ToolCall, reason~ : String)
   ModelResponseReceived(message~ : @kernel.Message, usage~ : @kernel.Usage?)
   SessionRedirect(from~ : String, to~ : String, messages_before~ : Int32, messages_after~ : Int32)
+  SessionRewound(session_id~ : String, messages_before~ : Int32, messages_after~ : Int32)
   TurnCompleted
   TurnFailed(String)
   TurnCancelled

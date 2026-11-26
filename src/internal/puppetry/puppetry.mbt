@@ -42,6 +42,7 @@ pub(all) enum PromptResult {
     turn_id~ : TurnId,
     parent_session_id~ : String,
     new_session_id~ : String,
+    fork_index~ : Int32,
     forked_messages~ : Array[@kernel.Message],
   )
   /// Compact completed. The pump consumed a `CompactCommand`
@@ -81,9 +82,10 @@ pub impl Show for PromptResult with fn to_string(self : PromptResult) -> String 
       turn_id~,
       parent_session_id~,
       new_session_id~,
+      fork_index~,
       forked_messages~,
     ) =>
-      "ForkCompleted(run=\{run_id.to_string()}, turn=\{turn_id.to_string()}, parent=\{parent_session_id}, new=\{new_session_id}, msgs=\{forked_messages.length()})"
+      "ForkCompleted(run=\{run_id.to_string()}, turn=\{turn_id.to_string()}, parent=\{parent_session_id}, new=\{new_session_id}, index=\{fork_index}, msgs=\{forked_messages.length()})"
     CompactCompleted(
       run_id~,
       turn_id~,

@@ -25,6 +25,11 @@ pub(all) enum SessionOp {
     from_index~ : Int32,
     result~ : Result[Unit, @error.SessionError],
   )
+  OpFork(
+    id~ : String,
+    fork~ : @port.SessionFork,
+    result~ : Result[Unit, @error.SessionError],
+  )
 }
 
 ///|
@@ -141,6 +146,17 @@ pub fn RecordingSessionPort::ops(
         )
       OpTruncate(id~, from_index~, result~) =>
         OpTruncate(id~, from_index~, result~)
+      OpFork(id~, fork~, result~) =>
+        OpFork(
+          id~,
+          fork={
+            from_id: fork.from_id,
+            at_index: fork.at_index,
+            messages: @message_snapshot.snapshot_messages(fork.messages),
+            metadata: @message_snapshot.snapshot_metadata(fork.metadata),
+          },
+          result~,
+        )
     }
   })
 }
@@ -193,6 +209,7 @@ pub extend RecordingSessionPort with @port.SessionPort::{
   append_messages,
   checkpoint,
   truncate,
+  fork,
 }
 
 ///|
@@ -286,6 +303,39 @@ pub impl @port.SessionPort for RecordingSessionPort with fn truncate(
     }
   }
   self.record(OpTruncate(id~, from_index~, result~), result)
+}
+
+///|
+pub impl @port.SessionPort for RecordingSessionPort with fn fork(
+  self,
+  id : String,
+  fork : @port.SessionFork,
+) -> Unit raise @error.SessionError {
+  let fork_copy : @port.SessionFork = {
+    from_id: fork.from_id,
+    at_index: fork.at_index,
+    messages: @message_snapshot.snapshot_messages(fork.messages),
+    metadata: @message_snapshot.snapshot_metadata(fork.metadata),
+  }
+  let result : Result[Unit, @error.SessionError] = match self.guard_save(id) {
+    Some(e) => Err(e)
+    None => {
+      let messages = match self.store.get(fork.from_id) {
+        Some(parent) if fork.at_index >= 0 &&
+          fork.at_index <= parent.messages.length() =>
+          @message_snapshot.snapshot_messages(
+            parent.messages[:fork.at_index].to_owned(),
+          )
+        _ => @message_snapshot.snapshot_messages(fork.messages)
+      }
+      self.store[id] = {
+        messages,
+        metadata: @message_snapshot.snapshot_metadata(fork.metadata),
+      }
+      Ok(())
+    }
+  }
+  self.record(OpFork(id~, fork=fork_copy, result~), result)
 }
 
 ///|

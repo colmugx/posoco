@@ -93,6 +93,21 @@ fn newthread_save_count(
 }
 
 ///|
+fn newthread_fork_count(
+  store : @test_support.RecordingSessionPort,
+  target : String,
+) -> Int32 {
+  let mut count = 0
+  for op in store.ops() {
+    match op {
+      OpFork(id~, ..) => if id == target { count = count + 1 }
+      _ => ()
+    }
+  }
+  count
+}
+
+///|
 /// The first model call injects a command at a deterministic interleaving:
 /// the run is bound, its model effect is in flight, and the next safe point
 /// has not executed. No scheduler ordering or wall-clock budget is involved.
@@ -225,6 +240,8 @@ async test "newthread/fork_persists_sibling_with_lineage_and_emits_redirect" {
   assert_true(sibling.messages[0] == @test_support.tk_user_msg("one"))
   assert_true(sibling.messages[1] == @test_support.tk_user_msg("two"))
   assert_eq(sibling.metadata[@types.PARENT_THREAD_ID_KEY], Json::string("s1"))
+  assert_eq(sibling.metadata[@types.PARENT_FORK_INDEX_KEY], Json::number(2.0))
+  assert_eq(sibling.parent_fork_index(), Some(2))
   // The sibling cursor advanced so the next turn appends instead of resaving.
   assert_eq(agent.runtime.progress.cursor(to), Some(2))
   // Parent provenance (evidence from the recorded writes): two incremental
@@ -272,8 +289,9 @@ async test "newthread/fork_persists_sibling_with_lineage_and_emits_redirect" {
   assert_true(original.messages[0] == sibling.messages[0])
   assert_true(original.messages[1] == sibling.messages[1])
   assert_false(original.metadata.contains(@types.PARENT_THREAD_ID_KEY))
-  // The Agent is the only NewThread output owner.
-  assert_eq(newthread_save_count(store, to), 1)
+  // The Agent dispatches structural fork to SessionPort instead of blind save.
+  assert_eq(newthread_fork_count(store, to), 1)
+  assert_eq(newthread_save_count(store, to), 0)
 }
 
 ///|
@@ -321,6 +339,7 @@ async test "newthread/compact_newthread_persists_sibling_with_lineage_and_emits_
   assert_eq(sibling.messages.length(), 1)
   assert_true(sibling.messages[0] == @test_support.tk_user_msg("summary"))
   assert_eq(sibling.metadata[@types.PARENT_THREAD_ID_KEY], Json::string("c1"))
+  assert_false(sibling.metadata.contains(@types.PARENT_FORK_INDEX_KEY))
   assert_eq(agent.runtime.progress.cursor(to), Some(1))
   // Real alias isolation: mutate what load() handed out, then reload — the
   // persisted state must be untouched because saves carry deep snapshots.

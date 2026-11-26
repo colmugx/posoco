@@ -10,6 +10,12 @@
 pub const SESSION_TITLE_METADATA_KEY : String = @types.SESSION_TITLE_METADATA_KEY
 
 ///|
+pub const PARENT_THREAD_ID_KEY : String = @types.PARENT_THREAD_ID_KEY
+
+///|
+pub const PARENT_FORK_INDEX_KEY : String = @types.PARENT_FORK_INDEX_KEY
+
+///|
 pub using @types {
   type ChatOptions,
   type StreamMode,
@@ -21,6 +27,11 @@ pub using @types {
   type ToolCatalogChange,
   type ToolCatalogChangedPayload,
   type TurnResult,
+  type CompactOutcome,
+  type ForkOutcome,
+  type RewindOutcome,
+  type ContextState,
+  type ContextReadingSource,
   type EventScope,
 }
 
@@ -89,6 +100,7 @@ pub using @port {
   type ExtensionManifest,
   type ProviderConfig,
   type SessionCheckpoint,
+  type SessionFork,
   // Consumption direction: declared capability requirements and the curated
   // composed-capability view delivered at Lifecycle::on_compose.
   type Capability,

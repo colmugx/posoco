@@ -24,6 +24,7 @@ pub fn CoreFacts::CoreFacts() -> Self
 pub fn CoreFacts::admit(Self, String, Array[@kernel.Message], Map[String, @json.Json], Array[@kernel.Message], String) -> Result[Unit, String]
 pub fn CoreFacts::capture_source(Self, String, String, Array[@kernel.Message], Int32) -> Unit
 pub fn CoreFacts::finish_run(Self, String, String, String) -> Unit
+pub fn CoreFacts::has_session(Self, String) -> Bool
 pub fn CoreFacts::hydrate(Self, String, Array[@kernel.Message], Map[String, @json.Json]) -> Result[Unit, String]
 pub fn CoreFacts::mark_missing_provenance(Self, String) -> Unit
 pub fn CoreFacts::read_session(Self, String) -> @types.Session raise CoreReadError

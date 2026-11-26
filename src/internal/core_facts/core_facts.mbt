@@ -274,6 +274,11 @@ pub fn CoreFacts::read_source(
 }
 
 ///|
+pub fn CoreFacts::has_session(self : CoreFacts, session_id : String) -> Bool {
+  self.store.sessions.contains(session_id)
+}
+
+///|
 fn CoreFacts::is_tracked(self : CoreFacts, session_id : String) -> Bool {
   match self.state.get(session_id) {
     Some(Tracking(..)) => true
